@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
+  <rect width="100%" height="100%" fill="#fff"/>
+  <circle cx="120" cy="120" r="20" fill="none" stroke="#ccc" stroke-width="1" />
+  <circle cx="140" cy="120" r="20" fill="none" stroke="#ccc" stroke-width="1" />
+  <circle cx="130" cy="137.32" r="20" fill="none" stroke="#ccc" stroke-width="1" />
+  <circle cx="110" cy="137.32" r="20" fill="none" stroke="#ccc" stroke-width="1" />
+  <circle cx="100" cy="120" r="20" fill="none" stroke="#ccc" stroke-width="1" />
+  <circle cx="110" cy="102.68" r="20" fill="none" stroke="#ccc" stroke-width="1" />
+  <circle cx="130" cy="102.68" r="20" fill="none" stroke="#ccc" stroke-width="1" />
+  <text x="120" y="117" text-anchor="middle" font-family="'DejaVu Sans Mono', monospace" font-size="32" fill="#000">tat</text>
+  <text x="120" y="140" text-anchor="middle" font-family="'DejaVu Sans Mono', monospace" font-size="32" fill="#000">bot</text>
+</svg>
