@@ -7,7 +7,7 @@ import logging
 from typing import Optional
 
 import numpy as np
-from pxr import Usd, UsdGeom
+from pxr import Usd, UsdGeom, UsdLux, Sdf
 from PIL import Image
 
 import warp as wp
@@ -35,24 +35,27 @@ class SimConfig:
     device: str = None  # Device to run the simulation on
     seed: int = 42  # Random seed
     headless: bool = False  # Turns off rendering
-    num_frames: int = 60 # Increased frames for settling
-    fps: int = 60  # Frames per second
+    num_frames: int = 30 # Increased frames for settling
+    fps: int = 30  # Frames per second
     sim_substeps: int = 32  # Number of simulation substeps per frame
     integrator_type: IntegratorType = IntegratorType.XPBD # XPBD often good for cloth contact
-    cloth_width: int = 128 # Increased resolution for potentially better mapping
+    cloth_width: int = 128 # resolution of cloth grid
     cloth_height: int = 128
-    cloth_cell_size: float = 0.001 # Smaller cell size if resolution increased
-    cloth_particle_radius: float = 0.001 # Match cell size
-    cloth_mass: float = 0.01  # Mass per cloth particle (adjust as needed)
-    cloth_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)  # Initial position of cloth
+    tattoo_width: float = 0.06 # size of tattoo in meters
+    tattoo_height: float = 0.06
+    cloth_cell_size: float = tattoo_width / cloth_width
+    cloth_particle_radius: float = cloth_cell_size
+    cloth_mass: float = 0.01  # Mass per cloth particle
+    cloth_pos: tuple[float, float, float] = (0.0, 0.5, 0.0)  # Initial position of cloth
     cloth_rot_axis: tuple[float, float, float] = (1.0, 0.0, 0.0)  # Axis for cloth rotation
     cloth_rot_angle: float = math.pi * 0.5  # Angle for cloth rotation (radians)
     cloth_vel: tuple[float, float, float] = (0.0, 0.0, 0.0)  # Initial velocity of cloth
     fix_left: bool = False  # Fix the left edge of the cloth
     root_dir: str = os.environ['TATBOT_ROOT']
     usd_output_path: str = f"{root_dir}/output/stencil.usd"  # Path to save USD file
+    env_hdr_path: str = f"{root_dir}/assets/3d/evening_road.hdr"
     mesh_target_usd_path: str = f"{root_dir}/assets/3d/real_leg/leg.usda"  # Path to mesh_target USD file
-    mesh_target_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)  # Position of mesh_target mesh
+    mesh_target_pos: tuple[float, float, float] = (0.0, 0.0, 0.2)  # Position of mesh_target mesh
     mesh_target_rot_axis: tuple[float, float, float] = (0.0, 1.0, 0.0)  # Axis for mesh_target rotation
     mesh_target_rot_angle: float = math.pi / 4  # Angle for mesh_target rotation (radians)
     mesh_target_scale: tuple[float, float, float] = (1.0, 1.0, 1.0)  # Scale of mesh_target mesh
@@ -274,6 +277,12 @@ class Sim:
             self.rot_x_axis_q_wp = wp.quat_from_axis_angle(wp.vec3(0.0, 0.0, 1.0), math.pi / 2.0) # Rotate cone from +Y to +X
             self.rot_y_axis_q_wp = wp.quat_identity() # Cone already points along +Y
             self.rot_z_axis_q_wp = wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi / 2.0) # Rotate cone from +Y to +Z
+            # Add environment hdr for lighting
+            dome_light = UsdLux.DomeLight.Get(self.renderer.stage, "/dome_light")
+            dome_light.CreateTextureFileAttr().Set(Sdf.AssetPath(config.env_hdr_path))
+            dome_light.GetIntensityAttr().Set(1.0)
+            dome_light.GetExposureAttr().Set(0.0)
+            self.renderer.stage.Save()
         else:
             self.renderer = None
 
