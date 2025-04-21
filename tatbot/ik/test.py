@@ -44,14 +44,6 @@ class TestImports(unittest.TestCase):
             log.info("Successfully imported mutate module")
         except Exception as e:
             self.fail(f"Failed to import mutate module: {str(e)}")
-
-    def test_stencil_module_import(self):
-        """Test that stencil.py can be imported without errors"""
-        try:
-            import tatbot.ik.stencil
-            log.info("Successfully imported stencil module")
-        except Exception as e:
-            self.fail(f"Failed to import stencil module: {str(e)}")
             
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 #!/bin/bash
 SEED=${1:-999}
 source "scripts/util/validate_backend.sh"
-docker build -f $TATBOT_ROOT/docker/ik/Dockerfile.$BACKEND -t tatbot-ik-$BACKEND $TATBOT_ROOT
+docker build -f $TATBOT_ROOT/docker/warp/Dockerfile.$BACKEND -t tatbot-warp-$BACKEND $TATBOT_ROOT
 declare -a failed_morphs
 declare -a successful_morphs
 MORPH_FILES=$(find "$TATBOT_ROOT/warp_ik/morphs" -name "*.py")
@@ -15,7 +15,7 @@ for MORPH_FILE in $MORPH_FILES; do
         -v $TATBOT_ROOT/output:/root/tatbot/output \
         -v $TATBOT_ROOT/assets:/root/tatbot/assets \
         -v $TATBOT_ROOT/tatbot/ik/morphs:/root/tatbot/tatbot/ik/morphs \
-        tatbot-ik-$BACKEND bash -c "
+        tatbot-warp-$BACKEND bash -c "
         source \${TATBOT_ROOT}/.venv/bin/activate && \
         source \${TATBOT_ROOT}/.env && \
         uv run python \${TATBOT_ROOT}/tatbot/ik/morph.py --morph $MORPH --track --headless --seed $SEED"; then

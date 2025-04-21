@@ -1,6 +1,5 @@
 # intended for oop compute node
 # used to run the Camera Calibration Tool
-# https://moveit.picknik.ai/main/doc/examples/setup_assistant/setup_assistant_tutorial.html
 # https://docs.nav2.org/tutorials/docs/camera_calibration.html
 FROM ros:humble-ros-base
 ENV ROS_DOMAIN_ID=1
