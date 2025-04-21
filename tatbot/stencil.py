@@ -51,13 +51,13 @@ class SimConfig:
     fix_left: bool = False  # Fix the left edge of the cloth
     root_dir: str = os.environ['TATBOT_ROOT']
     usd_output_path: str = f"{root_dir}/output/stencil.usd"  # Path to save USD file
-    mesh_target_usd_path: str = f"{root_dir}/assets/3d/arm.usda"  # Path to mesh_target USD file
-    mesh_target_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)  # Position of mesh_target mesh
+    mesh_target_usd_path: str = f"{root_dir}/assets/3d/real_leg/leg.usda"  # Path to mesh_target USD file
+    mesh_target_pos: tuple[float, float, float] = (0.0, -1.2, 0.0)  # Position of mesh_target mesh
     mesh_target_rot_axis: tuple[float, float, float] = (0.0, 1.0, 0.0)  # Axis for mesh_target rotation
     mesh_target_rot_angle: float = math.pi / 4  # Angle for mesh_target rotation (radians)
-    mesh_target_scale: tuple[float, float, float] = (12.0, 12.0, 12.0)  # Scale of mesh_target mesh
-    tattoo_image_path: str = f"{root_dir}/assets/designs/zorya-224x224.png" # Path to your tattoo PNG
-    tattoo_ik_poses_path: str = f"{root_dir}/output/stencil_ik_poses.npy" # Path to save IK poses
+    mesh_target_scale: tuple[float, float, float] = (1.0, 1.0, 1.0)  # Scale of mesh_target mesh
+    tattoo_image_path: str = f"{root_dir}/assets/designs/zorya-128x128.png" # Path to your tattoo PNG
+    tattoo_ik_poses_path: str = f"{root_dir}/assets/targets/zorya-128x128.npy" # Path to save IK poses
     tattoo_gizmo_scale: float = 0.005 # Scale for the visualization gizmos
     # Integrator-specific parameters (Defaults adjusted slightly)
     euler_tri_ke: float = 1.0e3

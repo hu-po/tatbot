@@ -39,7 +39,7 @@ the following assets are required:
 run the stencil simulation to generate ik poses
 
 ```bash
-./scripts/ik/stencil.sh
+./scripts/stencil.sh
 ```
 
 visualize the final stencil placement (requires `usdview`)

@@ -12,7 +12,6 @@ from typing import List
 from dataclasses import dataclass, field
 
 import yaml
-from dotenv import load_dotenv
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,13 +38,6 @@ def run(config: PoweroffConfig):
     except Exception as e:
         logger.error(f"Error loading compute.yaml: {e}")
         sys.exit(1)
-
-    # Load environment variables from .env file (for passwords)
-    env_path = os.path.join(config.root_dir, 'cfg', '.env')
-    if os.path.exists(env_path):
-        load_dotenv(env_path)
-    else:
-        logger.warning(f".env file not found at {env_path}. Proceeding without passwords (assuming SSH key auth).")
 
     nodes_processed_count = 0
     for node_id, node_config in compute_config.items():

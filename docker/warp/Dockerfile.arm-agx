@@ -26,6 +26,8 @@ RUN mkdir -p $TATBOT_ROOT/tatbot/morphs \
     $TATBOT_ROOT/.venv
 RUN git clone https://github.com/TrossenRobotics/trossen_arm_description.git $TATBOT_ROOT/assets/trossen_arm_description
 RUN uv venv --python $PYTHON_VERSION $DOCKERFILE_UV_VENV
+COPY docker/warp/requirements.base.txt $TATBOT_ROOT/requirements.base.txt
+RUN . $DOCKERFILE_UV_VENV/bin/activate && uv pip install -r requirements.base.txt
 COPY docker/warp/requirements.$BACKEND.txt $TATBOT_ROOT/requirements.$BACKEND.txt
 RUN . $DOCKERFILE_UV_VENV/bin/activate && uv pip install -r requirements.$BACKEND.txt
 COPY pyproject.toml $TATBOT_ROOT/pyproject.toml
