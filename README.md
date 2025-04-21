@@ -48,10 +48,16 @@ visualize the final stencil placement (requires `usdview`)
 usdview $TATBOT_ROOT/output/stencil.usd
 ```
 
-run the ik solver
+run the ik solver with a specific morph (e.g. `gpt-e409cb`)
 
 ```bash
-./scripts/ik/solve.sh
+./scripts/ik/morph.render.sh gpt-e409cb
+```
+
+visualize the ik result (requires `usdview`)
+
+```bash
+usdview $TATBOT_ROOT/output/ik_gpt-e409cb.usd
 ```
 
 ## testing
