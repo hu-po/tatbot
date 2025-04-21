@@ -278,10 +278,18 @@ class Sim:
             self.rot_y_axis_q_wp = wp.quat_identity() # Cone already points along +Y
             self.rot_z_axis_q_wp = wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi / 2.0) # Rotate cone from +Y to +Z
             # Add environment hdr for lighting
-            dome_light = UsdLux.DomeLight.Get(self.renderer.stage, "/dome_light")
-            dome_light.CreateTextureFileAttr().Set(Sdf.AssetPath(config.env_hdr_path))
-            dome_light.GetIntensityAttr().Set(1.0)
-            dome_light.GetExposureAttr().Set(0.0)
+            stage_dir  = os.path.dirname(config.usd_output_path)
+            hdr_rel    = os.path.relpath(config.env_hdr_path, stage_dir)
+            dome = UsdLux.DomeLight.Get(self.renderer.stage, "/dome_light")
+            dome.CreateTextureFileAttr().Set(Sdf.AssetPath(hdr_rel))
+            dome.GetIntensityAttr().Set(1.0)
+            dome.GetExposureAttr().Set(0.0)
+            # Add camera
+            cam   = UsdGeom.Camera.Define(self.renderer.stage, "/Camera")
+            cam.AddTranslateOp().Set(Gf.Vec3d(0, 0, 0.25))      # 25 cm back
+            cam.AddRotateXYZOp().Set(Gf.Vec3f(0, 180, 0))       # looking –Z
+            cam.CreateClippingRangeAttr().Set(Gf.Vec2f(0.001, 10)) # 1 mm near, 10 m far
+            UsdUtils.SetPrimaryCamera(self.renderer.stage, cam.GetPath())
             self.renderer.stage.Save()
         else:
             self.renderer = None
