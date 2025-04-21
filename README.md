@@ -28,11 +28,39 @@ configure and set the backend (e.g. `x86-3090`, `arm-rpi`)
 source scripts/backends/x86-3090.sh
 ```
 
-test ik functionality
+## workflow
+
+the following assets are required:
+
+- at least one tattoo design in `assets/designs`
+- a 3d mesh model of the tattoo area in `assets/3d`
+- a urdf of the robot arm in `assets/trossen-arm-description`
+
+run the stencil simulation to generate ik poses
+
+```bash
+./scripts/ik/stencil.sh
+```
+
+visualize the final stencil placement (requires `usdview`)
+
+```bash
+usdview $TATBOT_ROOT/output/stencil.usd
+```
+
+run the ik solver
+
+```bash
+./scripts/ik/solve.sh
+```
+
+## testing
+
+the following tests should work on all backends
 
 ```bash
 ./scripts/test/ik.sh
-./scripts/test/ik.ai.sh # this will test model apis
+./scripts/test/ik.ai.sh # this will test model apis (do not run this every time as it consumes credits)
 ```
 
 ## Citation

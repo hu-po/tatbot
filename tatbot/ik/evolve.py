@@ -31,7 +31,6 @@ class EvolveConfig:
     num_morphs: int = 20 # desired size of the population of morphs (may overshoot slightly)
     topk_morphs: int = 10 # number of top morphs to keep each round
     mutate_on_start: bool = False # whether to mutate protomorphs at the start
-    backend: str = os.environ.get("BACKEND", "x86-meerkat") # Default if not set
     root_dir: str = os.environ.get("TATBOT_ROOT")
     protomorphs_str: str = os.environ.get("PROTOMORPHS", "ik_geom_6d,ik_fd_6d") # comma separated list
     output_dir: str = field(init=False)
@@ -318,7 +317,6 @@ async def evolve_async(config: EvolveConfig):
 async def main():
     parser = argparse.ArgumentParser(description="Evolve IK morphs.")
     parser.add_argument("--seed", type=int, default=EvolveConfig.seed)
-    parser.add_argument("--backend", type=str, default=EvolveConfig.backend, help="Compute backend variant.")
     parser.add_argument("--protomorphs", type=str, default=EvolveConfig.protomorphs_str, help="Comma-separated list of protomorphs.")
     parser.add_argument("--num_rounds", type=int, default=EvolveConfig.num_rounds)
     parser.add_argument("--num_morphs", type=int, default=EvolveConfig.num_morphs, help="Target population size per round.")
@@ -343,7 +341,6 @@ async def main():
 
     config = EvolveConfig(
         seed=args.seed,
-        backend=args.backend,
         protomorphs_str=args.protomorphs,
         num_rounds=args.num_rounds,
         num_morphs=args.num_morphs,

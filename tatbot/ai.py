@@ -17,9 +17,6 @@ from tenacity import (
 )
 import aiofiles
 
-from dotenv import load_dotenv
-load_dotenv()  # take environment variables from .env.
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
@@ -41,7 +38,7 @@ class AIConfig:
     replicate_model: str = "deepseek-ai/deepseek-r1"
     max_tokens: int = int(1e4)
     api_max_retries: int = 1
-    timeout_model_api: int = 600 # seconds (this is high because of reasoning models)
+    timeout_model_api: int = 600 # seconds
     timeout_analysis: int = 900  # seconds
 
 config = AIConfig()

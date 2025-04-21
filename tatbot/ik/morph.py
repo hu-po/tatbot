@@ -31,8 +31,11 @@ class MorphConfig:
     root_dir: str = os.environ.get("TATBOT_ROOT") # root directory of the warp-ik project
     assets_dir: str = f"{root_dir}/assets" # assets directory for the morphs
     output_dir: str = f"{root_dir}/output" # output directory for the morphs
-    morph_dir: str = f"{root_dir}/warp_ik/morphs" # directory for the morphs
+    morph_dir: str = f"{root_dir}/tatbot/ik/morphs" # directory for the morphs
     morph_output_dir: str = f"{output_dir}/{morph}" # output directory for this unique morph
+    targets_path: str  = f"{assets_dir}/targets/zorya_1k.npy"   # path to N×7 .npy file of target poses
+    urdf_path: str = f"{assets_dir}/trossen_arm_description/urdf/generated/wxai/wxai_follower.urdf" # path to the urdf file
+    usd_output_path: str = f"{output_dir}/ik-{morph}.usd" # path to the usd file to save the model
     device: str = os.environ.get("DEVICE", None) # nvidia device to run the simulation on
     headless: bool = False # turns off rendering
     num_envs: int = os.environ.get("NUM_ENVS", 4) # number of parallel environments
@@ -45,9 +48,6 @@ class MorphConfig:
     start_time: float = 0.0 # start time for the simulation
     fps: int = 60 # frames per second
     step_size: float = 1.0 # step size in q space for updates
-    targets_path: str  = f"{assets_dir}/targets/zorya_1k.npy"   # path to N×7 .npy file of target poses
-    urdf_path: str = f"{assets_dir}/trossen_arm_description/urdf/generated/wxai/wxai_follower.urdf" # path to the urdf file
-    usd_output_path: str = f"{output_dir}/{morph}-recording.usd" # path to the usd file to save the model
     ee_link_offset: tuple[float, float, float] = (0.0, 0.0, 0.0) # offset from the ee_gripper_link to the end effector
     gizmo_radius: float = 0.005 # radius of the gizmo (used for arrow base radius)
     gizmo_length: float = 0.05 # total length of the gizmo arrow
@@ -1000,7 +1000,6 @@ def run_morph(config: MorphConfig) -> dict:
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--backend", type=str, default=MorphConfig.backend, help="Override default compute backend variant.")
     parser.add_argument("--headless", action='store_true', help="Run in headless mode.")
     parser.add_argument("--track", action='store_true', help="Turn on tracking with wandb.")
     parser.add_argument("--morph", type=str, default=MorphConfig.morph, help="Unique identifier for the morph.")
@@ -1014,7 +1013,6 @@ if __name__ == "__main__":
     config = MorphConfig(
         morph=args.morph,
         device=args.device,
-        backend=args.backend,
         headless=args.headless,
         track=args.track,
         seed=args.seed,

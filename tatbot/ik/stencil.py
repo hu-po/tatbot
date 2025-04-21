@@ -4,11 +4,11 @@ import math
 import os
 from enum import Enum
 import logging
-from typing import Optional # Added
+from typing import Optional
 
 import numpy as np
 from pxr import Usd, UsdGeom
-from PIL import Image # Added for image loading
+from PIL import Image
 
 import warp as wp
 import warp.sim
@@ -22,7 +22,61 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
-# --- Warp Math Functions (copied from your IK script for orientation) ---
+class IntegratorType(Enum):
+    EULER = "euler"
+    XPBD = "xpbd"
+    VBD = "vbd"
+
+    def __str__(self):
+        return self.value
+
+@dataclass
+class SimConfig:
+    device: str = None  # Device to run the simulation on
+    seed: int = 42  # Random seed
+    headless: bool = False  # Turns off rendering
+    num_frames: int = 60 # Increased frames for settling
+    fps: int = 60  # Frames per second
+    sim_substeps: int = 32  # Number of simulation substeps per frame
+    integrator_type: IntegratorType = IntegratorType.XPBD # XPBD often good for cloth contact
+    cloth_width: int = 128 # Increased resolution for potentially better mapping
+    cloth_height: int = 128
+    cloth_cell_size: float = 0.005 # Smaller cell size if resolution increased
+    cloth_particle_radius: float = 0.005 # Match cell size
+    cloth_mass: float = 0.01  # Mass per cloth particle (adjust as needed)
+    cloth_pos: tuple[float, float, float] = (0.0, 2.8, 0.0)  # Initial position of cloth
+    cloth_rot_axis: tuple[float, float, float] = (1.0, 0.0, 0.0)  # Axis for cloth rotation
+    cloth_rot_angle: float = math.pi * 0.5  # Angle for cloth rotation (radians)
+    cloth_vel: tuple[float, float, float] = (0.0, 0.0, 0.0)  # Initial velocity of cloth
+    fix_left: bool = False  # Fix the left edge of the cloth
+    root_dir: str = os.environ['TATBOT_ROOT']
+    usd_output_path: str = f"{root_dir}/output/stencil.usd"  # Path to save USD file
+    mesh_target_usd_path: str = f"{root_dir}/assets/3d/arm.usda"  # Path to mesh_target USD file
+    mesh_target_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)  # Position of mesh_target mesh
+    mesh_target_rot_axis: tuple[float, float, float] = (0.0, 1.0, 0.0)  # Axis for mesh_target rotation
+    mesh_target_rot_angle: float = math.pi / 4  # Angle for mesh_target rotation (radians)
+    mesh_target_scale: tuple[float, float, float] = (12.0, 12.0, 12.0)  # Scale of mesh_target mesh
+    tattoo_image_path: str = f"{root_dir}/assets/designs/zorya-224x224.png" # Path to your tattoo PNG
+    tattoo_ik_poses_path: str = f"{root_dir}/output/stencil_ik_poses.npy" # Path to save IK poses
+    tattoo_gizmo_scale: float = 0.005 # Scale for the visualization gizmos
+    # Integrator-specific parameters (Defaults adjusted slightly)
+    euler_tri_ke: float = 1.0e3
+    euler_tri_ka: float = 1.0e3
+    euler_tri_kd: float = 1.0e1
+    xpbd_edge_ke: float = 5.0e2 # Slightly increased stiffness
+    xpbd_spring_ke: float = 1.0e3
+    xpbd_spring_kd: float = 1.0 # Add a bit of spring damping
+    vbd_tri_ke: float = 1.0e4
+    vbd_tri_ka: float = 1.0e4
+    vbd_tri_kd: float = 1.0e-5
+    vbd_edge_ke: float = 100.0
+    # Contact parameters
+    soft_contact_ke: float = 1.0e4
+    soft_contact_kd: float = 1.0e2
+    mesh_ke: float = 5.0e2 # Increased contact stiffness
+    mesh_kd: float = 1.0e2
+    mesh_kf: float = 1.0e3
+
 @wp.func
 def quat_mul(q1: wp.quat, q2: wp.quat) -> wp.quat:
     return wp.quat(
@@ -61,63 +115,7 @@ def quat_from_matrix(m: wp.mat33) -> wp.quat:
         qz = 0.25 * s
         qw = (m[1, 0] - m[0, 1]) / s
     return wp.quat(qx, qy, qz, qw)
-# --- End Warp Math Functions ---
 
-class IntegratorType(Enum):
-    EULER = "euler"
-    XPBD = "xpbd"
-    VBD = "vbd"
-
-    def __str__(self):
-        return self.value
-
-@dataclass
-class SimConfig:
-    device: str = None  # Device to run the simulation on
-    seed: int = 42  # Random seed
-    headless: bool = False  # Turns off rendering
-    num_frames: int = 60 # Increased frames for settling
-    fps: int = 60  # Frames per second
-    sim_substeps: int = 32  # Number of simulation substeps per frame
-    integrator_type: IntegratorType = IntegratorType.XPBD # XPBD often good for cloth contact
-    cloth_width: int = 128 # Increased resolution for potentially better mapping
-    cloth_height: int = 128
-    cloth_cell_size: float = 0.005 # Smaller cell size if resolution increased
-    cloth_particle_radius: float = 0.005 # Match cell size
-    cloth_mass: float = 0.01  # Mass per cloth particle (adjust as needed)
-    cloth_pos: tuple[float, float, float] = (0.0, 2.8, 0.0)  # Initial position of cloth
-    cloth_rot_axis: tuple[float, float, float] = (1.0, 0.0, 0.0)  # Axis for cloth rotation
-    cloth_rot_angle: float = math.pi * 0.5  # Angle for cloth rotation (radians)
-    cloth_vel: tuple[float, float, float] = (0.0, 0.0, 0.0)  # Initial velocity of cloth
-    fix_left: bool = False  # Fix the left edge of the cloth
-    usd_output_path: str = "scenes/cloth_tattoo_output.usd"  # Path to save USD file
-    mesh_target_usd_path: str = "assets/arm.usda"  # Path to mesh_target USD file
-    mesh_target_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)  # Position of mesh_target mesh
-    mesh_target_rot_axis: tuple[float, float, float] = (0.0, 1.0, 0.0)  # Axis for mesh_target rotation
-    mesh_target_rot_angle: float = math.pi / 4  # Angle for mesh_target rotation (radians)
-    mesh_target_scale: tuple[float, float, float] = (12.0, 12.0, 12.0)  # Scale of mesh_target mesh
-    tattoo_image_path: str = "assets/zorya-224x224.png" # Path to your tattoo PNG
-    tattoo_ik_poses_path: str = "outputs/tattoo_ik_poses.npy" # Path to save IK poses
-    tattoo_gizmo_scale: float = 0.005 # Scale for the visualization gizmos
-    # Integrator-specific parameters (Defaults adjusted slightly)
-    euler_tri_ke: float = 1.0e3
-    euler_tri_ka: float = 1.0e3
-    euler_tri_kd: float = 1.0e1
-    xpbd_edge_ke: float = 5.0e2 # Slightly increased stiffness
-    xpbd_spring_ke: float = 1.0e3
-    xpbd_spring_kd: float = 1.0 # Add a bit of spring damping
-    vbd_tri_ke: float = 1.0e4
-    vbd_tri_ka: float = 1.0e4
-    vbd_tri_kd: float = 1.0e-5
-    vbd_edge_ke: float = 100.0
-    # Contact parameters
-    soft_contact_ke: float = 1.0e4
-    soft_contact_kd: float = 1.0e2
-    mesh_ke: float = 5.0e2 # Increased contact stiffness
-    mesh_kd: float = 1.0e2
-    mesh_kf: float = 1.0e3
-
-# --- New Kernels ---
 @wp.kernel
 def calculate_vertex_orientations_kernel(
     particle_q: wp.array(dtype=wp.vec3),
@@ -228,7 +226,6 @@ def calculate_tattoo_gizmo_transforms_kernel(
     out_gizmo_rot[base_idx + 1] = world_rot_y
     out_gizmo_pos[base_idx + 2] = target_pos - offset_z
     out_gizmo_rot[base_idx + 2] = world_rot_z
-# --- End New Kernels ---
 
 class Sim:
     def __init__(self, config: SimConfig):
@@ -763,9 +760,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_poses", type=str, default=SimConfig.tattoo_ik_poses_path, help="Path to save the generated 6D IK poses (.npy).")
     parser.add_argument("--output_usd", type=str, default=SimConfig.usd_output_path, help="Path to save the final state USD render.")
     parser.add_argument("--collider", type=str, default=SimConfig.mesh_target_usd_path, help="Path to the collider mesh USD file.")
-
-    args = parser.parse_args() # Use parse_args()
-
+    args = parser.parse_args()
     config = SimConfig(
         device=args.device,
         headless=args.headless,
@@ -778,15 +773,5 @@ if __name__ == "__main__":
         tattoo_ik_poses_path=args.output_poses,
         usd_output_path=args.output_usd,
         mesh_target_usd_path=args.collider,
-        # Add other args here if you want to expose more SimConfig options
     )
-
-    # Ensure required libraries are installed
-    try:
-        import PIL
-    except ImportError:
-        print("Error: Pillow library not found. Please install it using:")
-        print("pip install Pillow")
-        exit(1)
-
     run_sim(config)
