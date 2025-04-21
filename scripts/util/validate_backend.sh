@@ -19,7 +19,7 @@ if [ ! -d "${TATBOT_ROOT}" ]; then
     exit 1
 fi
 echo "TATBOT_ROOT: ${TATBOT_ROOT}"
-if [ -z "${GPU_FLAG}" ]; then
+if [ ! -v GPU_FLAG ]; then
     echo "Error: GPU_FLAG environment variable is not set"
     exit 1
 fi
