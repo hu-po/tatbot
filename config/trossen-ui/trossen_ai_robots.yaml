@@ -1,0 +1,19 @@
+trossen_ai_solo: 
+
+  max_relative_target: 2
+
+  leader_arms:
+    main:
+      ip: '192.168.1.2'
+      model: 'V0_LEADER'
+
+  follower_arms:
+    main:
+      ip: '192.168.1.3'
+      model: 'V0_FOLLOWER'
+
+  cameras:
+    cam_high:
+      serial_number: 218622278376
+    cam_wrist:
+      serial_number: 230422273017

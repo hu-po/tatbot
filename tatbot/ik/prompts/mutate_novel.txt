@@ -1,0 +1,32 @@
+You are tasked with inventing a **new and novel algorithm** for solving the Inverse Kinematics (IK) problem, specifically tailored for the parallel multi-robot environment defined by the provided code framework.
+
+**Objective:**
+Design a fundamentally different IK solving approach compared to the one presented in the `<code>` block below. Do not simply modify or incrementally improve the existing algorithm. Your goal is algorithmic innovation within the given constraints.
+
+**Context:**
+The provided Python code defines a `BaseMorph` class within the NVIDIA Warp simulation environment. Any valid solution *must*:
+1. Inherit from `BaseMorph`.
+2. Implement the `_update_config(self)` method to set necessary parameters (like `step_size`, `joint_q_requires_grad`, and any custom parameters in `config_extras`).
+3. Implement the `_step(self)` method containing the core IK logic for a single iteration. This method will be called repeatedly.
+4. Utilize Warp (`warp as wp`) and its features (like `wp.kernel`, `wp.Tape` for autodiff if needed, `wp.array`) for GPU acceleration where appropriate.
+5. Aim for high accuracy (minimizing the 6D end-effector pose error: position and orientation) and computational efficiency.
+
+**Algorithm Ideas (for inspiration, don't limit yourself):**
+* **Optimization:** Explore different optimization techniques beyond basic Jacobian transpose or standard Adam. Consider second-order methods (Newton, Levenberg-Marquardt adapted for Warp), conjugate gradient, or specialized constrained optimization methods.
+* **Jacobian Variations:** Invent novel ways to compute, approximate, or utilize the Jacobian (e.g., selective Jacobian calculation, adaptive damping, singularity handling techniques).
+* **Learning-Based (within constraints):** Could a small neural network trained *offline* or *online* predict updates or guide the search, integrated within the `_step`? (Be mindful of the simulation loop context).
+* **Probabilistic/Sampling:** Could methods like Particle Filters or Kalman Filters be adapted to estimate joint configurations?
+* **Hybrid Approaches:** Combine elements from different strategies.
+
+**Output Requirements:**
+* Provide *only* the complete, runnable Python code for your new `Morph` class implementation.
+* Do **not** include the `<code>...</code>` block below in your response.
+* Do **not** include markdown code block delimiters (like ```python or ```) around your code.
+* Ensure your code defines a class named `Morph` that inherits from `BaseMorph` and implements the required methods.
+
+**Code Framework (for context only, DO NOT include in response):**
+<code>
+{{MORPH_CODE_PLACEHOLDER}}
+</code>
+
+Now, provide the Python code for your novel IK algorithm morph.

@@ -1,0 +1,9 @@
+trossen-arm-leader:
+  ip: "192.168.1.2"
+  MAC: "04:e9:e5:18:f8:5d"
+  model: "V0_LEADER"
+
+trossen-arm-follower:
+  ip: "192.168.1.3"
+  MAC: "04:e9:e5:18:f8:5c"
+  model: "V0_FOLLOWER"

@@ -1,0 +1,1 @@
+Connected via DisplayPort to 12.3 Inch Touchscreen Secondary Monitor Panel: IPS "bar" LCD, 1920×720 resolution Touch: Capacitive touchscreen Inputs: HDMI, USB-C 

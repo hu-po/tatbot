@@ -1,0 +1,205 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{booktabs}
+
+\title{tatbot: Autonomous Robotic Tattooing}
+\author{Hugo Ponte}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We present TatBot, an autonomous robotic system designed to perform tattoo artistry using deep reinforcement learning. Our approach combines computer vision, trajectory optimization, and force control to enable precise and safe tattooing operations. We demonstrate the system's capabilities through extensive simulation and real-world experiments.
+\end{abstract}
+
+\section{Introduction}
+
+Tattoos are an ancient art form that predates recorded history.
+Tattoos have been used as punishment, status symbols, and even therapeutic tools.
+Ötzi, a frozen mummy found in the alps dated to 6272 BP, had tattoos on his arthritic joints \cite{deterwolf_worlds_oldest}.
+The Yimkhiungs of Northern India perform ritualized tattooing on children as young as 5 yearls old \cite{kluger2015cultural}.
+In ancient Mesopotamia, tattooing was used to mark slaves to punitively identify criminals \cite{hawken2022tattooing}.
+Today tattoos have evolved and merged into a global art form that is practiced in every corner of the world.
+Though some of the original symbology and purpose still remains, most modern tattoos are purely aesthetic.
+
+In many cultures, tattoos have to be "earned". They might represent a rite of passage, family sigil, or national identy. There is still debate over cultural appropriation of tattoos.
+
+Tattoo comes from a polynesian word \textit{tatau} which means \textit{to strike}, a reference to the traditional method of tattooing where needle penetration is achieved by striking with stick.
+During the 18th and 19th centuries, the age of exploration introduced Polynesian tattoos to the west.
+As a result, most modern languages now use the loanword tattoo to describe the art form over whatever traditional terminology may have existed.
+
+\section{Background}
+
+\subsection{Biology}
+
+The human skin is a complex organ, but it can roughly be divided into three layers:
+
+\begin{itemize}
+    \item Epidermis: outermost layer, 0.1 to 0.5mm thick, contains melanocytes, keratinocytes, and melanin.
+    \item Dermis: middle layer, 1 to 4mm thick, contains blood vessels, nerves, and hair follicles.
+    \item Subcutaneous tissue: innermost layer, 1 to 4mm thick, contains fat and connective tissue.
+\end{itemize}
+
+In a perfect tattoo, each needle puncture will deposit ink particles into the dermis.
+Ink deposited in the epidermis will fade as the skin cells regenerate.
+Ink deposited in the subcutaneous tissue will "blow out" as it diffuses outwards from the puncture site.
+because tattoos penetrate the skin, they can be a vector for disease transmission.
+medical grade equipment and sanitation protocols are required to prevent infection.
+
+\subsection{Basic Principles}
+
+Tattoo machines can be classified into two rough categories: rotary and coil.
+rotary machines have become the standard for modern tattooing.
+a wide variety of manufacturers compete to create the best wireless battery powered rotary machines.
+voltage is modulated to control the speed of the motor, ranging from 3V to 12V.
+needles are sold in pre-packaged cartridges, providing a convenient sterilized one-time use needle.
+many cartridge types and vendors exist
+needles are classified by their diameter, a grouping pattern, taper type, and length.
+rotary machines use the rotational motion of a small electric motor to drive the up and down motion of the needle.
+The distance the needle travels is called the \textit{stroke length}.
+the artist controls:
+\begin{itemize}
+    \item the speed of the machine travel along the surface of the skin.
+    \item the angle of the needle with respect to the skin surface.
+    \item the depth of the needle penetration.
+    \item the choice of needle cartridge.
+    \item the choice of ink color (and dilution)
+\end{itemize}
+
+\section{Methodology}
+
+\subsection{Theory}
+
+A tattoo $T = (m_1, m_2, \ldots, m_n)$ is a sequence of $n$ marks $m_i$.
+A mark $m_i$ is pattern of ink deposition on a bounded surface $S_i$ representing a small patch of skin.
+We approximate this surface using a mesh $M_i$, which is a collection of vertices $V_i$, edges $E_i$, and faces $F_i$.
+Each vertex $v_j \in V_i$ has a position $p_j \in \mathbb{R}^3$.
+Each edge $e_k \in E_i$ has a start vertex $s_k \in V_i$ and an end vertex $e_k \in V_i$.
+Each face $f_l \in F_i$ has a normal vector $n_l \in \mathbb{R}^3$ and a center position $c_l \in \mathbb{R}^3$.
+The angle of the needle with respect to the skin surface is represented by a quaternion $q_i \in \mathbb{H}$.
+Each mark $m_i$ is parameterized by a start position \( \mathbf{p}_i \in \mathbb{R}^3 \), a direction vector \( \mathbf{d}_i \in \mathbb{R}^3 \), and a radius \( r_i \).
+The bounded surface $S_i$ is represented by a sdf $\phi: \mathbb{R}^3 \to \mathbb{R}$.
+and the skin penetration depth at a point cae computed as:
+\[
+d(\mathbf{x}) = -\phi(\mathbf{x}) \quad \text{(for points inside the skin)}
+\]
+the robot can be broken down into the arm and the tool.
+in the literature the tool is also called end effector, gripper, or manipulator.
+the arm is controlled in joint space $\mathbf{q} = (q_1, q_2, \ldots, q_j)$ where the number joints $J$ is $6$.
+robot end effector has a position and quaternion $\mathbf{p}_{ee} \in \mathbb{R}^3 \quad \text{and} \quad \mathbf{q}_{ee} \in \mathbb{H} \quad (\text{a quaternion})$
+Inverse kinematics (IK) is the process that converts the joint space coordinates \( \mathbf{q} \) into the end effector space coordinates \( (\mathbf{p}_{ee}, \mathbf{q}_{ee}) \):
+\[
+\text{IK}: \mathbf{q} \mapsto (\mathbf{p}_{ee}, \mathbf{q}_{ee})
+\]
+
+condition the mark on a sequence of mesh vertices
+mesh transformers are probably very good for generating these kind of vertex sequences
+you can then condition the arm controller on the vertex sequence
+
+\subsection{Data Recipe}
+
+swiftsketch dataset - flux/ideogram/sdxl -> switftketch svg -> ply/mesh
+meshformer dataset -
+
+the starting point for the model is the $\pi_0$ model, an open source VLA model for robotic control \cite{Black2024pi0}.
+
+3B VLM
+300M action expert
+
+there is a fundamental magic inside modern pretrained transformers.
+The space of neural programs encoded in the weights just from human data on the internet is enormous. 
+Some of these neural programs serve as useful starting points for robotic control.
+
+\subsection{Software}
+
+flux to generate the 2d art based on the prompt
+
+rerun for timeseries database and visualization
+lerobot for dataset and model management
+
+rerun for visualization (compute done by pi5)
+uv for package management
+open3d for image to mesh mapping
+huggingface lerobot datasets for imitation learning
+openpi/lerobot for training and inference scripts
+wandb for experiment management
+sweeps for tuning hyperparameters
+onshape for part design
+
+\subsection{Hardware}
+
+Trossen Robotics Aloha Solo 6DoF robot arm.
+
+The action space of the arm is $\mathbb{R}^6$ for the joint angles and $\mathbb{R}$ for the gripper.
+The observation space is $\mathbb{R}^{14}$, including joint angles and joint forces.
+The observation space also includes 2D images for overhead and wrist camera.
+
+Toolbox with various end effectors.
+Calibration cone tool.
+Tattoo machine tool.
+Paper towel roll tool.
+tools have locating features to ensure consistent relative transformation between tool and arm.
+
+\section{Results}
+
+foo
+
+\section{Related Work}
+
+Tattoos are fundamentally 3D. They flow over the surfaces and curves of the body. Every single previous robotic tattoo system has been constrained to the 2D plane.
+Robot arms have been used before, but the control is still classical.
+A set of waypoints are programmed by the human operator and the robot arm just simply executes.
+Modern attempts have focused on 2D gantry systems, similar to 3D printers.
+The most advanced tattoo robot to date is from an Austin based startup called Blackdot.
+I have personally received a tattoo from the system and can vouch for the quality of the tattoo.
+The Blackdot system breaks down 2D designs into very small black dots and then tattoos each dot individually.
+However, the proccess is still fundamentally limited: the control is classical, the 2D constraint is still present.
+Even the designs are not AI generated, but rather come from a library of pre-existing human designs.
+These robots are not artists, they are printers.
+Technology has advanced and we need to create new systems that go beyond these limitations.
+AI generated designs that are 3D by nature tattooed using a robotic arm controlled by AI.
+Using modern imitation learning and reinforcement learning.
+
+foo \cite{NietoBastida2023}
+foo \cite{arar2025swiftsketch}
+foo \cite{carlier2020deepsvg}
+foo \cite{mellor2020unsupervised}
+foo \cite{ha2017neural}
+foo \cite{huang2019learning}
+foo \cite{kotani2019teaching}
+
+Various tattoo robots based on modified 3D printers have been demonstrated on YouTube \cite{EmilyTheEngineer2025}, a similar system \cite{YamanDeif2021}
+
+\section{Discussion}
+
+\subsection{Robotic Artistry}
+
+technology can create social tensions.
+photography was frowned upon by those who feared it would replace portraiture.
+robotic tattooing will run into tensions with human tattoo artists.
+new art mediums do not replace old art mediums, they simply expand the canvas with which humanity can express itself.
+
+\subsection{Future Work}
+
+As it stands, tatbot is still just a proof of concept.
+
+The design space is limited, the accuracy is still suboptimal.
+
+My dream is to continue to work on this project, expanding it accross the world.
+
+Cities are the heart of tattoing, where a large population creates an endless supply of skin.
+
+\section{Conclusion}
+
+foo
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document} 

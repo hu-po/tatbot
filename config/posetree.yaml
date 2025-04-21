@@ -1,0 +1,12 @@
+root_frame: "tag_3"
+
+offsets:
+  - tag_id: 4
+    camera_frame: "camera_004"
+    offset_xyz: [0.0, -0.035, 0.005]
+    offset_rpy_deg: [0, 0, 0]
+
+  - tag_id: 5
+    camera_frame: "camera_005"
+    offset_xyz: [0.0, -0.035, 0.005]
+    offset_rpy_deg: [0, 0, 0]

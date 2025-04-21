@@ -1,0 +1,29 @@
+camera1:
+  device_name: "AMC108EF91BA102126"
+  ip: "192.168.1.91"
+  username: "admin"
+  MAC: "A0:60:32:05:E1:7C"
+
+camera2:
+  device_name: "AMC10802AF9B53A9D5"
+  ip: "192.168.1.92"
+  username: "admin"
+  MAC: "A0:60:32:04:E4:D2"
+
+camera3:
+  device_name: "AMC10858C5C8435EF5"
+  ip: "192.168.1.93"
+  username: "admin"
+  MAC: "A0:60:32:04:E7:6A"
+
+camera4:
+  device_name: "AMC108D0D9673DEA55"
+  ip: "192.168.1.94"
+  username: "admin"
+  MAC: "A0:60:32:04:EB:27"
+
+camera5:
+  device_name: "AMC108A416274B2DA7"
+  ip: "192.168.1.95"
+  username: "admin"
+  MAC: "A0:60:32:05:DF:C9"

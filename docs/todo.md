@@ -1,0 +1,20 @@
+- warp tattoo cloth sim (3 RL and 5 RL liners)
+   - wait for MoveIt integration by trossen
+   - interface between warp and moveit is 6d needle pose
+- ping script to see which compute nodes are online
+- add emoji logging to ping, shutdown, scripts
+- understand latency and fps of realsenses, policy, robot on meerkat vs ojo
+- teleop hupo X video
+- tatbot organization in HF
+- finetune gr00t on dataset
+- wandb logging in gr00t fork
+- tatbot organization in wandb
+- record circle tattoo data
+- tatbot tok/insta/X video
+- reconstruction using amcrest cameras
+- turn off wifi on ojo, set up DNS
+- set static IP for trossen-ai, ojo, rpi1, rpi2
+- optimize realsense cameras settings via realsense-viewer
+- optimize amcrest cameras settings via browser
+- flash trossen control boxes with latest firmware
+- test battery load with models running

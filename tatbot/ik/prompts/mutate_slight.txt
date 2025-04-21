@@ -1,0 +1,32 @@
+You are tasked with making a **slight modification or incremental improvement** to the existing Inverse Kinematics (IK) algorithm provided in the code block below, specifically for the parallel multi-robot environment defined by the provided code framework.
+
+**Objective:**
+Carefully analyze the provided IK algorithm and make a meaningful but incremental change. This could involve tuning parameters, improving efficiency, adding a minor feature, or addressing a specific limitation. Do **not** invent a fundamentally new algorithm; focus on practical, evolutionary improvements.
+
+**Context:**
+The provided Python code defines a `BaseMorph` class within the NVIDIA Warp simulation environment. Any valid solution *must*:
+1. Inherit from `BaseMorph`.
+2. Implement the `_update_config(self)` method to set necessary parameters (like `step_size`, `joint_q_requires_grad`, and any custom parameters in `config_extras`).
+3. Implement the `_step(self)` method containing the core IK logic for a single iteration. This method will be called repeatedly.
+4. Utilize Warp (`warp as wp`) and its features (like `wp.kernel`, `wp.Tape` for autodiff if needed, `wp.array`) for GPU acceleration where appropriate.
+5. Aim for high accuracy (minimizing the 6D end-effector pose error: position and orientation) and computational efficiency.
+
+**Incremental Improvement Ideas (for inspiration, don't limit yourself):**
+* **Parameter Tuning:** Adjust learning rates, damping factors, or other hyperparameters for better performance.
+* **Efficiency:** Refactor code for speed, reduce memory usage, or optimize kernel launches.
+* **Robustness:** Add error handling, improve numerical stability, or address edge cases.
+* **Feature Addition:** Add a minor feature, such as logging, intermediate result tracking, or a new stopping criterion.
+* **Bug Fix:** Identify and fix a subtle bug or limitation in the original code.
+
+**Output Requirements:**
+* Provide *only* the complete, runnable Python code for your improved `Morph` class implementation.
+* Do **not** include the `<code>...</code>` block below in your response.
+* Do **not** include markdown code block delimiters (like ```python or ```) around your code.
+* Ensure your code defines a class named `Morph` that inherits from `BaseMorph` and implements the required methods.
+
+**Code Framework (for context only, DO NOT include in response):**
+<code>
+{{MORPH_CODE_PLACEHOLDER}}
+</code>
+
+Now, provide the Python code for your improved IK algorithm morph. 

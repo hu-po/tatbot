@@ -1,0 +1,29 @@
+# intended for oop compute node
+# uses tf2 to aggregate and publish poses for other nodes
+FROM ros:humble-ros-base
+ENV ROS_DOMAIN_ID=1
+RUN apt-get update && apt-get install -y \
+    libyaml-cpp-dev \
+    ros-humble-tf2-ros \
+    ros-humble-tf2-tools \
+    ros-humble-tf2-geometry-msgs \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /ros2_ws
+RUN mkdir -p /ros2_ws/src
+# copy the custom tf2pose package from tatbot-dev/src
+COPY src/tf2pose /ros2_ws/src/tf2pose
+WORKDIR /ros2_ws
+# build packages
+RUN . /opt/ros/humble/setup.sh && colcon build
+WORKDIR /root
+# copy over config files from tatbot-dev/cfg
+COPY cfg/.env /root/.env
+COPY cfg/apriltags.yaml /root/apriltags.yaml
+COPY cfg/posetree.yaml /root/posetree.yaml
+COPY cfg/cameras.yaml /root/cameras.yaml
+RUN echo '#!/bin/bash' > /root/entrypoint.sh && \
+    echo 'source /opt/ros/humble/setup.bash' >> /root/entrypoint.sh && \
+    echo 'source /ros2_ws/install/local_setup.bash' >> /root/entrypoint.sh && \
+    echo 'exec ros2 run tf2pose tf2pose_node' >> /root/entrypoint.sh
+RUN chmod +x /root/entrypoint.sh
+ENTRYPOINT ["/bin/bash", "/root/entrypoint.sh"]

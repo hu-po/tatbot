@@ -1,0 +1,9 @@
+data/
+output/
+docs/
+.venv
+.git
+.gitignore
+.dockerignore
+.github
+.vscode

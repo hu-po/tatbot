@@ -169,3 +169,24 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+
+# LaTeX build files
+*.pdf
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+
+# output directory
+output/
+
+# Assets directory (but keep specific logos)
+assets/*
+!assets/logos/
+!assets/logos/dark.svg
+!assets/logos/light.svg

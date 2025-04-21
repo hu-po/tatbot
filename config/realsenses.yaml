@@ -1,0 +1,13 @@
+cam_wrist:
+  model: "D405"
+  serial_number: 230422273017
+  fps: 30
+  width: 640
+  height: 480
+
+cam_main:
+  model: "D405"
+  serial_number: 218622278376
+  fps: 30
+  width: 640
+  height: 480
