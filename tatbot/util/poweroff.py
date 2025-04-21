@@ -4,21 +4,23 @@ SSH into each enabled compute node and shut it down.
 > python scripts/oop/shutdown.py
 """
 
-import yaml
+import logging
 import os
 import subprocess
 import sys
-import logging
 from typing import List
 from dataclasses import dataclass, field
+
+import yaml
 from dotenv import load_dotenv
 
-# Configure logger
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s|%(name)s|%(levelname)s|%(message)s',
+    datefmt='%H:%M:%S',
 )
-logger = logging.getLogger('shutdown-compute')
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 @dataclass
 class PoweroffConfig:

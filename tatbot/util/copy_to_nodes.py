@@ -1,17 +1,20 @@
 import argparse
-import yaml
+import logging
 import os
 import subprocess
 import sys
-import logging
 from typing import List
 from dataclasses import dataclass, field
 
+import yaml
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s|%(name)s|%(levelname)s|%(message)s',
+    datefmt='%H:%M:%S',
 )
-logger = logging.getLogger('copy-to-compute')
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 @dataclass
 class CopyConfig:

@@ -6,23 +6,27 @@ Captures images from all cameras and output to file.
 
 import argparse
 import asyncio
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime
 import json
 import logging
 import os
 import time
 from typing import Dict, Optional, Literal
-import yaml
 
 import cv2
 import requests
 from requests.auth import HTTPDigestAuth
+import yaml
 
-from concurrent.futures import ThreadPoolExecutor
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s|%(name)s|%(levelname)s|%(message)s',
+    datefmt='%H:%M:%S',
+)
 log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 @dataclass
 class Camera:

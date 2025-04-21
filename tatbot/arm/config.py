@@ -1,8 +1,10 @@
 import argparse
-import trossen_arm
 import os
 import sys
-import yaml # Requires PyYAML: pip install PyYAML
+
+import yaml
+
+import trossen_arm
 
 # --- Constants ---
 SERVER_IP_LEADER = '192.168.1.3'

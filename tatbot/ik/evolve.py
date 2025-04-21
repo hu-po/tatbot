@@ -19,7 +19,7 @@ from tatbot.ik.morph import ActiveMorph, MorphState, MorphConfig
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s|%(name)s|%(levelname)s|%(message)s',
-    datefmt='%H:%M:%S'
+    datefmt='%H:%M:%S',
 )
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
