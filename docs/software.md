@@ -23,6 +23,16 @@ to be added:
 - android phone with anker app, tattoo app?
 - jetson board for rerun and fast3r
 
+## Backends
+
+the `BACKEND` environment variable is used when running docker containers with specific workloads:
+
+- `oop` uses `x86-3090` backend
+- `ojo` uses `arm-agx` backend
+- `trossen-ai` uses `x86-meerkat` backend
+- `rpi1` uses `arm-rpi` backend
+- `rpi2` uses `arm-rpi` backend
+
 ## Networking
 
 - `switch-main`

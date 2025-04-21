@@ -7,7 +7,7 @@ import logging
 from typing import Optional
 
 import numpy as np
-from pxr import Usd, UsdGeom, UsdLux, Sdf
+from pxr import Gf, Usd, UsdGeom, UsdLux, Sdf
 from PIL import Image
 
 import warp as wp
@@ -289,7 +289,6 @@ class Sim:
             cam.AddTranslateOp().Set(Gf.Vec3d(0, 0, 0.25))      # 25 cm back
             cam.AddRotateXYZOp().Set(Gf.Vec3f(0, 180, 0))       # looking –Z
             cam.CreateClippingRangeAttr().Set(Gf.Vec2f(0.001, 10)) # 1 mm near, 10 m far
-            UsdUtils.SetPrimaryCamera(self.renderer.stage, cam.GetPath())
             self.renderer.stage.Save()
         else:
             self.renderer = None

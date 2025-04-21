@@ -37,35 +37,47 @@ class Camera:
     username: str
     password: str = None
 
-IMAGE_FORMAT: str = "jpg"
-VIDEO_FORMAT: str = "avi"
-VIDEO_CODEC: str = "MJPG"
-VIDEO_FPS: float = 30.0
-VIDEO_DURATION: int = 5
-FILENAME_TIMESTAMP_FORMAT: str = "%Yy%mm%dd%Hh%Mm%Ss"
-RTSP_URL_SUFFIX: str = ":554/cam/realmonitor?channel=1&subtype=0"
+@dataclass
+class PanoramConfig:
+    # File formats and constants
+    image_format: str = "jpg"
+    video_format: str = "avi"
+    video_codec: str = "MJPG"
+    video_fps: float = 30.0
+    video_duration: int = 5
+    filename_timestamp_format: str = "%Yy%mm%dd%Hh%Mm%Ss"
+    rtsp_url_suffix: str = ":554/cam/realmonitor?channel=1&subtype=0"
+    
+    # Paths and directories
+    root_dir: str = os.environ.get("TATBOT_ROOT")
+    config_path: str = f"{root_dir}/cfg/cameras.yaml"
+    output_dir: str = f"{root_dir}/output/panoram"
+    
+    # Camera configuration
+    cameras: Dict[str, Camera] = None
+    
+    def __post_init__(self):
+        if not self.root_dir:
+            raise ValueError("TATBOT_ROOT environment variable must be set.")
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.cameras = self._load_cameras()
+    
+    def _load_cameras(self) -> Dict[str, Camera]:
+        """Loads camera configurations from YAML file."""
+        assert os.path.exists(self.config_path), f"Camera config not found: {self.config_path}"
+        with open(self.config_path) as f:
+            data = yaml.safe_load(f)
+        cameras = {}
+        for key, value in data.items():
+            value['name'] = key
+            camera = Camera(**value)
+            cameras[key] = camera
+            cameras[key].password = os.getenv(f"{str.upper(key)}_PASSWORD")
+        return cameras
 
-CONFIG_PATH: str = os.path.expanduser("~/dev/tatbot-dev/cfg/cameras.yaml")
-OUTPUT_DIR: str = os.path.expanduser("~/dev/tatbot-dev/data/snapshots")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-def load_cameras_from_config(config_filepath: str) -> Dict[str, Camera]:
-    assert os.path.exists(config_filepath), f"Camera config not found: {config_filepath}"
-    with open(config_filepath) as f:
-        data = yaml.safe_load(f)
-    cameras = {}
-    for key, value in data.items():
-        value['name'] = key
-        camera = Camera(**value)
-        cameras[key] = camera
-        cameras[key].password = os.getenv(f"{str.upper(key)}_PASSWORD")
-    return cameras
-
-# Initially load cameras. (This global will be updated in main() if needed.)
-CAMERAS: Dict[str, Camera] = load_cameras_from_config(CONFIG_PATH)
-
-def make_rtsp_url(camera: Camera) -> str:
-    return f"rtsp://{camera.username}:{camera.password}@{camera.ip}{RTSP_URL_SUFFIX}"
+    def make_rtsp_url(self, camera: Camera) -> str:
+        """Creates RTSP URL for a camera."""
+        return f"rtsp://{camera.username}:{camera.password}@{camera.ip}{self.rtsp_url_suffix}"
 
 def get_camera_time(camera: Camera) -> Optional[datetime]:
     url = f"http://{camera.ip}/cgi-bin/global.cgi?action=getCurrentTime&channel=1"
@@ -142,10 +154,17 @@ async def async_toggle_all_cameras(
             results[camera_id] = result
     return results
 
-def capture_image(camera: Camera, file_suffix: str, output_dir: str, filename_timestamp_format: str, delay: float = 0) -> Optional[str]:
-    cap = cv2.VideoCapture(make_rtsp_url(camera))
+def capture_image(
+    config: PanoramConfig,
+    camera: Camera,
+    file_suffix: str,
+    output_dir: str,
+    filename_timestamp_format: str,
+    delay: float = 0
+) -> Optional[str]:
+    cap = cv2.VideoCapture(config.make_rtsp_url(camera))
     if not cap.isOpened():
-        log.error(f"Could not open stream for {camera.name} at {make_rtsp_url(camera)}")
+        log.error(f"Could not open stream for {camera.name} at {config.make_rtsp_url(camera)}")
         return None
 
     if delay > 0:
@@ -160,17 +179,26 @@ def capture_image(camera: Camera, file_suffix: str, output_dir: str, filename_ti
         return None
 
     timestamp = datetime.now().strftime(filename_timestamp_format)
-    filename = f"{timestamp}_{file_suffix}.{IMAGE_FORMAT}"
+    filename = f"{timestamp}_{file_suffix}.{config.image_format}"
     filepath = os.path.join(output_dir, filename)
     
     cv2.imwrite(filepath, frame)
     log.info(f"Saved image from {camera.name} ({file_suffix}) to {filepath}")
     return filepath
 
-def capture_video(camera: Camera, file_suffix: str, duration: int, output_dir: str, filename_timestamp_format: str, video_codec: str, video_fps: float) -> Optional[str]:
-    cap = cv2.VideoCapture(make_rtsp_url(camera))
+def capture_video(
+    config: PanoramConfig,
+    camera: Camera,
+    file_suffix: str,
+    duration: int,
+    output_dir: str,
+    filename_timestamp_format: str,
+    video_codec: str,
+    video_fps: float
+) -> Optional[str]:
+    cap = cv2.VideoCapture(config.make_rtsp_url(camera))
     if not cap.isOpened():
-        log.error(f"Could not open stream for {camera.name} at {make_rtsp_url(camera)}")
+        log.error(f"Could not open stream for {camera.name} at {config.make_rtsp_url(camera)}")
         return None
 
     ret, frame = cap.read()
@@ -181,7 +209,7 @@ def capture_video(camera: Camera, file_suffix: str, duration: int, output_dir: s
 
     height, width = frame.shape[:2]
     timestamp = datetime.now().strftime(filename_timestamp_format)
-    filename = f"{timestamp}_{file_suffix}.avi"
+    filename = f"{timestamp}_{file_suffix}.{config.video_format}"
     filepath = os.path.join(output_dir, filename)
 
     fourcc = cv2.VideoWriter_fourcc(*video_codec)
@@ -215,16 +243,34 @@ def capture_video(camera: Camera, file_suffix: str, duration: int, output_dir: s
     log.info(f"Saved video from {camera.name} ({file_suffix}) to {filepath} with {frame_count} frames")
     return filepath
 
-async def async_get_image(camera: Camera, file_suffix: str, delay: float = 0) -> Optional[str]:
-    return await asyncio.to_thread(capture_image, camera, file_suffix, OUTPUT_DIR, FILENAME_TIMESTAMP_FORMAT, delay)
+async def async_get_image(config: PanoramConfig, camera: Camera, file_suffix: str, delay: float = 0) -> Optional[str]:
+    return await asyncio.to_thread(
+        capture_image,
+        config,
+        camera,
+        file_suffix,
+        config.output_dir,
+        config.filename_timestamp_format,
+        delay
+    )
 
-async def async_get_video(camera: Camera, file_suffix: str, duration: int = VIDEO_DURATION) -> Optional[str]:
-    return await asyncio.to_thread(capture_video, camera, file_suffix, duration, OUTPUT_DIR, FILENAME_TIMESTAMP_FORMAT, VIDEO_CODEC, VIDEO_FPS)
+async def async_get_video(config: PanoramConfig, camera: Camera, file_suffix: str, duration: int) -> Optional[str]:
+    return await asyncio.to_thread(
+        capture_video,
+        config,
+        camera,
+        file_suffix,
+        duration,
+        config.output_dir,
+        config.filename_timestamp_format,
+        config.video_codec,
+        config.video_fps
+    )
 
-async def async_capture_all_images(delay: float = 0) -> Dict[str, Optional[str]]:
+async def async_capture_all_images(config: PanoramConfig, delay: float = 0) -> Dict[str, Optional[str]]:
     tasks = {
-        camera_id: asyncio.create_task(async_get_image(camera, f"multi_{camera.name}", delay))
-        for camera_id, camera in CAMERAS.items()
+        camera_id: asyncio.create_task(async_get_image(config, camera, f"multi_{camera.name}", delay))
+        for camera_id, camera in config.cameras.items()
     }
     results_list = await asyncio.gather(*tasks.values(), return_exceptions=True)
     results = {}
@@ -237,10 +283,10 @@ async def async_capture_all_images(delay: float = 0) -> Dict[str, Optional[str]]
             results[camera_id] = result
     return results
 
-async def async_capture_all_videos(duration: int = VIDEO_DURATION) -> Dict[str, Optional[str]]:
+async def async_capture_all_videos(config: PanoramConfig, duration: int) -> Dict[str, Optional[str]]:
     tasks = {
-        camera_id: asyncio.create_task(async_get_video(camera, f"multi_{camera.name}", duration))
-        for camera_id, camera in CAMERAS.items()
+        camera_id: asyncio.create_task(async_get_video(config, camera, f"multi_{camera.name}", duration))
+        for camera_id, camera in config.cameras.items()
     }
     results_list = await asyncio.gather(*tasks.values(), return_exceptions=True)
     results = {}
@@ -253,15 +299,15 @@ async def async_capture_all_videos(duration: int = VIDEO_DURATION) -> Dict[str, 
             results[camera_id] = result
     return results
 
-async def async_test() -> None:
+async def async_test(config: PanoramConfig) -> None:
     log.info("Running tests...")
     log.setLevel(logging.DEBUG)
     results: Dict[str, Dict[str, bool]] = {}
     
     log.info("\nVerifying camera times...")
-    time_sync_status = verify_all_cameras_same_time(CAMERAS)
+    time_sync_status = verify_all_cameras_same_time(config.cameras)
     
-    for camera in CAMERAS.values():
+    for camera in config.cameras.values():
         results[camera.name] = {
             "single_image": False,
             "single_video": False,
@@ -269,13 +315,13 @@ async def async_test() -> None:
             "enable": False
         }
         try:
-            image_path = await async_get_image(camera, "test_single")
+            image_path = await async_get_image(config, camera, "test_single")
             results[camera.name]["single_image"] = image_path is not None
         except Exception as e:
             log.error(f"Single image capture error for {camera.name}: {e}")
         
         try:
-            video_path = await async_get_video(camera, "test_single", duration=1)
+            video_path = await async_get_video(config, camera, "test_single", duration=1)
             results[camera.name]["single_video"] = video_path is not None
         except Exception as e:
             log.error(f"Single video capture error for {camera.name}: {e}")
@@ -290,8 +336,8 @@ async def async_test() -> None:
         except Exception as e:
             log.error(f"Camera control error for {camera.name}: {e}")
     
-    image_results = await async_capture_all_images()
-    video_results = await async_capture_all_videos(duration=1)
+    image_results = await async_capture_all_images(config)
+    video_results = await async_capture_all_videos(config, duration=1)
     
     log.info("\nTest Results Summary:")
     log.info("-" * 50)
@@ -321,14 +367,12 @@ async def async_test() -> None:
                                image_results.get(camera_name) is not None,
                                video_results.get(camera_name) is not None]))
     log.info("-" * 50)
-    log.info(f"Working Cameras: {working_cameras}/{len(CAMERAS)}")
+    log.info(f"Working Cameras: {working_cameras}/{len(config.cameras)}")
 
 async def main() -> None:
-    global OUTPUT_DIR, CAMERAS
-    
     parser = argparse.ArgumentParser(description="Capture images/videos from multiple cameras")
-    parser.add_argument("--duration", type=int, default=VIDEO_DURATION, help="Duration of video capture in seconds")
-    parser.add_argument("--output", type=str, default=OUTPUT_DIR, help="Output directory")
+    parser.add_argument("--duration", type=int, help="Duration of video capture in seconds")
+    parser.add_argument("--output", type=str, help="Output directory")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--test", action="store_true", help="Run tests")
     parser.add_argument("--control", choices=["enable", "disable"], help="Control camera video streams")
@@ -339,8 +383,11 @@ async def main() -> None:
     if args.debug:
         log.setLevel(logging.DEBUG)
     
-    OUTPUT_DIR = args.output
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    # Initialize config
+    config = PanoramConfig()
+    if args.output:
+        config.output_dir = args.output
+    os.makedirs(config.output_dir, exist_ok=True)
     
     # Set up a custom thread pool executor to allow concurrent execution of blocking calls.
     loop = asyncio.get_running_loop()
@@ -348,24 +395,22 @@ async def main() -> None:
     executor = ThreadPoolExecutor(max_workers=16)
     loop.set_default_executor(executor)
     
-    cameras = load_cameras_from_config(CONFIG_PATH)
-    # Update the global CAMERAS so that other functions use the newly loaded config.
-    CAMERAS = cameras
-    
     if args.control:
-        results = await async_toggle_all_cameras(cameras, args.control)
+        results = await async_toggle_all_cameras(config.cameras, args.control)
         success = sum(1 for success in results.values() if success)
-        log.info(f"{args.control.title()}d {success}/{len(cameras)} cameras")
+        log.info(f"{args.control.title()}d {success}/{len(config.cameras)} cameras")
         return
     
     if args.test:
-        await async_test()
+        await async_test(config)
         return
     
+    duration = args.duration if args.duration is not None else config.video_duration
+    
     if args.mode == "image":
-        results = await async_capture_all_images(delay=args.delay)
+        results = await async_capture_all_images(config, delay=args.delay)
     else:
-        results = await async_capture_all_videos(duration=args.duration)
+        results = await async_capture_all_videos(config, duration=duration)
     
     if not all(path is not None for path in results.values()):
         log.error(f"Some {args.mode} captures failed")

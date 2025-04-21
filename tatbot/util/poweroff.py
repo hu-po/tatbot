@@ -1,9 +1,3 @@
-"""
-SSH into each enabled compute node and shut it down.
-
-> python scripts/oop/shutdown.py
-"""
-
 import logging
 import os
 import subprocess

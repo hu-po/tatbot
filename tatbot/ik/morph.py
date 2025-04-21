@@ -26,14 +26,14 @@ log.setLevel(logging.INFO)
 @dataclass
 class MorphConfig:
     seed: int = 42 # random seed
-    morph: str = 'template' # unique identifier for the morph (when testing use "blank" morph)
+    morph: str = 'base' # unique identifier for the morph (when testing use "blank" morph)
     backend: str = os.environ.get("BACKEND") # compute backend variant
     root_dir: str = os.environ.get("TATBOT_ROOT") # root directory of the warp-ik project
     assets_dir: str = f"{root_dir}/assets" # assets directory for the morphs
     output_dir: str = f"{root_dir}/output" # output directory for the morphs
     morph_dir: str = f"{root_dir}/tatbot/ik/morphs" # directory for the morphs
     morph_output_dir: str = f"{output_dir}/{morph}" # output directory for this unique morph
-    targets_path: str  = f"{assets_dir}/targets/zorya_1k.npy"   # path to N×7 .npy file of target poses
+    targets_path: str  = f"{assets_dir}/targets/zorya-128x128.npy"   # path to N×7 .npy file of target poses
     urdf_path: str = f"{assets_dir}/trossen_arm_description/urdf/generated/wxai/wxai_follower.urdf" # path to the urdf file
     usd_output_path: str = f"{output_dir}/ik-{morph}.usd" # path to the usd file to save the model
     device: str = os.environ.get("DEVICE", None) # nvidia device to run the simulation on
