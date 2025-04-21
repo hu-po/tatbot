@@ -41,10 +41,10 @@ class SimConfig:
     integrator_type: IntegratorType = IntegratorType.XPBD # XPBD often good for cloth contact
     cloth_width: int = 128 # Increased resolution for potentially better mapping
     cloth_height: int = 128
-    cloth_cell_size: float = 0.005 # Smaller cell size if resolution increased
-    cloth_particle_radius: float = 0.005 # Match cell size
+    cloth_cell_size: float = 0.001 # Smaller cell size if resolution increased
+    cloth_particle_radius: float = 0.001 # Match cell size
     cloth_mass: float = 0.01  # Mass per cloth particle (adjust as needed)
-    cloth_pos: tuple[float, float, float] = (0.0, 2.8, 0.0)  # Initial position of cloth
+    cloth_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)  # Initial position of cloth
     cloth_rot_axis: tuple[float, float, float] = (1.0, 0.0, 0.0)  # Axis for cloth rotation
     cloth_rot_angle: float = math.pi * 0.5  # Angle for cloth rotation (radians)
     cloth_vel: tuple[float, float, float] = (0.0, 0.0, 0.0)  # Initial velocity of cloth
@@ -52,7 +52,7 @@ class SimConfig:
     root_dir: str = os.environ['TATBOT_ROOT']
     usd_output_path: str = f"{root_dir}/output/stencil.usd"  # Path to save USD file
     mesh_target_usd_path: str = f"{root_dir}/assets/3d/real_leg/leg.usda"  # Path to mesh_target USD file
-    mesh_target_pos: tuple[float, float, float] = (0.0, -1.2, 0.0)  # Position of mesh_target mesh
+    mesh_target_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)  # Position of mesh_target mesh
     mesh_target_rot_axis: tuple[float, float, float] = (0.0, 1.0, 0.0)  # Axis for mesh_target rotation
     mesh_target_rot_angle: float = math.pi / 4  # Angle for mesh_target rotation (radians)
     mesh_target_scale: tuple[float, float, float] = (1.0, 1.0, 1.0)  # Scale of mesh_target mesh
@@ -269,13 +269,7 @@ class Sim:
         # Renderer setup
         self.renderer = None
         if not config.headless:
-            self.renderer = wp.sim.render.SimRenderer(
-                self.model,
-                os.path.expanduser(config.usd_output_path),
-                scaling=40.0,
-                # Add stage up axis if needed, e.g., Y-up
-                # stage_up_axis="y",
-            )
+            self.renderer = wp.sim.render.SimRenderer(self.model, os.path.expanduser(config.usd_output_path))
             # Precompute gizmo rotations (cone points along +Y)
             self.rot_x_axis_q_wp = wp.quat_from_axis_angle(wp.vec3(0.0, 0.0, 1.0), math.pi / 2.0) # Rotate cone from +Y to +X
             self.rot_y_axis_q_wp = wp.quat_identity() # Cone already points along +Y

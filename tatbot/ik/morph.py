@@ -545,24 +545,23 @@ class BaseMorph:
         # --- Renderer Setup ---
         self.renderer = None
         if not self.config.headless:
-             try:
-                 self.usd_output_path = os.path.join(self.config.morph_output_dir, "recording.usd")
-                 self.renderer = wp.sim.render.SimRenderer(self.model, self.usd_output_path)
-                 log.info(f"Initialized renderer, outputting to {self.usd_output_path}")
-                 # Log USD path to wandb if tracking
-                 if self.wandb_run:
-                     self.wandb_run.summary['usd_output_path'] = self.usd_output_path
+            try:
+                self.usd_output_path = os.path.join(self.config.morph_output_dir, "recording.usd")
+                self.renderer = wp.sim.render.SimRenderer(self.model, self.usd_output_path)
+                log.info(f"Initialized renderer, outputting to {self.usd_output_path}")
+                # Log USD path to wandb if tracking
+                if self.wandb_run:
+                    self.wandb_run.summary['usd_output_path'] = self.usd_output_path
+                # Initialize gizmo transform arrays and precomputed rotations
+                self.gizmo_pos_wp = wp.zeros(self.num_envs * 6, dtype=wp.vec3, device=self.config.device)
+                self.gizmo_rot_wp = wp.zeros(self.num_envs * 6, dtype=wp.quat, device=self.config.device)
+                self.rot_x_axis_q_wp = wp.quat_from_axis_angle(wp.vec3(0.0, 0.0, 1.0), math.pi / 2.0)
+                self.rot_y_axis_q_wp = wp.quat_identity()
+                self.rot_z_axis_q_wp = wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi / 2.0)
 
-                 # Initialize gizmo transform arrays and precomputed rotations
-                 self.gizmo_pos_wp = wp.zeros(self.num_envs * 6, dtype=wp.vec3, device=self.config.device)
-                 self.gizmo_rot_wp = wp.zeros(self.num_envs * 6, dtype=wp.quat, device=self.config.device)
-                 self.rot_x_axis_q_wp = wp.quat_from_axis_angle(wp.vec3(0.0, 0.0, 1.0), math.pi / 2.0)
-                 self.rot_y_axis_q_wp = wp.quat_identity()
-                 self.rot_z_axis_q_wp = wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), -math.pi / 2.0)
-
-             except Exception as e:
-                 log.error(f"Failed to initialize renderer: {e}. Running headless.")
-                 self.config.headless = True # Force headless if renderer fails
+            except Exception as e:
+                log.error(f"Failed to initialize renderer: {e}. Running headless.")
+                self.config.headless = True # Force headless if renderer fails
         # --- End Renderer Setup ---
 
         # --- Simulation State ---
@@ -570,7 +569,6 @@ class BaseMorph:
         self.ee_pos = wp.zeros(self.num_envs, dtype=wp.vec3, requires_grad=True, device=self.config.device)
         # ee_error stores the flattened 6D error [err_px, py, pz, ox, oy, oz] * num_envs
         self.ee_error = wp.zeros(self.num_envs * 6, dtype=wp.float32, requires_grad=True, device=self.config.device)
-        
         # Add arrays for error magnitudes
         self.ee_pos_err_mag_wp = wp.zeros(self.num_envs, dtype=wp.float32, device=self.config.device)
         self.ee_ori_err_mag_wp = wp.zeros(self.num_envs, dtype=wp.float32, device=self.config.device)
