@@ -1,23 +1,22 @@
 #!/bin/bash
-set -euo pipefail
+source "scripts/util/validate_backend.sh"
 
-if [ -z "${1:-}" ]; then
-  echo "Usage: visualize.sh <path/to/scene.usd>"
-  exit 1
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 <usd_file_path>"
+    echo "Example: $0 output/stencil.usdz"
+    echo "Example: $0 assets/3d/real_leg/leg.usda"
+    exit 1
 fi
 
-USD_FILE="$1"
-GLB_FILE="$(basename "${USD_FILE%.usd}").glb"
+USD_FILE=$1
 
-# build the two images & start them detached (viewer will 404 until GLB exists)
-docker compose -f docker/viewer/docker-compose.yml up --build -d viewer api
+echo "Building TatBot viewer Docker image..."
+docker build -f $TATBOT_ROOT/docker/viewer/Dockerfile -t tatbot-viewer $TATBOT_ROOT
 
-# run the conversion INSIDE the api container
-docker compose -f docker/viewer/docker-compose.yml run --rm \
-  -v "$(pwd)/tatbot/assets:/app/assets" \
-  api \
-  python /app/usd_to_gltf.py "/tatbot/${USD_FILE}" "/app/assets/scenes/${GLB_FILE}"
-
-echo
-echo "✅  Converted  ${USD_FILE}  ➜  tatbot/assets/scenes/${GLB_FILE}"
-echo "🌐  Open: http://localhost:8080?file=scenes/${GLB_FILE}"
+echo "Running TatBot viewer container..."
+docker run -p 8080:8080 \
+  -v "$TATBOT_ROOT/output:/app/output" \
+  -v "$TATBOT_ROOT/assets:/app/assets" \
+  -e USD_FILE="$USD_FILE" \
+  --rm \
+  tatbot-viewer

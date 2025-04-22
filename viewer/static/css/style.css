@@ -1,0 +1,17 @@
+body {
+    margin: 0;
+    overflow: hidden; /* Prevent scrollbars */
+    font-family: sans-serif;
+}
+
+#viewer-container {
+    width: 100vw;
+    height: 100vh;
+    display: block;
+}
+
+/* Style for TransformControls gizmo if needed */
+.TransformControls {
+    /* Example: Increase handle size slightly if needed */
+    /* pointer-events: stroke; */ /* Check Three.js docs for gizmo styling */
+} 
