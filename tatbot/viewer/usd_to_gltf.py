@@ -1,21 +1,25 @@
+# tatbot/viewer/usd_to_gltf.py
 import sys
 from pathlib import Path
+from usd2gltf import converter as conv_mod
 
-try:
-    from usd2gltf.converter import Converter   # type: ignore
-except ImportError:
-    sys.exit("❌  'usd2gltf' is not installed inside this container.  Run: pip install usd2gltf")
+# ---------------------------------------------------------
+# 🚑  Work‑around for missing globals in usd2gltf 0.3.x
+conv_mod.point_instancers = []
+conv_mod.point_instancer_prototypes = []
+# ---------------------------------------------------------
 
 def main() -> None:
     if len(sys.argv) != 3:
-        sys.exit("Usage: usd_to_gltf.py <scene.usd/.usdz> <output.gltf|glb>")
-
+        sys.exit("Usage: usd_to_gltf.py <scene.usd/.usdz> <output.glb>")
     src, dst = map(Path, sys.argv[1:3])
 
-    conv = Converter()            # new OO‑style API
+    conv = conv_mod.Converter()
+    # turn off instancer handling if you don’t need it
+    conv.convert_instancers = False
+
     stage = conv.load_usd(str(src))
     conv.process(stage, str(dst))
-
     print(f"✅  Wrote {dst.relative_to(Path.cwd())}")
 
 if __name__ == "__main__":
