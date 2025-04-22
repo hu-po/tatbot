@@ -1,13 +1,20 @@
 # intended for rpi1 compute node
 # runs gscam2 nodes which convert ip camera rtsp streams to ros2 topics
 FROM arm64v8/ros:humble-ros-base
-ARG RPI
 ENV ROS_DOMAIN_ID=1
 # build argument for rpi number (1 or 2)
+ARG RPI
 ENV RPI=${RPI}
+
+# Install dependencies
 RUN apt-get update && apt-get install -y \
+    python3-pip \
     libgstreamer1.0-dev \
     libgstreamer-plugins-base1.0-dev \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-libav \    
     ros-humble-camera-calibration-parsers \
     ros-humble-camera-info-manager \
     ros-humble-image-transport \
@@ -18,28 +25,37 @@ RUN apt-get update && apt-get install -y \
     ros-humble-apriltag-msgs \
     ros-humble-apriltag-ros \
     && rm -rf /var/lib/apt/lists/*
-WORKDIR /ros2_ws
-RUN mkdir -p /ros2_ws/src
-WORKDIR /ros2_ws/src
+
+# Build gscam2
+RUN mkdir -p /root/ros2_ws/src
+WORKDIR /root/ros2_ws/src
 RUN git clone https://github.com/clydemcqueen/ros2_shared.git && \
     git clone https://github.com/clydemcqueen/gscam2.git
-WORKDIR /ros2_ws
+WORKDIR /root/ros2_ws
 RUN . /opt/ros/humble/setup.sh && colcon build
-WORKDIR /root
-COPY cfg/.env /root/.env
-COPY cfg/apriltags.yaml /root/apriltags.yaml
-COPY cfg/cameras.yaml /root/cameras.yaml
-COPY src/rpis_launch.py /root/rpis_launch.py
-COPY cfg/requirements.rpi.txt /root/requirements.txt
-RUN apt-get update && apt-get install -y python3-pip && rm -rf /var/lib/apt/lists/*
-RUN pip install -r /root/requirements.txt
+
 # Create .ros/camera_info directory and copy calibration files
 RUN mkdir -p /root/.ros/camera_info
-COPY cfg/camera_calibration/*.yaml /root/.ros/camera_info/
+COPY config/camera_calibration/*.yaml /root/.ros/camera_info/
+
+# Copy .env file
+COPY config/.env /root/.env
+RUN source /root/.env
+
+# Copy config files needed for apriltag detection
+COPY config/apriltags.yaml /root/apriltags.yaml
+COPY config/cameras.yaml /root/cameras.yaml
+COPY tatbot/ros2/apriltag.py /root/apriltag.py
+
+# Install apriltag python dependencies
+COPY docker/ros2/apriltag/requirements.arm-rpi.txt /root/requirements.txt
+RUN pip install -r /root/requirements.txt
+
+# Generate the entrypoint script
 RUN echo '#!/bin/bash' > /root/entrypoint.sh && \
     echo 'source /root/.env' >> /root/entrypoint.sh && \
     echo 'source /opt/ros/humble/setup.bash' >> /root/entrypoint.sh && \
     echo 'source /ros2_ws/install/local_setup.bash' >> /root/entrypoint.sh && \
-    echo 'ros2 launch /root/rpis_launch.py "$@"' >> /root/entrypoint.sh
+    echo 'ros2 launch /root/apriltag.py "$@"' >> /root/entrypoint.sh
 RUN chmod +x /root/entrypoint.sh
 ENTRYPOINT ["/bin/bash", "/root/entrypoint.sh"] 
