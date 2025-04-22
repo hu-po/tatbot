@@ -21,6 +21,11 @@ if [ -z "$CAM_PASSWORD" ]; then
     exit 1
 fi
 
+# Create output directory
+HOST_OUTPUT_DIR="$TATBOT_ROOT/output/calibration_results/camera_${CAMERA}"
+echo "Ensuring host output directory exists: $HOST_OUTPUT_DIR"
+mkdir -p "$HOST_OUTPUT_DIR"
+
 source "scripts/util/validate_backend.sh"
 docker build \
 -f $TATBOT_ROOT/docker/ros2/Dockerfile.camera_calibration.$BACKEND \
@@ -37,4 +42,5 @@ docker run $GPU_FLAG -it --rm \
 -v /tmp/.X11-unix:/tmp/.X11-unix \
 -v $HOME/.Xauthority:/root/.Xauthority \
 -v $TATBOT_ROOT/config/camera_calibration:/root/tatbot/config/camera_calibration \
+-v "$HOST_OUTPUT_DIR":/output \
 tatbot-ros2-camera_calibration-$BACKEND
