@@ -6,6 +6,8 @@ ENV ROS_DOMAIN_ID=1
 # checkerboard size and square size
 ENV CHECKERBOARD_SIZE=7x11
 ENV CHECKERBOARD_SQUARE_SIZE=0.033
+
+# Install dependencies including sed
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgstreamer1.0-dev \
     libgstreamer-plugins-base1.0-dev \
@@ -22,36 +24,71 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-image-pipeline \
     ros-humble-vision-opencv \
     x11-apps \
+    sed \
     && rm -rf /var/lib/apt/lists/*
+
+# Build gscam2
 RUN mkdir -p /root/ros2_ws/src
 WORKDIR /root/ros2_ws/src
 RUN git clone https://github.com/clydemcqueen/ros2_shared.git && \
     git clone https://github.com/clydemcqueen/gscam2.git
 WORKDIR /root/ros2_ws
 RUN . /opt/ros/humble/setup.sh && colcon build
-RUN echo '#!/bin/bash' > /root/entrypoint.sh
-RUN echo 'CAMERA=${CAMERA:-1}' >> /root/entrypoint.sh
-RUN echo 'export DISPLAY=${DISPLAY}' >> /root/entrypoint.sh
-RUN echo '# ROS setup' >> /root/entrypoint.sh
-RUN echo 'source /opt/ros/humble/setup.bash' >> /root/entrypoint.sh
-RUN echo 'source /root/ros2_ws/install/setup.bash' >> /root/entrypoint.sh
-RUN echo '# 1) Define parameter file path' >> /root/entrypoint.sh
-RUN echo 'PARAM_FILE=/root/tatbot/config/camera_calibration/gscam_camera${CAMERA}.yaml' >> /root/entrypoint.sh
-RUN echo '# 2) Launch gscam_main with parameters, run in background' >> /root/entrypoint.sh
-RUN echo 'ros2 run gscam2 gscam_main --ros-args --params-file ${PARAM_FILE} &' >> /root/entrypoint.sh
-RUN echo '# Allow gscam to start up' >> /root/entrypoint.sh
-RUN echo 'sleep 5' >> /root/entrypoint.sh
-RUN echo '# --- DEBUG: Check topics before launching calibrator ---' >> /root/entrypoint.sh
-RUN echo 'echo "--- Available ROS2 Topics ---"' >> /root/entrypoint.sh
-RUN echo 'ros2 topic list' >> /root/entrypoint.sh
-RUN echo 'echo "--- End of Topic List ---"' >> /root/entrypoint.sh
-RUN echo 'sleep 2' >> /root/entrypoint.sh
-RUN echo '# 3) Launch the monocular calibrator, remapping to the *observed* topics' >> /root/entrypoint.sh
-RUN echo 'ros2 run camera_calibration cameracalibrator \\' >> /root/entrypoint.sh
-RUN echo '  --size ${CHECKERBOARD_SIZE} \\' >> /root/entrypoint.sh
-RUN echo '  --square ${CHECKERBOARD_SQUARE_SIZE} \\' >> /root/entrypoint.sh
-RUN echo '  --ros-args \\' >> /root/entrypoint.sh
-RUN echo '    --remap image:=/image_raw \\' >> /root/entrypoint.sh
-RUN echo '    --remap camera:=/camera' >> /root/entrypoint.sh
-RUN chmod +x /root/entrypoint.sh
+
+# Generate the entrypoint script
+RUN echo '#!/bin/bash' > /root/entrypoint.sh && \
+    echo 'set -e' >> /root/entrypoint.sh && \
+    echo '' >> /root/entrypoint.sh && \
+    echo '# --- Configuration ---' >> /root/entrypoint.sh && \
+    echo 'CAMERA_NUM=${CAMERA:-1} # Read CAMERA env var, default to 1' >> /root/entrypoint.sh && \
+    echo 'TEMPLATE_FILE="/root/tatbot/config/camera_calibration/gscam_template.yaml"' >> /root/entrypoint.sh && \
+    echo 'GENERATED_PARAM_FILE="/tmp/gscam_params_${CAMERA_NUM}.yaml"' >> /root/entrypoint.sh && \
+    echo '' >> /root/entrypoint.sh && \
+    echo '# --- Dynamic Values ---' >> /root/entrypoint.sh && \
+    echo 'if [ -z "${CAM_PASSWORD}" ]; then' >> /root/entrypoint.sh && \
+    echo '  echo "Error: CAM_PASSWORD environment variable is not set."' >> /root/entrypoint.sh && \
+    echo '  exit 1' >> /root/entrypoint.sh && \
+    echo 'fi' >> /root/entrypoint.sh && \
+    echo 'CAMERA_NAME="camera_${CAMERA_NUM}"' >> /root/entrypoint.sh && \
+    echo 'IP_ADDRESS="192.168.1.9${CAMERA_NUM}"' >> /root/entrypoint.sh && \
+    echo '' >> /root/entrypoint.sh && \
+    echo '# --- Generate Parameter File from Template ---' >> /root/entrypoint.sh && \
+    echo "echo \"Generating parameter file \${GENERATED_PARAM_FILE} for \${CAMERA_NAME} (\${IP_ADDRESS})\"" >> /root/entrypoint.sh && \
+    echo 'cp "${TEMPLATE_FILE}" "${GENERATED_PARAM_FILE}"' >> /root/entrypoint.sh && \
+    echo 'sed -i "s|__CAMERA_NAME__|${CAMERA_NAME}|g" "${GENERATED_PARAM_FILE}"' >> /root/entrypoint.sh && \
+    echo 'sed -i "s|__IP_ADDRESS__|${IP_ADDRESS}|g" "${GENERATED_PARAM_FILE}"' >> /root/entrypoint.sh && \
+    echo 'ESCAPED_PASSWORD=$(printf "%s\n" "$CAM_PASSWORD" | sed -e '\''s/[\/&]/\\&/g'\'') # Escape / and & for sed' >> /root/entrypoint.sh && \
+    echo 'sed -i "s|__PASSWORD__|${ESCAPED_PASSWORD}|g" "${GENERATED_PARAM_FILE}"' >> /root/entrypoint.sh && \
+    echo 'echo "--- Generated Parameter File Contents ---"' >> /root/entrypoint.sh && \
+    echo 'cat "${GENERATED_PARAM_FILE}"' >> /root/entrypoint.sh && \
+    echo 'echo "---------------------------------------"' >> /root/entrypoint.sh && \
+    echo '' >> /root/entrypoint.sh && \
+    echo '# --- ROS Setup ---' >> /root/entrypoint.sh && \
+    echo 'export DISPLAY=${DISPLAY}' >> /root/entrypoint.sh && \
+    echo 'source /opt/ros/humble/setup.bash' >> /root/entrypoint.sh && \
+    echo 'source /root/ros2_ws/install/setup.bash' >> /root/entrypoint.sh && \
+    echo '' >> /root/entrypoint.sh && \
+    echo '# --- Launch gscam ---' >> /root/entrypoint.sh && \
+    echo 'ros2 run gscam2 gscam_main --ros-args --params-file ${GENERATED_PARAM_FILE} &' >> /root/entrypoint.sh && \
+    echo '' >> /root/entrypoint.sh && \
+    echo '# --- Wait and Verify Topics ---' >> /root/entrypoint.sh && \
+    echo 'echo "Waiting for gscam to start and publish topics..."' >> /root/entrypoint.sh && \
+    echo 'sleep 8 # Allow time for connection and topic publication' >> /root/entrypoint.sh && \
+    echo 'echo "--- Available ROS2 Topics ---"' >> /root/entrypoint.sh && \
+    echo 'ros2 topic list' >> /root/entrypoint.sh && \
+    echo 'echo "--- End of Topic List ---"' >> /root/entrypoint.sh && \
+    echo 'sleep 2' >> /root/entrypoint.sh && \
+    echo '' >> /root/entrypoint.sh && \
+    echo '# --- Launch Calibrator ---' >> /root/entrypoint.sh && \
+    echo 'ros2 run camera_calibration cameracalibrator \\' >> /root/entrypoint.sh && \
+    echo '  --size ${CHECKERBOARD_SIZE} \\' >> /root/entrypoint.sh && \
+    echo '  --square ${CHECKERBOARD_SQUARE_SIZE} \\' >> /root/entrypoint.sh && \
+    echo '  --ros-args \\' >> /root/entrypoint.sh && \
+    echo '    --remap image:=/image_raw \\' >> /root/entrypoint.sh && \
+    echo '    --remap camera:=/camera' >> /root/entrypoint.sh && \
+    echo '' >> /root/entrypoint.sh && \
+    echo '# Keep container running while calibrator is up (or gscam)' >> /root/entrypoint.sh && \
+    echo 'wait # Wait for background processes (like gscam) to finish' >> /root/entrypoint.sh && \
+    chmod +x /root/entrypoint.sh
+
 ENTRYPOINT ["/root/entrypoint.sh"]
