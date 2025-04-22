@@ -51,7 +51,7 @@ usdview $TATBOT_ROOT/output/stencil.usd
 run the ik solver with a specific morph (e.g. `gpt-e409cb`)
 
 ```bash
-./scripts/ik/morph.render.sh gpt-e409cb
+./scripts/ik/morph_render.sh gpt-e409cb
 ```
 
 visualize the ik result (requires `usdview`)
@@ -66,7 +66,7 @@ the following tests should work on all backends
 
 ```bash
 ./scripts/test/ik.sh
-./scripts/test/ik.ai.sh # this will test model apis (do not run this every time as it consumes credits)
+./scripts/test/ai.sh # this will test model apis (do not run this every time as it consumes credits)
 ```
 
 ## Citation

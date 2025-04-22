@@ -30,11 +30,20 @@ RUN echo '#!/bin/bash' > /root/entrypoint.sh && \
     echo 'export DISPLAY=${DISPLAY}' >> /root/entrypoint.sh && \
     echo 'source /opt/ros/humble/setup.bash' >> /root/entrypoint.sh && \
     echo 'source /root/ros2_ws/install/setup.bash' >> /root/entrypoint.sh && \
-    echo 'exec ros2 run camera_calibration cameracalibrator \\' >> /root/entrypoint.sh && \
-    echo '  --size ${CHECKERBOARD_SIZE} \\' >> /root/entrypoint.sh && \
-    echo '  --square ${CHECKERBOARD_SQUARE_SIZE} \\' >> /root/entrypoint.sh && \
+    echo '' >> /root/entrypoint.sh && \
+    echo '# 1) start the gscam2 node in the background' >> /root/entrypoint.sh && \
+    echo 'ros2 run gscam2 gscam_main \' >> /root/entrypoint.sh && \
     echo '  --ros-args \\' >> /root/entrypoint.sh && \
-    echo '    --remap image:=/my_camera/camera_${CAMERA}_image_raw \\' >> /root/entrypoint.sh && \
-    echo '    --remap camera:=/camera_${CAMERA}' >> /root/entrypoint.sh && \
+    echo '    -p camera_name:=${CAMERA} \\' >> /root/entrypoint.sh && \
+    echo '    -p gscam_config:=\"udpsrc address=192.168.1.9${CAMERA} port=5600 ! application/x-rtp,media=video,encoding-name=H264 ! rtph264depay ! h264parse ! avdec_h264 ! videoconvert ! video/x-raw,format=RGB ! videoconvert\" &' >> /root/entrypoint.sh && \
+    echo '' >> /root/entrypoint.sh && \
+    echo '# 2) wait a moment for images to start publishing' >> /root/entrypoint.sh && \
+    echo 'sleep 2' >> /root/entrypoint.sh && \
+    echo '' >> /root/entrypoint.sh && \
+    echo '# 3) run the calibrator in the foreground' >> /root/entrypoint.sh && \
+    echo 'exec ros2 run camera_calibration cameracalibrator \' >> /root/entrypoint.sh && \
+    echo '  --size ${CHECKERBOARD_SIZE} \' >> /root/entrypoint.sh && \
+    echo '  --square ${CHECKERBOARD_SQUARE_SIZE} \' >> /root/entrypoint.sh && \
+    echo '  --ros-args --remap image:=/image_raw --remap camera:=/camera_${CAMERA}' >> /root/entrypoint.sh && \
     chmod +x /root/entrypoint.sh
 ENTRYPOINT ["/root/entrypoint.sh"]
