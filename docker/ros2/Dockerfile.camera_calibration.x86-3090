@@ -4,7 +4,7 @@
 FROM ros:humble-ros-base
 ENV ROS_DOMAIN_ID=1
 # checkerboard size and square size
-ENV CHECKERBOARD_SIZE=7x11
+ENV CHECKERBOARD_SIZE=8x12
 ENV CHECKERBOARD_SQUARE_SIZE=0.033
 
 # Install dependencies including sed
@@ -63,6 +63,12 @@ RUN echo '#!/bin/bash' > /root/entrypoint.sh && \
     echo 'cat "${GENERATED_PARAM_FILE}"' >> /root/entrypoint.sh && \
     echo 'echo "---------------------------------------"' >> /root/entrypoint.sh && \
     echo '' >> /root/entrypoint.sh && \
+    echo '# --- Setup Output Symlink ---' >> /root/entrypoint.sh && \
+    echo 'mkdir -p /output' >> /root/entrypoint.sh && \
+    echo 'rm -f /tmp/calibrationdata.tar.gz' >> /root/entrypoint.sh && \
+    echo 'ln -s /output/calibrationdata.tar.gz /tmp/calibrationdata.tar.gz' >> /root/entrypoint.sh && \
+    echo 'echo "Symlinked /tmp/calibrationdata.tar.gz -> /output/calibrationdata.tar.gz"' >> /root/entrypoint.sh && \
+    echo '' >> /root/entrypoint.sh && \
     echo '# --- ROS Setup ---' >> /root/entrypoint.sh && \
     echo 'export DISPLAY=${DISPLAY}' >> /root/entrypoint.sh && \
     echo 'source /opt/ros/humble/setup.bash' >> /root/entrypoint.sh && \
@@ -70,6 +76,7 @@ RUN echo '#!/bin/bash' > /root/entrypoint.sh && \
     echo '' >> /root/entrypoint.sh && \
     echo '# --- Launch gscam ---' >> /root/entrypoint.sh && \
     echo 'ros2 run gscam2 gscam_main --ros-args --params-file ${GENERATED_PARAM_FILE} &' >> /root/entrypoint.sh && \
+    echo 'GSCAM_PID=$!' >> /root/entrypoint.sh && \
     echo '' >> /root/entrypoint.sh && \
     echo '# --- Wait and Verify Topics ---' >> /root/entrypoint.sh && \
     echo 'echo "Waiting for gscam to start and publish topics..."' >> /root/entrypoint.sh && \
@@ -86,25 +93,13 @@ RUN echo '#!/bin/bash' > /root/entrypoint.sh && \
     echo '  --ros-args \\' >> /root/entrypoint.sh && \
     echo '    --remap image:=/image_raw \\' >> /root/entrypoint.sh && \
     echo '    --remap camera:=/camera' >> /root/entrypoint.sh && \
-    echo 'CALIBRATOR_EXIT_CODE=$? # Capture exit code after calibrator finishes' >> /root/entrypoint.sh && \
-    echo '' >> /root/entrypoint.sh && \
-    echo '# --- Copy Calibration Results ---' >> /root/entrypoint.sh && \
-    echo 'if [ $CALIBRATOR_EXIT_CODE -eq 0 ] && [ -f /tmp/calibrationdata.tar.gz ]; then' >> /root/entrypoint.sh && \
-    echo '  echo "Calibration successful, copying results to /output..."' >> /root/entrypoint.sh && \
-    echo '  cp /tmp/calibrationdata.tar.gz /output/calibrationdata.tar.gz' >> /root/entrypoint.sh && \
-    echo '  echo "Attempting to extract results in /output..."' >> /root/entrypoint.sh && \
-    echo '  cd /output' >> /root/entrypoint.sh && \
-    echo '  tar xzf calibrationdata.tar.gz && echo "Extracted successfully." || echo "Extraction failed."' >> /root/entrypoint.sh && \
-    echo '  if [ -f ost.yaml ]; then mv ost.yaml ${CAMERA_NAME}_calibration.yaml; echo "Renamed ost.yaml"; fi' >> /root/entrypoint.sh && \
-    echo '  echo "Results copied/extracted to mounted /output directory."' >> /root/entrypoint.sh && \
-    echo 'else' >> /root/entrypoint.sh && \
-    echo '  echo "WARN: Calibrator exited with code $CALIBRATOR_EXIT_CODE or output file /tmp/calibrationdata.tar.gz not found. Skipping copy."' >> /root/entrypoint.sh && \
-    echo 'fi' >> /root/entrypoint.sh && \
+    echo 'CALIBRATOR_EXIT_CODE=$?' >> /root/entrypoint.sh && \
     echo '' >> /root/entrypoint.sh && \
     echo '# --- Cleanup ---' >> /root/entrypoint.sh && \
+    echo 'echo "Calibrator finished with code $CALIBRATOR_EXIT_CODE."' >> /root/entrypoint.sh && \
     echo 'echo "Attempting to kill background gscam process (PID: $GSCAM_PID)..."' >> /root/entrypoint.sh && \
     echo 'kill $GSCAM_PID 2>/dev/null && sleep 1 && kill -9 $GSCAM_PID 2>/dev/null || echo "gscam already exited."' >> /root/entrypoint.sh && \
-    echo 'echo "Calibration script finished."' >> /root/entrypoint.sh && \
+    echo 'echo "Entrypoint script finished."' >> /root/entrypoint.sh && \
     chmod +x /root/entrypoint.sh
 
 ENTRYPOINT ["/root/entrypoint.sh"]

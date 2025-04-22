@@ -44,3 +44,40 @@ docker run $GPU_FLAG -it --rm \
 -v $TATBOT_ROOT/config/camera_calibration:/root/tatbot/config/camera_calibration \
 -v "$HOST_OUTPUT_DIR":/output \
 tatbot-ros2-camera_calibration-$BACKEND
+DOCKER_EXIT_CODE=$?
+
+echo "Docker container finished with exit code $DOCKER_EXIT_CODE."
+
+# Extract Calibration Results on Host
+CALIBRATION_TAR_FILE="$HOST_OUTPUT_DIR/calibrationdata.tar.gz"
+CAMERA_NAME="camera_${CAMERA}"
+
+# Check if docker run succeeded AND the file was copied
+if [ $DOCKER_EXIT_CODE -eq 0 ] && [ -f "$CALIBRATION_TAR_FILE" ]; then
+    echo "Attempting to extract results on host from $CALIBRATION_TAR_FILE..."
+    # Change directory to output dir to extract files there
+    if cd "$HOST_OUTPUT_DIR"; then
+        if tar xzf calibrationdata.tar.gz; then
+            echo "Extracted successfully."
+            # Rename the common output filename (often ost.yaml)
+            if [ -f ost.yaml ]; then
+                YAML_OUTPUT_FILE="${CAMERA_NAME}.yaml"
+                echo "Renaming ost.yaml to ${YAML_OUTPUT_FILE}"
+                mv ost.yaml "${YAML_OUTPUT_FILE}"
+                echo "Calibration YAML saved to: $HOST_OUTPUT_DIR/${YAML_OUTPUT_FILE}"
+            else
+                echo "WARN: Expected ost.yaml not found after extraction in $HOST_OUTPUT_DIR."
+            fi
+        else
+            echo "ERROR: Extraction of $CALIBRATION_TAR_FILE failed."
+        fi
+        # Go back to original directory
+        cd - > /dev/null
+    else
+         echo "ERROR: Could not change directory to $HOST_OUTPUT_DIR"
+    fi
+else
+    echo "WARN: Docker exited with code $DOCKER_EXIT_CODE or $CALIBRATION_TAR_FILE not found on host. Cannot extract."
+fi
+
+echo "Calibration script for camera $CAMERA finished."
