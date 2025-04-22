@@ -1,6 +1,6 @@
-from enum import Enum, auto
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum, auto
 import importlib
 import json
 import logging
@@ -9,8 +9,11 @@ import os
 import sys
 import time
 import psutil
+
 import numpy as np
+from pxr import Gf, Usd, UsdGeom, UsdLux, Sdf, UsdUtils
 import wandb
+
 import warp as wp
 import warp.sim
 import warp.sim.render
@@ -867,6 +870,13 @@ def run_morph(config: MorphConfig) -> dict:
                 with wp.ScopedTimer("usd_save", print=False, active=True, dict=morph.profiler):
                      morph.renderer.save()
                      log.info(f"USD recording saved to {morph.usd_output_path}")
+                     # Package into USDZ if pxr is available
+                     usdz_path = morph.usd_output_path.replace('.usd', '.usdz')
+                     success = UsdUtils.CreateNewUsdzPackage(morph.usd_output_path, usdz_path)
+                     if not success:
+                         log.error(f"Failed to create USDZ package at {usdz_path}")
+                     else:
+                         log.info(f"Created USDZ package at {usdz_path}")
             except Exception as e:
                 log.error(f"Failed to save USD file: {e}")
 

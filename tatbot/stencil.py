@@ -7,7 +7,7 @@ import logging
 from typing import Optional
 
 import numpy as np
-from pxr import Gf, Usd, UsdGeom, UsdLux, Sdf
+from pxr import Gf, Usd, UsdGeom, UsdLux, Sdf, UsdUtils
 from PIL import Image
 
 import warp as wp
@@ -648,14 +648,43 @@ class Sim:
              if self.target_positions_wp is None:
                   log.warning("Final poses not calculated, cannot render gizmos.")
                   return
-
              self.renderer.begin_frame(self.sim_time) # Use the final sim time
              self.renderer.render(self.state_0) # Render the final simulation state
              self.render_tattoo_gizmos() # Render the gizmos on top
              self.renderer.end_frame()
-             # Save the renderer's output (which now includes this final frame)
+             
+             # Save the renderer state to ensure geometry is written
              self.renderer.save()
-             log.info(f"Final state rendering saved to {self.config.usd_output_path}")
+             
+             # Get the stage and set default prim
+             stage = self.renderer.stage
+             root_prim = stage.GetPrimAtPath('/root')
+             if root_prim:
+                 stage.SetDefaultPrim(root_prim)
+             
+             # Disable instancing for all prims
+             log.info("Disabling instancing for all prims...")
+             for prim in stage.Traverse():
+                 if prim.IsInstanceable():
+                     prim.SetInstanceable(False)
+             
+             # Flatten the stage to collapse composition arcs
+             log.info("Flattening stage to collapse composition arcs...")
+             flat_layer = stage.Flatten(addSourceFileComment=False)
+             flat_stage = Usd.Stage.Open(flat_layer.identifier)
+             
+             # Save the flattened stage
+             flat_usda = self.config.usd_output_path.replace('.usd', '_flat.usda')
+             flat_stage.GetRootLayer().Export(flat_usda)
+             log.info(f"Exported flattened USDA to {flat_usda}")
+             
+             # Create USDZ package from flattened USDA
+             usdz_path = flat_usda.replace('.usda', '.usdz')
+             success = UsdUtils.CreateNewUsdzPackage(Sdf.AssetPath(flat_usda), usdz_path)
+             if not success:
+                 log.error(f"Failed to create USDZ package at {usdz_path}")
+             else:
+                 log.info(f"Created USDZ package at {usdz_path}")
 
 
 def run_sim(config: SimConfig):
