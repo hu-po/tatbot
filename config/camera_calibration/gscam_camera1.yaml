@@ -1,0 +1,17 @@
+gscam_publisher:
+  ros__parameters:
+    camera_name: camera_1
+    camera_info_url: ""
+    frame_id: camera_frame
+    image_encoding: rgb8
+    use_gst_timestamps: false
+    gscam_config: >-
+      rtspsrc
+        location=rtsp://admin:goldensnail001@192.168.1.91:554/cam/realmonitor?channel=1&subtype=0
+        latency=0
+      ! rtph264depay
+      ! h264parse
+      ! avdec_h264
+      ! videoconvert
+    sync_sink: true
+    preroll: false
