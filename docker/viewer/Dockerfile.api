@@ -7,7 +7,9 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends libgl1 && \
     rm -rf /var/lib/apt/lists/* && \
     pip install --no-cache-dir \
-        fastapi uvicorn[standard] usd2gltf \
+        fastapi \
+        uvicorn[standard] \
+        usd2gltf \
         usd-core==24.05
 
 EXPOSE 8000
