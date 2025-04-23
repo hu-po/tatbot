@@ -34,7 +34,7 @@ the following assets are required:
 
 - at least one tattoo design in `assets/designs`
 - a 3d mesh model of the tattoo area in `assets/3d`
-- a urdf of the robot arm in `assets/trossen-arm-description`
+	- a urdf of the robot arm in `assets/trossen_arm_description`
 
 run the stencil simulation to generate ik poses
 
