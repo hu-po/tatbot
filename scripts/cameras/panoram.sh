@@ -7,4 +7,4 @@ docker run $GPU_FLAG -it --rm \
 tatbot-cv2-$BACKEND bash -c "
 source \${TATBOT_ROOT}/.venv/bin/activate && \
 source \${TATBOT_ROOT}/.env && \
-uv run python \${TATBOT_ROOT}/tatbot/panoram.py"
+uv run python \${TATBOT_ROOT}/tatbot/cameras/panoram.py"

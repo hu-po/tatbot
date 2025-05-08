@@ -1,4 +1,4 @@
-# $TATBOT_ROOT/tatbot/panoram.py
+# $TATBOT_ROOT/tatbot/cameras/panoram.py
 
 import argparse
 import asyncio

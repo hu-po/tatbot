@@ -48,3 +48,13 @@ https://chatgpt.com/share/681ce51b-dfcc-8009-8e23-d5ef69f61509
    - If using Docker Compose, you might parameterize the viewer address
    - Ensure time synchronization across machines if cross-referencing timestamps (use NTP or share a common clock source if precise alignment is important for sensor data)
    - Expose ports in Docker to ensure clients can reach the viewer
+
+
+## Rerun Camera Viewer Demo
+
+```bash
+./scripts/cameras/rr_server.sh # in one terminal
+./scripts/cameras/rr_client.sh # in another terminal
+google-chrome http://localhost:9876 # in third terminal
+```
+
