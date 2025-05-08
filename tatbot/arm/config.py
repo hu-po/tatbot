@@ -1,3 +1,5 @@
+# $TATBOT_ROOT/tatbot/arm/config.py
+
 import argparse
 import os
 import sys

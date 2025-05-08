@@ -1,3 +1,5 @@
+# $TATBOT_ROOT/tatbot/util/cuda_device_properties.py
+
 """
 installation:
 

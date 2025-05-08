@@ -1,9 +1,4 @@
-"""
-Captures images from all cameras and output to file.
-> pip install opencv-python requests pyyaml
-> python scripts/oop/camera-snapshot.py --mode image
-"""
-
+# $TATBOT_ROOT/tatbot/panoram.py
 import argparse
 import asyncio
 from concurrent.futures import ThreadPoolExecutor

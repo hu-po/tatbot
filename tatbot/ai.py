@@ -1,3 +1,4 @@
+# $TATBOT_ROOT/tatbot/ai.py
 import argparse
 import asyncio
 import base64

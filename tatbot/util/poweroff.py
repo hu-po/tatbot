@@ -1,3 +1,5 @@
+# $TATBOT_ROOT/tatbot/util/poweroff.py
+
 import logging
 import os
 import subprocess

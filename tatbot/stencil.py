@@ -1,4 +1,5 @@
-# stencil.py
+# $TATBOT_ROOT/tatbot/stencil.py
+
 from dataclasses import dataclass, field
 import math
 import os

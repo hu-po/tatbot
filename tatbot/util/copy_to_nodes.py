@@ -1,3 +1,5 @@
+# $TATBOT_ROOT/tatbot/util/copy_to_nodes.py
+
 import argparse
 import logging
 import os
