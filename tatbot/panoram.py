@@ -50,7 +50,7 @@ class PanoramConfig:
     
     # Paths and directories
     root_dir: str = os.environ.get("TATBOT_ROOT")
-    config_path: str = f"{root_dir}/cfg/cameras.yaml"
+    config_path: str = f"{root_dir}/config/cameras.yaml"
     output_dir: str = f"{root_dir}/output/panoram"
     
     # Camera configuration

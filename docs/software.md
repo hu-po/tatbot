@@ -84,8 +84,8 @@ shutdown sequence:
 keys, tokens, passwords are stored in the `.env` file. copy it to the compute nodes:
 
 ```bash
-./scripts/oop/copy-to-compute.py --file-paths cfg/.env
-source cfg/.env
+./scripts/oop/copy-to-compute.py --file-paths config/.env
+source config/.env
 ```
 
 ## Workload

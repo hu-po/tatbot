@@ -16,11 +16,11 @@ WORKDIR /ros2_ws
 # build packages
 RUN . /opt/ros/humble/setup.sh && colcon build
 WORKDIR /root
-# copy over config files from tatbot-dev/cfg
-COPY cfg/.env /root/.env
-COPY cfg/apriltags.yaml /root/apriltags.yaml
-COPY cfg/posetree.yaml /root/posetree.yaml
-COPY cfg/cameras.yaml /root/cameras.yaml
+# copy over config files from tatbot-dev/config
+COPY config/.env /root/.env
+COPY config/apriltags.yaml /root/apriltags.yaml
+COPY config/posetree.yaml /root/posetree.yaml
+COPY config/cameras.yaml /root/cameras.yaml
 RUN echo '#!/bin/bash' > /root/entrypoint.sh && \
     echo 'source /opt/ros/humble/setup.bash' >> /root/entrypoint.sh && \
     echo 'source /ros2_ws/install/local_setup.bash' >> /root/entrypoint.sh && \

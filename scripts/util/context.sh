@@ -46,26 +46,26 @@ declare -A IGNORE_DIRS=(
 
 declare -A DIRECTORIES=(
   # ----------------------------- ADD DIRECTORIES HERE
-  # ["docker"]=""
+  ["docker"]=""
   # ["docs"]=""
-  # ["config"]=""
-  # ["scripts"]=""
-  # ["tatbot"]=""
-  # Viewer sub-project
-  ["viewer"]=""
-  ["tatbot/viewer"]=""
-  ["scripts/viewer"]=""
-  ["docker/viewer"]=""
+  ["config"]=""
+  ["scripts"]=""
+  ["tatbot"]=""
+  # # Viewer sub-project
+  # ["viewer"]=""
+  # ["tatbot/viewer"]=""
+  # ["scripts/viewer"]=""
+  # ["docker/viewer"]=""
 )
 
 declare -A FILES=(
   # ----------------------------- ADD FILES HERE
-  # ["README.md"]=""
-  # ["pyproject.toml"]=""
+  ["README.md"]=""
+  ["pyproject.toml"]=""
   # ["tatbot/ik/morphs/base.py"]=""
   # ["tatbot/ik/morphs/gpt-e409cb.py"]=""
   # ["tatbot/ik/morphs/gemini-71f9bf.py"]=""
-  # [".env.example"]=""
+  [".env.example"]=""
   # [".dockerignore"]=""
 )
 

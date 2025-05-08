@@ -25,7 +25,7 @@ to put the arms back in the sleep position run:
 python ~/dev/tatbot-dev/scripts/trossen-ai/arms-sleep.py
 ```
 
-to configure the arms (config files are in `~/dev/tatbot-dev/cfg/trossen`):
+to configure the arms (config files are in `~/dev/tatbot-dev/config/trossen`):
 
 ```bash
 python ~/dev/tatbot-dev/scripts/trossen-ai/arms-config.py

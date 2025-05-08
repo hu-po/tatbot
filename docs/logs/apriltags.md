@@ -60,7 +60,7 @@ modifying apriltag rviz config from oop
 
 ```bash
 docker ps
-docker cp FOO:/root/.rviz2/default.rviz /home/oop/dev/tatbot-dev/cfg/apriltag.rviz
+docker cp FOO:/root/.rviz2/default.rviz /home/oop/dev/tatbot-dev/config/apriltag.rviz
 ```
 
 rpi one-liner

@@ -7,9 +7,9 @@ RUN apt-get update && apt-get install -y \
     dnsmasq \
     && rm -rf /var/lib/apt/lists/*
 # Copy the networking config files
-COPY cfg/networking/dnsmasq.conf /etc/dnsmasq.conf
+COPY config/networking/dnsmasq.conf /etc/dnsmasq.conf
 RUN mkdir -p /etc/dnsmasq_hosts
-COPY cfg/networking/hosts.conf /etc/dnsmasq_hosts/hosts.conf
+COPY config/networking/hosts.conf /etc/dnsmasq_hosts/hosts.conf
 # Ensure log file exists and has correct permissions for the 'dnsmasq' user
 RUN mkdir -p /var/log && \
     touch /var/log/dnsmasq.log && \

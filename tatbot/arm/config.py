@@ -9,8 +9,8 @@ import trossen_arm
 # --- Constants ---
 SERVER_IP_LEADER = '192.168.1.3'
 SERVER_IP_FOLLOWER = '192.168.1.2'
-_CONFIG_FILE_LEADER_RAW = '~/dev/tatbot-dev/cfg/trossen/leader.yaml'
-_CONFIG_FILE_FOLLOWER_RAW = '~/dev/tatbot-dev/cfg/trossen/follower.yaml'
+_CONFIG_FILE_LEADER_RAW = '~/dev/tatbot-dev/config/trossen/leader.yaml'
+_CONFIG_FILE_FOLLOWER_RAW = '~/dev/tatbot-dev/config/trossen/follower.yaml'
 CONFIG_FILE_LEADER = os.path.expanduser(_CONFIG_FILE_LEADER_RAW)
 CONFIG_FILE_FOLLOWER = os.path.expanduser(_CONFIG_FILE_FOLLOWER_RAW)
 

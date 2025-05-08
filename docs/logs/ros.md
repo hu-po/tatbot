@@ -49,13 +49,13 @@ a description of the ros nodes running on each compute node:
 
 -`rpi1`
     - inside docker container `tatbot-rpi` build and launch using `scripts/rpi/launch.rpi1.sh`
-        - handles a subset of cameras defined in `cfg/cameras.yaml`
+        - handles a subset of cameras defined in `config/cameras.yaml`
         - uses `gscam2` to convert RTSP streams into ROS2 image topics (e.g., /camera_002_image_raw)
         - uses `image_proc` to rectify those images (e.g., /apriltag_002/image_rect)
         - uses `apriltag_ros` to detect AprilTags, publishing poses as AprilTagDetectionArray messages on topics like /apriltag_002/detections
 -`rpi2`
     - inside docker container `tatbot-rpi` build and launch using `scripts/rpi/launch.rpi2.sh`
-        - handles a subset of cameras defined in `cfg/cameras.yaml`
+        - handles a subset of cameras defined in `config/cameras.yaml`
         - uses `gscam2` to convert RTSP streams into ROS2 image topics (e.g., /camera_002_image_raw)
         - uses `image_proc` to rectify those images (e.g., /apriltag_002/image_rect)
         - uses `apriltag_ros` to detect AprilTags, publishing poses as AprilTagDetectionArray messages on topics like /apriltag_002/detections

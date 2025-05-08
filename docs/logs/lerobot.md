@@ -113,7 +113,7 @@ using sounds requires DISPLAY, so ignore given we are using ssh
 robot cannot reach below its base plate, so using a taller table top
 
 ```bash
-source ~/dev/tatbot-dev/cfg/.env
+source ~/dev/tatbot-dev/config/.env
 cd ~/lerobot/ && git pull && conda activate lerobot
 python lerobot/scripts/control_robot.py \
 --robot.type=trossen_ai_solo \
@@ -142,7 +142,7 @@ conda install -y -c conda-forge ffmpeg
 ```
 
 ```bash
-source ~/dev/tatbot-dev/cfg/.env
+source ~/dev/tatbot-dev/config/.env
 wandb login
 huggingface-cli login --token ${HUGGINGFACE_TOKEN}
 python lerobot/scripts/train.py \
@@ -353,7 +353,7 @@ trying new home position
 ssh trossen-ai@192.168.1.97
 cd ~/lerobot
 git pull
-source ~/dev/tatbot-dev/cfg/.env
+source ~/dev/tatbot-dev/config/.env
 conda activate lerobot
 rm -rf /home/trossen-ai/.cache/huggingface/lerobot/hu-po/pickup_cube_2
 python ~/dev/tatbot-dev/scripts/trossen-ai/arms-sleep.py
