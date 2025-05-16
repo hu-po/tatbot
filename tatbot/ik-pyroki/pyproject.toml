@@ -1,7 +1,7 @@
 [project]
 name = "ik-pyroki"
 version = "0.0.1"
-requires-python = ">=3.12"
+requires-python = "==3.12"
 dependencies = [
     "trossen-arm==1.8.1",
     "pyroki @ git+https://github.com/chungmin99/pyroki.git@main#egg=pyroki",
