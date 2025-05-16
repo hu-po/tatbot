@@ -22,9 +22,31 @@ cargo clean && cargo build
 cargo run --example enumerate_devices
 ```
 
-had to install rust, clang
+had to install on trossen-ai pc
 
 ```bash
 sudo apt update
-sudo apt install clang cargo build-essential libstdc++-12-dev libfreetype-dev
+sudo apt install clang cargo build-essential libstdc++-12-dev libfreetype-dev libopencv-dev pkg-config
+```
+
+```bash
+----
+Enumerating all devices compatible with RealSense:
+----
+>  Intel RealSense D405      | SN: 230422273017    | Curr Fw Ver: 5.12.14.100     | Rec FW Ver: 5.16.0.1       
+>  Intel RealSense D405      | SN: 218622278376    | Curr Fw Ver: 5.16.0.1        | Rec FW Ver: 5.16.0.1       
+---
+```
+
+https://store.intelrealsense.com/buy-intel-realsense-depth-camera-d405.html?srsltid=AfmBOoq2TAPRoeGQJJM2s6P3xPfYx2Bk7334eDPXgjCwgIdHGYjcPQwy
+
+```bash
+cargo run --example opencv
+```
+
+had to unplug and replug the realsense camera to get it to work
+
+```rust
+.enable_stream(Rs2StreamKind::Color, None, 1280, 0, Rs2Format::Bgr8, 30)?
+.enable_stream(Rs2StreamKind::Depth, None, 1280, 0, Rs2Format::Z16, 30)
 ```
