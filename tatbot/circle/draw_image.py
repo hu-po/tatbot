@@ -1,31 +1,32 @@
-#!/usr/bin/env python3
 import logging
-import math
-import time
 from dataclasses import dataclass
 
 import numpy as np
 from PIL import Image
 import trossen_arm
 
-# -------------------------------------------------------
-# Utility: suppress unwanted logger output
-# -------------------------------------------------------
-def fully_suppress_logger(logger_name, level=logging.ERROR):
-    """Attempts to suppress a logger by setting its level, removing handlers,
-    adding a NullHandler, and disabling propagation."""
-    target_logger = logging.getLogger(logger_name)
-    target_logger.setLevel(level)
-    for h in target_logger.handlers[:]:
-        target_logger.removeHandler(h)
-        if hasattr(h, 'close'):
-            h.close()
-    target_logger.addHandler(logging.NullHandler())
-    target_logger.propagate = False
+@dataclass
+class DrawImageConfig:
+    arm_model: trossen_arm.Model = trossen_arm.Model.wxai_v0
+    # ip_address: str = "192.168.1.2"
+    # end_effector_model: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_leader
+    ip_address: str = "192.168.1.3"
+    end_effector_model: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_follower
+    t_flange_tool_x_offset: float = 0.0
+    arm_up_delta: float = 0.06
+    arm_forward_delta: float = 0.1
+    pen_height_delta: float = 0.01
+    # image_path: str = "flower.png"
+    image_path: str = "circle.png"
+    image_width_m: float = 0.06   # physical span of image in X [m]
+    image_height_m: float = 0.06  # physical span of image in Y [m]
+    image_threshold: int = 127   # B/W threshold
+    gripper_open_width_m: float = 0.024
+    gripper_closed_width_m: float = 0.010
+    gripper_external_effort_nm: float = -5.0
+    gripper_timeout_s: float = 1.0
 
-# -------------------------------------------------------
-# Image → black/white pixel lists → meter‐space coords
-# -------------------------------------------------------
+
 def image_pixels_to_meter_coords(
     image_path: str,
     width_meters: float,
@@ -69,29 +70,6 @@ def image_pixels_to_meter_coords(
     white_coords = list(zip(white_x.tolist(), white_y.tolist()))
     return black_coords, white_coords
 
-# -------------------------------------------------------
-# Robot‐drawing configuration
-# -------------------------------------------------------
-@dataclass
-class DrawImageConfig:
-    ip_address: str = "192.168.1.3"
-    t_flange_tool_x_offset: float = 0.0
-    arm_up_delta: float = 0.06
-    arm_forward_delta: float = 0.1
-    pen_height_delta: float = 0.01
-
-    # **Image‐drawing parameters**
-    image_path: str = "flower.png"
-    image_width_m: float = 0.06   # physical span of image in X [m]
-    image_height_m: float = 0.06  # physical span of image in Y [m]
-    image_threshold: int = 127   # B/W threshold
-
-    # gripper settings
-    gripper_open_width_m: float = 0.024
-    gripper_closed_width_m: float = 0.010
-    gripper_external_effort_nm: float = -5.0
-    gripper_timeout_s: float = 1.0
-
 if __name__ == "__main__":
     # 1) logging setup
     logging.basicConfig(level=logging.ERROR)
@@ -105,7 +83,6 @@ if __name__ == "__main__":
         ))
         logger.addHandler(h)
         logger.propagate = False
-    fully_suppress_logger("trossen_arm", logging.ERROR)
 
     # 2) config & driver
     config = DrawImageConfig()
@@ -115,12 +92,11 @@ if __name__ == "__main__":
     try:
         logger.info("🚀 Initializing driver...")
         driver.configure(
-            trossen_arm.Model.wxai_v0,
-            trossen_arm.StandardEndEffector.wxai_v0_follower,
+            config.arm_model,
+            config.end_effector_model,
             config.ip_address,
-            False
+            True
         )
-        fully_suppress_logger("trossen_arm", logging.ERROR)
 
         ee = driver.get_end_effector()
         ee.t_flange_tool[0] = config.t_flange_tool_x_offset
@@ -133,14 +109,14 @@ if __name__ == "__main__":
         sleep_joint_positions = np.array(driver.get_all_positions())
 
         # initial lift & forward
-        cart = driver.get_cartesian_positions()
+        origin = driver.get_cartesian_positions()
         logger.info(f"🔼 Lifting by {config.arm_up_delta}m")
-        cart[2] += config.arm_up_delta
-        driver.set_cartesian_positions(cart, trossen_arm.InterpolationSpace.cartesian)
+        origin[2] += config.arm_up_delta
+        driver.set_cartesian_positions(origin, trossen_arm.InterpolationSpace.cartesian)
 
         logger.info(f"▶️ Moving forward by {config.arm_forward_delta}m")
-        cart[0] += config.arm_forward_delta
-        driver.set_cartesian_positions(cart, trossen_arm.InterpolationSpace.cartesian)
+        origin[0] += config.arm_forward_delta
+        driver.set_cartesian_positions(origin, trossen_arm.InterpolationSpace.cartesian)
 
         # open+close gripper to grasp pen
         logger.info("🖐️ Opening gripper")
@@ -161,12 +137,9 @@ if __name__ == "__main__":
 
         # lift pen to drawing height
         logger.info(f"🔼 Lifting pen by {config.pen_height_delta}m")
-        cart[2] += config.pen_height_delta
-        driver.set_cartesian_positions(cart, trossen_arm.InterpolationSpace.cartesian)
+        origin[2] += config.pen_height_delta
+        driver.set_cartesian_positions(origin, trossen_arm.InterpolationSpace.cartesian)
 
-        # ---------------------------------------------------
-        #   IMAGE DRAWING
-        # ---------------------------------------------------
         logger.info("📷 Loading & thresholding image...")
         black_pts_m, _ = image_pixels_to_meter_coords(
             config.image_path,
@@ -208,7 +181,6 @@ if __name__ == "__main__":
         driver.set_cartesian_positions(draw_origin,
                                       trossen_arm.InterpolationSpace.cartesian)
 
-        # release pen & retreat
         logger.info("🖐️ Releasing pen")
         driver.set_gripper_mode(trossen_arm.Mode.position)
         driver.set_gripper_position(config.gripper_open_width_m/2.0,
@@ -232,8 +204,26 @@ if __name__ == "__main__":
 
     except Exception as e:
         logger.error(f"❌ Error: {e}")
-        # ... existing recovery logic unchanged ...
-        # (omitted here for brevity—just copy your original except/recovery/finally)
+        logger.info("💀 Attempting error recovery...")
+        try:
+            driver.cleanup()
+            logger.info("Re-configuring driver for recovery...")
+            driver.configure(
+                config.arm_model,
+                config.end_effector_model,
+                config.ip_address,
+                True
+            )
+            logger.info("Setting arm to position mode post-recovery...")
+            driver.set_all_modes(trossen_arm.Mode.position)
+            if sleep_joint_positions is not None:
+                logger.info("🛌 Returning to sleep pose post-recovery...")
+                driver.set_all_positions(sleep_joint_positions)
+            else:
+                logger.warning("🟡 No sleep pose recorded; manual reset may be needed post-recovery.")
+        except Exception as recovery_e:
+            logger.error(f"❌❌ Error during recovery: {recovery_e}")
+            logger.error("Manual intervention likely required.")
         raise
 
     finally:
