@@ -1,0 +1,7 @@
+[project]
+name = "ik-pyroki"
+version = "0.0.1"
+requires-python = "==3.12"
+dependencies = [
+    "trossen-arm==1.8.1",
+]
