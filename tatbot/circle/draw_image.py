@@ -1,5 +1,8 @@
-import logging
+import csv
 from dataclasses import dataclass
+import logging
+import os
+import time
 
 import numpy as np
 from PIL import Image
@@ -18,13 +21,15 @@ class DrawImageConfig:
     pen_height_delta: float = 0.01
     # image_path: str = "flower.png"
     image_path: str = "circle.png"
-    image_width_m: float = 0.06   # physical span of image in X [m]
-    image_height_m: float = 0.06  # physical span of image in Y [m]
+    image_width_m: float = 0.08   # physical span of image in X [m]
+    image_height_m: float = 0.08  # physical span of image in Y [m]
     image_threshold: int = 127   # B/W threshold
     gripper_open_width_m: float = 0.024
     gripper_closed_width_m: float = 0.010
-    gripper_external_effort_nm: float = -5.0
     gripper_timeout_s: float = 1.0
+    gripper_external_effort_nm: float = -5.0
+    gripper_pen_sleep_s: float = 2.0
+    progress_file_path: str = "draw_progress.csv"
 
 
 def image_pixels_to_meter_coords(
@@ -39,36 +44,55 @@ def image_pixels_to_meter_coords(
     for black and for white pixels, using the image
     center as the (0,0) origin.
     """
-    # load & convert to grayscale
     img = Image.open(image_path).convert("L")
     arr = np.array(img)
     h_px, w_px = arr.shape
-
-    # masks
     black_mask = arr <= threshold
     white_mask = arr >  threshold
-
-    # pixel indices
     black_rows, black_cols = np.where(black_mask)
     white_rows, white_cols = np.where(white_mask)
-
-    # center in px
     cx = w_px / 2.0
     cy = h_px / 2.0
-
-    # scaling factors
     scale_x = width_meters  / w_px
     scale_y = height_meters / h_px
-
-    # convert to meters
     black_x = (black_cols - cx) * scale_x
     black_y = (black_rows - cy) * scale_y
     white_x = (white_cols - cx) * scale_x
     white_y = (white_rows - cy) * scale_y
-
     black_coords = list(zip(black_x.tolist(), black_y.tolist()))
     white_coords = list(zip(white_x.tolist(), white_y.tolist()))
     return black_coords, white_coords
+
+
+def save_progress(index_drawn: int, logger_instance):
+    """Saves the index of the last successfully drawn point."""
+    try:
+        with open(config.progress_file_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([index_drawn])
+        logger_instance.info(f"Progress saved: Point index {index_drawn} completed.")
+    except IOError as e:
+        logger_instance.error(f"Could not save progress to {config.progress_file_path}: {e}")
+
+
+def load_progress(logger_instance) -> int:
+    """Loads the index of the last drawn point. Returns starting index for the current run."""
+    if os.path.exists(config.progress_file_path):
+        try:
+            with open(config.progress_file_path, 'r', newline='') as f:
+                reader = csv.reader(f)
+                row = next(reader, None)
+                if row and row[0].isdigit():
+                    last_index_drawn = int(row[0])
+                    logger_instance.info(f"Resuming. Last completed point index: {last_index_drawn}.")
+                    return last_index_drawn + 1  # Start from the next point
+                else:
+                    logger_instance.warning(f"Progress file ({config.progress_file_path}) found but content is invalid. Starting from beginning.")
+                    return 0 # Invalid content, start over
+        except (IOError, csv.Error) as e:
+            logger_instance.error(f"Error loading progress from {config.progress_file_path}: {e}. Starting from beginning.")
+            return 0 # Error reading, start over
+    return 0  # No progress file, start from the beginning
 
 if __name__ == "__main__":
     # 1) logging setup
@@ -128,6 +152,8 @@ if __name__ == "__main__":
         driver.set_gripper_mode(trossen_arm.Mode.position)
         driver.set_gripper_position(config.gripper_closed_width_m/2.0,
                                     config.gripper_timeout_s)
+        logger.info(f"sleep for {config.gripper_pen_sleep_s}s")
+        time.sleep(config.gripper_pen_sleep_s)
         driver.set_gripper_mode(trossen_arm.Mode.external_effort)
         driver.set_gripper_external_effort(
             config.gripper_external_effort_nm,
@@ -147,17 +173,30 @@ if __name__ == "__main__":
             config.image_height_m,
             config.image_threshold
         )
-        logger.info(f"🖼️  {len(black_pts_m)} black pixels detected")
+        logger.info(f"🖼️  {len(black_pts_m)} black pixels to draw.")
 
         # origin of drawing = current XY
         draw_origin = driver.get_cartesian_positions()
-        logger.info(f"DEBUG: draw_origin value: {draw_origin}, type: {type(draw_origin)}")
         ox, oy, oz = draw_origin[0], draw_origin[1], draw_origin[2]
         z_up   = oz
         z_down = oz - config.pen_height_delta
 
+        # --- Load progress before starting the drawing loop ---
+        start_index = load_progress(logger)
+
         logger.info("✍️  Starting image trace...")
-        for x_m, y_m in black_pts_m:
+        if start_index > 0 and start_index < len(black_pts_m):
+            logger.info(f"Resuming drawing from point index {start_index} (out of {len(black_pts_m)}).")
+        elif start_index >= len(black_pts_m) and len(black_pts_m) > 0:
+            # This case means the previous run completed all points but might have failed before cleanup.
+            logger.info("Previous drawing seems completed. All points will be skipped if it was a full completion.")
+            # The loop will handle this correctly by skipping all points.
+
+        num_points_drawn_this_session = 0
+        for i, (x_m, y_m) in enumerate(black_pts_m):
+            if i < start_index:
+                continue  # Skip points already drawn in a previous session
+
             xw = ox + x_m
             yw = oy + y_m
 
@@ -176,6 +215,26 @@ if __name__ == "__main__":
                 np.array([xw, yw, z_up]),
                 trossen_arm.InterpolationSpace.cartesian
             )
+
+            save_progress(i, logger)
+            num_points_drawn_this_session += 1
+
+        if num_points_drawn_this_session > 0:
+            logger.info(f"✍️  Completed drawing {num_points_drawn_this_session} points in this session.")
+        elif start_index > 0 and start_index >= len(black_pts_m) and len(black_pts_m) > 0:
+             logger.info("✍️  No new points drawn. Previous drawing was already complete.")
+        elif len(black_pts_m) == 0:
+            logger.info("🖼️ No black pixels to draw.")
+        else:
+            logger.info("✍️  Drawing was already complete or no points to draw from start.")
+
+        if os.path.exists(config.progress_file_path):
+            try:
+                logger.info("Drawing complete or all resume points processed. Deleting progress file.")
+                os.remove(config.progress_file_path)
+            except OSError as e:
+                logger.error(f"Error deleting progress file {config.progress_file_path}: {e}")
+
 
         logger.info("🎯 Returning home...")
         driver.set_cartesian_positions(draw_origin,
@@ -224,7 +283,6 @@ if __name__ == "__main__":
         except Exception as recovery_e:
             logger.error(f"❌❌ Error during recovery: {recovery_e}")
             logger.error("Manual intervention likely required.")
-        raise
 
     finally:
         logger.info("🧹 Cleaning up and idling motors")
