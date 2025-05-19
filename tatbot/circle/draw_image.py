@@ -33,11 +33,11 @@ class DrawImageConfig:
     """Upper right corner of skin in workspace frame."""
     
     # pen gripping parameters
-    pen_holder_cart_pos_ready: tuple[float, ...] = (0.15, 0.25, 0.16)
+    pen_holder_cart_pos_ready: tuple[float, ...] = (0.15, 0.25, 0.14)
     """Cartesian position of pen holder in workspace frame when ready to grasp pen."""
-    pen_holder_cart_pos_grasp: tuple[float, ...] = (0.15, 0.25, 0.1)
+    pen_holder_cart_pos_grasp: tuple[float, ...] = (0.15, 0.25, 0.08)
     """Cartesian position of pen holder in workspace frame when grasping pen."""
-    pen_holder_cart_pos_drop: tuple[float, ...] = (0.15, 0.25, 0.11) # slightly above grasp pose
+    pen_holder_cart_pos_drop: tuple[float, ...] = (0.15, 0.25, 0.09) # slightly above grasp pose
     """Cartesian position of pen holder in workspace frame when dropping pen."""
     gripper_open_width_m: float = 0.024
     gripper_closed_width_m: float = 0.010
@@ -45,15 +45,17 @@ class DrawImageConfig:
     gripper_external_effort_nm: float = -5.0
     gripper_pen_sleep_s: float = 2.0
     
-    pen_height_delta: float = 0.1
+    pen_height_delta: float = 0.08
     """Distance from pen tip to end effector tip."""
+    pen_stroke_length: float = 0.01
+    """Length of pen stroke when drawing a pixel."""
 
     # drawing parameters
     image_path: str = "circle.png"
     # image_path: str = "flower.png"
     progress_file_path: str = "draw_progress.csv"
-    image_width_m: float = 0.06   # physical span of image in X [m]
-    image_height_m: float = 0.06  # physical span of image in Y [m]
+    image_width_m: float = 0.02   # physical span of image in X [m]
+    image_height_m: float = 0.02  # physical span of image in Y [m]
     image_threshold: int = 127   # B/W threshold
 
 
@@ -197,7 +199,8 @@ if __name__ == "__main__":
             config.image_threshold,
             logger,
         )
-        logger.info(f"🖼️  {len(black_pts_m)} black pixels to draw.")
+        num_points_to_draw = len(black_pts_m)
+        logger.info(f"🖼️  {num_points_to_draw} black pixels to draw.")
 
         logger.info("🎯 Going to origin of drawing (center of skin)")
         draw_origin = (
@@ -207,52 +210,40 @@ if __name__ == "__main__":
         )
         goto_workspace(draw_origin, driver, config, logger)
 
-        # logger.info("✍️  Starting image trace...")
-        # start_index = load_progress(config, logger)
-        # if start_index > 0 and start_index < len(black_pts_m):
-        #     logger.info(f"Resuming drawing from point index {start_index} (out of {len(black_pts_m)}).")
-        # num_points_drawn_this_session = 0
-        # for i, (x_m, y_m) in enumerate(black_pts_m):
-        #     if i < start_index:
-        #         continue  # Skip points already drawn in a previous session
+        logger.info("✍️  Starting image trace...")
+        start_index = load_progress(config, logger)
+        if start_index > 0 and start_index < num_points_to_draw:
+            logger.info(f"Resuming drawing from point index {start_index} (out of {num_points_to_draw}).")
+        num_points_drawn_this_session = 0
+        for i, (x_m, y_m) in enumerate(black_pts_m):
+            if i < start_index:
+                continue  # Skip points already drawn in a previous session
+            xw = draw_origin[0] + x_m
+            yw = draw_origin[1] + y_m
+            logger.info(f"🎯 Moving to pixel {i} of {num_points_to_draw} at {xw}, {yw}")
+            goto_workspace((xw, yw, draw_origin[2]), driver, config, logger)
+            logger.info("🖌️  Drawing pixel")
+            goto_workspace((xw, yw, draw_origin[2] - config.pen_stroke_length), driver, config, logger)
+            logger.info(" lifting pen")
+            goto_workspace((xw, yw, draw_origin[2]), driver, config, logger)
+            save_progress(i, logger)
+            num_points_drawn_this_session += 1
 
-        #     xw = ox + x_m
-        #     yw = oy + y_m
+        if num_points_drawn_this_session > 0:
+            logger.info(f"✍️  Completed drawing {num_points_drawn_this_session} points in this session.")
+        elif start_index > 0 and start_index >= num_points_to_draw:
+             logger.info("✍️  No new points drawn. Previous drawing was already complete.")
+        elif num_points_to_draw == 0:
+            logger.info("🖼️ No black pixels to draw.")
+        else:
+            logger.info("✍️  Drawing was already complete or no points to draw from start.")
 
-        #     # move above pixel
-        #     driver.set_cartesian_positions(
-        #         np.array([xw, yw, z_up]),
-        #         trossen_arm.InterpolationSpace.cartesian
-        #     )
-        #     # pen down
-        #     driver.set_cartesian_positions(
-        #         np.array([xw, yw, z_down]),
-        #         trossen_arm.InterpolationSpace.cartesian
-        #     )
-        #     # pen up
-        #     driver.set_cartesian_positions(
-        #         np.array([xw, yw, z_up]),
-        #         trossen_arm.InterpolationSpace.cartesian
-        #     )
-        #     save_progress(i, logger)
-        #     num_points_drawn_this_session += 1
-
-        # if num_points_drawn_this_session > 0:
-        #     logger.info(f"✍️  Completed drawing {num_points_drawn_this_session} points in this session.")
-        # elif start_index > 0 and start_index >= len(black_pts_m) and len(black_pts_m) > 0:
-        #      logger.info("✍️  No new points drawn. Previous drawing was already complete.")
-        # elif len(black_pts_m) == 0:
-        #     logger.info("🖼️ No black pixels to draw.")
-        # else:
-        #     logger.info("✍️  Drawing was already complete or no points to draw from start.")
-
-        # if os.path.exists(config.progress_file_path):
-        #     try:
-        #         logger.info("Drawing complete or all resume points processed. Deleting progress file.")
-        #         os.remove(config.progress_file_path)
-        #     except OSError as e:
-        #         logger.error(f"Error deleting progress file {config.progress_file_path}: {e}")
-
+        if os.path.exists(config.progress_file_path):
+            try:
+                logger.info("Drawing complete or all resume points processed. Deleting progress file.")
+                os.remove(config.progress_file_path)
+            except OSError as e:
+                logger.error(f"Error deleting progress file {config.progress_file_path}: {e}")
 
         logger.info("🎯 Returning to origin of drawing")
         goto_workspace(draw_origin, driver, config, logger)
