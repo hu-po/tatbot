@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import logging
 import os
 import time
+import random
 
 import numpy as np
 from PIL import Image
@@ -30,32 +31,38 @@ class DrawImageConfig:
     """(x, y, z) in meters: Cartesian position of end effector in home pose in the robot's base frame."""
 
     # workspace definitions
-    workspace_home_offset: tuple[float, ...] = (-0.01, 0.33, 0.1)
+    workspace_home_offset: tuple[float, ...] = (0.01, 0.33, 0.1)
     """Cartesian offset of workspace frame from robot base frame."""
     skin_lower_left_corner: tuple[float, ...] = (0.1, 0.3, 0.04)
     """Lower left corner of skin in workspace frame."""
     skin_upper_right_corner: tuple[float, ...] = (0.22, 0.39, 0.04)
     """Upper right corner of skin in workspace frame."""
     
-    # Sharpie pen
-    pen_holder_cart_pos_ready: tuple[float, ...] = (0.15, 0.25, 0.14)
+    # Tattoo Pen
+    pen_holder_cart_pos_ready: tuple[float, ...] = (0.15, 0.25, 0.22)
     """(x, y, z) in meters: cartesian position of pen holder in workspace frame when ready to grasp pen."""
-    pen_holder_cart_pos_grasp: tuple[float, ...] = (0.15, 0.25, 0.08)
+    pen_holder_cart_pos_grasp: tuple[float, ...] = (0.15, 0.25, 0.13)
     """(x, y, z) in meters: cartesian position of pen holder in workspace frame when grasping pen."""
-    pen_holder_cart_pos_drop: tuple[float, ...] = (0.15, 0.25, 0.09) # slightly above grasp pose
+    pen_holder_cart_pos_drop: tuple[float, ...] = (0.15, 0.25, 0.14) # slightly above grasp pose
     """(x, y, z) in meters: cartesian position of pen holder in workspace frame when dropping pen."""
-    gripper_open_width: float = 0.024
+    gripper_open_width: float = 0.04
     """meters: width of the gripper when open."""
-    gripper_grip_width: float = 0.010
+    gripper_grip_width: float = 0.032
     """meters: width of the gripper before using effort based gripping."""
     gripper_grip_timeout: float = 1.0
     """seconds: timeout for effort based gripping."""
-    gripper_grip_effort: float = -5.0
+    gripper_grip_effort: float = -20.0
     """newtons: maximum force for effort based gripping."""
-    pen_height_delta: float = 0.08
+    pen_height_delta: float = 0.136
     """meters: distance from pen tip to end effector tip."""
-    pen_stroke_length: float = 0.01
+    pen_stroke_length: float = 0.008
     """meters: length of pen stroke when drawing a pixel."""
+
+    # Ink Cup
+    ink_cup_cart_pos_ready: tuple[float, ...] = (0.11, 0.31, 0.19)
+    """(x, y, z) in meters: cartesian position of ink cup in workspace frame when ready to dip ink cup."""
+    ink_cup_cart_pos_dip: tuple[float, ...] = (0.11, 0.31, 0.17)
+    """(x, y, z) in meters: cartesian position of ink cup in workspace frame when dipping ink cup."""
 
     # drawing parameters
     image_path: str = "circle.png"
@@ -64,6 +71,8 @@ class DrawImageConfig:
     image_width_m: float = 0.02   # physical span of image in X [m]
     image_height_m: float = 0.02  # physical span of image in Y [m]
     image_threshold: int = 127   # B/W threshold
+    max_draw_pixels: int = 0
+    """Maximum number of black pixels to draw. If 0, draw all."""
 
 def goto_workspace(cart_pos: tuple[float, ...], driver: trossen_arm.TrossenArmDriver, config: DrawImageConfig, log: logging.Logger):
     """Go to a xyz position in the workspace coordinate system, copies current orientation."""
@@ -133,6 +142,13 @@ if __name__ == "__main__":
         logger.info("⬆️ lifting pen")
         goto_workspace(config.pen_holder_cart_pos_ready, driver, config, logger)
 
+        logger.info("🎨 Going to ink cup")
+        goto_workspace(config.ink_cup_cart_pos_ready, driver, config, logger)
+        logger.info("✒️ Dipping into ink cup")
+        goto_workspace(config.ink_cup_cart_pos_dip, driver, config, logger)
+        logger.info("⬆️ Retracting from ink cup")
+        goto_workspace(config.ink_cup_cart_pos_ready, driver, config, logger)
+
         logger.info("📷 Loading & thresholding image...")
         """
         Opens an image with Pillow, thresholds to B/W,
@@ -156,6 +172,10 @@ if __name__ == "__main__":
         white_x = (white_cols - cx) * scale_x
         white_y = (white_rows - cy) * scale_y
         black_coords = list(zip(black_x.tolist(), black_y.tolist()))
+        # Randomly sample up to max_draw_pixels if set
+        if config.max_draw_pixels and config.max_draw_pixels > 0:
+            if len(black_coords) > config.max_draw_pixels:
+                black_coords = random.sample(black_coords, config.max_draw_pixels)
         num_points_to_draw = len(black_coords)
         logger.info(f"🖼️  {num_points_to_draw} black pixels to draw.")
 
@@ -248,6 +268,9 @@ if __name__ == "__main__":
             config.ip_address,
             True # whether to clear the error state of the robot
         )
+        logger.info("🖐️ Opening gripper")
+        driver.set_gripper_mode(trossen_arm.Mode.position)
+        driver.set_gripper_position(config.gripper_open_width/2.0, config.gripper_grip_timeout)
         logger.info("😴 Returning to sleep pose.")
         driver.set_all_modes(trossen_arm.Mode.position)
         driver.set_all_positions(trossen_arm.VectorDouble(list(config.joint_pos_sleep)))
