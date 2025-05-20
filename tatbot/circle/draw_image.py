@@ -65,18 +65,20 @@ class DrawImageConfig:
     """(x, y, z) in meters: cartesian position of ink cup in workspace frame when dipping ink cup."""
 
     # drawing parameters
-    image_path: str = "circle.png"
-    # image_path: str = "flower.png"
+    # image_path: str = "circle.png"
+    image_path: str = "flower.png"
     progress_file_path: str = "draw_progress.csv"
     """path to file to save progress of drawing."""
-    image_width_m: float = 0.02
+    image_width_m: float = 0.04
     """meters: width of the image in the workspace frame."""
-    image_height_m: float = 0.02
+    image_height_m: float = 0.04
     """meters: height of the image in the workspace frame."""
     image_threshold: int = 127
     """[0, 255] threshold for B/W image."""
-    max_draw_pixels: int = 0
+    max_draw_pixels: int = 600
     """maximum number of black pixels to draw. If 0, draw all."""
+    num_pixels_per_ink_dip: int = 60
+    """Number of pixels to draw before dipping the pen in ink cup again."""
 
 def goto_workspace(cart_pos: tuple[float, ...], driver: trossen_arm.TrossenArmDriver, config: DrawImageConfig, log: logging.Logger):
     """Go to a xyz position in the workspace coordinate system, copies current orientation."""
@@ -215,6 +217,14 @@ if __name__ == "__main__":
         for i, (x_m, y_m) in enumerate(black_coords):
             if i < start_index:
                 continue  # Skip points already drawn in a previous session
+            # Dip pen in ink after every num_pixels_per_ink_dip pixels
+            if config.num_pixels_per_ink_dip > 0 and num_points_drawn_this_session > 0 and num_points_drawn_this_session % config.num_pixels_per_ink_dip == 0:
+                logger.info("🎨 Going to ink cup for re-dip")
+                goto_workspace(config.ink_cup_cart_pos_ready, driver, config, logger)
+                logger.info("✒️ Dipping into ink cup")
+                goto_workspace(config.ink_cup_cart_pos_dip, driver, config, logger)
+                logger.info("⬆️ Retracting from ink cup")
+                goto_workspace(config.ink_cup_cart_pos_ready, driver, config, logger)
             xw = draw_origin[0] + x_m
             yw = draw_origin[1] + y_m
             logger.info(f"🎯 Moving to pixel {i} of {num_points_to_draw} at {xw}, {yw}")
