@@ -68,11 +68,15 @@ class DrawImageConfig:
     image_path: str = "circle.png"
     # image_path: str = "flower.png"
     progress_file_path: str = "draw_progress.csv"
-    image_width_m: float = 0.02   # physical span of image in X [m]
-    image_height_m: float = 0.02  # physical span of image in Y [m]
-    image_threshold: int = 127   # B/W threshold
+    """path to file to save progress of drawing."""
+    image_width_m: float = 0.02
+    """meters: width of the image in the workspace frame."""
+    image_height_m: float = 0.02
+    """meters: height of the image in the workspace frame."""
+    image_threshold: int = 127
+    """[0, 255] threshold for B/W image."""
     max_draw_pixels: int = 0
-    """Maximum number of black pixels to draw. If 0, draw all."""
+    """maximum number of black pixels to draw. If 0, draw all."""
 
 def goto_workspace(cart_pos: tuple[float, ...], driver: trossen_arm.TrossenArmDriver, config: DrawImageConfig, log: logging.Logger):
     """Go to a xyz position in the workspace coordinate system, copies current orientation."""
