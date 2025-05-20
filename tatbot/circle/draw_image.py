@@ -10,19 +10,24 @@ import trossen_arm
 
 @dataclass
 class DrawImageConfig:
-    arm_model: trossen_arm.Model = trossen_arm.Model.wxai_v0
+    
+    # Left arm
+    # arm_model: trossen_arm.Model = trossen_arm.Model.wxai_v0
     # ip_address: str = "192.168.1.2"
     # end_effector_model: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_leader
+
+    # Right arm
+    arm_model: trossen_arm.Model = trossen_arm.Model.wxai_v0
     ip_address: str = "192.168.1.3"
     end_effector_model: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_follower
     
     # pre-defined joint positions
     joint_pos_sleep: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    """Sleep pose: robot is folded up, motors can be released."""
+    """7d joint radians: sleep pose,robot is folded up, motors can be released."""
     joint_pos_home: tuple[float, ...] = (0.0, 1.05, 0.5, -1.06, 0.0, 0.0, 0.0)
-    """Home pose: robot is active, staring down at workspace"""
+    """7d joint radians: home pose, robot is active, staring down at workspace"""
     cart_pos_home: tuple[float, ...] = (0.12, 0.0, 0.005)
-    """Cartesian position of home pose in the robot's base frame."""
+    """(x, y, z) in meters: Cartesian position of end effector in home pose in the robot's base frame."""
 
     # workspace definitions
     workspace_home_offset: tuple[float, ...] = (-0.01, 0.33, 0.1)
@@ -32,23 +37,25 @@ class DrawImageConfig:
     skin_upper_right_corner: tuple[float, ...] = (0.22, 0.39, 0.04)
     """Upper right corner of skin in workspace frame."""
     
-    # pen gripping parameters
+    # Sharpie pen
     pen_holder_cart_pos_ready: tuple[float, ...] = (0.15, 0.25, 0.14)
-    """Cartesian position of pen holder in workspace frame when ready to grasp pen."""
+    """(x, y, z) in meters: cartesian position of pen holder in workspace frame when ready to grasp pen."""
     pen_holder_cart_pos_grasp: tuple[float, ...] = (0.15, 0.25, 0.08)
-    """Cartesian position of pen holder in workspace frame when grasping pen."""
+    """(x, y, z) in meters: cartesian position of pen holder in workspace frame when grasping pen."""
     pen_holder_cart_pos_drop: tuple[float, ...] = (0.15, 0.25, 0.09) # slightly above grasp pose
-    """Cartesian position of pen holder in workspace frame when dropping pen."""
-    gripper_open_width_m: float = 0.024
-    gripper_closed_width_m: float = 0.010
-    gripper_timeout_s: float = 1.0
-    gripper_external_effort_nm: float = -5.0
-    gripper_pen_sleep_s: float = 2.0
-    
+    """(x, y, z) in meters: cartesian position of pen holder in workspace frame when dropping pen."""
+    gripper_open_width: float = 0.024
+    """meters: width of the gripper when open."""
+    gripper_grip_width: float = 0.010
+    """meters: width of the gripper before using effort based gripping."""
+    gripper_grip_timeout: float = 1.0
+    """seconds: timeout for effort based gripping."""
+    gripper_grip_effort: float = -5.0
+    """newtons: maximum force for effort based gripping."""
     pen_height_delta: float = 0.08
-    """Distance from pen tip to end effector tip."""
+    """meters: distance from pen tip to end effector tip."""
     pen_stroke_length: float = 0.01
-    """Length of pen stroke when drawing a pixel."""
+    """meters: length of pen stroke when drawing a pixel."""
 
     # drawing parameters
     image_path: str = "circle.png"
@@ -57,71 +64,6 @@ class DrawImageConfig:
     image_width_m: float = 0.02   # physical span of image in X [m]
     image_height_m: float = 0.02  # physical span of image in Y [m]
     image_threshold: int = 127   # B/W threshold
-
-
-def image_pixels_to_meter_coords(
-    image_path: str,
-    width_meters: float,
-    height_meters: float,
-    threshold: int,
-    log: logging.Logger,
-):
-    """
-    Opens an image with Pillow, thresholds to B/W,
-    and returns two lists of (x,y) coords in meters
-    for black and for white pixels, using the image
-    center as the (0,0) origin.
-    """
-    img = Image.open(image_path).convert("L")
-    arr = np.array(img)
-    h_px, w_px = arr.shape
-    black_mask = arr <= threshold
-    white_mask = arr >  threshold
-    black_rows, black_cols = np.where(black_mask)
-    white_rows, white_cols = np.where(white_mask)
-    cx = w_px / 2.0
-    cy = h_px / 2.0
-    scale_x = width_meters  / w_px
-    scale_y = height_meters / h_px
-    black_x = (black_cols - cx) * scale_x
-    black_y = (black_rows - cy) * scale_y
-    white_x = (white_cols - cx) * scale_x
-    white_y = (white_rows - cy) * scale_y
-    black_coords = list(zip(black_x.tolist(), black_y.tolist()))
-    white_coords = list(zip(white_x.tolist(), white_y.tolist()))
-    return black_coords, white_coords
-
-
-def save_progress(index_drawn: int, log: logging.Logger):
-    """Saves the index of the last successfully drawn point."""
-    try:
-        with open(config.progress_file_path, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([index_drawn])
-        log.info(f"Progress saved: Point index {index_drawn} completed.")
-    except IOError as e:
-        log.error(f"Could not save progress to {config.progress_file_path}: {e}")
-
-
-def load_progress(config: DrawImageConfig, log: logging.Logger) -> int:
-    """Loads the index of the last drawn point. Returns starting index for the current run."""
-    if os.path.exists(config.progress_file_path):
-        try:
-            with open(config.progress_file_path, 'r', newline='') as f:
-                reader = csv.reader(f)
-                row = next(reader, None)
-                if row and row[0].isdigit():
-                    last_index_drawn = int(row[0])
-                    log.info(f"Resuming. Last completed point index: {last_index_drawn}.")
-                    return last_index_drawn + 1  # Start from the next point
-                else:
-                    log.warning(f"Progress file ({config.progress_file_path}) found but content is invalid. Starting from beginning.")
-                    return 0 # Invalid content, start over
-        except (IOError, csv.Error) as e:
-            log.error(f"Error loading progress from {config.progress_file_path}: {e}. Starting from beginning.")
-            return 0 # Error reading, start over
-    return 0  # No progress file, start from the beginning
-
 
 def goto_workspace(cart_pos: tuple[float, ...], driver: trossen_arm.TrossenArmDriver, config: DrawImageConfig, log: logging.Logger):
     """Go to a xyz position in the workspace coordinate system, copies current orientation."""
@@ -177,29 +119,44 @@ if __name__ == "__main__":
         goto_workspace(config.pen_holder_cart_pos_ready, driver, config, logger)
         logger.info("🖐️ Opening gripper")
         driver.set_gripper_mode(trossen_arm.Mode.position)
-        driver.set_gripper_position(config.gripper_open_width_m/2.0, config.gripper_timeout_s)
+        driver.set_gripper_position(config.gripper_open_width/2.0, config.gripper_grip_timeout)
         logger.info("⬇️ Lowering to grasp pen")
         goto_workspace(config.pen_holder_cart_pos_grasp, driver, config, logger)
         logger.info("👌 Closing gripper")
-        driver.set_gripper_position(config.gripper_closed_width_m/2.0, config.gripper_timeout_s)
+        driver.set_gripper_position(config.gripper_grip_width/2.0, config.gripper_grip_timeout)
         driver.set_gripper_mode(trossen_arm.Mode.external_effort)
         driver.set_gripper_external_effort(
-            config.gripper_external_effort_nm,
-            config.gripper_timeout_s,
+            config.gripper_grip_effort,
+            config.gripper_grip_timeout,
             True
         )
         logger.info("⬆️ lifting pen")
         goto_workspace(config.pen_holder_cart_pos_ready, driver, config, logger)
 
         logger.info("📷 Loading & thresholding image...")
-        black_pts_m, _ = image_pixels_to_meter_coords(
-            config.image_path,
-            config.image_width_m,
-            config.image_height_m,
-            config.image_threshold,
-            logger,
-        )
-        num_points_to_draw = len(black_pts_m)
+        """
+        Opens an image with Pillow, thresholds to B/W,
+        and returns two lists of (x,y) coords in meters
+        for black and for white pixels, using the image
+        center as the (0,0) origin.
+        """
+        img = Image.open(config.image_path).convert("L")
+        arr = np.array(img)
+        h_px, w_px = arr.shape
+        black_mask = arr <= config.image_threshold
+        white_mask = arr > config.image_threshold
+        black_rows, black_cols = np.where(black_mask)
+        white_rows, white_cols = np.where(white_mask)
+        cx = w_px / 2.0
+        cy = h_px / 2.0
+        scale_x = config.image_width_m  / w_px
+        scale_y = config.image_height_m / h_px
+        black_x = (black_cols - cx) * scale_x
+        black_y = (black_rows - cy) * scale_y
+        white_x = (white_cols - cx) * scale_x
+        white_y = (white_rows - cy) * scale_y
+        black_coords = list(zip(black_x.tolist(), black_y.tolist()))
+        num_points_to_draw = len(black_coords)
         logger.info(f"🖼️  {num_points_to_draw} black pixels to draw.")
 
         logger.info("🎯 Going to origin of drawing (center of skin)")
@@ -211,11 +168,27 @@ if __name__ == "__main__":
         goto_workspace(draw_origin, driver, config, logger)
 
         logger.info("✍️  Starting image trace...")
-        start_index = load_progress(config, logger)
+        if os.path.exists(config.progress_file_path):
+            try:
+                with open(config.progress_file_path, 'r', newline='') as f:
+                    reader = csv.reader(f)
+                    row = next(reader, None)
+                    if row and row[0].isdigit():
+                        last_index_drawn = int(row[0])
+                        logger.info(f"Resuming. Last completed point index: {last_index_drawn}.")
+                        start_index = last_index_drawn + 1  # Start from the next point
+                    else:
+                        logger.warning(f"Progress file ({config.progress_file_path}) found but content is invalid. Starting from beginning.")
+                        start_index = 0 # Invalid content, start over
+            except (IOError, csv.Error) as e:
+                logger.error(f"Error loading progress from {config.progress_file_path}: {e}. Starting from beginning.")
+                start_index = 0 # Error reading, start over
+        else:
+            start_index = 0  # No progress file, start from the beginning
         if start_index > 0 and start_index < num_points_to_draw:
             logger.info(f"Resuming drawing from point index {start_index} (out of {num_points_to_draw}).")
         num_points_drawn_this_session = 0
-        for i, (x_m, y_m) in enumerate(black_pts_m):
+        for i, (x_m, y_m) in enumerate(black_coords):
             if i < start_index:
                 continue  # Skip points already drawn in a previous session
             xw = draw_origin[0] + x_m
@@ -226,7 +199,13 @@ if __name__ == "__main__":
             goto_workspace((xw, yw, draw_origin[2] - config.pen_stroke_length), driver, config, logger)
             logger.info(" lifting pen")
             goto_workspace((xw, yw, draw_origin[2]), driver, config, logger)
-            save_progress(i, logger)
+            try:
+                with open(config.progress_file_path, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([i])
+                logger.info(f"Progress saved: Point index {i} completed.")
+            except IOError as e:
+                logger.error(f"Could not save progress to {config.progress_file_path}: {e}")
             num_points_drawn_this_session += 1
 
         if num_points_drawn_this_session > 0:
@@ -254,7 +233,7 @@ if __name__ == "__main__":
         goto_workspace(config.pen_holder_cart_pos_drop, driver, config, logger)
         logger.info("🖐️ Opening gripper")
         driver.set_gripper_mode(trossen_arm.Mode.position)
-        driver.set_gripper_position(config.gripper_open_width_m/2.0, config.gripper_timeout_s)
+        driver.set_gripper_position(config.gripper_open_width/2.0, config.gripper_grip_timeout)
         logger.info("⬆️ Lifting up after dropping pen")
         goto_workspace(config.pen_holder_cart_pos_ready, driver, config, logger)
     
