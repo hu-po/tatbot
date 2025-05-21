@@ -29,6 +29,10 @@ class IKConfig:
     end_effector_model: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_follower
     joint_pos_sleep: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
     """7d joint radians: sleep pose,robot is folded up, motors can be released."""
+    set_all_position_goal_time: float = 1.0
+    """goal time in s when the goal positions should be reached"""
+    set_all_position_blocking: bool = False
+    """whether to block until the goal positions are reached"""
 
 @jdc.jit
 def _solve_ik_jax(
@@ -142,7 +146,11 @@ def main(config: IKConfig):
             )
 
             # Set robot to solution
-            driver.set_all_positions(trossen_arm.VectorDouble(solution[:-1]))
+            driver.set_all_positions(
+                trossen_arm.VectorDouble(solution[:-1]),
+                goal_time=config.set_all_position_goal_time,
+                blocking=config.set_all_position_blocking,
+            )
 
             # Update timing handle.
             elapsed_time = time.time() - start_time
