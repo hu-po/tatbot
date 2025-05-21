@@ -88,62 +88,70 @@ keys, tokens, passwords are stored in the `.env` file. copy it to the compute no
 source config/.env
 ```
 
-## Workload
+## Development Setup
 
-during operation the following work is performed by each node:
-
-- `oop`
-    - docker container `tatbot-oop`
-        - finetuned policy
-- `trossen-ai`
-    - docker container `tatbot-trossen-ai`
-        - ros master node
-        - ros moveit node
-        - ros robot description node
-        - ros pointcloud2 node
-        - ros parameter server
-        - ros tf2 node
-- `rpi1`
-    - docker container `tatbot-rpi1`
-        - ros apriltag detection
-- `rpi2`
-    - docker container `tatbot-rpi2`
-        - DNS server
-
-to be added:
-    - frontend (rviz? rerun?)
-    - some kind of video recording or live streaming server
-    - some kind of mcp server
-    - inventory management via sqlite db
-
-## Notes
-
-notes contain loose text information related to different aspects of the system:
-
-- [ojo](notes/ojo.md)
-- [rpis](notes/rpis.md)
-- [switches](notes/switches.md)
-- [cameras](notes/cameras.md)
-- [apriltags](notes/apriltags.md)
-- [ros](notes/ros.md)
-- [trossen](notes/trossen.md)
-- [realsense](notes/realsense.md)
-- [power](notes/power.md)
-
-## Specs
-
-system specs for different compute nodes can be found at [docs/specs](docs/specs).
-
-to create a new spec file (this will create a `docs/specs/rpi1.md` file when run on `rpi1`):
+configure and set the backend (e.g. `x86-3090`, `arm-rpi`)
 
 ```bash
-./scripts/specs.sh
+source scripts/backends/x86-3090.sh
 ```
 
-specs for each node:
+## Workflow
 
-- [ojo](specs/ojo.md)
-- [rpi1](specs/rpi1.md)
-- [rpi2](specs/rpi2.md)
-- [trossen-ai](specs/trossen-ai.md)
-- [oop](specs/oop.md) (only used for development, not present in production)
+the following assets are required:
+
+- at least one tattoo design in `assets/designs`
+- a 3d mesh model of the tattoo area in `assets/3d`
+	- a urdf of the robot arm in `assets/trossen_arm_description`
+
+run the stencil simulation to generate ik poses
+
+```bash
+./scripts/stencil.sh
+```
+
+visualize the final stencil placement (requires `usdview`)
+
+```bash
+usdview $TATBOT_ROOT/output/stencil.usd
+```
+
+run the ik solver with a specific morph (e.g. `gpt-e409cb`)
+
+```bash
+./scripts/ik/morph_render.sh gpt-e409cb
+```
+
+visualize the ik result (requires `usdview`)
+
+```bash
+usdview $TATBOT_ROOT/output/ik_gpt-e409cb.usd
+```
+
+put the arms back in the sleep position:
+
+```bash
+python ~/dev/tatbot-dev/scripts/trossen-ai/arms-sleep.py
+```
+
+configure the arms (config files are in `~/dev/tatbot-dev/config/trossen`):
+
+```bash
+python ~/dev/tatbot-dev/scripts/trossen-ai/arms-config.py
+python ~/dev/tatbot-dev/scripts/trossen-ai/arms-config.py --push
+```
+
+reset the realsense cameras:
+
+```bash
+sudo bash ~/dev/tatbot-dev/scripts/trossen-ai/reset-realsenses.sh
+```
+
+## Testing
+
+the following tests should work on all backends
+
+```bash
+./scripts/test/ik.sh
+./scripts/test/ai.sh # this will test model apis (do not run this every time as it consumes credits)
+```
