@@ -1,9 +1,13 @@
+"""
+https://viser.studio/main/
+"""
+
 import math
 import os
 import random
 import time
 from dataclasses import dataclass
-from typing import List, Tuple, NamedTuple
+from typing import List, Tuple, NamedTuple, Dict, Any
 
 import numpy as np
 from PIL import Image
@@ -54,6 +58,102 @@ class ProcessedImageData(NamedTuple):
     skin_frame_T2: np.ndarray
     skin_frame_N: np.ndarray
 
+@dataclass
+class State:
+    visuals: Dict[str, Any]
+    processed_data: ProcessedImageData
+    skin_control: Any = None
+
+def process_skin_and_targets(config: VizConfig, target_rows, target_cols, skin_center_position, T1, T2, N):
+    if target_rows.size == 0:
+        return ProcessedImageData([], np.array(skin_center_position), np.array([1,0,0]), np.array([0,1,0]), np.array([0,0,1]))
+    h_px, w_px = target_rows.max() + 1, target_cols.max() + 1
+    norm_u = (target_cols / w_px) - 0.5
+    norm_v = 0.5 - (target_rows / h_px)
+    target_coords_normalized = list(zip(norm_u.tolist(), norm_v.tolist()))
+    if config.max_draw_pixels > 0 and len(target_coords_normalized) > config.max_draw_pixels:
+        target_coords_normalized = random.sample(target_coords_normalized, config.max_draw_pixels)
+    pixel_targets_list: List[PixelTarget] = []
+    skin_origin_pos = np.array(skin_center_position)
+    for u, v in target_coords_normalized:
+        pos_offset = u * config.skin_width_m * T1 + v * config.skin_height_m * T2
+        pixel_world_pos = skin_origin_pos + pos_offset
+        rotation_matrix = np.stack([T1, T2, N], axis=1)
+        so3_orientation = vtf.SO3.from_matrix(rotation_matrix)
+        pixel_targets_list.append(PixelTarget(position=pixel_world_pos, orientation=so3_orientation))
+    return ProcessedImageData(
+        targets=pixel_targets_list,
+        skin_frame_origin=skin_origin_pos,
+        skin_frame_T1=T1,
+        skin_frame_T2=T2,
+        skin_frame_N=N
+    )
+
+def update_scene(server, config, state):
+    for handle in state.visuals.values():
+        try:
+            handle.remove()
+        except Exception:
+            pass
+    state.visuals.clear()
+    processed_data = state.processed_data
+    targets = processed_data.targets
+    skin_origin = processed_data.skin_frame_origin
+    T1, T2, N = processed_data.skin_frame_T1, processed_data.skin_frame_T2, processed_data.skin_frame_N
+    skin_rot_matrix = np.stack([T1, T2, N], axis=1)
+    skin_so3 = vtf.SO3.from_matrix(skin_rot_matrix)
+    with server.atomic():
+        if config.show_skin_plane:
+            state.visuals['skin_box'] = server.scene.add_box(
+                name="/skin_patch",
+                wxyz=skin_so3.wxyz,
+                position=skin_origin,
+                dimensions=(config.skin_width_m, config.skin_height_m, config.skin_plane_thickness),
+                color=config.skin_plane_color
+            )
+            state.visuals['skin_frame'] = server.scene.add_frame(
+                name="/skin_coordinate_frame",
+                position=skin_origin,
+                wxyz=skin_so3.wxyz,
+                axes_length=min(config.skin_width_m, config.skin_height_m) * 0.6,
+                axes_radius=config.skin_plane_thickness * 2.5
+            )
+        if targets:
+            num_targets = len(targets)
+            positions_np = np.array([target.position for target in targets])
+            orientations_np = np.array([target.orientation.wxyz for target in targets])
+            colors_np = np.full((num_targets, 3), config.splat_color, dtype=np.uint8)
+            scales_np = np.full((num_targets, 3), (config.splat_thickness, config.splat_thickness, config.splat_length), dtype=np.float32)
+            covariances_np = np.array([
+                target.orientation.as_matrix() @ np.diag([config.splat_thickness, config.splat_thickness, config.splat_length]) @ target.orientation.as_matrix().T
+                for target in targets
+            ], dtype=np.float32)
+            opacities_np = np.full((num_targets, 1), 1.0, dtype=np.float32)
+            state.visuals['splats'] = server.scene.add_gaussian_splats(
+                name="/pixel_targets/oriented_gaussians",
+                centers=positions_np,
+                covariances=covariances_np,
+                rgbs=colors_np,
+                opacities=opacities_np
+            )
+    return skin_origin, skin_so3
+
+def update_from_gizmo(server, config, state):
+    config.skin_center_position = tuple(state.skin_control.position)
+    rot_matrix = vtf.SO3(state.skin_control.wxyz).as_matrix()
+    T1 = rot_matrix[:, 0]
+    T2 = rot_matrix[:, 1]
+    N = rot_matrix[:, 2]
+    config.skin_normal = tuple(N.tolist())
+    state.processed_data = process_skin_and_targets(
+        config,
+        state.target_rows,
+        state.target_cols,
+        config.skin_center_position,
+        T1, T2, N
+    )
+    update_scene(server, config, state)
+
 def main(config: VizConfig):
     try:
         img = Image.open(config.image_path)
@@ -67,89 +167,35 @@ def main(config: VizConfig):
     else:
         target_mask = arr <= config.image_threshold
     target_rows, target_cols = np.where(target_mask)
-    if target_rows.size == 0:
-        processed_data = ProcessedImageData([], np.array(config.skin_center_position), np.array([1,0,0]), np.array([0,1,0]), np.array(config.skin_normal))
+    # Initial axes from config
+    N0 = np.array(config.skin_normal, dtype=float)
+    if np.linalg.norm(N0) < 1e-9:
+        N0 = np.array([0.0, 0.0, 1.0])
     else:
-        norm_u = (target_cols / w_px) - 0.5
-        norm_v = 0.5 - (target_rows / h_px)
-        target_coords_normalized = list(zip(norm_u.tolist(), norm_v.tolist()))
-        if config.max_draw_pixels > 0 and len(target_coords_normalized) > config.max_draw_pixels:
-            target_coords_normalized = random.sample(target_coords_normalized, config.max_draw_pixels)
-        skin_N_vec = np.array(config.skin_normal, dtype=float)
-        if np.linalg.norm(skin_N_vec) < 1e-9:
-            skin_N_vec = np.array([0.0, 0.0, 1.0])
-        else:
-            skin_N_vec /= np.linalg.norm(skin_N_vec)
-        world_Z = np.array([0.0, 0.0, 1.0])
-        if np.abs(np.dot(skin_N_vec, world_Z)) > 0.999:
-            skin_T1_vec = np.cross(np.array([0.0, 1.0, 0.0]), skin_N_vec)
-            if np.linalg.norm(skin_T1_vec) < 1e-5:
-                skin_T1_vec = np.cross(np.array([1.0, 0.0, 0.0]), skin_N_vec)
-        else:
-            skin_T1_vec = np.cross(world_Z, skin_N_vec)
-        skin_T1_vec /= np.linalg.norm(skin_T1_vec)
-        skin_T2_vec = np.cross(skin_N_vec, skin_T1_vec)
-        skin_T2_vec /= np.linalg.norm(skin_T2_vec)
-        pixel_targets_list: List[PixelTarget] = []
-        skin_origin_pos = np.array(config.skin_center_position)
-        for u, v in target_coords_normalized:
-            pos_offset = u * config.skin_width_m * skin_T1_vec + v * config.skin_height_m * skin_T2_vec
-            pixel_world_pos = skin_origin_pos + pos_offset
-            z_axis_tool = skin_N_vec
-            x_axis_tool = skin_T1_vec
-            y_axis_tool = np.cross(z_axis_tool, x_axis_tool)
-            y_axis_tool /= np.linalg.norm(y_axis_tool)
-            rotation_matrix = np.stack([x_axis_tool, y_axis_tool, z_axis_tool], axis=1)
-            so3_orientation = vtf.SO3.from_matrix(rotation_matrix)
-            pixel_targets_list.append(PixelTarget(position=pixel_world_pos, orientation=so3_orientation))
-        processed_data = ProcessedImageData(
-            targets=pixel_targets_list,
-            skin_frame_origin=skin_origin_pos,
-            skin_frame_T1=skin_T1_vec,
-            skin_frame_T2=skin_T2_vec,
-            skin_frame_N=skin_N_vec
-        )
+        N0 /= np.linalg.norm(N0)
+    world_Z = np.array([0.0, 0.0, 1.0])
+    if np.abs(np.dot(N0, world_Z)) > 0.999:
+        T1_0 = np.cross(np.array([0.0, 1.0, 0.0]), N0)
+        if np.linalg.norm(T1_0) < 1e-5:
+            T1_0 = np.cross(np.array([1.0, 0.0, 0.0]), N0)
+    else:
+        T1_0 = np.cross(world_Z, N0)
+    T1_0 /= np.linalg.norm(T1_0)
+    T2_0 = np.cross(N0, T1_0)
+    T2_0 /= np.linalg.norm(T2_0)
+    processed_data = process_skin_and_targets(config, target_rows, target_cols, config.skin_center_position, T1_0, T2_0, N0)
     server = viser.ViserServer()
-    targets = processed_data.targets
-    skin_origin = processed_data.skin_frame_origin
-    T1, T2, N = processed_data.skin_frame_T1, processed_data.skin_frame_T2, processed_data.skin_frame_N
-    with server.atomic():
-        if config.show_skin_plane:
-            skin_rot_matrix = np.stack([T1, T2, N], axis=1)
-            skin_so3 = vtf.SO3.from_matrix(skin_rot_matrix)
-            server.scene.add_box(
-                name="/skin_patch",
-                wxyz=skin_so3.wxyz,
-                position=skin_origin,
-                dimensions=(config.skin_width_m, config.skin_height_m, config.skin_plane_thickness),
-                color=config.skin_plane_color
-            )
-            server.scene.add_frame(
-                name="/skin_coordinate_frame",
-                position=skin_origin,
-                wxyz=skin_so3.wxyz,
-                axes_length=min(config.skin_width_m, config.skin_height_m) * 0.6,
-                axes_radius=config.skin_plane_thickness * 2.5
-            )
-    if targets:
-        num_targets = len(targets)
-        positions_np = np.array([target.position for target in targets])
-        orientations_np = np.array([target.orientation.wxyz for target in targets])
-        colors_np = np.full((num_targets, 3), config.splat_color, dtype=np.uint8)
-        scales_np = np.full((num_targets, 3), (config.splat_thickness, config.splat_thickness, config.splat_length), dtype=np.float32)
-        covariances_np = np.array([
-            target.orientation.as_matrix() @ np.diag([config.splat_thickness, config.splat_thickness, config.splat_length]) @ target.orientation.as_matrix().T
-            for target in targets
-        ], dtype=np.float32)
-        opacities_np = np.full((num_targets, 1), 1.0, dtype=np.float32)
-        with server.atomic():
-            server.scene.add_gaussian_splats(
-                name="/pixel_targets/oriented_gaussians",
-                centers=positions_np,
-                covariances=covariances_np,
-                rgbs=colors_np,
-                opacities=opacities_np
-            )
+    state = State(visuals={}, processed_data=processed_data)
+    state.target_rows = target_rows
+    state.target_cols = target_cols
+    skin_origin, skin_so3 = update_scene(server, config, state)
+    state.skin_control = server.scene.add_transform_controls(
+        name="/skin_patch_control",
+        position=skin_origin,
+        wxyz=skin_so3.wxyz,
+        scale=0.15,
+    )
+    state.skin_control.on_update(lambda _: update_from_gizmo(server, config, state))
     while True:
         time.sleep(1)
 
