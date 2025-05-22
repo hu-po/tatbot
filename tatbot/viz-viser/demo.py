@@ -17,7 +17,7 @@ import viser.transforms as vtf
 @dataclass
 class VizConfig:
     """Configuration for generating and visualizing pixel targets."""
-    image_path: str = "flower.png"
+    image_path: str = "engmfyh5p9rma0cpz319px91gg.png"
     """Path to the input PNG image."""
     skin_center_position: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     """Center of the image on the skin patch in world coordinates (meters)."""
@@ -39,12 +39,16 @@ class VizConfig:
     """Thickness of the visualized skin plane box (meters)."""
     skin_plane_color: Tuple[int, int, int] = (220, 180, 150)
     """RGB color for the skin plane, e.g., a skin-like tone."""
-    splat_length: float = 0.000001
+    splat_length: float = 0.0000001
     """Length of the splat along its main oriented axis (meters)"""
-    splat_thickness: float = 0.000001
+    splat_thickness: float = 0.0000001
     """Thickness of the splat for its other two axes (meters)"""
     splat_color: Tuple[int, int, int] = (0, 0, 0)
     """Color for the splats"""
+    image_width: int = 256
+    """Width to resize the input image to before processing (pixels)."""
+    image_height: int = 256
+    """Height to resize the input image to before processing (pixels)."""
 
 @dataclass
 class PixelTarget:
@@ -159,6 +163,7 @@ def main(config: VizConfig):
         img = Image.open(config.image_path)
     except Exception:
         return
+    img = img.resize((config.image_width, config.image_height), Image.LANCZOS)
     img = img.convert("L")
     arr = np.array(img)
     h_px, w_px = arr.shape
