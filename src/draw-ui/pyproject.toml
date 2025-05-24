@@ -9,5 +9,7 @@ dependencies = [
     "trossen-arm==1.8.1",
     "pyroki @ git+https://github.com/chungmin99/pyroki.git@main#egg=pyroki",
     "jax==0.4.27",
+    "jaxtyping>=0.2.25,<1.0.0",
+    "jaxlie>=1.3.4,<2.0.0",
     "jaxlib @ https://storage.googleapis.com/jax-releases/cuda12/jaxlib-0.4.27+cuda12.cudnn89-cp312-cp312-manylinux2014_x86_64.whl"
 ]

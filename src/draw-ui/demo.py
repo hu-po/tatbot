@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 import logging
 import os
 import random
@@ -15,9 +14,11 @@ import jax_dataclasses as jdc
 import jaxlie
 import jaxls
 import pyroki as pk
-import trossen_arm
 from viser.extras import ViserUrdf
 import yourdfpy
+import jaxtyping
+from jaxtyping import Array, Float
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,19 +28,25 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
-@dataclass
+@jdc.pytree_dataclass
 class RobotConfig:
     arm_model: trossen_arm.Model = trossen_arm.Model.wxai_v0
     ip_address: str = "192.168.1.3"
     end_effector_model: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_follower
     joint_pos_sleep: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
     """7d joint radians: sleep pose,robot is folded up, motors can be released."""
+    joint_pos_home: tuple[float, ...] = (0.0, 1.05, 0.5, -1.06, 0.0, 0.0, 0.0)
+    """7d joint radians: home pose, robot is active, staring down at workspace"""
     set_all_position_goal_time: float = 1.0
     """goal time in s when the goal positions should be reached"""
     set_all_position_blocking: bool = False
     """whether to block until the goal positions are reached"""
+    urdf_path: str = "/home/oop/trossen_arm_description/urdf/generated/wxai/wxai_follower.urdf"
+    """Path to the URDF file for the robot."""
+    target_link_name: str = "ee_gripper_link"
+    """String name of the link to be controlled."""
 
-@dataclass
+@jdc.pytree_dataclass
 class VizConfig:
     image_path: str = "engmfyh5p9rma0cpz319px91gg.png"
     """Path to the input PNG image."""
@@ -74,19 +81,19 @@ class VizConfig:
     image_height: int = 256
     """Height to resize the input image to before processing (pixels)."""
 
-@dataclass
+@jdc.pytree_dataclass
 class PixelTarget:
-    position: np.ndarray
-    orientation: vtf.SO3
+    position: Float[Array, "3"]
+    orientation: jaxlie.SO3
 
 class ProcessedImageData(NamedTuple):
     targets: List[PixelTarget]
-    skin_frame_origin: np.ndarray
-    skin_frame_T1: np.ndarray
-    skin_frame_T2: np.ndarray
-    skin_frame_N: np.ndarray
+    skin_frame_origin: Float[Array, "3"]
+    skin_frame_T1: Float[Array, "3"]
+    skin_frame_T2: Float[Array, "3"]
+    skin_frame_N: Float[Array, "3"]
 
-@dataclass
+@jdc.pytree_dataclass
 class State:
     visuals: Dict[str, Any]
     processed_data: ProcessedImageData
@@ -235,7 +242,7 @@ def robot(config: RobotConfig):
 
 def process_skin_and_targets(config: VizConfig, target_rows, target_cols, skin_center_position, T1, T2, N):
     if target_rows.size == 0:
-        return ProcessedImageData([], np.array(skin_center_position), np.array([1,0,0]), np.array([0,1,0]), np.array([0,0,1]))
+        return ProcessedImageData([], jnp.array(skin_center_position), jnp.array([1,0,0]), jnp.array([0,1,0]), jnp.array([0,0,1]))
     h_px, w_px = target_rows.max() + 1, target_cols.max() + 1
     norm_u = (target_cols / w_px) - 0.5
     norm_v = 0.5 - (target_rows / h_px)
@@ -243,12 +250,12 @@ def process_skin_and_targets(config: VizConfig, target_rows, target_cols, skin_c
     if config.max_draw_pixels > 0 and len(target_coords_normalized) > config.max_draw_pixels:
         target_coords_normalized = random.sample(target_coords_normalized, config.max_draw_pixels)
     pixel_targets_list: List[PixelTarget] = []
-    skin_origin_pos = np.array(skin_center_position)
+    skin_origin_pos = jnp.array(skin_center_position)
     for u, v in target_coords_normalized:
         pos_offset = u * config.skin_width_m * T1 + v * config.skin_height_m * T2
         pixel_world_pos = skin_origin_pos + pos_offset
-        rotation_matrix = np.stack([T1, T2, N], axis=1)
-        so3_orientation = vtf.SO3.from_matrix(rotation_matrix)
+        rotation_matrix = jnp.stack([T1, T2, N], axis=1)
+        so3_orientation = jaxlie.SO3.from_matrix(rotation_matrix)
         pixel_targets_list.append(PixelTarget(position=pixel_world_pos, orientation=so3_orientation))
     return ProcessedImageData(
         targets=pixel_targets_list,
@@ -269,8 +276,8 @@ def update_scene(server, config, state):
     targets = processed_data.targets
     skin_origin = processed_data.skin_frame_origin
     T1, T2, N = processed_data.skin_frame_T1, processed_data.skin_frame_T2, processed_data.skin_frame_N
-    skin_rot_matrix = np.stack([T1, T2, N], axis=1)
-    skin_so3 = vtf.SO3.from_matrix(skin_rot_matrix)
+    skin_rot_matrix = jnp.stack([T1, T2, N], axis=1)
+    skin_so3 = jaxlie.SO3.from_matrix(skin_rot_matrix)
     with server.atomic():
         if config.show_skin_plane:
             state.visuals['skin_box'] = server.scene.add_box(
@@ -289,15 +296,15 @@ def update_scene(server, config, state):
             )
         if targets:
             num_targets = len(targets)
-            positions_np = np.array([target.position for target in targets])
-            orientations_np = np.array([target.orientation.wxyz for target in targets])
-            colors_np = np.full((num_targets, 3), config.splat_color, dtype=np.uint8)
-            scales_np = np.full((num_targets, 3), (config.splat_thickness, config.splat_thickness, config.splat_length), dtype=np.float32)
-            covariances_np = np.array([
-                target.orientation.as_matrix() @ np.diag([config.splat_thickness, config.splat_thickness, config.splat_length]) @ target.orientation.as_matrix().T
+            positions_np = jnp.array([target.position for target in targets])
+            orientations_np = jnp.array([target.orientation.wxyz for target in targets])
+            colors_np = jnp.full((num_targets, 3), config.splat_color, dtype=jnp.uint8)
+            scales_np = jnp.full((num_targets, 3), (config.splat_thickness, config.splat_thickness, config.splat_length), dtype=jnp.float32)
+            covariances_np = jnp.array([
+                target.orientation.as_matrix() @ jnp.diag([config.splat_thickness, config.splat_thickness, config.splat_length]) @ target.orientation.as_matrix().T
                 for target in targets
-            ], dtype=np.float32)
-            opacities_np = np.full((num_targets, 1), 1.0, dtype=np.float32)
+            ], dtype=jnp.float32)
+            opacities_np = jnp.full((num_targets, 1), 1.0, dtype=jnp.float32)
             state.visuals['splats'] = server.scene.add_gaussian_splats(
                 name="/pixel_targets/oriented_gaussians",
                 centers=positions_np,
@@ -309,7 +316,7 @@ def update_scene(server, config, state):
 
 def update_from_gizmo(server, config, state):
     config.skin_center_position = tuple(state.skin_control.position)
-    rot_matrix = vtf.SO3(state.skin_control.wxyz).as_matrix()
+    rot_matrix = jaxlie.SO3.from_matrix(state.skin_control.wxyz).as_matrix()
     T1 = rot_matrix[:, 0]
     T2 = rot_matrix[:, 1]
     N = rot_matrix[:, 2]
@@ -330,29 +337,29 @@ def main(config: VizConfig):
         return
     img = img.resize((config.image_width, config.image_height), Image.LANCZOS)
     img = img.convert("L")
-    arr = np.array(img)
+    arr = jnp.array(np.array(img))  # Convert to jax array immediately
     h_px, w_px = arr.shape
     if config.invert_image:
         target_mask = arr > config.image_threshold
     else:
         target_mask = arr <= config.image_threshold
-    target_rows, target_cols = np.where(target_mask)
+    target_rows, target_cols = jnp.where(target_mask)
     # Initial axes from config
-    N0 = np.array(config.skin_normal, dtype=float)
-    if np.linalg.norm(N0) < 1e-9:
-        N0 = np.array([0.0, 0.0, 1.0])
+    N0 = jnp.array(config.skin_normal, dtype=float)
+    if jnp.linalg.norm(N0) < 1e-9:
+        N0 = jnp.array([0.0, 0.0, 1.0])
     else:
-        N0 /= np.linalg.norm(N0)
-    world_Z = np.array([0.0, 0.0, 1.0])
-    if np.abs(np.dot(N0, world_Z)) > 0.999:
-        T1_0 = np.cross(np.array([0.0, 1.0, 0.0]), N0)
-        if np.linalg.norm(T1_0) < 1e-5:
-            T1_0 = np.cross(np.array([1.0, 0.0, 0.0]), N0)
+        N0 = N0 / jnp.linalg.norm(N0)
+    world_Z = jnp.array([0.0, 0.0, 1.0])
+    if jnp.abs(jnp.dot(N0, world_Z)) > 0.999:
+        T1_0 = jnp.cross(jnp.array([0.0, 1.0, 0.0]), N0)
+        if jnp.linalg.norm(T1_0) < 1e-5:
+            T1_0 = jnp.cross(jnp.array([1.0, 0.0, 0.0]), N0)
     else:
-        T1_0 = np.cross(world_Z, N0)
-    T1_0 /= np.linalg.norm(T1_0)
-    T2_0 = np.cross(N0, T1_0)
-    T2_0 /= np.linalg.norm(T2_0)
+        T1_0 = jnp.cross(world_Z, N0)
+    T1_0 = T1_0 / jnp.linalg.norm(T1_0)
+    T2_0 = jnp.cross(N0, T1_0)
+    T2_0 = T2_0 / jnp.linalg.norm(T2_0)
     processed_data = process_skin_and_targets(config, target_rows, target_cols, config.skin_center_position, T1_0, T2_0, N0)
     server = viser.ViserServer()
     state = State(visuals={}, processed_data=processed_data)
