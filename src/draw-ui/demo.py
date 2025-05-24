@@ -146,6 +146,7 @@ class Skin:
 @jdc.pytree_dataclass
 class Workspace:
     origin: Pose
+    """Pose of the workspace origin."""
 
 @jdc.pytree_dataclass
 class Design:
@@ -160,7 +161,7 @@ class Scene:
 
 
 @jdc.jit
-def _solve_ik_jax(
+def ik(
     robot: pk.Robot,
     config: RobotConfig,
     target_link_index: jax.Array,
@@ -196,46 +197,17 @@ def _solve_ik_jax(
     )
     return sol[joint_var]
 
-
-def solve_ik(
-    robot: pk.Robot,
-    config: RobotConfig,
-    target_link_name: str,
-    target_wxyz: np.ndarray,
-    target_position: np.ndarray,
-) -> np.ndarray:
-    """
-    Solves the basic IK problem for a robot.
-
-    Args:
-        robot: PyRoKi Robot.
-        config: RobotConfig.
-        target_link_name: String name of the link to be controlled.
-        target_wxyz: np.ndarray. Target orientation.
-        target_position: np.ndarray. Target position.
-
-    Returns:
-        cfg: np.ndarray. Shape: (robot.joint.actuated_count,).
-    """
-    assert target_position.shape == (3,) and target_wxyz.shape == (4,)
-    target_link_index = robot.links.names.index(target_link_name)
-    cfg = _solve_ik_jax(
-        robot,
-        config,
-        jnp.array(target_link_index),
-        jnp.array(target_wxyz),
-        jnp.array(target_position),
-    )
-    assert cfg.shape == (robot.joints.num_actuated_joints,)
-    return np.array(cfg)
-
-def robot(config: RobotConfig):
-    urdf : yourdfpy.URDF = yourdfpy.URDF.load(config.urdf_path)
-    robot: pk.Robot = pk.Robot.from_urdf(urdf)
-
-    # Set up visualizer.
-    server = viser.ViserServer()
+def main(
+    robot_config: RobotConfig,
+    design_config: DesignConfig,
+    session_config: SessionConfig,
+    viz_config: VizConfig,
+):
+    server: viser.ViserServer = viser.ViserServer()
     server.scene.add_grid("/ground", width=2, height=2)
+    
+    urdf : yourdfpy.URDF = yourdfpy.URDF.load(robot_config.urdf_path)
+    robot: pk.Robot = pk.Robot.from_urdf(urdf)
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/base")
 
     # Create interactive controller with initial position.
@@ -244,34 +216,69 @@ def robot(config: RobotConfig):
     )
     timing_handle = server.gui.add_number("Elapsed (ms)", 0.001, disabled=True)
 
-    # Initialize Robot
+    log.info("🖼️ Loading design...")
+    img = Image.open(design_config.image_path)
+    img = img.resize(
+        (design_config.image_width_px, design_config.image_height_px), Image.LANCZOS)
+    img = img.convert("L")
+    arr = jnp.array(np.array(img))
+    h_px, w_px = arr.shape
+    target_mask = arr <= design_config.image_threshold
+    target_rows, target_cols = jnp.where(target_mask)
+    h_px, w_px = target_rows.max() + 1, target_cols.max() + 1
+    norm_u = (target_cols / w_px) - 0.5
+    norm_v = 0.5 - (target_rows / h_px)
+    target_coords_normalized = list(zip(norm_u.tolist(), norm_v.tolist()))
+    # TODO: superpixel design instead of random sampling
+    if design_config.max_draw_pixels > 0 and len(target_coords_normalized) > design_config.max_draw_pixels:
+        target_coords_normalized = random.sample(target_coords_normalized, design_config.max_draw_pixels)
+    design = Design(
+        targets=[
+            Pose(
+                pos=jnp.array([u * design_config.image_width_m, v * design_config.image_height_m, 0.0]),
+                ori=jaxlie.SO3.from_matrix(jnp.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]))
+            )
+            for u, v in target_coords_normalized
+        ]
+    )
+    scene = Scene(
+        skin=Skin(
+            pose=Pose(
+                pos=jnp.array([0.0, 0.0, 0.0]),
+                ori=jaxlie.SO3.from_matrix(jnp.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]))
+            )
+        )
+    )
+
+    log.info("🦾 Initializing robot driver...")
     driver = trossen_arm.TrossenArmDriver()
-    log.info("🚀 Initializing driver...")
     driver.configure(
-        config.arm_model,
-        config.end_effector_model,
-        config.ip_address,
+        robot_config.arm_model,
+        robot_config.end_effector_model,
+        robot_config.ip_address,
         True # whether to clear the error state of the robot
     )
     driver.set_all_modes(trossen_arm.Mode.position)
-    driver.set_all_positions(trossen_arm.VectorDouble(list(config.joint_pos_sleep)))
+    driver.set_all_positions(trossen_arm.VectorDouble(list(robot_config.joint_pos_sleep)))
+
     try:
         while True:
             # Solve IK.
             start_time = time.time()
-            solution : np.ndarray = solve_ik(
+            
+            log.info("🔍 Solving IK...")
+            solution : np.ndarray = ik(
                 robot=robot,
-                config=config,
-                target_link_name=config.target_link_name,
-                target_position=np.array(ik_target.position),
-                target_wxyz=np.array(ik_target.wxyz),
+                config=robot_config,
+                target_link_index=jnp.array(robot.links.names.index(robot_config.target_link_name)),
+                target_wxyz=jnp.array(ik_target.wxyz),
+                target_position=jnp.array(ik_target.position),
             )
-
-            # Set robot to solution
+            log.info("🤖 Moving robot...")
             driver.set_all_positions(
                 trossen_arm.VectorDouble(solution[:-1]),
-                goal_time=config.set_all_position_goal_time,
-                blocking=config.set_all_position_blocking,
+                goal_time=robot_config.set_all_position_goal_time,
+                blocking=robot_config.set_all_position_blocking,
             )
 
             # Update timing handle.
@@ -284,11 +291,12 @@ def robot(config: RobotConfig):
         log.error(f"❌ Error: {e}")
     
     finally:
+        log.info("🦾 Shutting down robot...")
         driver.cleanup()
-        driver.configure(
-            config.arm_model,
-            config.end_effector_model,
-            config.ip_address,
+        driver.configure( # TODO: is this needed?
+            robot_config.arm_model,
+            robot_config.end_effector_model,
+            robot_config.ip_address,
             True # whether to clear the error state of the robot
         )
         log.info("😴 Returning to sleep pose.")
@@ -388,16 +396,7 @@ def update_from_gizmo(server, config, state):
     update_scene(server, config, state)
 
 def main(config: VizConfig):
-    try:
-        img = Image.open(config.image_path)
-    except Exception:
-        return
-    img = img.resize((config.image_width_px, config.image_height_px), Image.LANCZOS)
-    img = img.convert("L")
-    arr = jnp.array(np.array(img))  # Convert to jax array immediately
-    h_px, w_px = arr.shape
-    target_mask = arr <= config.image_threshold
-    target_rows, target_cols = jnp.where(target_mask)
+
     # Initial axes from config
     N0 = jnp.array(config.normal, dtype=float)
     if jnp.linalg.norm(N0) < 1e-9:
@@ -431,4 +430,9 @@ def main(config: VizConfig):
         time.sleep(1)
 
 if __name__ == "__main__":
-    main(VizConfig())
+    main(
+        robot_config=RobotConfig(),
+        design_config=DesignConfig(),
+        session_config=SessionConfig(),
+        viz_config=VizConfig()
+    )
