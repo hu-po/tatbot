@@ -20,6 +20,7 @@ import viser
 import viser.transforms as vtf
 from viser.extras import ViserUrdf
 import yourdfpy
+import tyro
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,31 +28,40 @@ logging.basicConfig(
     datefmt='%H:%M:%S', 
 )
 log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+@dataclass
+class CLIArgs:
+    debug: bool = False
+    """Enables debug logging."""
 
 @dataclass
 class RobotConfig:
     arm_model: trossen_arm.Model = trossen_arm.Model.wxai_v0
+    """Arm model for the robot."""
     ip_address: str = "192.168.1.3"
+    """IP address of the robot."""
     end_effector_model: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_follower
+    """End effector model for the robot."""
     joint_pos_sleep: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    """7d joint radians: sleep pose,robot is folded up, motors can be released."""
+    """7D joint radians for the sleep pose (robot is folded up, motors can be released)."""
     joint_pos_home: tuple[float, ...] = (0.0, 1.05, 0.5, -1.06, 0.0, 0.0, 0.0)
-    """7d joint radians: home pose, robot is active, staring down at workspace"""
+    """7D joint radians for the home pose (robot is active, staring down at workspace)."""
     set_all_position_goal_time: float = 1.0
-    """goal time in s when the goal positions should be reached"""
+    """Goal time in seconds when the goal positions should be reached."""
     set_all_position_blocking: bool = False
-    """whether to block until the goal positions are reached"""
+    """Whether to block until the goal positions are reached."""
+    clear_error_state: bool = True
+    """Whether to clear the error state of the robot."""
     urdf_path: str = "/home/oop/trossen_arm_description/urdf/generated/wxai/wxai_follower.urdf"
     """Local path to the URDF file for the robot."""
     target_link_name: str = "ee_gripper_link"
-    """String name of the link to be controlled."""
+    """Name of the link to be controlled."""
     gripper_open_width: float = 0.04
-    """meters: width of the gripper when open."""
+    """Width of the gripper when open (meters)."""
     gripper_grip_timeout: float = 1.0
-    """seconds: timeout for effort based gripping."""
+    """Timeout for effort-based gripping (seconds)."""
     gripper_grip_effort: float = -20.0
-    """newtons: maximum force for effort based gripping."""
+    """Maximum force for effort-based gripping (newtons)."""
     ik_pos_weight: float = 50.0
     """Weight for the position part of the IK cost function."""
     ik_ori_weight: float = 10.0
@@ -59,13 +69,33 @@ class RobotConfig:
     ik_limit_weight: float = 100.0
     """Weight for the joint limit part of the IK cost function."""
     ik_linear_solver: str = "dense_cholesky"
+    """Linear solver to use for IK."""
+    ik_lambda_initial: float = 1.0
+    """Initial lambda value for the IK trust region solver."""
+
+
+@dataclass
+class SessionConfig:
+    enable_robot: bool = False
+    """Whether to enable the real robot."""
+    use_ik_target: bool = True
+    """Whether to use an IK target for the robot."""
+    num_pixels_per_ink_dip: int = 60
+    """Number of pixels to draw before dipping the pen in the ink cup again."""
+
+@jdc.pytree_dataclass
+class Pose:
+    pos: Float[Array, "3"]
+    wxyz: Float[Array, "4"]
 
 @dataclass
 class DesignConfig:
+    pose: Pose = Pose(pos=jnp.array([0.0, 0.0, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 1.0]))
+    """Pose of the design."""
     image_path: str = "/home/oop/tatbot/assets/designs/circle.png"
     """Local path to the tattoo design PNG image."""
     image_threshold: int = 127
-    """[0, 255] threshold for B/W image. Pixels <= threshold are targets."""
+    """Threshold for B/W image. Pixels less than or equal to this value are targets. [0, 255]"""
     max_draw_pixels: int = 0
     """Maximum number of target pixels to process. If 0 or less, process all."""
     image_width_px: int = 256
@@ -76,61 +106,55 @@ class DesignConfig:
     """Width of the area on the skin where the image will be projected (meters)."""
     image_height_m: float = 0.04
     """Height of the area on the skin where the image will be projected (meters)."""
-
-@dataclass
-class SessionConfig:
-    num_pixels_per_ink_dip: int = 60
-    """Number of pixels to draw before dipping the pen in ink cup again."""
-
-@dataclass
-class VizConfig:
-    center_position: Tuple[float, float, float] = (0.0, 0.0, 0.0)
-    """Center of the image on the skin patch in world coordinates (meters)."""
     splat_length: float = 0.0000001
-    """Length of the splat along its main oriented axis (meters)"""
+    """Length of the splat along its main oriented axis (meters)."""
     splat_thickness: float = 0.0000001
-    """Thickness of the splat for its other two axes (meters)"""
+    """Thickness of the splat for its other two axes (meters)."""
     splat_color: Tuple[int, int, int] = (0, 0, 0)
-    """Color for the splats"""
+    """Color for the splats (RGB tuple)."""
 
-@jdc.pytree_dataclass
-class Pose:
-    pos: Float[Array, "3"]
-    ori: jaxlie.SO3
-
-@jdc.pytree_dataclass
-class TattooPen:
-    pose: Pose
+@dataclass
+class TattooPenConfig:
+    pose: Pose = Pose(pos=jnp.array([0.0, 0.0, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 1.0]))
     """Pose of the tattoo pen."""
-    holder_pose: Pose
-    """Pose of the tattoo pen holder."""
     diameter_m: float = 0.008
-    """meters: diameter of the tattoo pen."""
+    """Diameter of the tattoo pen (meters)."""
     height_m: float = 0.01
-    """meters: height of the tattoo pen."""
+    """Height of the tattoo pen (meters)."""
     gripper_grip_width: float = 0.032
-    """meters: width of the gripper before using effort based gripping."""
+    """Width of the gripper before using effort-based gripping (meters)."""
     pen_height_delta: float = 0.136
-    """meters: distance from pen tip to end effector tip."""
+    """Distance from pen tip to end effector tip (meters)."""
     pen_stroke_length: float = 0.008
-    """meters: length of pen stroke when drawing a pixel."""
-
-@jdc.pytree_dataclass
-class InkCap:
-    pose: Pose
-    """Pose of the inkcap."""
-    diameter_m: float = 0.008
-    """meters: diameter of the inkcap."""
-    height_m: float = 0.01
-    """meters: height of the inkcap."""
-    depth_m: float = 0.005
-    """meters: depth of the inkcap."""
+    """Length of pen stroke when drawing a pixel (meters)."""
     color: Tuple[int, int, int] = (0, 0, 0)
+    """RGB color of the pen."""
+    # TODO: holder as seperate object?
+    holder_pose: Pose = Pose(pos=jnp.array([0.0, 0.0, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 1.0]))
+    """Pose of the tattoo pen holder."""
+    holder_width_m: float = 0.032
+    """Width of the pen holder (meters)."""
+    holder_height_m: float = 0.01
+    """Height of the pen holder (meters)."""
+    holder_color: Tuple[int, int, int] = (0, 0, 0)
+    """RGB color of the pen holder."""
+
+@dataclass
+class InkCapConfig:
+    pose: Pose = Pose(pos=jnp.array([0.0, 0.0, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 1.0]))
+    """Pose of the inkcap."""
+    diameter_m: float = 0.018
+    """Diameter of the inkcap (meters)."""
+    height_m: float = 0.01
+    """Height of the inkcap (meters)."""
+    dip_depth_m: float = 0.005
+    """Depth of the inkcap when dipping (meters)."""
+    color: Tuple[int, int, int] = (0, 0, 0) # black
     """RGB color of the ink in the inkcap."""
 
-@jdc.pytree_dataclass
-class Skin:
-    pose: Pose
+@dataclass
+class SkinConfig:
+    pose: Pose = Pose(pos=jnp.array([0.0, 0.0, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 1.0]))
     """Pose of the skin."""
     normal: Tuple[float, float, float] = (0.0, 0.0, 1.0)
     """Normal vector of the skin surface (pointing outwards from the surface)."""
@@ -140,33 +164,33 @@ class Skin:
     """Height of the area on the skin where the image will be projected (meters)."""
     thickness: float = 0.001
     """Thickness of the visualized skin plane box (meters)."""
-    color: Tuple[int, int, int] = (220, 180, 150)
-    """RGB color for the skin plane, e.g., a skin-like tone."""
+    color: Tuple[int, int, int] = (220, 180, 150) # pink
+    """RGB color for the skin plane (e.g., a skin-like tone)."""
 
-@jdc.pytree_dataclass
-class Workspace:
-    origin: Pose
+@dataclass
+class WorkspaceConfig:
+    origin: Pose = Pose(pos=jnp.array([0.0, 0.0, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 1.0]))
     """Pose of the workspace origin."""
-
-@jdc.pytree_dataclass
-class Design:
-    targets: List[Pose]
-
-@jdc.pytree_dataclass
-class Scene:
-    skin: Skin
-    inkcap: InkCap
-    pen: TattooPen
-    design: Design
-
+    width_m: float = 0.42
+    """Width of the workspace (meters)."""
+    height_m: float = 0.28
+    """Height of the workspace (meters)."""
+    thickness: float = 0.001
+    """Thickness of the workspace (meters)."""
+    color: Tuple[int, int, int] = (0, 0, 0) # black
+    """RGB color for the workspace."""
 
 @jdc.jit
 def ik(
     robot: pk.Robot,
-    config: RobotConfig,
     target_link_index: jax.Array,
     target_wxyz: jax.Array,
     target_position: jax.Array,
+    pos_weight: float,
+    ori_weight: float,
+    limit_weight: float,
+    linear_solver: str,
+    lambda_initial: float,
 ) -> jax.Array:
     joint_var = robot.joint_var_cls(0)
     factors = [
@@ -177,13 +201,13 @@ def ik(
                 jaxlie.SO3(target_wxyz), target_position
             ),
             target_link_index,
-            pos_weight=config.ik_pos_weight,
-            ori_weight=config.ik_ori_weight,
+            pos_weight=pos_weight,
+            ori_weight=ori_weight,
         ),
         pk.costs.limit_cost(
             robot,
             joint_var,
-            weight=config.ik_limit_weight,
+            weight=limit_weight,
         ),
     ]
     sol = (
@@ -191,287 +215,207 @@ def ik(
         .analyze()
         .solve(
             verbose=False,
-            linear_solver=config.ik_linear_solver,
-            trust_region=jaxls.TrustRegionConfig(lambda_initial=1.0),
+            linear_solver=linear_solver,
+            trust_region=jaxls.TrustRegionConfig(lambda_initial=lambda_initial),
         )
     )
     return sol[joint_var]
 
 def main(
     robot_config: RobotConfig,
-    design_config: DesignConfig,
     session_config: SessionConfig,
-    viz_config: VizConfig,
+    workspace_config: WorkspaceConfig,
+    skin_config: SkinConfig,
+    design_config: DesignConfig,
+    inkcap_config: InkCapConfig,
+    pen_config: TattooPenConfig,
 ):
+    log.info("🚀 Starting viser server...")
     server: viser.ViserServer = viser.ViserServer()
+    ik_timing_handle = server.gui.add_number("ik (ms)", 0.001, disabled=True)
+    if session_config.enable_robot:
+        robot_move_timing_handle = server.gui.add_number("robot move (ms)", 0.001, disabled=True)
+    render_timing_handle = server.gui.add_number("render (ms)", 0.001, disabled=True)
+    step_timing_handle = server.gui.add_number("step (ms)", 0.001, disabled=True)
 
     log.info("🔲 Adding workspace...")
+    workspace_viz = server.scene.add_box(
+        name="/workspace",
+        position=workspace_config.origin.pos,
+        wxyz=workspace_config.origin.wxyz,
+        dimensions=(workspace_config.width_m, workspace_config.height_m, workspace_config.thickness),
+        color=workspace_config.color
+    )
     
-    log.info("🔍 Loading robot from URDF...")
+    log.info("🦾 Adding robot...")
     urdf : yourdfpy.URDF = yourdfpy.URDF.load(robot_config.urdf_path)
     robot: pk.Robot = pk.Robot.from_urdf(urdf)
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/base")
 
+    if session_config.use_ik_target:
+        ik_target = server.scene.add_transform_controls(
+            "/ik_target", scale=0.2, position=(0.30, 0.0, 0.30), wxyz=(0, 0, 0, 0)
+        )    
+
     log.info("🎨 Adding inkcap...")
-    inkcap = InkCap()
     inkcap_viz = server.scene.add_box(
         name="/inkcap",
-        position=inkcap.pose.pos,
-        wxyz=inkcap.pose.ori.wxyz,
-        dimensions=(inkcap.diameter_m, inkcap.diameter_m, inkcap.height_m),
-        color=inkcap.color
+        position=inkcap_config.pose.pos,
+        wxyz=inkcap_config.pose.wxyz,
+        dimensions=(inkcap_config.diameter_m, inkcap_config.diameter_m, inkcap_config.height_m),
+        color=inkcap_config.color
     )
     
     log.info("🖋️ Adding pen...")
-    pen = TattooPen()
     pen_viz = server.scene.add_box(
         name="/pen",
-        position=pen.pose.pos,
-        wxyz=pen.pose.ori.wxyz,
-        dimensions=(pen.diameter_m, pen.diameter_m, pen.height_m),
-        color=pen.color
+        position=pen_config.pose.pos,
+        wxyz=pen_config.pose.wxyz,
+        dimensions=(pen_config.diameter_m, pen_config.diameter_m, pen_config.height_m),
+        color=pen_config.color
     )
     pen_holder_viz = server.scene.add_box(
         name="/pen_holder",
-        position=pen.holder_pose.pos,
-        wxyz=pen.holder_pose.ori.wxyz,
-        dimensions=(pen.gripper_grip_width, pen.gripper_grip_width, pen.height_m),
-        color=pen.color
+        position=pen_config.holder_pose.pos,
+        wxyz=pen_config.holder_pose.wxyz,
+        dimensions=(pen_config.holder_width_m, pen_config.holder_width_m, pen_config.holder_height_m),
+        color=pen_config.holder_color
     )
 
     log.info("💪 Adding skin...")
-    skin = Skin()
     skin_viz = server.scene.add_box(
         name="/skin",
-        position=skin.pose.pos,
-        wxyz=skin.pose.ori.wxyz,
-        dimensions=(skin.width_m, skin.height_m, skin.thickness),
-        color=skin.color
+        position=skin_config.pose.pos,
+        wxyz=skin_config.pose.wxyz,
+        dimensions=(skin_config.width_m, skin_config.height_m, skin_config.thickness),
+        color=skin_config.color
     )
-    
-    # Create interactive controller with initial position.
-    ik_target = server.scene.add_transform_controls(
-        "/ik_target", scale=0.2, position=(0.30, 0.0, 0.30), wxyz=(0, 0, 0, 0)
-    )
-    timing_handle = server.gui.add_number("Elapsed (ms)", 0.001, disabled=True)
 
     log.info("🖼️ Loading design...")
-    img = Image.open(design_config.image_path)
-    img = img.resize(
-        (design_config.image_width_px, design_config.image_height_px), Image.LANCZOS)
+    img = PIL.Image.open(design_config.image_path)
+    img = img.resize((design_config.image_width_px, design_config.image_height_px), PIL.Image.LANCZOS)
     img = img.convert("L")
-    arr = jnp.array(np.array(img))
-    h_px, w_px = arr.shape
-    target_mask = arr <= design_config.image_threshold
-    target_rows, target_cols = jnp.where(target_mask)
-    h_px, w_px = target_rows.max() + 1, target_cols.max() + 1
-    norm_u = (target_cols / w_px) - 0.5
-    norm_v = 0.5 - (target_rows / h_px)
-    target_coords_normalized = list(zip(norm_u.tolist(), norm_v.tolist()))
-    # TODO: superpixel design instead of random sampling
-    if design_config.max_draw_pixels > 0 and len(target_coords_normalized) > design_config.max_draw_pixels:
-        target_coords_normalized = random.sample(target_coords_normalized, design_config.max_draw_pixels)
-    design = Design(
-        targets=[
-            Pose(
-                pos=jnp.array([u * design_config.image_width_m, v * design_config.image_height_m, 0.0]),
-                ori=jaxlie.SO3.from_matrix(jnp.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]))
-            )
-            for u, v in target_coords_normalized
-        ]
+    img_viz = server.gui.add_image(
+        image=np.array(img),
+        label=design_config.image_path,
+        format="jpeg",
+        jpeg_quality=90,
+        order=None,
+        visible=True,
     )
-    scene = Scene(
-        skin=Skin(
-            pose=Pose(
-                pos=jnp.array([0.0, 0.0, 0.0]),
-                ori=jaxlie.SO3.from_matrix(jnp.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]))
-            )
-        )
-    )
+    # arr = jnp.array(np.array(img))
+    # h_px, w_px = arr.shape
+    # target_mask = arr <= design_config.image_threshold
+    # target_rows, target_cols = jnp.where(target_mask)
+    # norm_u = (target_cols / w_px) - 0.5
+    # norm_v = 0.5 - (target_rows / h_px)
+    # target_coords_normalized = list(zip(norm_u.tolist(), norm_v.tolist()))
+    # # TODO: superpixel design instead of random sampling
+    # if design_config.max_draw_pixels > 0 and len(target_coords_normalized) > design_config.max_draw_pixels:
+    #     target_coords_normalized = random.sample(target_coords_normalized, design_config.max_draw_pixels)
+    # num_targets = len(targets)
+    # positions_np = jnp.array([target.position for target in targets])
+    # orientations_np = jnp.array([target.orientation.wxyz for target in targets])
+    # colors_np = jnp.full((num_targets, 3), config.splat_color, dtype=jnp.uint8)
+    # scales_np = jnp.full((num_targets, 3), (config.splat_thickness, config.splat_thickness, config.splat_length), dtype=jnp.float32)
+    # covariances_np = jnp.array([
+    #     target.orientation.as_matrix() @ jnp.diag([config.splat_thickness, config.splat_thickness, config.splat_length]) @ target.orientation.as_matrix().T
+    #     for target in targets
+    # ], dtype=jnp.float32)
+    # design_viz = server.scene.add_gaussian_splats(
+    #     name="/design",
+    #     centers=jnp.array([target.pos for target in design.targets]),
+    #     covariances=covariances_np,
+    #     rgbs=colors_np,
+    #     opacities=opacities_np
+    # )
 
-    log.info("🦾 Initializing robot driver...")
-    driver = trossen_arm.TrossenArmDriver()
-    driver.configure(
-        robot_config.arm_model,
-        robot_config.end_effector_model,
-        robot_config.ip_address,
-        True # whether to clear the error state of the robot
-    )
-    driver.set_all_modes(trossen_arm.Mode.position)
-    driver.set_all_positions(trossen_arm.VectorDouble(list(robot_config.joint_pos_sleep)))
-
-    try:
-        while True:
-            # Solve IK.
-            start_time = time.time()
-            
-            log.info("🔍 Solving IK...")
-            solution : np.ndarray = ik(
-                robot=robot,
-                config=robot_config,
-                target_link_index=jnp.array(robot.links.names.index(robot_config.target_link_name)),
-                target_wxyz=jnp.array(ik_target.wxyz),
-                target_position=jnp.array(ik_target.position),
-            )
-            log.info("🤖 Moving robot...")
-            driver.set_all_positions(
-                trossen_arm.VectorDouble(solution[:-1]),
-                goal_time=robot_config.set_all_position_goal_time,
-                blocking=robot_config.set_all_position_blocking,
-            )
-
-            # Update timing handle.
-            elapsed_time = time.time() - start_time
-            timing_handle.value = 0.99 * timing_handle.value + 0.01 * (elapsed_time * 1000)
-
-            # Update visualizer.
-            urdf_vis.update_cfg(solution)
-    except Exception as e:
-        log.error(f"❌ Error: {e}")
-    
-    finally:
-        log.info("🦾 Shutting down robot...")
-        driver.cleanup()
-        driver.configure( # TODO: is this needed?
+    if session_config.enable_robot:
+        log.info("🤖 Initializing robot driver...")
+        driver = trossen_arm.TrossenArmDriver()
+        driver.configure(
             robot_config.arm_model,
             robot_config.end_effector_model,
             robot_config.ip_address,
-            True # whether to clear the error state of the robot
+            robot_config.clear_error_state
         )
-        log.info("😴 Returning to sleep pose.")
         driver.set_all_modes(trossen_arm.Mode.position)
-        driver.set_all_positions(trossen_arm.VectorDouble(list(config.joint_pos_sleep)))
-        log.info("🧹 Idling motors")
-        driver.set_all_modes(trossen_arm.Mode.idle)
+        driver.set_all_positions(trossen_arm.VectorDouble(list(robot_config.joint_pos_sleep)))
+
+    try:
+        while True:
+            step_start_time = time.time()
+            
+            log.debug("🔍 Solving IK...")
+            ik_start_time = time.time()
+            solution : np.ndarray = ik(
+                robot=robot,
+                # TODO: probably slow to create these datatypes every step
+                target_link_index=jnp.array(robot.links.names.index(robot_config.target_link_name)),
+                target_wxyz=jnp.array(ik_target.wxyz),
+                target_position=jnp.array(ik_target.position),
+                pos_weight=robot_config.ik_pos_weight,
+                ori_weight=robot_config.ik_ori_weight,
+                limit_weight=robot_config.ik_limit_weight,
+                linear_solver=robot_config.ik_linear_solver,
+                lambda_initial=robot_config.ik_lambda_initial,
+            )
+            ik_elapsed_time = time.time() - ik_start_time
+            if session_config.enable_robot:
+                log.debug("🤖 Moving robot...")
+                robot_move_start_time = time.time()
+                driver.set_all_positions(
+                    trossen_arm.VectorDouble(solution[:-1]),
+                    goal_time=robot_config.set_all_position_goal_time,
+                    blocking=robot_config.set_all_position_blocking,
+                )
+                robot_move_elapsed_time = time.time() - robot_move_start_time
+
+            render_start_time = time.time()
+            log.debug("🎬 Rendering scene...")
+            urdf_vis.update_cfg(solution)
+            render_elapsed_time = time.time() - render_start_time
+
+            step_elapsed_time = time.time() - step_start_time
+            step_timing_handle.value = step_elapsed_time * 1000
+            ik_timing_handle.value = ik_elapsed_time * 1000
+            if session_config.enable_robot:
+                robot_move_timing_handle.value = robot_move_elapsed_time * 1000
+            render_timing_handle.value = render_elapsed_time * 1000
+
+    # except Exception as e:
+    #     log.error(f"❌ Error: {e}")
+    
+    finally:
+        if session_config.enable_robot:
+            log.info("🦾 Shutting down robot...")
+            driver.cleanup()
+            driver.configure( # TODO: is this needed? should the driver object be reinitialized?
+                robot_config.arm_model,
+                robot_config.end_effector_model,
+                robot_config.ip_address,
+                robot_config.clear_error_state
+            )
+            driver.set_all_modes(trossen_arm.Mode.position)
+            log.info("😴 Returning to sleep pose.")
+            driver.set_all_positions(trossen_arm.VectorDouble(list(robot_config.joint_pos_sleep)))
+            log.info("🧹 Idling motors")
+            driver.set_all_modes(trossen_arm.Mode.idle)
         log.info("🏁 Script complete.")
 
-def process_skin_and_targets(config: VizConfig, target_rows, target_cols, center_position, T1, T2, N):
-    if target_rows.size == 0:
-        return ProcessedImageData([], jnp.array(center_position), jnp.array([1,0,0]), jnp.array([0,1,0]), jnp.array([0,0,1]))
-    h_px, w_px = target_rows.max() + 1, target_cols.max() + 1
-    norm_u = (target_cols / w_px) - 0.5
-    norm_v = 0.5 - (target_rows / h_px)
-    target_coords_normalized = list(zip(norm_u.tolist(), norm_v.tolist()))
-    if config.max_draw_pixels > 0 and len(target_coords_normalized) > config.max_draw_pixels:
-        target_coords_normalized = random.sample(target_coords_normalized, config.max_draw_pixels)
-    pixel_targets_list: List[PixelTarget] = []
-    origin_pos = jnp.array(center_position)
-    for u, v in target_coords_normalized:
-        pos_offset = u * config.width_m * T1 + v * config.height_m * T2
-        pixel_world_pos = origin_pos + pos_offset
-        rotation_matrix = jnp.stack([T1, T2, N], axis=1)
-        so3_orientation = jaxlie.SO3.from_matrix(rotation_matrix)
-        pixel_targets_list.append(PixelTarget(position=pixel_world_pos, orientation=so3_orientation))
-    return ProcessedImageData(
-        targets=pixel_targets_list,
-        skin_frame_origin=origin_pos,
-        skin_frame_T1=T1,
-        skin_frame_T2=T2,
-        skin_frame_N=N
-    )
-
-def update_scene(server, config, state):
-    for handle in state.visuals.values():
-        try:
-            handle.remove()
-        except Exception:
-            pass
-    state.visuals.clear()
-    processed_data = state.processed_data
-    targets = processed_data.targets
-    origin = processed_data.skin_frame_origin
-    T1, T2, N = processed_data.skin_frame_T1, processed_data.skin_frame_T2, processed_data.skin_frame_N
-    rot_matrix = jnp.stack([T1, T2, N], axis=1)
-    so3 = jaxlie.SO3.from_matrix(rot_matrix)
-    with server.atomic():
-        state.visuals['skin_box'] = server.scene.add_box(
-            name="/skin_patch",
-            wxyz=so3.wxyz,
-            position=origin,
-            dimensions=(config.width_m, config.height_m, config.thickness),
-            color=config.color
-        )
-        state.visuals['skin_frame'] = server.scene.add_frame(
-            name="/skin_coordinate_frame",
-            position=origin,
-            wxyz=so3.wxyz,
-            axes_length=min(config.width_m, config.height_m) * 0.6,
-            axes_radius=config.thickness * 2.5
-        )
-        if targets:
-            num_targets = len(targets)
-            positions_np = jnp.array([target.position for target in targets])
-            orientations_np = jnp.array([target.orientation.wxyz for target in targets])
-            colors_np = jnp.full((num_targets, 3), config.splat_color, dtype=jnp.uint8)
-            scales_np = jnp.full((num_targets, 3), (config.splat_thickness, config.splat_thickness, config.splat_length), dtype=jnp.float32)
-            covariances_np = jnp.array([
-                target.orientation.as_matrix() @ jnp.diag([config.splat_thickness, config.splat_thickness, config.splat_length]) @ target.orientation.as_matrix().T
-                for target in targets
-            ], dtype=jnp.float32)
-            opacities_np = jnp.full((num_targets, 1), 1.0, dtype=jnp.float32)
-            state.visuals['splats'] = server.scene.add_gaussian_splats(
-                name="/pixel_targets/oriented_gaussians",
-                centers=positions_np,
-                covariances=covariances_np,
-                rgbs=colors_np,
-                opacities=opacities_np
-            )
-    return origin, so3
-
-def update_from_gizmo(server, config, state):
-    config.center_position = tuple(state.skin_control.position)
-    rot_matrix = jaxlie.SO3.from_matrix(state.skin_control.wxyz).as_matrix()
-    T1 = rot_matrix[:, 0]
-    T2 = rot_matrix[:, 1]
-    N = rot_matrix[:, 2]
-    config.normal = tuple(N.tolist())
-    state.processed_data = process_skin_and_targets(
-        config,
-        state.target_rows,
-        state.target_cols,
-        config.center_position,
-        T1, T2, N
-    )
-    update_scene(server, config, state)
-
-def main(config: VizConfig):
-
-    # Initial axes from config
-    N0 = jnp.array(config.normal, dtype=float)
-    if jnp.linalg.norm(N0) < 1e-9:
-        N0 = jnp.array([0.0, 0.0, 1.0])
-    else:
-        N0 = N0 / jnp.linalg.norm(N0)
-    world_Z = jnp.array([0.0, 0.0, 1.0])
-    if jnp.abs(jnp.dot(N0, world_Z)) > 0.999:
-        T1_0 = jnp.cross(jnp.array([0.0, 1.0, 0.0]), N0)
-        if jnp.linalg.norm(T1_0) < 1e-5:
-            T1_0 = jnp.cross(jnp.array([1.0, 0.0, 0.0]), N0)
-    else:
-        T1_0 = jnp.cross(world_Z, N0)
-    T1_0 = T1_0 / jnp.linalg.norm(T1_0)
-    T2_0 = jnp.cross(N0, T1_0)
-    T2_0 = T2_0 / jnp.linalg.norm(T2_0)
-    processed_data = process_skin_and_targets(config, target_rows, target_cols, config.center_position, T1_0, T2_0, N0)
-    server = viser.ViserServer()
-    state = State(visuals={}, processed_data=processed_data)
-    state.target_rows = target_rows
-    state.target_cols = target_cols
-    origin, so3 = update_scene(server, config, state)
-    state.skin_control = server.scene.add_transform_controls(
-        name="/skin_patch_control",
-        position=origin,
-        wxyz=so3.wxyz,
-        scale=0.15,
-    )
-    state.skin_control.on_update(lambda _: update_from_gizmo(server, config, state))
-    while True:
-        time.sleep(1)
-
 if __name__ == "__main__":
+    args = tyro.cli(CLIArgs)
+    if args.debug:
+        log.info("🐛 Debug mode enabled.")
+        log.setLevel(logging.DEBUG)
+    # TODO: cli args to override values
+    # TODO: wrap entire script for hyperparameter tuning
     main(
         robot_config=RobotConfig(),
         design_config=DesignConfig(),
         session_config=SessionConfig(),
-        viz_config=VizConfig()
+        workspace_config=WorkspaceConfig(),
+        inkcap_config=InkCapConfig(),
+        pen_config=TattooPenConfig(),
+        skin_config=SkinConfig(),
     )
