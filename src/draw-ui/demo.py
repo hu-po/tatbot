@@ -4,21 +4,21 @@ import random
 import time
 from typing import Any, Dict, List, NamedTuple, Tuple
 
-import numpy as np
-from PIL import Image
-import viser
-import viser.transforms as vtf
 import jax
 import jax.numpy as jnp
 import jax_dataclasses as jdc
 import jaxlie
 import jaxls
-import pyroki as pk
-from viser.extras import ViserUrdf
-import yourdfpy
 import jaxtyping
 from jaxtyping import Array, Float
-
+import numpy as np
+import PIL.Image
+import pyroki as pk
+import trossen_arm
+import viser
+import viser.transforms as vtf
+from viser.extras import ViserUrdf
+import yourdfpy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,6 +27,11 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
+
+@jdc.pytree_dataclass
+class Pose:
+    pos: Float[Array, "3"]
+    ori: jaxlie.SO3
 
 @jdc.pytree_dataclass
 class RobotConfig:
@@ -42,44 +47,90 @@ class RobotConfig:
     set_all_position_blocking: bool = False
     """whether to block until the goal positions are reached"""
     urdf_path: str = "/home/oop/trossen_arm_description/urdf/generated/wxai/wxai_follower.urdf"
-    """Path to the URDF file for the robot."""
+    """Local path to the URDF file for the robot."""
     target_link_name: str = "ee_gripper_link"
     """String name of the link to be controlled."""
+    pose: Pose
 
 @jdc.pytree_dataclass
-class VizConfig:
-    image_path: str = "engmfyh5p9rma0cpz319px91gg.png"
-    """Path to the input PNG image."""
-    skin_center_position: Tuple[float, float, float] = (0.0, 0.0, 0.0)
-    """Center of the image on the skin patch in world coordinates (meters)."""
-    skin_normal: Tuple[float, float, float] = (0.0, 0.0, 1.0)
-    """Normal vector of the skin surface (pointing outwards from the surface)."""
-    skin_width_m: float = 0.09
-    """Width of the area on the skin where the image will be projected (meters)."""
-    skin_height_m: float = 0.12
-    """Height of the area on the skin where the image will be projected (meters)."""
+class DesignConfig:
+    image_path: str = "/home/oop/tatbot/assets/designs/circle.png"
+    """Local path to the tattoo design PNG image."""
     image_threshold: int = 127
     """[0, 255] threshold for B/W image. Pixels <= threshold are targets."""
     max_draw_pixels: int = 0
     """Maximum number of target pixels to process. If 0 or less, process all."""
-    invert_image: bool = False
-    """If True, pixels > threshold become targets (e.g., for white lines on black bg)."""
-    show_skin_plane: bool = True
-    """Whether to visualize the skin plane itself."""
-    skin_plane_thickness: float = 0.001
+    image_width_px: int = 256
+    """Width to resize the input image to before processing (pixels)."""
+    image_height_px: int = 256
+    """Height to resize the input image to before processing (pixels)."""
+    image_width_m: float = 0.04
+    """Width of the area on the skin where the image will be projected (meters)."""
+    image_height_m: float = 0.04
+    """Height of the area on the skin where the image will be projected (meters)."""
+
+@jdc.pytree_dataclass
+class PenConfig:
+    gripper_open_width: float = 0.04
+    """meters: width of the gripper when open."""
+    gripper_grip_width: float = 0.032
+    """meters: width of the gripper before using effort based gripping."""
+    gripper_grip_timeout: float = 1.0
+    """seconds: timeout for effort based gripping."""
+    gripper_grip_effort: float = -20.0
+    """newtons: maximum force for effort based gripping."""
+    pen_height_delta: float = 0.136
+    """meters: distance from pen tip to end effector tip."""
+    pen_stroke_length: float = 0.008
+    """meters: length of pen stroke when drawing a pixel."""
+    holder_pose: Pose
+
+@jdc.pytree_dataclass
+class InkConfig:
+    diameter_m: float = 0.008
+    """meters: diameter of the ink cup."""
+    height_m: float = 0.01
+    """meters: height of the ink cup."""
+    depth_m: float = 0.005
+    """meters: depth of the ink cup."""
+    color: Tuple[int, int, int] = (0, 0, 0)
+    """RGB color of the ink in the ink cup."""
+    pose: Pose
+
+@jdc.pytree_dataclass
+class SkinConfig:
+    normal: Tuple[float, float, float] = (0.0, 0.0, 1.0)
+    """Normal vector of the skin surface (pointing outwards from the surface)."""
+    width_m: float = 0.09
+    """Width of the area on the skin where the image will be projected (meters)."""
+    height_m: float = 0.12
+    """Height of the area on the skin where the image will be projected (meters)."""
+    thickness: float = 0.001
     """Thickness of the visualized skin plane box (meters)."""
-    skin_plane_color: Tuple[int, int, int] = (220, 180, 150)
+    color: Tuple[int, int, int] = (220, 180, 150)
     """RGB color for the skin plane, e.g., a skin-like tone."""
+    pose: Pose
+
+@jdc.pytree_dataclass
+class SessionConfig:
+    num_pixels_per_ink_dip: int = 60
+    """Number of pixels to draw before dipping the pen in ink cup again."""
+
+@jdc.pytree_dataclass
+class VizConfig:
+    center_position: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    """Center of the image on the skin patch in world coordinates (meters)."""
     splat_length: float = 0.0000001
     """Length of the splat along its main oriented axis (meters)"""
     splat_thickness: float = 0.0000001
     """Thickness of the splat for its other two axes (meters)"""
     splat_color: Tuple[int, int, int] = (0, 0, 0)
     """Color for the splats"""
-    image_width: int = 256
-    """Width to resize the input image to before processing (pixels)."""
-    image_height: int = 256
-    """Height to resize the input image to before processing (pixels)."""
+
+@jdc.pytree_dataclass
+class Scene:
+    skin_pose: Tuple[Float[Array, "3"], jaxlie.SO3]
+    table_pose: Tuple[Float[Array, "3"], jaxlie.SO3]
 
 @jdc.pytree_dataclass
 class PixelTarget:
@@ -240,9 +291,9 @@ def robot(config: RobotConfig):
         driver.set_all_modes(trossen_arm.Mode.idle)
         log.info("🏁 Script complete.")
 
-def process_skin_and_targets(config: VizConfig, target_rows, target_cols, skin_center_position, T1, T2, N):
+def process_skin_and_targets(config: VizConfig, target_rows, target_cols, center_position, T1, T2, N):
     if target_rows.size == 0:
-        return ProcessedImageData([], jnp.array(skin_center_position), jnp.array([1,0,0]), jnp.array([0,1,0]), jnp.array([0,0,1]))
+        return ProcessedImageData([], jnp.array(center_position), jnp.array([1,0,0]), jnp.array([0,1,0]), jnp.array([0,0,1]))
     h_px, w_px = target_rows.max() + 1, target_cols.max() + 1
     norm_u = (target_cols / w_px) - 0.5
     norm_v = 0.5 - (target_rows / h_px)
@@ -250,16 +301,16 @@ def process_skin_and_targets(config: VizConfig, target_rows, target_cols, skin_c
     if config.max_draw_pixels > 0 and len(target_coords_normalized) > config.max_draw_pixels:
         target_coords_normalized = random.sample(target_coords_normalized, config.max_draw_pixels)
     pixel_targets_list: List[PixelTarget] = []
-    skin_origin_pos = jnp.array(skin_center_position)
+    origin_pos = jnp.array(center_position)
     for u, v in target_coords_normalized:
-        pos_offset = u * config.skin_width_m * T1 + v * config.skin_height_m * T2
-        pixel_world_pos = skin_origin_pos + pos_offset
+        pos_offset = u * config.width_m * T1 + v * config.height_m * T2
+        pixel_world_pos = origin_pos + pos_offset
         rotation_matrix = jnp.stack([T1, T2, N], axis=1)
         so3_orientation = jaxlie.SO3.from_matrix(rotation_matrix)
         pixel_targets_list.append(PixelTarget(position=pixel_world_pos, orientation=so3_orientation))
     return ProcessedImageData(
         targets=pixel_targets_list,
-        skin_frame_origin=skin_origin_pos,
+        skin_frame_origin=origin_pos,
         skin_frame_T1=T1,
         skin_frame_T2=T2,
         skin_frame_N=N
@@ -274,26 +325,25 @@ def update_scene(server, config, state):
     state.visuals.clear()
     processed_data = state.processed_data
     targets = processed_data.targets
-    skin_origin = processed_data.skin_frame_origin
+    origin = processed_data.skin_frame_origin
     T1, T2, N = processed_data.skin_frame_T1, processed_data.skin_frame_T2, processed_data.skin_frame_N
-    skin_rot_matrix = jnp.stack([T1, T2, N], axis=1)
-    skin_so3 = jaxlie.SO3.from_matrix(skin_rot_matrix)
+    rot_matrix = jnp.stack([T1, T2, N], axis=1)
+    so3 = jaxlie.SO3.from_matrix(rot_matrix)
     with server.atomic():
-        if config.show_skin_plane:
-            state.visuals['skin_box'] = server.scene.add_box(
-                name="/skin_patch",
-                wxyz=skin_so3.wxyz,
-                position=skin_origin,
-                dimensions=(config.skin_width_m, config.skin_height_m, config.skin_plane_thickness),
-                color=config.skin_plane_color
-            )
-            state.visuals['skin_frame'] = server.scene.add_frame(
-                name="/skin_coordinate_frame",
-                position=skin_origin,
-                wxyz=skin_so3.wxyz,
-                axes_length=min(config.skin_width_m, config.skin_height_m) * 0.6,
-                axes_radius=config.skin_plane_thickness * 2.5
-            )
+        state.visuals['skin_box'] = server.scene.add_box(
+            name="/skin_patch",
+            wxyz=so3.wxyz,
+            position=origin,
+            dimensions=(config.width_m, config.height_m, config.thickness),
+            color=config.color
+        )
+        state.visuals['skin_frame'] = server.scene.add_frame(
+            name="/skin_coordinate_frame",
+            position=origin,
+            wxyz=so3.wxyz,
+            axes_length=min(config.width_m, config.height_m) * 0.6,
+            axes_radius=config.thickness * 2.5
+        )
         if targets:
             num_targets = len(targets)
             positions_np = jnp.array([target.position for target in targets])
@@ -312,20 +362,20 @@ def update_scene(server, config, state):
                 rgbs=colors_np,
                 opacities=opacities_np
             )
-    return skin_origin, skin_so3
+    return origin, so3
 
 def update_from_gizmo(server, config, state):
-    config.skin_center_position = tuple(state.skin_control.position)
+    config.center_position = tuple(state.skin_control.position)
     rot_matrix = jaxlie.SO3.from_matrix(state.skin_control.wxyz).as_matrix()
     T1 = rot_matrix[:, 0]
     T2 = rot_matrix[:, 1]
     N = rot_matrix[:, 2]
-    config.skin_normal = tuple(N.tolist())
+    config.normal = tuple(N.tolist())
     state.processed_data = process_skin_and_targets(
         config,
         state.target_rows,
         state.target_cols,
-        config.skin_center_position,
+        config.center_position,
         T1, T2, N
     )
     update_scene(server, config, state)
@@ -335,17 +385,14 @@ def main(config: VizConfig):
         img = Image.open(config.image_path)
     except Exception:
         return
-    img = img.resize((config.image_width, config.image_height), Image.LANCZOS)
+    img = img.resize((config.image_width_px, config.image_height_px), Image.LANCZOS)
     img = img.convert("L")
     arr = jnp.array(np.array(img))  # Convert to jax array immediately
     h_px, w_px = arr.shape
-    if config.invert_image:
-        target_mask = arr > config.image_threshold
-    else:
-        target_mask = arr <= config.image_threshold
+    target_mask = arr <= config.image_threshold
     target_rows, target_cols = jnp.where(target_mask)
     # Initial axes from config
-    N0 = jnp.array(config.skin_normal, dtype=float)
+    N0 = jnp.array(config.normal, dtype=float)
     if jnp.linalg.norm(N0) < 1e-9:
         N0 = jnp.array([0.0, 0.0, 1.0])
     else:
@@ -360,16 +407,16 @@ def main(config: VizConfig):
     T1_0 = T1_0 / jnp.linalg.norm(T1_0)
     T2_0 = jnp.cross(N0, T1_0)
     T2_0 = T2_0 / jnp.linalg.norm(T2_0)
-    processed_data = process_skin_and_targets(config, target_rows, target_cols, config.skin_center_position, T1_0, T2_0, N0)
+    processed_data = process_skin_and_targets(config, target_rows, target_cols, config.center_position, T1_0, T2_0, N0)
     server = viser.ViserServer()
     state = State(visuals={}, processed_data=processed_data)
     state.target_rows = target_rows
     state.target_cols = target_cols
-    skin_origin, skin_so3 = update_scene(server, config, state)
+    origin, so3 = update_scene(server, config, state)
     state.skin_control = server.scene.add_transform_controls(
         name="/skin_patch_control",
-        position=skin_origin,
-        wxyz=skin_so3.wxyz,
+        position=origin,
+        wxyz=so3.wxyz,
         scale=0.15,
     )
     state.skin_control.on_update(lambda _: update_from_gizmo(server, config, state))
