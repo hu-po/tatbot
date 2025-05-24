@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import logging
 import os
 import random
@@ -28,12 +29,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
-@jdc.pytree_dataclass
-class Pose:
-    pos: Float[Array, "3"]
-    ori: jaxlie.SO3
-
-@jdc.pytree_dataclass
+@dataclass
 class RobotConfig:
     arm_model: trossen_arm.Model = trossen_arm.Model.wxai_v0
     ip_address: str = "192.168.1.3"
@@ -50,9 +46,21 @@ class RobotConfig:
     """Local path to the URDF file for the robot."""
     target_link_name: str = "ee_gripper_link"
     """String name of the link to be controlled."""
-    pose: Pose
+    gripper_open_width: float = 0.04
+    """meters: width of the gripper when open."""
+    gripper_grip_timeout: float = 1.0
+    """seconds: timeout for effort based gripping."""
+    gripper_grip_effort: float = -20.0
+    """newtons: maximum force for effort based gripping."""
+    ik_pos_weight: float = 50.0
+    """Weight for the position part of the IK cost function."""
+    ik_ori_weight: float = 10.0
+    """Weight for the orientation part of the IK cost function."""
+    ik_limit_weight: float = 100.0
+    """Weight for the joint limit part of the IK cost function."""
+    ik_linear_solver: str = "dense_cholesky"
 
-@jdc.pytree_dataclass
+@dataclass
 class DesignConfig:
     image_path: str = "/home/oop/tatbot/assets/designs/circle.png"
     """Local path to the tattoo design PNG image."""
@@ -69,54 +77,12 @@ class DesignConfig:
     image_height_m: float = 0.04
     """Height of the area on the skin where the image will be projected (meters)."""
 
-@jdc.pytree_dataclass
-class PenConfig:
-    gripper_open_width: float = 0.04
-    """meters: width of the gripper when open."""
-    gripper_grip_width: float = 0.032
-    """meters: width of the gripper before using effort based gripping."""
-    gripper_grip_timeout: float = 1.0
-    """seconds: timeout for effort based gripping."""
-    gripper_grip_effort: float = -20.0
-    """newtons: maximum force for effort based gripping."""
-    pen_height_delta: float = 0.136
-    """meters: distance from pen tip to end effector tip."""
-    pen_stroke_length: float = 0.008
-    """meters: length of pen stroke when drawing a pixel."""
-    holder_pose: Pose
-
-@jdc.pytree_dataclass
-class InkConfig:
-    diameter_m: float = 0.008
-    """meters: diameter of the ink cup."""
-    height_m: float = 0.01
-    """meters: height of the ink cup."""
-    depth_m: float = 0.005
-    """meters: depth of the ink cup."""
-    color: Tuple[int, int, int] = (0, 0, 0)
-    """RGB color of the ink in the ink cup."""
-    pose: Pose
-
-@jdc.pytree_dataclass
-class SkinConfig:
-    normal: Tuple[float, float, float] = (0.0, 0.0, 1.0)
-    """Normal vector of the skin surface (pointing outwards from the surface)."""
-    width_m: float = 0.09
-    """Width of the area on the skin where the image will be projected (meters)."""
-    height_m: float = 0.12
-    """Height of the area on the skin where the image will be projected (meters)."""
-    thickness: float = 0.001
-    """Thickness of the visualized skin plane box (meters)."""
-    color: Tuple[int, int, int] = (220, 180, 150)
-    """RGB color for the skin plane, e.g., a skin-like tone."""
-    pose: Pose
-
-@jdc.pytree_dataclass
+@dataclass
 class SessionConfig:
     num_pixels_per_ink_dip: int = 60
     """Number of pixels to draw before dipping the pen in ink cup again."""
 
-@jdc.pytree_dataclass
+@dataclass
 class VizConfig:
     center_position: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     """Center of the image on the skin patch in world coordinates (meters)."""
@@ -128,31 +94,75 @@ class VizConfig:
     """Color for the splats"""
 
 @jdc.pytree_dataclass
+class Pose:
+    pos: Float[Array, "3"]
+    ori: jaxlie.SO3
+
+@jdc.pytree_dataclass
+class TattooPen:
+    pose: Pose
+    """Pose of the tattoo pen."""
+    holder_pose: Pose
+    """Pose of the tattoo pen holder."""
+    diameter_m: float = 0.008
+    """meters: diameter of the tattoo pen."""
+    height_m: float = 0.01
+    """meters: height of the tattoo pen."""
+    gripper_grip_width: float = 0.032
+    """meters: width of the gripper before using effort based gripping."""
+    pen_height_delta: float = 0.136
+    """meters: distance from pen tip to end effector tip."""
+    pen_stroke_length: float = 0.008
+    """meters: length of pen stroke when drawing a pixel."""
+
+@jdc.pytree_dataclass
+class InkCap:
+    pose: Pose
+    """Pose of the inkcap."""
+    diameter_m: float = 0.008
+    """meters: diameter of the inkcap."""
+    height_m: float = 0.01
+    """meters: height of the inkcap."""
+    depth_m: float = 0.005
+    """meters: depth of the inkcap."""
+    color: Tuple[int, int, int] = (0, 0, 0)
+    """RGB color of the ink in the inkcap."""
+
+@jdc.pytree_dataclass
+class Skin:
+    pose: Pose
+    """Pose of the skin."""
+    normal: Tuple[float, float, float] = (0.0, 0.0, 1.0)
+    """Normal vector of the skin surface (pointing outwards from the surface)."""
+    width_m: float = 0.09
+    """Width of the area on the skin where the image will be projected (meters)."""
+    height_m: float = 0.12
+    """Height of the area on the skin where the image will be projected (meters)."""
+    thickness: float = 0.001
+    """Thickness of the visualized skin plane box (meters)."""
+    color: Tuple[int, int, int] = (220, 180, 150)
+    """RGB color for the skin plane, e.g., a skin-like tone."""
+
+@jdc.pytree_dataclass
+class Workspace:
+    origin: Pose
+
+@jdc.pytree_dataclass
+class Design:
+    targets: List[Pose]
+
+@jdc.pytree_dataclass
 class Scene:
-    skin_pose: Tuple[Float[Array, "3"], jaxlie.SO3]
-    table_pose: Tuple[Float[Array, "3"], jaxlie.SO3]
+    skin: Skin
+    inkcap: InkCap
+    pen: TattooPen
+    design: Design
 
-@jdc.pytree_dataclass
-class PixelTarget:
-    position: Float[Array, "3"]
-    orientation: jaxlie.SO3
-
-class ProcessedImageData(NamedTuple):
-    targets: List[PixelTarget]
-    skin_frame_origin: Float[Array, "3"]
-    skin_frame_T1: Float[Array, "3"]
-    skin_frame_T2: Float[Array, "3"]
-    skin_frame_N: Float[Array, "3"]
-
-@jdc.pytree_dataclass
-class State:
-    visuals: Dict[str, Any]
-    processed_data: ProcessedImageData
-    skin_control: Any = None
 
 @jdc.jit
 def _solve_ik_jax(
     robot: pk.Robot,
+    config: RobotConfig,
     target_link_index: jax.Array,
     target_wxyz: jax.Array,
     target_position: jax.Array,
@@ -166,13 +176,13 @@ def _solve_ik_jax(
                 jaxlie.SO3(target_wxyz), target_position
             ),
             target_link_index,
-            pos_weight=50.0,
-            ori_weight=10.0,
+            pos_weight=config.ik_pos_weight,
+            ori_weight=config.ik_ori_weight,
         ),
         pk.costs.limit_cost(
             robot,
             joint_var,
-            weight=100.0,
+            weight=config.ik_limit_weight,
         ),
     ]
     sol = (
@@ -180,7 +190,7 @@ def _solve_ik_jax(
         .analyze()
         .solve(
             verbose=False,
-            linear_solver="dense_cholesky",
+            linear_solver=config.ik_linear_solver,
             trust_region=jaxls.TrustRegionConfig(lambda_initial=1.0),
         )
     )
@@ -189,6 +199,7 @@ def _solve_ik_jax(
 
 def solve_ik(
     robot: pk.Robot,
+    config: RobotConfig,
     target_link_name: str,
     target_wxyz: np.ndarray,
     target_position: np.ndarray,
@@ -198,6 +209,7 @@ def solve_ik(
 
     Args:
         robot: PyRoKi Robot.
+        config: RobotConfig.
         target_link_name: String name of the link to be controlled.
         target_wxyz: np.ndarray. Target orientation.
         target_position: np.ndarray. Target position.
@@ -209,6 +221,7 @@ def solve_ik(
     target_link_index = robot.links.names.index(target_link_name)
     cfg = _solve_ik_jax(
         robot,
+        config,
         jnp.array(target_link_index),
         jnp.array(target_wxyz),
         jnp.array(target_position),
@@ -217,15 +230,8 @@ def solve_ik(
     return np.array(cfg)
 
 def robot(config: RobotConfig):
-    """Main function for basic IK."""
-
-    # Load URDF from file
-    urdf_path : str = "/home/oop/trossen_arm_description/urdf/generated/wxai/wxai_follower.urdf"
-    urdf : yourdfpy.URDF = yourdfpy.URDF.load(urdf_path)
-    target_link_name : str = "ee_gripper_link"
-
-    # Create robot.
-    robot = pk.Robot.from_urdf(urdf)
+    urdf : yourdfpy.URDF = yourdfpy.URDF.load(config.urdf_path)
+    robot: pk.Robot = pk.Robot.from_urdf(urdf)
 
     # Set up visualizer.
     server = viser.ViserServer()
@@ -255,7 +261,8 @@ def robot(config: RobotConfig):
             start_time = time.time()
             solution : np.ndarray = solve_ik(
                 robot=robot,
-                target_link_name=target_link_name,
+                config=config,
+                target_link_name=config.target_link_name,
                 target_position=np.array(ik_target.position),
                 target_wxyz=np.array(ik_target.wxyz),
             )
