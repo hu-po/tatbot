@@ -7,15 +7,15 @@
   </a>
 </div>
 <div align="center">
+  <a href="https://x.com/tatbots">
+    <img src="https://img.shields.io/badge/X-%40tatbot-000000.svg?logo=x&logoColor=white&style=flat" alt="X">
+  </a>
   <a href="https://github.com/hu-po/tatbot/blob/main/LICENSE"><img src="https://img.shields.io/github/license/hu-po/tatbot.svg?v" alt="license"></a>
   <a href="https://www.tiktok.com/@tatbottok">
     <img src="https://img.shields.io/badge/TikTok-%40tatbot-000000.svg?logo=tiktok&logoColor=white&style=flat" alt="TikTok">
   </a>
   <a href="https://www.instagram.com/tatbots/">
     <img src="https://img.shields.io/badge/Instagram-%40tatbot-E4405F.svg?logo=instagram&logoColor=white&style=flat" alt="Instagram">
-  </a>
-  <a href="https://x.com/tatbots">
-    <img src="https://img.shields.io/badge/X-%40tatbot-000000.svg?logo=x&logoColor=white&style=flat" alt="X">
   </a>
 </div>
 
