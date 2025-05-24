@@ -204,12 +204,51 @@ def main(
     viz_config: VizConfig,
 ):
     server: viser.ViserServer = viser.ViserServer()
-    server.scene.add_grid("/ground", width=2, height=2)
+
+    log.info("🔲 Adding workspace...")
     
+    log.info("🔍 Loading robot from URDF...")
     urdf : yourdfpy.URDF = yourdfpy.URDF.load(robot_config.urdf_path)
     robot: pk.Robot = pk.Robot.from_urdf(urdf)
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/base")
 
+    log.info("🎨 Adding inkcap...")
+    inkcap = InkCap()
+    inkcap_viz = server.scene.add_box(
+        name="/inkcap",
+        position=inkcap.pose.pos,
+        wxyz=inkcap.pose.ori.wxyz,
+        dimensions=(inkcap.diameter_m, inkcap.diameter_m, inkcap.height_m),
+        color=inkcap.color
+    )
+    
+    log.info("🖋️ Adding pen...")
+    pen = TattooPen()
+    pen_viz = server.scene.add_box(
+        name="/pen",
+        position=pen.pose.pos,
+        wxyz=pen.pose.ori.wxyz,
+        dimensions=(pen.diameter_m, pen.diameter_m, pen.height_m),
+        color=pen.color
+    )
+    pen_holder_viz = server.scene.add_box(
+        name="/pen_holder",
+        position=pen.holder_pose.pos,
+        wxyz=pen.holder_pose.ori.wxyz,
+        dimensions=(pen.gripper_grip_width, pen.gripper_grip_width, pen.height_m),
+        color=pen.color
+    )
+
+    log.info("💪 Adding skin...")
+    skin = Skin()
+    skin_viz = server.scene.add_box(
+        name="/skin",
+        position=skin.pose.pos,
+        wxyz=skin.pose.ori.wxyz,
+        dimensions=(skin.width_m, skin.height_m, skin.thickness),
+        color=skin.color
+    )
+    
     # Create interactive controller with initial position.
     ik_target = server.scene.add_transform_controls(
         "/ik_target", scale=0.2, position=(0.30, 0.0, 0.30), wxyz=(0, 0, 0, 0)
