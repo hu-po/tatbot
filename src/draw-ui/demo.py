@@ -1,3 +1,12 @@
+# INFO: This file controls a tatbot robotic tattoo machine.
+# INFO: This python file requires dependencies in the pyproject.toml file.
+# INFO: This file is a python script indended to be run directly with optional cli args.
+# INFO: This file will attempt to use a GPU if available.
+# INFO: When editing, do not remove any TODOs in this file.
+# INFO: When editing, do not add any additional comments to the code.
+# INFO: When editing, use log to add minimal but essential debug and info messages.
+# INFO: Use emojis tastefully.
+
 from dataclasses import dataclass
 import logging
 import os
@@ -68,8 +77,6 @@ class RobotConfig:
     """Weight for the orientation part of the IK cost function."""
     ik_limit_weight: float = 100.0
     """Weight for the joint limit part of the IK cost function."""
-    ik_linear_solver: str = "dense_cholesky"
-    """Linear solver to use for IK."""
     ik_lambda_initial: float = 1.0
     """Initial lambda value for the IK trust region solver."""
 
@@ -189,7 +196,6 @@ def ik(
     pos_weight: float,
     ori_weight: float,
     limit_weight: float,
-    linear_solver: str,
     lambda_initial: float,
 ) -> jax.Array:
     joint_var = robot.joint_var_cls(0)
@@ -215,7 +221,7 @@ def ik(
         .analyze()
         .solve(
             verbose=False,
-            linear_solver=linear_solver,
+            linear_solver="dense_cholesky", # TODO: is this the best?
             trust_region=jaxls.TrustRegionConfig(lambda_initial=lambda_initial),
         )
     )
@@ -303,6 +309,7 @@ def main(
         order=None,
         visible=True,
     )
+    # TODO: REPLACE THIS CODE HERE BELOW
     # arr = jnp.array(np.array(img))
     # h_px, w_px = arr.shape
     # target_mask = arr <= design_config.image_threshold
@@ -340,7 +347,12 @@ def main(
             robot_config.clear_error_state
         )
         driver.set_all_modes(trossen_arm.Mode.position)
-        driver.set_all_positions(trossen_arm.VectorDouble(list(robot_config.joint_pos_sleep)))
+        log.info("😴 Going to sleep pose at startup.")
+        driver.set_all_positions(
+            trossen_arm.VectorDouble(list(robot_config.joint_pos_sleep)),
+            goal_time=robot_config.set_all_position_goal_time,
+            blocking=True,
+        )
 
     try:
         while True:
@@ -348,7 +360,7 @@ def main(
             
             log.debug("🔍 Solving IK...")
             ik_start_time = time.time()
-            solution : np.ndarray = ik(
+            solution : jax.Array = ik(
                 robot=robot,
                 # TODO: probably slow to create these datatypes every step
                 target_link_index=jnp.array(robot.links.names.index(robot_config.target_link_name)),
@@ -357,7 +369,6 @@ def main(
                 pos_weight=robot_config.ik_pos_weight,
                 ori_weight=robot_config.ik_ori_weight,
                 limit_weight=robot_config.ik_limit_weight,
-                linear_solver=robot_config.ik_linear_solver,
                 lambda_initial=robot_config.ik_lambda_initial,
             )
             ik_elapsed_time = time.time() - ik_start_time
@@ -373,7 +384,7 @@ def main(
 
             render_start_time = time.time()
             log.debug("🎬 Rendering scene...")
-            urdf_vis.update_cfg(solution)
+            urdf_vis.update_cfg(np.array(solution))
             render_elapsed_time = time.time() - render_start_time
 
             step_elapsed_time = time.time() - step_start_time
