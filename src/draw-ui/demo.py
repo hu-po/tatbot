@@ -34,7 +34,7 @@ import tyro
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s|%(name)s|%(levelname)s|%(message)s',
-    datefmt='%H:%M:%S', 
+    datefmt='%H:%M:%S',
 )
 log = logging.getLogger(__name__)
 
@@ -376,7 +376,7 @@ def main(
                 log.debug("🤖 Moving robot...")
                 robot_move_start_time = time.time()
                 driver.set_all_positions(
-                    trossen_arm.VectorDouble(solution[:-1]),
+                    trossen_arm.VectorDouble(np.array(solution[:-1]).tolist()),
                     goal_time=robot_config.set_all_position_goal_time,
                     blocking=robot_config.set_all_position_blocking,
                 )
