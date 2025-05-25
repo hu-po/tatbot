@@ -94,14 +94,14 @@ class SessionConfig:
     use_ik_target: bool = True
     """Whether to use an IK target for the robot."""
     ik_target_pose: Pose = Pose(pos=jnp.array([0.3, 0.0, 0.3]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
-    """Initial pose of the grabbable transform IK target."""
+    """Initial pose of the grabbable transform IK target (relative to robot base)."""
     scale: float = 0.2
     """Scale for the IK target visualization."""
 
 @dataclass
 class DesignConfig:
     pose: Pose = Pose(pos=jnp.array([0.2, 0.0, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
-    """Pose of the design."""
+    """Pose of the design (relative to workspace origin)."""
     image_path: str = "/home/oop/tatbot/assets/designs/circle.png"
     """Local path to the tattoo design PNG image."""
     image_threshold: int = 127
@@ -126,7 +126,7 @@ class DesignConfig:
 @dataclass
 class TattooPenConfig:
     pose: Pose = Pose(pos=jnp.array([0.2, -0.1, -0.01]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
-    """Pose of the tattoo pen."""
+    """Pose of the tattoo pen (relative to workspace origin)."""
     diameter_m: float = 0.04
     """Diameter of the tattoo pen (meters)."""
     height_m: float = 0.15
@@ -141,7 +141,7 @@ class TattooPenConfig:
     """RGB color of the pen."""
     # TODO: holder as seperate object?
     holder_pose: Pose = Pose(pos=jnp.array([0.2, -0.1, -0.012]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
-    """Pose of the tattoo pen holder."""
+    """Pose of the tattoo pen holder (relative to workspace origin)."""
     holder_width_m: float = 0.032
     """Width of the pen holder (meters)."""
     holder_height_m: float = 0.01
@@ -152,7 +152,7 @@ class TattooPenConfig:
 @dataclass
 class InkCapConfig:
     pose: Pose = Pose(pos=jnp.array([0.2, 0.1, -0.01]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
-    """Pose of the inkcap."""
+    """Pose of the inkcap (relative to workspace origin)."""
     diameter_m: float = 0.018
     """Diameter of the inkcap (meters)."""
     height_m: float = 0.01
@@ -165,7 +165,7 @@ class InkCapConfig:
 @dataclass
 class SkinConfig:
     pose: Pose = Pose(pos=jnp.array([0.2, 0.05, -0.01]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
-    """Pose of the skin."""
+    """Pose of the skin (relative to workspace origin)."""
     normal: Tuple[float, float, float] = (0.0, 0.0, 1.0)
     """Normal vector of the skin surface (pointing outwards from the surface)."""
     width_m: float = 0.09
@@ -180,10 +180,12 @@ class SkinConfig:
 @dataclass
 class WorkspaceConfig:
     origin: Pose = Pose(pos=jnp.array([0.3, 0.0, -0.1]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
-    """Pose of the workspace origin."""
-    width_m: float = 0.42
+    """Pose of the workspace origin (relative to robot base)."""
+    center_offset: Pose = Pose(pos=jnp.array([0.14, -0.21, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
+    """Offset of the workspace center from the origin (relative to workspace origin)."""
+    width_m: float = 0.28
     """Width of the workspace (meters)."""
-    height_m: float = 0.28
+    height_m: float = 0.42
     """Height of the workspace (meters)."""
     thickness: float = 0.001
     """Thickness of the workspace (meters)."""
@@ -247,6 +249,19 @@ def main(
     render_timing_handle = server.gui.add_number("render (ms)", 0.001, disabled=True)
     step_timing_handle = server.gui.add_number("step (ms)", 0.001, disabled=True)
 
+    log.info("🦾 Adding robot...")
+    urdf : yourdfpy.URDF = yourdfpy.URDF.load(robot_config.urdf_path)
+    robot: pk.Robot = pk.Robot.from_urdf(urdf)
+    urdf_vis = ViserUrdf(server, urdf, root_node_name="/robot")
+
+    if session_config.use_ik_target:
+        ik_target = server.scene.add_transform_controls(
+            "/ik_target",
+            scale=session_config.scale,
+            position=session_config.ik_target_pose.pos,
+            wxyz=session_config.ik_target_pose.wxyz,
+        )    
+
     log.info("🔲 Adding workspace...")
     workspace_transform = server.scene.add_transform_controls(
         "/workspace",
@@ -255,80 +270,44 @@ def main(
         wxyz=workspace_config.origin.wxyz,
     )
     workspace_viz = server.scene.add_box(
-        name="/workspace/box",
-        position=(0, 0, 0),
-        wxyz=(1, 0, 0, 0),
+        name="/workspace/mat",
+        position=workspace_config.center_offset.pos,
+        wxyz=workspace_config.center_offset.wxyz,
         dimensions=(workspace_config.width_m, workspace_config.height_m, workspace_config.thickness),
         color=workspace_config.color
     )
 
-    log.info("🦾 Adding robot...")
-    urdf : yourdfpy.URDF = yourdfpy.URDF.load(robot_config.urdf_path)
-    robot: pk.Robot = pk.Robot.from_urdf(urdf)
-    urdf_vis = ViserUrdf(server, urdf, root_node_name="/robot")
-
-    if session_config.use_ik_target:
-        ik_target = server.scene.add_transform_controls(
-            "/workspace/ik_target",
-            scale=session_config.scale,
-            position=session_config.ik_target_pose.pos,
-            wxyz=session_config.ik_target_pose.wxyz,
-        )    
-
     log.info("🎨 Adding inkcap...")
-    inkcap_transform = server.scene.add_transform_controls(
-        "/workspace/inkcap",
-        scale=0.05,
+    inkcap_viz = server.scene.add_box(
+        name="/workspace/inkcap",
         position=inkcap_config.pose.pos,
         wxyz=inkcap_config.pose.wxyz,
-    )
-    inkcap_viz = server.scene.add_box(
-        name="/workspace/inkcap/box",
-        position=(0, 0, 0),
-        wxyz=(1, 0, 0, 0),
         dimensions=(inkcap_config.diameter_m, inkcap_config.diameter_m, inkcap_config.height_m),
         color=inkcap_config.color
     )
 
     log.info("🖋️ Adding pen...")
-    pen_transform = server.scene.add_transform_controls(
-        "/workspace/pen",
-        scale=0.05,
+    pen_viz = server.scene.add_box(
+        name="/workspace/pen",
         position=pen_config.pose.pos,
         wxyz=pen_config.pose.wxyz,
-    )
-    pen_viz = server.scene.add_box(
-        name="/workspace/pen/box",
-        position=(0, 0, 0),
-        wxyz=(1, 0, 0, 0),
         dimensions=(pen_config.diameter_m, pen_config.diameter_m, pen_config.height_m),
         color=pen_config.color
     )
-    pen_holder_transform = server.scene.add_transform_controls(
-        "/workspace/pen_holder",
-        scale=0.05,
+
+    pen_holder_viz = server.scene.add_box(
+        name="/workspace/pen_holder",
         position=pen_config.holder_pose.pos,
         wxyz=pen_config.holder_pose.wxyz,
-    )
-    pen_holder_viz = server.scene.add_box(
-        name="/workspace/pen_holder/box",
-        position=(0, 0, 0),
-        wxyz=(1, 0, 0, 0),
         dimensions=(pen_config.holder_width_m, pen_config.holder_width_m, pen_config.holder_height_m),
         color=pen_config.holder_color
     )
 
     log.info("💪 Adding skin...")
-    skin_transform = server.scene.add_transform_controls(
-        "/workspace/skin",
-        scale=0.05,
+    skin_viz = server.scene.add_box(
+        name="/workspace/skin",
         position=skin_config.pose.pos,
         wxyz=skin_config.pose.wxyz,
-    )
-    skin_viz = server.scene.add_box(
-        name="/workspace/skin/box",
-        position=(0, 0, 0),
-        wxyz=(1, 0, 0, 0),
         dimensions=(skin_config.width_m, skin_config.height_m, skin_config.thickness),
         color=skin_config.color
     )
@@ -389,6 +368,7 @@ def main(
             goal_time=robot_config.set_all_position_goal_time,
             blocking=True,
         )
+        urdf_vis.update_cfg(np.array(driver.get_all_positions()))
 
     try:
         while True:
@@ -408,6 +388,15 @@ def main(
                 lambda_initial=robot_config.ik_lambda_initial,
             )
             ik_elapsed_time = time.time() - ik_start_time
+
+            # Log positions and orientations
+            log.debug(f"🎯 IK Target - pos: {ik_target.position}, wxyz: {ik_target.wxyz}")
+            log.debug(f"🎨 Inkcap - pos: {inkcap_viz.position}, wxyz: {inkcap_viz.wxyz}")
+            log.debug(f"🖋️ Pen - pos: {pen_viz.position}, wxyz: {pen_viz.wxyz}")
+            log.debug(f"📏 Pen Holder - pos: {pen_holder_viz.position}, wxyz: {pen_holder_viz.wxyz}")
+            log.debug(f"💪 Skin - pos: {skin_viz.position}, wxyz: {skin_viz.wxyz}")
+            log.debug(f"🔲 Workspace - pos: {workspace_transform.position}, wxyz: {workspace_transform.wxyz}")
+
             if session_config.enable_robot:
                 log.debug("🤖 Moving robot...")
                 robot_move_start_time = time.time()
