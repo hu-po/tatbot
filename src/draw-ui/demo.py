@@ -51,9 +51,9 @@ class RobotConfig:
     """IP address of the robot."""
     end_effector_model: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_follower
     """End effector model for the robot."""
-    joint_pos_sleep: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    joint_pos_sleep: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
     """7D joint radians for the sleep pose (robot is folded up, motors can be released)."""
-    joint_pos_home: tuple[float, ...] = (0.0, 1.05, 0.5, -1.06, 0.0, 0.0, 0.0)
+    joint_pos_home: tuple[float, ...] = (0.0, 1.05, 0.5, -1.06, 0.0, 0.0, 0.0, 0.0)
     """7D joint radians for the home pose (robot is active, staring down at workspace)."""
     set_all_position_goal_time: float = 1.0
     """Goal time in seconds when the goal positions should be reached."""
@@ -93,7 +93,7 @@ class SessionConfig:
     """Number of pixels to draw before dipping the pen in the ink cup again."""
     use_ik_target: bool = True
     """Whether to use an IK target for the robot."""
-    ik_target_pose: Pose = Pose(pos=jnp.array([0.3, 0.0, 0.3]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
+    ik_target_pose: Pose = Pose(pos=jnp.array([0.2, 0.0, 0.0]), wxyz=jnp.array([0.7, 0.0, 0.7, 0.0]))
     """Initial pose of the grabbable transform IK target (relative to robot base)."""
     scale: float = 0.2
     """Scale for the IK target visualization."""
@@ -125,11 +125,11 @@ class DesignConfig:
 
 @dataclass
 class TattooPenConfig:
-    pose: Pose = Pose(pos=jnp.array([0.2, -0.1, -0.01]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
+    pose: Pose = Pose(pos=jnp.array([0.15, -0.25, 0.06]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
     """Pose of the tattoo pen (relative to workspace origin)."""
-    diameter_m: float = 0.04
+    diameter_m: float = 0.025
     """Diameter of the tattoo pen (meters)."""
-    height_m: float = 0.15
+    height_m: float = 0.12
     """Height of the tattoo pen (meters)."""
     gripper_grip_width: float = 0.032
     """Width of the gripper before using effort-based gripping (meters)."""
@@ -140,18 +140,18 @@ class TattooPenConfig:
     color: Tuple[int, int, int] = (0, 0, 0)
     """RGB color of the pen."""
     # TODO: holder as seperate object?
-    holder_pose: Pose = Pose(pos=jnp.array([0.2, -0.1, -0.012]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
+    holder_pose: Pose = Pose(pos=jnp.array([0.15, -0.25, 0.015]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
     """Pose of the tattoo pen holder (relative to workspace origin)."""
-    holder_width_m: float = 0.032
+    holder_width_m: float = 0.06
     """Width of the pen holder (meters)."""
-    holder_height_m: float = 0.01
+    holder_height_m: float = 0.03
     """Height of the pen holder (meters)."""
     holder_color: Tuple[int, int, int] = (0, 0, 0)
     """RGB color of the pen holder."""
 
 @dataclass
 class InkCapConfig:
-    pose: Pose = Pose(pos=jnp.array([0.2, 0.1, -0.01]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
+    pose: Pose = Pose(pos=jnp.array([0.1, -0.31, 0.05]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
     """Pose of the inkcap (relative to workspace origin)."""
     diameter_m: float = 0.018
     """Diameter of the inkcap (meters)."""
@@ -164,13 +164,13 @@ class InkCapConfig:
 
 @dataclass
 class SkinConfig:
-    pose: Pose = Pose(pos=jnp.array([0.2, 0.05, -0.01]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
+    pose: Pose = Pose(pos=jnp.array([0.145, -0.36, 0.04]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
     """Pose of the skin (relative to workspace origin)."""
     normal: Tuple[float, float, float] = (0.0, 0.0, 1.0)
     """Normal vector of the skin surface (pointing outwards from the surface)."""
-    width_m: float = 0.09
+    width_m: float = 0.12
     """Width of the area on the skin where the image will be projected (meters)."""
-    height_m: float = 0.12
+    height_m: float = 0.09
     """Height of the area on the skin where the image will be projected (meters)."""
     thickness: float = 0.001
     """Thickness of the visualized skin plane box (meters)."""
@@ -179,7 +179,7 @@ class SkinConfig:
 
 @dataclass
 class WorkspaceConfig:
-    origin: Pose = Pose(pos=jnp.array([0.3, 0.0, -0.1]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
+    origin: Pose = Pose(pos=jnp.array([0.1, 0.2, -0.1]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
     """Pose of the workspace origin (relative to robot base)."""
     center_offset: Pose = Pose(pos=jnp.array([0.14, -0.21, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
     """Offset of the workspace center from the origin (relative to workspace origin)."""
@@ -191,6 +191,13 @@ class WorkspaceConfig:
     """Thickness of the workspace (meters)."""
     color: Tuple[int, int, int] = (0, 0, 0) # black
     """RGB color for the workspace."""
+
+@jdc.pytree_dataclass
+class PixelTarget:
+    pos: Float[Array, "3"]
+    norm: Float[Array, "3"]
+    standoff_depth_m: float
+    max_depth_m: float
 
 @jdc.jit
 def ik(
@@ -252,7 +259,9 @@ def main(
     log.info("🦾 Adding robot...")
     urdf : yourdfpy.URDF = yourdfpy.URDF.load(robot_config.urdf_path)
     robot: pk.Robot = pk.Robot.from_urdf(urdf)
+    robot_joint_pos_sleep = np.array(list(robot_config.joint_pos_sleep))
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/robot")
+    urdf_vis.update_cfg(robot_joint_pos_sleep)
 
     if session_config.use_ik_target:
         ik_target = server.scene.add_transform_controls(
@@ -313,44 +322,20 @@ def main(
     )
 
     log.info("🖼️ Loading design...")
-    img = PIL.Image.open(design_config.image_path)
-    img = img.resize((design_config.image_width_px, design_config.image_height_px), PIL.Image.LANCZOS)
-    img = img.convert("L")
+    img_pil = PIL.Image.open(design_config.image_path)
+    img_pil = img_pil.resize((design_config.image_width_px, design_config.image_height_px), PIL.Image.LANCZOS)
+    img_pil = img_pil.convert("L")
+    img_np = np.array(img_pil)
     img_viz = server.gui.add_image(
-        image=np.array(img),
+        image=img_np,
         label=design_config.image_path,
-        format="jpeg",
-        jpeg_quality=90,
-        order=None,
+        format="png",
+        order="rgb",
         visible=True,
     )
-    # TODO: REPLACE THIS CODE HERE BELOW
-    # arr = jnp.array(np.array(img))
-    # h_px, w_px = arr.shape
-    # target_mask = arr <= design_config.image_threshold
-    # target_rows, target_cols = jnp.where(target_mask)
-    # norm_u = (target_cols / w_px) - 0.5
-    # norm_v = 0.5 - (target_rows / h_px)
-    # target_coords_normalized = list(zip(norm_u.tolist(), norm_v.tolist()))
-    # # TODO: superpixel design instead of random sampling
-    # if design_config.max_draw_pixels > 0 and len(target_coords_normalized) > design_config.max_draw_pixels:
-    #     target_coords_normalized = random.sample(target_coords_normalized, design_config.max_draw_pixels)
-    # num_targets = len(targets)
-    # positions_np = jnp.array([target.position for target in targets])
-    # orientations_np = jnp.array([target.orientation.wxyz for target in targets])
-    # colors_np = jnp.full((num_targets, 3), config.splat_color, dtype=jnp.uint8)
-    # scales_np = jnp.full((num_targets, 3), (config.splat_thickness, config.splat_thickness, config.splat_length), dtype=jnp.float32)
-    # covariances_np = jnp.array([
-    #     target.orientation.as_matrix() @ jnp.diag([config.splat_thickness, config.splat_thickness, config.splat_length]) @ target.orientation.as_matrix().T
-    #     for target in targets
-    # ], dtype=jnp.float32)
-    # design_viz = server.scene.add_gaussian_splats(
-    #     name="/design",
-    #     centers=jnp.array([target.pos for target in design.targets]),
-    #     covariances=covariances_np,
-    #     rgbs=colors_np,
-    #     opacities=opacities_np
-    # )
+   # TODO: threshold image using design_config.image_threshold
+   # TODO: create PixelTarget objects for each pixel that is above the threshold
+   # TODO: create a pointcloud from the PixelTargets, pointcloud pose is design_config.pose
 
     if session_config.enable_robot:
         log.info("🤖 Initializing robot driver...")
@@ -368,7 +353,7 @@ def main(
             goal_time=robot_config.set_all_position_goal_time,
             blocking=True,
         )
-        urdf_vis.update_cfg(np.array(driver.get_all_positions()))
+        urdf_vis.update_cfg(robot_joint_pos_sleep)
 
     try:
         while True:
