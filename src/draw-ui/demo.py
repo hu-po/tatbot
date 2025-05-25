@@ -80,24 +80,27 @@ class RobotConfig:
     ik_lambda_initial: float = 1.0
     """Initial lambda value for the IK trust region solver."""
 
-
-@dataclass
-class SessionConfig:
-    enable_robot: bool = False
-    """Whether to enable the real robot."""
-    use_ik_target: bool = True
-    """Whether to use an IK target for the robot."""
-    num_pixels_per_ink_dip: int = 60
-    """Number of pixels to draw before dipping the pen in the ink cup again."""
-
 @jdc.pytree_dataclass
 class Pose:
     pos: Float[Array, "3"]
     wxyz: Float[Array, "4"]
 
 @dataclass
+class SessionConfig:
+    enable_robot: bool = False
+    """Whether to enable the real robot."""
+    num_pixels_per_ink_dip: int = 60
+    """Number of pixels to draw before dipping the pen in the ink cup again."""
+    use_ik_target: bool = True
+    """Whether to use an IK target for the robot."""
+    ik_target_pose: Pose = Pose(pos=jnp.array([0.3, 0.0, 0.3]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
+    """Initial pose of the grabbable transform IK target."""
+    scale: float = 0.2
+    """Scale for the IK target visualization."""
+
+@dataclass
 class DesignConfig:
-    pose: Pose = Pose(pos=jnp.array([0.0, 0.0, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 1.0]))
+    pose: Pose = Pose(pos=jnp.array([0.2, 0.0, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
     """Pose of the design."""
     image_path: str = "/home/oop/tatbot/assets/designs/circle.png"
     """Local path to the tattoo design PNG image."""
@@ -122,11 +125,11 @@ class DesignConfig:
 
 @dataclass
 class TattooPenConfig:
-    pose: Pose = Pose(pos=jnp.array([0.0, 0.0, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 1.0]))
+    pose: Pose = Pose(pos=jnp.array([0.2, -0.1, -0.01]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
     """Pose of the tattoo pen."""
-    diameter_m: float = 0.008
+    diameter_m: float = 0.04
     """Diameter of the tattoo pen (meters)."""
-    height_m: float = 0.01
+    height_m: float = 0.15
     """Height of the tattoo pen (meters)."""
     gripper_grip_width: float = 0.032
     """Width of the gripper before using effort-based gripping (meters)."""
@@ -137,7 +140,7 @@ class TattooPenConfig:
     color: Tuple[int, int, int] = (0, 0, 0)
     """RGB color of the pen."""
     # TODO: holder as seperate object?
-    holder_pose: Pose = Pose(pos=jnp.array([0.0, 0.0, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 1.0]))
+    holder_pose: Pose = Pose(pos=jnp.array([0.2, -0.1, -0.012]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
     """Pose of the tattoo pen holder."""
     holder_width_m: float = 0.032
     """Width of the pen holder (meters)."""
@@ -148,7 +151,7 @@ class TattooPenConfig:
 
 @dataclass
 class InkCapConfig:
-    pose: Pose = Pose(pos=jnp.array([0.0, 0.0, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 1.0]))
+    pose: Pose = Pose(pos=jnp.array([0.2, 0.1, -0.01]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
     """Pose of the inkcap."""
     diameter_m: float = 0.018
     """Diameter of the inkcap (meters)."""
@@ -161,7 +164,7 @@ class InkCapConfig:
 
 @dataclass
 class SkinConfig:
-    pose: Pose = Pose(pos=jnp.array([0.0, 0.0, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 1.0]))
+    pose: Pose = Pose(pos=jnp.array([0.2, 0.05, -0.01]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
     """Pose of the skin."""
     normal: Tuple[float, float, float] = (0.0, 0.0, 1.0)
     """Normal vector of the skin surface (pointing outwards from the surface)."""
@@ -176,7 +179,7 @@ class SkinConfig:
 
 @dataclass
 class WorkspaceConfig:
-    origin: Pose = Pose(pos=jnp.array([0.0, 0.0, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 1.0]))
+    origin: Pose = Pose(pos=jnp.array([0.3, 0.0, -0.1]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
     """Pose of the workspace origin."""
     width_m: float = 0.42
     """Width of the workspace (meters)."""
@@ -245,54 +248,87 @@ def main(
     step_timing_handle = server.gui.add_number("step (ms)", 0.001, disabled=True)
 
     log.info("🔲 Adding workspace...")
-    workspace_viz = server.scene.add_box(
-        name="/workspace",
+    workspace_transform = server.scene.add_transform_controls(
+        "/workspace",
+        scale=0.1,
         position=workspace_config.origin.pos,
         wxyz=workspace_config.origin.wxyz,
+    )
+    workspace_viz = server.scene.add_box(
+        name="/workspace/box",
+        position=(0, 0, 0),
+        wxyz=(1, 0, 0, 0),
         dimensions=(workspace_config.width_m, workspace_config.height_m, workspace_config.thickness),
         color=workspace_config.color
     )
-    
+
     log.info("🦾 Adding robot...")
     urdf : yourdfpy.URDF = yourdfpy.URDF.load(robot_config.urdf_path)
     robot: pk.Robot = pk.Robot.from_urdf(urdf)
-    urdf_vis = ViserUrdf(server, urdf, root_node_name="/base")
+    urdf_vis = ViserUrdf(server, urdf, root_node_name="/robot")
 
     if session_config.use_ik_target:
         ik_target = server.scene.add_transform_controls(
-            "/ik_target", scale=0.2, position=(0.30, 0.0, 0.30), wxyz=(0, 0, 0, 0)
+            "/workspace/ik_target",
+            scale=session_config.scale,
+            position=session_config.ik_target_pose.pos,
+            wxyz=session_config.ik_target_pose.wxyz,
         )    
 
     log.info("🎨 Adding inkcap...")
-    inkcap_viz = server.scene.add_box(
-        name="/inkcap",
+    inkcap_transform = server.scene.add_transform_controls(
+        "/workspace/inkcap",
+        scale=0.05,
         position=inkcap_config.pose.pos,
         wxyz=inkcap_config.pose.wxyz,
+    )
+    inkcap_viz = server.scene.add_box(
+        name="/workspace/inkcap/box",
+        position=(0, 0, 0),
+        wxyz=(1, 0, 0, 0),
         dimensions=(inkcap_config.diameter_m, inkcap_config.diameter_m, inkcap_config.height_m),
         color=inkcap_config.color
     )
-    
+
     log.info("🖋️ Adding pen...")
-    pen_viz = server.scene.add_box(
-        name="/pen",
+    pen_transform = server.scene.add_transform_controls(
+        "/workspace/pen",
+        scale=0.05,
         position=pen_config.pose.pos,
         wxyz=pen_config.pose.wxyz,
+    )
+    pen_viz = server.scene.add_box(
+        name="/workspace/pen/box",
+        position=(0, 0, 0),
+        wxyz=(1, 0, 0, 0),
         dimensions=(pen_config.diameter_m, pen_config.diameter_m, pen_config.height_m),
         color=pen_config.color
     )
-    pen_holder_viz = server.scene.add_box(
-        name="/pen_holder",
+    pen_holder_transform = server.scene.add_transform_controls(
+        "/workspace/pen_holder",
+        scale=0.05,
         position=pen_config.holder_pose.pos,
         wxyz=pen_config.holder_pose.wxyz,
+    )
+    pen_holder_viz = server.scene.add_box(
+        name="/workspace/pen_holder/box",
+        position=(0, 0, 0),
+        wxyz=(1, 0, 0, 0),
         dimensions=(pen_config.holder_width_m, pen_config.holder_width_m, pen_config.holder_height_m),
         color=pen_config.holder_color
     )
 
     log.info("💪 Adding skin...")
-    skin_viz = server.scene.add_box(
-        name="/skin",
+    skin_transform = server.scene.add_transform_controls(
+        "/workspace/skin",
+        scale=0.05,
         position=skin_config.pose.pos,
         wxyz=skin_config.pose.wxyz,
+    )
+    skin_viz = server.scene.add_box(
+        name="/workspace/skin/box",
+        position=(0, 0, 0),
+        wxyz=(1, 0, 0, 0),
         dimensions=(skin_config.width_m, skin_config.height_m, skin_config.thickness),
         color=skin_config.color
     )
