@@ -99,8 +99,6 @@ class SessionConfig:
     """Initial pose of the grabbable transform IK target for left robot (relative to root frame)."""
     ik_target_pose_r: Pose = Pose(pos=jnp.array([0.2, 0.0, 0.0]), wxyz=jnp.array([0.7, 0.0, 0.7, 0.0]))
     """Initial pose of the grabbable transform IK target for right robot (relative to root frame)."""
-    scale: float = 0.2
-    """Scale for the IK target visualization."""
 
 @dataclass
 class DesignConfig:
@@ -120,9 +118,9 @@ class DesignConfig:
     """Width of the area on the skin where the image will be projected (meters)."""
     image_height_m: float = 0.04
     """Height of the area on the skin where the image will be projected (meters)."""
-    point_size: float = 0.01
+    point_size: float = 0.001
     """Size of points in the point cloud visualization (meters)."""
-    point_color: Tuple[int, int, int] = (0, 0, 0)
+    point_color: Tuple[int, int, int] = (0, 0, 0) # black
     """Color for the points in the point cloud (RGB tuple)."""
     point_shape: str = "rounded"
     """Shape of points in the point cloud visualization."""
@@ -259,17 +257,17 @@ def main(
     robot_r: pk.Robot = pk.Robot.from_urdf(urdf_r)
     robot_joint_pos_sleep_l = np.array(list(robot_l_config.joint_pos_sleep))
     robot_joint_pos_sleep_r = np.array(list(robot_r_config.joint_pos_sleep))
-    robot_l_transform = server.scene.add_transform_controls(
+    server.scene.add_frame(
         "/robot_l",
-        scale=0.1,
         position=robot_l_config.pose.pos,
         wxyz=robot_l_config.pose.wxyz,
+        show_axes=False if log.getEffectiveLevel() > logging.DEBUG else True,
     )
-    robot_r_transform = server.scene.add_transform_controls(
+    server.scene.add_frame(
         "/robot_r",
-        scale=0.1,
         position=robot_r_config.pose.pos,
         wxyz=robot_r_config.pose.wxyz,
+        show_axes=False if log.getEffectiveLevel() > logging.DEBUG else True,
     )
     urdf_vis_l = ViserUrdf(server, urdf_l, root_node_name="/robot_l/base")
     urdf_vis_r = ViserUrdf(server, urdf_r, root_node_name="/robot_r/base")
@@ -279,23 +277,23 @@ def main(
     if session_config.use_ik_target:
         ik_target_l = server.scene.add_transform_controls(
             "/robot_l/ik_target",
-            scale=session_config.scale,
             position=session_config.ik_target_pose_l.pos,
             wxyz=session_config.ik_target_pose_l.wxyz,
+            scale=0.1,
         )
         ik_target_r = server.scene.add_transform_controls(
             "/robot_r/ik_target",
-            scale=session_config.scale,
             position=session_config.ik_target_pose_r.pos,
             wxyz=session_config.ik_target_pose_r.wxyz,
+            scale=0.1,
         )
 
     log.info("🔲 Adding workspace...")
-    workspace_transform = server.scene.add_transform_controls(
+    workspace_transform = server.scene.add_frame(
         "/workspace",
-        scale=0.1,
         position=workspace_config.origin.pos,
         wxyz=workspace_config.origin.wxyz,
+        show_axes=False if log.getEffectiveLevel() > logging.DEBUG else True,
     )
     workspace_viz = server.scene.add_box(
         name="/workspace/mat",
@@ -362,18 +360,11 @@ def main(
                 pixel_targets.append(pixel_target)
     log.info(f"🎨 Created {len(pixel_targets)} pixel targets.")
     positions = np.array([pt.pos for pt in pixel_targets])
-    transform = vtf.SE3.from_rotation_and_translation(
-        vtf.SO3.from_quaternion_xyzw(design_config.pose.wxyz),
-        design_config.pose.pos
-    )
-    positions = np.array([
-        transform.rotation().apply(p) + transform.translation()
-        for p in positions
-    ])
-    server.scene.add_transform_controls(
+    design_frame = server.scene.add_transform_controls(
         name="/design",
         position=design_config.pose.pos,
         wxyz=design_config.pose.wxyz,
+        scale=0.1,
     )
     server.scene.add_point_cloud(
         name="/design/pixel_targets",
