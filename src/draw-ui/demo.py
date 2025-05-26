@@ -120,12 +120,12 @@ class DesignConfig:
     """Width of the area on the skin where the image will be projected (meters)."""
     image_height_m: float = 0.04
     """Height of the area on the skin where the image will be projected (meters)."""
-    splat_length: float = 0.0000001
-    """Length of the splat along its main oriented axis (meters)."""
-    splat_thickness: float = 0.0000001
-    """Thickness of the splat for its other two axes (meters)."""
-    splat_color: Tuple[int, int, int] = (0, 0, 0)
-    """Color for the splats (RGB tuple)."""
+    point_size: float = 0.01
+    """Size of points in the point cloud visualization (meters)."""
+    point_color: Tuple[int, int, int] = (0, 0, 0)
+    """Color for the points in the point cloud (RGB tuple)."""
+    point_shape: str = "rounded"
+    """Shape of points in the point cloud visualization."""
 
 @dataclass
 class TattooPenConfig:
@@ -137,9 +137,9 @@ class TattooPenConfig:
     """Height of the tattoo pen (meters)."""
     gripper_grip_width: float = 0.032
     """Width of the gripper before using effort-based gripping (meters)."""
-    pen_height_delta: float = 0.136
-    """Distance from pen tip to end effector tip (meters)."""
-    pen_stroke_length: float = 0.008
+    standoff_depth_m: float = 0.01
+    """Depth of the standoff: when the pen is above the pixel target size, but before it begins the stroke (meters)."""
+    stroke_depth_m: float = 0.008
     """Length of pen stroke when drawing a pixel (meters)."""
     color: Tuple[int, int, int] = (0, 0, 0)
     """RGB color of the pen."""
@@ -192,7 +192,7 @@ class PixelTarget:
     pos: Float[Array, "3"]
     norm: Float[Array, "3"]
     standoff_depth_m: float
-    max_depth_m: float
+    stroke_depth_m: float
 
 @jdc.jit
 def ik(
@@ -355,9 +355,9 @@ def main(
                 meter_y = (y - design_config.image_height_px/2) * pixel_to_meter_y
                 pixel_target = PixelTarget(
                     pos=jnp.array([meter_x, meter_y, 0.0]),
-                    norm=jnp.array([0.0, 0.0, 1.0]),  # Normal pointing up
-                    standoff_depth_m=0.001,  # 1mm standoff
-                    max_depth_m=0.002,  # 2mm max depth
+                    norm=jnp.array([0.0, 0.0, 1.0]),
+                    standoff_depth_m=pen_config.standoff_depth_m,
+                    stroke_depth_m=pen_config.stroke_depth_m,
                 )
                 pixel_targets.append(pixel_target)
     log.info(f"🎨 Created {len(pixel_targets)} pixel targets.")
@@ -370,12 +370,17 @@ def main(
         transform.rotation().apply(p) + transform.translation()
         for p in positions
     ])
+    server.scene.add_transform_controls(
+        name="/design",
+        position=design_config.pose.pos,
+        wxyz=design_config.pose.wxyz,
+    )
     server.scene.add_point_cloud(
-        name="/workspace/pixel_targets",
+        name="/design/pixel_targets",
         points=positions,
-        colors=np.array([design_config.splat_color] * len(positions)),
-        point_size=0.005,
-        point_shape="rounded",
+        colors=np.array([design_config.point_color] * len(positions)),
+        point_size=design_config.point_size,
+        point_shape=design_config.point_shape,
     )
 
     if session_config.enable_robot:
