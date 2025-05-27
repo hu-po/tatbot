@@ -42,6 +42,8 @@ log = logging.getLogger(__name__)
 class CLIArgs:
     debug: bool = False
     """Enables debug logging."""
+    device_name: str = "cuda:0"
+    """Name of the JAX device to use (i.e. 'gpu', 'cpu')."""
 
 @jdc.pytree_dataclass
 class Pose:
@@ -464,23 +466,23 @@ def main(
             current_target_index = target_slider.value
             progress_bar.value = float(current_target_index) / (num_targets - 1)
             current_target = pixel_targets[current_target_index]
-            T_world_design = tf.SE3.from_rotation_and_translation(
-                tf.SO3(design_frame.wxyz),
-                design_frame.position
-            )
-            # Transform target from design frame to world frame
-            target_world_pos = T_world_design @ np.array(current_target.pose.pos)
-            target_world_ori = jaxlie.SO3.from_matrix(T_world_design.rotation().as_matrix()) @ jaxlie.SO3(current_target.pose.wxyz)
-            # Transformn target from world frame to robot base frame
-            T_world_robot = tf.SE3.from_rotation_and_translation(
-                tf.SO3(robot_l_config.pose.wxyz),
-                robot_l_config.pose.pos
-            )
-            T_robot_world = T_world_robot.inverse()
-            target_robot_pos = T_robot_world @ target_world_pos
-            target_robot_ori = jaxlie.SO3.from_matrix(T_robot_world.rotation().as_matrix()) @ target_world_ori
-            ik_target_l.position = target_world_pos
-            ik_target_l.wxyz = target_world_ori.wxyz
+            # T_world_design = tf.SE3.from_rotation_and_translation(
+            #     tf.SO3(design_frame.wxyz),
+            #     design_frame.position
+            # )
+            # # Transform target from design frame to world frame
+            # target_world_pos = T_world_design @ np.array(current_target.pose.pos)
+            # target_world_ori = jaxlie.SO3.from_matrix(T_world_design.rotation().as_matrix()) @ jaxlie.SO3(current_target.pose.wxyz)
+            # # Transformn target from world frame to robot base frame
+            # T_world_robot = tf.SE3.from_rotation_and_translation(
+            #     tf.SO3(robot_l_config.pose.wxyz),
+            #     robot_l_config.pose.pos
+            # )
+            # T_robot_world = T_world_robot.inverse()
+            # target_robot_pos = T_robot_world @ target_world_pos
+            # target_robot_ori = jaxlie.SO3.from_matrix(T_robot_world.rotation().as_matrix()) @ target_world_ori
+            # ik_target_l.position = target_world_pos
+            # ik_target_l.wxyz = target_world_ori.wxyz
 
             log.debug("🔍 Solving IK...")
             ik_start_time = time.time()
@@ -488,8 +490,8 @@ def main(
                 solution_l : jax.Array = ik(
                     robot=robot_l,
                     target_link_index=jnp.array(robot_l.links.names.index(robot_l_config.target_link_name)),
-                    target_wxyz=jnp.array(target_robot_ori.wxyz),
-                    target_position=jnp.array(target_robot_pos),
+                    target_wxyz=jnp.array(ik_target_l.wxyz),
+                    target_position=jnp.array(ik_target_l.position),
                     pos_weight=robot_l_config.ik_pos_weight,
                     ori_weight=robot_l_config.ik_ori_weight,
                     limit_weight=robot_l_config.ik_limit_weight,
@@ -588,6 +590,8 @@ if __name__ == "__main__":
     if args.debug:
         log.info("🐛 Debug mode enabled.")
         log.setLevel(logging.DEBUG)
+    jax.config.update('jax_platform_name', args.device_name)
+    log.info(f"🎮 Using JAX device: {args.device_name}")
     # TODO: cli args to override values
     # TODO: wrap entire script for hyperparameter tuning
     main(
