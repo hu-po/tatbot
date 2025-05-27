@@ -88,3 +88,7 @@ jax is used for gpu acceleration, to check if jax has access to gpu:
 ```bash
 uv run python -c "import jax; has_gpu = bool(jax.devices('gpu')); print(has_gpu)"
 ```
+
+## URDF
+
+tatbot is defined using a [custom URDF file](https://github.com/hu-po/tatbot-urdf), which might not be kept up to date with the official [trossen widowxai description](https://github.com/TrossenRobotics/trossen_arm_description)
