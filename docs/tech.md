@@ -74,6 +74,7 @@ python dependencies are managed with environments using [`uv`](https://docs.astr
 cd src/<foo-project>
 deactivate && \
 rm -rf .venv && \
+rm uv.lock && \
 uv venv && \
 source .venv/bin/activate && \
 uv pip install -r pyproject.toml && \
