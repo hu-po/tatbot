@@ -1,0 +1,11 @@
+[project]
+name = "realsense-viser"
+version = "0.0.1"
+requires-python = "==3.12.2"
+dependencies = [
+    "viser==0.2.23",
+    "Pillow>=9.0.0,<11.0.0",
+    "trossen-arm==1.8.1",
+    "pyroki @ git+https://github.com/chungmin99/pyroki.git@main#egg=pyroki"
+    "pyrealsense2",
+]

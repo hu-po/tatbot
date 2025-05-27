@@ -250,6 +250,35 @@ def main(
     render_timing_handle = server.gui.add_number("render (ms)", 0.001, disabled=True)
     step_timing_handle = server.gui.add_number("step (ms)", 0.001, disabled=True)
 
+    # Add sleep position buttons
+    with server.gui.add_folder("Robot Control"):
+        sleep_left_button = server.gui.add_button("Sleep Left Arm")
+        sleep_right_button = server.gui.add_button("Sleep Right Arm")
+        use_ik_left = server.gui.add_checkbox("Use IK Left Arm", initial_value=True)
+        use_ik_right = server.gui.add_checkbox("Use IK Right Arm", initial_value=True)
+
+        @sleep_left_button.on_click
+        def _(_):
+            log.debug("😴 Moving left robot to sleep pose...")
+            urdf_vis_l.update_cfg(robot_joint_pos_sleep_l)
+            if session_config.enable_robot:
+                driver_l.set_all_positions(
+                    trossen_arm.VectorDouble(list(robot_l_config.joint_pos_sleep)),
+                    goal_time=robot_l_config.set_all_position_goal_time,
+                    blocking=True,
+                )
+
+        @sleep_right_button.on_click
+        def _(_):
+            log.debug("😴 Moving right robot to sleep pose...")
+            urdf_vis_r.update_cfg(robot_joint_pos_sleep_r)
+            if session_config.enable_robot:
+                driver_r.set_all_positions(
+                    trossen_arm.VectorDouble(list(robot_r_config.joint_pos_sleep)),
+                    goal_time=robot_r_config.set_all_position_goal_time,
+                    blocking=True,
+                )
+
     log.info("🦾 Adding robots...")
     urdf_l : yourdfpy.URDF = yourdfpy.URDF.load(robot_l_config.urdf_path)
     urdf_r : yourdfpy.URDF = yourdfpy.URDF.load(robot_r_config.urdf_path)
@@ -413,26 +442,33 @@ def main(
             
             log.debug("🔍 Solving IK...")
             ik_start_time = time.time()
-            solution_l : jax.Array = ik(
-                robot=robot_l,
-                target_link_index=jnp.array(robot_l.links.names.index(robot_l_config.target_link_name)),
-                target_wxyz=jnp.array(ik_target_l.wxyz),
-                target_position=jnp.array(ik_target_l.position),
-                pos_weight=robot_l_config.ik_pos_weight,
-                ori_weight=robot_l_config.ik_ori_weight,
-                limit_weight=robot_l_config.ik_limit_weight,
-                lambda_initial=robot_l_config.ik_lambda_initial,
-            )
-            solution_r : jax.Array = ik(
-                robot=robot_r,
-                target_link_index=jnp.array(robot_r.links.names.index(robot_r_config.target_link_name)),
-                target_wxyz=jnp.array(ik_target_r.wxyz),
-                target_position=jnp.array(ik_target_r.position),
-                pos_weight=robot_r_config.ik_pos_weight,
-                ori_weight=robot_r_config.ik_ori_weight,
-                limit_weight=robot_r_config.ik_limit_weight,
-                lambda_initial=robot_r_config.ik_lambda_initial,
-            )
+            if use_ik_left.value:
+                solution_l : jax.Array = ik(
+                    robot=robot_l,
+                    target_link_index=jnp.array(robot_l.links.names.index(robot_l_config.target_link_name)),
+                    target_wxyz=jnp.array(ik_target_l.wxyz),
+                    target_position=jnp.array(ik_target_l.position),
+                    pos_weight=robot_l_config.ik_pos_weight,
+                    ori_weight=robot_l_config.ik_ori_weight,
+                    limit_weight=robot_l_config.ik_limit_weight,
+                    lambda_initial=robot_l_config.ik_lambda_initial,
+                )
+            else:
+                solution_l = jnp.array(urdf_vis_l.cfg)
+
+            if use_ik_right.value:
+                solution_r : jax.Array = ik(
+                    robot=robot_r,
+                    target_link_index=jnp.array(robot_r.links.names.index(robot_r_config.target_link_name)),
+                    target_wxyz=jnp.array(ik_target_r.wxyz),
+                    target_position=jnp.array(ik_target_r.position),
+                    pos_weight=robot_r_config.ik_pos_weight,
+                    ori_weight=robot_r_config.ik_ori_weight,
+                    limit_weight=robot_r_config.ik_limit_weight,
+                    lambda_initial=robot_r_config.ik_lambda_initial,
+                )
+            else:
+                solution_r = jnp.array(urdf_vis_r.cfg)
             ik_elapsed_time = time.time() - ik_start_time
 
             if session_config.enable_robot:
@@ -454,10 +490,11 @@ def main(
             log.debug("🎬 Rendering scene...")
             log.debug(f"🎯 IK Target L - pos: {ik_target_l.position}, wxyz: {ik_target_l.wxyz}")
             log.debug(f"🎯 IK Target R - pos: {ik_target_r.position}, wxyz: {ik_target_r.wxyz}")
+            log.debug(f"🔲 Workspace - pos: {workspace_transform.position}, wxyz: {workspace_transform.wxyz}")
+            log.debug(f"🖼️ Design - pos: {design_frame.position}, wxyz: {design_frame.wxyz}")
             log.debug(f"🎨 Inkcap - pos: {inkcap_viz.position}, wxyz: {inkcap_viz.wxyz}")
             log.debug(f"🖋️ Pen - pos: {pen_viz.position}, wxyz: {pen_viz.wxyz}")
             log.debug(f"💪 Skin - pos: {skin_viz.position}, wxyz: {skin_viz.wxyz}")
-            log.debug(f"🔲 Workspace - pos: {workspace_transform.position}, wxyz: {workspace_transform.wxyz}")
             urdf_vis_l.update_cfg(np.array(solution_l))
             urdf_vis_r.update_cfg(np.array(solution_r))
             render_elapsed_time = time.time() - render_start_time
@@ -474,8 +511,6 @@ def main(
     finally:
         if session_config.enable_robot:
             log.info("🦾 Shutting down robots...")
-            
-            # Shutdown left robot
             driver_l.cleanup()
             driver_l.configure(
                 robot_l_config.arm_model,
@@ -488,8 +523,6 @@ def main(
             driver_l.set_all_positions(trossen_arm.VectorDouble(list(robot_l_config.joint_pos_sleep)))
             log.info("🧹 Idling left robot motors")
             driver_l.set_all_modes(trossen_arm.Mode.idle)
-            
-            # Shutdown right robot
             driver_r.cleanup()
             driver_r.configure(
                 robot_r_config.arm_model,
