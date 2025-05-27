@@ -60,6 +60,8 @@ the following devices are connected to each compute node:
 2. press power button on `trossen-ai`, it will glow blue
 3. flip rocker switches to "on" on `arm-follower` and `arm-leader` control boxes
 
+## Setup
+
 keys, tokens, passwords are stored in the `.env` file.
 
 ```bash
@@ -79,4 +81,10 @@ uv venv && \
 source .venv/bin/activate && \
 uv pip install -r pyproject.toml && \
 uv run python demo.py
+```
+
+jax is used for gpu acceleration, to check if jax has access to gpu:
+
+```bash
+uv run python -c "import jax; has_gpu = bool(jax.devices('gpu')); print(has_gpu)"
 ```
