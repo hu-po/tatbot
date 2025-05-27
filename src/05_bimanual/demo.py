@@ -413,16 +413,18 @@ def main(
 
     if session_config.use_ik_target:
         ik_target_l = server.scene.add_transform_controls(
-            "/robot_l/ik_target",
+            "/ik_target_l",
             position=session_config.ik_target_pose_l.pos,
             wxyz=session_config.ik_target_pose_l.wxyz,
             scale=0.1,
+            opacity=0.5,
         )
         ik_target_r = server.scene.add_transform_controls(
-            "/robot_r/ik_target",
+            "/ik_target_r",
             position=session_config.ik_target_pose_r.pos,
             wxyz=session_config.ik_target_pose_r.wxyz,
             scale=0.1,
+            opacity=0.5,
         )
 
     if session_config.enable_robot:
@@ -444,7 +446,7 @@ def main(
         )
         driver_r.set_all_modes(trossen_arm.Mode.position)
 
-        log.info("😴 Going to sleep pose at startup.")
+        log.info("😴 On driver startup moving robots to sleep pose.")
         driver_l.set_all_positions(
             trossen_arm.VectorDouble(robot_l_config.joint_pos_sleep.tolist()),
             goal_time=robot_l_config.set_all_position_goal_time,
@@ -466,27 +468,11 @@ def main(
             current_target_index = target_slider.value
             progress_bar.value = float(current_target_index) / (num_targets - 1)
             current_target = pixel_targets[current_target_index]
-            # T_world_design = tf.SE3.from_rotation_and_translation(
-            #     tf.SO3(design_frame.wxyz),
-            #     design_frame.position
-            # )
-            # # Transform target from design frame to world frame
-            # target_world_pos = T_world_design @ np.array(current_target.pose.pos)
-            # target_world_ori = jaxlie.SO3.from_matrix(T_world_design.rotation().as_matrix()) @ jaxlie.SO3(current_target.pose.wxyz)
-            # # Transformn target from world frame to robot base frame
-            # T_world_robot = tf.SE3.from_rotation_and_translation(
-            #     tf.SO3(robot_l_config.pose.wxyz),
-            #     robot_l_config.pose.pos
-            # )
-            # T_robot_world = T_world_robot.inverse()
-            # target_robot_pos = T_robot_world @ target_world_pos
-            # target_robot_ori = jaxlie.SO3.from_matrix(T_robot_world.rotation().as_matrix()) @ target_world_ori
-            # ik_target_l.position = target_world_pos
-            # ik_target_l.wxyz = target_world_ori.wxyz
 
             log.debug("🔍 Solving IK...")
             ik_start_time = time.time()
             if use_ik_left.value:
+                log.debug(f"🎯 Left arm IK target: {ik_target_l.position}, {ik_target_l.wxyz}")
                 solution_l : jax.Array = ik(
                     robot=robot_l,
                     target_link_index=jnp.array(robot_l.links.names.index(robot_l_config.target_link_name)),
@@ -501,6 +487,7 @@ def main(
                 robot_joint_pos_current_l = np.array(solution_l)
 
             if use_ik_right.value:
+                log.debug(f"🎯 Right arm IK target: {ik_target_r.position}, {ik_target_r.wxyz}")
                 solution_r : jax.Array = ik(
                     robot=robot_r,
                     target_link_index=jnp.array(robot_r.links.names.index(robot_r_config.target_link_name)),
