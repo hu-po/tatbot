@@ -65,3 +65,9 @@ keys, tokens, passwords are stored in the `.env` file.
 ```bash
 source config/.env
 ```
+
+python dependencies are managed with environments using `uv`
+
+```bash
+deactivate && rm -rf .venv && uv venv && source .venv/bin/activate && uv pip install -r pyproject.toml
+```
