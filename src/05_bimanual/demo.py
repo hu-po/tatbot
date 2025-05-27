@@ -26,7 +26,7 @@ import PIL.Image
 import pyroki as pk
 import trossen_arm
 import viser
-import viser.transforms as vtf
+import viser.transforms as tf
 from viser.extras import ViserUrdf
 import yourdfpy
 import tyro
@@ -187,8 +187,7 @@ class WorkspaceConfig:
 
 @jdc.pytree_dataclass
 class PixelTarget:
-    pos: Float[Array, "3"]
-    norm: Float[Array, "3"]
+    pose: Pose
     standoff_depth_m: float
     stroke_depth_m: float
 
@@ -250,7 +249,66 @@ def main(
     render_timing_handle = server.gui.add_number("render (ms)", 0.001, disabled=True)
     step_timing_handle = server.gui.add_number("step (ms)", 0.001, disabled=True)
 
-    # Add sleep position buttons
+    log.info("🖼️ Loading design...")
+    img_pil = PIL.Image.open(design_config.image_path)
+    original_width, original_height = img_pil.size
+    if original_width > design_config.image_width_px or original_height > design_config.image_height_px:
+        img_pil = img_pil.resize((design_config.image_width_px, design_config.image_height_px), PIL.Image.LANCZOS)
+    img_pil = img_pil.convert("L")
+    img_np = np.array(img_pil)
+    img_width_px, img_height_px = img_pil.size
+    img_viz = server.gui.add_image(
+        image=img_np,
+        label=design_config.image_path,
+        format="png",
+        order="rgb",
+        visible=True,
+    )
+    thresholded_pixels = img_np <= design_config.image_threshold
+    pixel_targets: List[PixelTarget] = []
+    pixel_to_meter_x = design_config.image_width_m / img_width_px
+    pixel_to_meter_y = design_config.image_height_m / img_height_px
+    for y in range(img_height_px):
+        for x in range(img_width_px):
+            if thresholded_pixels[y, x]:
+                meter_x = (x - img_width_px/2) * pixel_to_meter_x
+                meter_y = (y - img_height_px/2) * pixel_to_meter_y
+                pixel_target = PixelTarget(
+                    pose=Pose(
+                        pos=jnp.array([meter_x, meter_y, 0.0]),
+                        wxyz=design_config.pose.wxyz
+                    ),
+                    standoff_depth_m=pen_config.standoff_depth_m,
+                    stroke_depth_m=pen_config.stroke_depth_m,
+                )
+                pixel_targets.append(pixel_target)
+    num_targets: int = len(pixel_targets)
+    log.info(f"🎨 Created {num_targets} pixel targets.")
+    positions = np.array([pt.pose.pos for pt in pixel_targets])
+    design_frame = server.scene.add_transform_controls(
+        name="/design",
+        position=design_config.pose.pos,
+        wxyz=design_config.pose.wxyz,
+        scale=0.1,
+    )
+    server.scene.add_point_cloud(
+        name="/design/pixel_targets",
+        points=positions,
+        colors=np.array([design_config.point_color] * len(positions)),
+        point_size=design_config.point_size,
+        point_shape=design_config.point_shape,
+    )
+    with server.gui.add_folder("Session Progress"):
+        progress_bar = server.gui.add_progress_bar(0.0)
+        target_slider = server.gui.add_slider(
+            "Target Index",
+            min=0,
+            max=num_targets - 1,
+            step=1,
+            initial_value=0,
+        )
+    current_target_index: int = 0
+
     with server.gui.add_folder("Robot Control"):
         sleep_left_button = server.gui.add_button("Sleep Left Arm")
         sleep_right_button = server.gui.add_button("Sleep Right Arm")
@@ -260,6 +318,7 @@ def main(
         @sleep_left_button.on_click
         def _(_):
             log.debug("😴 Moving left robot to sleep pose...")
+            use_ik_left.value = False
             urdf_vis_l.update_cfg(robot_joint_pos_sleep_l)
             if session_config.enable_robot:
                 driver_l.set_all_positions(
@@ -271,6 +330,7 @@ def main(
         @sleep_right_button.on_click
         def _(_):
             log.debug("😴 Moving right robot to sleep pose...")
+            use_ik_right.value = False
             urdf_vis_r.update_cfg(robot_joint_pos_sleep_r)
             if session_config.enable_robot:
                 driver_r.set_all_positions(
@@ -279,52 +339,14 @@ def main(
                     blocking=True,
                 )
 
-    log.info("🦾 Adding robots...")
-    urdf_l : yourdfpy.URDF = yourdfpy.URDF.load(robot_l_config.urdf_path)
-    urdf_r : yourdfpy.URDF = yourdfpy.URDF.load(robot_r_config.urdf_path)
-    robot_l: pk.Robot = pk.Robot.from_urdf(urdf_l)
-    robot_r: pk.Robot = pk.Robot.from_urdf(urdf_r)
-    robot_joint_pos_sleep_l = np.array(list(robot_l_config.joint_pos_sleep))
-    robot_joint_pos_sleep_r = np.array(list(robot_r_config.joint_pos_sleep))
-    robot_joint_pos_current_l: Float[Array, "6"] = robot_joint_pos_sleep_l.copy()
-    robot_joint_pos_current_r: Float[Array, "6"] = robot_joint_pos_sleep_r.copy()
-    server.scene.add_frame(
-        "/robot_l",
-        position=robot_l_config.pose.pos,
-        wxyz=robot_l_config.pose.wxyz,
-        show_axes=False if log.getEffectiveLevel() > logging.DEBUG else True,
-    )
-    server.scene.add_frame(
-        "/robot_r",
-        position=robot_r_config.pose.pos,
-        wxyz=robot_r_config.pose.wxyz,
-        show_axes=False if log.getEffectiveLevel() > logging.DEBUG else True,
-    )
-    urdf_vis_l = ViserUrdf(server, urdf_l, root_node_name="/robot_l/base")
-    urdf_vis_r = ViserUrdf(server, urdf_r, root_node_name="/robot_r/base")
-    urdf_vis_l.update_cfg(robot_joint_pos_sleep_l)
-    urdf_vis_r.update_cfg(robot_joint_pos_sleep_r)
-
-    if session_config.use_ik_target:
-        ik_target_l = server.scene.add_transform_controls(
-            "/robot_l/ik_target",
-            position=session_config.ik_target_pose_l.pos,
-            wxyz=session_config.ik_target_pose_l.wxyz,
-            scale=0.1,
-        )
-        ik_target_r = server.scene.add_transform_controls(
-            "/robot_r/ik_target",
-            position=session_config.ik_target_pose_r.pos,
-            wxyz=session_config.ik_target_pose_r.wxyz,
-            scale=0.1,
-        )
-
     log.info("🔲 Adding workspace...")
     workspace_transform = server.scene.add_frame(
         "/workspace",
         position=workspace_config.origin.pos,
         wxyz=workspace_config.origin.wxyz,
         show_axes=False if log.getEffectiveLevel() > logging.DEBUG else True,
+        axes_length=0.01,
+        axes_radius=0.001,
     )
     workspace_viz = server.scene.add_box(
         name="/workspace/mat",
@@ -361,49 +383,47 @@ def main(
         color=skin_config.color
     )
 
-    log.info("🖼️ Loading design...")
-    img_pil = PIL.Image.open(design_config.image_path)
-    img_pil = img_pil.resize((design_config.image_width_px, design_config.image_height_px), PIL.Image.LANCZOS)
-    img_pil = img_pil.convert("L")
-    img_np = np.array(img_pil)
-    img_viz = server.gui.add_image(
-        image=img_np,
-        label=design_config.image_path,
-        format="png",
-        order="rgb",
-        visible=True,
+    log.info("🦾 Adding robots...")
+    urdf_l : yourdfpy.URDF = yourdfpy.URDF.load(robot_l_config.urdf_path)
+    urdf_r : yourdfpy.URDF = yourdfpy.URDF.load(robot_r_config.urdf_path)
+    robot_l: pk.Robot = pk.Robot.from_urdf(urdf_l)
+    robot_r: pk.Robot = pk.Robot.from_urdf(urdf_r)
+    robot_joint_pos_sleep_l = np.array(list(robot_l_config.joint_pos_sleep))
+    robot_joint_pos_sleep_r = np.array(list(robot_r_config.joint_pos_sleep))
+    robot_joint_pos_current_l: Float[Array, "6"] = robot_joint_pos_sleep_l.copy()
+    robot_joint_pos_current_r: Float[Array, "6"] = robot_joint_pos_sleep_r.copy()
+    server.scene.add_frame(
+        "/robot_l",
+        position=robot_l_config.pose.pos,
+        wxyz=robot_l_config.pose.wxyz,
+        show_axes=False if log.getEffectiveLevel() > logging.DEBUG else True,
+        axes_length=0.01,
+        axes_radius=0.001,
     )
-    thresholded_pixels = img_np <= design_config.image_threshold
-    pixel_targets: List[PixelTarget] = []
-    pixel_to_meter_x = design_config.image_width_m / design_config.image_width_px
-    pixel_to_meter_y = design_config.image_height_m / design_config.image_height_px
-    for y in range(design_config.image_height_px):
-        for x in range(design_config.image_width_px):
-            if thresholded_pixels[y, x]:
-                meter_x = (x - design_config.image_width_px/2) * pixel_to_meter_x
-                meter_y = (y - design_config.image_height_px/2) * pixel_to_meter_y
-                pixel_target = PixelTarget(
-                    pos=jnp.array([meter_x, meter_y, 0.0]),
-                    norm=jnp.array([0.0, 0.0, 1.0]),
-                    standoff_depth_m=pen_config.standoff_depth_m,
-                    stroke_depth_m=pen_config.stroke_depth_m,
-                )
-                pixel_targets.append(pixel_target)
-    log.info(f"🎨 Created {len(pixel_targets)} pixel targets.")
-    positions = np.array([pt.pos for pt in pixel_targets])
-    design_frame = server.scene.add_transform_controls(
-        name="/design",
-        position=design_config.pose.pos,
-        wxyz=design_config.pose.wxyz,
-        scale=0.1,
+    server.scene.add_frame(
+        "/robot_r",
+        position=robot_r_config.pose.pos,
+        wxyz=robot_r_config.pose.wxyz,
+        show_axes=False if log.getEffectiveLevel() > logging.DEBUG else True,
+        axes_length=0.01,
+        axes_radius=0.001,
     )
-    server.scene.add_point_cloud(
-        name="/design/pixel_targets",
-        points=positions,
-        colors=np.array([design_config.point_color] * len(positions)),
-        point_size=design_config.point_size,
-        point_shape=design_config.point_shape,
-    )
+    urdf_vis_l = ViserUrdf(server, urdf_l, root_node_name="/robot_l/base")
+    urdf_vis_r = ViserUrdf(server, urdf_r, root_node_name="/robot_r/base")
+
+    if session_config.use_ik_target:
+        ik_target_l = server.scene.add_transform_controls(
+            "/robot_l/ik_target",
+            position=session_config.ik_target_pose_l.pos,
+            wxyz=session_config.ik_target_pose_l.wxyz,
+            scale=0.1,
+        )
+        ik_target_r = server.scene.add_transform_controls(
+            "/robot_r/ik_target",
+            position=session_config.ik_target_pose_r.pos,
+            wxyz=session_config.ik_target_pose_r.wxyz,
+            scale=0.1,
+        )
 
     if session_config.enable_robot:
         log.info("🤖 Initializing robot drivers...")
@@ -430,18 +450,30 @@ def main(
             goal_time=robot_l_config.set_all_position_goal_time,
             blocking=True,
         )
+        urdf_vis_l.update_cfg(robot_joint_pos_sleep_l)
         driver_r.set_all_positions(
             trossen_arm.VectorDouble(list(robot_r_config.joint_pos_sleep)),
             goal_time=robot_r_config.set_all_position_goal_time,
             blocking=True,
         )
-        urdf_vis_l.update_cfg(robot_joint_pos_sleep_l)
         urdf_vis_r.update_cfg(robot_joint_pos_sleep_r)
 
     try:
         while True:
             step_start_time = time.time()
             
+            log.debug(f"🎯 Calculating target {current_target_index}...")
+            current_target_index = target_slider.value
+            progress_bar.value = float(current_target_index) / (num_targets - 1)
+            current_target = pixel_targets[current_target_index]
+            T_world_design = tf.SE3.from_rotation_and_translation(
+                tf.SO3(design_frame.wxyz),
+                design_frame.position
+            )
+            ik_target_l.position = T_world_design @ np.array(current_target.pose.pos)
+            _target_orientation = jaxlie.SO3.from_matrix(T_world_design.rotation().as_matrix()) @ jaxlie.SO3(current_target.pose.wxyz)
+            ik_target_l.wxyz = _target_orientation.wxyz
+
             log.debug("🔍 Solving IK...")
             ik_start_time = time.time()
             if use_ik_left.value:
@@ -455,10 +487,11 @@ def main(
                     limit_weight=robot_l_config.ik_limit_weight,
                     lambda_initial=robot_l_config.ik_lambda_initial,
                 )
-            else:
-                solution_l = jnp.array(robot_joint_pos_current_l)
+                log.debug(f"🎯 Left arm IK solution: {solution_l}")
+                robot_joint_pos_current_l = np.array(solution_l)
 
             if use_ik_right.value:
+                log.debug("🤖 Using IK for right arm")
                 solution_r : jax.Array = ik(
                     robot=robot_r,
                     target_link_index=jnp.array(robot_r.links.names.index(robot_r_config.target_link_name)),
@@ -469,20 +502,23 @@ def main(
                     limit_weight=robot_r_config.ik_limit_weight,
                     lambda_initial=robot_r_config.ik_lambda_initial,
                 )
-            else:
-                solution_r = jnp.array(robot_joint_pos_current_r)
+                log.debug(f"🎯 Right arm IK solution: {solution_r}")
+                robot_joint_pos_current_r = np.array(solution_r)
+
             ik_elapsed_time = time.time() - ik_start_time
 
             if session_config.enable_robot:
                 log.debug("🤖 Moving robots...")
                 robot_move_start_time = time.time()
+                log.debug(f"🎯 Moving left arm to: {robot_joint_pos_current_l[:-1]}")
                 driver_l.set_all_positions(
-                    trossen_arm.VectorDouble(np.array(solution_l[:-1]).tolist()),
+                    trossen_arm.VectorDouble(np.array(robot_joint_pos_current_l[:-1]).tolist()),
                     goal_time=robot_l_config.set_all_position_goal_time,
                     blocking=robot_l_config.set_all_position_blocking,
                 )
+                log.debug(f"🎯 Moving right arm to: {robot_joint_pos_current_r[:-1]}")
                 driver_r.set_all_positions(
-                    trossen_arm.VectorDouble(np.array(solution_r[:-1]).tolist()),
+                    trossen_arm.VectorDouble(np.array(robot_joint_pos_current_r[:-1]).tolist()),
                     goal_time=robot_r_config.set_all_position_goal_time,
                     blocking=robot_r_config.set_all_position_blocking,
                 )
@@ -497,10 +533,8 @@ def main(
             log.debug(f"🎨 Inkcap - pos: {inkcap_viz.position}, wxyz: {inkcap_viz.wxyz}")
             log.debug(f"🖋️ Pen - pos: {pen_viz.position}, wxyz: {pen_viz.wxyz}")
             log.debug(f"💪 Skin - pos: {skin_viz.position}, wxyz: {skin_viz.wxyz}")
-            urdf_vis_l.update_cfg(np.array(solution_l))
-            urdf_vis_r.update_cfg(np.array(solution_r))
-            robot_joint_pos_current_l = np.array(solution_l)
-            robot_joint_pos_current_r = np.array(solution_r)
+            urdf_vis_l.update_cfg(robot_joint_pos_current_l)
+            urdf_vis_r.update_cfg(robot_joint_pos_current_r)
             render_elapsed_time = time.time() - render_start_time
             render_timing_handle.value = render_elapsed_time * 1000
             ik_timing_handle.value = ik_elapsed_time * 1000
