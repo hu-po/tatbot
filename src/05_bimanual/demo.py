@@ -71,7 +71,10 @@ class RobotConfig:
     """End effector model for the right robot arm."""
     joint_pos_sleep: JointPos = JointPos(left=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), right=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
     """Sleep: robot is folded up, motors can be released (radians)."""
-    joint_pos_home: JointPos = JointPos(left=jnp.array([0.0, 1.05, 0.5, -1.06, 0.0, 0.0, 0.0, 0.0]), right=jnp.array([0.0, 1.05, 0.5, -1.06, 0.0, 0.0, 0.0, 0.0]))
+    joint_pos_home: JointPos = JointPos(
+        left=jnp.array([-0.03240784, 2.1669774, 1.8036014, -1.2129925, 0.00018064, -0.03240734, 0.022, 0.0]),
+        right=jnp.array([-0.06382597, 1.2545787, 0.78800493, -1.0274638, -0.00490101, -0.06363778, 0.022, 0.022])
+    )
     """Home: robot is ready to work (radians)."""
     set_all_position_goal_time: float = 1.0
     """Goal time in seconds when the goal positions should be reached."""
@@ -79,7 +82,7 @@ class RobotConfig:
     """Whether to block until the goal positions are reached."""
     clear_error_state: bool = True
     """Whether to clear the error state of the robot."""
-    target_links_name: tuple[str, str] = ("right/ee_gripper_link", "left/tattoo_needle")
+    target_links_name: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link")
     """Names of the links to be controlled."""
     # gripper_open_width: float = 0.04
     # """Width of the gripper when open (meters)."""
@@ -104,15 +107,15 @@ class SessionConfig:
     """Number of pixels to draw before dipping the pen in the ink cup again."""
     use_ik_target: bool = True
     """Whether to use an IK target for the robot."""
-    ik_target_pose_l: Pose = Pose(pos=jnp.array([0.2, 0.0, 0.0]), wxyz=jnp.array([0.7, 0.0, 0.7, 0.0]))
+    ik_target_pose_l: Pose = Pose(pos=jnp.array([0.2, -0.0571740852, 0.0]), wxyz=jnp.array([-0.00277338172, 0.0, 0.994983532, 0.0]))
     """Initial pose of the grabbable transform IK target for left robot (relative to root frame)."""
-    ik_target_pose_r: Pose = Pose(pos=jnp.array([0.2, 0.0, 0.0]), wxyz=jnp.array([0.7, 0.0, 0.7, 0.0]))
+    ik_target_pose_r: Pose = Pose(pos=jnp.array([0.2568429, -0.30759474, 0.00116006]), wxyz=jnp.array([0.714142855, 0.0, 0.686137207, 0.0]))
     """Initial pose of the grabbable transform IK target for right robot (relative to root frame)."""
 
 @dataclass
 class DesignConfig:
-    pose: Pose = Pose(pos=jnp.array([0.15, 0.25, 0.08]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
-    """Pose of the design (relative to workspace origin)."""
+    pose: Pose = Pose(pos=jnp.array([0.21333221, 0.00441298, -0.02088978]), wxyz=jnp.array([1.0, 0.0, 0.0, 0.0]))
+    """Pose of the design (relative to root frame)."""
     image_path: str = "/home/oop/tatbot/assets/designs/circle.png"
     """Local path to the tattoo design PNG image."""
     image_threshold: int = 127
@@ -136,25 +139,15 @@ class DesignConfig:
 
 @dataclass
 class TattooPenConfig:
-    pose: Pose = Pose(pos=jnp.array([0.15, -0.25, 0.06]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
-    """Pose of the tattoo pen (relative to workspace origin)."""
-    diameter_m: float = 0.025
-    """Diameter of the tattoo pen (meters)."""
-    height_m: float = 0.12
-    """Height of the tattoo pen (meters)."""
-    gripper_grip_width: float = 0.032
-    """Width of the gripper before using effort-based gripping (meters)."""
     standoff_depth_m: float = 0.01
     """Depth of the standoff: when the pen is above the pixel target size, but before it begins the stroke (meters)."""
     stroke_depth_m: float = 0.008
     """Length of pen stroke when drawing a pixel (meters)."""
-    color: Tuple[int, int, int] = (0, 0, 0)
-    """RGB color of the pen."""
 
 @dataclass
 class InkCapConfig:
-    pose: Pose = Pose(pos=jnp.array([0.1, -0.31, 0.05]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
-    """Pose of the inkcap (relative to workspace origin)."""
+    init_pose: Pose = Pose(pos=jnp.array([0.16813426, 0.03403597, -0.01519414]), wxyz=jnp.array([1.0, 0.0, 0.0, 0.0]))
+    """Pose of the inkcap (relative to root frame)."""
     diameter_m: float = 0.018
     """Diameter of the inkcap (meters)."""
     height_m: float = 0.01
@@ -166,8 +159,8 @@ class InkCapConfig:
 
 @dataclass
 class SkinConfig:
-    pose: Pose = Pose(pos=jnp.array([0.145, -0.36, 0.04]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
-    """Pose of the skin (relative to workspace origin)."""
+    init_pose: Pose = Pose(pos=jnp.array([0.21561891, 0.0046067, -0.02167064]), wxyz=jnp.array([1.0, 0.0, 0.0, 0.0]))
+    """Pose of the skin (relative to root frame)."""
     normal: Tuple[float, float, float] = (0.0, 0.0, 1.0)
     """Normal vector of the skin surface (pointing outwards from the surface)."""
     width_m: float = 0.12
@@ -181,24 +174,22 @@ class SkinConfig:
 
 @dataclass
 class WorkspaceConfig:
-    origin: Pose = Pose(pos=jnp.array([0.1, -0.10, -0.1]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
-    """Pose of the workspace origin (relative to root)."""
-    center_offset: Pose = Pose(pos=jnp.array([0.14, -0.21, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
-    """Offset of the workspace center from the origin (relative to workspace origin)."""
-    width_m: float = 0.28
-    """Width of the workspace (meters)."""
-    height_m: float = 0.42
-    """Height of the workspace (meters)."""
-    thickness: float = 0.001
-    """Thickness of the workspace (meters)."""
-    color: Tuple[int, int, int] = (0, 0, 0) # black
-    """RGB color for the workspace."""
+    init_pose: Pose = Pose(pos=jnp.array([0.08088932, 0.1035288, -0.05307121]), wxyz=jnp.array([1.0, 0.0, 0.0, 0.0]))
+    """Pose of the workspace origin (relative to root frame)."""
+    mat_center_offset: Pose = Pose(pos=jnp.array([0.14, -0.21, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
+    """Offset of the workspace mat center from the initial pose above"""
+    mat_width_m: float = 0.28
+    """Width of the workspace mat (meters)."""
+    mat_height_m: float = 0.42
+    """Height of the workspace mat (meters)."""
+    mat_thickness: float = 0.001
+    """Thickness of the workspace mat (meters)."""
+    mat_color: Tuple[int, int, int] = (0, 0, 0) # black
+    """RGB color for the workspace mat."""
 
 @jdc.pytree_dataclass
 class PixelTarget:
     pose: Pose
-    standoff_depth_m: float
-    stroke_depth_m: float
 
 @jdc.jit
 def ik(
@@ -273,7 +264,7 @@ def main(
         visible=True,
     )
     thresholded_pixels = img_np <= design_config.image_threshold
-    pixel_targets: List[PixelTarget] = []
+    pixel_targets: List[Pose] = []
     pixel_to_meter_x = design_config.image_width_m / img_width_px
     pixel_to_meter_y = design_config.image_height_m / img_height_px
     for y in range(img_height_px):
@@ -281,23 +272,20 @@ def main(
             if thresholded_pixels[y, x]:
                 meter_x = (x - img_width_px/2) * pixel_to_meter_x
                 meter_y = (y - img_height_px/2) * pixel_to_meter_y
-                pixel_target = PixelTarget(
-                    pose=Pose(
-                        pos=jnp.array([meter_x, meter_y, 0.0]),
-                        wxyz=design_config.pose.wxyz
-                    ),
-                    standoff_depth_m=pen_config.standoff_depth_m,
-                    stroke_depth_m=pen_config.stroke_depth_m,
+                pixel_target = Pose(
+                    pos=jnp.array([meter_x, meter_y, 0.0]),
+                    wxyz=design_config.pose.wxyz
                 )
                 pixel_targets.append(pixel_target)
     num_targets: int = len(pixel_targets)
     log.info(f"🎨 Created {num_targets} pixel targets.")
-    positions = np.array([pt.pose.pos for pt in pixel_targets])
-    design_frame = server.scene.add_transform_controls(
+    positions = np.array([pt.pos for pt in pixel_targets])
+    design_tf = server.scene.add_transform_controls(
         name="/design",
         position=design_config.pose.pos,
         wxyz=design_config.pose.wxyz,
-        scale=0.1,
+        scale=0.05,
+        opacity=0.2,
     )
     server.scene.add_point_cloud(
         name="/design/pixel_targets",
@@ -318,45 +306,45 @@ def main(
     current_target_index: int = 0
 
     log.info("🔲 Adding workspace...")
-    workspace_transform = server.scene.add_frame(
+    workspace_tf = server.scene.add_transform_controls(
         "/workspace",
-        position=workspace_config.origin.pos,
-        wxyz=workspace_config.origin.wxyz,
-        show_axes=False if log.getEffectiveLevel() > logging.DEBUG else True,
-        axes_length=0.01,
-        axes_radius=0.001,
+        position=workspace_config.init_pose.pos,
+        wxyz=workspace_config.init_pose.wxyz,
+        scale=0.05,
+        opacity=0.2,
     )
-    workspace_viz = server.scene.add_box(
+    server.scene.add_box(
         name="/workspace/mat",
-        position=workspace_config.center_offset.pos,
-        wxyz=workspace_config.center_offset.wxyz,
-        dimensions=(workspace_config.width_m, workspace_config.height_m, workspace_config.thickness),
-        color=workspace_config.color
+        position=workspace_config.mat_center_offset.pos,
+        wxyz=workspace_config.mat_center_offset.wxyz,
+        dimensions=(workspace_config.mat_width_m, workspace_config.mat_height_m, workspace_config.mat_thickness),
+        color=workspace_config.mat_color
     )
 
     log.info("🎨 Adding inkcap...")
-    inkcap_viz = server.scene.add_box(
-        name="/workspace/inkcap",
-        position=inkcap_config.pose.pos,
-        wxyz=inkcap_config.pose.wxyz,
+    inkcap_tf = server.scene.add_transform_controls(
+        "/inkcap",
+        position=inkcap_config.init_pose.pos,
+        wxyz=inkcap_config.init_pose.wxyz,
+        scale=0.05,
+        opacity=0.2,
+    )
+    server.scene.add_box(
+        name="/inkcap/box",
         dimensions=(inkcap_config.diameter_m, inkcap_config.diameter_m, inkcap_config.height_m),
         color=inkcap_config.color
     )
 
-    log.info("🖋️ Adding pen...")
-    pen_viz = server.scene.add_box(
-        name="/workspace/pen",
-        position=pen_config.pose.pos,
-        wxyz=pen_config.pose.wxyz,
-        dimensions=(pen_config.diameter_m, pen_config.diameter_m, pen_config.height_m),
-        color=pen_config.color
-    )
-
     log.info("💪 Adding skin...")
-    skin_viz = server.scene.add_box(
-        name="/workspace/skin",
-        position=skin_config.pose.pos,
-        wxyz=skin_config.pose.wxyz,
+    skin_tf = server.scene.add_transform_controls(
+        "/skin",
+        position=skin_config.init_pose.pos,
+        wxyz=skin_config.init_pose.wxyz,
+        scale=0.05,
+        opacity=0.2,
+    )
+    server.scene.add_box(
+        name="/skin/box",
         dimensions=(skin_config.width_m, skin_config.height_m, skin_config.thickness),
         color=skin_config.color
     )
@@ -365,11 +353,11 @@ def main(
     urdf : yourdfpy.URDF = yourdfpy.URDF.load(robot_config.urdf_path)
     robot: pk.Robot = pk.Robot.from_urdf(urdf)
     joint_pos_current: JointPos = robot_config.joint_pos_sleep
-    urdf_vis = ViserUrdf(server, urdf, root_node_name="/robot")
+    urdf_vis = ViserUrdf(server, urdf, root_node_name="/root")
     
     def move_robot(joint_pos: JointPos):
         log.debug(f"🤖 Moving robot to: {joint_pos}")
-        urdf_vis.update_cfg(joint_pos)
+        urdf_vis.update_cfg(np.concatenate([joint_pos.left, joint_pos.right]))
         if session_config.enable_robot:
             driver_l.set_all_positions(
                 trossen_arm.VectorDouble(joint_pos.left[:7].tolist()),
@@ -377,7 +365,7 @@ def main(
                 blocking=True,
             )
             driver_r.set_all_positions(
-                trossen_arm.VectorDouble(joint_pos.right[8:-1].tolist()),
+                trossen_arm.VectorDouble(joint_pos.right[8:-2].tolist()),
                 goal_time=robot_config.set_all_position_goal_time,
                 blocking=True,
             )
@@ -427,7 +415,11 @@ def main(
             )
             driver_l.set_all_modes(trossen_arm.Mode.position)
             driver_r.set_all_modes(trossen_arm.Mode.position)
-            move_robot(robot_config.joint_pos_sleep)
+        
+        log.info("🤖 Moving robots to sleep pose...")
+        move_robot(robot_config.joint_pos_sleep)
+        log.info("🤖 Moving robots to home pose...")
+        move_robot(robot_config.joint_pos_home)
 
         while True:
             step_start_time = time.time()
@@ -436,12 +428,18 @@ def main(
             current_target_index = target_slider.value
             progress_bar.value = float(current_target_index) / (num_targets - 1)
             current_target = pixel_targets[current_target_index]
+            design_to_root = jaxlie.SE3.from_rotation_and_translation(
+                jaxlie.SO3(design_tf.wxyz),
+                design_tf.position
+            )
+            pixel_pos_root = design_to_root @ current_target.pos
+            ik_target_l.position = pixel_pos_root
 
             log.debug("🔍 Solving IK...")
             ik_start_time = time.time()
             if use_ik.value:
-                log.debug(f"🎯 Left arm IK target: {ik_target_l.position}, {ik_target_l.wxyz}")
-                log.debug(f"🎯 Right arm IK target: {ik_target_r.position}, {ik_target_r.wxyz}")
+                log.debug(f"🎯 Left arm IK target - pos: {ik_target_l.position}, wxyz: {ik_target_l.wxyz}")
+                log.debug(f"🎯 Right arm IK target - pos: {ik_target_r.position}, wxyz: {ik_target_r.wxyz}")
                 target_link_indices = jnp.array([
                     robot.links.names.index(robot_config.target_links_name[0]),
                     robot.links.names.index(robot_config.target_links_name[1])
@@ -462,35 +460,20 @@ def main(
                     left=np.array(solution[:8]),  # First 8 joints for left arm
                     right=np.array(solution[8:])  # Last 8 joints for right arm
                 )
-                log.debug(f"🎯 IK solution: {solution}")
-
+                log.debug(f"🎯 IK solution shape: {solution.shape}")
+                log.debug(f"🎯 Left arm joints: {joint_pos_current.left}")
+                log.debug(f"🎯 Right arm joints: {joint_pos_current.right}")
             ik_elapsed_time = time.time() - ik_start_time
 
-            if session_config.enable_robot:
-                log.debug("🤖 Moving robots...")
-                robot_move_start_time = time.time()
-                log.debug(f"🎯 Moving left arm to: {joint_pos_current.left[:-1]}")
-                driver_l.set_all_positions(
-                    trossen_arm.VectorDouble(np.array(joint_pos_current.left[:-1]).tolist()),
-                    goal_time=robot_config.set_all_position_goal_time,
-                    blocking=robot_config.set_all_position_blocking,
-                )
-                log.debug(f"🎯 Moving right arm to: {joint_pos_current.right[:-1]}")
-                driver_r.set_all_positions(
-                    trossen_arm.VectorDouble(np.array(joint_pos_current.right[:-1]).tolist()),
-                    goal_time=robot_config.set_all_position_goal_time,
-                    blocking=robot_config.set_all_position_blocking,
-                )
-                robot_move_elapsed_time = time.time() - robot_move_start_time
+            log.debug("🤖 Moving robots...")
+            robot_move_start_time = time.time()
+            move_robot(joint_pos_current)
+            robot_move_elapsed_time = time.time() - robot_move_start_time
 
-            log.debug("🎬 Rendering scene...")
-            log.debug(f"🎯 IK Target L - pos: {ik_target_l.position}, wxyz: {ik_target_l.wxyz}")
-            log.debug(f"🎯 IK Target R - pos: {ik_target_r.position}, wxyz: {ik_target_r.wxyz}")
-            log.debug(f"🔲 Workspace - pos: {workspace_transform.position}, wxyz: {workspace_transform.wxyz}")
-            log.debug(f"🖼️ Design - pos: {design_frame.position}, wxyz: {design_frame.wxyz}")
-            log.debug(f"🎨 Inkcap - pos: {inkcap_viz.position}, wxyz: {inkcap_viz.wxyz}")
-            log.debug(f"🖋️ Pen - pos: {pen_viz.position}, wxyz: {pen_viz.wxyz}")
-            log.debug(f"💪 Skin - pos: {skin_viz.position}, wxyz: {skin_viz.wxyz}")
+            log.debug(f"🔲 Workspace - pos: {workspace_tf.position}, wxyz: {workspace_tf.wxyz}")
+            log.debug(f"🎨 Inkcap - pos: {inkcap_tf.position}, wxyz: {inkcap_tf.wxyz}")
+            log.debug(f"🖼️ Design - pos: {design_tf.position}, wxyz: {design_tf.wxyz}")
+            log.debug(f"💪 Skin - pos: {skin_tf.position}, wxyz: {skin_tf.wxyz}")
             ik_timing_handle.value = ik_elapsed_time * 1000
             if session_config.enable_robot:
                 robot_move_timing_handle.value = robot_move_elapsed_time * 1000
