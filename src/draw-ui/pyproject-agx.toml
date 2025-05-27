@@ -7,15 +7,6 @@ dependencies = [
     "Pillow>=9.0.0,<11.0.0",
     "trossen-arm==1.8.1",
     "pyroki @ git+https://github.com/chungmin99/pyroki.git@main#egg=pyroki"
-]
-
-[project.optional-dependencies]
-oop = [
-    "jax[cuda12]==0.4.27",
-    "jaxtyping>=0.2.25,<1.0.0",
-    "jaxlie>=1.3.4,<2.0.0"
-]
-agx = [
     "jax==0.4.25",
     "jaxtyping>=0.2.25,<1.0.0",
     "jaxlie>=1.3.4,<2.0.0"

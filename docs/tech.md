@@ -66,8 +66,16 @@ keys, tokens, passwords are stored in the `.env` file.
 source config/.env
 ```
 
-python dependencies are managed with environments using `uv`
+code is separated into projects, each intended to be run seperately, organized as folders in `/src`
+
+python dependencies are managed with environments using [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
 
 ```bash
-deactivate && rm -rf .venv && uv venv && source .venv/bin/activate && uv pip install -r pyproject.toml
+cd src/<foo-project>
+deactivate && \
+rm -rf .venv && \
+uv venv && \
+source .venv/bin/activate && \
+uv pip install -r pyproject.toml && \
+uv run python demo.py
 ```
