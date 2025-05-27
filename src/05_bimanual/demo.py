@@ -20,7 +20,7 @@ import jax_dataclasses as jdc
 import jaxlie
 import jaxls
 import jaxtyping
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, Int
 import numpy as np
 import PIL.Image
 import pyroki as pk
@@ -51,35 +51,42 @@ class Pose:
     wxyz: Float[Array, "4"]
 
 @jdc.pytree_dataclass
+class JointPos:
+    left: Float[Array, "8"]
+    right: Float[Array, "8"]
+
+@jdc.pytree_dataclass
 class RobotConfig:
-    pose: Pose = Pose(pos=jnp.array([0.0, -0.22, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
-    """Pose of the design (relative to root frame)."""
+    urdf_path: str = "/home/oop/tatbot-urdf/tatbot.urdf"
+    """Local path to the URDF file for the robot (https://github.com/hu-po/tatbot-urdf)."""
     arm_model: trossen_arm.Model = trossen_arm.Model.wxai_v0
     """Arm model for the robot."""
-    ip_address: str = "192.168.1.3"
-    """IP address of the robot."""
-    end_effector_model: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_follower
-    """End effector model for the robot."""
-    joint_pos_sleep: Float[Array, "8"] = jdc.field(default_factory=lambda: jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
-    """7D joint radians for the sleep pose (robot is folded up, motors can be released)."""
-    joint_pos_home: Float[Array, "8"] = jdc.field(default_factory=lambda: jnp.array([0.0, 1.05, 0.5, -1.06, 0.0, 0.0, 0.0, 0.0]))
-    """7D joint radians for the home pose (robot is active, staring down at workspace)."""
+    ip_address_l: str = "192.168.1.3"
+    """IP address of the left robot arm."""
+    ip_address_r: str = "192.168.1.4"
+    """IP address of the right robot arm."""
+    end_effector_model_l: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_follower
+    """End effector model for the left robot arm."""
+    end_effector_model_r: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_follower
+    """End effector model for the right robot arm."""
+    joint_pos_sleep: JointPos = JointPos(left=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), right=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
+    """Sleep: robot is folded up, motors can be released (radians)."""
+    joint_pos_home: JointPos = JointPos(left=jnp.array([0.0, 1.05, 0.5, -1.06, 0.0, 0.0, 0.0, 0.0]), right=jnp.array([0.0, 1.05, 0.5, -1.06, 0.0, 0.0, 0.0, 0.0]))
+    """Home: robot is ready to work (radians)."""
     set_all_position_goal_time: float = 1.0
     """Goal time in seconds when the goal positions should be reached."""
     set_all_position_blocking: bool = False
     """Whether to block until the goal positions are reached."""
     clear_error_state: bool = True
     """Whether to clear the error state of the robot."""
-    urdf_path: str = "/home/oop/trossen_arm_description/urdf/generated/wxai/wxai_follower.urdf"
-    """Local path to the URDF file for the robot."""
-    target_link_name: str = "ee_gripper_link"
-    """Name of the link to be controlled."""
-    gripper_open_width: float = 0.04
-    """Width of the gripper when open (meters)."""
-    gripper_grip_timeout: float = 1.0
-    """Timeout for effort-based gripping (seconds)."""
-    gripper_grip_effort: float = -20.0
-    """Maximum force for effort-based gripping (newtons)."""
+    target_links_name: tuple[str, str] = ("right/ee_gripper_link", "left/tattoo_needle")
+    """Names of the links to be controlled."""
+    # gripper_open_width: float = 0.04
+    # """Width of the gripper when open (meters)."""
+    # gripper_grip_timeout: float = 1.0
+    # """Timeout for effort-based gripping (seconds)."""
+    # gripper_grip_effort: float = -20.0
+    # """Maximum force for effort-based gripping (newtons)."""
     ik_pos_weight: float = 50.0
     """Weight for the position part of the IK cost function."""
     ik_ori_weight: float = 10.0
@@ -196,30 +203,30 @@ class PixelTarget:
 @jdc.jit
 def ik(
     robot: pk.Robot,
-    target_link_index: jax.Array,
-    target_wxyz: jax.Array,
-    target_position: jax.Array,
+    target_link_indices: Int[Array, "2"],
+    target_wxyz: Float[Array, "2 4"],
+    target_position: Float[Array, "2 3"],
     pos_weight: float,
     ori_weight: float,
     limit_weight: float,
     lambda_initial: float,
-) -> jax.Array:
+) -> Float[Array, "16"]:
     joint_var = robot.joint_var_cls(0)
     factors = [
-        pk.costs.pose_cost_analytic_jac(
+        pk.costs.pose_cost(
             robot,
             joint_var,
             jaxlie.SE3.from_rotation_and_translation(
                 jaxlie.SO3(target_wxyz), target_position
             ),
-            target_link_index,
+            target_link_indices,
             pos_weight=pos_weight,
             ori_weight=ori_weight,
         ),
         pk.costs.limit_cost(
             robot,
             joint_var,
-            weight=limit_weight,
+            jnp.array([limit_weight] * robot.joints.num_joints),
         ),
     ]
     sol = (
@@ -234,8 +241,7 @@ def ik(
     return sol[joint_var]
 
 def main(
-    robot_l_config: RobotConfig,
-    robot_r_config: RobotConfig,
+    robot_config: RobotConfig,
     session_config: SessionConfig,
     workspace_config: WorkspaceConfig,
     skin_config: SkinConfig,
@@ -311,36 +317,6 @@ def main(
         )
     current_target_index: int = 0
 
-    with server.gui.add_folder("Robot Control"):
-        sleep_left_button = server.gui.add_button("Sleep Left Arm")
-        sleep_right_button = server.gui.add_button("Sleep Right Arm")
-        use_ik_left = server.gui.add_checkbox("Use IK Left Arm", initial_value=True)
-        use_ik_right = server.gui.add_checkbox("Use IK Right Arm", initial_value=True)
-
-        @sleep_left_button.on_click
-        def _(_):
-            log.debug("😴 Moving left robot to sleep pose...")
-            use_ik_left.value = False
-            urdf_vis_l.update_cfg(robot_l_config.joint_pos_sleep)
-            if session_config.enable_robot:
-                driver_l.set_all_positions(
-                    trossen_arm.VectorDouble(robot_l_config.joint_pos_sleep.tolist()),
-                    goal_time=robot_l_config.set_all_position_goal_time,
-                    blocking=True,
-                )
-
-        @sleep_right_button.on_click
-        def _(_):
-            log.debug("😴 Moving right robot to sleep pose...")
-            use_ik_right.value = False
-            urdf_vis_r.update_cfg(robot_r_config.joint_pos_sleep)
-            if session_config.enable_robot:
-                driver_r.set_all_positions(
-                    trossen_arm.VectorDouble(robot_r_config.joint_pos_sleep.tolist()),
-                    goal_time=robot_r_config.set_all_position_goal_time,
-                    blocking=True,
-                )
-
     log.info("🔲 Adding workspace...")
     workspace_transform = server.scene.add_frame(
         "/workspace",
@@ -386,30 +362,35 @@ def main(
     )
 
     log.info("🦾 Adding robots...")
-    urdf_l : yourdfpy.URDF = yourdfpy.URDF.load(robot_l_config.urdf_path)
-    urdf_r : yourdfpy.URDF = yourdfpy.URDF.load(robot_r_config.urdf_path)
-    robot_l: pk.Robot = pk.Robot.from_urdf(urdf_l)
-    robot_r: pk.Robot = pk.Robot.from_urdf(urdf_r)
-    robot_joint_pos_current_l: Float[Array, "8"] = robot_l_config.joint_pos_sleep.copy()
-    robot_joint_pos_current_r: Float[Array, "8"] = robot_r_config.joint_pos_sleep.copy()
-    server.scene.add_frame(
-        "/robot_l",
-        position=robot_l_config.pose.pos,
-        wxyz=robot_l_config.pose.wxyz,
-        show_axes=False if log.getEffectiveLevel() > logging.DEBUG else True,
-        axes_length=0.01,
-        axes_radius=0.001,
-    )
-    server.scene.add_frame(
-        "/robot_r",
-        position=robot_r_config.pose.pos,
-        wxyz=robot_r_config.pose.wxyz,
-        show_axes=False if log.getEffectiveLevel() > logging.DEBUG else True,
-        axes_length=0.01,
-        axes_radius=0.001,
-    )
-    urdf_vis_l = ViserUrdf(server, urdf_l, root_node_name="/robot_l/base")
-    urdf_vis_r = ViserUrdf(server, urdf_r, root_node_name="/robot_r/base")
+    urdf : yourdfpy.URDF = yourdfpy.URDF.load(robot_config.urdf_path)
+    robot: pk.Robot = pk.Robot.from_urdf(urdf)
+    joint_pos_current: JointPos = robot_config.joint_pos_sleep
+    urdf_vis = ViserUrdf(server, urdf, root_node_name="/robot")
+    
+    def move_robot(joint_pos: JointPos):
+        log.debug(f"🤖 Moving robot to: {joint_pos}")
+        urdf_vis.update_cfg(joint_pos)
+        if session_config.enable_robot:
+            driver_l.set_all_positions(
+                trossen_arm.VectorDouble(joint_pos.left[:7].tolist()),
+                goal_time=robot_config.set_all_position_goal_time,
+                blocking=True,
+            )
+            driver_r.set_all_positions(
+                trossen_arm.VectorDouble(joint_pos.right[8:-1].tolist()),
+                goal_time=robot_config.set_all_position_goal_time,
+                blocking=True,
+            )
+
+    with server.gui.add_folder("Robot Control"):
+        sleep_button = server.gui.add_button("Sleep")
+        use_ik = server.gui.add_checkbox("enable ik", initial_value=True)
+
+        @sleep_button.on_click
+        def _(_):
+            log.debug("😴 Moving left robot to sleep pose...")
+            use_ik.value = False
+            move_robot(robot_config.joint_pos_sleep)
 
     if session_config.use_ik_target:
         ik_target_l = server.scene.add_transform_controls(
@@ -427,40 +408,27 @@ def main(
             opacity=0.5,
         )
 
-    if session_config.enable_robot:
-        log.info("🤖 Initializing robot drivers...")
-        driver_l = trossen_arm.TrossenArmDriver()
-        driver_r = trossen_arm.TrossenArmDriver()
-        driver_l.configure(
-            robot_l_config.arm_model,
-            robot_l_config.end_effector_model,
-            robot_l_config.ip_address,
-            robot_l_config.clear_error_state
-        )
-        driver_l.set_all_modes(trossen_arm.Mode.position)
-        driver_r.configure(
-            robot_r_config.arm_model,
-            robot_r_config.end_effector_model,
-            robot_r_config.ip_address,
-            robot_r_config.clear_error_state
-        )
-        driver_r.set_all_modes(trossen_arm.Mode.position)
-
-        log.info("😴 On driver startup moving robots to sleep pose.")
-        driver_l.set_all_positions(
-            trossen_arm.VectorDouble(robot_l_config.joint_pos_sleep.tolist()),
-            goal_time=robot_l_config.set_all_position_goal_time,
-            blocking=True,
-        )
-        urdf_vis_l.update_cfg(robot_l_config.joint_pos_sleep)
-        driver_r.set_all_positions(
-            trossen_arm.VectorDouble(robot_r_config.joint_pos_sleep.tolist()),
-            goal_time=robot_r_config.set_all_position_goal_time,
-            blocking=True,
-        )
-        urdf_vis_r.update_cfg(robot_r_config.joint_pos_sleep)
-
     try:
+        if session_config.enable_robot:
+            log.info("🤖 Initializing robot drivers...")
+            driver_l = trossen_arm.TrossenArmDriver()
+            driver_r = trossen_arm.TrossenArmDriver()
+            driver_l.configure(
+                robot_config.arm_model,
+                robot_config.end_effector_model_l,
+                robot_config.ip_address_l,
+                robot_config.clear_error_state
+            )
+            driver_r.configure(
+                robot_config.arm_model,
+                robot_config.end_effector_model_r,
+                robot_config.ip_address_r,
+                robot_config.clear_error_state
+            )
+            driver_l.set_all_modes(trossen_arm.Mode.position)
+            driver_r.set_all_modes(trossen_arm.Mode.position)
+            move_robot(robot_config.joint_pos_sleep)
+
         while True:
             step_start_time = time.time()
             
@@ -471,56 +439,50 @@ def main(
 
             log.debug("🔍 Solving IK...")
             ik_start_time = time.time()
-            if use_ik_left.value:
+            if use_ik.value:
                 log.debug(f"🎯 Left arm IK target: {ik_target_l.position}, {ik_target_l.wxyz}")
-                solution_l : jax.Array = ik(
-                    robot=robot_l,
-                    target_link_index=jnp.array(robot_l.links.names.index(robot_l_config.target_link_name)),
-                    target_wxyz=jnp.array(ik_target_l.wxyz),
-                    target_position=jnp.array(ik_target_l.position),
-                    pos_weight=robot_l_config.ik_pos_weight,
-                    ori_weight=robot_l_config.ik_ori_weight,
-                    limit_weight=robot_l_config.ik_limit_weight,
-                    lambda_initial=robot_l_config.ik_lambda_initial,
-                )
-                log.debug(f"🎯 Left arm IK solution: {solution_l}")
-                robot_joint_pos_current_l = np.array(solution_l)
-
-            if use_ik_right.value:
                 log.debug(f"🎯 Right arm IK target: {ik_target_r.position}, {ik_target_r.wxyz}")
-                solution_r : jax.Array = ik(
-                    robot=robot_r,
-                    target_link_index=jnp.array(robot_r.links.names.index(robot_r_config.target_link_name)),
-                    target_wxyz=jnp.array(ik_target_r.wxyz),
-                    target_position=jnp.array(ik_target_r.position),
-                    pos_weight=robot_r_config.ik_pos_weight,
-                    ori_weight=robot_r_config.ik_ori_weight,
-                    limit_weight=robot_r_config.ik_limit_weight,
-                    lambda_initial=robot_r_config.ik_lambda_initial,
+                target_link_indices = jnp.array([
+                    robot.links.names.index(robot_config.target_links_name[0]),
+                    robot.links.names.index(robot_config.target_links_name[1])
+                ])
+                solution = ik(
+                    robot=robot,
+                    target_link_indices=target_link_indices,
+                    target_wxyz=jnp.array([ik_target_l.wxyz, ik_target_r.wxyz]),
+                    target_position=jnp.array([ik_target_l.position, ik_target_r.position]),
+                    pos_weight=robot_config.ik_pos_weight,
+                    ori_weight=robot_config.ik_ori_weight,
+                    limit_weight=robot_config.ik_limit_weight,
+                    lambda_initial=robot_config.ik_lambda_initial,
                 )
-                log.debug(f"🎯 Right arm IK solution: {solution_r}")
-                robot_joint_pos_current_r = np.array(solution_r)
+                
+                # Split solution into left and right arm joint positions
+                joint_pos_current = JointPos(
+                    left=np.array(solution[:8]),  # First 8 joints for left arm
+                    right=np.array(solution[8:])  # Last 8 joints for right arm
+                )
+                log.debug(f"🎯 IK solution: {solution}")
 
             ik_elapsed_time = time.time() - ik_start_time
 
             if session_config.enable_robot:
                 log.debug("🤖 Moving robots...")
                 robot_move_start_time = time.time()
-                log.debug(f"🎯 Moving left arm to: {robot_joint_pos_current_l[:-1]}")
+                log.debug(f"🎯 Moving left arm to: {joint_pos_current.left[:-1]}")
                 driver_l.set_all_positions(
-                    trossen_arm.VectorDouble(np.array(robot_joint_pos_current_l[:-1]).tolist()),
-                    goal_time=robot_l_config.set_all_position_goal_time,
-                    blocking=robot_l_config.set_all_position_blocking,
+                    trossen_arm.VectorDouble(np.array(joint_pos_current.left[:-1]).tolist()),
+                    goal_time=robot_config.set_all_position_goal_time,
+                    blocking=robot_config.set_all_position_blocking,
                 )
-                log.debug(f"🎯 Moving right arm to: {robot_joint_pos_current_r[:-1]}")
+                log.debug(f"🎯 Moving right arm to: {joint_pos_current.right[:-1]}")
                 driver_r.set_all_positions(
-                    trossen_arm.VectorDouble(np.array(robot_joint_pos_current_r[:-1]).tolist()),
-                    goal_time=robot_r_config.set_all_position_goal_time,
-                    blocking=robot_r_config.set_all_position_blocking,
+                    trossen_arm.VectorDouble(np.array(joint_pos_current.right[:-1]).tolist()),
+                    goal_time=robot_config.set_all_position_goal_time,
+                    blocking=robot_config.set_all_position_blocking,
                 )
                 robot_move_elapsed_time = time.time() - robot_move_start_time
 
-            render_start_time = time.time()
             log.debug("🎬 Rendering scene...")
             log.debug(f"🎯 IK Target L - pos: {ik_target_l.position}, wxyz: {ik_target_l.wxyz}")
             log.debug(f"🎯 IK Target R - pos: {ik_target_r.position}, wxyz: {ik_target_r.wxyz}")
@@ -529,10 +491,6 @@ def main(
             log.debug(f"🎨 Inkcap - pos: {inkcap_viz.position}, wxyz: {inkcap_viz.wxyz}")
             log.debug(f"🖋️ Pen - pos: {pen_viz.position}, wxyz: {pen_viz.wxyz}")
             log.debug(f"💪 Skin - pos: {skin_viz.position}, wxyz: {skin_viz.wxyz}")
-            urdf_vis_l.update_cfg(robot_joint_pos_current_l)
-            urdf_vis_r.update_cfg(robot_joint_pos_current_r)
-            render_elapsed_time = time.time() - render_start_time
-            render_timing_handle.value = render_elapsed_time * 1000
             ik_timing_handle.value = ik_elapsed_time * 1000
             if session_config.enable_robot:
                 robot_move_timing_handle.value = robot_move_elapsed_time * 1000
@@ -547,27 +505,23 @@ def main(
             log.info("🦾 Shutting down robots...")
             driver_l.cleanup()
             driver_l.configure(
-                robot_l_config.arm_model,
-                robot_l_config.end_effector_model,
-                robot_l_config.ip_address,
-                robot_l_config.clear_error_state
+                robot_config.arm_model,
+                robot_config.end_effector_model_l,
+                robot_config.ip_address_l,
+                robot_config.clear_error_state
             )
-            driver_l.set_all_modes(trossen_arm.Mode.position)
-            log.info("😴 Returning left robot to sleep pose.")
-            driver_l.set_all_positions(trossen_arm.VectorDouble(robot_l_config.joint_pos_sleep.tolist()))
-            log.info("🧹 Idling left robot motors")
-            driver_l.set_all_modes(trossen_arm.Mode.idle)
             driver_r.cleanup()
             driver_r.configure(
-                robot_r_config.arm_model,
-                robot_r_config.end_effector_model,
-                robot_r_config.ip_address,
-                robot_r_config.clear_error_state
+                robot_config.arm_model,
+                robot_config.end_effector_model_r,
+                robot_config.ip_address_r,
+                robot_config.clear_error_state
             )
+            driver_l.set_all_modes(trossen_arm.Mode.position)
             driver_r.set_all_modes(trossen_arm.Mode.position)
-            log.info("😴 Returning right robot to sleep pose.")
-            driver_r.set_all_positions(trossen_arm.VectorDouble(robot_r_config.joint_pos_sleep.tolist()))
-            log.info("🧹 Idling right robot motors")
+            move_robot(robot_config.joint_pos_sleep)
+            log.info("🧹 Idling robot motors")
+            driver_l.set_all_modes(trossen_arm.Mode.idle)
             driver_r.set_all_modes(trossen_arm.Mode.idle)
             
         log.info("🏁 Script complete.")
@@ -582,14 +536,7 @@ if __name__ == "__main__":
     # TODO: cli args to override values
     # TODO: wrap entire script for hyperparameter tuning
     main(
-        robot_l_config=RobotConfig(
-            pose=Pose(pos=jnp.array([-0.15, 0.0, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0])),
-            ip_address="192.168.1.3",
-            end_effector_model=trossen_arm.StandardEndEffector.wxai_v0_base,
-            joint_pos_sleep=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            joint_pos_home=jnp.array([0.0, 1.05, 0.5, -1.06, 0.0, 0.0, 0.0, 0.0]),
-        ),
-        robot_r_config=RobotConfig(), # right arm uses the default config values
+        robot_config=RobotConfig(),
         design_config=DesignConfig(),
         session_config=SessionConfig(),
         workspace_config=WorkspaceConfig(),
