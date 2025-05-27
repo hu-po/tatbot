@@ -56,14 +56,27 @@ class JointPos:
     right: Float[Array, "8"]
 
 @jdc.pytree_dataclass
+class TatbotState:
+    SLEEP: int = 0
+    """Robot is folded up, motors can be released."""
+    WORK: int = 1
+    """Robot is ready to work."""
+    STANDOFF: int = 2
+    """Robot is in standoff position above a pixel target."""
+    POKE: int = 3
+    """Robot is poking the pixel target."""
+    DIP: int = 4
+    """Robot is dipping the pen in the inkcap."""
+
+@jdc.pytree_dataclass
 class RobotConfig:
     urdf_path: str = "/home/oop/tatbot-urdf/tatbot.urdf"
     """Local path to the URDF file for the robot (https://github.com/hu-po/tatbot-urdf)."""
     arm_model: trossen_arm.Model = trossen_arm.Model.wxai_v0
     """Arm model for the robot."""
-    ip_address_l: str = "192.168.1.3"
+    ip_address_l: str = "192.168.1.2"
     """IP address of the left robot arm."""
-    ip_address_r: str = "192.168.1.4"
+    ip_address_r: str = "192.168.1.3"
     """IP address of the right robot arm."""
     end_effector_model_l: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_follower
     """End effector model for the left robot arm."""
@@ -76,7 +89,7 @@ class RobotConfig:
         right=jnp.array([-0.06382597, 1.2545787, 0.78800493, -1.0274638, -0.00490101, -0.06363778, 0.022, 0.022])
     )
     """Home: robot is ready to work (radians)."""
-    set_all_position_goal_time: float = 1.0
+    set_all_position_goal_time: float = 2.0
     """Goal time in seconds when the goal positions should be reached."""
     set_all_position_blocking: bool = False
     """Whether to block until the goal positions are reached."""
@@ -84,12 +97,6 @@ class RobotConfig:
     """Whether to clear the error state of the robot."""
     target_links_name: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link")
     """Names of the links to be controlled."""
-    # gripper_open_width: float = 0.04
-    # """Width of the gripper when open (meters)."""
-    # gripper_grip_timeout: float = 1.0
-    # """Timeout for effort-based gripping (seconds)."""
-    # gripper_grip_effort: float = -20.0
-    # """Maximum force for effort-based gripping (newtons)."""
     ik_pos_weight: float = 50.0
     """Weight for the position part of the IK cost function."""
     ik_ori_weight: float = 10.0
@@ -101,12 +108,14 @@ class RobotConfig:
 
 @dataclass
 class SessionConfig:
-    enable_robot: bool = False
+    enable_robot: bool = True
     """Whether to enable the real robot."""
     num_pixels_per_ink_dip: int = 60
     """Number of pixels to draw before dipping the pen in the ink cup again."""
     use_ik_target: bool = True
     """Whether to use an IK target for the robot."""
+    min_fps: float = 1.0
+    """Minimum frames per second to maintain. If 0 or negative, no minimum framerate is enforced."""
     ik_target_pose_l: Pose = Pose(pos=jnp.array([0.2, -0.0571740852, 0.0]), wxyz=jnp.array([-0.00277338172, 0.0, 0.994983532, 0.0]))
     """Initial pose of the grabbable transform IK target for left robot (relative to root frame)."""
     ik_target_pose_r: Pose = Pose(pos=jnp.array([0.2568429, -0.30759474, 0.00116006]), wxyz=jnp.array([0.714142855, 0.0, 0.686137207, 0.0]))
@@ -242,10 +251,11 @@ def main(
 ):
     log.info("🚀 Starting viser server...")
     server: viser.ViserServer = viser.ViserServer()
+
+    # timing handles display duration of sub-steps
     ik_timing_handle = server.gui.add_number("ik (ms)", 0.001, disabled=True)
     if session_config.enable_robot:
         robot_move_timing_handle = server.gui.add_number("robot move (ms)", 0.001, disabled=True)
-    render_timing_handle = server.gui.add_number("render (ms)", 0.001, disabled=True)
     step_timing_handle = server.gui.add_number("step (ms)", 0.001, disabled=True)
 
     log.info("🖼️ Loading design...")
@@ -365,20 +375,10 @@ def main(
                 blocking=True,
             )
             driver_r.set_all_positions(
-                trossen_arm.VectorDouble(joint_pos.right[8:-2].tolist()),
+                trossen_arm.VectorDouble(joint_pos.right[:7].tolist()),
                 goal_time=robot_config.set_all_position_goal_time,
                 blocking=True,
             )
-
-    with server.gui.add_folder("Robot Control"):
-        sleep_button = server.gui.add_button("Sleep")
-        use_ik = server.gui.add_checkbox("enable ik", initial_value=True)
-
-        @sleep_button.on_click
-        def _(_):
-            log.debug("😴 Moving left robot to sleep pose...")
-            use_ik.value = False
-            move_robot(robot_config.joint_pos_sleep)
 
     if session_config.use_ik_target:
         ik_target_l = server.scene.add_transform_controls(
@@ -396,6 +396,19 @@ def main(
             opacity=0.5,
         )
 
+    state: TatbotState = TatbotState.SLEEP
+
+    with server.gui.add_folder("Robot Control"):
+        sleep_button = server.gui.add_button("Sleep")
+        use_ik = server.gui.add_checkbox("enable ik", initial_value=False)
+
+        @sleep_button.on_click
+        def _(_):
+            log.debug("😴 Moving left robot to sleep pose...")
+            use_ik.value = False
+            global state
+            state = TatbotState.SLEEP
+            move_robot(robot_config.joint_pos_sleep)
     try:
         if session_config.enable_robot:
             log.info("🤖 Initializing robot drivers...")
@@ -418,22 +431,48 @@ def main(
         
         log.info("🤖 Moving robots to sleep pose...")
         move_robot(robot_config.joint_pos_sleep)
+        state = TatbotState.SLEEP
         log.info("🤖 Moving robots to home pose...")
         move_robot(robot_config.joint_pos_home)
-
+        state = TatbotState.WORK
+        
         while True:
             step_start_time = time.time()
             
-            log.debug(f"🎯 Calculating target {current_target_index}...")
-            current_target_index = target_slider.value
-            progress_bar.value = float(current_target_index) / (num_targets - 1)
-            current_target = pixel_targets[current_target_index]
-            design_to_root = jaxlie.SE3.from_rotation_and_translation(
-                jaxlie.SO3(design_tf.wxyz),
-                design_tf.position
-            )
-            pixel_pos_root = design_to_root @ current_target.pos
-            ik_target_l.position = pixel_pos_root
+            if state == TatbotState.WORK:
+                log.info(f"🎯 Selecting target {current_target_index}...")
+                current_target_index = target_slider.value
+                progress_bar.value = float(current_target_index) / (num_targets - 1)
+                current_target = pixel_targets[current_target_index]
+                log.debug(f" Calculating standoff position...")
+                design_to_root = jaxlie.SE3.from_rotation_and_translation(
+                    jaxlie.SO3(design_tf.wxyz),
+                    design_tf.position + jnp.array([0.0, 0.0, pen_config.standoff_depth_m])
+                )
+                pixel_pos_root = design_to_root @ current_target.pos
+                ik_target_l.position = pixel_pos_root
+                state = TatbotState.STANDOFF
+            elif state == TatbotState.STANDOFF:
+                log.debug(f" Calculating poke position...")
+                design_to_root = jaxlie.SE3.from_rotation_and_translation(
+                    jaxlie.SO3(design_tf.wxyz),
+                    design_tf.position
+                )
+                pixel_pos_root = design_to_root @ current_target.pos
+                ik_target_l.position = pixel_pos_root
+                state = TatbotState.POKE
+            elif state == TatbotState.POKE:
+                log.debug(f" Returning to standoff position...")
+                design_to_root = jaxlie.SE3.from_rotation_and_translation(
+                    jaxlie.SO3(design_tf.wxyz),
+                    design_tf.position + jnp.array([0.0, 0.0, pen_config.standoff_depth_m])
+                )
+                pixel_pos_root = design_to_root @ current_target.pos
+                ik_target_l.position = pixel_pos_root
+                target_slider.value += 1
+                state = TatbotState.WORK
+            elif state == TatbotState.DIP:
+                pass
 
             log.debug("🔍 Solving IK...")
             ik_start_time = time.time()
@@ -454,13 +493,10 @@ def main(
                     limit_weight=robot_config.ik_limit_weight,
                     lambda_initial=robot_config.ik_lambda_initial,
                 )
-                
-                # Split solution into left and right arm joint positions
                 joint_pos_current = JointPos(
-                    left=np.array(solution[:8]),  # First 8 joints for left arm
-                    right=np.array(solution[8:])  # Last 8 joints for right arm
+                    left=np.array(solution[:8]),
+                    right=np.array(solution[8:])
                 )
-                log.debug(f"🎯 IK solution shape: {solution.shape}")
                 log.debug(f"🎯 Left arm joints: {joint_pos_current.left}")
                 log.debug(f"🎯 Right arm joints: {joint_pos_current.right}")
             ik_elapsed_time = time.time() - ik_start_time
@@ -479,6 +515,9 @@ def main(
                 robot_move_timing_handle.value = robot_move_elapsed_time * 1000
             step_elapsed_time = time.time() - step_start_time
             step_timing_handle.value = step_elapsed_time * 1000
+            target_frame_time = 1.0 / session_config.min_fps
+            sleep_time = max(0.0, target_frame_time - step_elapsed_time)
+            time.sleep(sleep_time)
 
     # except Exception as e:
     #     log.error(f"❌ Error: {e}")
