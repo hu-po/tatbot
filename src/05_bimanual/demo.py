@@ -286,6 +286,8 @@ def main(
     robot_r: pk.Robot = pk.Robot.from_urdf(urdf_r)
     robot_joint_pos_sleep_l = np.array(list(robot_l_config.joint_pos_sleep))
     robot_joint_pos_sleep_r = np.array(list(robot_r_config.joint_pos_sleep))
+    robot_joint_pos_current_l: Float[Array, "6"] = robot_joint_pos_sleep_l.copy()
+    robot_joint_pos_current_r: Float[Array, "6"] = robot_joint_pos_sleep_r.copy()
     server.scene.add_frame(
         "/robot_l",
         position=robot_l_config.pose.pos,
@@ -454,7 +456,7 @@ def main(
                     lambda_initial=robot_l_config.ik_lambda_initial,
                 )
             else:
-                solution_l = jnp.array(urdf_vis_l.cfg)
+                solution_l = jnp.array(robot_joint_pos_current_l)
 
             if use_ik_right.value:
                 solution_r : jax.Array = ik(
@@ -468,7 +470,7 @@ def main(
                     lambda_initial=robot_r_config.ik_lambda_initial,
                 )
             else:
-                solution_r = jnp.array(urdf_vis_r.cfg)
+                solution_r = jnp.array(robot_joint_pos_current_r)
             ik_elapsed_time = time.time() - ik_start_time
 
             if session_config.enable_robot:
@@ -497,6 +499,8 @@ def main(
             log.debug(f"💪 Skin - pos: {skin_viz.position}, wxyz: {skin_viz.wxyz}")
             urdf_vis_l.update_cfg(np.array(solution_l))
             urdf_vis_r.update_cfg(np.array(solution_r))
+            robot_joint_pos_current_l = np.array(solution_l)
+            robot_joint_pos_current_r = np.array(solution_r)
             render_elapsed_time = time.time() - render_start_time
             render_timing_handle.value = render_elapsed_time * 1000
             ik_timing_handle.value = ik_elapsed_time * 1000
