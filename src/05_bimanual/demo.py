@@ -58,21 +58,6 @@ class JointPos:
     right: Float[Array, "8"]
 
 @jdc.pytree_dataclass
-class TatbotState:
-    SLEEP: int = 0
-    """Robot is folded up, motors can be released."""
-    WORK: int = 1
-    """Robot is ready to work."""
-    STANDOFF: int = 2
-    """Robot is in standoff position above a pixel target."""
-    POKE: int = 3
-    """Robot is poking the pixel target."""
-    DIP: int = 4
-    """Robot is dipping the pen in the inkcap."""
-    PAUSED: int = 5
-    """Robot is paused at current IK target position."""
-
-@jdc.pytree_dataclass
 class RobotConfig:
     urdf_path: str = "/home/oop/tatbot-urdf/tatbot.urdf"
     """Local path to the URDF file for the robot (https://github.com/hu-po/tatbot-urdf)."""
@@ -89,8 +74,8 @@ class RobotConfig:
     joint_pos_sleep: JointPos = JointPos(left=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), right=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
     """Sleep: robot is folded up, motors can be released (radians)."""
     joint_pos_home: JointPos = JointPos(
-        left=jnp.array([-0.001, 1.275, 1.307, -1.525, -0.000, -0.001, 0.022, 0.012]),
-        right=jnp.array([-0.218, 1.141, 0.860, -1.215, -0.017, -0.218, 0.022, 0.022])
+        left=jnp.array([0.052, 1.724, 1.653, -1.314, 0.010, 0.052, 0.022, 0.044]),
+        right=jnp.array([-0.234, 1.749, 0.906, -1.045, -1.230, -2.005, 0.022, 0.022])
     )
     """Home: robot is ready to work (radians)."""
     joint_pos_calib: JointPos = JointPos(
@@ -119,19 +104,26 @@ class RobotConfig:
 
 @dataclass
 class SessionConfig:
-    enable_robot: bool = False
+    enable_robot: bool = True
     """Whether to enable the real robot."""
     num_pixels_per_ink_dip: int = 60
     """Number of pixels to draw before dipping the pen in the ink cup again."""
     min_fps: float = 1.0
     """Minimum frames per second to maintain. If 0 or negative, no minimum framerate is enforced."""
-    ik_target_pose_l: Pose = Pose(pos=jnp.array([0.11567971, 0.02446881, 0.11096699]), wxyz=jnp.array([0.734230744, 0.0, 0.678871577, 0.0]))
+    ik_target_pose_l: Pose = Pose(pos=jnp.array([0.272, 0.074, 0.105]), wxyz=jnp.array([0.770, 0.000, 0.638, 0.000]))
     """Initial pose of the grabbable transform IK target for left robot (relative to root frame)."""
-    ik_target_pose_r: Pose = Pose(pos=jnp.array([0.17720025, -0.25615479, 0.08327261]), wxyz=jnp.array([0.727507238, 0.0, 0.673455865, 0.0]))
+    ik_target_pose_r: Pose = Pose(pos=jnp.array([0.268, -0.107, 0.098]), wxyz=jnp.array([0.731, -0.143, 0.088, 0.656]))
     """Initial pose of the grabbable transform IK target for right robot (relative to root frame)."""
-    states: List[str] = field(default_factory=lambda: ["SLEEP", "WORK", "STANDOFF", "POKE", "DIP", "PAUSED"])
-    """Possible states of the robot."""
-    initial_state: str = "SLEEP"
+    states: List[str] = field(default_factory=lambda: ["MANUAL", "WORK", "STANDOFF", "POKE", "DIP", "PAUSED"])
+    """Possible states of the robot.
+      > MANUAL: Manual control mode, robot follows ik targets.
+      > WORK: Robot is ready to work.
+      > STANDOFF: Robot is in standoff position above a pixel target.
+      > POKE: Robot is poking the pixel target.
+      > DIP: Robot is dipping the pen in the inkcap.
+      > PAUSED: Robot is paused at current IK target position.
+    """
+    initial_state: str = "PAUSED"
     """Initial state of the robot."""
 
 @dataclass
@@ -267,6 +259,8 @@ def main(
     palette_config: PaletteConfig,
     pen_config: TattooPenConfig,
 ):
+    debug_mode: bool = log.getEffectiveLevel() == logging.DEBUG
+
     log.info("🚀 Starting viser server...")
     server: viser.ViserServer = viser.ViserServer()
 
@@ -312,26 +306,42 @@ def main(
     )
 
     log.info("🔲 Adding workspace...")
-    workspace_tf = server.scene.add_transform_controls(
-        "/workspace",
-        position=workspace_config.init_pose.pos,
-        wxyz=workspace_config.init_pose.wxyz,
-        scale=0.2,
-        opacity=0.2,
-    )
+    if debug_mode:
+        workspace_tf = server.scene.add_transform_controls(
+            "/workspace",
+            position=workspace_config.init_pose.pos,
+            wxyz=workspace_config.init_pose.wxyz,
+            scale=0.2,
+            opacity=0.2,
+        )
+    else:
+        workspace_tf = server.scene.add_frame(
+            "/workspace",
+            position=workspace_config.init_pose.pos,
+            wxyz=workspace_config.init_pose.wxyz,
+            show_axes=False,
+        )
     server.scene.add_mesh_trimesh(
         name="/workspace/mesh",
         mesh=trimesh.load(workspace_config.mesh_path),
     )
 
     log.info("🎨 Adding palette...")
-    palette_tf = server.scene.add_transform_controls(
-        "/palette",
-        position=palette_config.init_pose.pos,
-        wxyz=palette_config.init_pose.wxyz,
-        scale=0.2,
-        opacity=0.2,
-    )
+    if debug_mode:
+        palette_tf = server.scene.add_transform_controls(
+            "/palette",
+            position=palette_config.init_pose.pos,
+            wxyz=palette_config.init_pose.wxyz,
+            scale=0.2,
+            opacity=0.2,
+        )
+    else:
+        palette_tf = server.scene.add_frame(
+            "/palette",
+            position=palette_config.init_pose.pos,
+            wxyz=palette_config.init_pose.wxyz,
+            show_axes=False,
+        )
     server.scene.add_mesh_trimesh(
         name="/palette/mesh",
         mesh=trimesh.load(palette_config.mesh_path),
@@ -339,26 +349,58 @@ def main(
     inkcap_tfs: List[viser.TransformControls] = []
     for i, inkcap in enumerate(palette_config.inkcaps):
         log.info(f"🎨 Adding inkcap {i}...")
-        inkcap_tf = server.scene.add_transform_controls(
-            f"/palette/inkcap_{i}",
-            position=inkcap.palette_pose.pos,
-            wxyz=inkcap.palette_pose.wxyz,
-            scale=0.2,
-            opacity=0.2,
-        )
+        if debug_mode:
+            inkcap_tf = server.scene.add_transform_controls(
+                f"/palette/inkcap_{i}",
+                position=inkcap.palette_pose.pos,
+                wxyz=inkcap.palette_pose.wxyz,
+                scale=0.2,
+                opacity=0.2,
+            )
+        else:
+            inkcap_tf = server.scene.add_frame(
+                f"/palette/inkcap_{i}",
+                position=inkcap.palette_pose.pos,
+                wxyz=inkcap.palette_pose.wxyz,
+                show_axes=False,
+            )
         inkcap_tfs.append(inkcap_tf)
 
     log.info("💪 Adding skin...")
-    skin_tf = server.scene.add_transform_controls(
-        "/skin",
-        position=skin_config.init_pose.pos,
-        wxyz=skin_config.init_pose.wxyz,
-        scale=0.2,
-        opacity=0.2,
-    )
+    if debug_mode:
+        skin_tf = server.scene.add_transform_controls(
+            "/skin",
+            position=skin_config.init_pose.pos,
+            wxyz=skin_config.init_pose.wxyz,
+            scale=0.2,
+            opacity=0.2,
+        )
+    else:
+        skin_tf = server.scene.add_frame(
+            "/skin",
+            position=skin_config.init_pose.pos,
+            wxyz=skin_config.init_pose.wxyz,
+            show_axes=False,
+        )
     server.scene.add_mesh_trimesh(
         name="/skin/mesh",
         mesh=trimesh.load(skin_config.mesh_path),
+    )
+
+    log.info("🎯 Adding ik targets...")
+    ik_target_l = server.scene.add_transform_controls(
+        "/ik_target_l",
+        position=session_config.ik_target_pose_l.pos,
+        wxyz=session_config.ik_target_pose_l.wxyz,
+        scale=0.1,
+        opacity=0.5,
+    )
+    ik_target_r = server.scene.add_transform_controls(
+        "/ik_target_r",
+        position=session_config.ik_target_pose_r.pos,
+        wxyz=session_config.ik_target_pose_r.wxyz,
+        scale=0.1,
+        opacity=0.5,
     )
 
     log.info("🦾 Adding robots...")
@@ -382,26 +424,6 @@ def main(
                 blocking=True,
             )
 
-    ik_target_l = server.scene.add_transform_controls(
-        "/ik_target_l",
-        position=session_config.ik_target_pose_l.pos,
-        wxyz=session_config.ik_target_pose_l.wxyz,
-        scale=0.1,
-        opacity=0.5,
-    )
-    ik_target_r = server.scene.add_transform_controls(
-        "/ik_target_r",
-        position=session_config.ik_target_pose_r.pos,
-        wxyz=session_config.ik_target_pose_r.wxyz,
-        scale=0.1,
-        opacity=0.5,
-    )
-
-    state_handle = server.gui.add_dropdown(
-        "State", options=session_config.states,
-        initial_value=session_config.initial_state
-    )
-
     with server.gui.add_folder("Session"):
         progress_bar = server.gui.add_progress_bar(0.0)
         target_slider = server.gui.add_slider(
@@ -423,22 +445,17 @@ def main(
         move_duration_ms = server.gui.add_number("robot move (ms)", 0.001, disabled=True)
         step_duration_ms = server.gui.add_number("step (ms)", 0.001, disabled=True)
     with server.gui.add_folder("Robot"):
+        state_handle = server.gui.add_dropdown(
+            "State", options=session_config.states,
+            initial_value=session_config.initial_state
+        )
         sleep_button = server.gui.add_button("Go to Sleep")
-        pause_checkbox = server.gui.add_checkbox("pause", initial_value=True)
 
         @sleep_button.on_click
         def _(_):
             log.debug("😴 Moving left robot to sleep pose...")
-            pause_checkbox.value = True
-            state_handle.value = "SLEEP"
             move_robot(robot_config.joint_pos_sleep)
-
-        @pause_checkbox.on_update
-        def _(_):
-            if pause_checkbox.value:
-                state_handle.value = "PAUSED"
-            else:
-                state_handle.value = "WORK"
+            state_handle.value = "PAUSED"
 
     try:
         if session_config.enable_robot:
@@ -462,22 +479,20 @@ def main(
         
         log.info("🤖 Moving robots to sleep pose...")
         move_robot(robot_config.joint_pos_sleep)
-        state_handle.value = "SLEEP"
-        if log.getEffectiveLevel() == logging.DEBUG:
+        if debug_mode:
             log.info("🤖 Moving robots to calibration pose...")
             move_robot(robot_config.joint_pos_calib)
             joint_pos_current = robot_config.joint_pos_calib
+            state_handle.value = "PAUSED"
         else:
             log.info("🤖 Moving robots to home pose...")
             move_robot(robot_config.joint_pos_home)
             joint_pos_current = robot_config.joint_pos_home
-            state_handle.value = "WORK"
-            
-        log.info("🤖 Pausing robots...")
-        state_handle.value = "PAUSED"
+            state_handle.value = "MANUAL"
+
         while True:
             step_start_time = time.time()
-            log.debug(f"🔍 State: {state_handle.value}")
+            log.debug(f"State: {state_handle.value}")
             
             if state_handle.value == "WORK":
                 log.info(f"🎯 Selecting target {current_target_index}...")
@@ -516,10 +531,10 @@ def main(
                 target_slider.value += 1
                 state_handle.value = "WORK"
             elif state_handle.value == "PAUSED":
-                log.debug("🔍 Paused")
+                log.debug(" Paused")
                 pass
 
-            if state_handle.value in ["WORK", "STANDOFF", "POKE"]:
+            if state_handle.value in ["MANUAL", "WORK", "STANDOFF", "POKE"]:
                 log.debug("🔍 Solving IK...")
                 ik_start_time = time.time()
                 log.debug(f"🎯 Left arm IK target - pos: {ik_target_l.position}, wxyz: {ik_target_l.wxyz}")
