@@ -130,7 +130,7 @@ class SessionConfig:
 class DesignConfig:
     pose: Pose = Pose(pos=jnp.array([0.313, 0.074, 0.065]), wxyz=jnp.array([1.000, 0.000, 0.000, 0.000]))
     """Pose of the design (relative to root frame)."""
-    image_path: str = "/home/oop/tatbot/assets/designs/circle.png"
+    image_path: str = "/home/oop/tatbot/assets/designs/flower.png"
     """Local path to the tattoo design PNG image."""
     image_threshold: int = 127
     """Threshold for B/W image. Pixels less than or equal to this value are targets. [0, 255]"""
@@ -408,21 +408,6 @@ def main(
     robot: pk.Robot = pk.Robot.from_urdf(urdf)
     joint_pos_current: JointPos = robot_config.joint_pos_sleep
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/root")
-    
-    def move_robot(joint_pos: JointPos, goal_time: float = robot_config.set_all_position_goal_time_slow):
-        log.debug(f"🤖 Moving robot to: {joint_pos}")
-        urdf_vis.update_cfg(np.concatenate([joint_pos.left, joint_pos.right]))
-        if session_config.enable_robot:
-            driver_l.set_all_positions(
-                trossen_arm.VectorDouble(joint_pos.left[:7].tolist()),
-                goal_time=goal_time,
-                blocking=True,
-            )
-            driver_r.set_all_positions(
-                trossen_arm.VectorDouble(joint_pos.right[:7].tolist()),
-                goal_time=goal_time,
-                blocking=True,
-            )
 
     with server.gui.add_folder("Session"):
         progress_bar = server.gui.add_progress_bar(0.0)
@@ -466,16 +451,31 @@ def main(
                 robot_config.arm_model,
                 robot_config.end_effector_model_l,
                 robot_config.ip_address_l,
-                robot_config.clear_error_state
+                False, # clear_error
             )
             driver_r.configure(
                 robot_config.arm_model,
                 robot_config.end_effector_model_r,
                 robot_config.ip_address_r,
-                robot_config.clear_error_state
+                False, # clear_error
             )
             driver_l.set_all_modes(trossen_arm.Mode.position)
             driver_r.set_all_modes(trossen_arm.Mode.position)
+
+        def move_robot(joint_pos: JointPos, goal_time: float = robot_config.set_all_position_goal_time_slow):
+            log.debug(f"🤖 Moving robot to: {joint_pos}")
+            urdf_vis.update_cfg(np.concatenate([joint_pos.left, joint_pos.right]))
+            if session_config.enable_robot:
+                driver_l.set_all_positions(
+                    trossen_arm.VectorDouble(joint_pos.left[:7].tolist()),
+                    goal_time=goal_time,
+                    blocking=True,
+                )
+                driver_r.set_all_positions(
+                    trossen_arm.VectorDouble(joint_pos.right[:7].tolist()),
+                    goal_time=goal_time,
+                    blocking=True,
+                )
         
         log.info("🤖 Moving robots to sleep pose...")
         move_robot(robot_config.joint_pos_sleep)
@@ -576,24 +576,45 @@ def main(
             log.debug(f"💪 Skin - pos: {skin_tf.position}, wxyz: {skin_tf.wxyz}")
             step_elapsed_time = time.time() - step_start_time
             step_duration_ms.value = step_elapsed_time * 1000
+
+    except Exception as e:
+        log.error(f"Error: {e}")
+        log.info("🦾 Getting robot error information ...")
+        driver_l.configure(
+            robot_config.arm_model,
+            robot_config.end_effector_model_l,
+            robot_config.ip_address_l,
+            False, # clear_error
+        )
+        driver_r.configure(
+            robot_config.arm_model,
+            robot_config.end_effector_model_r,
+            robot_config.ip_address_r,
+            False, # clear_error
+        )
+        error_info_l = driver_l.get_error_information()
+        error_info_r = driver_r.get_error_information()
+        if error_info_l:
+            log.error(f"Left arm error: {error_info_l}")
+        if error_info_r:
+            log.error(f"Right arm error: {error_info_r}")
+        raise e
     
     finally:
         log.info("🏁 Shutting down...")
         if session_config.enable_robot:
             log.info("🦾 Shutting down robots...")
-            driver_l.cleanup()
             driver_l.configure(
                 robot_config.arm_model,
                 robot_config.end_effector_model_l,
                 robot_config.ip_address_l,
-                robot_config.clear_error_state
+                True, # clear_error
             )
-            driver_r.cleanup()
             driver_r.configure(
                 robot_config.arm_model,
                 robot_config.end_effector_model_r,
                 robot_config.ip_address_r,
-                robot_config.clear_error_state
+                True, # clear_error
             )
             driver_l.set_all_modes(trossen_arm.Mode.position)
             driver_r.set_all_modes(trossen_arm.Mode.position)
