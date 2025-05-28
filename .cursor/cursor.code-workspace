@@ -3,6 +3,7 @@
       { "name": "tatbot", "path": "../../tatbot" },
       { "name": "pyroki", "path": "../../pyroki" },
       { "name": "viser", "path": "../../viser" },
+      { "name": "docs", "path": "../../docs" },
       { "name": "trossen_arm", "path": "../../trossen_arm" },
       { "name": "trossen_arm_description", "path": "../../trossen_arm_description" },
       { "name": "tatbot-urdf", "path": "../../tatbot-urdf" },
