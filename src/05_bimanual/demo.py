@@ -192,8 +192,8 @@ class SkinConfig:
 class WorkspaceConfig:
     init_pose: Pose = Pose(pos=jnp.array([0.08088932, 0.1035288, -0.05307121]), wxyz=jnp.array([1.0, 0.0, 0.0, 0.0]))
     """Pose of the workspace origin (relative to root frame)."""
-    mat_center_offset: Pose = Pose(pos=jnp.array([0.14, -0.21, 0.0]), wxyz=jnp.array([0.0, 0.0, 0.0, 0.0]))
-    """Offset of the workspace mat center from the initial pose above"""
+    mat_center_offset: Pose = Pose(pos=jnp.array([0.14, -0.21, 0.0]), wxyz=jnp.array([1.0, 0.0, 0.0, 0.0]))
+    """Offset of the workspace mat center from the initial pose above."""
     mat_width_m: float = 0.28
     """Width of the workspace mat (meters)."""
     mat_height_m: float = 0.42
