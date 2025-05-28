@@ -22,14 +22,15 @@ import jaxls
 import jaxtyping
 from jaxtyping import Array, Float, Int
 import numpy as np
+import open3d as o3d
 import PIL.Image
 import pyroki as pk
+import tyro
 import trossen_arm
 import viser
 import viser.transforms as tf
 from viser.extras import ViserUrdf
 import yourdfpy
-import tyro
 
 logging.basicConfig(
     level=logging.INFO,
@@ -108,7 +109,7 @@ class RobotConfig:
 
 @dataclass
 class SessionConfig:
-    enable_robot: bool = True
+    enable_robot: bool = False
     """Whether to enable the real robot."""
     num_pixels_per_ink_dip: int = 60
     """Number of pixels to draw before dipping the pen in the ink cup again."""
@@ -157,6 +158,8 @@ class TattooPenConfig:
 class InkCapConfig:
     init_pose: Pose = Pose(pos=jnp.array([0.16813426, 0.03403597, -0.01519414]), wxyz=jnp.array([1.0, 0.0, 0.0, 0.0]))
     """Pose of the inkcap (relative to root frame)."""
+    ply_path: str = "/home/oop/tatbot/assets/3d/palette.ply"
+    """Path to the .ply file for the inkcap point cloud."""
     diameter_m: float = 0.018
     """Diameter of the inkcap (meters)."""
     height_m: float = 0.01
@@ -165,6 +168,10 @@ class InkCapConfig:
     """Depth of the inkcap when dipping (meters)."""
     color: Tuple[int, int, int] = (0, 0, 0) # black
     """RGB color of the ink in the inkcap."""
+    point_size: float = 0.001
+    """Size of points in the point cloud visualization (meters)."""
+    point_shape: str = "rounded"
+    """Shape of points in the point cloud visualization."""
 
 @dataclass
 class SkinConfig:
@@ -339,11 +346,16 @@ def main(
         scale=0.05,
         opacity=0.2,
     )
-    server.scene.add_box(
-        name="/inkcap/box",
-        dimensions=(inkcap_config.diameter_m, inkcap_config.diameter_m, inkcap_config.height_m),
-        color=inkcap_config.color
-    )
+    # pcd = o3d.io.read_point_cloud(inkcap_config.ply_path)
+    # points = np.asarray(pcd.points)
+    # colors = np.asarray(pcd.colors) if pcd.has_colors() else np.array([inkcap_config.color] * len(points))
+    # server.scene.add_point_cloud(
+    #     name="/inkcap/points",
+    #     points=points,
+    #     colors=colors,
+    #     point_size=inkcap_config.point_size,
+    #     point_shape=inkcap_config.point_shape,
+    # )
 
     log.info("💪 Adding skin...")
     skin_tf = server.scene.add_transform_controls(
@@ -439,40 +451,42 @@ def main(
         while True:
             step_start_time = time.time()
             
-            if state == TatbotState.WORK:
-                log.info(f"🎯 Selecting target {current_target_index}...")
-                current_target_index = target_slider.value
-                progress_bar.value = float(current_target_index) / (num_targets - 1)
-                current_target = pixel_targets[current_target_index]
-                log.debug(f" Calculating standoff position...")
-                design_to_root = jaxlie.SE3.from_rotation_and_translation(
-                    jaxlie.SO3(design_tf.wxyz),
-                    design_tf.position + jnp.array([0.0, 0.0, pen_config.standoff_depth_m])
-                )
-                pixel_pos_root = design_to_root @ current_target.pos
-                ik_target_l.position = pixel_pos_root
-                state = TatbotState.STANDOFF
-            elif state == TatbotState.STANDOFF:
-                log.debug(f" Calculating poke position...")
-                design_to_root = jaxlie.SE3.from_rotation_and_translation(
-                    jaxlie.SO3(design_tf.wxyz),
-                    design_tf.position
-                )
-                pixel_pos_root = design_to_root @ current_target.pos
-                ik_target_l.position = pixel_pos_root
-                state = TatbotState.POKE
-            elif state == TatbotState.POKE:
-                log.debug(f" Returning to standoff position...")
-                design_to_root = jaxlie.SE3.from_rotation_and_translation(
-                    jaxlie.SO3(design_tf.wxyz),
-                    design_tf.position + jnp.array([0.0, 0.0, pen_config.standoff_depth_m])
-                )
-                pixel_pos_root = design_to_root @ current_target.pos
-                ik_target_l.position = pixel_pos_root
-                target_slider.value += 1
-                state = TatbotState.WORK
-            elif state == TatbotState.DIP:
-                pass
+            # if state == TatbotState.WORK:
+            #     log.info(f"🎯 Selecting target {current_target_index}...")
+            #     current_target_index = target_slider.value
+            #     if current_target_index >= num_targets:
+            #         log.info("Completed all targets, looping back to start.")
+            #         target_slider.value = 0
+            #         current_target_index = 0
+            #     progress_bar.value = float(current_target_index) / (num_targets - 1)
+            #     current_target = pixel_targets[current_target_index]
+            #     log.debug(f" Calculating standoff position...")
+            #     design_to_root = jaxlie.SE3.from_rotation_and_translation(
+            #         jaxlie.SO3(design_tf.wxyz),
+            #         design_tf.position + jnp.array([0.0, 0.0, pen_config.standoff_depth_m])
+            #     )
+            #     pixel_pos_root = design_to_root @ current_target.pos
+            #     ik_target_l.position = pixel_pos_root
+            #     state = TatbotState.STANDOFF
+            # elif state == TatbotState.STANDOFF:
+            #     log.debug(f" Calculating poke position...")
+            #     design_to_root = jaxlie.SE3.from_rotation_and_translation(
+            #         jaxlie.SO3(design_tf.wxyz),
+            #         design_tf.position
+            #     )
+            #     pixel_pos_root = design_to_root @ current_target.pos
+            #     ik_target_l.position = pixel_pos_root
+            #     state = TatbotState.POKE
+            # elif state == TatbotState.POKE:
+            #     log.debug(f" Returning to standoff position...")
+            #     design_to_root = jaxlie.SE3.from_rotation_and_translation(
+            #         jaxlie.SO3(design_tf.wxyz),
+            #         design_tf.position + jnp.array([0.0, 0.0, pen_config.standoff_depth_m])
+            #     )
+            #     pixel_pos_root = design_to_root @ current_target.pos
+            #     ik_target_l.position = pixel_pos_root
+            #     target_slider.value += 1
+            #     state = TatbotState.WORK
 
             log.debug("🔍 Solving IK...")
             ik_start_time = time.time()
@@ -515,9 +529,9 @@ def main(
                 robot_move_timing_handle.value = robot_move_elapsed_time * 1000
             step_elapsed_time = time.time() - step_start_time
             step_timing_handle.value = step_elapsed_time * 1000
-            target_frame_time = 1.0 / session_config.min_fps
-            sleep_time = max(0.0, target_frame_time - step_elapsed_time)
-            time.sleep(sleep_time)
+            # target_frame_time = 1.0 / session_config.min_fps
+            # sleep_time = max(0.0, target_frame_time - step_elapsed_time)
+            # time.sleep(sleep_time)
 
     # except Exception as e:
     #     log.error(f"❌ Error: {e}")
