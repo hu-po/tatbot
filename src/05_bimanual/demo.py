@@ -6,8 +6,9 @@
 # INFO: When editing, do not add any additional comments to the code.
 # INFO: When editing, use log to add minimal but essential debug and info messages.
 # INFO: Use emojis tastefully.
+# INFO: When setting float values in configs, use 4 decimal places
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import os
 import random
@@ -22,10 +23,10 @@ import jaxls
 import jaxtyping
 from jaxtyping import Array, Float, Int
 import numpy as np
-# import open3d as o3d
 import PIL.Image
 import pyroki as pk
 import tyro
+import trimesh
 import trossen_arm
 import viser
 import viser.transforms as tf
@@ -68,6 +69,8 @@ class TatbotState:
     """Robot is poking the pixel target."""
     DIP: int = 4
     """Robot is dipping the pen in the inkcap."""
+    PAUSED: int = 5
+    """Robot is paused at current IK target position."""
 
 @jdc.pytree_dataclass
 class RobotConfig:
@@ -117,10 +120,14 @@ class SessionConfig:
     """Whether to use an IK target for the robot."""
     min_fps: float = 1.0
     """Minimum frames per second to maintain. If 0 or negative, no minimum framerate is enforced."""
-    ik_target_pose_l: Pose = Pose(pos=jnp.array([0.2, -0.0571740852, 0.0]), wxyz=jnp.array([-0.00277338172, 0.0, 0.994983532, 0.0]))
+    ik_target_pose_l: Pose = Pose(pos=jnp.array([0.2, -0.0571740852, 0.0]), wxyz=jnp.array([0.7342, 0.0, 0.6789, 0.0]))
     """Initial pose of the grabbable transform IK target for left robot (relative to root frame)."""
-    ik_target_pose_r: Pose = Pose(pos=jnp.array([0.2568429, -0.30759474, 0.00116006]), wxyz=jnp.array([0.714142855, 0.0, 0.686137207, 0.0]))
+    ik_target_pose_r: Pose = Pose(pos=jnp.array([0.2568429, -0.30759474, 0.00116006]), wxyz=jnp.array([0.7141, 0.0, 0.6861, 0.0]))
     """Initial pose of the grabbable transform IK target for right robot (relative to root frame)."""
+    states: List[str] = field(default_factory=lambda: ["SLEEP", "WORK", "STANDOFF", "POKE", "DIP", "PAUSED"])
+    """Possible states of the robot."""
+    initial_state: str = "SLEEP"
+    """Initial state of the robot."""
 
 @dataclass
 class DesignConfig:
@@ -154,54 +161,57 @@ class TattooPenConfig:
     stroke_depth_m: float = 0.008
     """Length of pen stroke when drawing a pixel (meters)."""
 
-@dataclass
-class InkCapConfig:
-    init_pose: Pose = Pose(pos=jnp.array([0.16813426, 0.03403597, -0.01519414]), wxyz=jnp.array([1.0, 0.0, 0.0, 0.0]))
-    """Pose of the inkcap (relative to root frame)."""
-    ply_path: str = "/home/oop/tatbot/assets/3d/palette.ply"
-    """Path to the .ply file for the inkcap point cloud."""
-    diameter_m: float = 0.018
-    """Diameter of the inkcap (meters)."""
-    height_m: float = 0.01
-    """Height of the inkcap (meters)."""
+@jdc.pytree_dataclass
+class InkCap:
+    palette_pose: Pose = Pose(pos=jnp.array([0.0, 0.0, 0.0]), wxyz=jnp.array([1.0, 0.0, 0.0, 0.0]))
+    """Pose of the inkcap (relative to palette frame)."""
     dip_depth_m: float = 0.005
     """Depth of the inkcap when dipping (meters)."""
     color: Tuple[int, int, int] = (0, 0, 0) # black
     """RGB color of the ink in the inkcap."""
-    point_size: float = 0.001
-    """Size of points in the point cloud visualization (meters)."""
-    point_shape: str = "rounded"
-    """Shape of points in the point cloud visualization."""
+
+@dataclass
+class PaletteConfig:
+    init_pose: Pose = Pose(pos=jnp.array([0.16813426, 0.16720189, -0.01519414]), wxyz=jnp.array([0.196697473, 0.0, 0.0, 0.980464229]))
+    """Pose of the palette (relative to root frame)."""
+    mesh_path: str = "/home/oop/tatbot/assets/3d/inkpalette-lowpoly/inkpalette-lowpoly.obj"
+    """Path to the .obj file for the palette mesh."""
+    inkcaps: Tuple[InkCap, ...] = (
+        InkCap(
+            palette_pose=Pose(pos=jnp.array([0.005, 0.014, 0.000]), wxyz=jnp.array([1.000, 0.000, 0.000, 0.000])),
+            dip_depth_m=0.005,
+            color=(0, 0, 0) # black
+        ),
+        InkCap(
+            palette_pose=Pose(pos=jnp.array([-0.011, 0.015, 0.001]), wxyz=jnp.array([1.000, 0.000, 0.000, 0.000])),
+            dip_depth_m=0.005,
+            color=(255, 0, 0) # red
+        ),
+        InkCap(
+            palette_pose=Pose(pos=jnp.array([-0.020, -0.005, 0.000]), wxyz=jnp.array([1.000, 0.000, 0.000, 0.000])),
+            dip_depth_m=0.005,
+            color=(0, 255, 0) # green
+        ),
+        InkCap(
+            palette_pose=Pose(pos=jnp.array([-0.026, 0.015, 0.005]), wxyz=jnp.array([0.999, 0.000, 0.000, 0.013])),
+            dip_depth_m=0.005,
+            color=(0, 0, 255) # blue
+        ),
+    )
 
 @dataclass
 class SkinConfig:
-    init_pose: Pose = Pose(pos=jnp.array([0.21561891, 0.0046067, -0.02167064]), wxyz=jnp.array([1.0, 0.0, 0.0, 0.0]))
+    init_pose: Pose = Pose(pos=jnp.array([0.065, 0.048, -0.005]), wxyz=jnp.array([0.676, 0.221, -0.674, 0.203]))
     """Pose of the skin (relative to root frame)."""
-    normal: Tuple[float, float, float] = (0.0, 0.0, 1.0)
-    """Normal vector of the skin surface (pointing outwards from the surface)."""
-    width_m: float = 0.12
-    """Width of the area on the skin where the image will be projected (meters)."""
-    height_m: float = 0.09
-    """Height of the area on the skin where the image will be projected (meters)."""
-    thickness: float = 0.001
-    """Thickness of the visualized skin plane box (meters)."""
-    color: Tuple[int, int, int] = (220, 180, 150) # pink
-    """RGB color for the skin plane (e.g., a skin-like tone)."""
+    mesh_path: str = "/home/oop/tatbot/assets/3d/fakeskin-lowpoly/fakeskin-lowpoly.obj"
+    """Path to the .obj file for the skin mesh."""
 
 @dataclass
 class WorkspaceConfig:
-    init_pose: Pose = Pose(pos=jnp.array([0.08088932, 0.1035288, -0.05307121]), wxyz=jnp.array([1.0, 0.0, 0.0, 0.0]))
+    init_pose: Pose = Pose(pos=jnp.array([0.08088932, 0.03058455, -0.02524097]), wxyz=jnp.array([-0.276996489, 0.0, 0.0, 0.960870931]))
     """Pose of the workspace origin (relative to root frame)."""
-    mat_center_offset: Pose = Pose(pos=jnp.array([0.14, -0.21, 0.0]), wxyz=jnp.array([1.0, 0.0, 0.0, 0.0]))
-    """Offset of the workspace mat center from the initial pose above."""
-    mat_width_m: float = 0.28
-    """Width of the workspace mat (meters)."""
-    mat_height_m: float = 0.42
-    """Height of the workspace mat (meters)."""
-    mat_thickness: float = 0.001
-    """Thickness of the workspace mat (meters)."""
-    mat_color: Tuple[int, int, int] = (0, 0, 0) # black
-    """RGB color for the workspace mat."""
+    mesh_path: str = "/home/oop/tatbot/assets/3d/mat-lowpoly/mat-lowpoly.obj"
+    """Path to the .obj file for the workspace mat mesh."""
 
 @jdc.pytree_dataclass
 class PixelTarget:
@@ -253,7 +263,7 @@ def main(
     workspace_config: WorkspaceConfig,
     skin_config: SkinConfig,
     design_config: DesignConfig,
-    inkcap_config: InkCapConfig,
+    palette_config: PaletteConfig,
     pen_config: TattooPenConfig,
 ):
     log.info("🚀 Starting viser server...")
@@ -327,48 +337,49 @@ def main(
         "/workspace",
         position=workspace_config.init_pose.pos,
         wxyz=workspace_config.init_pose.wxyz,
-        scale=0.05,
+        scale=0.2,
         opacity=0.2,
     )
-    server.scene.add_box(
-        name="/workspace/mat",
-        position=workspace_config.mat_center_offset.pos,
-        wxyz=workspace_config.mat_center_offset.wxyz,
-        dimensions=(workspace_config.mat_width_m, workspace_config.mat_height_m, workspace_config.mat_thickness),
-        color=workspace_config.mat_color
+    server.scene.add_mesh_trimesh(
+        name="/workspace/mesh",
+        mesh=trimesh.load(workspace_config.mesh_path),
     )
 
-    log.info("🎨 Adding inkcap...")
-    inkcap_tf = server.scene.add_transform_controls(
-        "/inkcap",
-        position=inkcap_config.init_pose.pos,
-        wxyz=inkcap_config.init_pose.wxyz,
-        scale=0.05,
+    log.info("🎨 Adding palette...")
+    palette_tf = server.scene.add_transform_controls(
+        "/palette",
+        position=palette_config.init_pose.pos,
+        wxyz=palette_config.init_pose.wxyz,
+        scale=0.2,
         opacity=0.2,
     )
-    # pcd = o3d.io.read_point_cloud(inkcap_config.ply_path)
-    # points = np.asarray(pcd.points)
-    # colors = np.asarray(pcd.colors) if pcd.has_colors() else np.array([inkcap_config.color] * len(points))
-    # server.scene.add_point_cloud(
-    #     name="/inkcap/points",
-    #     points=points,
-    #     colors=colors,
-    #     point_size=inkcap_config.point_size,
-    #     point_shape=inkcap_config.point_shape,
-    # )
+    server.scene.add_mesh_trimesh(
+        name="/palette/mesh",
+        mesh=trimesh.load(palette_config.mesh_path),
+    )
+    inkcap_tfs: List[viser.TransformControls] = []
+    for i, inkcap in enumerate(palette_config.inkcaps):
+        log.info(f"🎨 Adding inkcap {i}...")
+        inkcap_tf = server.scene.add_transform_controls(
+            f"/palette/inkcap_{i}",
+            position=inkcap.palette_pose.pos,
+            wxyz=inkcap.palette_pose.wxyz,
+            scale=0.2,
+            opacity=0.2,
+        )
+        inkcap_tfs.append(inkcap_tf)
 
     log.info("💪 Adding skin...")
     skin_tf = server.scene.add_transform_controls(
         "/skin",
         position=skin_config.init_pose.pos,
         wxyz=skin_config.init_pose.wxyz,
-        scale=0.05,
+        scale=0.2,
         opacity=0.2,
     )
-    server.scene.add_box(
-        name="/skin/box",
-        dimensions=(skin_config.width_m, skin_config.height_m, skin_config.thickness),
-        color=skin_config.color
+    server.scene.add_mesh_trimesh(
+        name="/skin/mesh",
+        mesh=trimesh.load(skin_config.mesh_path),
     )
 
     log.info("🦾 Adding robots...")
@@ -408,19 +419,31 @@ def main(
             opacity=0.5,
         )
 
-    state: TatbotState = TatbotState.SLEEP
+    state_handle = server.gui.add_dropdown(
+        "State", options=session_config.states,
+        initial_value=session_config.initial_state
+    )
 
     with server.gui.add_folder("Robot Control"):
         sleep_button = server.gui.add_button("Sleep")
-        use_ik = server.gui.add_checkbox("enable ik", initial_value=False)
+        use_ik = server.gui.add_checkbox("enable ik", initial_value=session_config.use_ik_target)
+        pause_checkbox = server.gui.add_checkbox("pause", initial_value=True)
 
         @sleep_button.on_click
         def _(_):
             log.debug("😴 Moving left robot to sleep pose...")
             use_ik.value = False
-            global state
-            state = TatbotState.SLEEP
+            pause_checkbox.value = True
+            state_handle.value = "SLEEP"
             move_robot(robot_config.joint_pos_sleep)
+
+        @pause_checkbox.on_update
+        def _(_):
+            if pause_checkbox.value:
+                state_handle.value = "PAUSED"
+            else:
+                state_handle.value = "WORK"
+
     try:
         if session_config.enable_robot:
             log.info("🤖 Initializing robot drivers...")
@@ -443,50 +466,56 @@ def main(
         
         log.info("🤖 Moving robots to sleep pose...")
         move_robot(robot_config.joint_pos_sleep)
-        state = TatbotState.SLEEP
+        state_handle.value = "SLEEP"
         log.info("🤖 Moving robots to home pose...")
         move_robot(robot_config.joint_pos_home)
-        state = TatbotState.WORK
+        state_handle.value = "WORK"
         
+        log.info("🤖 Pausing robots...")
+        state_handle.value = "PAUSED"
         while True:
             step_start_time = time.time()
+            log.debug(f"🔍 State: {state_handle.value}")
             
-            # if state == TatbotState.WORK:
-            #     log.info(f"🎯 Selecting target {current_target_index}...")
-            #     current_target_index = target_slider.value
-            #     if current_target_index >= num_targets:
-            #         log.info("Completed all targets, looping back to start.")
-            #         target_slider.value = 0
-            #         current_target_index = 0
-            #     progress_bar.value = float(current_target_index) / (num_targets - 1)
-            #     current_target = pixel_targets[current_target_index]
-            #     log.debug(f" Calculating standoff position...")
-            #     design_to_root = jaxlie.SE3.from_rotation_and_translation(
-            #         jaxlie.SO3(design_tf.wxyz),
-            #         design_tf.position + jnp.array([0.0, 0.0, pen_config.standoff_depth_m])
-            #     )
-            #     pixel_pos_root = design_to_root @ current_target.pos
-            #     ik_target_l.position = pixel_pos_root
-            #     state = TatbotState.STANDOFF
-            # elif state == TatbotState.STANDOFF:
-            #     log.debug(f" Calculating poke position...")
-            #     design_to_root = jaxlie.SE3.from_rotation_and_translation(
-            #         jaxlie.SO3(design_tf.wxyz),
-            #         design_tf.position
-            #     )
-            #     pixel_pos_root = design_to_root @ current_target.pos
-            #     ik_target_l.position = pixel_pos_root
-            #     state = TatbotState.POKE
-            # elif state == TatbotState.POKE:
-            #     log.debug(f" Returning to standoff position...")
-            #     design_to_root = jaxlie.SE3.from_rotation_and_translation(
-            #         jaxlie.SO3(design_tf.wxyz),
-            #         design_tf.position + jnp.array([0.0, 0.0, pen_config.standoff_depth_m])
-            #     )
-            #     pixel_pos_root = design_to_root @ current_target.pos
-            #     ik_target_l.position = pixel_pos_root
-            #     target_slider.value += 1
-            #     state = TatbotState.WORK
+            if state_handle.value == "WORK":
+                log.info(f"🎯 Selecting target {current_target_index}...")
+                current_target_index = target_slider.value
+                if current_target_index >= num_targets:
+                    log.info("Completed all targets, looping back to start.")
+                    target_slider.value = 0
+                    current_target_index = 0
+                progress_bar.value = float(current_target_index) / (num_targets - 1)
+                current_target = pixel_targets[current_target_index]
+                log.debug(f" Calculating standoff position...")
+                design_to_root = jaxlie.SE3.from_rotation_and_translation(
+                    jaxlie.SO3(design_tf.wxyz),
+                    design_tf.position + jnp.array([0.0, 0.0, pen_config.standoff_depth_m])
+                )
+                pixel_pos_root = design_to_root @ current_target.pos
+                ik_target_l.position = pixel_pos_root
+                state_handle.value = "STANDOFF"
+            elif state_handle.value == "STANDOFF":
+                log.debug(f" Calculating poke position...")
+                design_to_root = jaxlie.SE3.from_rotation_and_translation(
+                    jaxlie.SO3(design_tf.wxyz),
+                    design_tf.position
+                )
+                pixel_pos_root = design_to_root @ current_target.pos
+                ik_target_l.position = pixel_pos_root
+                state_handle.value = "POKE"
+            elif state_handle.value == "POKE":
+                log.debug(f" Returning to standoff position...")
+                design_to_root = jaxlie.SE3.from_rotation_and_translation(
+                    jaxlie.SO3(design_tf.wxyz),
+                    design_tf.position + jnp.array([0.0, 0.0, pen_config.standoff_depth_m])
+                )
+                pixel_pos_root = design_to_root @ current_target.pos
+                ik_target_l.position = pixel_pos_root
+                target_slider.value += 1
+                state_handle.value = "WORK"
+            elif state_handle.value == "PAUSED":
+                log.debug("🔍 Paused")
+                pass
 
             log.debug("🔍 Solving IK...")
             ik_start_time = time.time()
@@ -520,9 +549,11 @@ def main(
             move_robot(joint_pos_current)
             robot_move_elapsed_time = time.time() - robot_move_start_time
 
-            log.debug(f"🔲 Workspace - pos: {workspace_tf.position}, wxyz: {workspace_tf.wxyz}")
-            log.debug(f"🎨 Inkcap - pos: {inkcap_tf.position}, wxyz: {inkcap_tf.wxyz}")
             log.debug(f"🖼️ Design - pos: {design_tf.position}, wxyz: {design_tf.wxyz}")
+            log.debug(f"🔲 Workspace - pos: {workspace_tf.position}, wxyz: {workspace_tf.wxyz}")
+            log.debug(f"🎨 Palette - pos: {palette_tf.position}, wxyz: {palette_tf.wxyz}")
+            for inkcap_tf in inkcap_tfs:
+                log.debug(f"🎨 Inkcap {inkcap_tf.name} - pos: {inkcap_tf.position}, wxyz: {inkcap_tf.wxyz}")
             log.debug(f"💪 Skin - pos: {skin_tf.position}, wxyz: {skin_tf.wxyz}")
             ik_timing_handle.value = ik_elapsed_time * 1000
             if session_config.enable_robot:
@@ -576,7 +607,7 @@ if __name__ == "__main__":
         design_config=DesignConfig(),
         session_config=SessionConfig(),
         workspace_config=WorkspaceConfig(),
-        inkcap_config=InkCapConfig(),
+        palette_config=PaletteConfig(),
         pen_config=TattooPenConfig(),
         skin_config=SkinConfig(),
     )
