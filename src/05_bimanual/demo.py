@@ -89,12 +89,19 @@ class RobotConfig:
     joint_pos_sleep: JointPos = JointPos(left=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), right=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
     """Sleep: robot is folded up, motors can be released (radians)."""
     joint_pos_home: JointPos = JointPos(
-        left=jnp.array([-0.03240784, 2.1669774, 1.8036014, -1.2129925, 0.00018064, -0.03240734, 0.022, 0.0]),
-        right=jnp.array([-0.06382597, 1.2545787, 0.78800493, -1.0274638, -0.00490101, -0.06363778, 0.022, 0.022])
+        left=jnp.array([-0.001, 1.275, 1.307, -1.525, -0.000, -0.001, 0.022, 0.012]),
+        right=jnp.array([-0.218, 1.141, 0.860, -1.215, -0.017, -0.218, 0.022, 0.022])
     )
     """Home: robot is ready to work (radians)."""
-    set_all_position_goal_time: float = 2.0
-    """Goal time in seconds when the goal positions should be reached."""
+    joint_pos_calib: JointPos = JointPos(
+        left=jnp.array([0.530, 1.503, 1.167, -1.165, 0.027, 0.166, 0.022, 0.044]),
+        right=jnp.array([0.144, 1.354, 0.796, -0.986, 0.021, -0.209, 0.022, 0.022])
+    )
+    """Calibration: left arm is at workspace (42, 28) and right arm is at workspace (2, 28) (radians)."""
+    set_all_position_goal_time_slow: float = 3.0
+    """Goal time in seconds when the goal positions should be reached (slow)."""
+    set_all_position_goal_time_fast: float = 0.5
+    """Goal time in seconds when the goal positions should be reached (fast)."""
     set_all_position_blocking: bool = False
     """Whether to block until the goal positions are reached."""
     clear_error_state: bool = True
@@ -116,13 +123,11 @@ class SessionConfig:
     """Whether to enable the real robot."""
     num_pixels_per_ink_dip: int = 60
     """Number of pixels to draw before dipping the pen in the ink cup again."""
-    use_ik_target: bool = True
-    """Whether to use an IK target for the robot."""
     min_fps: float = 1.0
     """Minimum frames per second to maintain. If 0 or negative, no minimum framerate is enforced."""
-    ik_target_pose_l: Pose = Pose(pos=jnp.array([0.2, -0.0571740852, 0.0]), wxyz=jnp.array([0.7342, 0.0, 0.6789, 0.0]))
+    ik_target_pose_l: Pose = Pose(pos=jnp.array([0.11567971, 0.02446881, 0.11096699]), wxyz=jnp.array([0.734230744, 0.0, 0.678871577, 0.0]))
     """Initial pose of the grabbable transform IK target for left robot (relative to root frame)."""
-    ik_target_pose_r: Pose = Pose(pos=jnp.array([0.2568429, -0.30759474, 0.00116006]), wxyz=jnp.array([0.7141, 0.0, 0.6861, 0.0]))
+    ik_target_pose_r: Pose = Pose(pos=jnp.array([0.17720025, -0.25615479, 0.08327261]), wxyz=jnp.array([0.727507238, 0.0, 0.673455865, 0.0]))
     """Initial pose of the grabbable transform IK target for right robot (relative to root frame)."""
     states: List[str] = field(default_factory=lambda: ["SLEEP", "WORK", "STANDOFF", "POKE", "DIP", "PAUSED"])
     """Possible states of the robot."""
@@ -131,7 +136,7 @@ class SessionConfig:
 
 @dataclass
 class DesignConfig:
-    pose: Pose = Pose(pos=jnp.array([0.21333221, 0.00441298, -0.02088978]), wxyz=jnp.array([1.0, 0.0, 0.0, 0.0]))
+    pose: Pose = Pose(pos=jnp.array([0.313, 0.074, 0.065]), wxyz=jnp.array([1.000, 0.000, 0.000, 0.000]))
     """Pose of the design (relative to root frame)."""
     image_path: str = "/home/oop/tatbot/assets/designs/circle.png"
     """Local path to the tattoo design PNG image."""
@@ -172,43 +177,39 @@ class InkCap:
 
 @dataclass
 class PaletteConfig:
-    init_pose: Pose = Pose(pos=jnp.array([0.16813426, 0.16720189, -0.01519414]), wxyz=jnp.array([0.196697473, 0.0, 0.0, 0.980464229]))
+    init_pose: Pose = Pose(pos=jnp.array([0.281, 0.156, 0.032]), wxyz=jnp.array([0.971, 0.006, -0.024, 0.240]))
     """Pose of the palette (relative to root frame)."""
     mesh_path: str = "/home/oop/tatbot/assets/3d/inkpalette-lowpoly/inkpalette-lowpoly.obj"
     """Path to the .obj file for the palette mesh."""
     inkcaps: Tuple[InkCap, ...] = (
         InkCap(
             palette_pose=Pose(pos=jnp.array([0.005, 0.014, 0.000]), wxyz=jnp.array([1.000, 0.000, 0.000, 0.000])),
-            dip_depth_m=0.005,
             color=(0, 0, 0) # black
         ),
         InkCap(
             palette_pose=Pose(pos=jnp.array([-0.011, 0.015, 0.001]), wxyz=jnp.array([1.000, 0.000, 0.000, 0.000])),
-            dip_depth_m=0.005,
             color=(255, 0, 0) # red
         ),
         InkCap(
             palette_pose=Pose(pos=jnp.array([-0.020, -0.005, 0.000]), wxyz=jnp.array([1.000, 0.000, 0.000, 0.000])),
-            dip_depth_m=0.005,
             color=(0, 255, 0) # green
         ),
         InkCap(
             palette_pose=Pose(pos=jnp.array([-0.026, 0.015, 0.005]), wxyz=jnp.array([0.999, 0.000, 0.000, 0.013])),
-            dip_depth_m=0.005,
             color=(0, 0, 255) # blue
         ),
     )
 
 @dataclass
 class SkinConfig:
-    init_pose: Pose = Pose(pos=jnp.array([0.065, 0.048, -0.005]), wxyz=jnp.array([0.676, 0.221, -0.674, 0.203]))
+    init_pose: Pose = Pose(pos=jnp.array([0.303, 0.071, 0.044]), wxyz=jnp.array([0.701, 0.115, -0.698, 0.097]))
     """Pose of the skin (relative to root frame)."""
     mesh_path: str = "/home/oop/tatbot/assets/3d/fakeskin-lowpoly/fakeskin-lowpoly.obj"
     """Path to the .obj file for the skin mesh."""
 
 @dataclass
 class WorkspaceConfig:
-    init_pose: Pose = Pose(pos=jnp.array([0.08088932, 0.03058455, -0.02524097]), wxyz=jnp.array([-0.276996489, 0.0, 0.0, 0.960870931]))
+    init_pose: Pose = Pose(pos=jnp.array([0.287, 0.049, 0.022]), wxyz=jnp.array([-0.115, 0.000, 0.000, 0.993]))
     """Pose of the workspace origin (relative to root frame)."""
     mesh_path: str = "/home/oop/tatbot/assets/3d/mat-lowpoly/mat-lowpoly.obj"
     """Path to the .obj file for the workspace mat mesh."""
@@ -269,12 +270,6 @@ def main(
     log.info("🚀 Starting viser server...")
     server: viser.ViserServer = viser.ViserServer()
 
-    # timing handles display duration of sub-steps
-    ik_timing_handle = server.gui.add_number("ik (ms)", 0.001, disabled=True)
-    if session_config.enable_robot:
-        robot_move_timing_handle = server.gui.add_number("robot move (ms)", 0.001, disabled=True)
-    step_timing_handle = server.gui.add_number("step (ms)", 0.001, disabled=True)
-
     log.info("🖼️ Loading design...")
     img_pil = PIL.Image.open(design_config.image_path)
     original_width, original_height = img_pil.size
@@ -283,13 +278,6 @@ def main(
     img_pil = img_pil.convert("L")
     img_np = np.array(img_pil)
     img_width_px, img_height_px = img_pil.size
-    img_viz = server.gui.add_image(
-        image=img_np,
-        label=design_config.image_path,
-        format="png",
-        order="rgb",
-        visible=True,
-    )
     thresholded_pixels = img_np <= design_config.image_threshold
     pixel_targets: List[Pose] = []
     pixel_to_meter_x = design_config.image_width_m / img_width_px
@@ -305,6 +293,7 @@ def main(
                 )
                 pixel_targets.append(pixel_target)
     num_targets: int = len(pixel_targets)
+    current_target_index: int = 0
     log.info(f"🎨 Created {num_targets} pixel targets.")
     positions = np.array([pt.pos for pt in pixel_targets])
     design_tf = server.scene.add_transform_controls(
@@ -321,16 +310,6 @@ def main(
         point_size=design_config.point_size,
         point_shape=design_config.point_shape,
     )
-    with server.gui.add_folder("Session Progress"):
-        progress_bar = server.gui.add_progress_bar(0.0)
-        target_slider = server.gui.add_slider(
-            "Target Index",
-            min=0,
-            max=num_targets - 1,
-            step=1,
-            initial_value=0,
-        )
-    current_target_index: int = 0
 
     log.info("🔲 Adding workspace...")
     workspace_tf = server.scene.add_transform_controls(
@@ -388,51 +367,68 @@ def main(
     joint_pos_current: JointPos = robot_config.joint_pos_sleep
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/root")
     
-    def move_robot(joint_pos: JointPos):
+    def move_robot(joint_pos: JointPos, goal_time: float = robot_config.set_all_position_goal_time_slow):
         log.debug(f"🤖 Moving robot to: {joint_pos}")
         urdf_vis.update_cfg(np.concatenate([joint_pos.left, joint_pos.right]))
         if session_config.enable_robot:
             driver_l.set_all_positions(
                 trossen_arm.VectorDouble(joint_pos.left[:7].tolist()),
-                goal_time=robot_config.set_all_position_goal_time,
+                goal_time=goal_time,
                 blocking=True,
             )
             driver_r.set_all_positions(
                 trossen_arm.VectorDouble(joint_pos.right[:7].tolist()),
-                goal_time=robot_config.set_all_position_goal_time,
+                goal_time=goal_time,
                 blocking=True,
             )
 
-    if session_config.use_ik_target:
-        ik_target_l = server.scene.add_transform_controls(
-            "/ik_target_l",
-            position=session_config.ik_target_pose_l.pos,
-            wxyz=session_config.ik_target_pose_l.wxyz,
-            scale=0.1,
-            opacity=0.5,
-        )
-        ik_target_r = server.scene.add_transform_controls(
-            "/ik_target_r",
-            position=session_config.ik_target_pose_r.pos,
-            wxyz=session_config.ik_target_pose_r.wxyz,
-            scale=0.1,
-            opacity=0.5,
-        )
+    ik_target_l = server.scene.add_transform_controls(
+        "/ik_target_l",
+        position=session_config.ik_target_pose_l.pos,
+        wxyz=session_config.ik_target_pose_l.wxyz,
+        scale=0.1,
+        opacity=0.5,
+    )
+    ik_target_r = server.scene.add_transform_controls(
+        "/ik_target_r",
+        position=session_config.ik_target_pose_r.pos,
+        wxyz=session_config.ik_target_pose_r.wxyz,
+        scale=0.1,
+        opacity=0.5,
+    )
 
     state_handle = server.gui.add_dropdown(
         "State", options=session_config.states,
         initial_value=session_config.initial_state
     )
 
-    with server.gui.add_folder("Robot Control"):
-        sleep_button = server.gui.add_button("Sleep")
-        use_ik = server.gui.add_checkbox("enable ik", initial_value=session_config.use_ik_target)
+    with server.gui.add_folder("Session"):
+        progress_bar = server.gui.add_progress_bar(0.0)
+        target_slider = server.gui.add_slider(
+            "Target Index",
+            min=0,
+            max=num_targets - 1,
+            step=1,
+            initial_value=0,
+        )
+        server.gui.add_image(
+            image=img_np,
+            label=design_config.image_path,
+            format="png",
+            order="rgb",
+            visible=True,
+        )
+    with server.gui.add_folder("Timing"):
+        ik_duration_ms = server.gui.add_number("ik (ms)", 0.001, disabled=True)
+        move_duration_ms = server.gui.add_number("robot move (ms)", 0.001, disabled=True)
+        step_duration_ms = server.gui.add_number("step (ms)", 0.001, disabled=True)
+    with server.gui.add_folder("Robot"):
+        sleep_button = server.gui.add_button("Go to Sleep")
         pause_checkbox = server.gui.add_checkbox("pause", initial_value=True)
 
         @sleep_button.on_click
         def _(_):
             log.debug("😴 Moving left robot to sleep pose...")
-            use_ik.value = False
             pause_checkbox.value = True
             state_handle.value = "SLEEP"
             move_robot(robot_config.joint_pos_sleep)
@@ -467,10 +463,16 @@ def main(
         log.info("🤖 Moving robots to sleep pose...")
         move_robot(robot_config.joint_pos_sleep)
         state_handle.value = "SLEEP"
-        log.info("🤖 Moving robots to home pose...")
-        move_robot(robot_config.joint_pos_home)
-        state_handle.value = "WORK"
-        
+        if log.getEffectiveLevel() == logging.DEBUG:
+            log.info("🤖 Moving robots to calibration pose...")
+            move_robot(robot_config.joint_pos_calib)
+            joint_pos_current = robot_config.joint_pos_calib
+        else:
+            log.info("🤖 Moving robots to home pose...")
+            move_robot(robot_config.joint_pos_home)
+            joint_pos_current = robot_config.joint_pos_home
+            state_handle.value = "WORK"
+            
         log.info("🤖 Pausing robots...")
         state_handle.value = "PAUSED"
         while True:
@@ -517,9 +519,9 @@ def main(
                 log.debug("🔍 Paused")
                 pass
 
-            log.debug("🔍 Solving IK...")
-            ik_start_time = time.time()
-            if use_ik.value:
+            if state_handle.value in ["WORK", "STANDOFF", "POKE"]:
+                log.debug("🔍 Solving IK...")
+                ik_start_time = time.time()
                 log.debug(f"🎯 Left arm IK target - pos: {ik_target_l.position}, wxyz: {ik_target_l.wxyz}")
                 log.debug(f"🎯 Right arm IK target - pos: {ik_target_r.position}, wxyz: {ik_target_r.wxyz}")
                 target_link_indices = jnp.array([
@@ -542,12 +544,14 @@ def main(
                 )
                 log.debug(f"🎯 Left arm joints: {joint_pos_current.left}")
                 log.debug(f"🎯 Right arm joints: {joint_pos_current.right}")
-            ik_elapsed_time = time.time() - ik_start_time
+                ik_elapsed_time = time.time() - ik_start_time
+                ik_duration_ms.value = ik_elapsed_time * 1000
 
-            log.debug("🤖 Moving robots...")
-            robot_move_start_time = time.time()
-            move_robot(joint_pos_current)
-            robot_move_elapsed_time = time.time() - robot_move_start_time
+                log.debug("🤖 Moving robots...")
+                robot_move_start_time = time.time()
+                move_robot(joint_pos_current, goal_time=robot_config.set_all_position_goal_time_fast)
+                robot_move_elapsed_time = time.time() - robot_move_start_time
+                move_duration_ms.value = robot_move_elapsed_time * 1000
 
             log.debug(f"🖼️ Design - pos: {design_tf.position}, wxyz: {design_tf.wxyz}")
             log.debug(f"🔲 Workspace - pos: {workspace_tf.position}, wxyz: {workspace_tf.wxyz}")
@@ -555,19 +559,11 @@ def main(
             for inkcap_tf in inkcap_tfs:
                 log.debug(f"🎨 Inkcap {inkcap_tf.name} - pos: {inkcap_tf.position}, wxyz: {inkcap_tf.wxyz}")
             log.debug(f"💪 Skin - pos: {skin_tf.position}, wxyz: {skin_tf.wxyz}")
-            ik_timing_handle.value = ik_elapsed_time * 1000
-            if session_config.enable_robot:
-                robot_move_timing_handle.value = robot_move_elapsed_time * 1000
             step_elapsed_time = time.time() - step_start_time
-            step_timing_handle.value = step_elapsed_time * 1000
-            # target_frame_time = 1.0 / session_config.min_fps
-            # sleep_time = max(0.0, target_frame_time - step_elapsed_time)
-            # time.sleep(sleep_time)
-
-    # except Exception as e:
-    #     log.error(f"❌ Error: {e}")
+            step_duration_ms.value = step_elapsed_time * 1000
     
     finally:
+        log.info("🏁 Shutting down...")
         if session_config.enable_robot:
             log.info("🦾 Shutting down robots...")
             driver_l.cleanup()
