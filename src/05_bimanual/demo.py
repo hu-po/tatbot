@@ -10,17 +10,14 @@
 
 from dataclasses import dataclass, field
 import logging
-import os
-import random
 import time
-from typing import Any, Dict, List, NamedTuple, Tuple
+from typing import List, Tuple
 
 import jax
 import jax.numpy as jnp
 import jax_dataclasses as jdc
 import jaxlie
 import jaxls
-import jaxtyping
 from jaxtyping import Array, Float, Int
 import numpy as np
 import PIL.Image
@@ -29,7 +26,6 @@ import tyro
 import trimesh
 import trossen_arm
 import viser
-import viser.transforms as tf
 from viser.extras import ViserUrdf
 import yourdfpy
 
@@ -67,17 +63,17 @@ class RobotConfig:
     """IP address of the left robot arm."""
     ip_address_r: str = "192.168.1.3"
     """IP address of the right robot arm."""
-    end_effector_model_l: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_follower
+    end_effector_model_l: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_leader
     """End effector model for the left robot arm."""
     end_effector_model_r: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_follower
     """End effector model for the right robot arm."""
     joint_pos_sleep: JointPos = JointPos(left=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), right=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
     """Sleep: robot is folded up, motors can be released (radians)."""
-    joint_pos_home: JointPos = JointPos(
-        left=jnp.array([0.052, 1.724, 1.653, -1.314, 0.010, 0.052, 0.022, 0.044]),
-        right=jnp.array([-0.234, 1.749, 0.906, -1.045, -1.230, -2.005, 0.022, 0.022])
+    joint_pos_work: JointPos = JointPos(
+        left=jnp.array([0.431, 1.120, 0.270, 0.241, 0.360, 0.241, 0.022, 0.044]),
+        right=jnp.array([-0.147, 1.107, 0.526, -0.416, -0.963, -1.062, 0.022, 0.022])
     )
-    """Home: robot is ready to work (radians)."""
+    """Work: robot is ready to work (radians)."""
     joint_pos_calib: JointPos = JointPos(
         left=jnp.array([0.530, 1.503, 1.167, -1.165, 0.027, 0.166, 0.022, 0.044]),
         right=jnp.array([0.144, 1.354, 0.796, -0.986, 0.021, -0.209, 0.022, 0.022])
@@ -85,12 +81,8 @@ class RobotConfig:
     """Calibration: left arm is at workspace (42, 28) and right arm is at workspace (2, 28) (radians)."""
     set_all_position_goal_time_slow: float = 3.0
     """Goal time in seconds when the goal positions should be reached (slow)."""
-    set_all_position_goal_time_fast: float = 0.5
+    set_all_position_goal_time_fast: float = 0.1
     """Goal time in seconds when the goal positions should be reached (fast)."""
-    set_all_position_blocking: bool = False
-    """Whether to block until the goal positions are reached."""
-    clear_error_state: bool = True
-    """Whether to clear the error state of the robot."""
     target_links_name: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link")
     """Names of the links to be controlled."""
     ik_pos_weight: float = 50.0
@@ -104,15 +96,15 @@ class RobotConfig:
 
 @dataclass
 class SessionConfig:
-    enable_robot: bool = True
+    enable_robot: bool = False
     """Whether to enable the real robot."""
     num_pixels_per_ink_dip: int = 60
     """Number of pixels to draw before dipping the pen in the ink cup again."""
     min_fps: float = 1.0
     """Minimum frames per second to maintain. If 0 or negative, no minimum framerate is enforced."""
-    ik_target_pose_l: Pose = Pose(pos=jnp.array([0.272, 0.074, 0.105]), wxyz=jnp.array([0.770, 0.000, 0.638, 0.000]))
+    ik_target_pose_l: Pose = Pose(pos=jnp.array([0.243, 0.127, 0.070]), wxyz=jnp.array([0.960, 0.000, 0.279, 0.000]))
     """Initial pose of the grabbable transform IK target for left robot (relative to root frame)."""
-    ik_target_pose_r: Pose = Pose(pos=jnp.array([0.268, -0.107, 0.098]), wxyz=jnp.array([0.731, -0.143, 0.088, 0.656]))
+    ik_target_pose_r: Pose = Pose(pos=jnp.array([0.253, -0.105, 0.111]), wxyz=jnp.array([0.821, -0.190, 0.173, 0.505]))
     """Initial pose of the grabbable transform IK target for right robot (relative to root frame)."""
     states: List[str] = field(default_factory=lambda: ["MANUAL", "WORK", "STANDOFF", "POKE", "DIP", "PAUSED"])
     """Possible states of the robot.
@@ -263,6 +255,7 @@ def main(
 
     log.info("🚀 Starting viser server...")
     server: viser.ViserServer = viser.ViserServer()
+    server.scene.set_environment_map(hdri="forest", background=True)
 
     log.info("🖼️ Loading design...")
     img_pil = PIL.Image.open(design_config.image_path)
@@ -290,13 +283,21 @@ def main(
     current_target_index: int = 0
     log.info(f"🎨 Created {num_targets} pixel targets.")
     positions = np.array([pt.pos for pt in pixel_targets])
-    design_tf = server.scene.add_transform_controls(
-        name="/design",
-        position=design_config.pose.pos,
-        wxyz=design_config.pose.wxyz,
-        scale=0.05,
-        opacity=0.2,
-    )
+    if debug_mode:
+        design_tf = server.scene.add_transform_controls(
+            name="/design",
+            position=design_config.pose.pos,
+            wxyz=design_config.pose.wxyz,
+            scale=0.05,
+            opacity=0.2,
+        )
+    else:
+        design_tf = server.scene.add_frame(
+            name="/design",
+            position=design_config.pose.pos,
+            wxyz=design_config.pose.wxyz,
+            show_axes=False,
+        )
     server.scene.add_point_cloud(
         name="/design/pixel_targets",
         points=positions,
@@ -476,6 +477,8 @@ def main(
                     goal_time=goal_time,
                     blocking=True,
                 )
+            else:
+                time.sleep(goal_time)
         
         log.info("🤖 Moving robots to sleep pose...")
         move_robot(robot_config.joint_pos_sleep)
@@ -486,8 +489,8 @@ def main(
             state_handle.value = "PAUSED"
         else:
             log.info("🤖 Moving robots to home pose...")
-            move_robot(robot_config.joint_pos_home)
-            joint_pos_current = robot_config.joint_pos_home
+            move_robot(robot_config.joint_pos_work)
+            joint_pos_current = robot_config.joint_pos_work
             state_handle.value = "MANUAL"
 
         while True:
@@ -506,7 +509,7 @@ def main(
                 log.debug(f" Calculating standoff position...")
                 design_to_root = jaxlie.SE3.from_rotation_and_translation(
                     jaxlie.SO3(design_tf.wxyz),
-                    design_tf.position + jnp.array([0.0, 0.0, pen_config.standoff_depth_m])
+                    design_tf.position + (jaxlie.SO3(ik_target_l.wxyz).as_matrix() @ jnp.array([pen_config.standoff_depth_m, 0.0, 0.0]))
                 )
                 pixel_pos_root = design_to_root @ current_target.pos
                 ik_target_l.position = pixel_pos_root
@@ -524,7 +527,7 @@ def main(
                 log.debug(f" Returning to standoff position...")
                 design_to_root = jaxlie.SE3.from_rotation_and_translation(
                     jaxlie.SO3(design_tf.wxyz),
-                    design_tf.position + jnp.array([0.0, 0.0, pen_config.standoff_depth_m])
+                    design_tf.position + (jaxlie.SO3(ik_target_l.wxyz).as_matrix() @ jnp.array([pen_config.standoff_depth_m, 0.0, 0.0]))
                 )
                 pixel_pos_root = design_to_root @ current_target.pos
                 ik_target_l.position = pixel_pos_root

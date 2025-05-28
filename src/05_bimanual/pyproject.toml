@@ -5,7 +5,7 @@ requires-python = "==3.12.2"
 dependencies = [
     "viser==0.2.23",
     "Pillow>=9.0.0,<11.0.0",
-    "trossen-arm==1.8.1",
+    "trossen-arm==1.8.0",
     "pyroki @ git+https://github.com/chungmin99/pyroki.git@main#egg=pyroki",
     "jax[cuda12]>=0.4.0,<0.5.0",
     "jaxtyping>=0.2.25,<1.0.0",
