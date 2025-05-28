@@ -22,7 +22,7 @@ import jaxls
 import jaxtyping
 from jaxtyping import Array, Float, Int
 import numpy as np
-import open3d as o3d
+# import open3d as o3d
 import PIL.Image
 import pyroki as pk
 import tyro
