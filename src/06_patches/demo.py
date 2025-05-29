@@ -44,6 +44,8 @@ class CLIArgs:
     """Enables debug mode: allows for moving objects in the scene, enables debug logging."""
     robot: bool = False
     """Enables the real robot (if False then only sim)."""
+    realsense: bool = False
+    """Enables the RealSense cameras."""
     device_name: str = "cuda:0"
     """Name of the JAX device to use (i.e. 'gpu', 'cpu')."""
 
@@ -89,6 +91,8 @@ class RealSenseConfig:
     """Decimation factor for depth frame processing."""
     point_size: float = 0.001
     """Size of points in the point cloud visualization."""
+    serial_number: str = ""
+    """Serial number of the RealSense camera device."""
 
 @dataclass
 class TatbotConfig:
@@ -199,11 +203,15 @@ class TatbotConfig:
     """Pose of the workspace origin (relative to root frame)."""
     workspace_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/mat-lowpoly/mat-lowpoly.obj")
     """Path to the .obj file for the workspace mat mesh."""
-    realsense: RealSenseConfig = RealSenseConfig()
-    """Configuration for the RealSense cameras."""
+    realsense_a: RealSenseConfig = RealSenseConfig(serial_number="230422273017")
+    """Configuration for RealSense Camera A (attached to right arm)."""
+    realsense_b: RealSenseConfig = RealSenseConfig(serial_number="218622278376")
+    """Configuration for RealSense Camera B (overhead)."""
     # CLI overrides
     enable_robot: bool = False
     """Override for arg.robot."""
+    enable_realsense: bool = False
+    """Override for arg.realsense."""
     debug_mode: bool = False
     """Override for arg.debug."""
 
@@ -216,6 +224,9 @@ class RealSenseCamera:
         # Setup RealSense
         self._pipeline = rs.pipeline()
         self._config = rs.config()
+        pipeline_wrapper = rs.pipeline_wrapper(self._pipeline)
+        self._config.resolve(pipeline_wrapper)
+        self._config.enable_device(config.serial_number)
         self._config.enable_stream(rs.stream.depth, rs.format.z16, config.fps)
         self._config.enable_stream(rs.stream.color, rs.format.rgb8, config.fps)
         self._point_cloud = rs.pointcloud()
@@ -520,11 +531,12 @@ def main(config: TatbotConfig):
             state_handle.value = "PAUSED"
 
     try:
-        log.info("📷 Initializing RealSense cameras...")
-        camera_l = RealSenseCamera(config.realsense, server, "left")
-        camera_r = RealSenseCamera(config.realsense, server, "right")
-        camera_l.start()
-        camera_r.start()
+        if config.enable_realsense:
+            log.info("📷 Initializing RealSense cameras...")
+            camera_a = RealSenseCamera(config.realsense_a, server, "left")
+            camera_b = RealSenseCamera(config.realsense_b, server, "right")
+            camera_a.start()
+            camera_b.start()
         if config.enable_robot:
             log.info("🤖 Initializing robot drivers...")
             driver_l = trossen_arm.TrossenArmDriver()
@@ -606,6 +618,23 @@ def main(config: TatbotConfig):
                 log.debug(" Paused")
                 pass
 
+            if config.enable_realsense:
+                log.debug("📷 Updating point clouds...")
+                depth_l, color_l = camera_a.get_frames()
+                depth_r, color_r = camera_b.get_frames()
+                positions_l, colors_l = camera_a.process_frames(depth_l, color_l)
+                positions_r, colors_r = camera_b.process_frames(depth_r, color_r)
+                camera_link_idx_l = robot.links.names.index("left/camera_depth_frame")
+                camera_link_idx_r = robot.links.names.index("right/camera_depth_frame")
+                camera_pose_l = robot.forward_kinematics(joint_pos_current)[camera_link_idx_l]
+                camera_pose_r = robot.forward_kinematics(joint_pos_current)[camera_link_idx_r]
+                camera_transform_l = jaxlie.SE3(camera_pose_l)
+                camera_transform_r = jaxlie.SE3(camera_pose_r)
+                positions_world_l = camera_transform_l @ positions_l
+                positions_world_r = camera_transform_r @ positions_r
+                camera_a.update_point_cloud(positions_world_l, colors_l)
+                camera_b.update_point_cloud(positions_world_r, colors_r)
+
             if state_handle.value in ["MANUAL", "WORK", "STANDOFF", "POKE"]:
                 log.debug("🔍 Solving IK...")
                 ik_start_time = time.time()
@@ -636,22 +665,6 @@ def main(config: TatbotConfig):
                 move_robot(joint_pos_current, goal_time=config.set_all_position_goal_time_fast)
                 robot_move_elapsed_time = time.time() - robot_move_start_time
                 move_duration_ms.value = robot_move_elapsed_time * 1000
-
-            log.debug("📷 Updating point clouds...")
-            depth_l, color_l = camera_l.get_frames()
-            depth_r, color_r = camera_r.get_frames()
-            positions_l, colors_l = camera_l.process_frames(depth_l, color_l)
-            positions_r, colors_r = camera_r.process_frames(depth_r, color_r)
-            camera_link_idx_l = robot.links.names.index("left/camera_depth_frame")
-            camera_link_idx_r = robot.links.names.index("right/camera_depth_frame")
-            camera_pose_l = robot.forward_kinematics(joint_pos_current)[camera_link_idx_l]
-            camera_pose_r = robot.forward_kinematics(joint_pos_current)[camera_link_idx_r]
-            camera_transform_l = jaxlie.SE3(camera_pose_l)
-            camera_transform_r = jaxlie.SE3(camera_pose_r)
-            positions_world_l = camera_transform_l @ positions_l
-            positions_world_r = camera_transform_r @ positions_r
-            camera_l.update_point_cloud(positions_world_l, colors_l)
-            camera_r.update_point_cloud(positions_world_r, colors_r)
 
             log.debug(f"🖼️ Design - pos: {design_tf.position}, wxyz: {design_tf.wxyz}")
             log.debug(f"🔲 Workspace - pos: {workspace_tf.position}, wxyz: {workspace_tf.wxyz}")
@@ -687,9 +700,10 @@ def main(config: TatbotConfig):
     
     finally:
         log.info("🏁 Shutting down...")
-        log.info("📷 Shutting down cameras...")
-        camera_l.stop()
-        camera_r.stop()
+        if config.enable_realsense:
+            log.info("📷 Shutting down cameras...")
+            camera_a.stop()
+            camera_b.stop()
         if config.enable_robot:
             log.info("🦾 Shutting down robots...")
             driver_l.configure(
@@ -719,5 +733,6 @@ if __name__ == "__main__":
     log.info(f"🎮 Using JAX device: {args.device_name}")
     config = TatbotConfig()
     config.enable_robot = args.robot
+    config.enable_realsense = args.realsense
     config.debug_mode = args.debug
     main(config=config)
