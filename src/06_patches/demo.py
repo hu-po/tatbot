@@ -530,6 +530,9 @@ def main(config: TatbotConfig):
                 colors=np.zeros((1, 3), dtype=np.uint8),
                 point_size=config.realsense_b.point_size,
             )
+            camera_link_idx_b = robot.links.names.index(config.realsense_b.link_name)
+            home_joint_array = np.concatenate([config.joint_pos_work.left, config.joint_pos_work.right])
+            camera_pose_b_static = robot.forward_kinematics(home_joint_array)[camera_link_idx_b]
         if config.enable_robot:
             log.info("🤖 Initializing robot drivers...")
             driver_l = trossen_arm.TrossenArmDriver()
@@ -616,17 +619,17 @@ def main(config: TatbotConfig):
                 positions_a, colors_a = camera_a.get_points()
                 positions_b, colors_b = camera_b.get_points()
                 camera_link_idx_a = robot.links.names.index(config.realsense_a.link_name)
-                camera_link_idx_b = robot.links.names.index(config.realsense_b.link_name)
-                camera_pose_a = robot.forward_kinematics(joint_pos_current)[camera_link_idx_a]
-                camera_pose_b = robot.forward_kinematics(joint_pos_current)[camera_link_idx_b]
+                joint_array = np.concatenate([joint_pos_current.left, joint_pos_current.right])
+                camera_pose_a = robot.forward_kinematics(joint_array)[camera_link_idx_a]
+                camera_pose_b = camera_pose_b_static
                 camera_transform_a = jaxlie.SE3(camera_pose_a)
                 camera_transform_b = jaxlie.SE3(camera_pose_b)
                 positions_world_a = camera_transform_a @ positions_a
                 positions_world_b = camera_transform_b @ positions_b
-                camera_a_pointcloud.points = positions_world_a
-                camera_a_pointcloud.colors = colors_a
-                camera_b_pointcloud.points = positions_world_b
-                camera_b_pointcloud.colors = colors_b
+                camera_a_pointcloud.points = np.array(positions_world_a)
+                camera_a_pointcloud.colors = np.array(colors_a)
+                camera_b_pointcloud.points = np.array(positions_world_b)
+                camera_b_pointcloud.colors = np.array(colors_b)
 
             if state_handle.value in ["MANUAL", "WORK", "STANDOFF", "POKE"]:
                 log.debug("🔍 Solving IK...")
