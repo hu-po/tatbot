@@ -498,6 +498,7 @@ def main(config: TatbotConfig):
         )
     with server.gui.add_folder("Timing"):
         ik_duration_ms = server.gui.add_number("ik (ms)", 0.001, disabled=True)
+        realsense_duration_ms = server.gui.add_number("realsense (ms)", 0.001, disabled=True)
         move_duration_ms = server.gui.add_number("robot move (ms)", 0.001, disabled=True)
         step_duration_ms = server.gui.add_number("step (ms)", 0.001, disabled=True)
     with server.gui.add_folder("Robot"):
@@ -616,6 +617,7 @@ def main(config: TatbotConfig):
 
             if config.enable_realsense:
                 log.debug("📷 Updating point clouds...")
+                realsense_start_time = time.time()
                 positions_a, colors_a = camera_a.get_points()
                 positions_b, colors_b = camera_b.get_points()
                 camera_link_idx_a = robot.links.names.index(config.realsense_a.link_name)
@@ -630,6 +632,8 @@ def main(config: TatbotConfig):
                 camera_a_pointcloud.colors = np.array(colors_a)
                 camera_b_pointcloud.points = np.array(positions_world_b)
                 camera_b_pointcloud.colors = np.array(colors_b)
+                realsense_elapsed_time = time.time() - realsense_start_time
+                realsense_duration_ms.value = realsense_elapsed_time * 1000
 
             if state_handle.value in ["MANUAL", "WORK", "STANDOFF", "POKE"]:
                 log.debug("🔍 Solving IK...")
