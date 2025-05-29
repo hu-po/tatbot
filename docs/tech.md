@@ -15,12 +15,12 @@ tatbot consists of multiple seperate compute nodes connected via ethernet:
 - `camera3`: Amcrest PoE cameras (5MP)
 - `camera4`: Amcrest PoE cameras (5MP)
 - `camera5`: Amcrest PoE cameras (5MP)
-- `cam_wrist`: Intel Realsense D405 (1280x720 RGBD, 90fps)
-- `cam_main`: Intel Realsense D405 (1280x720 RGBD, 90fps)
+- `camera-a`: Intel Realsense D405 (1280x720 RGBD, 90fps)
+- `camera-b`: Intel Realsense D405 (1280x720 RGBD, 90fps)
 - `switch-main`: 5-port gigabit ethernet switch
 - `switch-poe`: 8-port gigabit PoE switch
-- `arm-leader`: Trossen Arm Controller box connected to leader arm
-- `arm-follower`: Trossen Arm Controller box connected to follower arm
+- `arm-l`: Trossen Arm Controller box connected to WidowXAI arm
+- `arm-r`: Trossen Arm Controller box connected to WidowXAI arm
 - `oop`: (only used for development)
 
 ## Networking
@@ -29,8 +29,8 @@ tatbot consists of multiple seperate compute nodes connected via ethernet:
     (1) short black ethernet cable to `switch-poe`
     (2) short black ethernet cable to `trossen-ai`
     (3) short black ethernet cable to `ojo`
-    (4) blue ethernet cable to `arm-follower` controller box
-    (5) blue ethernet cable to `arm-leader` controller box
+    (4) blue ethernet cable to `arm-r` controller box
+    (5) blue ethernet cable to `arm-l` controller box
 - `switch-poe`: 
     (1) long black ethernet cable to `camera1`
     (2) long black ethernet cable to `camera2`
@@ -43,22 +43,30 @@ tatbot consists of multiple seperate compute nodes connected via ethernet:
     (uplink-1) -
     (uplink-2) short black ethernet cable to `switch-main`
 
-## Devices
+ip addresses
+- `192.168.1.33` - `oop`
+- `192.168.1.91` - `camera1`
+- `192.168.1.92` - `camera2`
+- `192.168.1.93` - `camera3`
+- `192.168.1.94` - `camera4`
+- `192.168.1.95` - `camera5`
+- `192.168.1.96` - `ojo`
+- `192.168.1.97` - `trossen-ai`
+- `192.168.1.98` - `rpi1`
+- `192.168.1.99` - `rpi2`
 
-the following devices are connected to each compute node:
+## Realsense
 
-- `oop`
-    - `cam_wrist` via usb3 port
-- `trossen-ai`
-    - `cam_main` via usb3 port
-    - wireless keyboard via usb2 port
-    - touchscreen display via usbc port
+Two D405 realsense cameras are used to get a pointcloud of the skin. Follow the [calibration guide](https://dev.intelrealsense.com/docs/self-calibration-for-depth-cameras).
+
+`camera-a` is connected to `trossen-ai` via usb3 port and attached to the end effector of `arm-r`
+`camera-b` is connected to `trossen-ai` via usb3 port and attached to alumnium frame, giving it an overhead view
 
 ## Startup
 
 1. flip power strip in back to on
 2. press power button on `trossen-ai`, it will glow blue
-3. flip rocker switches to "on" on `arm-follower` and `arm-leader` control boxes
+3. flip rocker switches to "on" on `arm-r` and `arm-l` control boxes
 
 ## Setup
 

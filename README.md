@@ -23,7 +23,7 @@
 
 - [`docs/plan.md`](docs/plan.md)
 - [`docs/tech.md`](docs/tech.md)
-- [`docs/todo.md`](docs/todo.md)
+- 🚧`docs/paper.md`
 
 ## Citation
 
