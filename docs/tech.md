@@ -73,22 +73,19 @@ Two D405 realsense cameras are used to get a pointcloud of the skin. Follow the 
 keys, tokens, passwords are stored in the `.env` file.
 
 ```bash
-source config/.env
+source .env
 ```
-
-code is separated into projects, each intended to be run seperately, organized as folders in `/src`
 
 python dependencies are managed with environments using [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
 
 ```bash
-cd src/<foo-project>
 deactivate && \
 rm -rf .venv && \
 rm uv.lock && \
 uv venv && \
 source .venv/bin/activate && \
 uv pip install -r pyproject.toml && \
-uv run python demo.py
+uv run python tatbot.py
 ```
 
 jax is used for gpu acceleration, to check if jax has access to gpu:

@@ -1,2 +1,0 @@
-warp-lang @ https://github.com/NVIDIA/warp/releases/download/v1.7.0/warp_lang-1.7.0+cu12-py3-none-manylinux_2_34_aarch64.whl
-cuda-core[cu12]==0.2.0

@@ -1,2 +1,0 @@
-warp-lang[extras]==1.7.0
-cuda-core[cu12]==0.2.0

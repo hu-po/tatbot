@@ -1,6 +1,6 @@
 [project]
-name = "patches"
-version = "0.0.1"
+name = "tatbot"
+version = "0.4.0"
 requires-python = "==3.11.10"
 dependencies = [
     "viser==0.2.23",
