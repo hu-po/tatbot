@@ -39,7 +39,9 @@ log = logging.getLogger(__name__)
 @dataclass
 class CLIArgs:
     debug: bool = False
-    """Enables debug logging."""
+    """Enables debug mode: allows for moving objects in the scene, enables debug logging."""
+    robot: bool = False
+    """Enables the real robot (if False then only sim)."""
     device_name: str = "cuda:0"
     """Name of the JAX device to use (i.e. 'gpu', 'cpu')."""
 
@@ -54,18 +56,31 @@ class JointPos:
     right: Float[Array, "8"]
 
 @jdc.pytree_dataclass
+class PixelTarget:
+    pose: Pose
+
+@jdc.pytree_dataclass
 class IKConfig:
-    pos_weight: float
+    pos_weight: float = 50.0
     """Weight for the position part of the IK cost function."""
-    ori_weight: float
+    ori_weight: float = 10.0
     """Weight for the orientation part of the IK cost function."""
-    limit_weight: float
+    limit_weight: float = 100.0
     """Weight for the joint limit part of the IK cost function."""
-    lambda_initial: float
+    lambda_initial: float = 1.0
     """Initial lambda value for the IK trust region solver."""
 
 @jdc.pytree_dataclass
-class RobotConfig:
+class InkCap:
+    palette_pose: Pose = Pose(pos=jnp.array([0.0, 0.0, 0.0]), wxyz=jnp.array([1.0, 0.0, 0.0, 0.0]))
+    """Pose of the inkcap (relative to palette frame)."""
+    dip_depth_m: float = 0.005
+    """Depth of the inkcap when dipping (meters)."""
+    color: Tuple[int, int, int] = (0, 0, 0) # black
+    """RGB color of the ink in the inkcap."""
+
+@dataclass
+class TatbotConfig:
     urdf_path: str = "/home/oop/tatbot-urdf/tatbot.urdf"
     """Local path to the URDF file for the robot (https://github.com/hu-po/tatbot-urdf)."""
     arm_model: trossen_arm.Model = trossen_arm.Model.wxai_v0
@@ -96,18 +111,8 @@ class RobotConfig:
     """Goal time in seconds when the goal positions should be reached (fast)."""
     target_links_name: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link")
     """Names of the links to be controlled."""
-    ik_config: IKConfig = IKConfig(
-        pos_weight=50.0,
-        ori_weight=10.0,
-        limit_weight=100.0,
-        lambda_initial=1.0,
-    )
+    ik_config: IKConfig = IKConfig()
     """Configuration for the IK solver."""
-
-@dataclass
-class SessionConfig:
-    enable_robot: bool = False
-    """Whether to enable the real robot."""
     num_pixels_per_ink_dip: int = 60
     """Number of pixels to draw before dipping the pen in the ink cup again."""
     min_fps: float = 1.0
@@ -127,10 +132,7 @@ class SessionConfig:
     """
     initial_state: str = "PAUSED"
     """Initial state of the robot."""
-
-@dataclass
-class DesignConfig:
-    pose: Pose = Pose(pos=jnp.array([0.313, 0.074, 0.065]), wxyz=jnp.array([1.000, 0.000, 0.000, 0.000]))
+    design_pose: Pose = Pose(pos=jnp.array([0.313, 0.074, 0.065]), wxyz=jnp.array([1.000, 0.000, 0.000, 0.000]))
     """Pose of the design (relative to root frame)."""
     image_path: str = "/home/oop/tatbot/assets/designs/flower.png"
     """Local path to the tattoo design PNG image."""
@@ -152,28 +154,13 @@ class DesignConfig:
     """Color for the points in the point cloud (RGB tuple)."""
     point_shape: str = "rounded"
     """Shape of points in the point cloud visualization."""
-
-@dataclass
-class TattooPenConfig:
-    standoff_depth_m: float = 0.01
-    """Depth of the standoff: when the pen is above the pixel target size, but before it begins the stroke (meters)."""
+    standoff_offset: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.01, 0.0, 0.0]))
+    """Offset vector for the standoff position (meters)."""
     stroke_depth_m: float = 0.008
     """Length of pen stroke when drawing a pixel (meters)."""
-
-@jdc.pytree_dataclass
-class InkCap:
-    palette_pose: Pose = Pose(pos=jnp.array([0.0, 0.0, 0.0]), wxyz=jnp.array([1.0, 0.0, 0.0, 0.0]))
-    """Pose of the inkcap (relative to palette frame)."""
-    dip_depth_m: float = 0.005
-    """Depth of the inkcap when dipping (meters)."""
-    color: Tuple[int, int, int] = (0, 0, 0) # black
-    """RGB color of the ink in the inkcap."""
-
-@dataclass
-class PaletteConfig:
-    init_pose: Pose = Pose(pos=jnp.array([0.281, 0.156, 0.032]), wxyz=jnp.array([0.971, 0.006, -0.024, 0.240]))
+    palette_init_pose: Pose = Pose(pos=jnp.array([0.281, 0.156, 0.032]), wxyz=jnp.array([0.971, 0.006, -0.024, 0.240]))
     """Pose of the palette (relative to root frame)."""
-    mesh_path: str = "/home/oop/tatbot/assets/3d/inkpalette-lowpoly/inkpalette-lowpoly.obj"
+    palette_mesh_path: str = "/home/oop/tatbot/assets/3d/inkpalette-lowpoly/inkpalette-lowpoly.obj"
     """Path to the .obj file for the palette mesh."""
     inkcaps: Tuple[InkCap, ...] = (
         InkCap(
@@ -193,24 +180,37 @@ class PaletteConfig:
             color=(0, 0, 255) # blue
         ),
     )
-
-@dataclass
-class SkinConfig:
-    init_pose: Pose = Pose(pos=jnp.array([0.303, 0.071, 0.044]), wxyz=jnp.array([0.701, 0.115, -0.698, 0.097]))
+    skin_init_pose: Pose = Pose(pos=jnp.array([0.303, 0.071, 0.044]), wxyz=jnp.array([0.701, 0.115, -0.698, 0.097]))
     """Pose of the skin (relative to root frame)."""
-    mesh_path: str = "/home/oop/tatbot/assets/3d/fakeskin-lowpoly/fakeskin-lowpoly.obj"
+    skin_mesh_path: str = "/home/oop/tatbot/assets/3d/fakeskin-lowpoly/fakeskin-lowpoly.obj"
     """Path to the .obj file for the skin mesh."""
-
-@dataclass
-class WorkspaceConfig:
-    init_pose: Pose = Pose(pos=jnp.array([0.287, 0.049, 0.022]), wxyz=jnp.array([-0.115, 0.000, 0.000, 0.993]))
+    workspace_init_pose: Pose = Pose(pos=jnp.array([0.287, 0.049, 0.022]), wxyz=jnp.array([-0.115, 0.000, 0.000, 0.993]))
     """Pose of the workspace origin (relative to root frame)."""
-    mesh_path: str = "/home/oop/tatbot/assets/3d/mat-lowpoly/mat-lowpoly.obj"
+    workspace_mesh_path: str = "/home/oop/tatbot/assets/3d/mat-lowpoly/mat-lowpoly.obj"
     """Path to the .obj file for the workspace mat mesh."""
+    # CLI overrides
+    enable_robot: bool = False
+    """Override for arg.robot."""
+    debug_mode: bool = False
+    """Override for arg.debug."""
 
-@jdc.pytree_dataclass
-class PixelTarget:
-    pose: Pose
+@jdc.jit
+def standoff(design_pose: Pose, pixel_pos: Float[Array, "3"], standoff_offset: Float[Array, "3"]) -> Float[Array, "3"]:
+    design_to_root = jaxlie.SE3.from_rotation_and_translation(
+        jaxlie.SO3(design_pose.wxyz),
+        design_pose.pos
+    )
+    transformed_pos = design_to_root @ pixel_pos
+    standoff_offset_transformed = jaxlie.SO3(design_pose.wxyz) @ standoff_offset
+    return transformed_pos + standoff_offset_transformed
+
+@jdc.jit
+def poke(design_pose: Pose, pixel_pos: Float[Array, "3"]) -> Float[Array, "3"]:
+    design_to_root = jaxlie.SE3.from_rotation_and_translation(
+        jaxlie.SO3(design_pose.wxyz),
+        design_pose.pos
+    )
+    return design_to_root @ pixel_pos
 
 @jdc.jit
 def ik(
@@ -249,33 +249,27 @@ def ik(
     )
     return sol[joint_var]
 
-def main(
-    robot_config: RobotConfig,
-    session_config: SessionConfig,
-    workspace_config: WorkspaceConfig,
-    skin_config: SkinConfig,
-    design_config: DesignConfig,
-    palette_config: PaletteConfig,
-    pen_config: TattooPenConfig,
-):
-    debug_mode: bool = log.getEffectiveLevel() == logging.DEBUG
+def main(config: TatbotConfig):
+    if config.debug_mode:
+        log.info("🐛 Debug mode enabled.")
+        log.setLevel(logging.DEBUG)
 
     log.info("🚀 Starting viser server...")
     server: viser.ViserServer = viser.ViserServer()
     server.scene.set_environment_map(hdri="forest", background=True)
 
     log.info("🖼️ Loading design...")
-    img_pil = PIL.Image.open(design_config.image_path)
+    img_pil = PIL.Image.open(config.image_path)
     original_width, original_height = img_pil.size
-    if original_width > design_config.image_width_px or original_height > design_config.image_height_px:
-        img_pil = img_pil.resize((design_config.image_width_px, design_config.image_height_px), PIL.Image.LANCZOS)
+    if original_width > config.image_width_px or original_height > config.image_height_px:
+        img_pil = img_pil.resize((config.image_width_px, config.image_height_px), PIL.Image.LANCZOS)
     img_pil = img_pil.convert("L")
     img_np = np.array(img_pil)
     img_width_px, img_height_px = img_pil.size
-    thresholded_pixels = img_np <= design_config.image_threshold
+    thresholded_pixels = img_np <= config.image_threshold
     pixel_targets: List[PixelTarget] = []
-    pixel_to_meter_x = design_config.image_width_m / img_width_px
-    pixel_to_meter_y = design_config.image_height_m / img_height_px
+    pixel_to_meter_x = config.image_width_m / img_width_px
+    pixel_to_meter_y = config.image_height_m / img_height_px
     for y in range(img_height_px):
         for x in range(img_width_px):
             if thresholded_pixels[y, x]:
@@ -284,7 +278,7 @@ def main(
                 pixel_target = PixelTarget(
                     pose=Pose(
                         pos=jnp.array([meter_x, meter_y, 0.0]),
-                        wxyz=design_config.pose.wxyz
+                        wxyz=config.design_pose.wxyz
                     )
                 )
                 pixel_targets.append(pixel_target)
@@ -292,74 +286,75 @@ def main(
     current_target_index: int = 0
     log.info(f"🎨 Created {num_targets} pixel targets.")
     positions = np.array([pt.pose.pos for pt in pixel_targets])
-    if debug_mode:
+    if config.debug_mode:
         design_tf = server.scene.add_transform_controls(
             name="/design",
-            position=design_config.pose.pos,
-            wxyz=design_config.pose.wxyz,
+            position=config.design_pose.pos,
+            wxyz=config.design_pose.wxyz,
             scale=0.05,
             opacity=0.2,
         )
     else:
         design_tf = server.scene.add_frame(
             name="/design",
-            position=design_config.pose.pos,
-            wxyz=design_config.pose.wxyz,
+            position=config.design_pose.pos,
+            wxyz=config.design_pose.wxyz,
             show_axes=False,
         )
+    design_pose = Pose(pos=design_tf.position, wxyz=design_tf.wxyz)
     server.scene.add_point_cloud(
         name="/design/pixel_targets",
         points=positions,
-        colors=np.array([design_config.point_color] * len(positions)),
-        point_size=design_config.point_size,
-        point_shape=design_config.point_shape,
+        colors=np.array([config.point_color] * len(positions)),
+        point_size=config.point_size,
+        point_shape=config.point_shape,
     )
 
     log.info("🔲 Adding workspace...")
-    if debug_mode:
+    if config.debug_mode:
         workspace_tf = server.scene.add_transform_controls(
             "/workspace",
-            position=workspace_config.init_pose.pos,
-            wxyz=workspace_config.init_pose.wxyz,
+            position=config.workspace_init_pose.pos,
+            wxyz=config.workspace_init_pose.wxyz,
             scale=0.2,
             opacity=0.2,
         )
     else:
         workspace_tf = server.scene.add_frame(
             "/workspace",
-            position=workspace_config.init_pose.pos,
-            wxyz=workspace_config.init_pose.wxyz,
+            position=config.workspace_init_pose.pos,
+            wxyz=config.workspace_init_pose.wxyz,
             show_axes=False,
         )
     server.scene.add_mesh_trimesh(
         name="/workspace/mesh",
-        mesh=trimesh.load(workspace_config.mesh_path),
+        mesh=trimesh.load(config.workspace_mesh_path),
     )
 
     log.info("🎨 Adding palette...")
-    if debug_mode:
+    if config.debug_mode:
         palette_tf = server.scene.add_transform_controls(
             "/palette",
-            position=palette_config.init_pose.pos,
-            wxyz=palette_config.init_pose.wxyz,
+            position=config.palette_init_pose.pos,
+            wxyz=config.palette_init_pose.wxyz,
             scale=0.2,
             opacity=0.2,
         )
     else:
         palette_tf = server.scene.add_frame(
             "/palette",
-            position=palette_config.init_pose.pos,
-            wxyz=palette_config.init_pose.wxyz,
+            position=config.palette_init_pose.pos,
+            wxyz=config.palette_init_pose.wxyz,
             show_axes=False,
         )
     server.scene.add_mesh_trimesh(
         name="/palette/mesh",
-        mesh=trimesh.load(palette_config.mesh_path),
+        mesh=trimesh.load(config.palette_mesh_path),
     )
     inkcap_tfs: List[viser.TransformControls] = []
-    for i, inkcap in enumerate(palette_config.inkcaps):
+    for i, inkcap in enumerate(config.inkcaps):
         log.info(f"🎨 Adding inkcap {i}...")
-        if debug_mode:
+        if config.debug_mode:
             inkcap_tf = server.scene.add_transform_controls(
                 f"/palette/inkcap_{i}",
                 position=inkcap.palette_pose.pos,
@@ -377,46 +372,46 @@ def main(
         inkcap_tfs.append(inkcap_tf)
 
     log.info("💪 Adding skin...")
-    if debug_mode:
+    if config.debug_mode:
         skin_tf = server.scene.add_transform_controls(
             "/skin",
-            position=skin_config.init_pose.pos,
-            wxyz=skin_config.init_pose.wxyz,
+            position=config.skin_init_pose.pos,
+            wxyz=config.skin_init_pose.wxyz,
             scale=0.2,
             opacity=0.2,
         )
     else:
         skin_tf = server.scene.add_frame(
             "/skin",
-            position=skin_config.init_pose.pos,
-            wxyz=skin_config.init_pose.wxyz,
+            position=config.skin_init_pose.pos,
+            wxyz=config.skin_init_pose.wxyz,
             show_axes=False,
         )
     server.scene.add_mesh_trimesh(
         name="/skin/mesh",
-        mesh=trimesh.load(skin_config.mesh_path),
+        mesh=trimesh.load(config.skin_mesh_path),
     )
 
     log.info("🎯 Adding ik targets...")
     ik_target_l = server.scene.add_transform_controls(
         "/ik_target_l",
-        position=session_config.ik_target_pose_l.pos,
-        wxyz=session_config.ik_target_pose_l.wxyz,
+        position=config.ik_target_pose_l.pos,
+        wxyz=config.ik_target_pose_l.wxyz,
         scale=0.1,
         opacity=0.5,
     )
     ik_target_r = server.scene.add_transform_controls(
         "/ik_target_r",
-        position=session_config.ik_target_pose_r.pos,
-        wxyz=session_config.ik_target_pose_r.wxyz,
+        position=config.ik_target_pose_r.pos,
+        wxyz=config.ik_target_pose_r.wxyz,
         scale=0.1,
         opacity=0.5,
     )
 
     log.info("🦾 Adding robots...")
-    urdf : yourdfpy.URDF = yourdfpy.URDF.load(robot_config.urdf_path)
+    urdf : yourdfpy.URDF = yourdfpy.URDF.load(config.urdf_path)
     robot: pk.Robot = pk.Robot.from_urdf(urdf)
-    joint_pos_current: JointPos = robot_config.joint_pos_sleep
+    joint_pos_current: JointPos = config.joint_pos_sleep
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/root")
 
     with server.gui.add_folder("Session"):
@@ -430,7 +425,7 @@ def main(
         )
         server.gui.add_image(
             image=img_np,
-            label=design_config.image_path,
+            label=config.image_path,
             format="png",
             order="rgb",
             visible=True,
@@ -441,41 +436,41 @@ def main(
         step_duration_ms = server.gui.add_number("step (ms)", 0.001, disabled=True)
     with server.gui.add_folder("Robot"):
         state_handle = server.gui.add_dropdown(
-            "State", options=session_config.states,
-            initial_value=session_config.initial_state
+            "State", options=config.states,
+            initial_value=config.initial_state
         )
         sleep_button = server.gui.add_button("Go to Sleep")
 
         @sleep_button.on_click
         def _(_):
             log.debug("😴 Moving left robot to sleep pose...")
-            move_robot(robot_config.joint_pos_sleep)
+            move_robot(config.joint_pos_sleep)
             state_handle.value = "PAUSED"
 
     try:
-        if session_config.enable_robot:
+        if config.enable_robot:
             log.info("🤖 Initializing robot drivers...")
             driver_l = trossen_arm.TrossenArmDriver()
             driver_r = trossen_arm.TrossenArmDriver()
             driver_l.configure(
-                robot_config.arm_model,
-                robot_config.end_effector_model_l,
-                robot_config.ip_address_l,
+                config.arm_model,
+                config.end_effector_model_l,
+                config.ip_address_l,
                 False, # clear_error
             )
             driver_r.configure(
-                robot_config.arm_model,
-                robot_config.end_effector_model_r,
-                robot_config.ip_address_r,
+                config.arm_model,
+                config.end_effector_model_r,
+                config.ip_address_r,
                 False, # clear_error
             )
             driver_l.set_all_modes(trossen_arm.Mode.position)
             driver_r.set_all_modes(trossen_arm.Mode.position)
 
-        def move_robot(joint_pos: JointPos, goal_time: float = robot_config.set_all_position_goal_time_slow):
+        def move_robot(joint_pos: JointPos, goal_time: float = config.set_all_position_goal_time_slow):
             log.debug(f"🤖 Moving robot to: {joint_pos}")
             urdf_vis.update_cfg(np.concatenate([joint_pos.left, joint_pos.right]))
-            if session_config.enable_robot:
+            if config.enable_robot:
                 driver_l.set_all_positions(
                     trossen_arm.VectorDouble(joint_pos.left[:7].tolist()),
                     goal_time=goal_time,
@@ -490,16 +485,16 @@ def main(
                 time.sleep(goal_time)
         
         log.info("🤖 Moving robots to sleep pose...")
-        move_robot(robot_config.joint_pos_sleep)
-        if debug_mode:
+        move_robot(config.joint_pos_sleep)
+        if config.debug_mode:
             log.info("🤖 Moving robots to calibration pose...")
-            move_robot(robot_config.joint_pos_calib)
-            joint_pos_current = robot_config.joint_pos_calib
+            move_robot(config.joint_pos_calib)
+            joint_pos_current = config.joint_pos_calib
             state_handle.value = "PAUSED"
         else:
             log.info("🤖 Moving robots to home pose...")
-            move_robot(robot_config.joint_pos_work)
-            joint_pos_current = robot_config.joint_pos_work
+            move_robot(config.joint_pos_work)
+            joint_pos_current = config.joint_pos_work
             state_handle.value = "MANUAL"
 
         while True:
@@ -516,29 +511,17 @@ def main(
                 progress_bar.value = float(current_target_index) / (num_targets - 1)
                 current_target = pixel_targets[current_target_index]
                 log.debug(f" Calculating standoff position...")
-                design_to_root = jaxlie.SE3.from_rotation_and_translation(
-                    jaxlie.SO3(design_tf.wxyz),
-                    design_tf.position + (jaxlie.SO3(ik_target_l.wxyz).as_matrix() @ jnp.array([pen_config.standoff_depth_m, 0.0, 0.0]))
-                )
-                pixel_pos_root = design_to_root @ current_target.pose.pos
+                pixel_pos_root = standoff(design_pose, current_target.pose.pos, config.standoff_offset)
                 ik_target_l.position = pixel_pos_root
                 state_handle.value = "STANDOFF"
             elif state_handle.value == "STANDOFF":
                 log.debug(f" Calculating poke position...")
-                design_to_root = jaxlie.SE3.from_rotation_and_translation(
-                    jaxlie.SO3(design_tf.wxyz),
-                    design_tf.position
-                )
-                pixel_pos_root = design_to_root @ current_target.pose.pos
+                pixel_pos_root = poke(design_pose, current_target.pose.pos)
                 ik_target_l.position = pixel_pos_root
                 state_handle.value = "POKE"
             elif state_handle.value == "POKE":
                 log.debug(f" Returning to standoff position...")
-                design_to_root = jaxlie.SE3.from_rotation_and_translation(
-                    jaxlie.SO3(design_tf.wxyz),
-                    design_tf.position + (jaxlie.SO3(ik_target_l.wxyz).as_matrix() @ jnp.array([pen_config.standoff_depth_m, 0.0, 0.0]))
-                )
-                pixel_pos_root = design_to_root @ current_target.pose.pos
+                pixel_pos_root = standoff(design_pose, current_target.pose.pos, config.standoff_offset)
                 ik_target_l.position = pixel_pos_root
                 target_slider.value += 1
                 state_handle.value = "WORK"
@@ -552,15 +535,15 @@ def main(
                 log.debug(f"🎯 Left arm IK target - pos: {ik_target_l.position}, wxyz: {ik_target_l.wxyz}")
                 log.debug(f"🎯 Right arm IK target - pos: {ik_target_r.position}, wxyz: {ik_target_r.wxyz}")
                 target_link_indices = jnp.array([
-                    robot.links.names.index(robot_config.target_links_name[0]),
-                    robot.links.names.index(robot_config.target_links_name[1])
+                    robot.links.names.index(config.target_links_name[0]),
+                    robot.links.names.index(config.target_links_name[1])
                 ])
                 solution = ik(
                     robot=robot,
                     target_link_indices=target_link_indices,
                     target_wxyz=jnp.array([ik_target_l.wxyz, ik_target_r.wxyz]),
                     target_position=jnp.array([ik_target_l.position, ik_target_r.position]),
-                    config=robot_config.ik_config,
+                    config=config.ik_config,
                 )
                 joint_pos_current = JointPos(
                     left=np.array(solution[:8]),
@@ -573,7 +556,7 @@ def main(
 
                 log.debug("🤖 Moving robots...")
                 robot_move_start_time = time.time()
-                move_robot(joint_pos_current, goal_time=robot_config.set_all_position_goal_time_fast)
+                move_robot(joint_pos_current, goal_time=config.set_all_position_goal_time_fast)
                 robot_move_elapsed_time = time.time() - robot_move_start_time
                 move_duration_ms.value = robot_move_elapsed_time * 1000
 
@@ -590,15 +573,15 @@ def main(
         log.error(f"Error: {e}")
         log.info("🦾 Getting robot error information ...")
         driver_l.configure(
-            robot_config.arm_model,
-            robot_config.end_effector_model_l,
-            robot_config.ip_address_l,
+            config.arm_model,
+            config.end_effector_model_l,
+            config.ip_address_l,
             False, # clear_error
         )
         driver_r.configure(
-            robot_config.arm_model,
-            robot_config.end_effector_model_r,
-            robot_config.ip_address_r,
+            config.arm_model,
+            config.end_effector_model_r,
+            config.ip_address_r,
             False, # clear_error
         )
         error_info_l = driver_l.get_error_information()
@@ -611,23 +594,23 @@ def main(
     
     finally:
         log.info("🏁 Shutting down...")
-        if session_config.enable_robot:
+        if config.enable_robot:
             log.info("🦾 Shutting down robots...")
             driver_l.configure(
-                robot_config.arm_model,
-                robot_config.end_effector_model_l,
-                robot_config.ip_address_l,
+                config.arm_model,
+                config.end_effector_model_l,
+                config.ip_address_l,
                 True, # clear_error
             )
             driver_r.configure(
-                robot_config.arm_model,
-                robot_config.end_effector_model_r,
-                robot_config.ip_address_r,
+                config.arm_model,
+                config.end_effector_model_r,
+                config.ip_address_r,
                 True, # clear_error
             )
             driver_l.set_all_modes(trossen_arm.Mode.position)
             driver_r.set_all_modes(trossen_arm.Mode.position)
-            move_robot(robot_config.joint_pos_sleep)
+            move_robot(config.joint_pos_sleep)
             log.info("🧹 Idling robot motors")
             driver_l.set_all_modes(trossen_arm.Mode.idle)
             driver_r.set_all_modes(trossen_arm.Mode.idle)
@@ -636,19 +619,9 @@ def main(
 
 if __name__ == "__main__":
     args = tyro.cli(CLIArgs)
-    if args.debug:
-        log.info("🐛 Debug mode enabled.")
-        log.setLevel(logging.DEBUG)
     jax.config.update('jax_platform_name', args.device_name)
     log.info(f"🎮 Using JAX device: {args.device_name}")
-    # TODO: cli args to override values
-    # TODO: wrap entire script for hyperparameter tuning
-    main(
-        robot_config=RobotConfig(),
-        design_config=DesignConfig(),
-        session_config=SessionConfig(),
-        workspace_config=WorkspaceConfig(),
-        palette_config=PaletteConfig(),
-        pen_config=TattooPenConfig(),
-        skin_config=SkinConfig(),
-    )
+    config = TatbotConfig()
+    config.enable_robot = args.robot
+    config.debug_mode = args.debug
+    main(config=config)
