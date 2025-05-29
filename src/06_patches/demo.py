@@ -21,6 +21,7 @@ import jaxls
 from jaxtyping import Array, Float, Int
 import numpy as np
 import PIL.Image
+import pyrealsense2 as rs
 import pyroki as pk
 import tyro
 import trimesh
@@ -78,6 +79,15 @@ class InkCap:
     """Depth of the inkcap when dipping (meters)."""
     color: Tuple[int, int, int] = (0, 0, 0) # black
     """RGB color of the ink in the inkcap."""
+
+@jdc.pytree_dataclass
+class RealSenseConfig:
+    fps: int = 1
+    """Frames per second for the RealSense camera."""
+    decimation_factor: int = 3
+    """Decimation factor for depth frame processing."""
+    point_size: float = 0.001
+    """Size of points in the point cloud visualization."""
 
 @dataclass
 class TatbotConfig:
@@ -188,11 +198,72 @@ class TatbotConfig:
     """Pose of the workspace origin (relative to root frame)."""
     workspace_mesh_path: str = "/home/oop/tatbot/assets/3d/mat-lowpoly/mat-lowpoly.obj"
     """Path to the .obj file for the workspace mat mesh."""
+    realsense: RealSenseConfig = RealSenseConfig()
+    """Configuration for the RealSense cameras."""
     # CLI overrides
     enable_robot: bool = False
     """Override for arg.robot."""
     debug_mode: bool = False
     """Override for arg.debug."""
+
+class RealSenseCamera:
+    def __init__(self, config: RealSenseConfig, server: viser.ViserServer, name: str):
+        self.config = config
+        self.server = server
+        self.name = name
+        
+        # Setup RealSense
+        self._pipeline = rs.pipeline()
+        self._config = rs.config()
+        self._config.enable_stream(rs.stream.depth, rs.format.z16, config.fps)
+        self._config.enable_stream(rs.stream.color, rs.format.rgb8, config.fps)
+        self._point_cloud = rs.pointcloud()
+        self._decimate = rs.decimation_filter()
+        self._decimate.set_option(rs.option.filter_magnitude, config.decimation_factor)
+        
+        # Setup visualization
+        self.point_cloud = self.server.scene.add_point_cloud(
+            f"/realsense/{name}",
+            points=np.zeros((1, 3)),
+            colors=np.zeros((1, 3), dtype=np.uint8),
+            point_size=config.point_size,
+        )
+        
+    def start(self):
+        self._pipeline.start(self._config)
+        
+    def stop(self):
+        self._pipeline.stop()
+        
+    def get_frames(self):
+        frames = self._pipeline.wait_for_frames()
+        return frames.get_depth_frame(), frames.get_color_frame()
+        
+    def process_frames(self, depth_frame, color_frame):
+        depth_frame = self._decimate.process(depth_frame)
+        self._point_cloud.map_to(color_frame)
+        points = self._point_cloud.calculate(depth_frame)
+        
+        positions = np.asanyarray(points.get_vertices()).view(np.float32)
+        positions = positions.reshape((-1, 3))
+        
+        texture_uv = np.asanyarray(points.get_texture_coordinates()).view(np.float32).reshape((-1, 2))
+        color_image = np.asanyarray(color_frame.get_data())
+        color_h, color_w, _ = color_image.shape
+        
+        texture_uv = texture_uv.clip(0.0, 1.0)
+        colors = color_image[
+            (texture_uv[:, 1] * (color_h - 1.0)).astype(np.int32),
+            (texture_uv[:, 0] * (color_w - 1.0)).astype(np.int32),
+            :,
+        ]
+        log.debug(f"📷 Processed {len(positions)} points from {self.name} camera.")
+        return positions, colors
+        
+    def update_point_cloud(self, positions: np.ndarray, colors: np.ndarray):
+        self.point_cloud.points = positions
+        self.point_cloud.colors = colors
+
 
 @jdc.jit
 def standoff(design_pose: Pose, pixel_pos: Float[Array, "3"], standoff_offset: Float[Array, "3"]) -> Float[Array, "3"]:
@@ -448,6 +519,11 @@ def main(config: TatbotConfig):
             state_handle.value = "PAUSED"
 
     try:
+        log.info("📷 Initializing RealSense cameras...")
+        camera_l = RealSenseCamera(config.realsense, server, "left")
+        camera_r = RealSenseCamera(config.realsense, server, "right")
+        camera_l.start()
+        camera_r.start()
         if config.enable_robot:
             log.info("🤖 Initializing robot drivers...")
             driver_l = trossen_arm.TrossenArmDriver()
@@ -560,6 +636,22 @@ def main(config: TatbotConfig):
                 robot_move_elapsed_time = time.time() - robot_move_start_time
                 move_duration_ms.value = robot_move_elapsed_time * 1000
 
+            log.debug("📷 Updating point clouds...")
+            depth_l, color_l = camera_l.get_frames()
+            depth_r, color_r = camera_r.get_frames()
+            positions_l, colors_l = camera_l.process_frames(depth_l, color_l)
+            positions_r, colors_r = camera_r.process_frames(depth_r, color_r)
+            camera_link_idx_l = robot.links.names.index("left/camera_depth_frame")
+            camera_link_idx_r = robot.links.names.index("right/camera_depth_frame")
+            camera_pose_l = robot.forward_kinematics(joint_pos_current)[camera_link_idx_l]
+            camera_pose_r = robot.forward_kinematics(joint_pos_current)[camera_link_idx_r]
+            camera_transform_l = jaxlie.SE3(camera_pose_l)
+            camera_transform_r = jaxlie.SE3(camera_pose_r)
+            positions_world_l = camera_transform_l @ positions_l
+            positions_world_r = camera_transform_r @ positions_r
+            camera_l.update_point_cloud(positions_world_l, colors_l)
+            camera_r.update_point_cloud(positions_world_r, colors_r)
+
             log.debug(f"🖼️ Design - pos: {design_tf.position}, wxyz: {design_tf.wxyz}")
             log.debug(f"🔲 Workspace - pos: {workspace_tf.position}, wxyz: {workspace_tf.wxyz}")
             log.debug(f"🎨 Palette - pos: {palette_tf.position}, wxyz: {palette_tf.wxyz}")
@@ -594,6 +686,9 @@ def main(config: TatbotConfig):
     
     finally:
         log.info("🏁 Shutting down...")
+        log.info("📷 Shutting down cameras...")
+        camera_l.stop()
+        camera_r.stop()
         if config.enable_robot:
             log.info("🦾 Shutting down robots...")
             driver_l.configure(
@@ -614,7 +709,7 @@ def main(config: TatbotConfig):
             log.info("🧹 Idling robot motors")
             driver_l.set_all_modes(trossen_arm.Mode.idle)
             driver_r.set_all_modes(trossen_arm.Mode.idle)
-            
+
         log.info("🏁 Script complete.")
 
 if __name__ == "__main__":
