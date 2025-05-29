@@ -10,6 +10,7 @@
 
 from dataclasses import dataclass, field
 import logging
+import os
 import time
 from typing import List, Tuple
 
@@ -91,7 +92,7 @@ class RealSenseConfig:
 
 @dataclass
 class TatbotConfig:
-    urdf_path: str = "/home/oop/tatbot-urdf/tatbot.urdf"
+    urdf_path: str = os.path.expanduser("~/tatbot-urdf/tatbot.urdf")
     """Local path to the URDF file for the robot (https://github.com/hu-po/tatbot-urdf)."""
     arm_model: trossen_arm.Model = trossen_arm.Model.wxai_v0
     """Arm model for the robot."""
@@ -144,7 +145,7 @@ class TatbotConfig:
     """Initial state of the robot."""
     design_pose: Pose = Pose(pos=jnp.array([0.313, 0.074, 0.065]), wxyz=jnp.array([1.000, 0.000, 0.000, 0.000]))
     """Pose of the design (relative to root frame)."""
-    image_path: str = "/home/oop/tatbot/assets/designs/flower.png"
+    image_path: str = os.path.expanduser("~/tatbot/assets/designs/flower.png")
     """Local path to the tattoo design PNG image."""
     image_threshold: int = 127
     """Threshold for B/W image. Pixels less than or equal to this value are targets. [0, 255]"""
@@ -170,7 +171,7 @@ class TatbotConfig:
     """Length of pen stroke when drawing a pixel (meters)."""
     palette_init_pose: Pose = Pose(pos=jnp.array([0.281, 0.156, 0.032]), wxyz=jnp.array([0.971, 0.006, -0.024, 0.240]))
     """Pose of the palette (relative to root frame)."""
-    palette_mesh_path: str = "/home/oop/tatbot/assets/3d/inkpalette-lowpoly/inkpalette-lowpoly.obj"
+    palette_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/inkpalette-lowpoly/inkpalette-lowpoly.obj")
     """Path to the .obj file for the palette mesh."""
     inkcaps: Tuple[InkCap, ...] = (
         InkCap(
@@ -192,11 +193,11 @@ class TatbotConfig:
     )
     skin_init_pose: Pose = Pose(pos=jnp.array([0.303, 0.071, 0.044]), wxyz=jnp.array([0.701, 0.115, -0.698, 0.097]))
     """Pose of the skin (relative to root frame)."""
-    skin_mesh_path: str = "/home/oop/tatbot/assets/3d/fakeskin-lowpoly/fakeskin-lowpoly.obj"
+    skin_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/fakeskin-lowpoly/fakeskin-lowpoly.obj")
     """Path to the .obj file for the skin mesh."""
     workspace_init_pose: Pose = Pose(pos=jnp.array([0.287, 0.049, 0.022]), wxyz=jnp.array([-0.115, 0.000, 0.000, 0.993]))
     """Pose of the workspace origin (relative to root frame)."""
-    workspace_mesh_path: str = "/home/oop/tatbot/assets/3d/mat-lowpoly/mat-lowpoly.obj"
+    workspace_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/mat-lowpoly/mat-lowpoly.obj")
     """Path to the .obj file for the workspace mat mesh."""
     realsense: RealSenseConfig = RealSenseConfig()
     """Configuration for the RealSense cameras."""
