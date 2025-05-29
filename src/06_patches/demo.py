@@ -1,12 +1,12 @@
-# INFO: This file controls a tatbot robotic tattoo machine.
-# INFO: This python file requires dependencies in the pyproject.toml file.
+# INFO: This file controls tatbot: a robotic tattoo machine.
+# INFO: This python file requires dependencies defined in the pyproject.toml file.
 # INFO: This file is a python script indended to be run directly with optional cli args.
 # INFO: This file will attempt to use a GPU if available.
 # INFO: When editing, do not remove any TODOs in this file.
 # INFO: When editing, do not add any additional comments to the code.
 # INFO: When editing, use log to add minimal but essential debug and info messages.
+# INFO: When setting float values in configs, use 3 decimal places
 # INFO: Use emojis tastefully.
-# INFO: When setting float values in configs, use 4 decimal places
 
 from dataclasses import dataclass, field
 import logging
