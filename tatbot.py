@@ -204,9 +204,9 @@ class TatbotConfig:
     """Pose of the workspace origin (relative to root frame)."""
     workspace_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/mat-lowpoly/mat-lowpoly.obj")
     """Path to the .obj file for the workspace mat mesh."""
-    realsense_a: RealSenseConfig = RealSenseConfig(serial_number="230422273017", link_name="right/camera_depth_frame")
+    realsense_a: RealSenseConfig = RealSenseConfig(serial_number="230422273017", link_name="right/camera_depth_optical_frame")
     """Configuration for RealSense Camera A (attached to right arm)."""
-    realsense_b: RealSenseConfig = RealSenseConfig(serial_number="218622278376", link_name="cam_high_depth_frame")
+    realsense_b: RealSenseConfig = RealSenseConfig(serial_number="218622278376", link_name="cam_high_depth_optical_frame")
     """Configuration for RealSense Camera B (overhead)."""
     # CLI overrides
     enable_robot: bool = False
@@ -480,6 +480,7 @@ def main(config: TatbotConfig):
     joint_pos_current: JointPos = config.joint_pos_sleep
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/root")
 
+    log.info("🖥️ Adding gui...")
     with server.gui.add_folder("Session"):
         progress_bar = server.gui.add_progress_bar(0.0)
         target_slider = server.gui.add_slider(
@@ -511,21 +512,21 @@ def main(config: TatbotConfig):
         @sleep_button.on_click
         def _(_):
             log.debug("😴 Moving left robot to sleep pose...")
-            move_robot(config.joint_pos_sleep)
             state_handle.value = "PAUSED"
+            move_robot(config.joint_pos_sleep)
 
     try:
         if config.enable_realsense:
             log.info("📷 Initializing RealSense cameras...")
-            camera_a = RealSenseCamera(config.realsense_a)
-            camera_b = RealSenseCamera(config.realsense_b)
-            camera_a_pointcloud = server.scene.add_point_cloud(
+            realsense_a = RealSenseCamera(config.realsense_a)
+            realsense_b = RealSenseCamera(config.realsense_b)
+            pointcloud_a = server.scene.add_point_cloud(
                 f"/realsense/a",
                 points=np.zeros((1, 3)),
                 colors=np.zeros((1, 3), dtype=np.uint8),
                 point_size=config.realsense_a.point_size,
             )
-            camera_b_pointcloud = server.scene.add_point_cloud(
+            pointcloud_b = server.scene.add_point_cloud(
                 f"/realsense/b",
                 points=np.zeros((1, 3)),
                 colors=np.zeros((1, 3), dtype=np.uint8),
@@ -618,8 +619,8 @@ def main(config: TatbotConfig):
             if config.enable_realsense:
                 log.debug("📷 Updating point clouds...")
                 realsense_start_time = time.time()
-                positions_a, colors_a = camera_a.get_points()
-                positions_b, colors_b = camera_b.get_points()
+                positions_a, colors_a = realsense_a.get_points()
+                positions_b, colors_b = realsense_b.get_points()
                 camera_link_idx_a = robot.links.names.index(config.realsense_a.link_name)
                 joint_array = np.concatenate([joint_pos_current.left, joint_pos_current.right])
                 camera_pose_a = robot.forward_kinematics(joint_array)[camera_link_idx_a]
@@ -628,10 +629,10 @@ def main(config: TatbotConfig):
                 camera_transform_b = jaxlie.SE3(camera_pose_b)
                 positions_world_a = camera_transform_a @ positions_a
                 positions_world_b = camera_transform_b @ positions_b
-                camera_a_pointcloud.points = np.array(positions_world_a)
-                camera_a_pointcloud.colors = np.array(colors_a)
-                camera_b_pointcloud.points = np.array(positions_world_b)
-                camera_b_pointcloud.colors = np.array(colors_b)
+                pointcloud_a.points = np.array(positions_world_a)
+                pointcloud_a.colors = np.array(colors_a)
+                pointcloud_b.points = np.array(positions_world_b)
+                pointcloud_b.colors = np.array(colors_b)
                 realsense_elapsed_time = time.time() - realsense_start_time
                 realsense_duration_ms.value = realsense_elapsed_time * 1000
 
@@ -702,8 +703,8 @@ def main(config: TatbotConfig):
         log.info("🏁 Shutting down...")
         if config.enable_realsense:
             log.info("📷 Shutting down cameras...")
-            camera_a.pipeline.stop()
-            camera_b.pipeline.stop()
+            realsense_a.pipeline.stop()
+            realsense_b.pipeline.stop()
         if config.enable_robot:
             log.info("🦾 Shutting down robots...")
             driver_l.configure(
