@@ -118,19 +118,17 @@ Some of these neural programs serve as useful starting points for robotic contro
 
 \subsection{Software}
 
-flux to generate the 2d art based on the prompt
-
-rerun for timeseries database and visualization
-lerobot for dataset and model management
-
-rerun for visualization (compute done by pi5)
-uv for package management
-open3d for image to mesh mapping
-huggingface lerobot datasets for imitation learning
-openpi/lerobot for training and inference scripts
-wandb for experiment management
-sweeps for tuning hyperparameters
-onshape for part design
+The TatBot system relies on a suite of open-source software packages:
+\begin{itemize}
+    \item \textbf{viser (v0.2.23):} Used for 3D visualization and creating interactive browser-based GUIs. Essential for visualizing robot workspaces, tattoo designs, and simulation results.
+    \item \textbf{Pillow (>=9.0.0,<11.0.0):} A Python Imaging Library fork, used for image manipulation tasks, which could include processing tattoo designs or camera input.
+    \item \textbf{trossen-arm (v1.8.1):} The official Python library for controlling Trossen Robotics arms, likely used for interfacing with the Aloha Solo robot arm.
+    \item \textbf{pyrealsense2 (v2.55.1.6486):} Python bindings for Intel RealSense SDK, used for capturing data from RealSense depth cameras, likely for environment perception and skin surface mapping.
+    \item \textbf{pyroki (git+https://github.com/chungmin99/pyroki.git@main):} A robotics library, potentially used for kinematics, trajectory planning, or other robot control functions.
+    \item \textbf{jax[cuda12] (>=0.4.0,<0.5.0):} A high-performance numerical computation library, accelerated with CUDA for GPU usage. Likely used for machine learning model training and inference, and complex calculations.
+    \item \textbf{jaxtyping (>=0.2.25,<1.0.0):} Type annotations for JAX, enhancing code clarity and robustness for JAX-based computations.
+    \item \textbf{jaxlie (>=1.3.4,<2.0.0):} A library for Lie theory operations with a JAX backend, often used in robotics for representing and manipulating rotations and transformations.
+\end{itemize}
 
 \subsection{Hardware}
 
