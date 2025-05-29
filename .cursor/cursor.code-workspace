@@ -1,13 +1,17 @@
 {
     "folders": [
-      { "name": "tatbot", "path": "../../tatbot" },
-      { "name": "pyroki", "path": "../../pyroki" },
-      { "name": "viser", "path": "../../viser" },
-      { "name": "docs", "path": "../../docs" },
-      { "name": "trossen_arm", "path": "../../trossen_arm" },
-      { "name": "trossen_arm_description", "path": "../../trossen_arm_description" },
-      { "name": "tatbot-urdf", "path": "../../tatbot-urdf" },
-      { "name": "tatbot-log", "path": "../../tatbot-logs" }
+      { "name": "tatbot", "path": "../../tatbot" }, // https://github.com/hu-po/tatbot
+      // Dependencies are useful to provide context for AI coding agents (e.g. Cursor)
+      { "name": "pyroki", "path": "../../pyroki" }, // https://github.com/chungmin99/pyroki
+      { "name": "viser", "path": "../../viser" }, // https://github.com/nerfstudio-project/viser
+      { "name": "librealsense", "path": "../../librealsense" }, // https://github.com/IntelRealSense/librealsense
+      { "name": "trossen_arm", "path": "../../trossen_arm" }, // https://github.com/TrossenRobotics/trossen_arm
+      // URDFs
+      { "name": "tatbot-urdf", "path": "../../tatbot-urdf" }, // https://github.com/hu-po/tatbot-urdf
+      { "name": "trossen_arm_description", "path": "../../trossen_arm_description" }, // https://github.com/TrossenRobotics/trossen_arm_description
+      // Documentation
+      { "name": "docs", "path": "../../docs" }, // https://github.com/hu-po/docs
+      { "name": "tatbot-log", "path": "../../tatbot-logs" } // https://github.com/hu-po/tatbot-logs
     ],
     "settings": {}
   }

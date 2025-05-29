@@ -2,9 +2,9 @@
 
 technical description of tatbot
 
-## Compute
+## Devices
 
-tatbot consists of multiple seperate compute nodes connected via ethernet:
+tatbot consists of several computers, cameras, and robotos connected via ethernet:
 
 - `ojo`: NVIDIA Jetson AGX Orin (12-core ARM Cortex-A78AE @ 2.2 GHz) (32GB Unified RAM) (200 TOPS)
 - `trossen-ai`: System76 Meerkat PC (13th Gen Intel i5-1340P, 16-core @ 4.6GHz) (15GB RAM)
@@ -22,6 +22,14 @@ tatbot consists of multiple seperate compute nodes connected via ethernet:
 - `arm-l`: Trossen Arm Controller box connected to WidowXAI arm
 - `arm-r`: Trossen Arm Controller box connected to WidowXAI arm
 - `oop`: (only used for development)
+
+## Dependencies
+
+- [`pyroki`](https://github.com/chungmin99/pyroki) - inverse kinematics
+- [`viser`](https://github.com/nerfstudio-project/viser) - browser visualizer and GUI
+- [`librealsense`](https://github.com/IntelRealSense/librealsense) - RGBD depth cameras (pointclouds) for skin tracking
+- [`trossen_arm`](https://github.com/TrossenRobotics/trossen_arm) - robot arms
+- [`jax`](https://github.com/jax-ml/jax) - gpu acceleration
 
 ## Networking
 
@@ -43,7 +51,8 @@ tatbot consists of multiple seperate compute nodes connected via ethernet:
     (uplink-1) -
     (uplink-2) short black ethernet cable to `switch-main`
 
-ip addresses
+hardcoded ip addresses:
+
 - `192.168.1.33` - `oop`
 - `192.168.1.91` - `camera1`
 - `192.168.1.92` - `camera2`
@@ -55,20 +64,18 @@ ip addresses
 - `192.168.1.98` - `rpi1`
 - `192.168.1.99` - `rpi2`
 
-## Realsense
+## Realsenses
 
 Two D405 realsense cameras are used to get a pointcloud of the skin. Follow the [calibration guide](https://dev.intelrealsense.com/docs/self-calibration-for-depth-cameras).
 
 `camera-a` is connected to `trossen-ai` via usb3 port and attached to the end effector of `arm-r`
 `camera-b` is connected to `trossen-ai` via usb3 port and attached to alumnium frame, giving it an overhead view
 
-## Startup
+## Setup
 
 1. flip power strip in back to on
 2. press power button on `trossen-ai`, it will glow blue
 3. flip rocker switches to "on" on `arm-r` and `arm-l` control boxes
-
-## Setup
 
 keys, tokens, passwords are stored in the `.env` file.
 
