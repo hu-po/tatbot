@@ -21,6 +21,7 @@ import jaxlie
 import jaxls
 from jaxtyping import Array, Float, Int
 import numpy as np
+import numpy.typing as npt
 import PIL.Image
 import pyrealsense2 as rs
 import pyroki as pk
@@ -85,14 +86,14 @@ class InkCap:
 
 @jdc.pytree_dataclass
 class RealSenseConfig:
-    fps: int = 1
+    fps: int = 5
     """Frames per second for the RealSense camera."""
-    decimation_factor: int = 3
-    """Decimation factor for depth frame processing."""
     point_size: float = 0.001
     """Size of points in the point cloud visualization."""
     serial_number: str = ""
     """Serial number of the RealSense camera device."""
+    link_name: str = ""
+    """Name of the camera link in the robot URDF."""
 
 @dataclass
 class TatbotConfig:
@@ -203,9 +204,9 @@ class TatbotConfig:
     """Pose of the workspace origin (relative to root frame)."""
     workspace_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/mat-lowpoly/mat-lowpoly.obj")
     """Path to the .obj file for the workspace mat mesh."""
-    realsense_a: RealSenseConfig = RealSenseConfig(serial_number="230422273017")
+    realsense_a: RealSenseConfig = RealSenseConfig(serial_number="230422273017", link_name="right/camera_depth_frame")
     """Configuration for RealSense Camera A (attached to right arm)."""
-    realsense_b: RealSenseConfig = RealSenseConfig(serial_number="218622278376")
+    realsense_b: RealSenseConfig = RealSenseConfig(serial_number="218622278376", link_name="cam_high_depth_frame")
     """Configuration for RealSense Camera B (overhead)."""
     # CLI overrides
     enable_robot: bool = False
@@ -216,65 +217,47 @@ class TatbotConfig:
     """Override for arg.debug."""
 
 class RealSenseCamera:
-    def __init__(self, config: RealSenseConfig, server: viser.ViserServer, name: str):
-        self.config = config
-        self.server = server
-        self.name = name
+    def __init__(self, config: RealSenseConfig):
+        self.pipeline = rs.pipeline()
+        self.config = rs.config()
+        pipeline_wrapper = rs.pipeline_wrapper(self.pipeline)
+        self.config.resolve(pipeline_wrapper)
+        self.config.enable_device(config.serial_number)
+        self.config.enable_stream(rs.stream.depth, rs.format.z16, config.fps)
+        self.config.enable_stream(rs.stream.color, rs.format.rgb8, config.fps)
+        self.pipeline.start(self.config)
         
-        # Setup RealSense
-        self._pipeline = rs.pipeline()
-        self._config = rs.config()
-        pipeline_wrapper = rs.pipeline_wrapper(self._pipeline)
-        self._config.resolve(pipeline_wrapper)
-        self._config.enable_device(config.serial_number)
-        self._config.enable_stream(rs.stream.depth, rs.format.z16, config.fps)
-        self._config.enable_stream(rs.stream.color, rs.format.rgb8, config.fps)
-        self._point_cloud = rs.pointcloud()
-        self._decimate = rs.decimation_filter()
-        self._decimate.set_option(rs.option.filter_magnitude, config.decimation_factor)
-        
-        # Setup visualization
-        self.point_cloud = self.server.scene.add_point_cloud(
-            f"/realsense/{name}",
-            points=np.zeros((1, 3)),
-            colors=np.zeros((1, 3), dtype=np.uint8),
-            point_size=config.point_size,
+    def get_points(self) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.uint8]]:
+        point_cloud = rs.pointcloud()
+        decimate = rs.decimation_filter()
+        decimate.set_option(rs.option.filter_magnitude, 3)        
+        frames = self.pipeline.wait_for_frames()
+        depth_frame = frames.get_depth_frame()
+        depth_frame = decimate.process(depth_frame)
+        color_frame = frames.get_color_frame()
+        point_cloud.map_to(color_frame)
+        points = point_cloud.calculate(depth_frame)
+        texture_uv = (
+            np.asanyarray(points.get_texture_coordinates())
+            .view(np.float32)
+            .reshape((-1, 2))
         )
-        
-    def start(self):
-        self._pipeline.start(self._config)
-        
-    def stop(self):
-        self._pipeline.stop()
-        
-    def get_frames(self):
-        frames = self._pipeline.wait_for_frames()
-        return frames.get_depth_frame(), frames.get_color_frame()
-        
-    def process_frames(self, depth_frame, color_frame):
-        depth_frame = self._decimate.process(depth_frame)
-        self._point_cloud.map_to(color_frame)
-        points = self._point_cloud.calculate(depth_frame)
-        
-        positions = np.asanyarray(points.get_vertices()).view(np.float32)
-        positions = positions.reshape((-1, 3))
-        
-        texture_uv = np.asanyarray(points.get_texture_coordinates()).view(np.float32).reshape((-1, 2))
         color_image = np.asanyarray(color_frame.get_data())
         color_h, color_w, _ = color_image.shape
-        
         texture_uv = texture_uv.clip(0.0, 1.0)
+        positions = np.asanyarray(points.get_vertices()).view(np.float32)
+        positions = positions.reshape((-1, 3))
         colors = color_image[
             (texture_uv[:, 1] * (color_h - 1.0)).astype(np.int32),
             (texture_uv[:, 0] * (color_w - 1.0)).astype(np.int32),
             :,
         ]
-        log.debug(f"📷 Processed {len(positions)} points from {self.name} camera.")
+        N = positions.shape[0]
+        assert positions.shape == (N, 3)
+        assert positions.dtype == np.float32
+        assert colors.shape == (N, 3)
+        assert colors.dtype == np.uint8
         return positions, colors
-        
-    def update_point_cloud(self, positions: np.ndarray, colors: np.ndarray):
-        self.point_cloud.points = positions
-        self.point_cloud.colors = colors
 
 
 @jdc.jit
@@ -533,10 +516,20 @@ def main(config: TatbotConfig):
     try:
         if config.enable_realsense:
             log.info("📷 Initializing RealSense cameras...")
-            camera_a = RealSenseCamera(config.realsense_a, server, "left")
-            camera_b = RealSenseCamera(config.realsense_b, server, "right")
-            camera_a.start()
-            camera_b.start()
+            camera_a = RealSenseCamera(config.realsense_a)
+            camera_b = RealSenseCamera(config.realsense_b)
+            camera_a_pointcloud = server.scene.add_point_cloud(
+                f"/realsense/a",
+                points=np.zeros((1, 3)),
+                colors=np.zeros((1, 3), dtype=np.uint8),
+                point_size=config.realsense_a.point_size,
+            )
+            camera_b_pointcloud = server.scene.add_point_cloud(
+                f"/realsense/b",
+                points=np.zeros((1, 3)),
+                colors=np.zeros((1, 3), dtype=np.uint8),
+                point_size=config.realsense_b.point_size,
+            )
         if config.enable_robot:
             log.info("🤖 Initializing robot drivers...")
             driver_l = trossen_arm.TrossenArmDriver()
@@ -620,20 +613,20 @@ def main(config: TatbotConfig):
 
             if config.enable_realsense:
                 log.debug("📷 Updating point clouds...")
-                depth_l, color_l = camera_a.get_frames()
-                depth_r, color_r = camera_b.get_frames()
-                positions_l, colors_l = camera_a.process_frames(depth_l, color_l)
-                positions_r, colors_r = camera_b.process_frames(depth_r, color_r)
-                camera_link_idx_l = robot.links.names.index("left/camera_depth_frame")
-                camera_link_idx_r = robot.links.names.index("right/camera_depth_frame")
-                camera_pose_l = robot.forward_kinematics(joint_pos_current)[camera_link_idx_l]
-                camera_pose_r = robot.forward_kinematics(joint_pos_current)[camera_link_idx_r]
-                camera_transform_l = jaxlie.SE3(camera_pose_l)
-                camera_transform_r = jaxlie.SE3(camera_pose_r)
-                positions_world_l = camera_transform_l @ positions_l
-                positions_world_r = camera_transform_r @ positions_r
-                camera_a.update_point_cloud(positions_world_l, colors_l)
-                camera_b.update_point_cloud(positions_world_r, colors_r)
+                positions_a, colors_a = camera_a.get_points()
+                positions_b, colors_b = camera_b.get_points()
+                camera_link_idx_a = robot.links.names.index(config.realsense_a.link_name)
+                camera_link_idx_b = robot.links.names.index(config.realsense_b.link_name)
+                camera_pose_a = robot.forward_kinematics(joint_pos_current)[camera_link_idx_a]
+                camera_pose_b = robot.forward_kinematics(joint_pos_current)[camera_link_idx_b]
+                camera_transform_a = jaxlie.SE3(camera_pose_a)
+                camera_transform_b = jaxlie.SE3(camera_pose_b)
+                positions_world_a = camera_transform_a @ positions_a
+                positions_world_b = camera_transform_b @ positions_b
+                camera_a_pointcloud.points = positions_world_a
+                camera_a_pointcloud.colors = colors_a
+                camera_b_pointcloud.points = positions_world_b
+                camera_b_pointcloud.colors = colors_b
 
             if state_handle.value in ["MANUAL", "WORK", "STANDOFF", "POKE"]:
                 log.debug("🔍 Solving IK...")
@@ -702,8 +695,8 @@ def main(config: TatbotConfig):
         log.info("🏁 Shutting down...")
         if config.enable_realsense:
             log.info("📷 Shutting down cameras...")
-            camera_a.stop()
-            camera_b.stop()
+            camera_a.pipeline.stop()
+            camera_b.pipeline.stop()
         if config.enable_robot:
             log.info("🦾 Shutting down robots...")
             driver_l.configure(
