@@ -132,17 +132,28 @@ The TatBot system relies on a suite of open-source software packages:
 
 \subsection{Hardware}
 
-Trossen Robotics Aloha Solo 6DoF robot arm.
+TatBot uses a pair of Trossen Robotics WidowXAI arms, each providing six degrees of freedom plus a gripper. The arms are driven by dedicated controller boxes on a gigabit Ethernet network.
 
-The action space of the arm is $\mathbb{R}^6$ for the joint angles and $\mathbb{R}$ for the gripper.
-The observation space is $\mathbb{R}^{14}$, including joint angles and joint forces.
-The observation space also includes 2D images for overhead and wrist camera.
+Perception is handled by two Intel RealSense D405 cameras---one mounted on the right arm and another mounted overhead---along with five PoE overhead cameras. An NVIDIA Jetson AGX Orin and a System76 Meerkat PC handle inference and visualization, while two Raspberry Pi 5 computers manage auxiliary tasks.
 
-Toolbox with various end effectors.
-Calibration cone tool.
-Tattoo machine tool.
-Paper towel roll tool.
-tools have locating features to ensure consistent relative transformation between tool and arm.
+Interchangeable end effectors, including a calibration cone, a tattoo machine, and a paper towel roll, attach to the arms via locating fiducials to maintain consistent poses.
+
+\begin{table}[h]
+    \centering
+    \caption{Compute and camera devices used by TatBot}
+    \label{tab:hardware-devices}
+    \begin{tabular}{lll}
+        \toprule
+        Device & Type & Notes \\
+        \midrule
+        Jetson AGX Orin (\texttt{ojo}) & Compute & 12-core ARM, 32GB RAM \\
+        System76 Meerkat (\texttt{trossen-ai}) & Compute & Intel i5-1340P, 15GB RAM \\
+        Raspberry Pi~5 $\times$2 & Compute & 4-core ARM, 8GB RAM each \\
+        Intel RealSense D405 $\times$2 & Camera & Wrist and overhead mounts \\
+        Amcrest PoE cameras $\times$5 & Camera & Overhead coverage \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
 \section{Results}
 
