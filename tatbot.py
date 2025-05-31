@@ -116,12 +116,8 @@ class RealSenseConfig:
     """Serial number of the RealSense camera device."""
     link_name: str = ""
     """Name of the camera link in the robot URDF."""
-    fov: float = 60.0
-    """Field of view of the camera (degrees)."""
-    aspect: float = 1.0
-    """Aspect ratio of the camera."""
-    scale: float = 0.15
-    """Scale of the camera."""
+    frustrum_scale: float = 0.04
+    """Scale of the camera frustrum used for visualization."""
     frustrum_color: Tuple[int, int, int] = (200, 200, 200)
     """Color of the camera frustrum used for visualization."""
 
@@ -139,7 +135,10 @@ class TatbotConfig:
     """End effector model for the left robot arm."""
     end_effector_model_r: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_follower
     """End effector model for the right robot arm."""
-    joint_pos_sleep: JointPos = JointPos(left=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), right=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
+    joint_pos_sleep: JointPos = JointPos(
+        left=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+        right=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+    )
     """Sleep: robot is folded up, motors can be released (radians)."""
     joint_pos_work: JointPos = JointPos(
         left=jnp.array([0.431, 1.120, 0.270, 0.241, 0.360, 0.241, 0.022, 0.044]),
@@ -272,6 +271,15 @@ class RealSenseCamera:
         self.pipeline.start(self.config)
         self.intrinsics = self.pipeline.get_active_profile().get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
         
+    @property
+    def fov(self) -> float:
+        # vertical fov in radians
+        return 2 * np.arctan2(self.intrinsics.height / 2, self.intrinsics.fy)
+
+    @property
+    def aspect(self) -> float:
+        return self.intrinsics.width / self.intrinsics.height
+
     def make_observation(self) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.float32], npt.NDArray[np.uint8]]:
         point_cloud = rs.pointcloud()
         decimate = rs.decimation_filter()
@@ -598,88 +606,88 @@ def main(config: TatbotConfig):
         step_duration_ms = server.gui.add_number("step (ms)", 0.001, disabled=True)
         apriltags_duration_ms = server.gui.add_number("apriltags (ms)", 0.001, disabled=True)
 
-    try:
-        if config.enable_realsense:
-            log.info("📷 Adding RealSense cameras...")
-            realsense_a = RealSenseCamera(config.realsense_a)
-            realsense_b = RealSenseCamera(config.realsense_b)
-            realsense_a_frustrum = server.scene.add_camera_frustum(
-                f"/realsense_a",
-                fov=config.realsense_a.fov,
-                aspect=config.realsense_a.aspect,
-                scale=config.realsense_a.scale,
-                color=config.realsense_a.frustrum_color,
-            )
-            realsense_b_frustrum = server.scene.add_camera_frustum(
-                f"/realsense_b",
-                fov=config.realsense_b.fov,
-                aspect=config.realsense_b.aspect,
-                scale=config.realsense_b.scale,
-                color=config.realsense_b.frustrum_color,
-            )
-            pointcloud_a = server.scene.add_point_cloud(
-                f"/pointcloud_a",
-                points=np.zeros((1, 3)),
-                colors=np.zeros((1, 3), dtype=np.uint8),
-                point_size=config.realsense_a.point_size,
-            )
-            pointcloud_b = server.scene.add_point_cloud(
-                f"/pointcloud_b",
-                points=np.zeros((1, 3)),
-                colors=np.zeros((1, 3), dtype=np.uint8),
-                point_size=config.realsense_b.point_size,
-            )
-            # realsense_b is static
-            camera_pose_b_static = robot.forward_kinematics(
-                np.concatenate([config.joint_pos_work.left, config.joint_pos_work.right]),
-                robot.links.names.index(config.realsense_b.link_name),
-            )
-            realsense_b_frustrum.position = camera_pose_b_static[:3]
-            realsense_b_frustrum.wxyz = camera_pose_b_static[3:]
-            if config.enable_apriltags:
-                log.info("🔲 Adding AprilTags...")
-                detector = apriltags.Detector(config.apriltag_family)
-        if config.enable_robot:
-            log.info("🤖 Initializing robot drivers...")
+    if config.enable_realsense:
+        log.info("📷 Adding RealSense cameras...")
+        realsense_a = RealSenseCamera(config.realsense_a)
+        realsense_b = RealSenseCamera(config.realsense_b)
+        realsense_a_frustrum = server.scene.add_camera_frustum(
+            f"/realsense_a",
+            fov=realsense_a.fov,
+            aspect=realsense_a.aspect,
+            scale=config.realsense_a.frustrum_scale,
+            color=config.realsense_a.frustrum_color,
+        )
+        realsense_b_frustrum = server.scene.add_camera_frustum(
+            f"/realsense_b",
+            fov=realsense_b.fov,
+            aspect=realsense_b.aspect,
+            scale=config.realsense_b.frustrum_scale,
+            color=config.realsense_b.frustrum_color,
+        )
+        pointcloud_a = server.scene.add_point_cloud(
+            f"/pointcloud_a",
+            points=np.zeros((1, 3)),
+            colors=np.zeros((1, 3), dtype=np.uint8),
+            point_size=config.realsense_a.point_size,
+        )
+        pointcloud_b = server.scene.add_point_cloud(
+            f"/pointcloud_b",
+            points=np.zeros((1, 3)),
+            colors=np.zeros((1, 3), dtype=np.uint8),
+            point_size=config.realsense_b.point_size,
+        )
+        # realsense_b is static
+        _joint_config_for_camera_b = np.concatenate([config.joint_pos_work.left, config.joint_pos_work.right])
+        _all_link_poses_for_camera_b = robot.forward_kinematics(_joint_config_for_camera_b)
+        _link_index_camera_b = robot.links.names.index(config.realsense_b.link_name)
+        camera_pose_b_static = _all_link_poses_for_camera_b[_link_index_camera_b]
+        realsense_b_frustrum.position = camera_pose_b_static[:3]
+        realsense_b_frustrum.wxyz = camera_pose_b_static[3:]
+        if config.enable_apriltags:
+            log.info("🏷️ Adding AprilTags...")
+            detector = apriltags.Detector(config.apriltag_family)
 
-            def init_robot(clear_error: bool = False) -> Tuple[trossen_arm.TrossenArmDriver, trossen_arm.TrossenArmDriver]:
-                driver_l = trossen_arm.TrossenArmDriver()
-                driver_r = trossen_arm.TrossenArmDriver()
-                driver_l.configure(
-                    config.arm_model,
-                    config.end_effector_model_l,
-                    config.ip_address_l,
-                    clear_error,
-                )
-                driver_r.configure(
-                    config.arm_model,
-                    config.end_effector_model_r,
-                    config.ip_address_r,
-                    clear_error,
-                )
-                driver_l.set_all_modes(trossen_arm.Mode.position)
-                driver_r.set_all_modes(trossen_arm.Mode.position)
-                return driver_l, driver_r
-            
-            driver_l, driver_r = init_robot()
+    if config.enable_robot:
+        log.info("🤖 Initializing robot drivers...")
 
-        def move_robot(joint_pos: JointPos, goal_time: float = config.set_all_position_goal_time_slow):
-            log.debug(f"🤖 Moving robot to: {joint_pos}")
-            urdf_vis.update_cfg(np.concatenate([joint_pos.left, joint_pos.right]))
-            if config.enable_robot:
-                driver_l.set_all_positions(
-                    trossen_arm.VectorDouble(joint_pos.left[:7].tolist()),
-                    goal_time=goal_time,
-                    blocking=True,
-                )
-                driver_r.set_all_positions(
-                    trossen_arm.VectorDouble(joint_pos.right[:7].tolist()),
-                    goal_time=goal_time,
-                    blocking=True,
-                )
-            else:
-                time.sleep(goal_time)
+        def init_robot(clear_error: bool = False) -> Tuple[trossen_arm.TrossenArmDriver, trossen_arm.TrossenArmDriver]:
+            driver_l = trossen_arm.TrossenArmDriver()
+            driver_r = trossen_arm.TrossenArmDriver()
+            driver_l.configure(
+                config.arm_model,
+                config.end_effector_model_l,
+                config.ip_address_l,
+                clear_error,
+            )
+            driver_r.configure(
+                config.arm_model,
+                config.end_effector_model_r,
+                config.ip_address_r,
+                clear_error,
+            )
+            driver_l.set_all_modes(trossen_arm.Mode.position)
+            driver_r.set_all_modes(trossen_arm.Mode.position)
+            return driver_l, driver_r
         
+        driver_l, driver_r = init_robot()
+
+    def move_robot(joint_pos: JointPos, goal_time: float = config.set_all_position_goal_time_slow):
+        log.debug(f"🤖 Moving robot to: {joint_pos}")
+        urdf_vis.update_cfg(np.concatenate([joint_pos.left, joint_pos.right]))
+        if config.enable_robot:
+            driver_l.set_all_positions(
+                trossen_arm.VectorDouble(joint_pos.left[:7].tolist()),
+                goal_time=goal_time,
+                blocking=True,
+            )
+            driver_r.set_all_positions(
+                trossen_arm.VectorDouble(joint_pos.right[:7].tolist()),
+                goal_time=goal_time,
+                blocking=True,
+            )
+        else:
+            time.sleep(goal_time)
+    try:
         log.info("🤖 Moving robots to sleep pose...")
         move_robot(config.joint_pos_sleep)
         if config.debug_mode:
@@ -736,7 +744,7 @@ def main(config: TatbotConfig):
             elif state_handle.value == "STANDOFF":
                 log.info(f"🔢 Current target: {target_index.value}")
                 log.debug(f"🎯 Setting IK target to target position...")
-                ik_target_l.position = ik_target_positions[target_index.value]
+                ik_target_l.position = ik_target_positions[target_index.value + 1]
                 state_handle.value = "POKE"
             elif state_handle.value == "POKE": # robot has already performed poke
                 target_index.value += 1
@@ -775,7 +783,7 @@ def main(config: TatbotConfig):
                 realsense_elapsed_time = time.time() - realsense_start_time
                 realsense_duration_ms.value = realsense_elapsed_time * 1000
                 if config.enable_apriltags:
-                    log.debug("🔲 Updating Realsense AprilTags...")
+                    log.debug("🏷️ Updating Realsense AprilTags...")
                     apriltags_start_time = time.time()
                     detections: List[apriltags.Detection] = detector.detect(
                         np.mean(rgb_b, axis=2).astype(np.uint8),
@@ -783,10 +791,10 @@ def main(config: TatbotConfig):
                         camera_params=(realsense_b.intrinsics.fx, realsense_b.intrinsics.fy, realsense_b.intrinsics.ppx, realsense_b.intrinsics.ppy),
                         tag_size=config.apriltag_size,
                     )
-                    log.debug(f"🔲 AprilTags detections: {detections}")
+                    log.debug(f"🏷️ AprilTags detections: {detections}")
                     if detections:
                         for d in detections:
-                            log.debug(f"🔲 AprilTag {d.tag_id} - pos: {d.pose_t}, wxyz: {d.pose_R}")
+                            log.debug(f"🏷️ AprilTag {d.tag_id} - pos: {d.pose_t}, wxyz: {d.pose_R}")
                     apriltags_elapsed_time = time.time() - apriltags_start_time
                     apriltags_duration_ms.value = apriltags_elapsed_time * 1000
 
