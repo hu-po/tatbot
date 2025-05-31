@@ -64,6 +64,8 @@ class JointPos:
 @jdc.pytree_dataclass
 class PixelTarget:
     pose: Pose
+    pixel_index: Tuple[int, int]
+    point_index: int
 
 @jdc.pytree_dataclass
 class PixelBatch:
@@ -71,7 +73,7 @@ class PixelBatch:
     """Center pose of the batch patch."""
     radius_m: float
     """Radius of the patch in meters."""
-    pixel_targets: List[PixelTarget]
+    targets: List[PixelTarget]
     """List of pixel targets within this batch."""
 
 @jdc.pytree_dataclass
@@ -360,8 +362,8 @@ def main(config: TatbotConfig):
     
     log.info("🔢 Creating pixel batches...")
     num_targets: int = img_height_px * img_width_px
-    target_pointcloud_positions: np.ndarray = np.zeros((num_targets, 3))
-    target_pointcloud_colors: np.ndarray = np.zeros((num_targets, 3))
+    design_pointcloud_positions: np.ndarray = np.zeros((num_targets, 3))
+    design_pointcloud_colors: np.ndarray = np.zeros((num_targets, 3))
     batch_radius_px_x = int(config.batch_radius_m / pixel_to_meter_x)
     batch_radius_px_y = int(config.batch_radius_m / pixel_to_meter_y)
     batches: List[PixelBatch] = []
@@ -373,15 +375,18 @@ def main(config: TatbotConfig):
                     if thresholded_pixels[y, x]:
                         meter_x = (x - img_width_px/2) * pixel_to_meter_x
                         meter_y = (y - img_height_px/2) * pixel_to_meter_y
+                        point_index = y * img_width_px + x
                         pixel_target = PixelTarget(
                             pose=Pose( # in design frame
                                 pos=jnp.array([meter_x, meter_y, 0.0]),
                                 wxyz=config.design_pose.wxyz
-                            )
+                            ),
+                            pixel_index=(x, y),
+                            point_index=point_index
                         )
                         batch_pixels.append(pixel_target)
-                        target_pointcloud_positions[y * img_width_px + x] = jnp.array([meter_x, meter_y, 0.0])
-                        target_pointcloud_colors[y * img_width_px + x] = config.point_color
+                        design_pointcloud_positions[point_index] = jnp.array([meter_x, meter_y, 0.0])
+                        design_pointcloud_colors[point_index] = config.point_color
             # Only create batch if it contains targets
             if batch_pixels:
                 batch = PixelBatch(
@@ -390,7 +395,7 @@ def main(config: TatbotConfig):
                         wxyz=config.design_pose.wxyz
                     ),
                     radius_m=config.batch_radius_m,
-                    pixel_targets=batch_pixels
+                    targets=batch_pixels
                 )
                 batches.append(batch)
 
@@ -414,10 +419,10 @@ def main(config: TatbotConfig):
             show_axes=False,
         )
     design_pose = Pose(pos=design_tf.position, wxyz=design_tf.wxyz)
-    server.scene.add_point_cloud(
+    design_pointcloud = server.scene.add_point_cloud(
         name="/design/targets",
-        points=target_pointcloud_positions,
-        colors=target_pointcloud_colors,
+        points=design_pointcloud_positions,
+        colors=design_pointcloud_colors,
         point_size=config.point_size,
         point_shape=config.point_shape,
     )
@@ -541,7 +546,7 @@ def main(config: TatbotConfig):
         target_index = server.gui.add_slider(
             "Target Index",
             min=0,
-            max=len(batches[0].pixel_targets) - 1,
+            max=len(batches[0].targets) - 1,
             step=1,
             initial_value=0,
         )
@@ -552,11 +557,6 @@ def main(config: TatbotConfig):
             order="rgb",
             visible=True,
         )
-    with server.gui.add_folder("Timing"):
-        ik_duration_ms = server.gui.add_number("ik (ms)", 0.001, disabled=True)
-        realsense_duration_ms = server.gui.add_number("realsense (ms)", 0.001, disabled=True)
-        move_duration_ms = server.gui.add_number("robot move (ms)", 0.001, disabled=True)
-        step_duration_ms = server.gui.add_number("step (ms)", 0.001, disabled=True)
     with server.gui.add_folder("Robot"):
         state_handle = server.gui.add_dropdown(
             "State", options=config.states,
@@ -569,6 +569,12 @@ def main(config: TatbotConfig):
             log.debug("😴 Moving left robot to sleep pose...")
             state_handle.value = "PAUSED"
             move_robot(config.joint_pos_sleep)
+
+    with server.gui.add_folder("Timing", expand_by_default=False):
+        ik_duration_ms = server.gui.add_number("ik (ms)", 0.001, disabled=True)
+        realsense_duration_ms = server.gui.add_number("realsense (ms)", 0.001, disabled=True)
+        move_duration_ms = server.gui.add_number("robot move (ms)", 0.001, disabled=True)
+        step_duration_ms = server.gui.add_number("step (ms)", 0.001, disabled=True)
 
     try:
         if config.enable_realsense:
@@ -656,27 +662,29 @@ def main(config: TatbotConfig):
                     target_index.value = 0
                 current_batch: PixelBatch = batches[batch_index.value]
                 log.debug(f"🖥️ Updating GUI with batch {batch_index.value}")
-                target_index.max = len(current_batch.pixel_targets) - 1
-                img_viz = cv2.cvtColor(img_np.copy(), cv2.COLOR_GRAY2RGB)
+                target_index.max = len(current_batch.targets) - 1
+                # TODO: are these copy necessary?
+                _design_pointcloud_colors = design_pointcloud_colors.copy()
+                _img = cv2.cvtColor(img_np.copy(), cv2.COLOR_GRAY2RGB)
                 center_x_viz = int((current_batch.center_pose.pos[0] / pixel_to_meter_x) + img_width_px/2)
                 center_y_viz = int((current_batch.center_pose.pos[1] / pixel_to_meter_y) + img_height_px/2)
-                cv2.ellipse(img_viz, (center_x_viz, center_y_viz), (batch_radius_px_x, batch_radius_px_y), 0, 0, 360, (0, 255, 0), 1)
-                for target in current_batch.pixel_targets:
-                    x_viz = int((target.pose.pos[0] / pixel_to_meter_x) + img_width_px / 2)
-                    y_viz = int((target.pose.pos[1] / pixel_to_meter_y) + img_height_px / 2)
-                    cv2.circle(img_viz, (x_viz, y_viz), 1, (255, 0, 0), -1)
-                design_image.image = img_viz
+                cv2.ellipse(_img, (center_x_viz, center_y_viz), (batch_radius_px_x, batch_radius_px_y), 0, 0, 360, (0, 255, 0), 1)
+                for target in current_batch.targets:
+                    cv2.circle(_img, (target.pixel_index[0], target.pixel_index[1]), 1, (255, 0, 0), -1)
+                    _design_pointcloud_colors[target.point_index] = (255, 0, 0)
+                design_pointcloud.colors = _design_pointcloud_colors
+                design_image.image = _img
                 log.debug(f"🧮 Calculating standoff and target positions...")
                 ik_target_positions = transform_targets(
                     design_pose,
                     # concatenate standoff and target positions
                     jnp.concatenate([
                         jnp.array([current_batch.center_pose.pos]),
-                        jnp.array([target.pose.pos for target in current_batch.pixel_targets])
+                        jnp.array([target.pose.pos for target in current_batch.targets])
                     ]),
                     jnp.concatenate([
                         jnp.array([config.standoff_offset_m]),
-                        jnp.array([config.poke_offset_m] * len(current_batch.pixel_targets))
+                        jnp.array([config.poke_offset_m] * len(current_batch.targets))
                     ])
                 )
                 log.debug(f"🎯 Setting IK target to standoff position...")
@@ -689,7 +697,7 @@ def main(config: TatbotConfig):
                 state_handle.value = "POKE"
             elif state_handle.value == "POKE": # robot has already performed poke
                 target_index.value += 1
-                if target_index.value >= len(current_batch.pixel_targets):
+                if target_index.value >= len(current_batch.targets):
                     log.debug(f" Completed all targets in batch, moving to next batch...")
                     batch_index.value += 1
                     state_handle.value = "WORK"
