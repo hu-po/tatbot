@@ -14,6 +14,7 @@ import os
 import time
 from typing import List, Tuple
 
+import cv2
 import jax
 import jax.numpy as jnp
 import jax_dataclasses as jdc
@@ -65,6 +66,15 @@ class PixelTarget:
     pose: Pose
 
 @jdc.pytree_dataclass
+class PixelBatch:
+    center_pose: Pose
+    """Center pose of the batch patch."""
+    radius_m: float
+    """Radius of the patch in meters."""
+    pixel_targets: List[PixelTarget]
+    """List of pixel targets within this batch."""
+
+@jdc.pytree_dataclass
 class IKConfig:
     pos_weight: float = 50.0
     """Weight for the position part of the IK cost function."""
@@ -94,6 +104,10 @@ class RealSenseConfig:
     """Serial number of the RealSense camera device."""
     link_name: str = ""
     """Name of the camera link in the robot URDF."""
+    env_map_hdri: str = "forest"
+    """HDRI for the environment map."""
+    env_map_background: bool = True
+    """Whether to show the environment map as background."""
 
 @dataclass
 class TatbotConfig:
@@ -168,12 +182,14 @@ class TatbotConfig:
     """Size of points in the point cloud visualization (meters)."""
     point_color: Tuple[int, int, int] = (0, 0, 0) # black
     """Color for the points in the point cloud (RGB tuple)."""
+    batch_radius_m: float = 0.004
+    """Radius in meters for each batch of pixels to process."""
     point_shape: str = "rounded"
     """Shape of points in the point cloud visualization."""
-    standoff_offset: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.01, 0.0, 0.0]))
+    standoff_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.01, 0.0, 0.0]))
     """Offset vector for the standoff position (meters)."""
-    stroke_depth_m: float = 0.008
-    """Length of pen stroke when drawing a pixel (meters)."""
+    poke_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.0, 0.0, 0.0]))
+    """Offset vector for the poke position (meters)."""
     palette_init_pose: Pose = Pose(pos=jnp.array([0.281, 0.156, 0.032]), wxyz=jnp.array([0.971, 0.006, -0.024, 0.240]))
     """Pose of the palette (relative to root frame)."""
     palette_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/inkpalette-lowpoly/inkpalette-lowpoly.obj")
@@ -204,6 +220,12 @@ class TatbotConfig:
     """Pose of the workspace origin (relative to root frame)."""
     workspace_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/mat-lowpoly/mat-lowpoly.obj")
     """Path to the .obj file for the workspace mat mesh."""
+    view_camera_position: Tuple[float, float, float] = (0.5, 0.5, 0.5)
+    """Initial camera position in the Viser scene."""
+    view_camera_look_at: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    """Initial camera look_at in the Viser scene."""
+    env_map_hdri: str = "forest"
+    """HDRI for the environment map."""
     realsense_a: RealSenseConfig = RealSenseConfig(serial_number="230422273017", link_name="right/camera_depth_optical_frame")
     """Configuration for RealSense Camera A (attached to right arm)."""
     realsense_b: RealSenseConfig = RealSenseConfig(serial_number="218622278376", link_name="cam_high_depth_optical_frame")
@@ -261,31 +283,25 @@ class RealSenseCamera:
 
 
 @jdc.jit
-def standoff(design_pose: Pose, pixel_pos: Float[Array, "3"], standoff_offset: Float[Array, "3"]) -> Float[Array, "3"]:
+def transform_targets(
+    design_pose: Pose,
+    targets: Float[Array, "B 3"],
+    offsets: Float[Array, "B 3"],
+) -> Float[Array, "B 3"]:
     design_to_root = jaxlie.SE3.from_rotation_and_translation(
         jaxlie.SO3(design_pose.wxyz),
         design_pose.pos
     )
-    transformed_pos = design_to_root @ pixel_pos
-    standoff_offset_transformed = jaxlie.SO3(design_pose.wxyz) @ standoff_offset
-    return transformed_pos + standoff_offset_transformed
-
-@jdc.jit
-def poke(design_pose: Pose, pixel_pos: Float[Array, "3"]) -> Float[Array, "3"]:
-    design_to_root = jaxlie.SE3.from_rotation_and_translation(
-        jaxlie.SO3(design_pose.wxyz),
-        design_pose.pos
-    )
-    return design_to_root @ pixel_pos
+    return jax.vmap(lambda pos, offset: design_to_root @ pos + offset)(targets, offsets)
 
 @jdc.jit
 def ik(
     robot: pk.Robot,
-    target_link_indices: Int[Array, "2"],
-    target_wxyz: Float[Array, "2 4"],
-    target_position: Float[Array, "2 3"],
+    target_link_indices: Int[Array, "B"],
+    target_wxyz: Float[Array, "B 4"],
+    target_position: Float[Array, "B 3"],
     config: IKConfig,
-) -> Float[Array, "16"]:
+) -> Float[Array, "B 16"]:
     joint_var = robot.joint_var_cls(0)
     factors = [
         pk.costs.pose_cost(
@@ -322,7 +338,12 @@ def main(config: TatbotConfig):
 
     log.info("🚀 Starting viser server...")
     server: viser.ViserServer = viser.ViserServer()
-    server.scene.set_environment_map(hdri="forest", background=True)
+    server.scene.set_environment_map(hdri=config.env_map_hdri, background=True)
+
+    @server.on_client_connect
+    def _(client: viser.ClientHandle) -> None:
+        client.camera.position = config.view_camera_position
+        client.camera.look_at = config.view_camera_look_at
 
     log.info("🖼️ Loading design...")
     img_pil = PIL.Image.open(config.image_path)
@@ -332,26 +353,51 @@ def main(config: TatbotConfig):
     img_pil = img_pil.convert("L")
     img_np = np.array(img_pil)
     img_width_px, img_height_px = img_pil.size
+    # TODO: use opencv dependency to do fancier contours/thresholding
     thresholded_pixels = img_np <= config.image_threshold
-    pixel_targets: List[PixelTarget] = []
     pixel_to_meter_x = config.image_width_m / img_width_px
     pixel_to_meter_y = config.image_height_m / img_height_px
-    for y in range(img_height_px):
-        for x in range(img_width_px):
-            if thresholded_pixels[y, x]:
-                meter_x = (x - img_width_px/2) * pixel_to_meter_x
-                meter_y = (y - img_height_px/2) * pixel_to_meter_y
-                pixel_target = PixelTarget(
-                    pose=Pose(
-                        pos=jnp.array([meter_x, meter_y, 0.0]),
+    
+    log.info("🔢 Creating pixel batches...")
+    num_targets: int = img_height_px * img_width_px
+    target_pointcloud_positions: np.ndarray = np.zeros((num_targets, 3))
+    target_pointcloud_colors: np.ndarray = np.zeros((num_targets, 3))
+    batch_radius_px_x = int(config.batch_radius_m / pixel_to_meter_x)
+    batch_radius_px_y = int(config.batch_radius_m / pixel_to_meter_y)
+    batches: List[PixelBatch] = []
+    for center_y in range(batch_radius_px_y, img_height_px, batch_radius_px_y * 2):
+        for center_x in range(batch_radius_px_x, img_width_px, batch_radius_px_x * 2):
+            batch_pixels: List[PixelTarget] = []
+            for y in range(max(0, center_y - batch_radius_px_y), min(img_height_px, center_y + batch_radius_px_y)):
+                for x in range(max(0, center_x - batch_radius_px_x), min(img_width_px, center_x + batch_radius_px_x)):
+                    if thresholded_pixels[y, x]:
+                        meter_x = (x - img_width_px/2) * pixel_to_meter_x
+                        meter_y = (y - img_height_px/2) * pixel_to_meter_y
+                        pixel_target = PixelTarget(
+                            pose=Pose( # in design frame
+                                pos=jnp.array([meter_x, meter_y, 0.0]),
+                                wxyz=config.design_pose.wxyz
+                            )
+                        )
+                        batch_pixels.append(pixel_target)
+                        target_pointcloud_positions[y * img_width_px + x] = jnp.array([meter_x, meter_y, 0.0])
+                        target_pointcloud_colors[y * img_width_px + x] = config.point_color
+            # Only create batch if it contains targets
+            if batch_pixels:
+                batch = PixelBatch(
+                    center_pose=Pose(
+                        pos=jnp.array([(center_x - img_width_px/2) * pixel_to_meter_x, (center_y - img_height_px/2) * pixel_to_meter_y, 0.0]),
                         wxyz=config.design_pose.wxyz
-                    )
+                    ),
+                    radius_m=config.batch_radius_m,
+                    pixel_targets=batch_pixels
                 )
-                pixel_targets.append(pixel_target)
-    num_targets: int = len(pixel_targets)
-    current_target_index: int = 0
-    log.info(f"🎨 Created {num_targets} pixel targets.")
-    positions = np.array([pt.pose.pos for pt in pixel_targets])
+                batches.append(batch)
+
+    num_batches: int = len(batches)
+    log.info(f"🔢 Design has {num_targets} targets in {num_batches} batches.")
+
+    log.info("🖼️ Adding design...")
     if config.debug_mode:
         design_tf = server.scene.add_transform_controls(
             name="/design",
@@ -369,9 +415,9 @@ def main(config: TatbotConfig):
         )
     design_pose = Pose(pos=design_tf.position, wxyz=design_tf.wxyz)
     server.scene.add_point_cloud(
-        name="/design/pixel_targets",
-        points=positions,
-        colors=np.array([config.point_color] * len(positions)),
+        name="/design/targets",
+        points=target_pointcloud_positions,
+        colors=target_pointcloud_colors,
         point_size=config.point_size,
         point_shape=config.point_shape,
     )
@@ -459,12 +505,14 @@ def main(config: TatbotConfig):
     )
 
     log.info("🎯 Adding ik targets...")
+    ik_target_positions: Float[Array, "B 3"] = jnp.zeros((num_batches, 3))
     ik_target_l = server.scene.add_transform_controls(
         "/ik_target_l",
         position=config.ik_target_pose_l.pos,
         wxyz=config.ik_target_pose_l.wxyz,
         scale=0.1,
         opacity=0.5,
+        visible=True if config.debug_mode else False,
     )
     ik_target_r = server.scene.add_transform_controls(
         "/ik_target_r",
@@ -472,6 +520,7 @@ def main(config: TatbotConfig):
         wxyz=config.ik_target_pose_r.wxyz,
         scale=0.1,
         opacity=0.5,
+        visible=True if config.debug_mode else False,
     )
 
     log.info("🦾 Adding robots...")
@@ -480,17 +529,23 @@ def main(config: TatbotConfig):
     joint_pos_current: JointPos = config.joint_pos_sleep
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/root")
 
-    log.info("🖥️ Adding gui...")
+    log.info("🖥️  Adding gui...")
     with server.gui.add_folder("Session"):
-        progress_bar = server.gui.add_progress_bar(0.0)
-        target_slider = server.gui.add_slider(
-            "Target Index",
+        batch_index = server.gui.add_slider(
+            "Batch Index",
             min=0,
-            max=num_targets - 1,
+            max=num_batches - 1,
             step=1,
             initial_value=0,
         )
-        server.gui.add_image(
+        target_index = server.gui.add_slider(
+            "Target Index",
+            min=0,
+            max=len(batches[0].pixel_targets) - 1,
+            step=1,
+            initial_value=0,
+        )
+        design_image = server.gui.add_image(
             image=img_np,
             label=config.image_path,
             format="png",
@@ -537,22 +592,27 @@ def main(config: TatbotConfig):
             camera_pose_b_static = robot.forward_kinematics(home_joint_array)[camera_link_idx_b]
         if config.enable_robot:
             log.info("🤖 Initializing robot drivers...")
-            driver_l = trossen_arm.TrossenArmDriver()
-            driver_r = trossen_arm.TrossenArmDriver()
-            driver_l.configure(
-                config.arm_model,
-                config.end_effector_model_l,
-                config.ip_address_l,
-                False, # clear_error
-            )
-            driver_r.configure(
-                config.arm_model,
-                config.end_effector_model_r,
-                config.ip_address_r,
-                False, # clear_error
-            )
-            driver_l.set_all_modes(trossen_arm.Mode.position)
-            driver_r.set_all_modes(trossen_arm.Mode.position)
+
+            def init_robot(clear_error: bool = False) -> Tuple[trossen_arm.TrossenArmDriver, trossen_arm.TrossenArmDriver]:
+                driver_l = trossen_arm.TrossenArmDriver()
+                driver_r = trossen_arm.TrossenArmDriver()
+                driver_l.configure(
+                    config.arm_model,
+                    config.end_effector_model_l,
+                    config.ip_address_l,
+                    clear_error,
+                )
+                driver_r.configure(
+                    config.arm_model,
+                    config.end_effector_model_r,
+                    config.ip_address_r,
+                    clear_error,
+                )
+                driver_l.set_all_modes(trossen_arm.Mode.position)
+                driver_r.set_all_modes(trossen_arm.Mode.position)
+                return driver_l, driver_r
+            
+            driver_l, driver_r = init_robot()
 
         def move_robot(joint_pos: JointPos, goal_time: float = config.set_all_position_goal_time_slow):
             log.debug(f"🤖 Moving robot to: {joint_pos}")
@@ -589,29 +649,54 @@ def main(config: TatbotConfig):
             log.debug(f"State: {state_handle.value}")
             
             if state_handle.value == "WORK":
-                log.info(f"🎯 Selecting target {current_target_index}...")
-                current_target_index = target_slider.value
-                if current_target_index >= num_targets:
-                    log.info("Completed all targets, looping back to start.")
-                    target_slider.value = 0
-                    current_target_index = 0
-                progress_bar.value = float(current_target_index) / (num_targets - 1)
-                current_target = pixel_targets[current_target_index]
-                log.debug(f" Calculating standoff position...")
-                pixel_pos_root = standoff(design_pose, current_target.pose.pos, config.standoff_offset)
-                ik_target_l.position = pixel_pos_root
+                log.info(f"🔢 Current batch: {batch_index.value}")
+                if batch_index.value >= num_batches:
+                    log.info("Completed all batches, looping back to start.")
+                    batch_index.value = 0
+                    target_index.value = 0
+                current_batch: PixelBatch = batches[batch_index.value]
+                log.debug(f"🖥️ Updating GUI with batch {batch_index.value}")
+                target_index.max = len(current_batch.pixel_targets) - 1
+                img_viz = cv2.cvtColor(img_np.copy(), cv2.COLOR_GRAY2RGB)
+                center_x_viz = int((current_batch.center_pose.pos[0] / pixel_to_meter_x) + img_width_px/2)
+                center_y_viz = int((current_batch.center_pose.pos[1] / pixel_to_meter_y) + img_height_px/2)
+                cv2.ellipse(img_viz, (center_x_viz, center_y_viz), (batch_radius_px_x, batch_radius_px_y), 0, 0, 360, (0, 255, 0), 1)
+                for target in current_batch.pixel_targets:
+                    x_viz = int((target.pose.pos[0] / pixel_to_meter_x) + img_width_px / 2)
+                    y_viz = int((target.pose.pos[1] / pixel_to_meter_y) + img_height_px / 2)
+                    cv2.circle(img_viz, (x_viz, y_viz), 1, (255, 0, 0), -1)
+                design_image.image = img_viz
+                log.debug(f"🧮 Calculating standoff and target positions...")
+                ik_target_positions = transform_targets(
+                    design_pose,
+                    # concatenate standoff and target positions
+                    jnp.concatenate([
+                        jnp.array([current_batch.center_pose.pos]),
+                        jnp.array([target.pose.pos for target in current_batch.pixel_targets])
+                    ]),
+                    jnp.concatenate([
+                        jnp.array([config.standoff_offset_m]),
+                        jnp.array([config.poke_offset_m] * len(current_batch.pixel_targets))
+                    ])
+                )
+                log.debug(f"🎯 Setting IK target to standoff position...")
+                ik_target_l.position = ik_target_positions[0]
                 state_handle.value = "STANDOFF"
             elif state_handle.value == "STANDOFF":
-                log.debug(f" Calculating poke position...")
-                pixel_pos_root = poke(design_pose, current_target.pose.pos)
-                ik_target_l.position = pixel_pos_root
+                log.info(f"🔢 Current target: {target_index.value}")
+                log.debug(f"🎯 Setting IK target to target position...")
+                ik_target_l.position = ik_target_positions[target_index.value]
                 state_handle.value = "POKE"
-            elif state_handle.value == "POKE":
-                log.debug(f" Returning to standoff position...")
-                pixel_pos_root = standoff(design_pose, current_target.pose.pos, config.standoff_offset)
-                ik_target_l.position = pixel_pos_root
-                target_slider.value += 1
-                state_handle.value = "WORK"
+            elif state_handle.value == "POKE": # robot has already performed poke
+                target_index.value += 1
+                if target_index.value >= len(current_batch.pixel_targets):
+                    log.debug(f" Completed all targets in batch, moving to next batch...")
+                    batch_index.value += 1
+                    state_handle.value = "WORK"
+                else:
+                    log.debug(f"🎯 Setting IK target to standoff position...")
+                    ik_target_l.position = ik_target_positions[0]
+                    state_handle.value = "STANDOFF"
             elif state_handle.value == "PAUSED":
                 log.debug(" Paused")
                 pass
@@ -678,25 +763,14 @@ def main(config: TatbotConfig):
 
     except Exception as e:
         log.error(f"Error: {e}")
-        log.info("🦾 Getting robot error information ...")
-        driver_l.configure(
-            config.arm_model,
-            config.end_effector_model_l,
-            config.ip_address_l,
-            False, # clear_error
-        )
-        driver_r.configure(
-            config.arm_model,
-            config.end_effector_model_r,
-            config.ip_address_r,
-            False, # clear_error
-        )
-        error_info_l = driver_l.get_error_information()
-        error_info_r = driver_r.get_error_information()
-        if error_info_l:
-            log.error(f"Left arm error: {error_info_l}")
-        if error_info_r:
-            log.error(f"Right arm error: {error_info_r}")
+        if config.enable_robot:
+            log.info("🦾 Getting robot error information ...")
+            error_info_l = driver_l.get_error_information()
+            error_info_r = driver_r.get_error_information()
+            if error_info_l:
+                log.error(f"Left arm error: {error_info_l}")
+            if error_info_r:
+                log.error(f"Right arm error: {error_info_r}")
         raise e
     
     finally:
@@ -707,20 +781,7 @@ def main(config: TatbotConfig):
             realsense_b.pipeline.stop()
         if config.enable_robot:
             log.info("🦾 Shutting down robots...")
-            driver_l.configure(
-                config.arm_model,
-                config.end_effector_model_l,
-                config.ip_address_l,
-                True, # clear_error
-            )
-            driver_r.configure(
-                config.arm_model,
-                config.end_effector_model_r,
-                config.ip_address_r,
-                True, # clear_error
-            )
-            driver_l.set_all_modes(trossen_arm.Mode.position)
-            driver_r.set_all_modes(trossen_arm.Mode.position)
+            driver_l, driver_r = init_robot(clear_error=True)
             move_robot(config.joint_pos_sleep)
             log.info("🧹 Idling robot motors")
             driver_l.set_all_modes(trossen_arm.Mode.idle)
