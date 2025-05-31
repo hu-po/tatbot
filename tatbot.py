@@ -305,11 +305,6 @@ class RealSenseCamera:
             (texture_uv[:, 0] * (color_w - 1.0)).astype(np.int32),
             :,
         ]
-        N = positions.shape[0]
-        assert positions.shape == (N, 3)
-        assert positions.dtype == np.float32
-        assert colors.shape == (N, 3)
-        assert colors.dtype == np.uint8
         return color_image, positions, colors
 
 
@@ -687,6 +682,7 @@ def main(config: TatbotConfig):
             )
         else:
             time.sleep(goal_time)
+
     try:
         log.info("🤖 Moving robots to sleep pose...")
         move_robot(config.joint_pos_sleep)
@@ -728,7 +724,6 @@ def main(config: TatbotConfig):
                 log.debug(f"🧮 Calculating standoff and target positions...")
                 ik_target_positions = transform_targets(
                     design_pose,
-                    # concatenate standoff and target positions
                     jnp.concatenate([
                         jnp.array([current_batch.center_pose.pos]),
                         jnp.array([target.pose.pos for target in current_batch.targets])
