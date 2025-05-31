@@ -23,6 +23,7 @@ import jaxls
 from jaxtyping import Array, Float, Int
 import numpy as np
 import numpy.typing as npt
+import pupil_apriltags as apriltags
 import PIL.Image
 import pyrealsense2 as rs
 import pyroki as pk
@@ -48,31 +49,40 @@ class CLIArgs:
     """Enables the real robot (if False then only sim)."""
     realsense: bool = False
     """Enables the RealSense cameras."""
+    apriltags: bool = False
+    """Enables the AprilTags."""
     device_name: str = "cuda:0"
     """Name of the JAX device to use (i.e. 'gpu', 'cpu')."""
 
 @jdc.pytree_dataclass
 class Pose:
     pos: Float[Array, "3"]
+    """XYZ position (meters)."""
     wxyz: Float[Array, "4"]
+    """WXYZ orientation (quaternion)."""
 
 @jdc.pytree_dataclass
 class JointPos:
     left: Float[Array, "8"]
+    """Left arm joint positions (radians)."""
     right: Float[Array, "8"]
+    """Right arm joint positions (radians)."""
 
 @jdc.pytree_dataclass
 class PixelTarget:
     pose: Pose
+    """Pose of the target pixel (relative to design frame)."""
     pixel_index: Tuple[int, int]
+    """Pixel index (image) of the target pixel (x, y)."""
     point_index: int
+    """Point index (pointcloud) of the target pixel (0-indexed)."""
 
 @jdc.pytree_dataclass
 class PixelBatch:
     center_pose: Pose
     """Center pose of the batch patch."""
     radius_m: float
-    """Radius of the patch in meters."""
+    """Radius of the patch (meters)."""
     targets: List[PixelTarget]
     """List of pixel targets within this batch."""
 
@@ -106,10 +116,14 @@ class RealSenseConfig:
     """Serial number of the RealSense camera device."""
     link_name: str = ""
     """Name of the camera link in the robot URDF."""
-    env_map_hdri: str = "forest"
-    """HDRI for the environment map."""
-    env_map_background: bool = True
-    """Whether to show the environment map as background."""
+    fov: float = 60.0
+    """Field of view of the camera (degrees)."""
+    aspect: float = 1.0
+    """Aspect ratio of the camera."""
+    scale: float = 0.15
+    """Scale of the camera."""
+    frustrum_color: Tuple[int, int, int] = (200, 200, 200)
+    """Color of the camera frustrum used for visualization."""
 
 @dataclass
 class TatbotConfig:
@@ -232,11 +246,17 @@ class TatbotConfig:
     """Configuration for RealSense Camera A (attached to right arm)."""
     realsense_b: RealSenseConfig = RealSenseConfig(serial_number="218622278376", link_name="cam_high_depth_optical_frame")
     """Configuration for RealSense Camera B (overhead)."""
+    apriltag_family: str = "tag16h5"
+    """Family of AprilTags to use."""
+    apriltag_size: float = 0.04
+    """Size of AprilTags (meters)."""
     # CLI overrides
     enable_robot: bool = False
     """Override for arg.robot."""
     enable_realsense: bool = False
     """Override for arg.realsense."""
+    enable_apriltags: bool = False
+    """Override for arg.apriltags."""
     debug_mode: bool = False
     """Override for arg.debug."""
 
@@ -250,8 +270,9 @@ class RealSenseCamera:
         self.config.enable_stream(rs.stream.depth, rs.format.z16, config.fps)
         self.config.enable_stream(rs.stream.color, rs.format.rgb8, config.fps)
         self.pipeline.start(self.config)
+        self.intrinsics = self.pipeline.get_active_profile().get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
         
-    def get_points(self) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.uint8]]:
+    def make_observation(self) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.float32], npt.NDArray[np.uint8]]:
         point_cloud = rs.pointcloud()
         decimate = rs.decimation_filter()
         decimate.set_option(rs.option.filter_magnitude, 3)        
@@ -281,7 +302,7 @@ class RealSenseCamera:
         assert positions.dtype == np.float32
         assert colors.shape == (N, 3)
         assert colors.dtype == np.uint8
-        return positions, colors
+        return color_image, positions, colors
 
 
 @jdc.jit
@@ -470,7 +491,7 @@ def main(config: TatbotConfig):
     )
     inkcap_tfs: List[viser.TransformControls] = []
     for i, inkcap in enumerate(config.inkcaps):
-        log.info(f"🎨 Adding inkcap {i}...")
+        log.info(f"🕳️ Adding inkcap {i}...")
         if config.debug_mode:
             inkcap_tf = server.scene.add_transform_controls(
                 f"/palette/inkcap_{i}",
@@ -575,27 +596,49 @@ def main(config: TatbotConfig):
         realsense_duration_ms = server.gui.add_number("realsense (ms)", 0.001, disabled=True)
         move_duration_ms = server.gui.add_number("robot move (ms)", 0.001, disabled=True)
         step_duration_ms = server.gui.add_number("step (ms)", 0.001, disabled=True)
+        apriltags_duration_ms = server.gui.add_number("apriltags (ms)", 0.001, disabled=True)
 
     try:
         if config.enable_realsense:
-            log.info("📷 Initializing RealSense cameras...")
+            log.info("📷 Adding RealSense cameras...")
             realsense_a = RealSenseCamera(config.realsense_a)
             realsense_b = RealSenseCamera(config.realsense_b)
+            realsense_a_frustrum = server.scene.add_camera_frustum(
+                f"/realsense_a",
+                fov=config.realsense_a.fov,
+                aspect=config.realsense_a.aspect,
+                scale=config.realsense_a.scale,
+                color=config.realsense_a.frustrum_color,
+            )
+            realsense_b_frustrum = server.scene.add_camera_frustum(
+                f"/realsense_b",
+                fov=config.realsense_b.fov,
+                aspect=config.realsense_b.aspect,
+                scale=config.realsense_b.scale,
+                color=config.realsense_b.frustrum_color,
+            )
             pointcloud_a = server.scene.add_point_cloud(
-                f"/realsense/a",
+                f"/pointcloud_a",
                 points=np.zeros((1, 3)),
                 colors=np.zeros((1, 3), dtype=np.uint8),
                 point_size=config.realsense_a.point_size,
             )
             pointcloud_b = server.scene.add_point_cloud(
-                f"/realsense/b",
+                f"/pointcloud_b",
                 points=np.zeros((1, 3)),
                 colors=np.zeros((1, 3), dtype=np.uint8),
                 point_size=config.realsense_b.point_size,
             )
-            camera_link_idx_b = robot.links.names.index(config.realsense_b.link_name)
-            home_joint_array = np.concatenate([config.joint_pos_work.left, config.joint_pos_work.right])
-            camera_pose_b_static = robot.forward_kinematics(home_joint_array)[camera_link_idx_b]
+            # realsense_b is static
+            camera_pose_b_static = robot.forward_kinematics(
+                np.concatenate([config.joint_pos_work.left, config.joint_pos_work.right]),
+                robot.links.names.index(config.realsense_b.link_name),
+            )
+            realsense_b_frustrum.position = camera_pose_b_static[:3]
+            realsense_b_frustrum.wxyz = camera_pose_b_static[3:]
+            if config.enable_apriltags:
+                log.info("🔲 Adding AprilTags...")
+                detector = apriltags.Detector(config.apriltag_family)
         if config.enable_robot:
             log.info("🤖 Initializing robot drivers...")
 
@@ -710,16 +753,19 @@ def main(config: TatbotConfig):
                 pass
 
             if config.enable_realsense:
-                log.debug("📷 Updating point clouds...")
+                log.debug("📷 Updating Realsense pointclouds...")
                 realsense_start_time = time.time()
-                positions_a, colors_a = realsense_a.get_points()
-                positions_b, colors_b = realsense_b.get_points()
+                rgb_a, positions_a, colors_a = realsense_a.make_observation()
+                realsense_a_frustrum.image = rgb_a
+                rgb_b, positions_b, colors_b = realsense_b.make_observation()
+                realsense_b_frustrum.image = rgb_b
                 camera_link_idx_a = robot.links.names.index(config.realsense_a.link_name)
                 joint_array = np.concatenate([joint_pos_current.left, joint_pos_current.right])
                 camera_pose_a = robot.forward_kinematics(joint_array)[camera_link_idx_a]
-                camera_pose_b = camera_pose_b_static
+                realsense_a_frustrum.position = camera_pose_a[:3]
+                realsense_a_frustrum.wxyz = camera_pose_a[3:]
                 camera_transform_a = jaxlie.SE3(camera_pose_a)
-                camera_transform_b = jaxlie.SE3(camera_pose_b)
+                camera_transform_b = jaxlie.SE3(camera_pose_b_static)
                 positions_world_a = camera_transform_a @ positions_a
                 positions_world_b = camera_transform_b @ positions_b
                 pointcloud_a.points = np.array(positions_world_a)
@@ -728,6 +774,21 @@ def main(config: TatbotConfig):
                 pointcloud_b.colors = np.array(colors_b)
                 realsense_elapsed_time = time.time() - realsense_start_time
                 realsense_duration_ms.value = realsense_elapsed_time * 1000
+                if config.enable_apriltags:
+                    log.debug("🔲 Updating Realsense AprilTags...")
+                    apriltags_start_time = time.time()
+                    detections: List[apriltags.Detection] = detector.detect(
+                        np.mean(rgb_b, axis=2).astype(np.uint8),
+                        estimate_tag_pose=True,
+                        camera_params=(realsense_b.intrinsics.fx, realsense_b.intrinsics.fy, realsense_b.intrinsics.ppx, realsense_b.intrinsics.ppy),
+                        tag_size=config.apriltag_size,
+                    )
+                    log.debug(f"🔲 AprilTags detections: {detections}")
+                    if detections:
+                        for d in detections:
+                            log.debug(f"🔲 AprilTag {d.tag_id} - pos: {d.pose_t}, wxyz: {d.pose_R}")
+                    apriltags_elapsed_time = time.time() - apriltags_start_time
+                    apriltags_duration_ms.value = apriltags_elapsed_time * 1000
 
             if state_handle.value in ["MANUAL", "WORK", "STANDOFF", "POKE"]:
                 log.debug("🔍 Solving IK...")
@@ -804,5 +865,6 @@ if __name__ == "__main__":
     config = TatbotConfig()
     config.enable_robot = args.robot
     config.enable_realsense = args.realsense
+    config.enable_apriltags = args.apriltags
     config.debug_mode = args.debug
     main(config=config)
