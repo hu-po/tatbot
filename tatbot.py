@@ -56,9 +56,9 @@ class CLIArgs:
 
 @jdc.pytree_dataclass
 class Pose:
-    pos: Float[Array, "3"]
+    pos: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.0, 0.0, 0.0]))
     """XYZ position (meters)."""
-    wxyz: Float[Array, "4"]
+    wxyz: Float[Array, "4"] = field(default_factory=lambda: jnp.array([1.0, 0.0, 0.0, 0.0]))
     """WXYZ orientation (quaternion)."""
 
 @jdc.pytree_dataclass
@@ -101,8 +101,10 @@ class IKConfig:
 class InkCap:
     palette_pose: Pose = Pose(pos=jnp.array([0.0, 0.0, 0.0]), wxyz=jnp.array([1.0, 0.0, 0.0, 0.0]))
     """Pose of the inkcap (relative to palette frame)."""
-    dip_depth_m: float = 0.005
-    """Depth of the inkcap when dipping (meters)."""
+    diameter_m: float = 0.008
+    """Diameter of the inkcap (meters)."""
+    max_dip_depth_m: float = 0.01
+    """Maximum depth of the inkcap when dipping (meters)."""
     color: Tuple[int, int, int] = (0, 0, 0) # black
     """RGB color of the ink in the inkcap."""
 
@@ -214,20 +216,23 @@ class TatbotConfig:
     palette_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/inkpalette-lowpoly/inkpalette-lowpoly.obj")
     """Path to the .obj file for the palette mesh."""
     inkcaps: Tuple[InkCap, ...] = (
-        InkCap(
-            palette_pose=Pose(pos=jnp.array([0.005, 0.014, 0.000]), wxyz=jnp.array([1.000, 0.000, 0.000, 0.000])),
+        InkCap( # small inkcap at idx 0 (row 0 column 0)
+            palette_pose=Pose(pos=jnp.array([0.005, 0.014, 0.000])),
             color=(0, 0, 0) # black
         ),
-        InkCap(
-            palette_pose=Pose(pos=jnp.array([-0.011, 0.015, 0.001]), wxyz=jnp.array([1.000, 0.000, 0.000, 0.000])),
+        InkCap(  # small inkcap at idx 1 (row 0 column 1)
+            palette_pose=Pose(pos=jnp.array([-0.011, 0.015, 0.001])),
             color=(255, 0, 0) # red
         ),
-        InkCap(
-            palette_pose=Pose(pos=jnp.array([-0.020, -0.005, 0.000]), wxyz=jnp.array([1.000, 0.000, 0.000, 0.000])),
+        InkCap(  # large inkcap at idx 2 (row 0 column 2)
+            palette_pose=Pose(pos=jnp.array([-0.020, -0.005, 0.000])),
+            diameter_m=0.014,
+            max_dip_depth_m=0.014,
             color=(0, 255, 0) # green
         ),
-        InkCap(
-            palette_pose=Pose(pos=jnp.array([-0.026, 0.015, 0.005]), wxyz=jnp.array([0.999, 0.000, 0.000, 0.013])),
+        InkCap(  # medium inkcap at idx 5 (row 1 column 0)
+            palette_pose=Pose(pos=jnp.array([-0.026, 0.015, 0.005])),
+            diameter_m=0.012,
             color=(0, 0, 255) # blue
         ),
     )
