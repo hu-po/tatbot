@@ -110,3 +110,35 @@ tatbot is defined using a [custom URDF file](https://github.com/hu-po/tatbot-urd
 ## AprilTags
 
 Various objects in the scene are tracked using [AprilTags](https://chaitanyantr.github.io/apriltag.html).
+
+## Profiling
+
+TODO: none of these feel great...
+
+### [snakeviz](https://github.com/jiffyclub/snakeviz)
+
+```bash
+uv pip install snakeviz
+snakeviz tatbot.prof
+```
+
+### [scalene](https://github.com/plasma-umass/scalene)
+
+```bash
+uv pip install scalene
+scalene --cpu --gpu --memory tatbot.py
+```
+
+### [nsys](https://docs.nvidia.com/nsight-systems/UserGuide/index.html)
+
+```bash
+nsys profile -t cuda,nvtx,osrt --stats=true -o tatbot uv run python tatbot.py --debug
+nsys-ui tatbot.nsys-rep
+```
+
+### JAX profiler
+
+```bash
+uv run python tatbot.py 
+tensorboard --logdir ./jax_trace
+```

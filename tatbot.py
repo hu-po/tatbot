@@ -53,6 +53,8 @@ class CLIArgs:
     """Enables the AprilTags."""
     device_name: str = "cuda:0"
     """Name of the JAX device to use (i.e. 'gpu', 'cpu')."""
+    profile: bool = False
+    """Enables JAX profiling, opens up tensorboard to view the trace."""
 
 @jdc.pytree_dataclass
 class Pose:
@@ -942,4 +944,11 @@ if __name__ == "__main__":
     config.enable_realsense = args.realsense
     config.enable_apriltag = args.apriltag
     config.debug_mode = args.debug
-    main(config=config)
+    if args.profile:
+        import jax.profiler as profiler
+        profiler.start_trace("./jax_trace")
+        main(config=config)
+        profiler.stop_trace()
+        os.system("tensorboard --logdir ./jax_trace")
+    else:
+        main(config=config)
