@@ -765,8 +765,10 @@ def main(config: TatbotConfig):
                 camera_link_idx_a = robot.links.names.index(config.realsense_a.link_name)
                 joint_array = np.concatenate([joint_pos_current.left, joint_pos_current.right])
                 camera_pose_a = robot.forward_kinematics(joint_array)[camera_link_idx_a]
-                realsense_a_frustrum.position = camera_pose_a[:3]
-                realsense_a_frustrum.wxyz = camera_pose_a[3:]
+                realsense_a_frustrum.wxyz = camera_pose_a[:4]
+                realsense_a_frustrum.position = camera_pose_a[-3:]
+                realsense_b_frustrum.wxyz = camera_pose_b_static[:4]
+                realsense_b_frustrum.position = camera_pose_b_static[-3:]
                 camera_transform_a = jaxlie.SE3(camera_pose_a)
                 camera_transform_b = jaxlie.SE3(camera_pose_b_static)
                 positions_world_a = camera_transform_a @ positions_a
