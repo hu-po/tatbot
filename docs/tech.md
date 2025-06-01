@@ -64,20 +64,7 @@ hardcoded ip addresses:
 - `192.168.1.98` - `rpi1`
 - `192.168.1.99` - `rpi2`
 
-## Realsenses
-
-Two D405 realsense cameras are used to get a pointcloud of the skin. Follow the [calibration guide](https://dev.intelrealsense.com/docs/self-calibration-for-depth-cameras).
-
-- `camera-a` is connected to `trossen-ai` via usb3 port and attached to the end effector of `arm-r`
-- `camera-b` is connected to `trossen-ai` via usb3 port and attached to alumnium frame, giving it an overhead view
-
-Use the `rs-enumerate-devices` command to verify that both realsenses are connected. If this doesn't work, unplug and replug the realsense cameras.
-
 ## Setup
-
-1. flip power strip in back to on
-2. press power button on `trossen-ai`, it will glow blue
-3. flip rocker switches to "on" on `arm-r` and `arm-l` control boxes
 
 keys, tokens, passwords are stored in the `.env` file.
 
@@ -88,14 +75,36 @@ source .env
 python dependencies are managed with environments using [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
 
 ```bash
+# Clean old uv environment
 deactivate && \
 rm -rf .venv && \
-rm uv.lock && \
+rm uv.lock
+# Setup new uv environment
 uv venv && \
 source .venv/bin/activate && \
-uv pip install -r pyproject.toml && \
-uv run python tatbot.py
+uv pip install -r pyproject.toml
 ```
+
+## Trossen Robot Arms
+
+- [trossen_arm](ttps://github.com/TrossenRobotics/trossen_arm)
+- [Driver API Documentation](https://docs.trossenrobotics.com/trossen_arm/main/api/library_root.html#)
+- [official URDF](https://github.com/TrossenRobotics/trossen_arm_description)
+
+```bash
+uv run python config_trossen.py
+```
+
+## Realsense Cameras
+
+Two D405 realsense cameras are used to get a pointcloud of the skin. Follow the [calibration guide](https://dev.intelrealsense.com/docs/self-calibration-for-depth-cameras).
+
+- `camera-a` is connected to `trossen-ai` via usb3 port and attached to the end effector of `arm-r`
+- `camera-b` is connected to `trossen-ai` via usb3 port and attached to alumnium frame, giving it an overhead view
+
+Use the `rs-enumerate-devices` command to verify that both realsenses are connected. If this doesn't work, unplug and replug the realsense cameras.
+
+## GPU
 
 jax is used for gpu acceleration, to check if jax has access to gpu:
 
@@ -103,9 +112,19 @@ jax is used for gpu acceleration, to check if jax has access to gpu:
 uv run python -c "import jax; has_gpu = bool(jax.devices('gpu')); print(has_gpu)"
 ```
 
+## Run
+
+1. flip power strip in the back to on
+2. press power button on `trossen-ai`, it will glow blue
+3. flip rocker switches to "on" on `arm-r` and `arm-l` control boxes
+
+```bash
+uv run python tatbot.py
+```
+
 ## URDF
 
-tatbot is defined using a [custom URDF file](https://github.com/hu-po/tatbot-urdf), which might not be kept up to date with the official [trossen widowxai description](https://github.com/TrossenRobotics/trossen_arm_description)
+tatbot is defined using a [custom URDF file](https://github.com/hu-po/tatbot-urdf).
 
 ## AprilTags
 
