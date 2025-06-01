@@ -51,7 +51,7 @@ class CLIArgs:
     """Enables the RealSense cameras."""
     apriltag: bool = False
     """Enables the AprilTags."""
-    device_name: str = "cuda:0"
+    device_name: str = "gpu"
     """Name of the JAX device to use (i.e. 'gpu', 'cpu')."""
     profile: bool = False
     """Enables JAX profiling, opens up tensorboard to view the trace."""
