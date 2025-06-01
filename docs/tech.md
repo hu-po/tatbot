@@ -92,7 +92,7 @@ uv pip install -r pyproject.toml
 - [official URDF](https://github.com/TrossenRobotics/trossen_arm_description)
 
 ```bash
-uv run python config_trossen.py
+uv run python config/trossen.py
 ```
 
 ## Realsense Cameras
