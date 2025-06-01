@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 import logging
 import os
 import time
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 import cv2
 import jax
@@ -23,7 +23,7 @@ import jaxls
 from jaxtyping import Array, Float, Int
 import numpy as np
 import numpy.typing as npt
-import pupil_apriltags as apriltags
+import pupil_apriltags as apriltag
 import PIL.Image
 import pyrealsense2 as rs
 import pyroki as pk
@@ -49,7 +49,7 @@ class CLIArgs:
     """Enables the real robot (if False then only sim)."""
     realsense: bool = False
     """Enables the RealSense cameras."""
-    apriltags: bool = False
+    apriltag: bool = False
     """Enables the AprilTags."""
     device_name: str = "cuda:0"
     """Name of the JAX device to use (i.e. 'gpu', 'cpu')."""
@@ -126,6 +126,13 @@ class RealSenseConfig:
     """Decimation filter magnitude for depth frames (integer >= 1)."""
     clipping: Tuple[float, float] = (0.03, 0.8)
     """Clipping range for depth in meters (min, max)."""
+
+@jdc.pytree_dataclass
+class AprilTagConfig:
+    tag_id: int
+    """AprilTag ID."""
+    frame_name: str
+    """Name of the frame to use in the scene."""
 
 @dataclass
 class TatbotConfig:
@@ -258,13 +265,18 @@ class TatbotConfig:
     """Family of AprilTags to use."""
     apriltag_size: float = 0.04
     """Size of AprilTags (meters)."""
+    apriltags: Tuple[AprilTagConfig, ...] = (
+        AprilTagConfig(tag_id=3, frame_name="/apriltag_3"),
+        AprilTagConfig(tag_id=4, frame_name="/apriltag_4"),
+        AprilTagConfig(tag_id=5, frame_name="/apriltag_5"),
+    )
     # CLI overrides
     enable_robot: bool = False
     """Override for arg.robot."""
     enable_realsense: bool = False
     """Override for arg.realsense."""
-    enable_apriltags: bool = False
-    """Override for arg.apriltags."""
+    enable_apriltag: bool = False
+    """Override for arg.apriltag."""
     debug_mode: bool = False
     """Override for arg.debug."""
 
@@ -613,7 +625,7 @@ def main(config: TatbotConfig):
         realsense_duration_ms = server.gui.add_number("realsense (ms)", 0.001, disabled=True)
         move_duration_ms = server.gui.add_number("robot move (ms)", 0.001, disabled=True)
         step_duration_ms = server.gui.add_number("step (ms)", 0.001, disabled=True)
-        apriltags_duration_ms = server.gui.add_number("apriltags (ms)", 0.001, disabled=True)
+        apriltag_duration_ms = server.gui.add_number("apriltag (ms)", 0.001, disabled=True)
 
     if config.enable_realsense:
         log.info("📷 Adding RealSense cameras...")
@@ -652,9 +664,17 @@ def main(config: TatbotConfig):
         camera_pose_b_static = _all_link_poses_for_camera_b[_link_index_camera_b]
         realsense_b_frustrum.position = camera_pose_b_static[:3]
         realsense_b_frustrum.wxyz = camera_pose_b_static[3:]
-        if config.enable_apriltags:
+        if config.enable_apriltag:
             log.info("🏷️ Adding AprilTags...")
-            detector = apriltags.Detector(config.apriltag_family)
+            detector = apriltag.Detector(config.apriltag_family)
+            apriltag_frames: Dict[str, viser.Frame] = {}
+            for _config in config.apriltags:
+                apriltag_frames[_config.frame_name] = server.scene.add_frame(
+                    name=_config.frame_name,
+                    position=np.array([0.0, 0.0, 0.0]),
+                    wxyz=np.array([1.0, 0.0, 0.0, 0.0]),
+                    show_axes=True,
+                )
 
     if config.enable_robot:
         log.info("🤖 Initializing robot drivers...")
@@ -793,21 +813,30 @@ def main(config: TatbotConfig):
                 pointcloud_b.colors = np.array(colors_b)
                 realsense_elapsed_time = time.time() - realsense_start_time
                 realsense_duration_ms.value = realsense_elapsed_time * 1000
-                if config.enable_apriltags:
+                if config.enable_apriltag:
                     log.debug("🏷️ Updating Realsense AprilTags...")
                     apriltags_start_time = time.time()
-                    detections: List[apriltags.Detection] = detector.detect(
+                    detections: List[apriltag.Detection] = detector.detect(
                         np.mean(rgb_b, axis=2).astype(np.uint8),
                         estimate_tag_pose=True,
                         camera_params=(realsense_b.intrinsics.fx, realsense_b.intrinsics.fy, realsense_b.intrinsics.ppx, realsense_b.intrinsics.ppy),
                         tag_size=config.apriltag_size,
                     )
                     log.debug(f"🏷️ AprilTags detections: {detections}")
-                    if detections:
-                        for d in detections:
-                            log.debug(f"🏷️ AprilTag {d.tag_id} - pos: {d.pose_t}, wxyz: {d.pose_R}")
+                    for d in detections:
+                        if d.tag_id in apriltag_frames:
+                            tag_in_cam = jnp.eye(4)
+                            tag_in_cam = tag_in_cam.at[:3, :3].set(jnp.array(d.pose_R))
+                            tag_in_cam = tag_in_cam.at[:3, 3].set(jnp.array(d.pose_t).flatten())
+                            tag_in_world = jnp.matmul(camera_transform_b.as_matrix(), tag_in_cam)
+                            pos = jnp.array(tag_in_world[:3, 3])
+                            wxyz = jaxlie.SO3.from_matrix(tag_in_world[:3, :3]).wxyz
+                            frame_name = apriltag_frames[d.tag_id].name
+                            log.debug(f"🏷️ AprilTag {d.tag_id}:{frame_name} - pos: {pos}, wxyz: {wxyz}")
+                            apriltag_frames[frame_name].position = np.array(pos)
+                            apriltag_frames[frame_name].wxyz = np.array(wxyz)
                     apriltags_elapsed_time = time.time() - apriltags_start_time
-                    apriltags_duration_ms.value = apriltags_elapsed_time * 1000
+                    apriltag_duration_ms.value = apriltags_elapsed_time * 1000
 
             if state_handle.value in ["MANUAL", "WORK", "STANDOFF", "POKE"]:
                 log.debug("🔍 Solving IK...")
@@ -884,6 +913,6 @@ if __name__ == "__main__":
     config = TatbotConfig()
     config.enable_robot = args.robot
     config.enable_realsense = args.realsense
-    config.enable_apriltags = args.apriltags
+    config.enable_apriltag = args.apriltag
     config.debug_mode = args.debug
     main(config=config)
