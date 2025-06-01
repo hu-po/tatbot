@@ -414,8 +414,8 @@ def main(config: TatbotConfig):
     
     log.info("🔢 Creating pixel batches...")
     num_targets: int = img_height_px * img_width_px
-    design_pointcloud_positions: np.ndarray = np.zeros((num_targets, 3))
-    design_pointcloud_colors: np.ndarray = np.zeros((num_targets, 3))
+    design_pointcloud_positions: np.ndarray = np.zeros((num_targets, 3), dtype=np.float32)
+    design_pointcloud_colors: np.ndarray = np.zeros((num_targets, 3), dtype=np.uint8)
     batch_radius_px_x = int(config.batch_radius_m / pixel_to_meter_x)
     batch_radius_px_y = int(config.batch_radius_m / pixel_to_meter_y)
     batches: List[PixelBatch] = []
@@ -438,7 +438,7 @@ def main(config: TatbotConfig):
                         )
                         batch_pixels.append(pixel_target)
                         design_pointcloud_positions[point_index] = jnp.array([meter_x, meter_y, 0.0])
-                        design_pointcloud_colors[point_index] = config.point_color
+                        design_pointcloud_colors[point_index] = np.array(config.point_color, dtype=np.uint8)
             # Only create batch if it contains targets
             if batch_pixels:
                 batch = PixelBatch(
@@ -834,7 +834,7 @@ def main(config: TatbotConfig):
                 cv2.ellipse(_img, (center_x_viz, center_y_viz), (batch_radius_px_x, batch_radius_px_y), 0, 0, 360, (0, 255, 0), 1)
                 for target in current_batch.targets:
                     cv2.circle(_img, (target.pixel_index[0], target.pixel_index[1]), 1, (255, 0, 0), -1)
-                    _design_pointcloud_colors[target.point_index] = (255, 0, 0)
+                    _design_pointcloud_colors[target.point_index] = np.array((255, 0, 0), dtype=np.uint8)
                 design_pointcloud.colors = _design_pointcloud_colors
                 design_image.image = _img
                 log.debug(f"🧮 Calculating hover and target positions...")
@@ -888,10 +888,7 @@ def main(config: TatbotConfig):
                     target_position=jnp.array([ik_target_l.position, ik_target_r.position]),
                     config=config.ik_config,
                 )
-                joint_pos_current = JointPos(
-                    left=np.array(solution[:8]),
-                    right=np.array(solution[8:])
-                )
+                joint_pos_current = JointPos(left=solution[:8], right=solution[8:])
                 log.debug(f"🎯 Left arm joints: {joint_pos_current.left}")
                 log.debug(f"🎯 Right arm joints: {joint_pos_current.right}")
                 ik_elapsed_time = time.time() - ik_start_time
