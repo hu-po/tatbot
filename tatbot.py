@@ -405,7 +405,7 @@ def main(config: TatbotConfig):
     img_pil = img_pil.convert("L")
     img_np = np.array(img_pil)
     img_width_px, img_height_px = img_pil.size
-    # TODO: use opencv dependency to do fancier contours/thresholding
+    # TODO: use opencv connected components
     thresholded_pixels = img_np <= config.image_threshold
     pixel_to_meter_x = config.image_width_m / img_width_px
     pixel_to_meter_y = config.image_height_m / img_height_px
@@ -416,6 +416,7 @@ def main(config: TatbotConfig):
     design_pointcloud_colors: np.ndarray = np.zeros((num_targets, 3), dtype=np.uint8)
     batch_radius_px_x = int(config.batch_radius_m / pixel_to_meter_x)
     batch_radius_px_y = int(config.batch_radius_m / pixel_to_meter_y)
+    # TODO: some way of ensuring a consistent batch size
     batches: List[PixelBatch] = []
     for center_y in range(batch_radius_px_y, img_height_px, batch_radius_px_y * 2):
         for center_x in range(batch_radius_px_x, img_width_px, batch_radius_px_x * 2):
