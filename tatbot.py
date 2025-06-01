@@ -152,17 +152,17 @@ class TatbotConfig:
         left=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
         right=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
     )
-    """Sleep: robot is folded up, motors can be released (radians)."""
-    joint_pos_work: JointPos = JointPos(
+    """Robot is folded up, motors can be released (radians)."""
+    joint_pos_ready: JointPos = JointPos(
         left=jnp.array([0.431, 1.120, 0.270, 0.241, 0.360, 0.241, 0.022, 0.044]),
         right=jnp.array([-0.147, 1.107, 0.526, -0.416, -0.963, -1.062, 0.022, 0.022])
     )
-    """Work: robot is ready to work (radians)."""
+    """Robot is ready to begin the session (radians)."""
     joint_pos_calib: JointPos = JointPos(
         left=jnp.array([0.530, 1.503, 1.167, -1.165, 0.027, 0.166, 0.022, 0.044]),
         right=jnp.array([0.144, 1.354, 0.796, -0.986, 0.021, -0.209, 0.022, 0.022])
     )
-    """Calibration: left arm is at workspace (42, 28) and right arm is at workspace (2, 28) (radians)."""
+    """Robot arms are in calibration position: left arm is at workspace (42, 28) and right arm is at workspace (2, 28) (radians)."""
     set_all_position_goal_time_slow: float = 3.0
     """Goal time in seconds when the goal positions should be reached (slow)."""
     set_all_position_goal_time_fast: float = 0.1
@@ -179,16 +179,18 @@ class TatbotConfig:
     """Initial pose of the grabbable transform IK target for left robot (relative to root frame)."""
     ik_target_pose_r: Pose = Pose(pos=jnp.array([0.253, -0.105, 0.111]), wxyz=jnp.array([0.821, -0.190, 0.173, 0.505]))
     """Initial pose of the grabbable transform IK target for right robot (relative to root frame)."""
-    states: List[str] = field(default_factory=lambda: ["MANUAL", "WORK", "STANDOFF", "POKE", "DIP", "PAUSED"])
+    states: List[str] = field(default_factory=lambda: ["PAUSE", "PLAY", "STOP", "READY", "HOVER", "POKE", "DIP", "MANUAL"])
     """Possible states of the robot.
-      > MANUAL: Manual control mode, robot follows ik targets.
-      > WORK: Robot is ready to work.
-      > STANDOFF: Robot is in standoff position above a pixel target.
+      > PAUSE: Pause the robot session, robot will freeze, cameras will still update.
+      > PLAY: Resume the robot session.
+      > STOP: Stop the robot session, return to sleep position, reset session.
+      > READY: Robot is ready to begin the session.
+      > HOVER: Robot is hovering over the batch target center.
       > POKE: Robot is poking the pixel target.
       > DIP: Robot is dipping the pen in the inkcap.
-      > PAUSED: Robot is paused at current IK target position.
+      > MANUAL: Manual control mode, robot follows ik targets.
     """
-    initial_state: str = "PAUSED"
+    initial_state: str = "PAUSE"
     """Initial state of the robot."""
     design_pose: Pose = Pose(pos=jnp.array([0.313, 0.074, 0.065]), wxyz=jnp.array([1.000, 0.000, 0.000, 0.000]))
     """Pose of the design (relative to root frame)."""
@@ -214,8 +216,8 @@ class TatbotConfig:
     """Radius in meters for each batch of pixels to process."""
     point_shape: str = "rounded"
     """Shape of points in the point cloud visualization."""
-    standoff_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.01, 0.0, 0.0]))
-    """Offset vector for the standoff position (meters)."""
+    hover_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.01, 0.0, 0.0]))
+    """Offset vector for the hover position (meters)."""
     poke_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.0, 0.0, 0.0]))
     """Offset vector for the poke position (meters)."""
     palette_init_pose: Pose = Pose(pos=jnp.array([0.281, 0.156, 0.032]), wxyz=jnp.array([0.971, 0.006, -0.024, 0.240]))
@@ -612,13 +614,25 @@ def main(config: TatbotConfig):
             "State", options=config.states,
             initial_value=config.initial_state
         )
-        sleep_button = server.gui.add_button("Go to Sleep")
+        state_button_group = server.gui.add_button_group(
+            "Controls", ("⏸️", "▶️", "⏹️")
+        )
 
-        @sleep_button.on_click
+        @state_button_group.on_click
         def _(_):
-            log.debug("😴 Moving left robot to sleep pose...")
-            state_handle.value = "PAUSED"
-            move_robot(config.joint_pos_sleep)
+            if state_button_group.value == "⏸️":
+                log.debug("⏸️ Pause")
+                state_handle.value = "PAUSE"
+            elif state_button_group.value == "▶️":
+                log.debug("▶️ Play")
+                state_handle.value = "PLAY"
+            elif state_button_group.value == "⏹️":
+                log.debug("⏹️ Stop")
+                state_handle.value = "STOP"
+                batch_index.value = 0
+                target_index.value = 0
+                log.debug("😴 Sleeping robot...")
+                move_robot(config.joint_pos_sleep)
 
     with server.gui.add_folder("Timing", expand_by_default=False):
         ik_duration_ms = server.gui.add_number("ik (ms)", 0.001, disabled=True)
@@ -658,7 +672,7 @@ def main(config: TatbotConfig):
             point_size=config.realsense_b.point_size,
         )
         # realsense_b is static
-        _joint_config_for_camera_b = np.concatenate([config.joint_pos_work.left, config.joint_pos_work.right])
+        _joint_config_for_camera_b = np.concatenate([config.joint_pos_ready.left, config.joint_pos_ready.right])
         _all_link_poses_for_camera_b = robot.forward_kinematics(_joint_config_for_camera_b)
         _link_index_camera_b = robot.links.names.index(config.realsense_b.link_name)
         camera_pose_b_static = _all_link_poses_for_camera_b[_link_index_camera_b]
@@ -720,76 +734,22 @@ def main(config: TatbotConfig):
             time.sleep(goal_time)
 
     try:
-        log.info("🤖 Moving robots to sleep pose...")
+        log.info("🤖 Moving robots to SLEEP pose...")
         move_robot(config.joint_pos_sleep)
         if config.debug_mode:
-            log.info("🤖 Moving robots to calibration pose...")
+            log.info("🤖 Moving robots to CALIBRATION pose...")
             move_robot(config.joint_pos_calib)
             joint_pos_current = config.joint_pos_calib
-            state_handle.value = "PAUSED"
+            state_handle.value = "PAUSE"
         else:
-            log.info("🤖 Moving robots to home pose...")
-            move_robot(config.joint_pos_work)
-            joint_pos_current = config.joint_pos_work
-            state_handle.value = "MANUAL"
+            log.info("🤖 Moving robots to READY pose...")
+            move_robot(config.joint_pos_ready)
+            joint_pos_current = config.joint_pos_ready
+            state_handle.value = "READY"
 
         while True:
             step_start_time = time.time()
             log.debug(f"State: {state_handle.value}")
-            
-            if state_handle.value == "WORK":
-                log.info(f"🔢 Current batch: {batch_index.value}")
-                if batch_index.value >= num_batches:
-                    log.info("Completed all batches, looping back to start.")
-                    batch_index.value = 0
-                    target_index.value = 0
-                current_batch: PixelBatch = batches[batch_index.value]
-                log.debug(f"🖥️ Updating GUI with batch {batch_index.value}")
-                target_index.max = len(current_batch.targets) - 1
-                # TODO: are these copy necessary?
-                _design_pointcloud_colors = design_pointcloud_colors.copy()
-                _img = cv2.cvtColor(img_np.copy(), cv2.COLOR_GRAY2RGB)
-                center_x_viz = int((current_batch.center_pose.pos[0] / pixel_to_meter_x) + img_width_px/2)
-                center_y_viz = int((current_batch.center_pose.pos[1] / pixel_to_meter_y) + img_height_px/2)
-                cv2.ellipse(_img, (center_x_viz, center_y_viz), (batch_radius_px_x, batch_radius_px_y), 0, 0, 360, (0, 255, 0), 1)
-                for target in current_batch.targets:
-                    cv2.circle(_img, (target.pixel_index[0], target.pixel_index[1]), 1, (255, 0, 0), -1)
-                    _design_pointcloud_colors[target.point_index] = (255, 0, 0)
-                design_pointcloud.colors = _design_pointcloud_colors
-                design_image.image = _img
-                log.debug(f"🧮 Calculating standoff and target positions...")
-                ik_target_positions = transform_targets(
-                    design_pose,
-                    jnp.concatenate([
-                        jnp.array([current_batch.center_pose.pos]),
-                        jnp.array([target.pose.pos for target in current_batch.targets])
-                    ]),
-                    jnp.concatenate([
-                        jnp.array([config.standoff_offset_m]),
-                        jnp.array([config.poke_offset_m] * len(current_batch.targets))
-                    ])
-                )
-                log.debug(f"🎯 Setting IK target to standoff position...")
-                ik_target_l.position = ik_target_positions[0]
-                state_handle.value = "STANDOFF"
-            elif state_handle.value == "STANDOFF":
-                log.info(f"🔢 Current target: {target_index.value}")
-                log.debug(f"🎯 Setting IK target to target position...")
-                ik_target_l.position = ik_target_positions[target_index.value + 1]
-                state_handle.value = "POKE"
-            elif state_handle.value == "POKE": # robot has already performed poke
-                target_index.value += 1
-                if target_index.value >= len(current_batch.targets):
-                    log.debug(f" Completed all targets in batch, moving to next batch...")
-                    batch_index.value += 1
-                    state_handle.value = "WORK"
-                else:
-                    log.debug(f"🎯 Setting IK target to standoff position...")
-                    ik_target_l.position = ik_target_positions[0]
-                    state_handle.value = "STANDOFF"
-            elif state_handle.value == "PAUSED":
-                log.debug(" Paused")
-                pass
 
             if config.enable_realsense:
                 log.debug("📷 Updating Realsense pointclouds...")
@@ -851,8 +811,68 @@ def main(config: TatbotConfig):
                             frame.wxyz = np.array(wxyz)
                     apriltags_elapsed_time = time.time() - apriltags_start_time
                     apriltag_duration_ms.value = apriltags_elapsed_time * 1000
+            
+            if state_handle.value in ["PAUSE", "STOP"]:
+                continue
+            elif state_handle.value == "PLAY":
+                state_handle.value = "READY"
 
-            if state_handle.value in ["MANUAL", "WORK", "STANDOFF", "POKE"]:
+            if state_handle.value == "READY":
+                log.info(f"🔢 Current batch: {batch_index.value}")
+                if batch_index.value >= num_batches:
+                    log.info("Completed all batches, looping back to start.")
+                    batch_index.value = 0
+                    target_index.value = 0
+                current_batch: PixelBatch = batches[batch_index.value]
+                log.debug(f"🖥️ Updating GUI with batch {batch_index.value}")
+                target_index.max = len(current_batch.targets) - 1
+                # TODO: are these copy necessary?
+                _design_pointcloud_colors = design_pointcloud_colors.copy()
+                _img = cv2.cvtColor(img_np.copy(), cv2.COLOR_GRAY2RGB)
+                center_x_viz = int((current_batch.center_pose.pos[0] / pixel_to_meter_x) + img_width_px/2)
+                center_y_viz = int((current_batch.center_pose.pos[1] / pixel_to_meter_y) + img_height_px/2)
+                cv2.ellipse(_img, (center_x_viz, center_y_viz), (batch_radius_px_x, batch_radius_px_y), 0, 0, 360, (0, 255, 0), 1)
+                for target in current_batch.targets:
+                    cv2.circle(_img, (target.pixel_index[0], target.pixel_index[1]), 1, (255, 0, 0), -1)
+                    _design_pointcloud_colors[target.point_index] = (255, 0, 0)
+                design_pointcloud.colors = _design_pointcloud_colors
+                design_image.image = _img
+                log.debug(f"🧮 Calculating hover and target positions...")
+                ik_target_positions = transform_targets(
+                    design_pose,
+                    jnp.concatenate([
+                        jnp.array([current_batch.center_pose.pos]),
+                        jnp.array([target.pose.pos for target in current_batch.targets])
+                    ]),
+                    jnp.concatenate([
+                        jnp.array([config.hover_offset_m]),
+                        jnp.array([config.poke_offset_m] * len(current_batch.targets))
+                    ])
+                )
+                log.debug(f"🎯 Setting IK target to hover position...")
+                ik_target_l.position = ik_target_positions[0]
+                state_handle.value = "HOVER" # perform hover on next iteration
+            elif state_handle.value == "HOVER": # robot has already performed hover
+                log.info(f"🔢 Current target: {target_index.value}")
+                log.debug(f"🎯 Setting IK target to target position...")
+                ik_target_l.position = ik_target_positions[target_index.value + 1]
+                state_handle.value = "POKE" # perform poke on next iteration
+            elif state_handle.value == "POKE": # robot has already performed poke
+                target_index.value += 1
+                if target_index.value >= len(current_batch.targets):
+                    log.debug(f" Completed all targets in batch, moving to next batch...")
+                    batch_index.value += 1
+                    state_handle.value = "DIP" # perform dip on next iteration
+                else:
+                    log.debug(f"🎯 Setting IK target to hover position...")
+                    ik_target_l.position = ik_target_positions[0]
+                    state_handle.value = "HOVER" # perform hover on next iteration
+            elif state_handle.value == "DIP": # robot has already performed dip
+                log.debug(f"🎯 Setting IK target to hover position...")
+                # TODO: set ik target to dip position based on inkcaps
+                state_handle.value = "READY" # perform ready on next iteration
+
+            if state_handle.value in ["MANUAL", "READY", "HOVER", "POKE", "DIP"]:
                 log.debug("🔍 Solving IK...")
                 ik_start_time = time.time()
                 log.debug(f"🎯 Left arm IK target - pos: {ik_target_l.position}, wxyz: {ik_target_l.wxyz}")
