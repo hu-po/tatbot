@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 import logging
 import os
 import time
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import jax
@@ -263,8 +263,8 @@ class TatbotConfig:
     """Configuration for RealSense Camera B (overhead)."""
     apriltag_family: str = "tag16h5"
     """Family of AprilTags to use."""
-    apriltag_size: float = 0.04
-    """Size of AprilTags (meters)."""
+    apriltag_size_m: float = 0.0275
+    """Size of AprilTags: distance between detection corners (meters)."""
     apriltags: Tuple[AprilTagConfig, ...] = (
         AprilTagConfig(tag_id=3, frame_name="/apriltag_3"),
         AprilTagConfig(tag_id=4, frame_name="/apriltag_4"),
@@ -667,14 +667,16 @@ def main(config: TatbotConfig):
         if config.enable_apriltag:
             log.info("🏷️ Adding AprilTags...")
             detector = apriltag.Detector(config.apriltag_family)
-            apriltag_frames: Dict[str, viser.Frame] = {}
+            apriltag_frames_by_id: Dict[int, viser.Frame] = {}
             for _config in config.apriltags:
-                apriltag_frames[_config.frame_name] = server.scene.add_frame(
+                frame = server.scene.add_frame(
                     name=_config.frame_name,
                     position=np.array([0.0, 0.0, 0.0]),
                     wxyz=np.array([1.0, 0.0, 0.0, 0.0]),
                     show_axes=True,
                 )
+                apriltag_frames_by_id[_config.tag_id] = frame
+            apriltag_debug_image: Optional[viser.GuiImageHandle] = None
 
     if config.enable_robot:
         log.info("🤖 Initializing robot drivers...")
@@ -816,25 +818,37 @@ def main(config: TatbotConfig):
                 if config.enable_apriltag:
                     log.debug("🏷️ Updating Realsense AprilTags...")
                     apriltags_start_time = time.time()
+                    gray_b = cv2.cvtColor(rgb_b, cv2.COLOR_RGB2GRAY)
                     detections: List[apriltag.Detection] = detector.detect(
-                        np.mean(rgb_b, axis=2).astype(np.uint8),
+                        gray_b,
                         estimate_tag_pose=True,
                         camera_params=(realsense_b.intrinsics.fx, realsense_b.intrinsics.fy, realsense_b.intrinsics.ppx, realsense_b.intrinsics.ppy),
-                        tag_size=config.apriltag_size,
+                        tag_size=config.apriltag_size_m,
                     )
                     log.debug(f"🏷️ AprilTags detections: {detections}")
+                    gray_b_bgr = cv2.cvtColor(gray_b, cv2.COLOR_GRAY2BGR)
                     for d in detections:
-                        if d.tag_id in apriltag_frames:
+                        corners = np.int32(d.corners)
+                        cv2.polylines(gray_b_bgr, [corners], isClosed=True, color=(0, 255, 0), thickness=2)
+                        center = tuple(np.int32(d.center))
+                        cv2.circle(gray_b_bgr, center, 4, (0, 0, 255), -1)
+                        cv2.putText(gray_b_bgr, str(d.tag_id), (center[0] + 5, center[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+                    if apriltag_debug_image is None:
+                        apriltag_debug_image = server.gui.add_image(gray_b_bgr, "AprilTags")
+                    else:
+                        apriltag_debug_image.image = gray_b_bgr
+                    for d in detections:
+                        if d.tag_id in apriltag_frames_by_id:
                             tag_in_cam = jnp.eye(4)
                             tag_in_cam = tag_in_cam.at[:3, :3].set(jnp.array(d.pose_R))
                             tag_in_cam = tag_in_cam.at[:3, 3].set(jnp.array(d.pose_t).flatten())
                             tag_in_world = jnp.matmul(camera_transform_b.as_matrix(), tag_in_cam)
                             pos = jnp.array(tag_in_world[:3, 3])
                             wxyz = jaxlie.SO3.from_matrix(tag_in_world[:3, :3]).wxyz
-                            frame_name = apriltag_frames[d.tag_id].name
-                            log.debug(f"🏷️ AprilTag {d.tag_id}:{frame_name} - pos: {pos}, wxyz: {wxyz}")
-                            apriltag_frames[frame_name].position = np.array(pos)
-                            apriltag_frames[frame_name].wxyz = np.array(wxyz)
+                            frame = apriltag_frames_by_id[d.tag_id]
+                            log.debug(f"🏷️ AprilTag {d.tag_id}:{frame.name} - pos: {pos}, wxyz: {wxyz}")
+                            frame.position = np.array(pos)
+                            frame.wxyz = np.array(wxyz)
                     apriltags_elapsed_time = time.time() - apriltags_start_time
                     apriltag_duration_ms.value = apriltags_elapsed_time * 1000
 
