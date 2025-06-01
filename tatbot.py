@@ -171,8 +171,6 @@ class TatbotConfig:
     """Names of the links to be controlled."""
     ik_config: IKConfig = IKConfig()
     """Configuration for the IK solver."""
-    num_pixels_per_ink_dip: int = 60
-    """Number of pixels to draw before dipping the pen in the ink cup again."""
     min_fps: float = 1.0
     """Minimum frames per second to maintain. If 0 or negative, no minimum framerate is enforced."""
     ik_target_pose_l: Pose = Pose(pos=jnp.array([0.243, 0.127, 0.070]), wxyz=jnp.array([0.960, 0.000, 0.279, 0.000]))
@@ -198,8 +196,6 @@ class TatbotConfig:
     """Local path to the tattoo design PNG image."""
     image_threshold: int = 127
     """Threshold for B/W image. Pixels less than or equal to this value are targets. [0, 255]"""
-    max_draw_pixels: int = 0
-    """Maximum number of target pixels to process. If 0 or less, process all."""
     image_width_px: int = 256
     """Width to resize the input image to before processing (pixels)."""
     image_height_px: int = 256
@@ -562,7 +558,7 @@ def main(config: TatbotConfig):
     )
 
     log.info("🎯 Adding ik targets...")
-    ik_target_positions: Float[Array, "B 3"] = jnp.zeros((num_batches, 3))
+    ik_target_positions: Optional[Float[Array, "B 3"]] = None
     ik_target_l = server.scene.add_transform_controls(
         "/ik_target_l",
         position=config.ik_target_pose_l.pos,
