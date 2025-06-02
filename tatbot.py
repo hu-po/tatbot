@@ -336,14 +336,12 @@ class RealSenseCamera:
 
 @jdc.jit
 def transform_targets(
-    design_pose: Pose,
+    design_position: Float[Array, "3"],
+    design_wxyz: Float[Array, "4"],
     targets: Float[Array, "B 3"],
     offsets: Float[Array, "B 3"],
 ) -> Float[Array, "B 3"]:
-    design_to_root = jaxlie.SE3.from_rotation_and_translation(
-        jaxlie.SO3(design_pose.wxyz),
-        design_pose.pos
-    )
+    design_to_root = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(design_wxyz), design_position)
     return jax.vmap(lambda pos, offset: design_to_root @ pos + offset)(targets, offsets)
 
 @jdc.jit
@@ -430,6 +428,7 @@ def main(config: TatbotConfig):
                         pixel_target = PixelTarget(
                             pose=Pose( # in design frame
                                 pos=jnp.array([meter_x, meter_y, 0.0]),
+                                # TODO: use normal vector of skin mesh?
                                 wxyz=config.design_pose.wxyz
                             ),
                             pixel_index=(x, y),
@@ -443,6 +442,7 @@ def main(config: TatbotConfig):
                 batch = PixelBatch(
                     center_pose=Pose(
                         pos=jnp.array([(center_x - img_width_px/2) * pixel_to_meter_x, (center_y - img_height_px/2) * pixel_to_meter_y, 0.0]),
+                        # TODO: use normal vector of skin mesh?
                         wxyz=config.design_pose.wxyz
                     ),
                     radius_m=config.batch_radius_m,
@@ -454,22 +454,14 @@ def main(config: TatbotConfig):
     log.info(f"🔢 Design has {num_targets} targets in {num_batches} batches.")
 
     log.info("🖼️ Adding design...")
-    if config.debug_mode:
-        design_tf = server.scene.add_transform_controls(
-            name="/design",
-            position=config.design_pose.pos,
-            wxyz=config.design_pose.wxyz,
-            scale=0.05,
-            opacity=0.2,
-        )
-    else:
-        design_tf = server.scene.add_frame(
-            name="/design",
-            position=config.design_pose.pos,
-            wxyz=config.design_pose.wxyz,
-            show_axes=False,
-        )
-    design_pose = Pose(pos=design_tf.position, wxyz=design_tf.wxyz)
+    design_tf = server.scene.add_transform_controls(
+        name="/design",
+        position=config.design_pose.pos,
+        wxyz=config.design_pose.wxyz,
+        scale=config.ik_target_frame_scale,
+        opacity=config.ik_target_frame_opacity,
+        visible=True if config.debug_mode else False,
+    )
     design_pointcloud = server.scene.add_point_cloud(
         name="/design/targets",
         points=design_pointcloud_positions,
@@ -793,7 +785,8 @@ def main(config: TatbotConfig):
                 design_image.image = _img
                 log.debug(f"🧮 Calculating hover and target positions...")
                 ik_target_positions = transform_targets(
-                    design_pose,
+                    design_tf.position,
+                    design_tf.wxyz,
                     jnp.concatenate([
                         jnp.array([current_batch.center_pose.pos]),
                         jnp.array([target.pose.pos for target in current_batch.targets])
@@ -805,12 +798,14 @@ def main(config: TatbotConfig):
                 )
                 log.debug(f"🎯 Setting IK target to hover position...")
                 ik_target_l.position = ik_target_positions[0]
+                # TODO: ik_target_l.wxyz
                 state.value = "HOVER" # perform hover on next iteration
             elif state.value in ["HOVER", "POKE"]: # robot has already performed hover or poke
                 target_index.value += 1
                 log.info(f"🔢 Current target: {target_index.value}")
                 log.debug(f"🎯 Setting IK target to target position...")
                 ik_target_l.position = ik_target_positions[target_index.value + 1] # index 0 is hover position
+                # TODO: ik_target_l.wxyz
                 if target_index.value >= len(current_batch.targets):
                     log.debug(f"✅ Completed all targets in batch, moving to next batch...")
                     batch_index.value += 1
