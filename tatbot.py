@@ -160,14 +160,9 @@ class TatbotConfig:
         right=jnp.array([-0.147, 1.107, 0.526, -0.416, -0.963, -1.062, 0.022, 0.022])
     )
     """Robot is ready to begin the session (radians)."""
-    joint_pos_calib: JointPos = JointPos(
-        left=jnp.array([0.530, 1.503, 1.167, -1.165, 0.027, 0.166, 0.022, 0.044]),
-        right=jnp.array([0.144, 1.354, 0.796, -0.986, 0.021, -0.209, 0.022, 0.022])
-    )
-    """Robot arms are in calibration position: left arm is at workspace (42, 28) and right arm is at workspace (2, 28) (radians)."""
     set_all_position_goal_time_slow: float = 3.0
     """Goal time in seconds when the goal positions should be reached (slow)."""
-    set_all_position_goal_time_fast: float = 1.0
+    set_all_position_goal_time_fast: float = 0.5
     """Goal time in seconds when the goal positions should be reached (fast)."""
     target_links_name: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link")
     """Names of the links to be controlled."""
@@ -179,12 +174,17 @@ class TatbotConfig:
     """Initial pose of the grabbable transform IK target for left robot (relative to root frame)."""
     ik_target_pose_r: Pose = Pose(pos=jnp.array([0.253, -0.105, 0.111]), wxyz=jnp.array([0.821, -0.190, 0.173, 0.505]))
     """Initial pose of the grabbable transform IK target for right robot (relative to root frame)."""
-    states: List[str] = field(default_factory=lambda: ["PAUSE", "PLAY", "STOP", "READY", "HOVER", "POKE", "DIP", "MANUAL"])
+    ik_target_frame_scale: float = 0.06
+    """Scale of the IK target frames."""
+    ik_target_frame_opacity: float = 0.2
+    """Opacity of the IK target frames."""
+    states: List[str] = field(default_factory=lambda: ["PAUSE", "PLAY", "STOP", "READY", "TRACK", "HOVER", "POKE", "DIP", "MANUAL"])
     """Possible states of the robot.
       > PAUSE: Pause the robot session, robot will freeze, cameras will still update.
       > PLAY: Resume the robot session.
       > STOP: Stop the robot session, return to sleep position, reset session.
       > READY: Robot is ready to begin the session.
+      > TRACK: Update trackable object poses in scene.
       > HOVER: Robot is hovering over the batch target center.
       > POKE: Robot is poking the pixel target.
       > DIP: Robot is dipping the pen in the inkcap.
@@ -521,16 +521,16 @@ def main(config: TatbotConfig):
         "/ik_target_l",
         position=config.ik_target_pose_l.pos,
         wxyz=config.ik_target_pose_l.wxyz,
-        scale=0.1,
-        opacity=0.5,
+        scale=config.ik_target_frame_scale,
+        opacity=config.ik_target_frame_opacity,
         visible=True if config.debug_mode else False,
     )
     ik_target_r = server.scene.add_transform_controls(
         "/ik_target_r",
         position=config.ik_target_pose_r.pos,
         wxyz=config.ik_target_pose_r.wxyz,
-        scale=0.1,
-        opacity=0.5,
+        scale=config.ik_target_frame_scale,
+        opacity=config.ik_target_frame_opacity,
         visible=True if config.debug_mode else False,
     )
 
@@ -564,7 +564,7 @@ def main(config: TatbotConfig):
             visible=True,
         )
     with server.gui.add_folder("Robot"):
-        state_handle = server.gui.add_dropdown(
+        state = server.gui.add_dropdown(
             "State", options=config.states,
             initial_value=config.initial_state
         )
@@ -576,13 +576,13 @@ def main(config: TatbotConfig):
         def _(_):
             if state_button_group.value == "⏸️":
                 log.debug("⏸️ Pause")
-                state_handle.value = "PAUSE"
+                state.value = "PAUSE"
             elif state_button_group.value == "▶️":
                 log.debug("▶️ Play")
-                state_handle.value = "PLAY"
+                state.value = "PLAY"
             elif state_button_group.value == "⏹️":
                 log.debug("⏹️ Stop")
-                state_handle.value = "STOP"
+                state.value = "STOP"
                 batch_index.value = 0
                 target_index.value = 0
                 log.debug("😴 Sleeping robot...")
@@ -687,97 +687,99 @@ def main(config: TatbotConfig):
     try:
         log.info("🤖 Moving robots to SLEEP pose...")
         move_robot(config.joint_pos_sleep)
-        if config.debug_mode:
-            log.info("🤖 Moving robots to CALIBRATION pose...")
-            move_robot(config.joint_pos_calib)
-            joint_pos_current = config.joint_pos_calib
-            state_handle.value = "PAUSE"
-        else:
+        state.value = "PAUSE"
+        if not config.debug_mode:
             log.info("🤖 Moving robots to READY pose...")
             move_robot(config.joint_pos_ready)
             joint_pos_current = config.joint_pos_ready
-            state_handle.value = "READY"
+            state.value = "PLAY"
 
         while True:
             step_start_time = time.time()
-            log.debug(f"State: {state_handle.value}")
-
-            if config.enable_realsense:
-                log.debug("📷 Updating Realsense pointclouds...")
-                realsense_start_time = time.time()
-                rgb_a, positions_a, colors_a = realsense_a.make_observation()
-                realsense_a_frustrum.image = rgb_a
-                rgb_b, positions_b, colors_b = realsense_b.make_observation()
-                realsense_b_frustrum.image = rgb_b
-                camera_link_idx_a = robot.links.names.index(config.realsense_a.link_name)
-                joint_array = np.concatenate([joint_pos_current.left, joint_pos_current.right])
-                camera_pose_a = robot.forward_kinematics(joint_array)[camera_link_idx_a]
-                realsense_a_frustrum.wxyz = camera_pose_a[:4]
-                realsense_a_frustrum.position = camera_pose_a[-3:]
-                realsense_b_frustrum.wxyz = camera_pose_b_static[:4]
-                realsense_b_frustrum.position = camera_pose_b_static[-3:]
-                camera_transform_a = jaxlie.SE3(camera_pose_a)
-                camera_transform_b = jaxlie.SE3(camera_pose_b_static)
-                positions_world_a = camera_transform_a @ positions_a
-                positions_world_b = camera_transform_b @ positions_b
-                pointcloud_a.points = np.array(positions_world_a)
-                pointcloud_a.colors = np.array(colors_a)
-                pointcloud_b.points = np.array(positions_world_b)
-                pointcloud_b.colors = np.array(colors_b)
-                realsense_elapsed_time = time.time() - realsense_start_time
-                realsense_duration_ms.value = realsense_elapsed_time * 1000
-                if config.enable_apriltag:
-                    log.debug("🏷️ Updating Realsense AprilTags...")
-                    apriltags_start_time = time.time()
-                    gray_b = cv2.cvtColor(rgb_b, cv2.COLOR_RGB2GRAY)
-                    detections: List[apriltag.Detection] = detector.detect(
-                        gray_b,
-                        # TODO: tune these params
-                        estimate_tag_pose=True,
-                        camera_params=(realsense_b.intrinsics.fx, realsense_b.intrinsics.fy, realsense_b.intrinsics.ppx, realsense_b.intrinsics.ppy),
-                        tag_size=config.apriltag_size_m,
-                    )
-                    log.debug(f"🏷️ AprilTags detections: {detections}")
-                    gray_b_bgr = cv2.cvtColor(gray_b, cv2.COLOR_GRAY2BGR)
-                    for d in detections:
-                        corners = np.int32(d.corners)
-                        cv2.polylines(gray_b_bgr, [corners], isClosed=True, color=(0, 255, 0), thickness=2)
-                        center = tuple(np.int32(d.center))
-                        cv2.circle(gray_b_bgr, center, 4, (0, 0, 255), -1)
-                        cv2.putText(gray_b_bgr, str(d.tag_id), (center[0] + 5, center[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-                    if apriltag_debug_image is None:
-                        apriltag_debug_image = server.gui.add_image(gray_b_bgr, "AprilTags")
-                    else:
-                        apriltag_debug_image.image = gray_b_bgr
-                    for d in detections:
-                        if d.tag_id in apriltag_frames_by_id:
-                            tag_in_cam = jnp.eye(4)
-                            tag_in_cam = tag_in_cam.at[:3, :3].set(jnp.array(d.pose_R))
-                            tag_in_cam = tag_in_cam.at[:3, 3].set(jnp.array(d.pose_t).flatten())
-                            tag_in_world = jnp.matmul(camera_transform_b.as_matrix(), tag_in_cam)
-                            pos = jnp.array(tag_in_world[:3, 3])
-                            wxyz = jaxlie.SO3.from_matrix(tag_in_world[:3, :3]).wxyz
-                            frame = apriltag_frames_by_id[d.tag_id]
-                            log.debug(f"🏷️ AprilTag {d.tag_id}:{frame.name} - pos: {pos}, wxyz: {wxyz}")
-                            frame.position = np.array(pos)
-                            frame.wxyz = np.array(wxyz)
-                    apriltags_elapsed_time = time.time() - apriltags_start_time
-                    apriltag_duration_ms.value = apriltags_elapsed_time * 1000
+            log.debug(f"State: {state.value}")
             
-            if state_handle.value in ["PAUSE", "STOP"]:
+            if state.value in ["PAUSE", "STOP"]:
                 continue
-            elif state_handle.value == "PLAY":
-                state_handle.value = "READY"
+            elif state.value == "PLAY":
+                state.value = "TRACK"
 
-            if state_handle.value == "READY":
+            if state.value == "TRACK":
+                log.info("🎥🗺️ Tracking objects in scene...")
+                log.debug(f"🖼️ Design - pos: {design_tf.position}, wxyz: {design_tf.wxyz}")
+                if config.enable_realsense:
+                    log.debug("📷 Updating Realsense pointclouds...")
+                    realsense_start_time = time.time()
+                    rgb_a, positions_a, colors_a = realsense_a.make_observation()
+                    realsense_a_frustrum.image = rgb_a
+                    rgb_b, positions_b, colors_b = realsense_b.make_observation()
+                    realsense_b_frustrum.image = rgb_b
+                    camera_link_idx_a = robot.links.names.index(config.realsense_a.link_name)
+                    joint_array = np.concatenate([joint_pos_current.left, joint_pos_current.right])
+                    camera_pose_a = robot.forward_kinematics(joint_array)[camera_link_idx_a]
+                    realsense_a_frustrum.wxyz = camera_pose_a[:4]
+                    realsense_a_frustrum.position = camera_pose_a[-3:]
+                    realsense_b_frustrum.wxyz = camera_pose_b_static[:4]
+                    realsense_b_frustrum.position = camera_pose_b_static[-3:]
+                    camera_transform_a = jaxlie.SE3(camera_pose_a)
+                    camera_transform_b = jaxlie.SE3(camera_pose_b_static)
+                    positions_world_a = camera_transform_a @ positions_a
+                    positions_world_b = camera_transform_b @ positions_b
+                    pointcloud_a.points = np.array(positions_world_a)
+                    pointcloud_a.colors = np.array(colors_a)
+                    pointcloud_b.points = np.array(positions_world_b)
+                    pointcloud_b.colors = np.array(colors_b)
+                    realsense_elapsed_time = time.time() - realsense_start_time
+                    realsense_duration_ms.value = realsense_elapsed_time * 1000
+                    if config.enable_apriltag:
+                        log.debug("🏷️ Updating Realsense AprilTags...")
+                        apriltags_start_time = time.time()
+                        gray_b = cv2.cvtColor(rgb_b, cv2.COLOR_RGB2GRAY)
+                        detections: List[apriltag.Detection] = detector.detect(
+                            gray_b,
+                            # TODO: tune these params
+                            estimate_tag_pose=True,
+                            camera_params=(realsense_b.intrinsics.fx, realsense_b.intrinsics.fy, realsense_b.intrinsics.ppx, realsense_b.intrinsics.ppy),
+                            tag_size=config.apriltag_size_m,
+                        )
+                        log.debug(f"🏷️ AprilTags detections: {detections}")
+                        gray_b_bgr = cv2.cvtColor(gray_b, cv2.COLOR_GRAY2BGR)
+                        for d in detections:
+                            corners = np.int32(d.corners)
+                            cv2.polylines(gray_b_bgr, [corners], isClosed=True, color=(0, 255, 0), thickness=2)
+                            center = tuple(np.int32(d.center))
+                            cv2.circle(gray_b_bgr, center, 4, (0, 0, 255), -1)
+                            cv2.putText(gray_b_bgr, str(d.tag_id), (center[0] + 5, center[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+                        if apriltag_debug_image is None:
+                            apriltag_debug_image = server.gui.add_image(gray_b_bgr, "AprilTags")
+                        else:
+                            apriltag_debug_image.image = gray_b_bgr
+                        for d in detections:
+                            if d.tag_id in apriltag_frames_by_id:
+                                tag_in_cam = jnp.eye(4)
+                                tag_in_cam = tag_in_cam.at[:3, :3].set(jnp.array(d.pose_R))
+                                tag_in_cam = tag_in_cam.at[:3, 3].set(jnp.array(d.pose_t).flatten())
+                                tag_in_world = jnp.matmul(camera_transform_b.as_matrix(), tag_in_cam)
+                                pos = jnp.array(tag_in_world[:3, 3])
+                                wxyz = jaxlie.SO3.from_matrix(tag_in_world[:3, :3]).wxyz
+                                frame = apriltag_frames_by_id[d.tag_id]
+                                log.debug(f"🏷️ AprilTag {d.tag_id}:{frame.name} - pos: {pos}, wxyz: {wxyz}")
+                                frame.position = np.array(pos)
+                                frame.wxyz = np.array(wxyz)
+                        apriltags_elapsed_time = time.time() - apriltags_start_time
+                        apriltag_duration_ms.value = apriltags_elapsed_time * 1000
+                state.value = "READY" # proceed to ready state once tracking is complete
+                continue
+
+            if state.value == "READY":
                 log.info(f"🔢 Current batch: {batch_index.value}")
                 if batch_index.value >= num_batches:
                     log.info("Completed all batches, looping back to start.")
                     batch_index.value = 0
                     target_index.value = 0
                 current_batch: PixelBatch = batches[batch_index.value]
-                log.debug(f"🖥️ Updating GUI with batch {batch_index.value}")
+                target_index.value = 0
                 target_index.max = len(current_batch.targets) - 1
+                log.debug(f"🖥️ Updating GUI with batch {batch_index.value}")
                 # TODO: are these copy necessary?
                 _design_pointcloud_colors = design_pointcloud_colors.copy()
                 _img = cv2.cvtColor(img_np.copy(), cv2.COLOR_GRAY2RGB)
@@ -803,28 +805,30 @@ def main(config: TatbotConfig):
                 )
                 log.debug(f"🎯 Setting IK target to hover position...")
                 ik_target_l.position = ik_target_positions[0]
-                state_handle.value = "HOVER" # perform hover on next iteration
-            elif state_handle.value == "HOVER": # robot has already performed hover
+                state.value = "HOVER" # perform hover on next iteration
+            elif state.value in ["HOVER", "POKE"]: # robot has already performed hover or poke
+                target_index.value += 1
                 log.info(f"🔢 Current target: {target_index.value}")
                 log.debug(f"🎯 Setting IK target to target position...")
-                ik_target_l.position = ik_target_positions[target_index.value + 1]
-                state_handle.value = "POKE" # perform poke on next iteration
-            elif state_handle.value == "POKE": # robot has already performed poke
-                target_index.value += 1
+                ik_target_l.position = ik_target_positions[target_index.value + 1] # index 0 is hover position
                 if target_index.value >= len(current_batch.targets):
-                    log.debug(f" Completed all targets in batch, moving to next batch...")
+                    log.debug(f"✅ Completed all targets in batch, moving to next batch...")
                     batch_index.value += 1
-                    state_handle.value = "DIP" # perform dip on next iteration
+                    state.value = "TRACK" # perform track on next iteration
                 else:
-                    log.debug(f"🎯 Setting IK target to hover position...")
-                    ik_target_l.position = ik_target_positions[0]
-                    state_handle.value = "POKE" # perform poke on next iteration
-            elif state_handle.value == "DIP": # robot has already performed dip
-                log.debug(f"🎯 Setting IK target to hover position...")
-                # TODO: set ik target to dip position based on inkcaps
-                state_handle.value = "READY" # perform ready on next iteration
+                    state.value = "POKE" # perform poke on next iteration
+            elif state.value == "DIP": # robot has already performed dip
+                # TODO: set ik target to dip position based on inkcaps)
+                state.value = "READY" # perform ready on next iteration
 
-            if state_handle.value in ["MANUAL", "READY", "HOVER", "POKE", "DIP"]:
+            if state.value in ["MANUAL", "READY", "HOVER", "POKE", "DIP"]:
+                if state.value == "MANUAL":
+                    log.debug("🎯 Enabling IK target frames for manual control...")
+                    ik_target_l.visible = True
+                    ik_target_r.visible = True
+                else:
+                    ik_target_l.visible = False
+                    ik_target_r.visible = False
                 log.debug("🔍 Solving IK...")
                 ik_start_time = time.time()
                 log.debug(f"🎯 Left arm IK target - pos: {ik_target_l.position}, wxyz: {ik_target_l.wxyz}")
@@ -848,11 +852,14 @@ def main(config: TatbotConfig):
 
                 log.debug("🤖 Moving robots...")
                 robot_move_start_time = time.time()
-                move_robot(joint_pos_current, goal_time=config.set_all_position_goal_time_fast)
+                if state.value in ["MANUAL", "POKE"]:
+                    log.debug("🏎️💨 robot is moving fast")
+                    move_robot(joint_pos_current, goal_time=config.set_all_position_goal_time_fast)
+                elif state.value in ["HOVER", "DIP"]:
+                    move_robot(joint_pos_current)
                 robot_move_elapsed_time = time.time() - robot_move_start_time
                 move_duration_ms.value = robot_move_elapsed_time * 1000
 
-            log.debug(f"🖼️ Design - pos: {design_tf.position}, wxyz: {design_tf.wxyz}")
             step_elapsed_time = time.time() - step_start_time
             step_duration_ms.value = step_elapsed_time * 1000
 
