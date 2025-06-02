@@ -170,7 +170,7 @@ class TatbotConfig:
     """Configuration for the IK solver."""
     min_fps: float = 1.0
     """Minimum frames per second to maintain. If 0 or negative, no minimum framerate is enforced."""
-    ik_target_pose_l: Pose = Pose(pos=jnp.array([0.243, 0.127, 0.070]), wxyz=jnp.array([0.960, 0.000, 0.279, 0.000]))
+    ik_target_pose_l: Pose = Pose(pos=jnp.array([0.243, 0.127, 0.070]), wxyz=jnp.array([0.835, 0.000, 0.551, 0.000]))
     """Initial pose of the grabbable transform IK target for left robot (relative to root frame)."""
     ik_target_pose_r: Pose = Pose(pos=jnp.array([0.253, -0.105, 0.111]), wxyz=jnp.array([0.821, -0.190, 0.173, 0.505]))
     """Initial pose of the grabbable transform IK target for right robot (relative to root frame)."""
