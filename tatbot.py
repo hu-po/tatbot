@@ -194,13 +194,13 @@ class TatbotConfig:
     """Initial state of the robot."""
     design_pose: Pose = Pose(pos=jnp.array([0.313, 0.074, 0.065]), wxyz=jnp.array([1, 0, 0, 0]))
     """Pose of the design (relative to root frame)."""
-    image_path: str = os.path.expanduser("~/tatbot/assets/designs/flower.png")
+    image_path: str = os.path.expanduser("~/tatbot/assets/designs/filled_circle.png")
     """Local path to the tattoo design PNG image."""
     image_threshold: int = 127
     """Threshold for B/W image. Pixels less than or equal to this value are targets. [0, 255]"""
-    image_width_px: int = 256
+    image_width_px: int = 128
     """Width to resize the input image to before processing (pixels)."""
-    image_height_px: int = 256
+    image_height_px: int = 128
     """Height to resize the input image to before processing (pixels)."""
     image_width_m: float = 0.04
     """Width of the area on the skin where the image will be projected (meters)."""
@@ -399,6 +399,7 @@ def main(config: TatbotConfig):
     img_pil = PIL.Image.open(config.image_path)
     original_width, original_height = img_pil.size
     if original_width > config.image_width_px or original_height > config.image_height_px:
+        log.info(f"🖼️ Resizing from {original_width}x{original_height} to {config.image_width_px}x{config.image_height_px}...")
         img_pil = img_pil.resize((config.image_width_px, config.image_height_px), PIL.Image.LANCZOS)
     img_pil = img_pil.convert("L")
     img_np = np.array(img_pil)
