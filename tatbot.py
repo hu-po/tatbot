@@ -167,7 +167,7 @@ class TatbotConfig:
     """Robot arms are in calibration position: left arm is at workspace (42, 28) and right arm is at workspace (2, 28) (radians)."""
     set_all_position_goal_time_slow: float = 3.0
     """Goal time in seconds when the goal positions should be reached (slow)."""
-    set_all_position_goal_time_fast: float = 0.1
+    set_all_position_goal_time_fast: float = 1.0
     """Goal time in seconds when the goal positions should be reached (fast)."""
     target_links_name: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link")
     """Names of the links to be controlled."""
@@ -928,6 +928,8 @@ def main(config: TatbotConfig):
             realsense_b.pipeline.stop()
         if config.enable_robot:
             log.info("🦾 Shutting down robots...")
+            driver_l.cleanup()
+            driver_r.cleanup()
             driver_l, driver_r = init_robot(clear_error=True)
             move_robot(config.joint_pos_sleep)
             log.info("🧹 Idling robot motors")
