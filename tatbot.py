@@ -682,13 +682,11 @@ def main(config: TatbotConfig):
             detector = apriltag.Detector(config.apriltag_family)
             apriltag_frames_by_id: Dict[int, viser.Frame] = {}
             for _config in config.apriltags:
-                frame = server.scene.add_frame(
+                apriltag_frames_by_id[_config.tag_id] = server.scene.add_frame(
                     name=_config.frame_name,
-                    position=np.array([0.0, 0.0, 0.0]),
-                    wxyz=np.array([1.0, 0.0, 0.0, 0.0]),
                     show_axes=True,
+                    visible=True if config.debug_mode else False,
                 )
-                apriltag_frames_by_id[_config.tag_id] = frame
             apriltag_debug_image: Optional[viser.GuiImageHandle] = None
 
     if config.enable_robot:
@@ -865,7 +863,7 @@ def main(config: TatbotConfig):
                 else:
                     log.debug(f"🎯 Setting IK target to hover position...")
                     ik_target_l.position = ik_target_positions[0]
-                    state_handle.value = "HOVER" # perform hover on next iteration
+                    state_handle.value = "POKE" # perform poke on next iteration
             elif state_handle.value == "DIP": # robot has already performed dip
                 log.debug(f"🎯 Setting IK target to hover position...")
                 # TODO: set ik target to dip position based on inkcaps
