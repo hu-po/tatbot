@@ -192,7 +192,7 @@ class TatbotConfig:
     """
     initial_state: str = "PAUSE"
     """Initial state of the robot."""
-    design_pose: Pose = Pose(pos=jnp.array([0.313, 0.074, 0.065]), wxyz=jnp.array([1.000, 0.000, 0.000, 0.000]))
+    design_pose: Pose = Pose(pos=jnp.array([0.313, 0.074, 0.065]), wxyz=jnp.array([1, 0, 0, 0]))
     """Pose of the design (relative to root frame)."""
     image_path: str = os.path.expanduser("~/tatbot/assets/designs/flower.png")
     """Local path to the tattoo design PNG image."""
@@ -218,8 +218,8 @@ class TatbotConfig:
     """Offset vector for the hover position (meters)."""
     poke_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.0, 0.0, 0.0]))
     """Offset vector for the poke position (meters)."""
-    palette_init_pose: Pose = Pose(pos=jnp.array([0.281, 0.156, 0.032]), wxyz=jnp.array([0.971, 0.006, -0.024, 0.240]))
-    """Pose of the palette (relative to root frame)."""
+    palette_mesh_pose: Pose = Pose(pos=jnp.array([0, 0, 0]), wxyz=jnp.array([0, 0.707, 0.707, 0]))
+    """Pose of the palette mesh (relative to mesh frame)."""
     palette_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/inkpalette-lowpoly/inkpalette-lowpoly.obj")
     """Path to the .obj file for the palette mesh."""
     inkcaps: Tuple[InkCap, ...] = (
@@ -243,12 +243,12 @@ class TatbotConfig:
             color=(0, 0, 255) # blue
         ),
     )
-    skin_init_pose: Pose = Pose(pos=jnp.array([0.303, 0.071, 0.044]), wxyz=jnp.array([0.701, 0.115, -0.698, 0.097]))
-    """Pose of the skin (relative to root frame)."""
+    skin_mesh_pose: Pose = Pose(pos=jnp.array([0, 0, 0]), wxyz=jnp.array([-0.5, 0.5, -0.5, 0.5]))
+    """Pose of the skin mesh (relative to mesh frame)."""
     skin_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/fakeskin-lowpoly/fakeskin-lowpoly.obj")
     """Path to the .obj file for the skin mesh."""
-    workspace_init_pose: Pose = Pose(pos=jnp.array([0.287, 0.049, 0.022]), wxyz=jnp.array([-0.115, 0.000, 0.000, 0.993]))
-    """Pose of the workspace origin (relative to root frame)."""
+    workspace_mesh_pose: Pose = Pose(pos=jnp.array([0, 0, 0]), wxyz=jnp.array([0, 0.707, 0.707, 0]))
+    """Pose of the workspace mesh (relative to mesh frame)."""
     workspace_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/mat-lowpoly/mat-lowpoly.obj")
     """Path to the .obj file for the workspace mat mesh."""
     view_camera_position: Tuple[float, float, float] = (0.5, 0.5, 0.5)
@@ -263,12 +263,12 @@ class TatbotConfig:
     """Configuration for RealSense Camera B (overhead)."""
     apriltag_family: str = "tag16h5"
     """Family of AprilTags to use."""
-    apriltag_size_m: float = 0.0275
+    apriltag_size_m: float = 0.041
     """Size of AprilTags: distance between detection corners (meters)."""
     apriltags: Tuple[AprilTagConfig, ...] = (
-        AprilTagConfig(tag_id=3, frame_name="/apriltag_3"),
-        AprilTagConfig(tag_id=4, frame_name="/apriltag_4"),
-        AprilTagConfig(tag_id=5, frame_name="/apriltag_5"),
+        AprilTagConfig(tag_id=9, frame_name="workspace"),
+        AprilTagConfig(tag_id=10, frame_name="palette"),
+        AprilTagConfig(tag_id=11, frame_name="skin"),
     )
     # CLI overrides
     enable_robot: bool = False
@@ -478,85 +478,40 @@ def main(config: TatbotConfig):
         point_shape=config.point_shape,
     )
 
+    tracked_frames: Dict[str, viser.Frame] = {}
+
     log.info("🔲 Adding workspace...")
-    if config.debug_mode:
-        workspace_tf = server.scene.add_transform_controls(
-            "/workspace",
-            position=config.workspace_init_pose.pos,
-            wxyz=config.workspace_init_pose.wxyz,
-            scale=0.2,
-            opacity=0.2,
-        )
-    else:
-        workspace_tf = server.scene.add_frame(
-            "/workspace",
-            position=config.workspace_init_pose.pos,
-            wxyz=config.workspace_init_pose.wxyz,
-            show_axes=False,
-        )
+    tracked_frames["workspace"] = server.scene.add_frame("/workspace", show_axes=False)
     server.scene.add_mesh_trimesh(
         name="/workspace/mesh",
+        position=config.workspace_mesh_pose.pos,
+        wxyz=config.workspace_mesh_pose.wxyz,
         mesh=trimesh.load(config.workspace_mesh_path),
     )
 
     log.info("🎨 Adding palette...")
-    if config.debug_mode:
-        palette_tf = server.scene.add_transform_controls(
-            "/palette",
-            position=config.palette_init_pose.pos,
-            wxyz=config.palette_init_pose.wxyz,
-            scale=0.2,
-            opacity=0.2,
-        )
-    else:
-        palette_tf = server.scene.add_frame(
-            "/palette",
-            position=config.palette_init_pose.pos,
-            wxyz=config.palette_init_pose.wxyz,
-            show_axes=False,
-        )
+    tracked_frames["palette"] = server.scene.add_frame("/palette", show_axes=False)
     server.scene.add_mesh_trimesh(
         name="/palette/mesh",
+        position=config.palette_mesh_pose.pos,
+        wxyz=config.palette_mesh_pose.wxyz,
         mesh=trimesh.load(config.palette_mesh_path),
     )
-    inkcap_tfs: List[viser.TransformControls] = []
     for i, inkcap in enumerate(config.inkcaps):
         log.info(f"🕳️ Adding inkcap {i}...")
-        if config.debug_mode:
-            inkcap_tf = server.scene.add_transform_controls(
-                f"/palette/inkcap_{i}",
-                position=inkcap.palette_pose.pos,
-                wxyz=inkcap.palette_pose.wxyz,
-                scale=0.2,
-                opacity=0.2,
-            )
-        else:
-            inkcap_tf = server.scene.add_frame(
-                f"/palette/inkcap_{i}",
-                position=inkcap.palette_pose.pos,
-                wxyz=inkcap.palette_pose.wxyz,
-                show_axes=False,
-            )
-        inkcap_tfs.append(inkcap_tf)
-
-    log.info("💪 Adding skin...")
-    if config.debug_mode:
-        skin_tf = server.scene.add_transform_controls(
-            "/skin",
-            position=config.skin_init_pose.pos,
-            wxyz=config.skin_init_pose.wxyz,
-            scale=0.2,
-            opacity=0.2,
-        )
-    else:
-        skin_tf = server.scene.add_frame(
-            "/skin",
-            position=config.skin_init_pose.pos,
-            wxyz=config.skin_init_pose.wxyz,
+        server.scene.add_frame(
+            f"/palette/inkcap_{i}",
+            position=inkcap.palette_pose.pos,
+            wxyz=inkcap.palette_pose.wxyz,
             show_axes=False,
         )
+
+    log.info("💪 Adding skin...")
+    tracked_frames["skin"] = server.scene.add_frame("/skin", show_axes=False)
     server.scene.add_mesh_trimesh(
         name="/skin/mesh",
+        position=config.skin_mesh_pose.pos,
+        wxyz=config.skin_mesh_pose.wxyz,
         mesh=trimesh.load(config.skin_mesh_path),
     )
 
@@ -679,14 +634,13 @@ def main(config: TatbotConfig):
         realsense_b_frustrum.wxyz = camera_pose_b_static[3:]
         if config.enable_apriltag:
             log.info("🏷️ Adding AprilTags...")
-            detector = apriltag.Detector(config.apriltag_family)
+            detector = apriltag.Detector(
+                # TODO: tune the apriltag params
+                families=config.apriltag_family,
+            )
             apriltag_frames_by_id: Dict[int, viser.Frame] = {}
             for _config in config.apriltags:
-                apriltag_frames_by_id[_config.tag_id] = server.scene.add_frame(
-                    name=_config.frame_name,
-                    show_axes=True,
-                    visible=True if config.debug_mode else False,
-                )
+                apriltag_frames_by_id[_config.tag_id] = tracked_frames[_config.frame_name]
             apriltag_debug_image: Optional[viser.GuiImageHandle] = None
 
     if config.enable_robot:
@@ -778,6 +732,7 @@ def main(config: TatbotConfig):
                     gray_b = cv2.cvtColor(rgb_b, cv2.COLOR_RGB2GRAY)
                     detections: List[apriltag.Detection] = detector.detect(
                         gray_b,
+                        # TODO: tune these params
                         estimate_tag_pose=True,
                         camera_params=(realsense_b.intrinsics.fx, realsense_b.intrinsics.fy, realsense_b.intrinsics.ppx, realsense_b.intrinsics.ppy),
                         tag_size=config.apriltag_size_m,
@@ -898,11 +853,6 @@ def main(config: TatbotConfig):
                 move_duration_ms.value = robot_move_elapsed_time * 1000
 
             log.debug(f"🖼️ Design - pos: {design_tf.position}, wxyz: {design_tf.wxyz}")
-            log.debug(f"🔲 Workspace - pos: {workspace_tf.position}, wxyz: {workspace_tf.wxyz}")
-            log.debug(f"🎨 Palette - pos: {palette_tf.position}, wxyz: {palette_tf.wxyz}")
-            for inkcap_tf in inkcap_tfs:
-                log.debug(f"🎨 Inkcap {inkcap_tf.name} - pos: {inkcap_tf.position}, wxyz: {inkcap_tf.wxyz}")
-            log.debug(f"💪 Skin - pos: {skin_tf.position}, wxyz: {skin_tf.wxyz}")
             step_elapsed_time = time.time() - step_start_time
             step_duration_ms.value = step_elapsed_time * 1000
 

@@ -27,9 +27,10 @@ tatbot consists of several computers, cameras, and robotos connected via etherne
 
 - [`pyroki`](https://github.com/chungmin99/pyroki) - inverse kinematics
 - [`viser`](https://github.com/nerfstudio-project/viser) - browser visualizer and GUI
-- [`librealsense`](https://github.com/IntelRealSense/librealsense) - RGBD depth cameras (pointclouds) for skin tracking
+- [`librealsense`](https://github.com/IntelRealSense/librealsense) - RGBD depth cameras (pointclouds) for skin surface reconstruction
 - [`trossen_arm`](https://github.com/TrossenRobotics/trossen_arm) - robot arms
 - [`jax`](https://github.com/jax-ml/jax) - gpu acceleration
+- [`pupil-apriltags`](https://github.com/pupil-labs/apriltags) - tracking objects in the scene
 
 ## Networking
 
@@ -128,7 +129,7 @@ tatbot is defined using a [custom URDF file](https://github.com/hu-po/tatbot-urd
 
 ## AprilTags
 
-Various objects in the scene are tracked using [AprilTags](https://chaitanyantr.github.io/apriltag.html).
+Objects (i.e. ink palette) in the scene are tracked using [AprilTags](https://chaitanyantr.github.io/apriltag.html).
 
 ## Profiling
 
