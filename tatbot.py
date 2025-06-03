@@ -167,10 +167,12 @@ class TatbotConfig:
     """Names of the links to be controlled."""
     ik_config: IKConfig = IKConfig()
     """Configuration for the IK solver."""
-    ik_target_pose_l: Pose = Pose(pos=jnp.array([0.243, 0.127, 0.070]), wxyz=jnp.array([0.835, 0.000, 0.551, 0.000]))
-    """Initial pose of the grabbable transform IK target for left robot (relative to root frame)."""
-    ik_target_pose_r: Pose = Pose(pos=jnp.array([0.253, -0.105, 0.111]), wxyz=jnp.array([0.821, -0.190, 0.173, 0.505]))
-    """Initial pose of the grabbable transform IK target for right robot (relative to root frame)."""
+    ik_target_l_wxyz_offset: Float[Array, "4"] = field(default_factory=lambda: jnp.array([0.5, -0.5, 0.5, 0.5]))
+    """Quaternion offset of IK target for left robot."""
+    ik_target_r_wxyz_offset: Float[Array, "4"] = field(default_factory=lambda: jnp.array([0.5, -0.5, 0.5, 0.5]))
+    """Quaternion offset of IK target for right robot."""
+    tracked_object_wxyz_offset: Float[Array, "4"] = field(default_factory=lambda: jnp.array([0, 1, 0, 0]))
+    """Quaternion offset of a tracked object."""
     transform_control_scale: float = 0.2 #0.06
     """Scale of the transform control frames for visualization."""
     transform_control_opacity: float = 0.2
@@ -253,7 +255,7 @@ class TatbotConfig:
             color=(0, 0, 255) # blue
         ),
     )
-    skin_mesh_pose: Pose = Pose(pos=jnp.array([-0.1113, 0.0304, 0.8664]), wxyz=jnp.array([0.0367, 0.8838, -0.4652, -0.0144]))
+    skin_mesh_pose: Pose = Pose(pos=jnp.array([-0.167, 0.015, 0.855]), wxyz=jnp.array([0.013, 0.885, -0.465, 0.008]))
     """Pose of the skin mesh (relative to mesh frame)."""
     skin_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/skin/skin.obj")
     """Path to the .obj file for the skin mesh."""
@@ -280,6 +282,8 @@ class TatbotConfig:
         AprilTagConfig(tag_id=10, frame_name="palette"),
         AprilTagConfig(tag_id=11, frame_name="skin"),
     )
+    apriltag_decision_margin: float = 20.0
+    """Minimum decision margin for AprilTag detection filtering."""
     # CLI overrides
     enable_robot: bool = False
     """Override for arg.robot."""
@@ -345,12 +349,14 @@ class RealSenseCamera:
 
 
 @jdc.jit
-def transform_targets(
+def transform_ik_targets(
     design_position: Float[Array, "3"],
     design_wxyz: Float[Array, "4"],
     targets: Float[Array, "B 3"],
-    offsets: Float[Array, "B 3"],
+    offsets: Optional[Float[Array, "B 3"]] = None,
 ) -> Float[Array, "B 3"]:
+    if offsets is None:
+        offsets = jnp.zeros_like(targets)
     design_to_root = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(design_wxyz), design_position)
     return jax.vmap(lambda pos, offset: design_to_root @ pos + offset)(targets, offsets)
 
@@ -566,16 +572,12 @@ def main(config: TatbotConfig):
     log.info("🎯 Adding ik targets...")
     ik_target_l = server.scene.add_transform_controls(
         "/ik_target_l",
-        position=config.ik_target_pose_l.pos,
-        wxyz=config.ik_target_pose_l.wxyz,
         scale=config.transform_control_scale,
         opacity=config.transform_control_opacity,
         visible=True if config.debug_mode else False,
     )
     ik_target_r = server.scene.add_transform_controls(
         "/ik_target_r",
-        position=config.ik_target_pose_r.pos,
-        wxyz=config.ik_target_pose_r.wxyz,
         scale=config.transform_control_scale,
         opacity=config.transform_control_opacity,
         visible=True if config.debug_mode else False,
@@ -779,6 +781,9 @@ def main(config: TatbotConfig):
                             tag_size=config.apriltag_size_m,
                         )
                         log.debug(f"🏷️ AprilTags detections: {detections}")
+                        log.debug(f"🏷️ AprilTags detections before filtering: {len(detections)}")
+                        detections = [d for d in detections if d.decision_margin >= config.apriltag_decision_margin]
+                        log.info(f"🏷️ AprilTags detections after filtering: {len(detections)}")
                         gray_b_bgr = cv2.cvtColor(gray_b, cv2.COLOR_GRAY2BGR)
                         for d in detections:
                             corners = np.int32(d.corners)
@@ -806,7 +811,7 @@ def main(config: TatbotConfig):
                         apriltag_duration_ms.value = apriltags_elapsed_time * 1000
                 
                 log.info(f"Adjusting design and work poses based on skin position")
-                _output: Float[Array, "3 3"] = transform_targets(
+                _output: Float[Array, "3 3"] = transform_ik_targets(
                     tracked_frames["skin"].position,
                     tracked_frames["skin"].wxyz,
                     jnp.concatenate([
@@ -814,22 +819,20 @@ def main(config: TatbotConfig):
                         jnp.array([config.ready_ik_target_l_offset_m]),
                         jnp.array([config.ready_ik_target_r_offset_m]),
                     ]),
-                    jnp.stack([
-                        jnp.array([0, 0, 0]),
-                        jnp.array([0, 0, 0]),
-                        jnp.array([0, 0, 0]),
-                    ]),
                 )
                 design_tf.position = _output[0]
+                design_tf.wxyz = (jaxlie.SO3(tracked_frames["skin"].wxyz) @ jaxlie.SO3(config.tracked_object_wxyz_offset)).wxyz
                 ik_target_l.position = _output[1]
+                ik_target_l.wxyz = (jaxlie.SO3(design_tf.wxyz) @ jaxlie.SO3(config.ik_target_l_wxyz_offset)).wxyz
                 ik_target_r.position = _output[2]
+                ik_target_r.wxyz = (jaxlie.SO3(design_tf.wxyz) @ jaxlie.SO3(config.ik_target_r_wxyz_offset)).wxyz
                 log.debug(f"🖼️ Design - pos: {design_tf.position}, wxyz: {design_tf.wxyz}")
                 log.debug(f"🦾🎯 IK Target L - pos: {ik_target_l.position}, wxyz: {ik_target_l.wxyz}")
                 log.debug(f"🦾🎯 IK Target R - pos: {ik_target_r.position}, wxyz: {ik_target_r.wxyz}")
                 log.debug(f"🖼️ Workspace Mesh - pos: {workspace_mesh_tf.position}, wxyz: {workspace_mesh_tf.wxyz}")
                 log.debug(f"🖼️ Palette Mesh - pos: {palette_mesh_tf.position}, wxyz: {palette_mesh_tf.wxyz}")
                 log.debug(f"🖼️ Skin Mesh - pos: {skin_mesh_tf.position}, wxyz: {skin_mesh_tf.wxyz}")
-                state.value = "MANUAL" # proceed to ready state once tracking is complete
+                state.value = "MANUAL"
                 continue
 
             if state.value == "READY":
@@ -860,7 +863,8 @@ def main(config: TatbotConfig):
                 design_pointcloud.colors = _design_pointcloud_colors
                 design_image.image = _img
                 log.debug(f"🧮 Calculating hover and target positions...")
-                batch_ik_positions: Float[Array, "len(current_batch.targets)+1 3"] = transform_targets(
+                _B = 1 + len(current_batch.targets)
+                batch_ik_positions: Float[Array, "_B 3"] = transform_ik_targets(
                     design_tf.position,
                     design_tf.wxyz,
                     jnp.concatenate([
@@ -870,44 +874,52 @@ def main(config: TatbotConfig):
                     jnp.concatenate([
                         jnp.array([config.hover_offset_m]),
                         jnp.array([config.poke_offset_m] * len(current_batch.targets))
-                    ])
+                    ]),
                 )
-                dip_ik_positions: Float[Array, "len(config.inkcaps)*2 3"] = transform_targets(
+                # TODO: use surface normal of skin to determine wxyz offset
+                batch_ik_wxyzs = jnp.tile(config.ik_target_l_wxyz_offset, (_B, 1))
+                _B = len(config.inkcaps) * 2
+                dip_ik_positions: Float[Array, "_B 3"] = transform_ik_targets(
                     tracked_frames["palette"].position,
                     tracked_frames["palette"].wxyz,
                     jnp.array([inkcap.palette_pose.pos for inkcap in config.inkcaps] * 2),
                     jnp.concatenate([
-                        jnp.array([-inkcap.dip_offset_m for _ in config.inkcaps]), # hover over inkcap
+                        jnp.array([-inkcap.dip_offset_m for inkcap in config.inkcaps]), # hover over inkcap
                         jnp.array([inkcap.dip_offset_m for inkcap in config.inkcaps]), # dip into inkcap
                     ]),
                 )
+                inkcap_wxyz = (jaxlie.SO3(tracked_frames["palette"].wxyz) @ jaxlie.SO3(config.ik_target_r_wxyz_offset)).wxyz
+                dip_ik_wxyzs = jnp.tile(inkcap_wxyz, (_B, 1))
                 log.debug(f"🎯 Setting IK target to dip hover position...")
                 # TODO: pick inkcap based on design
                 inkcap_index = int(jax.random.randint(rng, (), 0, len(config.inkcaps)))
                 ik_target_l.position = dip_ik_positions[inkcap_index]
+                ik_target_l.wxyz = dip_ik_wxyzs[inkcap_index]
                 needle_has_ink = False
                 state.value = "DIP_HOVER"
             elif state.value == "DIP_HOVER":
                 if not needle_has_ink:
                     log.debug(f"🎯 Setting IK target to dip position...")
                     ik_target_l.position = dip_ik_positions[inkcap_index + len(config.inkcaps)]
+                    ik_target_l.wxyz = dip_ik_wxyzs[inkcap_index + len(config.inkcaps)]
                     state.value = "DIP"
                 else:
                     log.debug(f"🎯 Setting IK target to hover position...")
                     ik_target_l.position = batch_ik_positions[0]
-                    # TODO: ik_target_l.wxyz
+                    ik_target_l.wxyz = batch_ik_wxyzs[0]
                     state.value = "HOVER"
             elif state.value == "DIP":
                 log.debug(f"🎯 Setting IK target to dip hover position...")
                 ik_target_l.position = dip_ik_positions[inkcap_index]
+                ik_target_l.wxyz = dip_ik_wxyzs[inkcap_index]
                 needle_has_ink = True
                 state.value = "DIP_HOVER"
             elif state.value in ["HOVER", "POKE"]: # robot has already performed hover or poke
                 target_index.value += 1
                 log.info(f"🔢 Current target: {target_index.value}")
                 log.debug(f"🎯 Setting IK target to target position...")
-                ik_target_l.position = batch_ik_positions[target_index.value + 1] # index 0 is hover position
-                # TODO: ik_target_l.wxyz
+                ik_target_l.position = batch_ik_positions[target_index.value + 1]
+                ik_target_l.wxyz = batch_ik_wxyzs[target_index.value + 1]
                 if target_index.value >= len(current_batch.targets):
                     log.debug(f"✅ Completed all targets in batch, moving to next batch...")
                     batch_index.value += 1
