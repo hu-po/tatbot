@@ -159,11 +159,6 @@ class TatbotConfig:
         right=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
     )
     """Robot is folded up, motors can be released (radians)."""
-    joint_pos_ready: JointPos = JointPos(
-        left=jnp.array([0.431, 1.120, 0.270, 0.241, 0.360, 0.241, 0.022, 0.044]),
-        right=jnp.array([-0.147, 1.107, 0.526, -0.416, -0.963, -1.062, 0.022, 0.022])
-    )
-    """Robot is ready to begin the session (radians)."""
     set_all_position_goal_time_slow: float = 3.0
     """Goal time in seconds when the goal positions should be reached (slow)."""
     set_all_position_goal_time_fast: float = 0.5
@@ -176,10 +171,16 @@ class TatbotConfig:
     """Initial pose of the grabbable transform IK target for left robot (relative to root frame)."""
     ik_target_pose_r: Pose = Pose(pos=jnp.array([0.253, -0.105, 0.111]), wxyz=jnp.array([0.821, -0.190, 0.173, 0.505]))
     """Initial pose of the grabbable transform IK target for right robot (relative to root frame)."""
-    ik_target_frame_scale: float = 0.06
-    """Scale of the IK target frames."""
-    ik_target_frame_opacity: float = 0.2
-    """Opacity of the IK target frames."""
+    transform_control_scale: float = 0.2 #0.06
+    """Scale of the transform control frames for visualization."""
+    transform_control_opacity: float = 0.2
+    """Opacity of the transform control frames for visualization."""
+    tracked_object_axes_length: float = 0.04
+    """Length of the axes for the tracked object frames."""
+    tracked_object_axes_radius: float = 0.002
+    """Radius of the axes for the tracked object frames."""
+    tracked_object_origin_radius: float = 0.005
+    """Radius of the origin for the tracked object frames."""
     states: List[str] = field(default_factory=lambda: ["PAUSE", "PLAY", "STOP", "READY", "TRACK", "HOVER", "POKE", "DIP_HOVER", "DIP", "MANUAL"])
     """Possible states of the robot.
       > PAUSE: Pause the robot session, robot will freeze, cameras will still update.
@@ -193,8 +194,14 @@ class TatbotConfig:
       > DIP: Robot is dipping the pen in the inkcap.
       > MANUAL: Manual control mode, robot follows ik targets.
     """
-    initial_state: str = "PAUSE"
+    initial_state: str = "TRACK"
     """Initial state of the robot."""
+    ready_design_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([-0.05, -0.05, 0.0]))
+    """Offset vector for the ready skin position (meters)."""
+    ready_ik_target_l_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([-0.05, -0.05, -0.05]))
+    """Offset vector for the ready IK target L (meters)."""
+    ready_ik_target_r_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.15, -0.2, -0.05]))
+    """Offset vector for the ready IK target R (meters)."""
     design_pose: Pose = Pose(pos=jnp.array([0.313, 0.074, 0.065]), wxyz=jnp.array([1, 0, 0, 0]))
     """Pose of the design (relative to root frame)."""
     image_path: str = os.path.expanduser("~/tatbot/assets/designs/filled_circle.png")
@@ -221,9 +228,9 @@ class TatbotConfig:
     """Offset vector for the hover position (meters)."""
     poke_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.0, 0.0, 0.0]))
     """Offset vector for the poke position (meters)."""
-    palette_mesh_pose: Pose = Pose(pos=jnp.array([0, 0, 0]), wxyz=jnp.array([0, 0.707, 0.707, 0]))
+    palette_mesh_pose: Pose = Pose(pos=jnp.array([-0.0020, 0.0563, 0.7155]), wxyz=jnp.array([0.0000, -0.6870, 0.7260, 0.0000]))
     """Pose of the palette mesh (relative to mesh frame)."""
-    palette_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/inkpalette-lowpoly/inkpalette-lowpoly.obj")
+    palette_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/palette/palette.obj")
     """Path to the .obj file for the palette mesh."""
     inkcaps: Tuple[InkCap, ...] = (
         InkCap( # small inkcap at idx 0 (row 0 column 0)
@@ -246,14 +253,14 @@ class TatbotConfig:
             color=(0, 0, 255) # blue
         ),
     )
-    skin_mesh_pose: Pose = Pose(pos=jnp.array([0, 0, 0]), wxyz=jnp.array([-0.5, 0.5, -0.5, 0.5]))
+    skin_mesh_pose: Pose = Pose(pos=jnp.array([-0.1113, 0.0304, 0.8664]), wxyz=jnp.array([0.0367, 0.8838, -0.4652, -0.0144]))
     """Pose of the skin mesh (relative to mesh frame)."""
-    skin_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/fakeskin-lowpoly/fakeskin-lowpoly.obj")
+    skin_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/skin/skin.obj")
     """Path to the .obj file for the skin mesh."""
-    workspace_mesh_pose: Pose = Pose(pos=jnp.array([0, 0, 0]), wxyz=jnp.array([0, 0.707, 0.707, 0]))
+    workspace_mesh_pose: Pose = Pose(pos=jnp.array([0.2750, 0.0657, 0.7868]), wxyz=jnp.array([-0.0066, -0.4110, 0.9110, -0.0030]))
     """Pose of the workspace mesh (relative to mesh frame)."""
-    workspace_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/mat-lowpoly/mat-lowpoly.obj")
-    """Path to the .obj file for the workspace mat mesh."""
+    workspace_mesh_path: str = os.path.expanduser("~/tatbot/assets/3d/workspace/workspace.obj")
+    """Path to the .obj file for the workspace mesh."""
     view_camera_position: Tuple[float, float, float] = (0.5, 0.5, 0.5)
     """Initial camera position in the Viser scene."""
     view_camera_look_at: Tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -467,8 +474,8 @@ def main(config: TatbotConfig):
         name="/design",
         position=config.design_pose.pos,
         wxyz=config.design_pose.wxyz,
-        scale=config.ik_target_frame_scale,
-        opacity=config.ik_target_frame_opacity,
+        scale=config.transform_control_scale,
+        opacity=config.transform_control_opacity,
         visible=True if config.debug_mode else False,
     )
     design_pointcloud = server.scene.add_point_cloud(
@@ -482,20 +489,46 @@ def main(config: TatbotConfig):
     tracked_frames: Dict[str, viser.Frame] = {}
 
     log.info("🔲 Adding workspace...")
-    tracked_frames["workspace"] = server.scene.add_frame("/workspace", show_axes=False)
-    server.scene.add_mesh_trimesh(
-        name="/workspace/mesh",
+    tracked_frames["workspace"] = server.scene.add_frame(
+        "/workspace",
+        axes_length=config.tracked_object_axes_length,
+        axes_radius=config.tracked_object_axes_radius,
+        origin_radius=config.tracked_object_origin_radius,
+    )
+    workspace_mesh_tf = server.scene.add_transform_controls(
+        "/workspace/mesh",
         position=config.workspace_mesh_pose.pos,
         wxyz=config.workspace_mesh_pose.wxyz,
+        scale=config.transform_control_scale,
+        opacity=config.transform_control_opacity,
+        visible=True if config.debug_mode else False,
+    )
+    server.scene.add_mesh_trimesh(
+        name="/workspace/mesh/obj",
+        # position=config.workspace_mesh_pose.pos,
+        # wxyz=config.workspace_mesh_pose.wxyz,
         mesh=trimesh.load(config.workspace_mesh_path),
     )
 
     log.info("🎨 Adding palette...")
-    tracked_frames["palette"] = server.scene.add_frame("/palette", show_axes=False)
-    server.scene.add_mesh_trimesh(
-        name="/palette/mesh",
+    tracked_frames["palette"] = server.scene.add_frame(
+        "/palette",
+        axes_length=config.tracked_object_axes_length,
+        axes_radius=config.tracked_object_axes_radius,
+        origin_radius=config.tracked_object_origin_radius,
+    )
+    palette_mesh_tf = server.scene.add_transform_controls(
+        "/palette/mesh",
         position=config.palette_mesh_pose.pos,
         wxyz=config.palette_mesh_pose.wxyz,
+        scale=config.transform_control_scale,
+        opacity=config.transform_control_opacity,
+        visible=True if config.debug_mode else False,
+    )
+    server.scene.add_mesh_trimesh(
+        name="/palette/mesh/obj",
+        # position=config.palette_mesh_pose.pos,
+        # wxyz=config.palette_mesh_pose.wxyz,
         mesh=trimesh.load(config.palette_mesh_path),
     )
     for i, inkcap in enumerate(config.inkcaps):
@@ -509,11 +542,24 @@ def main(config: TatbotConfig):
     needle_has_ink: bool = False
 
     log.info("💪 Adding skin...")
-    tracked_frames["skin"] = server.scene.add_frame("/skin", show_axes=False)
-    server.scene.add_mesh_trimesh(
-        name="/skin/mesh",
+    tracked_frames["skin"] = server.scene.add_frame(
+        "/skin",
+        axes_length=config.tracked_object_axes_length,
+        axes_radius=config.tracked_object_axes_radius,
+        origin_radius=config.tracked_object_origin_radius,
+    )
+    skin_mesh_tf = server.scene.add_transform_controls(
+        "/skin/mesh",
         position=config.skin_mesh_pose.pos,
         wxyz=config.skin_mesh_pose.wxyz,
+        scale=config.transform_control_scale,
+        opacity=config.transform_control_opacity,
+        visible=True if config.debug_mode else False,
+    )
+    server.scene.add_mesh_trimesh(
+        name="/skin/mesh/obj",
+        # position=config.skin_mesh_pose.pos,
+        # wxyz=config.skin_mesh_pose.wxyz,
         mesh=trimesh.load(config.skin_mesh_path),
     )
 
@@ -522,16 +568,16 @@ def main(config: TatbotConfig):
         "/ik_target_l",
         position=config.ik_target_pose_l.pos,
         wxyz=config.ik_target_pose_l.wxyz,
-        scale=config.ik_target_frame_scale,
-        opacity=config.ik_target_frame_opacity,
+        scale=config.transform_control_scale,
+        opacity=config.transform_control_opacity,
         visible=True if config.debug_mode else False,
     )
     ik_target_r = server.scene.add_transform_controls(
         "/ik_target_r",
         position=config.ik_target_pose_r.pos,
         wxyz=config.ik_target_pose_r.wxyz,
-        scale=config.ik_target_frame_scale,
-        opacity=config.ik_target_frame_opacity,
+        scale=config.transform_control_scale,
+        opacity=config.transform_control_opacity,
         visible=True if config.debug_mode else False,
     )
 
@@ -627,7 +673,7 @@ def main(config: TatbotConfig):
             point_size=config.realsense_b.point_size,
         )
         # realsense_b is static
-        _joint_config_for_camera_b = np.concatenate([config.joint_pos_ready.left, config.joint_pos_ready.right])
+        _joint_config_for_camera_b = np.concatenate([config.joint_pos_sleep.left, config.joint_pos_sleep.right])
         _all_link_poses_for_camera_b = robot.forward_kinematics(_joint_config_for_camera_b)
         _link_index_camera_b = robot.links.names.index(config.realsense_b.link_name)
         camera_pose_b_static = _all_link_poses_for_camera_b[_link_index_camera_b]
@@ -688,17 +734,8 @@ def main(config: TatbotConfig):
     try:
         log.info("🤖 Moving robots to SLEEP pose...")
         move_robot(config.joint_pos_sleep)
-        state.value = "PAUSE"
-        if not config.debug_mode:
-            log.info("🤖 Moving robots to READY pose...")
-            move_robot(config.joint_pos_ready)
-            joint_pos_current = config.joint_pos_ready
-            state.value = "PLAY"
-
         while True:
             step_start_time = time.time()
-            log.debug(f"State: {state.value}")
-            
             if state.value in ["PAUSE", "STOP"]:
                 continue
             elif state.value == "PLAY":
@@ -706,7 +743,6 @@ def main(config: TatbotConfig):
 
             if state.value == "TRACK":
                 log.info("🎥🗺️ Tracking objects in scene...")
-                log.debug(f"🖼️ Design - pos: {design_tf.position}, wxyz: {design_tf.wxyz}")
                 if config.enable_realsense:
                     log.debug("📷 Updating Realsense pointclouds...")
                     realsense_start_time = time.time()
@@ -768,7 +804,32 @@ def main(config: TatbotConfig):
                                 frame.wxyz = np.array(wxyz)
                         apriltags_elapsed_time = time.time() - apriltags_start_time
                         apriltag_duration_ms.value = apriltags_elapsed_time * 1000
-                state.value = "READY" # proceed to ready state once tracking is complete
+                
+                log.info(f"Adjusting design and work poses based on skin position")
+                _output: Float[Array, "3 3"] = transform_targets(
+                    tracked_frames["skin"].position,
+                    tracked_frames["skin"].wxyz,
+                    jnp.concatenate([
+                        jnp.array([config.ready_design_offset_m]),
+                        jnp.array([config.ready_ik_target_l_offset_m]),
+                        jnp.array([config.ready_ik_target_r_offset_m]),
+                    ]),
+                    jnp.stack([
+                        jnp.array([0, 0, 0]),
+                        jnp.array([0, 0, 0]),
+                        jnp.array([0, 0, 0]),
+                    ]),
+                )
+                design_tf.position = _output[0]
+                ik_target_l.position = _output[1]
+                ik_target_r.position = _output[2]
+                log.debug(f"🖼️ Design - pos: {design_tf.position}, wxyz: {design_tf.wxyz}")
+                log.debug(f"🦾🎯 IK Target L - pos: {ik_target_l.position}, wxyz: {ik_target_l.wxyz}")
+                log.debug(f"🦾🎯 IK Target R - pos: {ik_target_r.position}, wxyz: {ik_target_r.wxyz}")
+                log.debug(f"🖼️ Workspace Mesh - pos: {workspace_mesh_tf.position}, wxyz: {workspace_mesh_tf.wxyz}")
+                log.debug(f"🖼️ Palette Mesh - pos: {palette_mesh_tf.position}, wxyz: {palette_mesh_tf.wxyz}")
+                log.debug(f"🖼️ Skin Mesh - pos: {skin_mesh_tf.position}, wxyz: {skin_mesh_tf.wxyz}")
+                state.value = "MANUAL" # proceed to ready state once tracking is complete
                 continue
 
             if state.value == "READY":
@@ -799,7 +860,7 @@ def main(config: TatbotConfig):
                 design_pointcloud.colors = _design_pointcloud_colors
                 design_image.image = _img
                 log.debug(f"🧮 Calculating hover and target positions...")
-                batch_ik_positions = transform_targets(
+                batch_ik_positions: Float[Array, "len(current_batch.targets)+1 3"] = transform_targets(
                     design_tf.position,
                     design_tf.wxyz,
                     jnp.concatenate([
@@ -811,7 +872,7 @@ def main(config: TatbotConfig):
                         jnp.array([config.poke_offset_m] * len(current_batch.targets))
                     ])
                 )
-                dip_ik_positions = transform_targets(
+                dip_ik_positions: Float[Array, "len(config.inkcaps)*2 3"] = transform_targets(
                     tracked_frames["palette"].position,
                     tracked_frames["palette"].wxyz,
                     jnp.array([inkcap.palette_pose.pos for inkcap in config.inkcaps] * 2),
@@ -864,8 +925,8 @@ def main(config: TatbotConfig):
                     ik_target_r.visible = False
                 log.debug("🔍 Solving IK...")
                 ik_start_time = time.time()
-                log.debug(f"🎯 Left arm IK target - pos: {ik_target_l.position}, wxyz: {ik_target_l.wxyz}")
-                log.debug(f"🎯 Right arm IK target - pos: {ik_target_r.position}, wxyz: {ik_target_r.wxyz}")
+                log.debug(f"🦾🎯 Left arm IK target - pos: {ik_target_l.position}, wxyz: {ik_target_l.wxyz}")
+                log.debug(f"🦾🎯 Right arm IK target - pos: {ik_target_r.position}, wxyz: {ik_target_r.wxyz}")
                 target_link_indices = jnp.array([
                     robot.links.names.index(config.target_links_name[0]),
                     robot.links.names.index(config.target_links_name[1])
