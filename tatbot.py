@@ -105,8 +105,10 @@ class InkCap:
     """Pose of the inkcap (relative to palette frame)."""
     diameter_m: float = 0.008
     """Diameter of the inkcap (meters)."""
-    max_dip_depth_m: float = 0.01
-    """Maximum depth of the inkcap when dipping (meters)."""
+    depth_m: float = 0.01
+    """Depth of the inkcap (meters)."""
+    dip_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.004, 0.0, 0.0]))
+    """Offset of the inkcap when dipping (meters)."""
     color: Tuple[int, int, int] = (0, 0, 0) # black
     """RGB color of the ink in the inkcap."""
 
@@ -138,6 +140,8 @@ class AprilTagConfig:
 
 @dataclass
 class TatbotConfig:
+    seed: int = 42
+    """Seed for random behavior."""
     urdf_path: str = os.path.expanduser("~/tatbot-urdf/tatbot.urdf")
     """Local path to the URDF file for the robot (https://github.com/hu-po/tatbot-urdf)."""
     arm_model: trossen_arm.Model = trossen_arm.Model.wxai_v0
@@ -168,8 +172,6 @@ class TatbotConfig:
     """Names of the links to be controlled."""
     ik_config: IKConfig = IKConfig()
     """Configuration for the IK solver."""
-    min_fps: float = 1.0
-    """Minimum frames per second to maintain. If 0 or negative, no minimum framerate is enforced."""
     ik_target_pose_l: Pose = Pose(pos=jnp.array([0.243, 0.127, 0.070]), wxyz=jnp.array([0.835, 0.000, 0.551, 0.000]))
     """Initial pose of the grabbable transform IK target for left robot (relative to root frame)."""
     ik_target_pose_r: Pose = Pose(pos=jnp.array([0.253, -0.105, 0.111]), wxyz=jnp.array([0.821, -0.190, 0.173, 0.505]))
@@ -178,7 +180,7 @@ class TatbotConfig:
     """Scale of the IK target frames."""
     ik_target_frame_opacity: float = 0.2
     """Opacity of the IK target frames."""
-    states: List[str] = field(default_factory=lambda: ["PAUSE", "PLAY", "STOP", "READY", "TRACK", "HOVER", "POKE", "DIP", "MANUAL"])
+    states: List[str] = field(default_factory=lambda: ["PAUSE", "PLAY", "STOP", "READY", "TRACK", "HOVER", "POKE", "DIP_HOVER", "DIP", "MANUAL"])
     """Possible states of the robot.
       > PAUSE: Pause the robot session, robot will freeze, cameras will still update.
       > PLAY: Resume the robot session.
@@ -187,6 +189,7 @@ class TatbotConfig:
       > TRACK: Update trackable object poses in scene.
       > HOVER: Robot is hovering over the batch target center.
       > POKE: Robot is poking the pixel target.
+      > DIP_HOVER: Robot is hovering over the inkcap, ready to dip.
       > DIP: Robot is dipping the pen in the inkcap.
       > MANUAL: Manual control mode, robot follows ik targets.
     """
@@ -234,7 +237,7 @@ class TatbotConfig:
         InkCap(  # large inkcap at idx 2 (row 0 column 2)
             palette_pose=Pose(pos=jnp.array([-0.020, -0.005, 0.000])),
             diameter_m=0.014,
-            max_dip_depth_m=0.014,
+            depth_m=0.014,
             color=(0, 255, 0) # green
         ),
         InkCap(  # medium inkcap at idx 5 (row 1 column 0)
@@ -386,6 +389,9 @@ def main(config: TatbotConfig):
         log.info("🐛 Debug mode enabled.")
         log.setLevel(logging.DEBUG)
 
+    log.info(f"🌱 Setting random seed to {config.seed}...")
+    rng = jax.random.PRNGKey(config.seed)
+
     log.info("🚀 Starting viser server...")
     server: viser.ViserServer = viser.ViserServer()
     server.scene.set_environment_map(hdri=config.env_map_hdri, background=True)
@@ -453,6 +459,8 @@ def main(config: TatbotConfig):
 
     num_batches: int = len(batches)
     log.info(f"🔢 Design has {num_targets} targets in {num_batches} batches.")
+    batch_ik_positions: Optional[Float[Array, "B 3"]] = None
+    dip_ik_positions: Optional[Float[Array, "B 3"]] = None
 
     log.info("🖼️ Adding design...")
     design_tf = server.scene.add_transform_controls(
@@ -498,6 +506,7 @@ def main(config: TatbotConfig):
             wxyz=inkcap.palette_pose.wxyz,
             show_axes=False,
         )
+    needle_has_ink: bool = False
 
     log.info("💪 Adding skin...")
     tracked_frames["skin"] = server.scene.add_frame("/skin", show_axes=False)
@@ -509,7 +518,6 @@ def main(config: TatbotConfig):
     )
 
     log.info("🎯 Adding ik targets...")
-    ik_target_positions: Optional[Float[Array, "B 3"]] = None
     ik_target_l = server.scene.add_transform_controls(
         "/ik_target_l",
         position=config.ik_target_pose_l.pos,
@@ -778,14 +786,20 @@ def main(config: TatbotConfig):
                 _img = cv2.cvtColor(img_np.copy(), cv2.COLOR_GRAY2RGB)
                 center_x_viz = int((current_batch.center_pose.pos[0] / pixel_to_meter_x) + img_width_px/2)
                 center_y_viz = int((current_batch.center_pose.pos[1] / pixel_to_meter_y) + img_height_px/2)
-                cv2.ellipse(_img, (center_x_viz, center_y_viz), (batch_radius_px_x, batch_radius_px_y), 0, 0, 360, (0, 255, 0), 1)
+                cv2.rectangle(
+                    _img,
+                    (center_x_viz - batch_radius_px_x, center_y_viz - batch_radius_px_y),
+                    (center_x_viz + batch_radius_px_x, center_y_viz + batch_radius_px_y),
+                    (0, 255, 0),
+                    1
+                )
                 for target in current_batch.targets:
                     cv2.circle(_img, (target.pixel_index[0], target.pixel_index[1]), 1, (255, 0, 0), -1)
                     _design_pointcloud_colors[target.point_index] = np.array((255, 0, 0), dtype=np.uint8)
                 design_pointcloud.colors = _design_pointcloud_colors
                 design_image.image = _img
                 log.debug(f"🧮 Calculating hover and target positions...")
-                ik_target_positions = transform_targets(
+                batch_ik_positions = transform_targets(
                     design_tf.position,
                     design_tf.wxyz,
                     jnp.concatenate([
@@ -797,15 +811,41 @@ def main(config: TatbotConfig):
                         jnp.array([config.poke_offset_m] * len(current_batch.targets))
                     ])
                 )
-                log.debug(f"🎯 Setting IK target to hover position...")
-                ik_target_l.position = ik_target_positions[0]
-                # TODO: ik_target_l.wxyz
-                state.value = "HOVER" # perform hover on next iteration
+                dip_ik_positions = transform_targets(
+                    tracked_frames["palette"].position,
+                    tracked_frames["palette"].wxyz,
+                    jnp.array([inkcap.palette_pose.pos for inkcap in config.inkcaps] * 2),
+                    jnp.concatenate([
+                        jnp.array([-inkcap.dip_offset_m for _ in config.inkcaps]), # hover over inkcap
+                        jnp.array([inkcap.dip_offset_m for inkcap in config.inkcaps]), # dip into inkcap
+                    ]),
+                )
+                log.debug(f"🎯 Setting IK target to dip hover position...")
+                # TODO: pick inkcap based on design
+                inkcap_index = int(jax.random.randint(rng, (), 0, len(config.inkcaps)))
+                ik_target_l.position = dip_ik_positions[inkcap_index]
+                needle_has_ink = False
+                state.value = "DIP_HOVER"
+            elif state.value == "DIP_HOVER":
+                if not needle_has_ink:
+                    log.debug(f"🎯 Setting IK target to dip position...")
+                    ik_target_l.position = dip_ik_positions[inkcap_index + len(config.inkcaps)]
+                    state.value = "DIP"
+                else:
+                    log.debug(f"🎯 Setting IK target to hover position...")
+                    ik_target_l.position = batch_ik_positions[0]
+                    # TODO: ik_target_l.wxyz
+                    state.value = "HOVER"
+            elif state.value == "DIP":
+                log.debug(f"🎯 Setting IK target to dip hover position...")
+                ik_target_l.position = dip_ik_positions[inkcap_index]
+                needle_has_ink = True
+                state.value = "DIP_HOVER"
             elif state.value in ["HOVER", "POKE"]: # robot has already performed hover or poke
                 target_index.value += 1
                 log.info(f"🔢 Current target: {target_index.value}")
                 log.debug(f"🎯 Setting IK target to target position...")
-                ik_target_l.position = ik_target_positions[target_index.value + 1] # index 0 is hover position
+                ik_target_l.position = batch_ik_positions[target_index.value + 1] # index 0 is hover position
                 # TODO: ik_target_l.wxyz
                 if target_index.value >= len(current_batch.targets):
                     log.debug(f"✅ Completed all targets in batch, moving to next batch...")
@@ -813,9 +853,6 @@ def main(config: TatbotConfig):
                     state.value = "TRACK" # perform track on next iteration
                 else:
                     state.value = "POKE" # perform poke on next iteration
-            elif state.value == "DIP": # robot has already performed dip
-                # TODO: set ik target to dip position based on inkcaps)
-                state.value = "READY" # perform ready on next iteration
 
             if state.value in ["MANUAL", "READY", "HOVER", "POKE", "DIP"]:
                 if state.value == "MANUAL":

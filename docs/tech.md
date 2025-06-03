@@ -2,6 +2,58 @@
 
 technical description of tatbot
 
+## Setup
+
+keys, tokens, passwords are stored in the `.env` file.
+
+```bash
+source .env
+```
+
+python dependencies are managed with environments using [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+
+```bash
+# Clean old uv environment
+deactivate && \
+rm -rf .venv && \
+rm uv.lock
+# Setup new uv environment
+uv venv && \
+source .venv/bin/activate && \
+uv pip install -r pyproject.toml
+```
+
+## States
+
+tatbot operates using a state machine
+
+```mermaid
+stateDiagram-v2
+    direction LR
+
+    %% Define all states
+    state PAUSE
+    state PLAY
+    state STOP
+    state READY
+    state TRACK
+    state HOVER
+    state POKE
+    state DIP
+    state MANUAL
+
+    %% Transitions driven by the script logic
+    PAUSE --> PLAY
+    PLAY  --> TRACK
+    TRACK --> READY
+    READY --> DIP
+    DIP   --> HOVER
+    HOVER --> POKE
+    POKE  --> POKE
+    POKE  --> TRACK
+    STOP  --> PAUSE
+```
+
 ## Devices
 
 tatbot consists of several computers, cameras, and robotos connected via ethernet:
@@ -26,11 +78,11 @@ tatbot consists of several computers, cameras, and robotos connected via etherne
 ## Dependencies
 
 - [`pyroki`](https://github.com/chungmin99/pyroki) - inverse kinematics
-- [`viser`](https://github.com/nerfstudio-project/viser) - browser visualizer and GUI
-- [`librealsense`](https://github.com/IntelRealSense/librealsense) - RGBD depth cameras (pointclouds) for skin surface reconstruction
+- [`viser`](https://github.com/nerfstudio-project/viser) - GUI
+- [`librealsense`](https://github.com/IntelRealSense/librealsense) - depth cameras
 - [`trossen_arm`](https://github.com/TrossenRobotics/trossen_arm) - robot arms
 - [`jax`](https://github.com/jax-ml/jax) - gpu acceleration
-- [`pupil-apriltags`](https://github.com/pupil-labs/apriltags) - tracking objects in the scene
+- [`pupil-apriltags`](https://github.com/pupil-labs/apriltags) - object tracking
 
 ## Networking
 
@@ -65,26 +117,7 @@ hardcoded ip addresses:
 - `192.168.1.98` - `rpi1`
 - `192.168.1.99` - `rpi2`
 
-## Setup
 
-keys, tokens, passwords are stored in the `.env` file.
-
-```bash
-source .env
-```
-
-python dependencies are managed with environments using [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
-
-```bash
-# Clean old uv environment
-deactivate && \
-rm -rf .venv && \
-rm uv.lock
-# Setup new uv environment
-uv venv && \
-source .venv/bin/activate && \
-uv pip install -r pyproject.toml
-```
 
 ## Trossen Robot Arms
 
