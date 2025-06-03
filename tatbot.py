@@ -511,8 +511,6 @@ def main(config: TatbotConfig):
     )
     server.scene.add_mesh_trimesh(
         name="/workspace/mesh/obj",
-        # position=config.workspace_mesh_pose.pos,
-        # wxyz=config.workspace_mesh_pose.wxyz,
         mesh=trimesh.load(config.workspace_mesh_path),
     )
 
@@ -533,8 +531,6 @@ def main(config: TatbotConfig):
     )
     server.scene.add_mesh_trimesh(
         name="/palette/mesh/obj",
-        # position=config.palette_mesh_pose.pos,
-        # wxyz=config.palette_mesh_pose.wxyz,
         mesh=trimesh.load(config.palette_mesh_path),
     )
     for i, inkcap in enumerate(config.inkcaps):
@@ -564,8 +560,6 @@ def main(config: TatbotConfig):
     )
     server.scene.add_mesh_trimesh(
         name="/skin/mesh/obj",
-        # position=config.skin_mesh_pose.pos,
-        # wxyz=config.skin_mesh_pose.wxyz,
         mesh=trimesh.load(config.skin_mesh_path),
     )
 
@@ -697,20 +691,20 @@ def main(config: TatbotConfig):
 
         def init_robot(clear_error: bool = False) -> Tuple[trossen_arm.TrossenArmDriver, trossen_arm.TrossenArmDriver]:
             driver_l = trossen_arm.TrossenArmDriver()
-            driver_r = trossen_arm.TrossenArmDriver()
             driver_l.configure(
                 config.arm_model,
                 config.end_effector_model_l,
                 config.ip_address_l,
                 clear_error,
             )
+            driver_l.set_all_modes(trossen_arm.Mode.position)
+            driver_r = trossen_arm.TrossenArmDriver()
             driver_r.configure(
                 config.arm_model,
                 config.end_effector_model_r,
                 config.ip_address_r,
                 clear_error,
             )
-            driver_l.set_all_modes(trossen_arm.Mode.position)
             driver_r.set_all_modes(trossen_arm.Mode.position)
             return driver_l, driver_r
         
@@ -719,19 +713,21 @@ def main(config: TatbotConfig):
     def move_robot(joint_pos: JointPos, goal_time: float = config.set_all_position_goal_time_slow):
         log.debug(f"🤖 Moving robot to: {joint_pos}")
         urdf_vis.update_cfg(np.concatenate([joint_pos.left, joint_pos.right]))
-        if config.enable_robot:
+        if not config.enable_robot:
+            time.sleep(goal_time)
+            return
+        if driver_l is not None:
             driver_l.set_all_positions(
                 trossen_arm.VectorDouble(joint_pos.left[:7].tolist()),
                 goal_time=goal_time,
                 blocking=True,
             )
+        if driver_r is not None:
             driver_r.set_all_positions(
                 trossen_arm.VectorDouble(joint_pos.right[:7].tolist()),
                 goal_time=goal_time,
                 blocking=True,
             )
-        else:
-            time.sleep(goal_time)
 
     try:
         log.info("🤖 Moving robots to SLEEP pose...")
@@ -832,7 +828,7 @@ def main(config: TatbotConfig):
                 log.debug(f"🖼️ Workspace Mesh - pos: {workspace_mesh_tf.position}, wxyz: {workspace_mesh_tf.wxyz}")
                 log.debug(f"🖼️ Palette Mesh - pos: {palette_mesh_tf.position}, wxyz: {palette_mesh_tf.wxyz}")
                 log.debug(f"🖼️ Skin Mesh - pos: {skin_mesh_tf.position}, wxyz: {skin_mesh_tf.wxyz}")
-                state.value = "MANUAL"
+                state.value = "TRACK"
 
             if state.value == "READY":
                 log.info(f"🔢 Current batch: {batch_index.value}")
@@ -969,15 +965,15 @@ def main(config: TatbotConfig):
             step_duration_ms.value = step_elapsed_time * 1000
 
     except Exception as e:
-        log.error(f"Error: {e}")
-        if config.enable_robot:
-            log.info("🦾 Getting robot error information ...")
+        log.error(f"🚨 Error: {e}")
+        if driver_l is not None:
             error_info_l = driver_l.get_error_information()
-            error_info_r = driver_r.get_error_information()
             if error_info_l:
-                log.error(f"Left arm error: {error_info_l}")
+                log.error(f"🦾🚨 Left arm error: {error_info_l}")
+        if driver_r is not None:
+            error_info_r = driver_r.get_error_information()
             if error_info_r:
-                log.error(f"Right arm error: {error_info_r}")
+                log.error(f"🦾🚨 Right arm error: {error_info_r}")
         raise e
     
     finally:
@@ -987,14 +983,20 @@ def main(config: TatbotConfig):
             realsense_a.pipeline.stop()
             realsense_b.pipeline.stop()
         if config.enable_robot:
-            log.info("🦾 Shutting down robots...")
-            driver_l.cleanup()
-            driver_r.cleanup()
+            if driver_l is not None:
+                log.info("🦾 Shutting down left robot...")
+                driver_l.cleanup()
+            if driver_r is not None:
+                log.info("🦾 Shutting down right robot...")
+                driver_r.cleanup()
             driver_l, driver_r = init_robot(clear_error=True)
-            move_robot(config.joint_pos_sleep)
-            log.info("🧹 Idling robot motors")
-            driver_l.set_all_modes(trossen_arm.Mode.idle)
-            driver_r.set_all_modes(trossen_arm.Mode.idle)
+            move_robot(driver_l, driver_r, config.joint_pos_sleep)
+            if driver_l is not None:
+                log.info("🦾 Idling left robot...")
+                driver_l.set_all_modes(trossen_arm.Mode.idle)
+            if driver_r is not None:
+                log.info("🦾 Idling right robot...")
+                driver_r.set_all_modes(trossen_arm.Mode.idle)
 
         log.info("🏁 Script complete.")
 
