@@ -743,7 +743,7 @@ def main(config: TatbotConfig):
             elif state.value == "PLAY":
                 state.value = "TRACK"
 
-            if state.value == "TRACK":
+            if state.value in ["TRACK", "MANUAL"]:
                 log.info("🎥🗺️ Tracking objects in scene...")
                 if config.enable_realsense:
                     log.debug("📷 Updating Realsense pointclouds...")
@@ -833,7 +833,6 @@ def main(config: TatbotConfig):
                 log.debug(f"🖼️ Palette Mesh - pos: {palette_mesh_tf.position}, wxyz: {palette_mesh_tf.wxyz}")
                 log.debug(f"🖼️ Skin Mesh - pos: {skin_mesh_tf.position}, wxyz: {skin_mesh_tf.wxyz}")
                 state.value = "MANUAL"
-                continue
 
             if state.value == "READY":
                 log.info(f"🔢 Current batch: {batch_index.value}")
@@ -958,10 +957,10 @@ def main(config: TatbotConfig):
 
                 log.debug("🤖 Moving robots...")
                 robot_move_start_time = time.time()
-                if state.value in ["MANUAL", "POKE"]:
+                if state.value in ["POKE"]:
                     log.debug("🏎️💨 robot is moving fast")
                     move_robot(joint_pos_current, goal_time=config.set_all_position_goal_time_fast)
-                elif state.value in ["HOVER", "DIP"]:
+                elif state.value in ["MANUAL", "HOVER", "DIP"]:
                     move_robot(joint_pos_current)
                 robot_move_elapsed_time = time.time() - robot_move_start_time
                 move_duration_ms.value = robot_move_elapsed_time * 1000
