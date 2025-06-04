@@ -4,15 +4,9 @@ technical description of tatbot
 
 ## URDF
 
-tatbot is defined using a [custom URDF file](https://github.com/hu-po/tatbot-urdf).
+tatbot is defined using URDF at `tatbot/assets/urdf/tatbot.urdf`.
 
 ## Setup
-
-keys, tokens, passwords are stored in the `.env` file.
-
-```bash
-source .env
-```
 
 python dependencies are managed with environments using [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
 
@@ -25,6 +19,12 @@ rm uv.lock
 uv venv && \
 source .venv/bin/activate && \
 uv pip install -r pyproject.toml
+```
+
+keys, tokens, passwords are stored in the `.env` file.
+
+```bash
+source .env
 ```
 
 ## Run

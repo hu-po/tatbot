@@ -142,8 +142,8 @@ class AprilTagConfig:
 class TatbotConfig:
     seed: int = 42
     """Seed for random behavior."""
-    urdf_path: str = os.path.expanduser("~/tatbot-urdf/tatbot.urdf")
-    """Local path to the URDF file for the robot (https://github.com/hu-po/tatbot-urdf)."""
+    urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
+    """Local path to the URDF file for the robot."""
     arm_model: trossen_arm.Model = trossen_arm.Model.wxai_v0
     """Arm model for the robot."""
     ip_address_l: str = "192.168.1.2"
