@@ -2,7 +2,7 @@
   <a href="https://tatbot.ai/">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="assets/logos/dark.svg">
-      <img src="assets/logos/light.svg" alt="tatbot">
+      <img src="assets/logos/light.svg" alt="tatbot" style="max-width: 200px; width: 80%;">
     </picture>
   </a>
 </div>
