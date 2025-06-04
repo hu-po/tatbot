@@ -10,7 +10,7 @@
 
   <!-- camera1 -->
   <joint name="camera1_mount_joint" type="fixed">
-    <origin rpy="0 1.5707963267948966 0" xyz="-0.3 -0.22 0.4"/>
+    <origin rpy="0 1.5707963267948966 0" xyz="0.08 0.258125 -0.05"/>
     <parent link="root"/>
     <child link="camera1"/>
   </joint>
@@ -140,7 +140,7 @@
 
   <!-- camera5 -->
   <joint name="camera5_mount_joint" type="fixed">
-    <origin rpy="0 1.5707963267948966 0" xyz="0 -0.2 0.5"/>
+    <origin rpy="0 1.5707963267948966 0" xyz="0.08 -0.258125 -0.05"/>
     <parent link="root"/>
     <child link="camera5"/>
   </joint>
@@ -248,9 +248,9 @@
   <link name="cam_high_color_optical_frame"/>
 
 
-  <!-- Left Arm -->
+  <!-- arm_l -->
   <joint name="left/mount_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.20 0 0"/>
+    <origin rpy="0 0 0" xyz="0 0.238125 0"/>
     <parent link="root"/>
     <child link="left/base_link"/>
   </joint>
@@ -562,9 +562,9 @@
   </joint>
 
 
-  <!-- Right Arm -->
+  <!-- arm_r -->
   <joint name="right/mount_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 -0.2413 0"/>
+    <origin rpy="0 0 0" xyz="0 -0.238125 0"/>
     <parent link="root"/>
     <child link="right/base_link"/>
   </joint>
@@ -843,7 +843,7 @@
   </joint>
   <link name="right/camera_link">
     <visual>
-      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0038 -0.009 0"/>
+      <origin rpy="1.57079632679 0 0" xyz="0.0038 -0.009 0"/>
       <geometry>
         <mesh filename="meshes/cameras/d405.stl" scale="0.001 0.001 0.001"/>
       </geometry>
@@ -968,4 +968,139 @@
     <axis xyz="1 0 0"/>
   </joint>
   <link name="right/ee_gripper_link"/>
+
+  <!-- horizontal aluminum framing -->
+  <link name="600mm_front_horizontal">
+    <visual>
+      <origin rpy="1.57079632679 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/t2020_600mm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="600mm_front_horizontal_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.0278 0 -0.03"/>
+    <parent link="root"/>
+    <child link="600mm_front_horizontal"/>
+  </joint>
+  <link name="600mm_back_horizontal">
+    <visual>
+      <origin rpy="1.57079632679 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/t2020_600mm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="600mm_back_horizontal_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.267 0 -0.03"/>
+    <parent link="root"/>
+    <child link="600mm_back_horizontal"/>
+  </joint>
+
+  <!-- vertical aluminum framing -->
+  <link name="600mm_vertical_left">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/t2020_600mm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="600mm_vertical_left_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.267 0.08128 0.28"/>
+    <parent link="root"/>
+    <child link="600mm_vertical_left"/>
+  </joint>
+  <link name="600mm_vertical_right">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/t2020_600mm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="600mm_vertical_right_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.267 -0.08128 0.28"/>
+    <parent link="root"/>
+    <child link="600mm_vertical_right"/>
+  </joint>
+  <link name="300mm_vertical_top">
+    <visual>
+      <origin rpy="1.57079632679 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/t2020_300mm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="300mm_vertical_top_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.267 0 0.59"/>
+    <parent link="root"/>
+    <child link="300mm_vertical_top"/>
+  </joint>
+
+  <!-- left arm rails -->
+  <link name="300mm_left_rail_left">
+    <visual>
+      <origin rpy="1.57079632679 0 1.57079632679" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/t2020_300mm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="300mm_left_rail_left_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.12 0.258125 -0.01"/>
+    <parent link="root"/>
+    <child link="300mm_left_rail_left"/>
+  </joint>
+  <link name="300mm_left_rail_right">
+    <visual>
+      <origin rpy="1.57079632679 0 1.57079632679" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/t2020_300mm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="300mm_left_rail_right_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.12 0.218125 -0.01"/>
+    <parent link="root"/>
+    <child link="300mm_left_rail_right"/>
+  </joint>
+
+  <!-- right arm rails -->
+  <link name="300mm_right_rail_left">
+    <visual>
+      <origin rpy="1.57079632679 0 1.57079632679" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/t2020_300mm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="300mm_right_rail_left_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.12 -0.218125 -0.01"/>
+    <parent link="root"/>
+    <child link="300mm_right_rail_left"/>
+  </joint>
+  <link name="300mm_right_rail_right">
+    <visual>
+      <origin rpy="1.57079632679 0 1.57079632679" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/t2020_300mm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="300mm_right_rail_right_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.12 -0.258125 -0.01"/>
+    <parent link="root"/>
+    <child link="300mm_right_rail_right"/>
+  </joint>
+
 </robot>
