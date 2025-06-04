@@ -10,7 +10,7 @@
 - (✅ **05/28/2025**) [software 0.5](https://x.com/hupobuboo/status/1927794884854849542)
 - (✅ **05/30/2025**) [software 0.6](https://www.youtube.com/live/vssqXg-Gm2Y)
 - (✅ **06/03/2025**) [software 0.7](https://x.com/hupobuboo/status/1929983263667331232)
-- (✅ **06/04/2025**) [hardware 0.2]() ([✨view in 3D](https://poly.cam/capture/548778f3-e243-41bd-87b8-6ed2d5dfff5a))
+- (✅ **06/04/2025**) [hardware 0.2](https://x.com/tatbots/status/1930308303222890931) ([✨view in 3D](https://poly.cam/capture/548778f3-e243-41bd-87b8-6ed2d5dfff5a))
 - (🚧 **Q2 2025**) software 1.0
 - (🚧 **Q2 2025**) hardware 1.0
 - (🚧 **Q3 2025**) first real skin self tattoo
