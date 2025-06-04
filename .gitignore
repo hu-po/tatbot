@@ -161,3 +161,4 @@ output/
 # Assets directory (but keep specific logos)
 assets/*
 !assets/logos/
+!assets/urdf/

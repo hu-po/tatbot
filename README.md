@@ -21,9 +21,7 @@
 
 # **tatbot**: tattoo robot
 
-- [`docs/plan.md`](docs/plan.md)
-- [`docs/tech.md`](docs/tech.md)
-- 🚧`docs/paper.md`
+Understand the [tech](docs/tech.md). Follow the [plan](docs/plan.md). Read the [paper](`docs/paper`).
 
 ## Citation
 

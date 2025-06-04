@@ -1,6 +1,6 @@
 [project]
 name = "tatbot"
-version = "0.4.0"
+version = "0.7.0"
 requires-python = "==3.11.10"
 dependencies = [
     "viser==0.2.23",

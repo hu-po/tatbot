@@ -2,6 +2,10 @@
 
 technical description of tatbot
 
+## URDF
+
+tatbot is defined using a [custom URDF file](https://github.com/hu-po/tatbot-urdf).
+
 ## Setup
 
 keys, tokens, passwords are stored in the `.env` file.
@@ -21,6 +25,17 @@ rm uv.lock
 uv venv && \
 source .venv/bin/activate && \
 uv pip install -r pyproject.toml
+```
+
+## Run
+
+1. flip power strip in the back to on.
+2. press power button on `trossen-ai`, it will glow blue.
+3. flip rocker switches to "on" on `arm-r` and `arm-l` control boxes underneath workspace.
+4. flip rocker switch on the back of the light to turn it on.
+
+```bash
+uv run python tatbot.py
 ```
 
 ## States
@@ -77,6 +92,8 @@ tatbot consists of several computers, cameras, and robotos connected via etherne
 
 ## Dependencies
 
+tatbot makes use of the following dependencies:
+
 - [`pyroki`](https://github.com/chungmin99/pyroki) - inverse kinematics
 - [`viser`](https://github.com/nerfstudio-project/viser) - GUI
 - [`librealsense`](https://github.com/IntelRealSense/librealsense) - depth cameras
@@ -86,27 +103,27 @@ tatbot consists of several computers, cameras, and robotos connected via etherne
 
 ## Networking
 
-- `switch-main`: 
-    (1) short black ethernet cable to `switch-poe`
-    (2) short black ethernet cable to `trossen-ai`
-    (3) short black ethernet cable to `ojo`
-    (4) blue ethernet cable to `arm-r` controller box
-    (5) blue ethernet cable to `arm-l` controller box
-- `switch-poe`: 
-    (1) long black ethernet cable to `camera1`
-    (2) long black ethernet cable to `camera2`
-    (3) long black ethernet cable to `camera3`
-    (4) long black ethernet cable to `camera4`
-    (5) long black ethernet cable to `camera5`
-    (6) -
-    (7) short black ethernet cable to `rpi1`
-    (8) short black ethernet cable to `rpi2`
-    (uplink-1) -
-    (uplink-2) short black ethernet cable to `switch-main`
+- `switch-main`:
+    - (1) short black ethernet cable to `switch-poe`
+    - (2) short black ethernet cable to `trossen-ai`
+    - (3) short black ethernet cable to `ojo`
+    - (4) blue ethernet cable to `arm-r` controller box
+    - (5) blue ethernet cable to `arm-l` controller box
+- `switch-poe`:
+    - (1) long black ethernet cable to `camera1`
+    - (2) long black ethernet cable to `camera2`
+    - (3) long black ethernet cable to `camera3`
+    - (4) long black ethernet cable to `camera4`
+    - (5) long black ethernet cable to `camera5`
+    - (6) -
+    - (7) short black ethernet cable to `rpi1`
+    - (8) short black ethernet cable to `rpi2`
+    - (uplink-1) -
+    - (uplink-2) short black ethernet cable to `switch-main`
 
 hardcoded ip addresses:
 
-- `192.168.1.33` - `oop`
+- `192.168.1.53` - `oop`
 - `192.168.1.91` - `camera1`
 - `192.168.1.92` - `camera2`
 - `192.168.1.93` - `camera3`
@@ -117,9 +134,9 @@ hardcoded ip addresses:
 - `192.168.1.98` - `rpi1`
 - `192.168.1.99` - `rpi2`
 
-
-
 ## Trossen Robot Arms
+
+tatbot uses two [Trossen WidowXAI arms](https://docs.trossenrobotics.com/trossen_arm/main/specifications.html).
 
 - [trossen_arm](ttps://github.com/TrossenRobotics/trossen_arm)
 - [Driver API Documentation](https://docs.trossenrobotics.com/trossen_arm/main/api/library_root.html#)
@@ -131,12 +148,12 @@ uv run python config/trossen.py
 
 ## Realsense Cameras
 
-Two D405 realsense cameras are used to get a pointcloud of the skin. Follow the [calibration guide](https://dev.intelrealsense.com/docs/self-calibration-for-depth-cameras).
+tatbot uses two [D405 Intel Realsense cameras](https://www.intelrealsense.com/depth-camera-d405/).
 
 - `camera-a` is connected to `trossen-ai` via usb3 port and attached to the end effector of `arm-r`
 - `camera-b` is connected to `trossen-ai` via usb3 port and attached to alumnium frame, giving it an overhead view
-
-Use the `rs-enumerate-devices` command to verify that both realsenses are connected. If this doesn't work, unplug and replug the realsense cameras.
+- Follow the [calibration guide](https://dev.intelrealsense.com/docs/self-calibration-for-depth-cameras).
+- Use the `rs-enumerate-devices` command to verify that both realsenses are connected. If this doesn't work, unplug and replug the realsense cameras.
 
 ## GPU
 
@@ -145,20 +162,6 @@ jax is used for gpu acceleration, to check if jax has access to gpu:
 ```bash
 uv run python -c "import jax; has_gpu = bool(jax.devices('gpu')); print(has_gpu)"
 ```
-
-## Run
-
-1. flip power strip in the back to on
-2. press power button on `trossen-ai`, it will glow blue
-3. flip rocker switches to "on" on `arm-r` and `arm-l` control boxes
-
-```bash
-uv run python tatbot.py
-```
-
-## URDF
-
-tatbot is defined using a [custom URDF file](https://github.com/hu-po/tatbot-urdf).
 
 ## AprilTags
 
