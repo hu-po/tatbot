@@ -10,7 +10,7 @@
 
   <!-- camera1 -->
   <joint name="camera1_mount_joint" type="fixed">
-    <origin rpy="0 1.5707963267948966 0" xyz="0.08 0.258125 -0.05"/>
+    <origin rpy="0 1.5707963267948966 0" xyz="0.0378 0.258125 -0.08"/>
     <parent link="root"/>
     <child link="camera1"/>
   </joint>
@@ -44,7 +44,7 @@
   
   <!-- camera2 -->
   <joint name="camera2_mount_joint" type="fixed">
-    <origin rpy="0 1.5707963267948966 0" xyz="0 0.2 0.5"/>
+    <origin rpy="0 1.5707963267948966 0" xyz="-0.257 0.08128 0.5"/>
     <parent link="root"/>
     <child link="camera2"/>
   </joint>
@@ -78,7 +78,7 @@
   
   <!-- camera3 -->
   <joint name="camera3_mount_joint" type="fixed">
-    <origin rpy="0 1.5707963267948966 0" xyz="0 0.1 0.7"/>
+    <origin rpy="0 1.5707963267948966 0" xyz="-0.257 0.06 0.7"/>
     <parent link="root"/>
     <child link="camera3"/>
   </joint>
@@ -112,7 +112,7 @@
 
   <!-- camera4 -->
   <joint name="camera4_mount_joint" type="fixed">
-    <origin rpy="0 1.5707963267948966 0" xyz="0 -0.1 0.7"/>
+    <origin rpy="0 1.5707963267948966 0" xyz="-0.257 -0.06 0.7"/>
     <parent link="root"/>
     <child link="camera4"/>
   </joint>
@@ -140,7 +140,7 @@
 
   <!-- camera5 -->
   <joint name="camera5_mount_joint" type="fixed">
-    <origin rpy="0 1.5707963267948966 0" xyz="0.08 -0.258125 -0.05"/>
+    <origin rpy="0 1.5707963267948966 0" xyz="0.0378 -0.258125 -0.08"/>
     <parent link="root"/>
     <child link="camera5"/>
   </joint>
@@ -168,7 +168,7 @@
 
   <!-- realsense_b (overhead) -->
   <joint name="cam_high_joint" type="fixed">
-    <origin rpy="0 1.5707963267948966 0" xyz="0.12 -0.30 0.6"/>
+    <origin rpy="0 0.7853981633974483 0" xyz="-0.24 0 0.64"/>
     <parent link="root"/>
     <child link="cam_high_bottom_screw_frame"/>
   </joint>
@@ -843,7 +843,7 @@
   </joint>
   <link name="right/camera_link">
     <visual>
-      <origin rpy="1.57079632679 0 0" xyz="0.0038 -0.009 0"/>
+      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0038 -0.009 0"/>
       <geometry>
         <mesh filename="meshes/cameras/d405.stl" scale="0.001 0.001 0.001"/>
       </geometry>
