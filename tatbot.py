@@ -154,11 +154,16 @@ class TatbotConfig:
     """End effector model for the left robot arm."""
     end_effector_model_r: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_follower
     """End effector model for the right robot arm."""
+    # joint_pos_storage: JointPos = JointPos(
+    #     left=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+    #     right=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+    # )
+    # """Robot arms are folded up and rotated inwards for storage (radians)."""
     joint_pos_sleep: JointPos = JointPos(
-        left=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-        right=jnp.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+        left=jnp.array([1.5708, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+        right=jnp.array([1.5708, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
     )
-    """Robot is folded up, motors can be released (radians)."""
+    """Robot arms are facing forwards(radians)."""
     set_all_position_goal_time_slow: float = 3.0
     """Goal time in seconds when the goal positions should be reached (slow)."""
     set_all_position_goal_time_fast: float = 0.5
@@ -198,11 +203,11 @@ class TatbotConfig:
     """
     initial_state: str = "TRACK"
     """Initial state of the robot."""
-    ready_design_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([-0.05, -0.05, 0.0]))
+    ready_design_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([-0.045, -0.056, 0.0]))
     """Offset vector for the ready skin position (meters)."""
-    ready_ik_target_l_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([-0.05, -0.05, -0.05]))
+    ready_ik_target_l_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([-0.045, -0.056, -0.03]))
     """Offset vector for the ready IK target L (meters)."""
-    ready_ik_target_r_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.15, -0.2, -0.05]))
+    ready_ik_target_r_offset_m: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.16, -0.2, -0.08]))
     """Offset vector for the ready IK target R (meters)."""
     design_pose: Pose = Pose(pos=jnp.array([0.313, 0.074, 0.065]), wxyz=jnp.array([1, 0, 0, 0]))
     """Pose of the design (relative to root frame)."""
@@ -482,7 +487,6 @@ def main(config: TatbotConfig):
         wxyz=config.design_pose.wxyz,
         scale=config.transform_control_scale,
         opacity=config.transform_control_opacity,
-        visible=True if config.debug_mode else False,
     )
     design_pointcloud = server.scene.add_point_cloud(
         name="/design/targets",
@@ -507,7 +511,6 @@ def main(config: TatbotConfig):
         wxyz=config.workspace_mesh_pose.wxyz,
         scale=config.transform_control_scale,
         opacity=config.transform_control_opacity,
-        visible=True if config.debug_mode else False,
     )
     server.scene.add_mesh_trimesh(
         name="/workspace/mesh/obj",
@@ -527,7 +530,6 @@ def main(config: TatbotConfig):
         wxyz=config.palette_mesh_pose.wxyz,
         scale=config.transform_control_scale,
         opacity=config.transform_control_opacity,
-        visible=True if config.debug_mode else False,
     )
     server.scene.add_mesh_trimesh(
         name="/palette/mesh/obj",
@@ -556,7 +558,6 @@ def main(config: TatbotConfig):
         wxyz=config.skin_mesh_pose.wxyz,
         scale=config.transform_control_scale,
         opacity=config.transform_control_opacity,
-        visible=True if config.debug_mode else False,
     )
     server.scene.add_mesh_trimesh(
         name="/skin/mesh/obj",
@@ -828,7 +829,7 @@ def main(config: TatbotConfig):
                 log.debug(f"🖼️ Workspace Mesh - pos: {workspace_mesh_tf.position}, wxyz: {workspace_mesh_tf.wxyz}")
                 log.debug(f"🖼️ Palette Mesh - pos: {palette_mesh_tf.position}, wxyz: {palette_mesh_tf.wxyz}")
                 log.debug(f"🖼️ Skin Mesh - pos: {skin_mesh_tf.position}, wxyz: {skin_mesh_tf.wxyz}")
-                state.value = "TRACK"
+                state.value = "MANUAL"
 
             if state.value == "READY":
                 log.info(f"🔢 Current batch: {batch_index.value}")
