@@ -417,7 +417,7 @@ def main(config: TatbotConfig):
     @server.on_client_connect
     def _(client: viser.ClientHandle) -> None:
         client.camera.position = config.view_camera_position
-        client.camera.look_at = config.view_camera_look_at
+        client.camera.look_at = config.view_camera_look_at7
 
     log.info("🖼️ Loading design...")
     img_pil = PIL.Image.open(config.image_path)

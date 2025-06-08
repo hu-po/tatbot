@@ -24,7 +24,9 @@
 
 # **tatbot**: tattoo robot
 
-Understand the [tech](docs/tech.md). Follow the [plan](docs/plan.md). Read the [paper](docs/paper).
+Understand the [tech](docs/tech.md). Follow the [plan](docs/plan.md). 
+
+<!-- Read the [paper](docs/paper). -->
 
 ## Citation
 

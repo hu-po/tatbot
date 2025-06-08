@@ -6,6 +6,8 @@ technical description of tatbot
 
 tatbot is defined using URDF at `tatbot/assets/urdf/tatbot.urdf`.
 
+various software versions of tatbot with different dependencies and designs are available under `tatbot/src`.
+
 ## Setup
 
 python dependencies are managed with environments using [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
@@ -35,10 +37,10 @@ source .env
 4. flip rocker switch on the back of the light to turn it on.
 
 ```bash
-uv run python tatbot.py
+uv run python src/0.1/tatbot.py
 ```
 
-## States
+<!-- ## States
 
 tatbot operates using a state machine
 
@@ -67,7 +69,7 @@ stateDiagram-v2
     POKE  --> POKE
     POKE  --> TRACK
     STOP  --> PAUSE
-```
+``` -->
 
 ## Devices
 
