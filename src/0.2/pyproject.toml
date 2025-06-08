@@ -14,8 +14,8 @@ dependencies = [
     "jaxtyping>=0.2.25,<1.0.0",
     "jaxlie>=1.3.4,<2.0.0",
     "opencv-python==4.11.0.86",
-    "pupil-apriltags==1.0.4.post11",
     "pyyaml==6.0.2",
+    "replicate==1.0.7",
 ]
 
 [tool.setuptools]

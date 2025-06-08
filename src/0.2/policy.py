@@ -22,21 +22,11 @@ from dataclasses import asdict, dataclass
 import lerobot.record
 from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.record import RecordConfig, DatasetRecordConfig
-from lerobot.common.teleoperators.config import TeleoperatorConfig
-
-# HACK: monkeypatch to use Vizier Web Teleoperator
-from vizer_teleop import VizerTeleop, VizerTeleopConfig
-
-original_make_teleoperator_from_config = lerobot.record.make_teleoperator_from_config
+from lerobot.common.policies.smolvla.configuration_smolvla import SmolVLAConfig
+from transformers import AutoProcessor
 
 
-def make_teleoperator_from_config(config: TeleoperatorConfig):
-    if isinstance(config, VizerTeleopConfig):
-        return VizerTeleop(config)
-    return original_make_teleoperator_from_config(config)
 
-
-lerobot.record.make_teleoperator_from_config = make_teleoperator_from_config
 
 if __name__ == "__main__":
     cfg = RecordConfig(
@@ -44,7 +34,7 @@ if __name__ == "__main__":
         dataset=DatasetRecordConfig(
             repo_id="hu-po/tatbot-test" + str(int(time.time())),
             single_task="Grab the red triangle",
-            root=os.path.expanduser("~/tatbot/output"),
+            root=os.path.expanduser("~/tatbot/output/policy"),
             fps=10,
             episode_time_s=6,
             num_episodes=2,
@@ -52,7 +42,9 @@ if __name__ == "__main__":
             tags=["tatbot", "widowx"],
             push_to_hub=False,
         ),
-        teleop=VizerTeleopConfig(),
+        policy=SmolVLAConfig(
+            pretrained_path=os.path.expanduser("~/tatbot/outputs/train/2025-06-05/08-54-14_smolvla/checkpoints/last/pretrained_model")
+        ),
         display_data=False,
         play_sounds=True,
         resume=False,
