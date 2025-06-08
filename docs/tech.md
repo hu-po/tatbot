@@ -13,14 +13,16 @@ various software versions of tatbot with different dependencies and designs are 
 python dependencies are managed with environments using [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
 
 ```bash
-# Clean old uv environment
+# Choose a release
+cd src/0.2
+# Optional: Clean old uv environment
 deactivate && \
 rm -rf .venv && \
 rm uv.lock
 # Setup new uv environment
 uv venv && \
 source .venv/bin/activate && \
-uv pip install -r pyproject.toml
+uv pip install .
 ```
 
 keys, tokens, passwords are stored in the `.env` file.

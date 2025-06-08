@@ -7,7 +7,7 @@ dependencies = [
     "lerobot[tatbot,intelrealsense] @ git+https://github.com/hu-po/lerobot.git@main",
     "viser==0.2.23",
     "Pillow>=9.0.0,<11.0.0",
-    "trossen-arm==1.8.1",
+    "trossen-arm==1.8.2",
     "pyrealsense2==2.55.1.6486",
     "pyroki @ git+https://github.com/chungmin99/pyroki.git@main#egg=pyroki",
     "jax[cuda12]>=0.4.0,<0.5.0",
@@ -17,3 +17,6 @@ dependencies = [
     "pupil-apriltags==1.0.4.post11",
     "pyyaml==6.0.2",
 ]
+
+[tool.setuptools]
+py-modules = ["vizer_teleop", "lerobot_record", "smolvla_benchmark"]
