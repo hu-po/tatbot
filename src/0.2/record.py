@@ -1,3 +1,15 @@
+"""
+> cd ~/tatbot/src/0.2
+> git pull
+> deactivate && rm -rf .venv && rm uv.lock
+> uv venv && source .venv/bin/activate && uv pip install .
+> DISPLAY=:0 uv run record.py --debug
+
+[esc] stop recording
+[left arrow] rerecord the last episode
+[right arrow] exit recording loop
+"""
+
 import logging
 import os
 import time
