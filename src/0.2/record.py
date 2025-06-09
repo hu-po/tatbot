@@ -23,6 +23,14 @@ import lerobot.record
 from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.record import RecordConfig, DatasetRecordConfig
 from lerobot.common.teleoperators.config import TeleoperatorConfig
+import tyro
+
+@dataclass
+class RecordConfig:
+    dataset_name: str = f"test-{int(time.time())}"
+    """Name of the dataset to record."""
+    output_dir: str = os.path.expanduser("~/tatbot/output/record")
+    """Directory to save the dataset."""
 
 # HACK: monkeypatch to use Vizier Web Teleoperator
 from vizer_teleop import VizerTeleop, VizerTeleopConfig
@@ -39,12 +47,13 @@ def make_teleoperator_from_config(config: TeleoperatorConfig):
 lerobot.record.make_teleoperator_from_config = make_teleoperator_from_config
 
 if __name__ == "__main__":
+    args = tyro.cli(RecordConfig)
     cfg = RecordConfig(
         robot=TatbotConfig(),
         dataset=DatasetRecordConfig(
-            repo_id="hu-po/tatbot-test" + str(int(time.time())),
+            repo_id=f"hu-po/{args.dataset_name}",
             single_task="Grab the red triangle",
-            root=os.path.expanduser("~/tatbot/output/teleop"),
+            root=f"{args.output_dir}/{args.dataset_name}",
             fps=10,
             episode_time_s=6,
             num_episodes=2,
