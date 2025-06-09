@@ -38,18 +38,18 @@ if __name__ == "__main__":
     cfg = RecordConfig(
         robot=TatbotConfig(),
         dataset=DatasetRecordConfig(
-            repo_id=f"hu-po/{args.dataset_name}",
+            repo_id=f"hu-po/tatbot-{args.dataset_name}",
             single_task="Grab the red triangle",
             root=f"{args.output_dir}/{args.dataset_name}",
             fps=10,
-            episode_time_s=6,
-            num_episodes=2,
+            episode_time_s=3,
+            num_episodes=1,
             video=True,
-            tags=["tatbot", "widowx"],
+            tags=["tatbot", "wxai", "trossen"],
             push_to_hub=False,
         ),
         teleop=VizerTeleopConfig(),
-        display_data=False,
+        display_data=True,
         play_sounds=True,
         resume=False,
     )
