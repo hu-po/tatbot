@@ -25,7 +25,7 @@ import tyro
 class CLIArgs:
     debug: bool = False
     """Enable debug logging."""
-    teleop: str = "iktargets"
+    teleop: str = "iktarget"
     """Type of custom teleoperator to use, one of: iktarget, toolpath"""
     dataset_name: str = f"test-{int(time.time())}"
     """Name of the dataset to record."""
@@ -33,7 +33,7 @@ class CLIArgs:
     """Directory to save the dataset."""
     episode_time_s: float = 5.0
     """Time of each episode."""
-    num_episodes: int = 2
+    num_episodes: int = 1
     """Number of episodes to record."""
     push_to_hub: bool = False
     """Push the dataset to the Hugging Face Hub."""
@@ -57,9 +57,10 @@ lerobot.record.make_teleoperator_from_config = make_teleoperator_from_config
 if __name__ == "__main__":
     args = tyro.cli(CLIArgs)
     os.makedirs(args.output_dir, exist_ok=True)
-    if args.debug_mode:
-        logging.info("🐛 Debug mode enabled.")
-        logging.basicConfig(level=logging.DEBUG)
+    if args.debug:
+        logging.getLogger('tatbot').setLevel(logging.DEBUG)
+        # logging.getLogger('lerobot').setLevel(logging.DEBUG)
+        logging.debug("🐛 Debug mode enabled.")
     if args.teleop == "iktarget":
         logging.info("🎮 Using IKTargetTeleop.")
         teleop_config = IKTargetTeleopConfig()

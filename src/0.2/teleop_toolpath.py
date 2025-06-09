@@ -15,12 +15,7 @@ from typing import Dict, Any
 
 from ik import IKConfig, ik
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s|%(name)s|%(levelname)s|%(message)s',
-    datefmt='%H:%M:%S',
-)
-log = logging.getLogger(__name__)
+log = logging.getLogger('tatbot')
 
 @dataclass
 class ToolpathTeleopConfig(TeleoperatorConfig):
@@ -94,7 +89,6 @@ class ToolpathTeleop(Teleoperator):
             
     @property
     def action_features(self) -> Dict[str, Any]:
-        """Defines the action space for the teleoperator."""
         action_features = {}
         for side in ["left", "right"]:
             for i in range(6):
@@ -108,22 +102,17 @@ class ToolpathTeleop(Teleoperator):
 
     @property
     def is_connected(self) -> bool:
-        """Check if the teleoperator is connected."""
         return self.server is not None
 
     @property
     def is_calibrated(self) -> bool:
-        """Check if the teleoperator is calibrated."""
         return True
 
     def connect(self, calibrate: bool = True):
-        """Connects to the teleoperator."""
         if calibrate:
             self.calibrate()
 
     def calibrate(self) -> None:
-        """Calibrates the teleoperator."""
-        log.info("Virtual teleoperator, no calibration needed.")
         pass
 
     def configure(self) -> None:
@@ -163,10 +152,7 @@ class ToolpathTeleop(Teleoperator):
         return action
 
     def send_feedback(self, feedback: Dict[str, Any]) -> None:
-        """Sends feedback captured from a robot to the teleoperator."""
         pass
 
     def disconnect(self):
-        """Disconnects from the teleoperator."""
-        log.info("Disconnecting from VizerTeleop.")
         pass
