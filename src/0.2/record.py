@@ -1,17 +1,3 @@
-"""
-
-```bash
-python -m lerobot.record \
-    --robot.type=tatbot \
-    --robot.cameras="{wrist: {type: intelrealsense, camera_index: 0, width: 640, height: 480}}" \
-    --robot.id=black \
-    --dataset.repo_id=$HF_USERNAME/record-test \
-    --dataset.num_episodes=2 \
-    --dataset.single_task="Grab the cube"
-```
-
-"""
-
 import logging
 import os
 import time
