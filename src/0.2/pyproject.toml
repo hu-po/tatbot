@@ -20,4 +20,4 @@ dependencies = [
 ]
 
 [tool.setuptools]
-py-modules = ["design", "policy", "record", "vizer_teleop"]
+py-modules = ["design", "ik", "policy", "record", "teleop_iktarget", "teleop_toolpath"]
