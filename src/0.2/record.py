@@ -1,9 +1,7 @@
 import logging
 import os
 import time
-from pprint import pformat
-from pathlib import Path
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
 import lerobot.record
 from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
@@ -13,6 +11,8 @@ import tyro
 
 @dataclass
 class CLIArgs:
+    debug: bool = False
+    """Debug mode."""
     dataset_name: str = f"test-{int(time.time())}"
     """Name of the dataset to record."""
     output_dir: str = os.path.expanduser("~/tatbot/output/record")
@@ -35,6 +35,11 @@ lerobot.record.make_teleoperator_from_config = make_teleoperator_from_config
 if __name__ == "__main__":
     args = tyro.cli(CLIArgs)
     os.makedirs(args.output_dir, exist_ok=True)
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
+
     cfg = RecordConfig(
         robot=TatbotConfig(),
         dataset=DatasetRecordConfig(
@@ -42,8 +47,8 @@ if __name__ == "__main__":
             single_task="Grab the red triangle",
             root=f"{args.output_dir}/{args.dataset_name}",
             fps=10,
-            episode_time_s=3,
-            num_episodes=1,
+            episode_time_s=5,
+            num_episodes=2,
             video=True,
             tags=["tatbot", "wxai", "trossen"],
             push_to_hub=False,
