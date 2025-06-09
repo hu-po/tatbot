@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import logging
 
 import jax
@@ -11,15 +11,11 @@ from jaxtyping import Array, Float, Int
 from lerobot.common.teleoperators.config import TeleoperatorConfig
 from lerobot.common.teleoperators.teleoperator import Teleoperator
 import numpy as np
-import numpy.typing as npt
 import pyroki as pk
 import viser
 from viser.extras import ViserUrdf
 import yourdfpy
 from typing import Dict, Any
-import gymnasium as gym
-
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,20 +23,6 @@ logging.basicConfig(
     datefmt='%H:%M:%S',
 )
 log = logging.getLogger(__name__)
-
-@jdc.pytree_dataclass
-class Pose:
-    pos: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.0, 0.0, 0.0]))
-    """XYZ position (meters)."""
-    wxyz: Float[Array, "4"] = field(default_factory=lambda: jnp.array([1.0, 0.0, 0.0, 0.0]))
-    """WXYZ orientation (quaternion)."""
-
-@jdc.pytree_dataclass
-class JointPos:
-    left: Float[Array, "8"]
-    """Left arm joint positions (radians)."""
-    right: Float[Array, "8"]
-    """Right arm joint positions (radians)."""
 
 @jdc.pytree_dataclass
 class IKConfig:
@@ -73,6 +55,14 @@ class VizerTeleopConfig(TeleoperatorConfig):
     """Initial camera look_at in the Viser scene."""
     env_map_hdri: str = "forest"
     """HDRI for the environment map."""
+    ik_target_l_pos_init: tuple[float, float, float] = (0.2, 0.05, 0.1)
+    """Initial position of the left IK target."""
+    ik_target_r_pos_init: tuple[float, float, float] = (0.2, -0.05, 0.1)
+    """Initial position of the right IK target."""
+    ik_target_l_ori_init: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
+    """Initial orientation of the left IK target."""
+    ik_target_r_ori_init: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
+    """Initial orientation of the right IK target."""
 
 @jdc.jit
 def ik(
@@ -133,11 +123,15 @@ class VizerTeleop(Teleoperator):
         log.info("🎯 Adding ik targets...")
         self.ik_target_l = self.server.scene.add_transform_controls(
             "/ik_target_l",
+            position=config.ik_target_l_pos_init,
+            wxyz=config.ik_target_l_ori_init,
             scale=config.transform_control_scale,
             opacity=config.transform_control_opacity,
         )
         self.ik_target_r = self.server.scene.add_transform_controls(
             "/ik_target_r",
+            position=config.ik_target_r_pos_init,
+            wxyz=config.ik_target_r_ori_init,
             scale=config.transform_control_scale,
             opacity=config.transform_control_opacity,
         )
@@ -198,7 +192,7 @@ class VizerTeleop(Teleoperator):
             target_position=jnp.array([self.ik_target_l.position, self.ik_target_r.position]),
             config=self.config.ik_config,
         )
-        self.urdf_vis.update_cfg(solution)
+        self.urdf_vis.update_cfg(np.array(solution))
         # action = {
         #     "left.joint_0.pos": solution[0],
         #     "left.joint_1.pos": solution[1],
