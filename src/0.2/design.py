@@ -37,6 +37,8 @@ class DesignConfig:
     """ Number of patches along the x-axis."""
     num_patches_height: int = 16
     """ Number of patches along the y-axis."""
+    patch_empty_threshold: float = 250
+    """(0-255) Pixel intensity mean threshold to consider a patch empty. Higher is more aggressive."""
 
 
 def main(config: DesignConfig):
@@ -67,12 +69,15 @@ def main(config: DesignConfig):
     original_width, original_height = img_pil.size
     log.info(f"🖼️ Design image size: {original_width}x{original_height} pixels.")
 
+    img_viz = cv2.cvtColor(np.array(img_pil.convert("RGB")), cv2.COLOR_RGB2BGR)
+
     log.info("Creating patches...")
     patches_dir = f"{config.output_dir}/{config.image_filename}_patches"
     os.makedirs(patches_dir, exist_ok=True)
     log.info(f"Saving patches to {patches_dir}")
 
-    patch_num = 0
+    full_patches = 0
+    empty_patches = 0
     x_coords = np.linspace(0, original_width, config.num_patches_width + 1, dtype=int)
     y_coords = np.linspace(0, original_height, config.num_patches_height + 1, dtype=int)
 
@@ -80,10 +85,38 @@ def main(config: DesignConfig):
         for j in range(config.num_patches_width):
             box = (x_coords[j], y_coords[i], x_coords[j + 1], y_coords[i + 1])
             patch = img_pil.crop(box)
+
+            is_empty = np.array(patch.convert("L")).mean() > config.patch_empty_threshold
+
+            # Draw rectangle and text for visualization
+            color = (0, 0, 255) if is_empty else (0, 255, 0)  # Red for empty, Green for non-empty
+            cv2.rectangle(img_viz, (box[0], box[1]), (box[2], box[3]), color, 2)
+            center_x = (x_coords[j] + x_coords[j + 1]) // 2
+            center_y = (y_coords[i] + y_coords[i + 1]) // 2
+            text = f"{i},{j}"
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.5
+            font_thickness = 1
+            (text_width, text_height), _ = cv2.getTextSize(text, font, font_scale, font_thickness)
+            text_x = center_x - text_width // 2
+            text_y = center_y + text_height // 2
+            cv2.putText(img_viz, text, (text_x, text_y), font, font_scale, (0, 0, 0), font_thickness)
+
+            if is_empty:
+                empty_patches += 1
+                continue
+
             patch_path = os.path.join(patches_dir, f"patch_{i:02d}_{j:02d}.png")
             patch.save(patch_path)
-            patch_num += 1
-    log.info(f"Saved {patch_num} patches.")
+            full_patches += 1
+            
+    log.info(f"Saved {full_patches} full patches.")
+    log.info(f"Found {empty_patches} empty patches.")
+
+    base, ext = os.path.splitext(image_path)
+    viz_path = f"{base}_patchviz{ext}"
+    cv2.imwrite(viz_path, img_viz)
+    log.info(f"🖼️ Saved patch visualization to {viz_path}")
 
     # # TODO: feed each patch to sam-2
 
