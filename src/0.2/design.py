@@ -16,6 +16,14 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+VIZ_COLORS = [
+    (0, 0, 255),  # Red
+    (0, 255, 0),  # Green
+    (255, 0, 0),  # Blue
+    (0, 255, 255),  # Yellow
+    (255, 0, 255),  # Magenta
+]
+
 @dataclass
 class DesignConfig:
     # image_path: str | None = None
@@ -33,11 +41,11 @@ class DesignConfig:
     """ Width of the design image (meters)."""
     image_height_m: float = 0.06
     """ Height of the design image (meters)."""
-    num_patches_width: int = 32
+    num_patches_width: int = 64
     """ Number of patches along the x-axis."""
-    num_patches_height: int = 32
+    num_patches_height: int = 64
     """ Number of patches along the y-axis."""
-    patch_empty_threshold: float = 250
+    patch_empty_threshold: float = 254
     """(0-255) Pixel intensity mean threshold to consider a patch empty. Higher is more aggressive."""
     binary_threshold: int = 127
     """(0-255) Pixel intensity threshold for binary conversion of patch. Lower is more aggressive."""
@@ -86,14 +94,6 @@ def main(config: DesignConfig):
     x_coords = np.linspace(0, original_width, config.num_patches_width + 1, dtype=int)
     y_coords = np.linspace(0, original_height, config.num_patches_height + 1, dtype=int)
 
-    component_colors_bgr = [
-        (0, 0, 255),  # Red
-        (0, 255, 0),  # Green
-        (255, 0, 0),  # Blue
-        (0, 255, 255),  # Yellow
-        (255, 0, 255),  # Magenta
-    ]
-
     for i in range(config.num_patches_height):
         for j in range(config.num_patches_width):
             box = (x_coords[j], y_coords[i], x_coords[j + 1], y_coords[i + 1])
@@ -137,7 +137,7 @@ def main(config: DesignConfig):
 
             for k, label_idx in enumerate(sorted_component_indices[:config.max_components_per_patch]):
                 component_mask = labels == label_idx
-                color_vis = component_colors_bgr[k % len(component_colors_bgr)]
+                color_vis = VIZ_COLORS[k % len(VIZ_COLORS)]
                 patch_h, patch_w = labels.shape
                 patch_start_y, patch_start_x = box[1], box[0]
                 comp_viz[patch_start_y : patch_start_y + patch_h, patch_start_x : patch_start_x + patch_w][
