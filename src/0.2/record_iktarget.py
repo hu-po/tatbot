@@ -1,68 +1,93 @@
-import os
-from dataclasses import dataclass
-import logging
+"""
 
-import jax
-import jax.numpy as jnp
+Records episodes using Vizer ik target controls.
+
+> cd ~/tatbot/src/0.2
+> git pull
+> deactivate && rm -rf .venv && rm uv.lock
+> uv venv && source .venv/bin/activate && uv pip install .
+> DISPLAY=:0 uv run record_iktarget.py --debug
+
+[esc] stop recording
+[left arrow] rerecord the last episode
+[right arrow] exit recording loop
+"""
+
+from dataclasses import asdict, dataclass
+import logging
+import os
+import time
+from pprint import pformat
+
+import lerobot.record
+from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
+from lerobot.record import RecordConfig, DatasetRecordConfig
 from lerobot.common.teleoperators.config import TeleoperatorConfig
 from lerobot.common.teleoperators.teleoperator import Teleoperator
+from ik import IKConfig, ik
 import numpy as np
 import pyroki as pk
 import viser
 from viser.extras import ViserUrdf
 import yourdfpy
 from typing import Dict, Any
-
-from ik import IKConfig, ik
+import tyro
 
 log = logging.getLogger('tatbot')
 
 @dataclass
-class ToolpathTeleopConfig(TeleoperatorConfig):
-    toolpath_path: str = os.path.expanduser("~/tatbot/output/design/cat_toolpaths.json")
-    """Local path to the toolpath file generated with design.py file."""
+class CLIArgs:
+    debug: bool = False
+    """Enable debug logging."""
+    teleop: str = "iktarget"
+    """Type of custom teleoperator to use, one of: iktarget, toolpath"""
+    dataset_name: str = f"test-{int(time.time())}"
+    """Name of the dataset to record."""
+    output_dir: str = os.path.expanduser("~/tatbot/output/record")
+    """Directory to save the dataset."""
+    episode_time_s: float = 60.0
+    """Time of each episode."""
+    num_episodes: int = 1
+    """Number of episodes to record."""
+    push_to_hub: bool = False
+    """Push the dataset to the Hugging Face Hub."""
 
-    seed: int = 42
-    """Seed for random behavior."""
+
+@dataclass
+class IKTargetTeleopConfig(TeleoperatorConfig):
     urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
     """Local path to the URDF file for the robot."""
     target_links_name: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link")
     """Names of the links to be controlled."""
     ik_config: IKConfig = IKConfig()
     """Configuration for the IK solver."""
-
+    transform_control_scale: float = 0.2
+    """Scale of the transform control frames for visualization."""
+    transform_control_opacity: float = 0.2
+    """Opacity of the transform control frames for visualization."""
     view_camera_position: tuple[float, float, float] = (0.5, 0.5, 0.5)
     """Initial camera position in the Viser scene."""
     view_camera_look_at: tuple[float, float, float] = (0.0, 0.0, 0.0)
     """Initial camera look_at in the Viser scene."""
     env_map_hdri: str = "forest"
     """HDRI for the environment map."""
-
-    joint_pos_design_l: tuple[float, float, float, float, float, float, float] = (0.10, 1.23, 1.01, -1.35, 0, 0, 0.02)
-    """Joint positions of the left arm for robot hovering over design."""
-    joint_pos_design_r: tuple[float, float, float, float, float, float, float] = (3.05, 0.49, 1.09, -1.52, 0, 0, 0.04)
-    """Joint positions of the rgiht arm for robot hovering over design."""
-
-    ee_design_pos: tuple[float, float, float] = (0.08, 0.0, 0.04)
-    """position of the design ee transform."""
-    ee_design_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
-    """orientation quaternion (wxyz) of the design ee transform."""
-
-    ee_inkcap_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
-    """position of the inkcap ee transform."""
-    ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
-    """orientation quaternion (wxyz) of the inkcap ee transform."""
+    ik_target_l_pos_init: tuple[float, float, float] = (0.08, 0.0, 0.04)
+    """Initial position of the left IK target."""
+    ik_target_l_ori_init: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
+    """Initial orientation of the left IK target."""
+    ik_target_r_pos_init: tuple[float, float, float] = (0.2, -0.2, 0.1)
+    """Initial position of the right IK target."""
+    ik_target_r_ori_init: tuple[float, float, float, float] = (0.7071, 0.0, 0.7071, 0.0)
+    """Initial orientation of the right IK target."""
 
 
-class ToolpathTeleop(Teleoperator):
-    config_class = ToolpathTeleopConfig
-    name = "toolpath"
+class IKTargetTeleop(Teleoperator):
+    config_class = IKTargetTeleopConfig
+    name = "iktarget"
 
-    def __init__(self, config: ToolpathTeleopConfig):
+    def __init__(self, config: IKTargetTeleopConfig):
         super().__init__(config)
         self.config = config
-        log.info(f"🌱 Setting random seed to {config.seed}...")
-        self.rng = jax.random.PRNGKey(config.seed)
 
         log.info("🚀 Starting viser server...")
         self.server: viser.ViserServer = viser.ViserServer()
@@ -164,3 +189,45 @@ class ToolpathTeleop(Teleoperator):
 
     def disconnect(self):
         pass
+
+
+# HACK: monkeypatch custom teleoperators into lerobot record types
+original_make_teleoperator_from_config = lerobot.record.make_teleoperator_from_config
+
+def make_teleoperator_from_config(config: TeleoperatorConfig):
+    if isinstance(config, IKTargetTeleopConfig):
+        return IKTargetTeleop(config)
+    return original_make_teleoperator_from_config(config)
+
+
+lerobot.record.make_teleoperator_from_config = make_teleoperator_from_config
+
+if __name__ == "__main__":
+    args = tyro.cli(CLIArgs)
+    if args.debug:
+        log.setLevel(logging.DEBUG)
+        # logging.getLogger('lerobot').setLevel(logging.DEBUG)
+        log.debug("🐛 Debug mode enabled.")
+    os.makedirs(args.output_dir, exist_ok=True)
+    log.info(f"💾 Saving output to {args.output_dir}")
+    log.info("🎮 Using IKTargetTeleop.")
+    cfg = RecordConfig(
+        robot=TatbotConfig(),
+        dataset=DatasetRecordConfig(
+            repo_id=f"hu-po/tatbot-iktarget-{args.dataset_name}",
+            single_task="Move using cartesian control",
+            root=f"{args.output_dir}/{args.dataset_name}",
+            fps=10,
+            episode_time_s=args.episode_time_s,
+            num_episodes=args.num_episodes,
+            video=True,
+            tags=["tatbot", "wxai", "trossen"],
+            push_to_hub=args.push_to_hub,
+        ),
+        teleop=IKTargetTeleopConfig(),
+        display_data=True,
+        play_sounds=True,
+        resume=False,
+    )
+    log.info(pformat(asdict(cfg)))
+    lerobot.record.record(cfg)
