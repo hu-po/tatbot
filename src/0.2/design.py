@@ -2,6 +2,7 @@ import io
 import os
 import logging
 from dataclasses import dataclass
+import json
 
 import cv2
 import networkx as nx
@@ -80,6 +81,7 @@ def main(config: DesignConfig):
         image_path = f"{config.output_dir}/{config.image_filename}"
 
     img_pil = PIL.Image.open(image_path)
+    base, ext = os.path.splitext(image_path)
     original_width, original_height = img_pil.size
     log.info(f"🖼️ Design image size: {original_width}x{original_height} pixels.")
 
@@ -223,13 +225,35 @@ def main(config: DesignConfig):
     log.info(f"Found {empty_patches} empty patches.")
 
     if all_tool_paths:
-        path_lengths = [len(p) for p in all_tool_paths]
+        base, ext = os.path.splitext(image_path)
+        scale_x = config.image_width_m / original_width
+        scale_y = config.image_height_m / original_height
+        all_tool_paths_m = []
+        for path in all_tool_paths:
+            path_m = [(p[0] * scale_x, p[1] * scale_y) for p in path]
+            all_tool_paths_m.append(path_m)
+
+        tool_paths_path = f"{base}_toolpaths.json"
+        with open(tool_paths_path, "w") as f:
+            json.dump(all_tool_paths_m, f, indent=4)
+        log.info(f"💾 Saved {len(all_tool_paths_m)} tool paths to {tool_paths_path}")
+
+        path_lengths_px = [
+            sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path[:-1], path[1:]))
+            for path in all_tool_paths
+        ]
+        path_lengths_m = [
+            sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path[:-1], path[1:]))
+            for path in all_tool_paths_m
+        ]
+
         log.info("--- Tool Path Statistics ---")
         log.info(f"Total tool paths generated: {len(all_tool_paths)}")
-        log.info(f"Min path length: {np.min(path_lengths)} pixels")
-        log.info(f"Max path length: {np.max(path_lengths)} pixels")
-        log.info(f"Average path length: {np.mean(path_lengths):.2f} pixels")
-        log.info(f"Total path length: {np.sum(path_lengths)} pixels")
+        if path_lengths_px:
+            log.info(f"Min path length: {np.min(path_lengths_px):.2f} pixels ({np.min(path_lengths_m):.4f} m)")
+            log.info(f"Max path length: {np.max(path_lengths_px):.2f} pixels ({np.max(path_lengths_m):.4f} m)")
+            log.info(f"Average path length: {np.mean(path_lengths_px):.2f} pixels ({np.mean(path_lengths_m):.4f} m)")
+            log.info(f"Total path length: {np.sum(path_lengths_px):.2f} pixels ({np.sum(path_lengths_m):.4f} m)")
     else:
         log.info("No tool paths were generated.")
 
