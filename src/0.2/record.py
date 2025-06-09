@@ -10,16 +10,19 @@
 [right arrow] exit recording loop
 """
 
+from dataclasses import asdict, dataclass
 import logging
 import os
 import time
-from dataclasses import dataclass
+from pprint import pformat
 
 import lerobot.record
 from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.record import RecordConfig, DatasetRecordConfig
 from lerobot.common.teleoperators.config import TeleoperatorConfig
 import tyro
+
+log = logging.getLogger('tatbot')
 
 @dataclass
 class CLIArgs:
@@ -31,7 +34,7 @@ class CLIArgs:
     """Name of the dataset to record."""
     output_dir: str = os.path.expanduser("~/tatbot/output/record")
     """Directory to save the dataset."""
-    episode_time_s: float = 5.0
+    episode_time_s: float = 60.0
     """Time of each episode."""
     num_episodes: int = 1
     """Number of episodes to record."""
@@ -56,16 +59,20 @@ lerobot.record.make_teleoperator_from_config = make_teleoperator_from_config
 
 if __name__ == "__main__":
     args = tyro.cli(CLIArgs)
-    os.makedirs(args.output_dir, exist_ok=True)
+
     if args.debug:
-        logging.getLogger('tatbot').setLevel(logging.DEBUG)
+        log.setLevel(logging.DEBUG)
         # logging.getLogger('lerobot').setLevel(logging.DEBUG)
-        logging.debug("🐛 Debug mode enabled.")
+        log.debug("🐛 Debug mode enabled.")
+
+    os.makedirs(args.output_dir, exist_ok=True)
+    log.info(f"💾 Saving output to {args.output_dir}")
+
     if args.teleop == "iktarget":
-        logging.info("🎮 Using IKTargetTeleop.")
+        log.info("🎮 Using IKTargetTeleop.")
         teleop_config = IKTargetTeleopConfig()
     elif args.teleop == "toolpath":
-        logging.info("🎮 Using ToolpathTeleop.")
+        log.info("🎮 Using ToolpathTeleop.")
         teleop_config = ToolpathTeleopConfig()
     else:
         raise ValueError(f"Invalid teleoperator: {args.teleop}")
@@ -88,4 +95,5 @@ if __name__ == "__main__":
         play_sounds=True,
         resume=False,
     )
+    log.info(pformat(asdict(cfg)))
     lerobot.record.record(cfg)

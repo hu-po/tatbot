@@ -37,13 +37,13 @@ class IKTargetTeleopConfig(TeleoperatorConfig):
     """Initial camera look_at in the Viser scene."""
     env_map_hdri: str = "forest"
     """HDRI for the environment map."""
-    ik_target_l_pos_init: tuple[float, float, float] = (0.3, 0.2, 0.05)
+    ik_target_l_pos_init: tuple[float, float, float] = (0.10401879, 0.02613797, 0.04999624)
     """Initial position of the left IK target."""
-    ik_target_r_pos_init: tuple[float, float, float] = (0.3, -0.2, 0.05)
+    ik_target_r_pos_init: tuple[float, float, float] = (0.126168, -0.08606435, 0.09718769)
     """Initial position of the right IK target."""
-    ik_target_l_ori_init: tuple[float, float, float, float] = (0.7071, 0.0, 0.7071, 0.0)
+    ik_target_l_ori_init: tuple[float, float, float, float] = (0.56458258, 0.42273247, 0.4155419, -0.5743291)
     """Initial orientation of the left IK target."""
-    ik_target_r_ori_init: tuple[float, float, float, float] = (0.7071, 0.0, 0.7071, 0.0)
+    ik_target_r_ori_init: tuple[float, float, float, float] = (0.78880915, -0.21117975, 0.41067119, 0.40561093)
     """Initial orientation of the right IK target."""
 
 

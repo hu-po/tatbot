@@ -159,14 +159,6 @@ tatbot uses two [D405 Intel Realsense cameras](https://www.intelrealsense.com/de
 - Follow the [calibration guide](https://dev.intelrealsense.com/docs/self-calibration-for-depth-cameras).
 - Use the `rs-enumerate-devices` command to verify that both realsenses are connected. If this doesn't work, unplug and replug the realsense cameras.
 
-## GPU
-
-jax is used for gpu acceleration, to check if jax has access to gpu:
-
-```bash
-uv run python -c "import jax; has_gpu = bool(jax.devices('gpu')); print(has_gpu)"
-```
-
 ## AprilTags
 
 Objects (i.e. ink palette) in the scene are tracked using [AprilTags](https://chaitanyantr.github.io/apriltag.html).

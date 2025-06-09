@@ -9,7 +9,7 @@ from jaxtyping import Array, Float, Int
 import pyroki as pk
 
 log = logging.getLogger('tatbot')
-log.debug(f" JAX devices: {jax.devices()}")
+log.info(f" JAX devices: {jax.devices()}")
 
 @jdc.pytree_dataclass
 class IKConfig:
