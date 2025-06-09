@@ -33,12 +33,16 @@ class DesignConfig:
     """ Width of the design image (meters)."""
     image_height_m: float = 0.06
     """ Height of the design image (meters)."""
-    num_patches_width: int = 16
+    num_patches_width: int = 32
     """ Number of patches along the x-axis."""
-    num_patches_height: int = 16
+    num_patches_height: int = 32
     """ Number of patches along the y-axis."""
     patch_empty_threshold: float = 250
     """(0-255) Pixel intensity mean threshold to consider a patch empty. Higher is more aggressive."""
+    binary_threshold: int = 127
+    """(0-255) Pixel intensity threshold for binary conversion of patch. Lower is more aggressive."""
+    max_components_per_patch: int = 5
+    """Maximum number of components to visualize per patch."""
 
 
 def main(config: DesignConfig):
@@ -70,9 +74,10 @@ def main(config: DesignConfig):
     log.info(f"🖼️ Design image size: {original_width}x{original_height} pixels.")
 
     img_viz = cv2.cvtColor(np.array(img_pil.convert("RGB")), cv2.COLOR_RGB2BGR)
+    comp_viz = img_viz.copy()
 
     log.info("Creating patches...")
-    patches_dir = f"{config.output_dir}/{config.image_filename}_patches"
+    patches_dir = f"{config.output_dir}/{os.path.splitext(config.image_filename)[0]}_patches"
     os.makedirs(patches_dir, exist_ok=True)
     log.info(f"Saving patches to {patches_dir}")
 
@@ -80,6 +85,14 @@ def main(config: DesignConfig):
     empty_patches = 0
     x_coords = np.linspace(0, original_width, config.num_patches_width + 1, dtype=int)
     y_coords = np.linspace(0, original_height, config.num_patches_height + 1, dtype=int)
+
+    component_colors_bgr = [
+        (0, 0, 255),  # Red
+        (0, 255, 0),  # Green
+        (255, 0, 0),  # Blue
+        (0, 255, 255),  # Yellow
+        (255, 0, 255),  # Magenta
+    ]
 
     for i in range(config.num_patches_height):
         for j in range(config.num_patches_width):
@@ -91,6 +104,7 @@ def main(config: DesignConfig):
             # Draw rectangle and text for visualization
             color = (0, 0, 255) if is_empty else (0, 255, 0)  # Red for empty, Green for non-empty
             cv2.rectangle(img_viz, (box[0], box[1]), (box[2], box[3]), color, 2)
+            cv2.rectangle(comp_viz, (box[0], box[1]), (box[2], box[3]), color, 2)
             center_x = (x_coords[j] + x_coords[j + 1]) // 2
             center_y = (y_coords[i] + y_coords[i + 1]) // 2
             text = f"{i},{j}"
@@ -101,6 +115,7 @@ def main(config: DesignConfig):
             text_x = center_x - text_width // 2
             text_y = center_y + text_height // 2
             cv2.putText(img_viz, text, (text_x, text_y), font, font_scale, (0, 0, 0), font_thickness)
+            cv2.putText(comp_viz, text, (text_x, text_y), font, font_scale, (0, 0, 0), font_thickness)
 
             if is_empty:
                 empty_patches += 1
@@ -109,7 +124,26 @@ def main(config: DesignConfig):
             patch_path = os.path.join(patches_dir, f"patch_{i:02d}_{j:02d}.png")
             patch.save(patch_path)
             full_patches += 1
-            
+
+            patch_gray = np.array(patch.convert("L"))
+            _, binary_patch = cv2.threshold(patch_gray, config.binary_threshold, 255, cv2.THRESH_BINARY_INV)
+            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_patch, connectivity=8)
+
+            if num_labels <= 1:
+                continue
+
+            areas = stats[1:, cv2.CC_STAT_AREA]
+            sorted_component_indices = np.argsort(areas)[::-1] + 1
+
+            for k, label_idx in enumerate(sorted_component_indices[:config.max_components_per_patch]):
+                component_mask = labels == label_idx
+                color_vis = component_colors_bgr[k % len(component_colors_bgr)]
+                patch_h, patch_w = labels.shape
+                patch_start_y, patch_start_x = box[1], box[0]
+                comp_viz[patch_start_y : patch_start_y + patch_h, patch_start_x : patch_start_x + patch_w][
+                    component_mask
+                ] = color_vis
+
     log.info(f"Saved {full_patches} full patches.")
     log.info(f"Found {empty_patches} empty patches.")
 
@@ -118,32 +152,34 @@ def main(config: DesignConfig):
     cv2.imwrite(viz_path, img_viz)
     log.info(f"🖼️ Saved patch visualization to {viz_path}")
 
-    # # TODO: feed each patch to sam-2
-
-    # log.info("🔍 Segmenting design...")
-    # # https://replicate.com/meta/sam-2/api/schema
-    # output = replicate.run(
-    #     "meta/sam-2:fe97b453a6455861e3bac769b441ca1f1086110da7466dbb65cf1eecfd60dc83",
-    #     input={
-    #         "image": open(config.image_path, "rb"),
-    #         "points_per_side": 32,
-    #         "mask_threshold": 0.88,
-    #     }
-    # )
-
-    # mask_files = output['individual_masks']
-    # log.info(f"🔍 Found {len(mask_files)} masks.")
-
-    # individual_masks_np = [np.array(PIL.Image.open(io.BytesIO(f.read()))) for f in mask_files]
-
-    # log.info(f"Converted masks to {len(individual_masks_np)} NumPy arrays.")
-    # if individual_masks_np:
-    #     log.info(f"First mask shape: {individual_masks_np[0].shape}")
+    comp_viz_path = f"{base}_compviz{ext}"
+    cv2.imwrite(comp_viz_path, comp_viz)
+    log.info(f"🖼️ Saved component visualization to {comp_viz_path}")
 
 
 if __name__ == "__main__":
     args = tyro.cli(DesignConfig)
     main(args)
+
+# log.info("🔍 Segmenting design...")
+# # https://replicate.com/meta/sam-2/api/schema
+# output = replicate.run(
+#     "meta/sam-2:fe97b453a6455861e3bac769b441ca1f1086110da7466dbb65cf1eecfd60dc83",
+#     input={
+#         "image": open(config.image_path, "rb"),
+#         "points_per_side": 32,
+#         "mask_threshold": 0.88,
+#     }
+# )
+
+# mask_files = output['individual_masks']
+# log.info(f"🔍 Found {len(mask_files)} masks.")
+
+# individual_masks_np = [np.array(PIL.Image.open(io.BytesIO(f.read()))) for f in mask_files]
+
+# log.info(f"Converted masks to {len(individual_masks_np)} NumPy arrays.")
+# if individual_masks_np:
+#     log.info(f"First mask shape: {individual_masks_np[0].shape}")
 
 # log.info("🖼️ Loading design...")
 # img_pil = PIL.Image.open(config.image_path)

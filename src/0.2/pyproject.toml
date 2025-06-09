@@ -3,7 +3,6 @@ name = "tatbot"
 version = "0.2.0"
 requires-python = "==3.11.10"
 dependencies = [
-    # "lerobot[tatbot,intelrealsense] @ file:///home/oop/lerobot",
     "lerobot[tatbot,intelrealsense] @ git+https://github.com/hu-po/lerobot.git@main",
     "viser==0.2.23",
     "Pillow>=9.0.0,<11.0.0",
@@ -19,4 +18,4 @@ dependencies = [
 ]
 
 [tool.setuptools]
-py-modules = ["vizer_teleop", "lerobot_record", "smolvla_benchmark"]
+py-modules = ["design", "policy", "record", "vizer_teleop"]
