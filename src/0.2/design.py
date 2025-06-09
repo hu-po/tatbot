@@ -54,6 +54,10 @@ class DesignConfig:
     """(0-255) Pixel intensity threshold for binary conversion of patch. Lower is more aggressive."""
     max_components_per_patch: int = 5
     """Maximum number of components to visualize per patch."""
+    min_tool_path_length_px: int = 10
+    """(px) Minimum length of a tool path to be included."""
+    max_tool_path_length_px: int = 200
+    """(px) Maximum length of a tool path to be included."""
 
 
 def main(config: DesignConfig):
@@ -205,16 +209,6 @@ def main(config: DesignConfig):
 
                     all_tool_paths.append(global_path)
 
-                    if len(global_path) > 1:
-                        path_indices = np.linspace(0, 255, len(global_path), dtype=np.uint8)
-                        colormap = cv2.applyColorMap(path_indices.reshape(-1, 1), cv2.COLORMAP_JET)
-
-                        for path_idx in range(len(global_path) - 1):
-                            p1 = global_path[path_idx]
-                            p2 = global_path[path_idx + 1]
-                            color = colormap[path_idx][0].tolist()
-                            cv2.line(path_viz, p1, p2, color, 2)
-
                 color_vis = VIZ_COLORS[k % len(VIZ_COLORS)]
                 patch_h, patch_w = labels.shape
                 comp_viz[patch_start_y : patch_start_y + patch_h, patch_start_x : patch_start_x + patch_w][
@@ -225,6 +219,37 @@ def main(config: DesignConfig):
     log.info(f"Found {empty_patches} empty patches.")
 
     if all_tool_paths:
+        original_path_count = len(all_tool_paths)
+        paths_with_lengths = []
+        for path in all_tool_paths:
+            length = (
+                sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path[:-1], path[1:]))
+                if len(path) > 1
+                else 0
+            )
+            paths_with_lengths.append((path, length))
+
+        all_tool_paths = [
+            path
+            for path, length in paths_with_lengths
+            if config.min_tool_path_length_px <= length <= config.max_tool_path_length_px
+        ]
+        log.info(
+            f"Filtered tool paths from {original_path_count} to {len(all_tool_paths)} based on length ({config.min_tool_path_length_px}-{config.max_tool_path_length_px} px)."
+        )
+
+    if all_tool_paths:
+        # Draw filtered paths
+        for path in all_tool_paths:
+            if len(path) > 1:
+                path_indices = np.linspace(0, 255, len(path), dtype=np.uint8)
+                colormap = cv2.applyColorMap(path_indices.reshape(-1, 1), cv2.COLORMAP_JET)
+                for path_idx in range(len(path) - 1):
+                    p1 = path[path_idx]
+                    p2 = path[path_idx + 1]
+                    color = colormap[path_idx][0].tolist()
+                    cv2.line(path_viz, p1, p2, color, 2)
+        
         base, ext = os.path.splitext(image_path)
         scale_x = config.image_width_m / original_width
         scale_y = config.image_height_m / original_height
