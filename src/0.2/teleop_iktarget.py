@@ -19,15 +19,13 @@ log = logging.getLogger('tatbot')
 
 @dataclass
 class IKTargetTeleopConfig(TeleoperatorConfig):
-    seed: int = 42
-    """Seed for random behavior."""
     urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
     """Local path to the URDF file for the robot."""
     target_links_name: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link")
     """Names of the links to be controlled."""
     ik_config: IKConfig = IKConfig()
     """Configuration for the IK solver."""
-    transform_control_scale: float = 0.2 #0.06
+    transform_control_scale: float = 0.2
     """Scale of the transform control frames for visualization."""
     transform_control_opacity: float = 0.2
     """Opacity of the transform control frames for visualization."""
@@ -37,13 +35,13 @@ class IKTargetTeleopConfig(TeleoperatorConfig):
     """Initial camera look_at in the Viser scene."""
     env_map_hdri: str = "forest"
     """HDRI for the environment map."""
-    ik_target_l_pos_init: tuple[float, float, float] = (0.10401879, 0.02613797, 0.04999624)
+    ik_target_l_pos_init: tuple[float, float, float] = (0.08, 0.0, 0.04)
     """Initial position of the left IK target."""
-    ik_target_r_pos_init: tuple[float, float, float] = (0.126168, -0.08606435, 0.09718769)
-    """Initial position of the right IK target."""
-    ik_target_l_ori_init: tuple[float, float, float, float] = (0.56458258, 0.42273247, 0.4155419, -0.5743291)
+    ik_target_l_ori_init: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """Initial orientation of the left IK target."""
-    ik_target_r_ori_init: tuple[float, float, float, float] = (0.78880915, -0.21117975, 0.41067119, 0.40561093)
+    ik_target_r_pos_init: tuple[float, float, float] = (0.2, -0.2, 0.1)
+    """Initial position of the right IK target."""
+    ik_target_r_ori_init: tuple[float, float, float, float] = (0.7071, 0.0, 0.7071, 0.0)
     """Initial orientation of the right IK target."""
 
 
@@ -54,8 +52,6 @@ class IKTargetTeleop(Teleoperator):
     def __init__(self, config: IKTargetTeleopConfig):
         super().__init__(config)
         self.config = config
-        log.info(f"🌱 Setting random seed to {config.seed}...")
-        self.rng = jax.random.PRNGKey(config.seed)
 
         log.info("🚀 Starting viser server...")
         self.server: viser.ViserServer = viser.ViserServer()
@@ -119,8 +115,8 @@ class IKTargetTeleop(Teleoperator):
         pass
 
     def get_action(self):
-        log.debug(f"🦾🎯 Left arm IK target - pos: {self.ik_target_l.position}, wxyz: {self.ik_target_l.wxyz}")
-        log.debug(f"🦾🎯 Right arm IK target - pos: {self.ik_target_r.position}, wxyz: {self.ik_target_r.wxyz}")
+        log.debug(f"🎯 Left arm IK target - pos: {self.ik_target_l.position}, wxyz: {self.ik_target_l.wxyz}")
+        log.debug(f"🎯 Right arm IK target - pos: {self.ik_target_r.position}, wxyz: {self.ik_target_r.wxyz}")
         target_link_indices = jnp.array([
             self.robot.links.names.index(self.config.target_links_name[0]),
             self.robot.links.names.index(self.config.target_links_name[1])
@@ -149,6 +145,7 @@ class IKTargetTeleop(Teleoperator):
             "right.joint_5.pos": solution[13],
             "right.gripper.pos": solution[14],
         }
+        log.debug(f"🦾 Action: {action}")
         return action
 
     def send_feedback(self, feedback: Dict[str, Any]) -> None:

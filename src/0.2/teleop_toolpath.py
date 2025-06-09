@@ -19,6 +19,9 @@ log = logging.getLogger('tatbot')
 
 @dataclass
 class ToolpathTeleopConfig(TeleoperatorConfig):
+    toolpath_path: str = os.path.expanduser("~/tatbot/output/design/cat_toolpaths.json")
+    """Local path to the toolpath file generated with design.py file."""
+
     seed: int = 42
     """Seed for random behavior."""
     urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
@@ -27,24 +30,28 @@ class ToolpathTeleopConfig(TeleoperatorConfig):
     """Names of the links to be controlled."""
     ik_config: IKConfig = IKConfig()
     """Configuration for the IK solver."""
-    transform_control_scale: float = 0.2 #0.06
-    """Scale of the transform control frames for visualization."""
-    transform_control_opacity: float = 0.2
-    """Opacity of the transform control frames for visualization."""
+
     view_camera_position: tuple[float, float, float] = (0.5, 0.5, 0.5)
     """Initial camera position in the Viser scene."""
     view_camera_look_at: tuple[float, float, float] = (0.0, 0.0, 0.0)
     """Initial camera look_at in the Viser scene."""
     env_map_hdri: str = "forest"
     """HDRI for the environment map."""
-    ik_target_l_pos_init: tuple[float, float, float] = (0.3, 0.2, 0.05)
-    """Initial position of the left IK target."""
-    ik_target_r_pos_init: tuple[float, float, float] = (0.3, -0.2, 0.05)
-    """Initial position of the right IK target."""
-    ik_target_l_ori_init: tuple[float, float, float, float] = (0.7071, 0.0, 0.7071, 0.0)
-    """Initial orientation of the left IK target."""
-    ik_target_r_ori_init: tuple[float, float, float, float] = (0.7071, 0.0, 0.7071, 0.0)
-    """Initial orientation of the right IK target."""
+
+    joint_pos_design_l: tuple[float, float, float, float, float, float, float] = (0.10, 1.23, 1.01, -1.35, 0, 0, 0.02)
+    """Joint positions of the left arm for robot hovering over design."""
+    joint_pos_design_r: tuple[float, float, float, float, float, float, float] = (3.05, 0.49, 1.09, -1.52, 0, 0, 0.04)
+    """Joint positions of the rgiht arm for robot hovering over design."""
+
+    ee_design_pos: tuple[float, float, float] = (0.08, 0.0, 0.04)
+    """position of the design ee transform."""
+    ee_design_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
+    """orientation quaternion (wxyz) of the design ee transform."""
+
+    ee_inkcap_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
+    """position of the inkcap ee transform."""
+    ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
+    """orientation quaternion (wxyz) of the inkcap ee transform."""
 
 
 class ToolpathTeleop(Teleoperator):
@@ -119,8 +126,8 @@ class ToolpathTeleop(Teleoperator):
         pass
 
     def get_action(self):
-        log.debug(f"🦾🎯 Left arm IK target - pos: {self.ik_target_l.position}, wxyz: {self.ik_target_l.wxyz}")
-        log.debug(f"🦾🎯 Right arm IK target - pos: {self.ik_target_r.position}, wxyz: {self.ik_target_r.wxyz}")
+        log.debug(f"🎯 Left arm IK target - pos: {self.ik_target_l.position}, wxyz: {self.ik_target_l.wxyz}")
+        log.debug(f"🎯 Right arm IK target - pos: {self.ik_target_r.position}, wxyz: {self.ik_target_r.wxyz}")
         target_link_indices = jnp.array([
             self.robot.links.names.index(self.config.target_links_name[0]),
             self.robot.links.names.index(self.config.target_links_name[1])
@@ -149,6 +156,7 @@ class ToolpathTeleop(Teleoperator):
             "right.joint_5.pos": solution[13],
             "right.gripper.pos": solution[14],
         }
+        log.debug(f"🦾 Action: {action}")
         return action
 
     def send_feedback(self, feedback: Dict[str, Any]) -> None:
