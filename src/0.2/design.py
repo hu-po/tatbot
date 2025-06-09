@@ -4,10 +4,12 @@ import logging
 from dataclasses import dataclass
 
 import cv2
+import networkx as nx
 import numpy as np
 import PIL.Image
 import replicate
 import tyro
+from skimage.morphology import skeletonize
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,6 +85,7 @@ def main(config: DesignConfig):
 
     img_viz = cv2.cvtColor(np.array(img_pil.convert("RGB")), cv2.COLOR_RGB2BGR)
     comp_viz = img_viz.copy()
+    path_viz = img_viz.copy()
 
     log.info("Creating patches...")
     patches_dir = f"{config.output_dir}/{os.path.splitext(config.image_filename)[0]}_patches"
@@ -91,6 +94,7 @@ def main(config: DesignConfig):
 
     full_patches = 0
     empty_patches = 0
+    all_tool_paths = []
     x_coords = np.linspace(0, original_width, config.num_patches_width + 1, dtype=int)
     y_coords = np.linspace(0, original_height, config.num_patches_height + 1, dtype=int)
 
@@ -137,15 +141,97 @@ def main(config: DesignConfig):
 
             for k, label_idx in enumerate(sorted_component_indices[:config.max_components_per_patch]):
                 component_mask = labels == label_idx
+
+                skeleton = skeletonize(component_mask)
+                if not np.any(skeleton):
+                    continue
+
+                G = nx.Graph()
+                pixel_coords = np.argwhere(skeleton)
+                pixel_coords_set = {tuple(p) for p in pixel_coords}
+                for r_c_tuple in pixel_coords_set:
+                    G.add_node(r_c_tuple)
+                    r, c = r_c_tuple
+                    for dr in [-1, 0, 1]:
+                        for dc in [-1, 0, 1]:
+                            if dr == 0 and dc == 0:
+                                continue
+                            nr, nc = r + dr, c + dc
+                            if (nr, nc) in pixel_coords_set:
+                                G.add_edge((r, c), (nr, nc))
+                
+                if G.number_of_nodes() == 0:
+                    continue
+
+                subgraphs = [G.subgraph(c).copy() for c in nx.connected_components(G)]
+
+                for subgraph in subgraphs:
+                    if subgraph.number_of_nodes() == 0:
+                        continue
+                    
+                    if subgraph.number_of_nodes() == 1:
+                        path_nodes_local = list(subgraph.nodes())
+                    else:
+                        endpoints = [node for node, degree in subgraph.degree() if degree == 1]
+                        start_node = endpoints[0] if endpoints else list(subgraph.nodes())[0]
+
+                        path_nodes_local = []
+                        stack = [start_node]
+                        visited_nodes = {start_node}
+                        path_nodes_local.append(start_node)
+                        while stack:
+                            curr_node = stack[-1]
+                            unvisited_neighbors = [n for n in subgraph.neighbors(curr_node) if n not in visited_nodes]
+                            if unvisited_neighbors:
+                                next_node = unvisited_neighbors[0]
+                                visited_nodes.add(next_node)
+                                stack.append(next_node)
+                                path_nodes_local.append(next_node)
+                            else:
+                                stack.pop()
+                                if stack:
+                                    path_nodes_local.append(stack[-1])
+                        
+                        if len(path_nodes_local) > 1 and path_nodes_local[-1] == path_nodes_local[-2]:
+                            path_nodes_local.pop()
+
+                    patch_start_y, patch_start_x = box[1], box[0]
+                    global_path = [(c + patch_start_x, r + patch_start_y) for r, c in path_nodes_local]
+                    
+                    if not global_path:
+                        continue
+
+                    all_tool_paths.append(global_path)
+
+                    if len(global_path) > 1:
+                        path_indices = np.linspace(0, 255, len(global_path), dtype=np.uint8)
+                        colormap = cv2.applyColorMap(path_indices.reshape(-1, 1), cv2.COLORMAP_JET)
+
+                        for path_idx in range(len(global_path) - 1):
+                            p1 = global_path[path_idx]
+                            p2 = global_path[path_idx + 1]
+                            color = colormap[path_idx][0].tolist()
+                            cv2.line(path_viz, p1, p2, color, 2)
+
                 color_vis = VIZ_COLORS[k % len(VIZ_COLORS)]
                 patch_h, patch_w = labels.shape
-                patch_start_y, patch_start_x = box[1], box[0]
                 comp_viz[patch_start_y : patch_start_y + patch_h, patch_start_x : patch_start_x + patch_w][
                     component_mask
                 ] = color_vis
 
     log.info(f"Saved {full_patches} full patches.")
     log.info(f"Found {empty_patches} empty patches.")
+
+    if all_tool_paths:
+        path_lengths = [len(p) for p in all_tool_paths]
+        log.info("--- Tool Path Statistics ---")
+        log.info(f"Total tool paths generated: {len(all_tool_paths)}")
+        log.info(f"Min path length: {np.min(path_lengths)} pixels")
+        log.info(f"Max path length: {np.max(path_lengths)} pixels")
+        log.info(f"Average path length: {np.mean(path_lengths):.2f} pixels")
+        log.info(f"Total path length: {np.sum(path_lengths)} pixels")
+    else:
+        log.info("No tool paths were generated.")
 
     base, ext = os.path.splitext(image_path)
     viz_path = f"{base}_patchviz{ext}"
@@ -156,85 +242,11 @@ def main(config: DesignConfig):
     cv2.imwrite(comp_viz_path, comp_viz)
     log.info(f"🖼️ Saved component visualization to {comp_viz_path}")
 
+    path_viz_path = f"{base}_pathviz{ext}"
+    cv2.imwrite(path_viz_path, path_viz)
+    log.info(f"🖼️ Saved tool path visualization to {path_viz_path}")
+
 
 if __name__ == "__main__":
     args = tyro.cli(DesignConfig)
     main(args)
-
-# log.info("🔍 Segmenting design...")
-# # https://replicate.com/meta/sam-2/api/schema
-# output = replicate.run(
-#     "meta/sam-2:fe97b453a6455861e3bac769b441ca1f1086110da7466dbb65cf1eecfd60dc83",
-#     input={
-#         "image": open(config.image_path, "rb"),
-#         "points_per_side": 32,
-#         "mask_threshold": 0.88,
-#     }
-# )
-
-# mask_files = output['individual_masks']
-# log.info(f"🔍 Found {len(mask_files)} masks.")
-
-# individual_masks_np = [np.array(PIL.Image.open(io.BytesIO(f.read()))) for f in mask_files]
-
-# log.info(f"Converted masks to {len(individual_masks_np)} NumPy arrays.")
-# if individual_masks_np:
-#     log.info(f"First mask shape: {individual_masks_np[0].shape}")
-
-# log.info("🖼️ Loading design...")
-# img_pil = PIL.Image.open(config.image_path)
-# original_width, original_height = img_pil.size
-# if original_width > config.image_width_px or original_height > config.image_height_px:
-#     log.info(f"🖼️ Resizing from {original_width}x{original_height} to {config.image_width_px}x{config.image_height_px}...")
-#     img_pil = img_pil.resize((config.image_width_px, config.image_height_px), PIL.Image.LANCZOS)
-# img_pil = img_pil.convert("L")
-# img_np = np.array(img_pil)
-# img_width_px, img_height_px = img_pil.size
-# thresholded_pixels = img_np <= config.image_threshold
-# pixel_to_meter_x = config.image_width_m / img_width_px
-# pixel_to_meter_y = config.image_height_m / img_height_px
-
-# log.info("🔢 Creating pixel batches...")
-# num_targets: int = img_height_px * img_width_px
-# design_pointcloud_positions: np.ndarray = np.zeros((num_targets, 3), dtype=np.float32)
-# design_pointcloud_colors: np.ndarray = np.zeros((num_targets, 3), dtype=np.uint8)
-# batch_radius_px_x = int(config.batch_radius_m / pixel_to_meter_x)
-# batch_radius_px_y = int(config.batch_radius_m / pixel_to_meter_y)
-# # TODO: some way of ensuring a consistent batch size
-# batches: List[PixelBatch] = []
-# for center_y in range(batch_radius_px_y, img_height_px, batch_radius_px_y * 2):
-#     for center_x in range(batch_radius_px_x, img_width_px, batch_radius_px_x * 2):
-#         batch_pixels: List[PixelTarget] = []
-#         for y in range(max(0, center_y - batch_radius_px_y), min(img_height_px, center_y + batch_radius_px_y)):
-#             for x in range(max(0, center_x - batch_radius_px_x), min(img_width_px, center_x + batch_radius_px_x)):
-#                 if thresholded_pixels[y, x]:
-#                     meter_x = (x - img_width_px/2) * pixel_to_meter_x
-#                     meter_y = (y - img_height_px/2) * pixel_to_meter_y
-#                     point_index = y * img_width_px + x
-#                     pixel_target = PixelTarget(
-#                         pose=Pose( # in design frame
-#                             pos=jnp.array([meter_x, meter_y, 0.0]),
-#                             # TODO: use normal vector of skin mesh?
-#                             wxyz=config.design_pose.wxyz
-#                         ),
-#                         pixel_index=(x, y),
-#                         point_index=point_index
-#                     )
-#                     batch_pixels.append(pixel_target)
-#                     design_pointcloud_positions[point_index] = jnp.array([meter_x, meter_y, 0.0])
-#                     design_pointcloud_colors[point_index] = np.array(config.point_color, dtype=np.uint8)
-#         # Only create batch if it contains targets
-#         if batch_pixels:
-#             batch = PixelBatch(
-#                 center_pose=Pose(
-#                     pos=jnp.array([(center_x - img_width_px/2) * pixel_to_meter_x, (center_y - img_height_px/2) * pixel_to_meter_y, 0.0]),
-#                     # TODO: use normal vector of skin mesh?
-#                     wxyz=config.design_pose.wxyz
-#                 ),
-#                 radius_m=config.batch_radius_m,
-#                 targets=batch_pixels
-#             )
-#             batches.append(batch)
-
-# num_batches: int = len(batches)
-# log.info(f"🔢 Design has {num_targets} targets in {num_batches} batches.")

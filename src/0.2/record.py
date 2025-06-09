@@ -26,7 +26,7 @@ from lerobot.common.teleoperators.config import TeleoperatorConfig
 import tyro
 
 @dataclass
-class RecordConfig:
+class CLIArgs:
     dataset_name: str = f"test-{int(time.time())}"
     """Name of the dataset to record."""
     output_dir: str = os.path.expanduser("~/tatbot/output/record")
@@ -47,7 +47,8 @@ def make_teleoperator_from_config(config: TeleoperatorConfig):
 lerobot.record.make_teleoperator_from_config = make_teleoperator_from_config
 
 if __name__ == "__main__":
-    args = tyro.cli(RecordConfig)
+    args = tyro.cli(CLIArgs)
+    os.makedirs(args.output_dir, exist_ok=True)
     cfg = RecordConfig(
         robot=TatbotConfig(),
         dataset=DatasetRecordConfig(
