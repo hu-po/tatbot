@@ -101,10 +101,12 @@ class ToolpathConfig:
     """position of the design ee transform."""
     ee_design_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the design ee transform."""
+    ee_design_hover_offset: tuple[float, float, float] = (0.0, 0.0, -0.01)
+    """offset of the design ee transform when hovering over a toolpoint."""
 
     ee_inkcap_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
     """position of the inkcap ee transform."""
-    ee_inkcap_dip: tuple[float, float, float] = (0.0, 0.0, -0.02)
+    ee_inkcap_dip: tuple[float, float, float] = (0.0, 0.0, -0.035)
     """dip vector when performing inkcap dip."""
     ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the inkcap ee transform."""
@@ -195,7 +197,7 @@ def main(config: ToolpathConfig):
         # The toolpath from the design file is relative to the design's origin.
         # We make it absolute by adding the design's position.
         absolute_toolpath_segment = [
-            list(np.array(config.ee_design_pos) + np.array([p[0], p[1], 0.0])) for p in relative_toolpath_segment
+            list(np.array(config.ee_design_pos) + np.array([p[0], p[1], 0.0]) + np.array(config.ee_design_hover_offset)) for p in relative_toolpath_segment
         ]
 
         # Each segment is an episode, and starts with an ink dip.
@@ -206,11 +208,13 @@ def main(config: ToolpathConfig):
         episode_toolpath.append(list(config.ee_inkcap_pos))
         # 2. Hover over the general design area.
         episode_toolpath.append(list(config.ee_design_pos))
-        # 3. Add the drawing path for the segment.
+        # 3. Hover over the first toolpoint
+        episode_toolpath.append(list(absolute_toolpath_segment[0] - np.array(config.ee_design_hover_offset)))
+        # 4. Add the drawing path for the segment.
         episode_toolpath.extend(absolute_toolpath_segment)
 
         num_toolpoints = len(episode_toolpath)
-        log_say(f"Recording episode {dataset.num_episodes}", config.play_sounds)
+        log_say(f"Recording tool path {dataset.num_episodes}", config.play_sounds)
 
         len_prefix = len(episode_toolpath) - len(absolute_toolpath_segment)
 
@@ -253,13 +257,14 @@ def main(config: ToolpathConfig):
                 "right.gripper.pos": solution[14],
             }
             log.debug(f"🦾 Action: {action}")
-            # # first 5 actions (ink dipping, hovering) should be SLOW and blocking
-            # if i < 5:
-            #     sent_action = robot.send_action(action, goal_time=robot.config.goal_time_ready_sleep, blocking=True)
-            # else:
-            #     # rest of the actions should be FAST and non-blocking
-            #     sent_action = robot.send_action(action)
-            sent_action = action
+            # first 6 actions (ink dipping, hovering) should be SLOW and blocking
+            if i < 6:
+                if i == 0:
+                    log_say("Dipping ink", config.play_sounds)
+                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_ready_sleep, blocking=True)
+            else:
+                # rest of the actions should be FAST and non-blocking
+                sent_action = robot.send_action(action)
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
@@ -331,4 +336,14 @@ if __name__ == "__main__":
     os.makedirs(args.output_dir, exist_ok=True)
     log.info(f"💾 Saving output to {args.output_dir}")
     log.info(pformat(asdict(args)))
-    main(args)
+    try:
+        main(args)
+    except Exception as e:
+        log.error(f"Error: {e}")
+    except KeyboardInterrupt:
+        log.info("🛑 Keyboard interrupt detected. Disconnecting robot...")
+    finally:
+        log.info("🛑 Disconnecting robot...")
+        robot = make_robot_from_config(TatbotConfig())
+        robot.connect()
+        robot.disconnect()
