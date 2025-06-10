@@ -39,8 +39,9 @@ class ToolpathConfig:
     design_dir: str = os.path.expanduser("~/tatbot/output/design/infinity")
     """Directory with design outputs from design.py."""
 
-    dataset_name: str = f"test-{int(time.time())}"
-    """Name of the dataset to record."""
+    # repo_id: str = f"hu-po/tatbot-test-{int(time.time())}"
+    repo_id: str = f"hu-po/tatbot-infinity"
+    """Hugging Face Hub repository ID, e.g. 'hf-username/my-dataset'."""
     display_data: bool = True
     """Display data on screen using Rerun."""
     output_dir: str = os.path.expanduser("~/tatbot/output/record")
@@ -66,7 +67,7 @@ class ToolpathConfig:
     """Whether to push the dataset to a private repository."""
     fps: int = 5
     """Frames per second."""
-    max_episodes: int = 6
+    max_episodes: int = 100
     """Maximum number of episodes to record."""
 
     image_width_px: int = 256
@@ -108,7 +109,7 @@ class ToolpathConfig:
 
     ee_inkcap_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
     """position of the inkcap ee transform."""
-    ee_inkcap_dip: tuple[float, float, float] = (0.0, 0.0, -0.029)
+    ee_inkcap_dip: tuple[float, float, float] = (0.0, 0.0, -0.03)
     """dip vector when performing inkcap dip."""
     ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the inkcap ee transform."""
@@ -166,11 +167,12 @@ def main(config: ToolpathConfig):
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
     dataset_features = {**action_features, **obs_features}
 
-    sanity_check_dataset_name(f"hu-po/tatbot-toolpath-{config.dataset_name}", None)
+    dataset_name = config.repo_id.split("/")[-1]
+    sanity_check_dataset_name(config.repo_id, None)
     dataset = LeRobotDataset.create(
-        f"hu-po/tatbot-toolpath-{config.dataset_name}",
+        config.repo_id,
         config.fps,
-        root=f"{config.output_dir}/{config.dataset_name}",
+        root=f"{config.output_dir}/{dataset_name}",
         robot_type=robot.name,
         features=dataset_features,
         use_videos=True,
@@ -281,7 +283,7 @@ def main(config: ToolpathConfig):
                 sent_action = robot.send_action(action, goal_time=robot.config.goal_time_ready_sleep, blocking=True)
             else:
                 # rest of the actions should be FAST and non-blocking
-                sent_action = robot.send_action(action, blocking=True)
+                sent_action = robot.send_action(action)
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
@@ -362,5 +364,6 @@ if __name__ == "__main__":
     finally:
         log.info("🛑 Disconnecting robot...")
         robot = make_robot_from_config(TatbotConfig())
-        robot.connect()
+        robot.connect(clear_error=False)
+        log.error(robot._get_error_str())
         robot.disconnect()
