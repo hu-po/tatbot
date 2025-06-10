@@ -41,7 +41,7 @@ class CLIArgs:
     debug: bool = False
     """Enable debug logging."""
     teleop: str = "iktarget"
-    """Type of custom teleoperator to use, one of: iktarget, toolpath"""
+    """Type of custom teleoperator to use, one of: iktarget, path"""
     dataset_name: str = f"test-{int(time.time())}"
     """Name of the dataset to record."""
     output_dir: str = os.path.expanduser("~/tatbot/output/record")

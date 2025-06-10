@@ -12,6 +12,15 @@ log = logging.getLogger('tatbot')
 log.info(f" JAX devices: {jax.devices()}")
 
 @jdc.pytree_dataclass
+class Pose:
+    pos: Float[Array, "3"]
+    wxyz: Float[Array, "4"]
+
+@jdc.pytree_dataclass
+class Path:
+    poses: list[Pose]
+
+@jdc.pytree_dataclass
 class IKConfig:
     pos_weight: float = 50.0
     """Weight for the position part of the IK cost function."""

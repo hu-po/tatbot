@@ -32,7 +32,7 @@ from ik import IKConfig, ik
 log = logging.getLogger('tatbot')
 
 @dataclass
-class ToolpathConfig:
+class PathConfig:
     debug: bool = False
     """Enable debug logging."""
 
@@ -107,14 +107,14 @@ class ToolpathConfig:
 
     ink_dip_interval: int = 4
     """
-    Dip ink every N toolpath segments.
+    Dip ink every N path segments.
     If N > 0, dips on segment 0, N, 2N, ...
     If N = 0, dips only on the first segment.
     If N < 0, never dips.
     """
 
 
-def main(config: ToolpathConfig):
+def main(config: PathConfig):
     config = config
     log.info(f"🌱 Setting random seed to {config.seed}...")
     rng = jax.random.PRNGKey(config.seed)
@@ -174,19 +174,19 @@ def main(config: ToolpathConfig):
     robot.connect()
     listener, events = init_keyboard_listener()
 
-    toolpath_file_path = os.path.join(config.design_dir, "toolpaths.json")
-    with open(toolpath_file_path, "r") as f:
-        toolpaths = json.load(f)
+    path_file_path = os.path.join(config.design_dir, "paths.json")
+    with open(path_file_path, "r") as f:
+        paths = json.load(f)
 
-    for toolpath_idx, relative_toolpath_segment in enumerate(toolpaths):
+    for path_idx, relative_path_segment in enumerate(paths):
 
-        if toolpath_idx >= config.max_episodes:
+        if path_idx >= config.max_episodes:
             log_say(f"Reached max episodes ({config.max_episodes})", config.play_sounds)
             break
 
-        # `relative_toolpath_segment` is a list of dicts, each with 'px' and 'm' keys.
-        relative_toolpath_segment_m = [p['m'] for p in relative_toolpath_segment]
-        segment_points_px = [tuple(p['px']) for p in relative_toolpath_segment]
+        # `relative_path_segment` is a list of dicts, each with 'px' and 'm' keys.
+        relative_path_segment_m = [p['m'] for p in relative_path_segment]
+        segment_points_px = [tuple(p['px']) for p in relative_path_segment]
 
         if img_bgr is not None and design_image_gui is not None:
             # Create a fresh copy for this segment's visualization
@@ -198,34 +198,34 @@ def main(config: ToolpathConfig):
             
             design_image_gui.image = cv2.cvtColor(segment_viz_img, cv2.COLOR_BGR2RGB)
 
-        # The toolpath from the design file is relative to the design's origin.
+        # The path from the design file is relative to the design's origin.
         # We make it absolute by adding the design's position.
-        absolute_toolpath_segment = [
-            list(np.array(config.ee_design_pos) + np.array([p[0], p[1], 0.0]) + np.array(config.ee_design_hover_offset)) for p in relative_toolpath_segment_m
+        absolute_path_segment = [
+            list(np.array(config.ee_design_pos) + np.array([p[0], p[1], 0.0]) + np.array(config.ee_design_hover_offset)) for p in relative_path_segment_m
         ]
 
         # Each segment is an episode, and starts with an ink dip.
-        episode_toolpath = []
+        episode_path = []
 
-        should_dip = (config.ink_dip_interval > 0 and toolpath_idx % config.ink_dip_interval == 0) or \
-                     (config.ink_dip_interval == 0 and toolpath_idx == 0)
+        should_dip = (config.ink_dip_interval > 0 and path_idx % config.ink_dip_interval == 0) or \
+                     (config.ink_dip_interval == 0 and path_idx == 0)
 
         if should_dip:
             log_say("Dipping ink", config.play_sounds)
             # Ink dip sequence
-            episode_toolpath.append(list(config.ee_inkcap_pos))
-            episode_toolpath.append((np.array(config.ee_inkcap_pos) + np.array(config.ee_inkcap_dip)).tolist())
-            episode_toolpath.append(list(config.ee_inkcap_pos))
+            episode_path.append(list(config.ee_inkcap_pos))
+            episode_path.append((np.array(config.ee_inkcap_pos) + np.array(config.ee_inkcap_dip)).tolist())
+            episode_path.append(list(config.ee_inkcap_pos))
 
         # Hover over the first toolpoint
-        episode_toolpath.append(list(absolute_toolpath_segment[0] - np.array(config.ee_design_hover_offset)))
-        # Add the rest of the toolpath
-        episode_toolpath.extend(absolute_toolpath_segment)
-        len_prefix = len(episode_toolpath) - len(absolute_toolpath_segment)
-        num_toolpoints = len(episode_toolpath)
+        episode_path.append(list(absolute_path_segment[0] - np.array(config.ee_design_hover_offset)))
+        # Add the rest of the path
+        episode_path.extend(absolute_path_segment)
+        len_prefix = len(episode_path) - len(absolute_path_segment)
+        num_toolpoints = len(episode_path)
 
-        log_say(f"Recording tool path {toolpath_idx}", config.play_sounds)
-        for toolpoint_idx, toolpoint in enumerate(episode_toolpath):
+        log_say(f"Recording tool path {path_idx}", config.play_sounds)
+        for toolpoint_idx, toolpoint in enumerate(episode_path):
             start_loop_t = time.perf_counter()
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
@@ -334,7 +334,7 @@ def main(config: ToolpathConfig):
     log_say("Exiting", config.play_sounds)
 
 if __name__ == "__main__":
-    args = tyro.cli(ToolpathConfig)
+    args = tyro.cli(PathConfig)
     if args.debug:
         log.setLevel(logging.DEBUG)
         # logging.getLogger('lerobot').setLevel(logging.DEBUG)

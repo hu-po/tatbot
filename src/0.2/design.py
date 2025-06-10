@@ -295,26 +295,26 @@ def main(config: DesignConfig):
         scale_x = config.image_width_m / original_width
         scale_y = config.image_height_m / original_height
 
-        all_toolpaths_structured = []
+        all_paths_structured = []
         for path_px in all_tool_paths:
-            toolpath = []
+            path = []
             for p_px in path_px:
                 p_m = (p_px[0] * scale_x, p_px[1] * scale_y, 0.0)
                 toolpoint = Toolpoint(px=p_px, m=p_m)
-                toolpath.append(toolpoint)
-            all_toolpaths_structured.append(toolpath)
+                path.append(toolpoint)
+            all_paths_structured.append(path)
 
-        tool_paths_path = os.path.join(design_output_dir, "toolpaths.json")
+        tool_paths_path = os.path.join(design_output_dir, "paths.json")
         with open(tool_paths_path, "w") as f:
-            json.dump([[asdict(tp) for tp in path] for path in all_toolpaths_structured], f, indent=4)
-        log.info(f"💾 Saved {len(all_toolpaths_structured)} tool paths to {tool_paths_path}")
+            json.dump([[asdict(tp) for tp in path] for path in all_paths_structured], f, indent=4)
+        log.info(f"💾 Saved {len(all_paths_structured)} tool paths to {tool_paths_path}")
 
         path_lengths_px = [
             sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path[:-1], path[1:]))
             for path in all_tool_paths
         ]
 
-        all_tool_paths_m = [[tp.m for tp in path] for path in all_toolpaths_structured]
+        all_tool_paths_m = [[tp.m for tp in path] for path in all_paths_structured]
         path_lengths_m = [
             sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path[:-1], path[1:]))
             for path in all_tool_paths_m
