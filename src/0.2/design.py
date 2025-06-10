@@ -3,6 +3,7 @@ import os
 import logging
 from dataclasses import dataclass
 import json
+import shutil
 
 import cv2
 import networkx as nx
@@ -30,23 +31,23 @@ VIZ_COLORS = [
 @dataclass
 class DesignConfig:
     # image_path: str | None = None
-    image_filename: str | None = "cat.png"
+    image_filename: str | None = "infinity.webp"
     """ (Optional) Local path to the tattoo design image."""
-    prompt: str = "cat"
+    prompt: str = "infinity"
     """ Prompt for the design image generation."""
     output_dir: str = os.path.expanduser("~/tatbot/output/design")
     """ Directory to save the design image and patches."""
-    image_width_px: int = 2048
+    image_width_px: int = 256
     """ Width of the design image (pixels)."""
-    image_height_px: int = 2048
+    image_height_px: int = 256
     """ Height of the design image (pixels)."""
     image_width_m: float = 0.06
     """ Width of the design image (meters)."""
     image_height_m: float = 0.06
     """ Height of the design image (meters)."""
-    num_patches_width: int = 64
+    num_patches_width: int = 16
     """ Number of patches along the x-axis."""
-    num_patches_height: int = 64
+    num_patches_height: int = 16
     """ Number of patches along the y-axis."""
     patch_empty_threshold: float = 254
     """(0-255) Pixel intensity mean threshold to consider a patch empty. Higher is more aggressive."""
@@ -64,8 +65,18 @@ def main(config: DesignConfig):
     log.info(f"🔍 Using output directory: {config.output_dir}")
     os.makedirs(config.output_dir, exist_ok=True)
 
+    if config.image_filename:
+        design_name = os.path.splitext(os.path.basename(config.image_filename))[0]
+    else:
+        design_name = config.prompt.replace(" ", "_")
+
+    design_output_dir = os.path.join(config.output_dir, design_name)
+    log.info(f"🎨 All design outputs will be saved in: {design_output_dir}")
+    os.makedirs(design_output_dir, exist_ok=True)
+
     if config.image_filename is None:
-        image_path: str = f"{config.output_dir}/{config.prompt.replace(' ', '_')}.png"
+        raw_image_path = os.path.join(design_output_dir, f"{design_name}_raw.png")
+        image_path = os.path.join(design_output_dir, f"{design_name}.png")
         log.info(" Generating design...")
         # https://replicate.com/black-forest-labs/flux-1.1-pro-ultra/api/schema
         output = replicate.run(
@@ -74,15 +85,42 @@ def main(config: DesignConfig):
                 "prompt": f"black tattoo design of {config.prompt}, linework, svg, black on white",
                 "aspect_ratio": "1:1",
                 "output_format": "png",
-                "width": config.image_width_px,
-                "height": config.image_height_px,
                 "safety_tolerance": 6,
             }
         )
-        with open(image_path, "wb") as file:
+        with open(raw_image_path, "wb") as file:
             file.write(output.read())
+        log.info(f"Saved raw image to {raw_image_path}")
+
+        img_raw = PIL.Image.open(raw_image_path)
+        log.info(f"Resizing image to {config.image_width_px}x{config.image_height_px}px...")
+        img_resized = img_raw.resize((config.image_width_px, config.image_height_px))
+        img_resized.save(image_path)
+        log.info(f"Saved resized image to {image_path}")
+
     else:
-        image_path = f"{config.output_dir}/{config.image_filename}"
+        source_image_path = config.image_filename
+        if not os.path.isabs(source_image_path) and not os.path.exists(source_image_path):
+            source_image_path = os.path.join(config.output_dir, config.image_filename)
+        
+        if not os.path.exists(source_image_path):
+            log.error(f"Image file not found: {source_image_path}")
+            return
+
+        image_filename_base = os.path.basename(config.image_filename)
+        base, ext = os.path.splitext(image_filename_base)
+        raw_image_path = os.path.join(design_output_dir, f"{base}_raw{ext}")
+        image_path = os.path.join(design_output_dir, image_filename_base)
+
+        if os.path.abspath(source_image_path) != os.path.abspath(raw_image_path):
+            log.info(f"Copying {source_image_path} to {raw_image_path}")
+            shutil.copy(source_image_path, raw_image_path)
+        
+        img_raw = PIL.Image.open(raw_image_path)
+        log.info(f"Resizing image to {config.image_width_px}x{config.image_height_px}px...")
+        img_resized = img_raw.resize((config.image_width_px, config.image_height_px))
+        img_resized.save(image_path)
+        log.info(f"Saved resized image to {image_path}")
 
     img_pil = PIL.Image.open(image_path)
     base, ext = os.path.splitext(image_path)
@@ -94,7 +132,7 @@ def main(config: DesignConfig):
     path_viz = img_viz.copy()
 
     log.info("Creating patches...")
-    patches_dir = f"{config.output_dir}/{os.path.splitext(config.image_filename)[0]}_patches"
+    patches_dir = os.path.join(design_output_dir, "patches")
     os.makedirs(patches_dir, exist_ok=True)
     log.info(f"Saving patches to {patches_dir}")
 
@@ -250,7 +288,6 @@ def main(config: DesignConfig):
                     color = colormap[path_idx][0].tolist()
                     cv2.line(path_viz, p1, p2, color, 2)
         
-        base, ext = os.path.splitext(image_path)
         scale_x = config.image_width_m / original_width
         scale_y = config.image_height_m / original_height
         all_tool_paths_m = []
@@ -258,7 +295,7 @@ def main(config: DesignConfig):
             path_m = [(p[0] * scale_x, p[1] * scale_y, 0.0) for p in path]
             all_tool_paths_m.append(path_m)
 
-        tool_paths_path = f"{base}_toolpaths.json"
+        tool_paths_path = os.path.join(design_output_dir, "toolpaths.json")
         with open(tool_paths_path, "w") as f:
             json.dump(all_tool_paths_m, f, indent=4)
         log.info(f"💾 Saved {len(all_tool_paths_m)} tool paths to {tool_paths_path}")
@@ -282,16 +319,15 @@ def main(config: DesignConfig):
     else:
         log.info("No tool paths were generated.")
 
-    base, ext = os.path.splitext(image_path)
-    viz_path = f"{base}_patchviz{ext}"
+    viz_path = os.path.join(design_output_dir, f"patchviz{ext}")
     cv2.imwrite(viz_path, img_viz)
     log.info(f"🖼️ Saved patch visualization to {viz_path}")
 
-    comp_viz_path = f"{base}_compviz{ext}"
+    comp_viz_path = os.path.join(design_output_dir, f"compviz{ext}")
     cv2.imwrite(comp_viz_path, comp_viz)
     log.info(f"🖼️ Saved component visualization to {comp_viz_path}")
 
-    path_viz_path = f"{base}_pathviz{ext}"
+    path_viz_path = os.path.join(design_output_dir, f"pathviz{ext}")
     cv2.imwrite(path_viz_path, path_viz)
     log.info(f"🖼️ Saved tool path visualization to {path_viz_path}")
 

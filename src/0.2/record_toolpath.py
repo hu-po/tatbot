@@ -147,7 +147,7 @@ def main(config: ToolpathConfig):
         # The toolpath from the design file is relative to the design's origin.
         # We make it absolute by adding the design's position.
         absolute_toolpath_segment = [
-            list(np.array(config.ee_design_pos) + np.array(p)) for p in relative_toolpath_segment
+            list(np.array(config.ee_design_pos) + np.array([p[0], p[1], 0.0])) for p in relative_toolpath_segment
         ]
 
         # Each segment is an episode, and starts with an ink dip.
@@ -177,13 +177,13 @@ def main(config: ToolpathConfig):
                 config=config.ik_config,
             )
             # hardcode the right arm
-            solution[8] = config.joint_pos_design_r[0]
-            solution[9] = config.joint_pos_design_r[1]
-            solution[10] = config.joint_pos_design_r[2]
-            solution[11] = config.joint_pos_design_r[3]
-            solution[12] = config.joint_pos_design_r[4]
-            solution[13] = config.joint_pos_design_r[5]
-            solution[14] = config.joint_pos_design_r[6]
+            solution = solution.at[8].set(config.joint_pos_design_r[0])
+            solution = solution.at[9].set(config.joint_pos_design_r[1])
+            solution = solution.at[10].set(config.joint_pos_design_r[2])
+            solution = solution.at[11].set(config.joint_pos_design_r[3])
+            solution = solution.at[12].set(config.joint_pos_design_r[4])
+            solution = solution.at[13].set(config.joint_pos_design_r[5])
+            solution = solution.at[14].set(config.joint_pos_design_r[6])
             urdf_vis.update_cfg(np.array(solution))
             action = {
                 "left.joint_0.pos": solution[0],
