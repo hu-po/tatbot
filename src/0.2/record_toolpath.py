@@ -70,15 +70,6 @@ class ToolpathConfig:
     max_episodes: int = 100
     """Maximum number of episodes to record."""
 
-    image_width_px: int = 256
-    """Width of the design image (pixels)."""
-    image_height_px: int = 256
-    """Height of the design image (pixels)."""
-    image_width_m: float = 0.06
-    """Width of the design image (meters)."""
-    image_height_m: float = 0.06
-    """Height of the design image (meters)."""
-
     seed: int = 42
     """Seed for random behavior."""
     urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
@@ -193,19 +184,15 @@ def main(config: ToolpathConfig):
             log_say(f"Reached max episodes ({config.max_episodes})", config.play_sounds)
             break
 
+        # `relative_toolpath_segment` is a list of dicts, each with 'px' and 'm' keys.
+        relative_toolpath_segment_m = [p['m'] for p in relative_toolpath_segment]
+        segment_points_px = [tuple(p['px']) for p in relative_toolpath_segment]
+
         if img_bgr is not None and design_image_gui is not None:
             # Create a fresh copy for this segment's visualization
             segment_viz_img = img_bgr.copy()
             
-            # Convert full segment to pixels and draw it
-            segment_points_px = []
-            scale_x = config.image_width_m / config.image_width_px
-            scale_y = config.image_height_m / config.image_height_px
-            for p_m in relative_toolpath_segment:
-                px_x = int(p_m[0] / scale_x)
-                px_y = int(p_m[1] / scale_y)
-                segment_points_px.append((px_x, px_y))
-
+            # The pixel coordinates are now directly available in `segment_points_px`.
             for k in range(len(segment_points_px) - 1):
                 cv2.line(segment_viz_img, segment_points_px[k], segment_points_px[k+1], (255, 0, 0), 2) # Blue
             
@@ -214,7 +201,7 @@ def main(config: ToolpathConfig):
         # The toolpath from the design file is relative to the design's origin.
         # We make it absolute by adding the design's position.
         absolute_toolpath_segment = [
-            list(np.array(config.ee_design_pos) + np.array([p[0], p[1], 0.0]) + np.array(config.ee_design_hover_offset)) for p in relative_toolpath_segment
+            list(np.array(config.ee_design_pos) + np.array([p[0], p[1], 0.0]) + np.array(config.ee_design_hover_offset)) for p in relative_toolpath_segment_m
         ]
 
         # Each segment is an episode, and starts with an ink dip.

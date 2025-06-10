@@ -1,7 +1,7 @@
 import io
 import os
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 import json
 import shutil
 
@@ -19,6 +19,13 @@ logging.basicConfig(
     datefmt='%H:%M:%S',
 )
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class Toolpoint:
+    px: tuple[int, int]
+    m: tuple[float, float, float]
+
 
 VIZ_COLORS = [
     (0, 0, 255),  # Red
@@ -237,7 +244,7 @@ def main(config: DesignConfig):
                             path_nodes_local.pop()
 
                     patch_start_y, patch_start_x = box[1], box[0]
-                    global_path = [(c + patch_start_x, r + patch_start_y) for r, c in path_nodes_local]
+                    global_path = [(int(c + patch_start_x), int(r + patch_start_y)) for r, c in path_nodes_local]
                     
                     if not global_path:
                         continue
@@ -287,20 +294,27 @@ def main(config: DesignConfig):
         
         scale_x = config.image_width_m / original_width
         scale_y = config.image_height_m / original_height
-        all_tool_paths_m = []
-        for path in all_tool_paths:
-            path_m = [(p[0] * scale_x, p[1] * scale_y, 0.0) for p in path]
-            all_tool_paths_m.append(path_m)
+
+        all_toolpaths_structured = []
+        for path_px in all_tool_paths:
+            toolpath = []
+            for p_px in path_px:
+                p_m = (p_px[0] * scale_x, p_px[1] * scale_y, 0.0)
+                toolpoint = Toolpoint(px=p_px, m=p_m)
+                toolpath.append(toolpoint)
+            all_toolpaths_structured.append(toolpath)
 
         tool_paths_path = os.path.join(design_output_dir, "toolpaths.json")
         with open(tool_paths_path, "w") as f:
-            json.dump(all_tool_paths_m, f, indent=4)
-        log.info(f"💾 Saved {len(all_tool_paths_m)} tool paths to {tool_paths_path}")
+            json.dump([[asdict(tp) for tp in path] for path in all_toolpaths_structured], f, indent=4)
+        log.info(f"💾 Saved {len(all_toolpaths_structured)} tool paths to {tool_paths_path}")
 
         path_lengths_px = [
             sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path[:-1], path[1:]))
             for path in all_tool_paths
         ]
+
+        all_tool_paths_m = [[tp.m for tp in path] for path in all_toolpaths_structured]
         path_lengths_m = [
             sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path[:-1], path[1:]))
             for path in all_tool_paths_m
