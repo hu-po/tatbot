@@ -17,10 +17,13 @@ from typing import Dict, Any
 import tyro
 
 from lerobot.record import _init_rerun, record_loop
-from lerobot.common.datasets.utils import build_dataset_frame, hw_to_dataset_features, sanity_check_dataset_name
-from lerobot.common.datasets.dataset import LeRobotDataset
+from lerobot.common.datasets.utils import build_dataset_frame, hw_to_dataset_features
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.common.robots import make_robot_from_config
-from lerobot.common.utils import busy_wait, is_headless, log_say, init_keyboard_listener
+from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
+from lerobot.common.utils.utils import log_say
+from lerobot.common.utils.robot_utils import busy_wait
+from lerobot.common.utils.control_utils import init_keyboard_listener, is_headless, sanity_check_dataset_name
 
 from ik import IKConfig, ik
 
@@ -28,10 +31,13 @@ log = logging.getLogger('tatbot')
 
 @dataclass
 class ToolpathConfig:
-
     debug: bool = False
     """Enable debug logging."""
-    dataset_name: str = f"toolpath-test-{int(time.time())}"
+
+    toolpath_path: str = os.path.expanduser("~/tatbot/output/design/cat_toolpaths.json")
+    """Local path to the toolpath file generated with design.py file."""
+
+    dataset_name: str = f"test-{int(time.time())}"
     """Name of the dataset to record."""
     display_data: bool = False
     """Display data on screen using Rerun."""
@@ -52,9 +58,12 @@ class ToolpathConfig:
     Too many threads might cause unstable teleoperation fps due to main thread being blocked.
     Not enough threads might cause low camera fps.
     """
-
-    toolpath_path: str = os.path.expanduser("~/tatbot/output/design/cat_toolpaths.json")
-    """Local path to the toolpath file generated with design.py file."""
+    play_sounds: bool = True
+    """Whether to play sounds."""
+    private: bool = False
+    """Whether to push the dataset to a private repository."""
+    fps: int = 30
+    """Frames per second."""
 
     seed: int = 42
     """Seed for random behavior."""
@@ -84,6 +93,8 @@ class ToolpathConfig:
 
     ee_inkcap_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
     """position of the inkcap ee transform."""
+    ee_inkcap_dip: tuple[float, float, float] = (0.0, 0.0, -0.02)
+    """dip vector when performing inkcap dip."""
     ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the inkcap ee transform."""
 
@@ -109,7 +120,7 @@ def main(config: ToolpathConfig):
 
     if config.display_data:
         _init_rerun(session_name="recording")
-    robot = make_robot_from_config('tatbot')
+    robot = make_robot_from_config(TatbotConfig())
     action_features = hw_to_dataset_features(robot.action_features, "action", True)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
     dataset_features = {**action_features, **obs_features}
@@ -118,7 +129,7 @@ def main(config: ToolpathConfig):
     dataset = LeRobotDataset.create(
         f"hu-po/tatbot-toolpath-{config.dataset_name}",
         config.fps,
-        root=config.output_dir,
+        root=f"{config.output_dir}/{config.dataset_name}",
         robot_type=robot.name,
         features=dataset_features,
         use_videos=True,
@@ -132,22 +143,37 @@ def main(config: ToolpathConfig):
     with open(config.toolpath_path, "r") as f:
         toolpaths = json.load(f)
 
-    for toolpath in toolpaths:
+    for relative_toolpath_segment in toolpaths:
+        # The toolpath from the design file is relative to the design's origin.
+        # We make it absolute by adding the design's position.
+        absolute_toolpath_segment = [
+            list(np.array(config.ee_design_pos) + np.array(p)) for p in relative_toolpath_segment
+        ]
+
+        # Each segment is an episode, and starts with an ink dip.
+        episode_toolpath = []
+        # 1. Ink dip sequence.
+        episode_toolpath.append(list(config.ee_inkcap_pos))
+        episode_toolpath.append((np.array(config.ee_inkcap_pos) + np.array(config.ee_inkcap_dip)).tolist())
+        episode_toolpath.append(list(config.ee_inkcap_pos))
+        # 2. Hover over the general design area.
+        episode_toolpath.append(list(config.ee_design_pos))
+        # 3. Add the drawing path for the segment.
+        episode_toolpath.extend(absolute_toolpath_segment)
+
+        num_toolpoints = len(episode_toolpath)
         log_say(f"Recording episode {dataset.num_episodes}", config.play_sounds)
-        timestamp = 0
-        start_episode_t = time.perf_counter()
-        num_toolpoints = len(toolpath)
-        for i, toolpoint in enumerate(toolpath):
+        for i, toolpoint in enumerate(episode_toolpath):
             start_loop_t = time.perf_counter()
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
-            
+
             log.info(f"🔍 Solving IK for toolpoint: {toolpoint} (index: {i}/{num_toolpoints})")
             solution = ik(
                 robot=viser_robot,
-                target_link_indices=jnp.array([robot.links.names.index(config.target_link_name)]),
+                target_link_indices=jnp.array([viser_robot.links.names.index(config.target_link_name)]),
                 target_wxyz=jnp.array([config.ee_design_wxyz]),
-                target_position=jnp.array([config.ee_design_pos + toolpoint]),
+                target_position=jnp.array([np.array(toolpoint)]),
                 config=config.ik_config,
             )
             # hardcode the right arm
@@ -176,12 +202,17 @@ def main(config: ToolpathConfig):
                 "right.gripper.pos": solution[14],
             }
             log.debug(f"🦾 Action: {action}")
-            # sent_action = robot.send_action(action)
+            # # first 5 actions (ink dipping, hovering) should be SLOW and blocking
+            # if i < 5:
+            #     sent_action = robot.send_action(action, goal_time=robot.config.goal_time_ready_sleep, blocking=True)
+            # else:
+            #     # rest of the actions should be FAST and non-blocking
+            #     sent_action = robot.send_action(action)
             sent_action = action
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
-            dataset.add_frame(frame, task=single_task)
+            dataset.add_frame(frame, task=f"Tattoo path {i}")
 
             if config.display_data:
                 for obs, val in observation.items():
@@ -196,7 +227,6 @@ def main(config: ToolpathConfig):
             dt_s = time.perf_counter() - start_loop_t
             busy_wait(1 / config.fps - dt_s)
 
-            timestamp = time.perf_counter() - start_episode_t
             if events["exit_early"]:
                 events["exit_early"] = False
                 break
@@ -221,7 +251,7 @@ def main(config: ToolpathConfig):
         listener.stop()
 
     if config.push_to_hub:
-        dataset.push_to_hub(tags=config.tags, private=config.private)
+        dataset.push_to_hub(tags=["tatbot", "wxai", "trossen"], private=config.private)
 
     log_say("Exiting", config.play_sounds)
 

@@ -255,7 +255,7 @@ def main(config: DesignConfig):
         scale_y = config.image_height_m / original_height
         all_tool_paths_m = []
         for path in all_tool_paths:
-            path_m = [(p[0] * scale_x, p[1] * scale_y) for p in path]
+            path_m = [(p[0] * scale_x, p[1] * scale_y, 0.0) for p in path]
             all_tool_paths_m.append(path_m)
 
         tool_paths_path = f"{base}_toolpaths.json"
