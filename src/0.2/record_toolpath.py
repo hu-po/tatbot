@@ -45,7 +45,7 @@ class ToolpathConfig:
     """Display data on screen using Rerun."""
     output_dir: str = os.path.expanduser("~/tatbot/output/record")
     """Directory to save the dataset."""
-    push_to_hub: bool = False
+    push_to_hub: bool = True
     """Push the dataset to the Hugging Face Hub."""
     num_image_writer_processes: int = 0
     """
@@ -66,6 +66,8 @@ class ToolpathConfig:
     """Whether to push the dataset to a private repository."""
     fps: int = 30
     """Frames per second."""
+    max_episodes: int = 10
+    """Maximum number of episodes to record."""
 
     image_width_px: int = 256
     """Width of the design image (pixels)."""
@@ -101,12 +103,12 @@ class ToolpathConfig:
     """position of the design ee transform."""
     ee_design_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the design ee transform."""
-    ee_design_hover_offset: tuple[float, float, float] = (0.0, 0.0, -0.01)
+    ee_design_hover_offset: tuple[float, float, float] = (0.0, 0.0, -0.009)
     """offset of the design ee transform when hovering over a toolpoint."""
 
     ee_inkcap_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
     """position of the inkcap ee transform."""
-    ee_inkcap_dip: tuple[float, float, float] = (0.0, 0.0, -0.035)
+    ee_inkcap_dip: tuple[float, float, float] = (0.0, 0.0, -0.03)
     """dip vector when performing inkcap dip."""
     ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the inkcap ee transform."""
@@ -184,6 +186,11 @@ def main(config: ToolpathConfig):
         toolpaths = json.load(f)
 
     for toolpath_idx, relative_toolpath_segment in enumerate(toolpaths):
+
+        if toolpath_idx >= config.max_episodes:
+            log_say(f"Reached max episodes ({config.max_episodes})", config.play_sounds)
+            break
+
         if img_bgr is not None and design_image_gui is not None:
             # Create a fresh copy for this segment's visualization
             segment_viz_img = img_bgr.copy()
