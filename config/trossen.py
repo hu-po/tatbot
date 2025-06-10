@@ -90,12 +90,12 @@ if __name__=='__main__':
 
     if args.arm == "l":
         print("Configuring left arm")
-        ip = "192.168.1.2"
-        ee = trossen_arm.StandardEndEffector.wxai_v0_leader
+        ip = "192.168.1.3"
+        ee = trossen_arm.StandardEndEffector.wxai_v0_base
         yaml_file = "config/trossen_arm_r.yaml"
     elif args.arm == "r":
         print("Configuring right arm")
-        ip = "192.168.1.3"
+        ip = "192.168.1.2"
         ee = trossen_arm.StandardEndEffector.wxai_v0_follower
         yaml_file = "config/trossen_arm_l.yaml"
     else:

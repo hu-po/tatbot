@@ -104,12 +104,12 @@ class ToolpathConfig:
     """position of the design ee transform."""
     ee_design_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the design ee transform."""
-    ee_design_hover_offset: tuple[float, float, float] = (0.0, 0.0, -0.008)
+    ee_design_hover_offset: tuple[float, float, float] = (0.0, 0.0, -0.0085)
     """offset of the design ee transform when hovering over a toolpoint."""
 
     ee_inkcap_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
     """position of the inkcap ee transform."""
-    ee_inkcap_dip: tuple[float, float, float] = (0.0, 0.0, -0.03)
+    ee_inkcap_dip: tuple[float, float, float] = (0.0, 0.0, -0.032)
     """dip vector when performing inkcap dip."""
     ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the inkcap ee transform."""
