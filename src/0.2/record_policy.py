@@ -1,30 +1,15 @@
-"""
-
-```bash
-python -m lerobot.record \
-    --robot.type=tatbot \
-    --robot.cameras="{wrist: {type: intelrealsense, camera_index: 0, width: 640, height: 480}}" \
-    --robot.id=black \
-    --dataset.repo_id=$HF_USERNAME/record-test \
-    --dataset.num_episodes=2 \
-    --dataset.single_task="Grab the cube"
-```
-
-"""
-
 import logging
 import os
 import time
-from pprint import pformat
-from pathlib import Path
 from dataclasses import asdict, dataclass
+from pathlib import Path
+from pprint import pformat
 
 import lerobot.record
-from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
-from lerobot.record import RecordConfig, DatasetRecordConfig
-from lerobot.common.policies.smolvla.configuration_smolvla import SmolVLAConfig
-from transformers import AutoProcessor
 import tyro
+from lerobot.common.policies.smolvla.configuration_smolvla import SmolVLAConfig
+from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
+from lerobot.record import DatasetRecordConfig, RecordConfig
 
 log = logging.getLogger('tatbot')
 

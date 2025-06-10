@@ -1,5 +1,4 @@
 """
-
 Records episodes using Vizer ik target controls.
 
 > cd ~/tatbot/src/0.2
@@ -13,25 +12,27 @@ Records episodes using Vizer ik target controls.
 [right arrow] exit recording loop
 """
 
-from dataclasses import asdict, dataclass
 import logging
 import os
 import time
+from dataclasses import asdict, dataclass
 from pprint import pformat
+from typing import Any, Dict
 
+import jax.numpy as jnp
 import lerobot.record
-from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
-from lerobot.record import RecordConfig, DatasetRecordConfig
-from lerobot.common.teleoperators.config import TeleoperatorConfig
-from lerobot.common.teleoperators.teleoperator import Teleoperator
-from ik import IKConfig, ik
 import numpy as np
 import pyroki as pk
-import viser
-from viser.extras import ViserUrdf
-import yourdfpy
-from typing import Dict, Any
 import tyro
+import viser
+import yourdfpy
+from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
+from lerobot.common.teleoperators.config import TeleoperatorConfig
+from lerobot.common.teleoperators.teleoperator import Teleoperator
+from lerobot.record import DatasetRecordConfig, RecordConfig
+from viser.extras import ViserUrdf
+
+from ik import IKConfig, ik
 
 log = logging.getLogger('tatbot')
 
