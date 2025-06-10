@@ -41,7 +41,7 @@ class ToolpathConfig:
 
     dataset_name: str = f"test-{int(time.time())}"
     """Name of the dataset to record."""
-    display_data: bool = False
+    display_data: bool = True
     """Display data on screen using Rerun."""
     output_dir: str = os.path.expanduser("~/tatbot/output/record")
     """Directory to save the dataset."""
@@ -111,6 +111,14 @@ class ToolpathConfig:
     ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the inkcap ee transform."""
 
+    ink_dip_interval: int = 4
+    """
+    Dip ink every N toolpath segments.
+    If N > 0, dips on segment 0, N, 2N, ...
+    If N = 0, dips only on the first segment.
+    If N < 0, never dips.
+    """
+
 
 def main(config: ToolpathConfig):
     config = config
@@ -175,7 +183,7 @@ def main(config: ToolpathConfig):
     with open(toolpath_file_path, "r") as f:
         toolpaths = json.load(f)
 
-    for relative_toolpath_segment in toolpaths:
+    for toolpath_idx, relative_toolpath_segment in enumerate(toolpaths):
         if img_bgr is not None and design_image_gui is not None:
             # Create a fresh copy for this segment's visualization
             segment_viz_img = img_bgr.copy()
@@ -202,28 +210,31 @@ def main(config: ToolpathConfig):
 
         # Each segment is an episode, and starts with an ink dip.
         episode_toolpath = []
-        # 1. Ink dip sequence.
-        episode_toolpath.append(list(config.ee_inkcap_pos))
-        episode_toolpath.append((np.array(config.ee_inkcap_pos) + np.array(config.ee_inkcap_dip)).tolist())
-        episode_toolpath.append(list(config.ee_inkcap_pos))
-        # 2. Hover over the general design area.
-        episode_toolpath.append(list(config.ee_design_pos))
-        # 3. Hover over the first toolpoint
+
+        should_dip = (config.ink_dip_interval > 0 and toolpath_idx % config.ink_dip_interval == 0) or \
+                     (config.ink_dip_interval == 0 and toolpath_idx == 0)
+
+        if should_dip:
+            log_say("Dipping ink", config.play_sounds)
+            # Ink dip sequence
+            episode_toolpath.append(list(config.ee_inkcap_pos))
+            episode_toolpath.append((np.array(config.ee_inkcap_pos) + np.array(config.ee_inkcap_dip)).tolist())
+            episode_toolpath.append(list(config.ee_inkcap_pos))
+
+        # Hover over the first toolpoint
         episode_toolpath.append(list(absolute_toolpath_segment[0] - np.array(config.ee_design_hover_offset)))
-        # 4. Add the drawing path for the segment.
+        # Add the rest of the toolpath
         episode_toolpath.extend(absolute_toolpath_segment)
-
-        num_toolpoints = len(episode_toolpath)
-        log_say(f"Recording tool path {dataset.num_episodes}", config.play_sounds)
-
         len_prefix = len(episode_toolpath) - len(absolute_toolpath_segment)
+        num_toolpoints = len(episode_toolpath)
 
-        for i, toolpoint in enumerate(episode_toolpath):
+        log_say(f"Recording tool path {toolpath_idx}", config.play_sounds)
+        for toolpoint_idx, toolpoint in enumerate(episode_toolpath):
             start_loop_t = time.perf_counter()
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 
-            log.info(f"🔍 Solving IK for toolpoint: {toolpoint} (index: {i}/{num_toolpoints})")
+            log.info(f"🔍 Solving IK for toolpoint: {toolpoint} (index: {toolpoint_idx}/{num_toolpoints})")
             solution = ik(
                 robot=viser_robot,
                 target_link_indices=jnp.array([viser_robot.links.names.index(config.target_link_name)]),
@@ -257,21 +268,20 @@ def main(config: ToolpathConfig):
                 "right.gripper.pos": solution[14],
             }
             log.debug(f"🦾 Action: {action}")
-            # first 6 actions (ink dipping, hovering) should be SLOW and blocking
-            if i < 6:
-                if i == 0:
-                    log_say("Dipping ink", config.play_sounds)
+            # initial actions such as ink dipping and hovering should be SLOW and blocking
+            # This includes the first drawing point.
+            if toolpoint_idx < len_prefix + 1:
                 sent_action = robot.send_action(action, goal_time=robot.config.goal_time_ready_sleep, blocking=True)
             else:
                 # rest of the actions should be FAST and non-blocking
-                sent_action = robot.send_action(action)
+                sent_action = robot.send_action(action, blocking=True)
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
-            dataset.add_frame(frame, task=f"Tattoo path {i}")
+            dataset.add_frame(frame, task=f"Tattoo path {toolpoint_idx}")
 
             if img_bgr is not None and design_image_gui is not None:
-                current_drawing_point_idx = i - len_prefix
+                current_drawing_point_idx = toolpoint_idx - len_prefix
                 if current_drawing_point_idx >= 0:
                     # new image for each step
                     step_image = segment_viz_img.copy()
