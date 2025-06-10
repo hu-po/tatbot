@@ -5,9 +5,11 @@ import os
 from pprint import pformat
 import time
 
+import cv2
 import jax
 import jax.numpy as jnp
 import numpy as np
+import PIL.Image
 import pyroki as pk
 import rerun as rr
 import viser
@@ -34,8 +36,8 @@ class ToolpathConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    toolpath_path: str = os.path.expanduser("~/tatbot/output/design/cat_toolpaths.json")
-    """Local path to the toolpath file generated with design.py file."""
+    design_dir: str = os.path.expanduser("~/tatbot/output/design/infinity")
+    """Directory with design outputs from design.py."""
 
     dataset_name: str = f"test-{int(time.time())}"
     """Name of the dataset to record."""
@@ -64,6 +66,15 @@ class ToolpathConfig:
     """Whether to push the dataset to a private repository."""
     fps: int = 30
     """Frames per second."""
+
+    image_width_px: int = 256
+    """Width of the design image (pixels)."""
+    image_height_px: int = 256
+    """Height of the design image (pixels)."""
+    image_width_m: float = 0.06
+    """Width of the design image (meters)."""
+    image_height_m: float = 0.06
+    """Height of the design image (meters)."""
 
     seed: int = 42
     """Seed for random behavior."""
@@ -108,6 +119,24 @@ def main(config: ToolpathConfig):
     server: viser.ViserServer = viser.ViserServer()
     server.scene.set_environment_map(hdri=config.env_map_hdri, background=True)
 
+    with server.gui.add_folder("Design"):
+        image_path = os.path.join(config.design_dir, "resized.png")
+        if os.path.exists(image_path):
+            log.info(f"🖼️ Loading design image from {image_path}...")
+            img_pil = PIL.Image.open(image_path).convert("RGB")
+            img_bgr = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+            # Viser GUI expects RGB
+            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+            design_image_gui = server.gui.add_image(
+                label="Tattoo Design",
+                image=img_rgb,
+                format="png",
+            )
+        else:
+            log.warning(f"Design image not found at {image_path}, GUI image will be disabled.")
+            img_bgr = None
+            design_image_gui = None
+
     @server.on_client_connect
     def _(client: viser.ClientHandle) -> None:
         client.camera.position = config.view_camera_position
@@ -140,10 +169,29 @@ def main(config: ToolpathConfig):
     robot.connect()
     listener, events = init_keyboard_listener()
 
-    with open(config.toolpath_path, "r") as f:
+    toolpath_file_path = os.path.join(config.design_dir, "toolpaths.json")
+    with open(toolpath_file_path, "r") as f:
         toolpaths = json.load(f)
 
     for relative_toolpath_segment in toolpaths:
+        if img_bgr is not None and design_image_gui is not None:
+            # Create a fresh copy for this segment's visualization
+            segment_viz_img = img_bgr.copy()
+            
+            # Convert full segment to pixels and draw it
+            segment_points_px = []
+            scale_x = config.image_width_m / config.image_width_px
+            scale_y = config.image_height_m / config.image_height_px
+            for p_m in relative_toolpath_segment:
+                px_x = int(p_m[0] / scale_x)
+                px_y = int(p_m[1] / scale_y)
+                segment_points_px.append((px_x, px_y))
+
+            for k in range(len(segment_points_px) - 1):
+                cv2.line(segment_viz_img, segment_points_px[k], segment_points_px[k+1], (255, 0, 0), 2) # Blue
+            
+            design_image_gui.image = cv2.cvtColor(segment_viz_img, cv2.COLOR_BGR2RGB)
+
         # The toolpath from the design file is relative to the design's origin.
         # We make it absolute by adding the design's position.
         absolute_toolpath_segment = [
@@ -163,6 +211,9 @@ def main(config: ToolpathConfig):
 
         num_toolpoints = len(episode_toolpath)
         log_say(f"Recording episode {dataset.num_episodes}", config.play_sounds)
+
+        len_prefix = len(episode_toolpath) - len(absolute_toolpath_segment)
+
         for i, toolpoint in enumerate(episode_toolpath):
             start_loop_t = time.perf_counter()
             observation = robot.get_observation()
@@ -213,6 +264,22 @@ def main(config: ToolpathConfig):
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
             dataset.add_frame(frame, task=f"Tattoo path {i}")
+
+            if img_bgr is not None and design_image_gui is not None:
+                current_drawing_point_idx = i - len_prefix
+                if current_drawing_point_idx >= 0:
+                    # new image for each step
+                    step_image = segment_viz_img.copy()
+                    
+                    # draw path up to current point
+                    path_to_draw_px = segment_points_px[:current_drawing_point_idx+1]
+                    for k in range(len(path_to_draw_px) - 1):
+                        cv2.line(step_image, path_to_draw_px[k], path_to_draw_px[k+1], (0, 255, 0), 2) # Green
+                    
+                    if path_to_draw_px:
+                        cv2.circle(step_image, path_to_draw_px[-1], 5, (0, 0, 255), -1) # Red circle for current point
+
+                    design_image_gui.image = cv2.cvtColor(step_image, cv2.COLOR_BGR2RGB)
 
             if config.display_data:
                 for obs, val in observation.items():

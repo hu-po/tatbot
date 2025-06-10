@@ -107,10 +107,8 @@ def main(config: DesignConfig):
             log.error(f"Image file not found: {source_image_path}")
             return
 
-        image_filename_base = os.path.basename(config.image_filename)
-        base, ext = os.path.splitext(image_filename_base)
-        raw_image_path = os.path.join(design_output_dir, f"{base}_raw{ext}")
-        image_path = os.path.join(design_output_dir, image_filename_base)
+        raw_image_path = os.path.join(design_output_dir, f"raw.png")
+        image_path = os.path.join(design_output_dir, f"resized.png")
 
         if os.path.abspath(source_image_path) != os.path.abspath(raw_image_path):
             log.info(f"Copying {source_image_path} to {raw_image_path}")
@@ -123,7 +121,6 @@ def main(config: DesignConfig):
         log.info(f"Saved resized image to {image_path}")
 
     img_pil = PIL.Image.open(image_path)
-    base, ext = os.path.splitext(image_path)
     original_width, original_height = img_pil.size
     log.info(f"🖼️ Design image size: {original_width}x{original_height} pixels.")
 
@@ -319,15 +316,15 @@ def main(config: DesignConfig):
     else:
         log.info("No tool paths were generated.")
 
-    viz_path = os.path.join(design_output_dir, f"patchviz{ext}")
+    viz_path = os.path.join(design_output_dir, f"patchviz.png")
     cv2.imwrite(viz_path, img_viz)
     log.info(f"🖼️ Saved patch visualization to {viz_path}")
 
-    comp_viz_path = os.path.join(design_output_dir, f"compviz{ext}")
+    comp_viz_path = os.path.join(design_output_dir, f"compviz.png")
     cv2.imwrite(comp_viz_path, comp_viz)
     log.info(f"🖼️ Saved component visualization to {comp_viz_path}")
 
-    path_viz_path = os.path.join(design_output_dir, f"pathviz{ext}")
+    path_viz_path = os.path.join(design_output_dir, f"pathviz.png")
     cv2.imwrite(path_viz_path, path_viz)
     log.info(f"🖼️ Saved tool path visualization to {path_viz_path}")
 
