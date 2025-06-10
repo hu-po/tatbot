@@ -22,20 +22,6 @@ log = logging.getLogger(__name__)
 
 
 @dataclass
-class Toolpoint:
-    px: tuple[int, int]
-    m: tuple[float, float, float]
-
-
-VIZ_COLORS = [
-    (0, 0, 255),  # Red
-    (0, 255, 0),  # Green
-    (255, 0, 0),  # Blue
-    (0, 255, 255),  # Yellow
-    (255, 0, 255),  # Magenta
-]
-
-@dataclass
 class DesignConfig:
     # image_path: str | None = None
     image_filename: str | None = "infinity.webp"
@@ -66,6 +52,20 @@ class DesignConfig:
     """(px) Minimum length of a tool path to be included."""
     max_tool_path_length_px: int = 200
     """(px) Maximum length of a tool path to be included."""
+
+@dataclass
+class Toolpoint:
+    px: tuple[int, int]
+    m: tuple[float, float, float]
+
+
+VIZ_COLORS = [
+    (0, 0, 255),  # Red
+    (0, 255, 0),  # Green
+    (255, 0, 0),  # Blue
+    (0, 255, 255),  # Yellow
+    (255, 0, 255),  # Magenta
+]
 
 
 def main(config: DesignConfig):
