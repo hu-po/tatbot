@@ -64,9 +64,9 @@ class ToolpathConfig:
     """Whether to play sounds."""
     private: bool = False
     """Whether to push the dataset to a private repository."""
-    fps: int = 30
+    fps: int = 5
     """Frames per second."""
-    max_episodes: int = 10
+    max_episodes: int = 6
     """Maximum number of episodes to record."""
 
     image_width_px: int = 256
@@ -103,12 +103,12 @@ class ToolpathConfig:
     """position of the design ee transform."""
     ee_design_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the design ee transform."""
-    ee_design_hover_offset: tuple[float, float, float] = (0.0, 0.0, -0.009)
+    ee_design_hover_offset: tuple[float, float, float] = (0.0, 0.0, -0.008)
     """offset of the design ee transform when hovering over a toolpoint."""
 
     ee_inkcap_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
     """position of the inkcap ee transform."""
-    ee_inkcap_dip: tuple[float, float, float] = (0.0, 0.0, -0.03)
+    ee_inkcap_dip: tuple[float, float, float] = (0.0, 0.0, -0.029)
     """dip vector when performing inkcap dip."""
     ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the inkcap ee transform."""
