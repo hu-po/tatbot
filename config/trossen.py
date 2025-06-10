@@ -1,4 +1,32 @@
-# https://github.com/TrossenRobotics/trossen_arm/blob/main/demos/python/configuration_in_yaml.py
+"""
+Configure the robot via YAML, originally from:
+
+https://github.com/TrossenRobotics/trossen_arm/blob/main/demos/python/configuration_in_yaml.py
+
+First update the firmware to the latest version:
+
+https://docs.trossenrobotics.com/trossen_arm/main/getting_started/software_setup.html#software-upgrade
+
+Download latest firmware:
+
+https://docs.trossenrobotics.com/trossen_arm/main/downloads.html
+
+> unzip firmware-wxai_v0.zip
+> teensy_loader_cli --mcu=TEENSY41 -s firmware-wxai_v0.hex
+
+----
+
+TODO: Set the velocity_tolerance to 0.2 times the velocity max
+
+https://docs.trossenrobotics.com/trossen_arm/main/getting_started/configuration.html#joint-limits
+
+----
+
+TODO: Edit end effector parameters for left arm (tattoo needle arm):
+
+https://docs.trossenrobotics.com/trossen_arm/main/api/structtrossen__arm_1_1EndEffector.html#struct-documentation
+
+"""
 
 import trossen_arm
 from dataclasses import dataclass
