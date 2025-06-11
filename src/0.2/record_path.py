@@ -373,6 +373,8 @@ if __name__ == "__main__":
     finally:
         log.info("🛑 Disconnecting robot...")
         robot = make_robot_from_config(TatbotConfig())
-        robot.connect(clear_error=False)
-        log.error(robot._get_error_str())
+        robot._connect_l(clear_error=False)
+        log.error(robot._get_error_str_l())
+        robot._connect_r(clear_error=False)
+        log.error(robot._get_error_str_r())
         robot.disconnect()
