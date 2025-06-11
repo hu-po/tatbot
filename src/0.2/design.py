@@ -12,6 +12,9 @@ import PIL.Image
 import replicate
 import tyro
 from skimage.morphology import skeletonize
+import jax.numpy as jnp
+
+from path import Pose, Path, Pattern
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,7 +27,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class DesignConfig:
     # image_path: str | None = None
-    image_filename: str | None = "infinity.webp"
+    image_filename: str | None = "infinity/raw.png"
     """ (Optional) Local path to the tattoo design image."""
     prompt: str = "infinity"
     """ Prompt for the design image generation."""
@@ -52,11 +55,6 @@ class DesignConfig:
     """(px) Minimum length of a tool path to be included."""
     max_path_length_px: int = 200
     """(px) Maximum length of a tool path to be included."""
-
-@dataclass
-class Toolpoint:
-    px: tuple[int, int]
-    m: tuple[float, float, float]
 
 
 VIZ_COLORS = [
@@ -295,33 +293,50 @@ def main(config: DesignConfig):
         scale_x = config.image_width_m / original_width
         scale_y = config.image_height_m / original_height
 
-        all_paths_structured = []
+        paths = []
         for path_px in all_paths:
-            path = []
-            for p_px in path_px:
-                p_m = (p_px[0] * scale_x, p_px[1] * scale_y, 0.0)
-                toolpoint = Toolpoint(px=p_px, m=p_m)
-                path.append(toolpoint)
-            all_paths_structured.append(path)
+            poses = [
+                Pose(
+                    pixel_coords=jnp.array(p_px, dtype=jnp.int32),
+                    pos=jnp.array([p_px[0] * scale_x, p_px[1] * scale_y, 0.0]),
+                )
+                for p_px in path_px
+            ]
+            paths.append(Path(poses=poses))
+
+        pattern = Pattern(
+            name=design_name,
+            paths=paths,
+            width_m=config.image_width_m,
+            height_m=config.image_height_m,
+            width_px=config.image_width_px,
+            height_px=config.image_height_px,
+        )
+
+        class NumpyEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, (np.ndarray, jnp.ndarray)):
+                    return obj.tolist()
+                return json.JSONEncoder.default(self, obj)
 
         paths_path = os.path.join(design_output_dir, "paths.json")
         with open(paths_path, "w") as f:
-            json.dump([[asdict(tp) for tp in path] for path in all_paths_structured], f, indent=4)
-        log.info(f"💾 Saved {len(all_paths_structured)} tool paths to {paths_path}")
+            json_data = [[asdict(pose) for pose in path.poses] for path in pattern.paths]
+            json.dump(json_data, f, indent=4, cls=NumpyEncoder)
+        log.info(f"💾 Saved {len(pattern.paths)} tool paths to {paths_path}")
 
         path_lengths_px = [
             sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path[:-1], path[1:]))
             for path in all_paths
         ]
 
-        all_paths_m = [[tp.m for tp in path] for path in all_paths_structured]
+        all_paths_m = [[pose.pos for pose in path.poses] for path in pattern.paths]
         path_lengths_m = [
-            sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path[:-1], path[1:]))
-            for path in all_paths_m
+            sum(np.linalg.norm(p1 - p2) for p1, p2 in zip(path[:-1], path[1:])) for path in all_paths_m
         ]
 
         log.info("--- Tool Path Statistics ---")
-        log.info(f"Total tool paths generated: {len(all_paths)}")
+        log.info(f"Total tool paths generated: {len(pattern.paths)}")
         if path_lengths_px:
             log.info(f"Min path length: {np.min(path_lengths_px):.2f} pixels ({np.min(path_lengths_m):.4f} m)")
             log.info(f"Max path length: {np.max(path_lengths_px):.2f} pixels ({np.max(path_lengths_m):.4f} m)")

@@ -7,6 +7,9 @@ from PIL import Image, ImageDraw
 import numpy as np
 import cv2
 import tyro
+import jax.numpy as jnp
+
+from path import Pose, Path, Pattern
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,12 +37,6 @@ class StencilConfig:
     """Number of rows in the grid."""
     background_color: str = "white"
     """Background color of the canvas."""
-
-@dataclass
-class Toolpoint:
-    """A single point in a tool path, with pixel and metric coordinates."""
-    px: tuple[int, int]
-    m: tuple[float, float, float]
 
 @dataclass
 class VerticalLineConfig:
@@ -202,15 +199,37 @@ def main(config: StencilConfig):
     scale_x = config.image_width_m / config.image_width_px
     scale_y = config.image_height_m / config.image_height_px
 
-    all_paths_structured = []
+    paths = []
     for path_px in all_paths:
-        path = [Toolpoint(px=p_px, m=(p_px[0] * scale_x, p_px[1] * scale_y, 0.0)) for p_px in path_px]
-        all_paths_structured.append(path)
+        poses = [
+            Pose(
+                pixel_coords=jnp.array(p_px, dtype=jnp.int32),
+                pos=jnp.array([p_px[0] * scale_x, p_px[1] * scale_y, 0.0]),
+            )
+            for p_px in path_px
+        ]
+        paths.append(Path(poses=poses))
+
+    pattern = Pattern(
+        name="stencil_pattern",
+        paths=paths,
+        width_m=config.image_width_m,
+        height_m=config.image_height_m,
+        width_px=config.image_width_px,
+        height_px=config.image_height_px,
+    )
+
+    class NumpyEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, (np.ndarray, jnp.ndarray)):
+                return obj.tolist()
+            return json.JSONEncoder.default(self, obj)
 
     paths_path = os.path.join(config.output_dir, "paths.json")
     with open(paths_path, "w") as f:
-        json.dump([[asdict(tp) for tp in path] for path in all_paths_structured], f, indent=4)
-    log.info(f"💾 Saved {len(all_paths_structured)} tool paths to {paths_path}")
+        json_data = [[asdict(pose) for pose in path.poses] for path in pattern.paths]
+        json.dump(json_data, f, indent=4, cls=NumpyEncoder)
+    log.info(f"💾 Saved {len(pattern.paths)} tool paths to {paths_path}")
 
 if __name__ == "__main__":
     args = tyro.cli(StencilConfig)

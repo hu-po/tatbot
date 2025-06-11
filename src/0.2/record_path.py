@@ -28,6 +28,7 @@ from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.common.utils.control_utils import init_keyboard_listener, is_headless, sanity_check_dataset_name
 
 from ik import IKConfig, ik
+from path import Pose, Path, Pattern
 
 log = logging.getLogger('tatbot')
 
@@ -178,39 +179,58 @@ def main(config: PathConfig):
 
     path_file_path = os.path.join(config.design_dir, "paths.json")
     with open(path_file_path, "r") as f:
-        paths = json.load(f)
+        paths_json = json.load(f)
 
-    for path_idx, relative_path_segment in enumerate(paths):
+    paths = []
+    for path_data in paths_json:
+        poses = [
+            Pose(
+                pos=jnp.array(p["pos"]),
+                wxyz=jnp.array(p["wxyz"]),
+                pixel_coords=jnp.array(p["pixel_coords"], dtype=jnp.int32)
+                if p["pixel_coords"] is not None
+                else None,
+                metric_coords=jnp.array(p["metric_coords"]) if p["metric_coords"] is not None else None,
+            )
+            for p in path_data
+        ]
+        paths.append(Path(poses=poses))
 
+    pattern = Pattern(paths=paths, name=os.path.basename(os.path.normpath(config.design_dir)))
+    log.info(f"Loaded pattern '{pattern.name}' with {len(pattern.paths)} paths.")
+
+    for path_idx, path in enumerate(pattern.paths):
         if path_idx >= config.max_episodes:
             log_say(f"Reached max episodes ({config.max_episodes})", config.play_sounds)
             break
 
-        # `relative_path_segment` is a list of dicts, each with 'px' and 'm' keys.
-        relative_path_segment_m = [p['m'] for p in relative_path_segment]
-        segment_points_px = [tuple(p['px']) for p in relative_path_segment]
+        # `path.poses` is a list of `Pose` objects.
+        relative_path_segment_m = [p.pos for p in path.poses]
+        segment_points_px = [tuple(p.pixel_coords.tolist()) for p in path.poses]
 
         if img_bgr is not None and design_image_gui is not None:
             # Create a fresh copy for this segment's visualization
             segment_viz_img = img_bgr.copy()
-            
+
             # The pixel coordinates are now directly available in `segment_points_px`.
             for k in range(len(segment_points_px) - 1):
-                cv2.line(segment_viz_img, segment_points_px[k], segment_points_px[k+1], (255, 0, 0), 2) # Blue
-            
+                cv2.line(segment_viz_img, segment_points_px[k], segment_points_px[k + 1], (255, 0, 0), 2)  # Blue
+
             design_image_gui.image = cv2.cvtColor(segment_viz_img, cv2.COLOR_BGR2RGB)
 
         # The path from the design file is relative to the design's origin.
         # We make it absolute by adding the design's position.
         absolute_path_segment = [
-            list(np.array(config.ee_design_pos) + np.array([p[0], p[1], 0.0]) + np.array(config.ee_design_hover_offset)) for p in relative_path_segment_m
+            list(np.array(config.ee_design_pos) + np.array(p) + np.array(config.ee_design_hover_offset))
+            for p in relative_path_segment_m
         ]
 
         # Each segment is an episode, and starts with an ink dip.
         episode_path = []
 
-        should_dip = (config.ink_dip_interval > 0 and path_idx % config.ink_dip_interval == 0) or \
-                     (config.ink_dip_interval == 0 and path_idx == 0)
+        should_dip = (config.ink_dip_interval > 0 and path_idx % config.ink_dip_interval == 0) or (
+            config.ink_dip_interval == 0 and path_idx == 0
+        )
 
         if should_dip:
             log_say("Dipping ink", config.play_sounds)
@@ -269,7 +289,7 @@ def main(config: PathConfig):
             # initial actions such as ink dipping and hovering should be SLOW and blocking
             # This includes the first drawing point.
             if toolpoint_idx < len_prefix + 1:
-                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_ready_sleep, blocking=True)
+                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, blocking=True)
             else:
                 # rest of the actions should be FAST and non-blocking
                 sent_action = robot.send_action(action)
@@ -283,14 +303,14 @@ def main(config: PathConfig):
                 if current_drawing_point_idx >= 0:
                     # new image for each step
                     step_image = segment_viz_img.copy()
-                    
+
                     # draw path up to current point
-                    path_to_draw_px = segment_points_px[:current_drawing_point_idx+1]
+                    path_to_draw_px = segment_points_px[: current_drawing_point_idx + 1]
                     for k in range(len(path_to_draw_px) - 1):
-                        cv2.line(step_image, path_to_draw_px[k], path_to_draw_px[k+1], (0, 255, 0), 2) # Green
-                    
+                        cv2.line(step_image, path_to_draw_px[k], path_to_draw_px[k + 1], (0, 255, 0), 2)  # Green
+
                     if path_to_draw_px:
-                        cv2.circle(step_image, path_to_draw_px[-1], 5, (0, 0, 255), -1) # Red circle for current point
+                        cv2.circle(step_image, path_to_draw_px[-1], 5, (0, 0, 255), -1)  # Red circle for current point
 
                     design_image_gui.image = cv2.cvtColor(step_image, cv2.COLOR_BGR2RGB)
 
