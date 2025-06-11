@@ -28,7 +28,7 @@ from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.common.utils.control_utils import init_keyboard_listener, is_headless, sanity_check_dataset_name
 
 from ik import IKConfig, ik
-from path import Pose, Path, Pattern
+from pattern import Pose, Path, Pattern
 
 log = logging.getLogger('tatbot')
 
@@ -37,14 +37,13 @@ class PathConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    # pattern_dir: str = os.path.expanduser("~/tatbot/output/patterns/infinity")
-    pattern_dir: str = os.path.expanduser("~/tatbot/output/patterns/stencil")
-    """Directory with pattern.json and design.png."""
+    pattern_dir: str = os.path.expanduser("~/tatbot/output/patterns/calibration")
+    """Directory with pattern.json and image.png."""
 
-    # repo_id: str = f"hu-po/tatbot-test-{int(time.time())}"
-    # repo_id: str = "hu-po/tatbot-infinity"
-    repo_id: str = f"hu-po/tatbot-stencil-{int(time.time())}"
-    """Hugging Face Hub repository ID, e.g. 'hf-username/my-dataset'."""
+    hf_username: str = os.environ.get("HF_USER", "hu-po")
+    """Hugging Face username."""
+    dataset_name: str | None = None
+    """Dataset will be saved to Hugging Face Hub repository ID, e.g. 'hf_username/dataset_name'."""
     display_data: bool = True
     """Display data on screen using Rerun."""
     output_dir: str = os.path.expanduser("~/tatbot/output/record")
@@ -126,23 +125,19 @@ def main(config: PathConfig):
     server: viser.ViserServer = viser.ViserServer()
     server.scene.set_environment_map(hdri=config.env_map_hdri, background=True)
 
-    with server.gui.add_folder("Design"):
-        image_path = os.path.join(config.pattern_dir, "design.png")
-        if os.path.exists(image_path):
-            log.info(f"🖼️ Loading design image from {image_path}...")
-            img_pil = PIL.Image.open(image_path).convert("RGB")
-            img_bgr = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
-            # Viser GUI expects RGB
-            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-            design_image_gui = server.gui.add_image(
-                label="Tattoo Design",
-                image=img_rgb,
-                format="png",
-            )
-        else:
-            log.warning(f"Design image not found at {image_path}, GUI image will be disabled.")
-            img_bgr = None
-            design_image_gui = None
+    with server.gui.add_folder("Pattern"):
+        image_path = os.path.join(config.pattern_dir, "image.png")
+        assert os.path.exists(image_path), f"Pattern image not found at {image_path}"
+        log.info(f"🖼️ Loading pattern image from {image_path}...")
+        img_pil = PIL.Image.open(image_path).convert("RGB")
+        img_bgr = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+        # Viser GUI expects RGB
+        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+        design_image_gui = server.gui.add_image(
+            label="Pattern",
+            image=img_rgb,
+            format="png",
+        )
 
     @server.on_client_connect
     def _(client: viser.ClientHandle) -> None:
@@ -161,10 +156,18 @@ def main(config: PathConfig):
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
     dataset_features = {**action_features, **obs_features}
 
-    dataset_name = config.repo_id.split("/")[-1]
-    sanity_check_dataset_name(config.repo_id, None)
+    pattern_path = os.path.join(config.pattern_dir, "pattern.json")
+    assert os.path.exists(pattern_path), f"Pattern file not found at {pattern_path}"
+    with open(pattern_path, "r") as f:
+        pattern_json = json.load(f)
+    pattern = Pattern.from_json(pattern_json)
+    log.info(f"Loaded pattern '{pattern.name}' with {len(pattern.paths)} paths.")
+
+    dataset_name = config.dataset_name or f"{pattern.name}-{int(time.time())}"
+    repo_id = f"{config.hf_username}/{dataset_name}"
+    sanity_check_dataset_name(repo_id, None)
     dataset = LeRobotDataset.create(
-        config.repo_id,
+        repo_id,
         config.fps,
         root=f"{config.output_dir}/{dataset_name}",
         robot_type=robot.name,
@@ -177,28 +180,7 @@ def main(config: PathConfig):
     robot.connect()
     listener, events = init_keyboard_listener()
 
-    path_file_path = os.path.join(config.pattern_dir, "pattern.json")
-    with open(path_file_path, "r") as f:
-        paths_json = json.load(f)
-
-    paths = []
-    for path_data in paths_json:
-        poses = [
-            Pose(
-                pos=jnp.array(p["pos"]),
-                wxyz=jnp.array(p["wxyz"]),
-                pixel_coords=jnp.array(p["pixel_coords"], dtype=jnp.int32)
-                if p["pixel_coords"] is not None
-                else None,
-                metric_coords=jnp.array(p["metric_coords"]) if p["metric_coords"] is not None else None,
-            )
-            for p in path_data
-        ]
-        paths.append(Path(poses=poses))
-
-    pattern = Pattern(paths=paths, name=os.path.basename(os.path.normpath(config.pattern_dir)))
-    log.info(f"Loaded pattern '{pattern.name}' with {len(pattern.paths)} paths.")
-
+    log.info(f"Recording {len(pattern.paths)} paths...")
     for path_idx, path in enumerate(pattern.paths):
         if path_idx >= config.max_episodes:
             log_say(f"Reached max episodes ({config.max_episodes})", config.play_sounds)

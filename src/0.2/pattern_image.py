@@ -16,13 +16,7 @@ import tyro
 
 from pattern import Pose, Path, Pattern, make_pathviz_image
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s|%(name)s|%(levelname)s|%(message)s',
-    datefmt='%H:%M:%S',
-)
-log = logging.getLogger(__name__)
-
+log = logging.getLogger('tatbot')
 
 @dataclass
 class PatternFromImageConfig:
@@ -77,7 +71,7 @@ def make_pattern_from_image(config: PatternFromImageConfig):
 
     if config.image_path is None:
         raw_image_path = os.path.join(design_output_dir, "raw.png")
-        image_path = os.path.join(design_output_dir, "design.png")
+        image_path = os.path.join(design_output_dir, "image.png")
         log.info(" Generating design...")
         # https://replicate.com/black-forest-labs/flux-1.1-pro-ultra/api/schema
         output = replicate.run(
@@ -109,7 +103,7 @@ def make_pattern_from_image(config: PatternFromImageConfig):
             return
 
         raw_image_path = os.path.join(design_output_dir, f"raw.png")
-        image_path = os.path.join(design_output_dir, f"design.png")
+        image_path = os.path.join(design_output_dir, f"image.png")
 
         if os.path.abspath(source_image_path) != os.path.abspath(raw_image_path):
             log.info(f"Copying {source_image_path} to {raw_image_path}")

@@ -12,12 +12,7 @@ import tyro
 
 from pattern import Pose, Path, Pattern, make_pathviz_image
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s|%(name)s|%(levelname)s|%(message)s',
-    datefmt='%H:%M:%S',
-)
-log = logging.getLogger(__name__)
+log = logging.getLogger('tatbot')
 
 @dataclass
 class CalibrationPatternConfig:
@@ -175,7 +170,7 @@ def make_calibration_pattern(config: CalibrationPatternConfig):
     log.info(f"Generated {len(all_paths)} paths.")
 
     # Save visualization images
-    strokes_path = os.path.join(config.output_dir, "design.png")
+    strokes_path = os.path.join(config.output_dir, "image.png")
     image_strokes.save(strokes_path)
     log.info(f"🖼️ Saved stroke patterns image to {strokes_path}")
 
