@@ -24,9 +24,13 @@
 
 # **tatbot**: tattoo robot
 
-Understand the [tech](docs/tech.md). Follow the [plan](docs/plan.md). 
+Understand the open source [tech stack](docs/tech.md) 🦾🖥️
 
-<!-- Read the [paper](docs/paper). -->
+Follow along with the [master plan](docs/plan.md) 📋📅
+
+Learn more by reading the [academic paper](docs/paper) 📜📚
+
+Want a tattoo? Join the [waitlist](https://forms.gle/Zys6f5iLEtYCG8VW7) 🙋‍♂️
 
 ## Citation
 

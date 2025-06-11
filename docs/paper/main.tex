@@ -7,18 +7,39 @@
 \usepackage{algorithmic}
 \usepackage{booktabs}
 
-\title{tatbot: Autonomous Robotic Tattooing}
+\title{tatbot: Tattoo Robot}
 \author{Hugo Ponte}
 \date{\today}
 
 \begin{document}
 \maketitle
 
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/cover.png}
+    \caption{(a) The tatbot system (hardware v0.2) (b) First human tattoo performed by the tatbot system. }
+    \label{fig:cover}
+\end{figure}
+
+
 \begin{abstract}
-We present TatBot, an autonomous robotic system designed to perform tattoo artistry using deep reinforcement learning. Our approach combines computer vision, trajectory optimization, and force control to enable precise and safe tattooing operations. We demonstrate the system's capabilities through extensive simulation and real-world experiments.
+We present \textbf{tatbot}, an autonomous robotic system designed to perform tattoo artistry.
+Our approach combines computer vision, trajectory optimization, and force control to enable precise and safe tattooing operations.
+We demonstrate the system's capabilities through extensive simulation and real-world experiments.
 \end{abstract}
 
-\section{Introduction}
+\pagebreak
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/timeline.png}
+    \caption{A history of tattoos.}
+    \label{fig:timeline}
+\end{figure}
+
+\section{Background}
+
+\subsection{History}
 
 Tattoos are an ancient art form that predates recorded history.
 Tattoos have been used as punishment, status symbols, and even therapeutic tools.
@@ -33,8 +54,6 @@ In many cultures, tattoos have to be "earned". They might represent a rite of pa
 Tattoo comes from a polynesian word \textit{tatau} which means \textit{to strike}, a reference to the traditional method of tattooing where needle penetration is achieved by striking with stick.
 During the 18th and 19th centuries, the age of exploration introduced Polynesian tattoos to the west.
 As a result, most modern languages now use the loanword tattoo to describe the art form over whatever traditional terminology may have existed.
-
-\section{Background}
 
 \subsection{Biology}
 
@@ -52,7 +71,7 @@ Ink deposited in the subcutaneous tissue will "blow out" as it diffuses outwards
 because tattoos penetrate the skin, they can be a vector for disease transmission.
 medical grade equipment and sanitation protocols are required to prevent infection.
 
-\subsection{Basic Principles}
+\subsection{Principles}
 
 Tattoo machines can be classified into two rough categories: rotary and coil.
 rotary machines have become the standard for modern tattooing.
@@ -71,8 +90,6 @@ the artist controls:
     \item the choice of needle cartridge.
     \item the choice of ink color (and dilution)
 \end{itemize}
-
-\section{Methodology}
 
 \subsection{Theory}
 
@@ -102,33 +119,7 @@ condition the mark on a sequence of mesh vertices
 mesh transformers are probably very good for generating these kind of vertex sequences
 you can then condition the arm controller on the vertex sequence
 
-\subsection{Data Recipe}
-
-swiftsketch dataset - flux/ideogram/sdxl -> switftketch svg -> ply/mesh
-meshformer dataset -
-
-the starting point for the model is the $\pi_0$ model, an open source VLA model for robotic control \cite{Black2024pi0}.
-
-3B VLM
-300M action expert
-
-there is a fundamental magic inside modern pretrained transformers.
-The space of neural programs encoded in the weights just from human data on the internet is enormous. 
-Some of these neural programs serve as useful starting points for robotic control.
-
-\subsection{Software}
-
-The TatBot system relies on a suite of open-source software packages:
-\begin{itemize}
-    \item \textbf{viser (v0.2.23):} Used for 3D visualization and creating interactive browser-based GUIs. Essential for visualizing robot workspaces, tattoo designs, and simulation results.
-    \item \textbf{Pillow (>=9.0.0,<11.0.0):} A Python Imaging Library fork, used for image manipulation tasks, which could include processing tattoo designs or camera input.
-    \item \textbf{trossen-arm (v1.8.1):} The official Python library for controlling Trossen Robotics arms, likely used for interfacing with the Aloha Solo robot arm.
-    \item \textbf{pyrealsense2 (v2.55.1.6486):} Python bindings for Intel RealSense SDK, used for capturing data from RealSense depth cameras, likely for environment perception and skin surface mapping.
-    \item \textbf{pyroki (git+https://github.com/chungmin99/pyroki.git@main):} A robotics library, potentially used for kinematics, trajectory planning, or other robot control functions.
-    \item \textbf{jax[cuda12] (>=0.4.0,<0.5.0):} A high-performance numerical computation library, accelerated with CUDA for GPU usage. Likely used for machine learning model training and inference, and complex calculations.
-    \item \textbf{jaxtyping (>=0.2.25,<1.0.0):} Type annotations for JAX, enhancing code clarity and robustness for JAX-based computations.
-    \item \textbf{jaxlie (>=1.3.4,<2.0.0):} A library for Lie theory operations with a JAX backend, often used in robotics for representing and manipulating rotations and transformations.
-\end{itemize}
+\section{tatbot}
 
 \subsection{Hardware}
 
@@ -155,11 +146,43 @@ Interchangeable end effectors, including a calibration cone, a tattoo machine, a
     \end{tabular}
 \end{table}
 
+\subsection{Software}
+
+The TatBot system relies on a suite of open-source software packages:
+\begin{itemize}
+    \item \textbf{viser (v0.2.23):} Used for 3D visualization and creating interactive browser-based GUIs. Essential for visualizing robot workspaces, tattoo designs, and simulation results.
+    \item \textbf{Pillow (>=9.0.0,<11.0.0):} A Python Imaging Library fork, used for image manipulation tasks, which could include processing tattoo designs or camera input.
+    \item \textbf{trossen-arm (v1.8.1):} The official Python library for controlling Trossen Robotics arms, likely used for interfacing with the Aloha Solo robot arm.
+    \item \textbf{pyrealsense2 (v2.55.1.6486):} Python bindings for Intel RealSense SDK, used for capturing data from RealSense depth cameras, likely for environment perception and skin surface mapping.
+    \item \textbf{pyroki (git+https://github.com/chungmin99/pyroki.git@main):} A robotics library, potentially used for kinematics, trajectory planning, or other robot control functions.
+    \item \textbf{jax[cuda12] (>=0.4.0,<0.5.0):} A high-performance numerical computation library, accelerated with CUDA for GPU usage. Likely used for machine learning model training and inference, and complex calculations.
+    \item \textbf{jaxtyping (>=0.2.25,<1.0.0):} Type annotations for JAX, enhancing code clarity and robustness for JAX-based computations.
+    \item \textbf{jaxlie (>=1.3.4,<2.0.0):} A library for Lie theory operations with a JAX backend, often used in robotics for representing and manipulating rotations and transformations.
+\end{itemize}
+
+\subsection{VLA}
+
+\subsection{Data Recipe}
+
+swiftsketch dataset - flux/ideogram/sdxl -> switftketch svg -> ply/mesh
+meshformer dataset -
+
+the starting point for the model is the $\pi_0$ model, an open source VLA model for robotic control \cite{Black2024pi0}.
+
+3B VLM
+300M action expert
+
+there is a fundamental magic inside modern pretrained transformers.
+The space of neural programs encoded in the weights just from human data on the internet is enormous. 
+Some of these neural programs serve as useful starting points for robotic control.
+
 \section{Results}
 
 foo
 
-\section{Related Work}
+\section{Discussion}
+
+\subsection{Other Robotic Tattoo Systems}
 
 Tattoos are fundamentally 3D. They flow over the surfaces and curves of the body. Every single previous robotic tattoo system has been constrained to the 2D plane.
 Robot arms have been used before, but the control is still classical.
@@ -184,8 +207,6 @@ foo \cite{huang2019learning}
 foo \cite{kotani2019teaching}
 
 Various tattoo robots based on modified 3D printers have been demonstrated on YouTube \cite{EmilyTheEngineer2025}, a similar system \cite{YamanDeif2021}
-
-\section{Discussion}
 
 \subsection{Robotic Artistry}
 
