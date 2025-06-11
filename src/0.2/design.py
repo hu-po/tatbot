@@ -82,8 +82,8 @@ def main(config: DesignConfig):
     os.makedirs(design_output_dir, exist_ok=True)
 
     if config.image_filename is None:
-        raw_image_path = os.path.join(design_output_dir, f"{design_name}_raw.png")
-        image_path = os.path.join(design_output_dir, f"{design_name}.png")
+        raw_image_path = os.path.join(design_output_dir, "raw.png")
+        image_path = os.path.join(design_output_dir, "design.png")
         log.info(" Generating design...")
         # https://replicate.com/black-forest-labs/flux-1.1-pro-ultra/api/schema
         output = replicate.run(
@@ -115,7 +115,7 @@ def main(config: DesignConfig):
             return
 
         raw_image_path = os.path.join(design_output_dir, f"raw.png")
-        image_path = os.path.join(design_output_dir, f"resized.png")
+        image_path = os.path.join(design_output_dir, f"design.png")
 
         if os.path.abspath(source_image_path) != os.path.abspath(raw_image_path):
             log.info(f"Copying {source_image_path} to {raw_image_path}")

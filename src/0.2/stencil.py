@@ -46,7 +46,7 @@ class VerticalLineConfig:
     """Parameters for a vertical line."""
     length: int = 80
     thickness: int = 10
-    num_points: int = 10
+    num_points: int = 30
     """Number of points to generate for the path."""
 
 @dataclass
@@ -54,7 +54,7 @@ class HorizontalLineConfig:
     """Parameters for a horizontal line."""
     length: int = 80
     thickness: int = 10
-    num_points: int = 10
+    num_points: int = 30
     """Number of points to generate for the path."""
 
 @dataclass
@@ -62,7 +62,7 @@ class CircleConfig:
     """Parameters for a full circle."""
     radius: int = 40
     thickness: int = 10
-    num_points: int = 50
+    num_points: int = 60
     """Number of points to generate for the path."""
 
 @dataclass
@@ -72,7 +72,7 @@ class WaveConfig:
     frequency: float = 0.15
     length: int = 80
     thickness: int = 6
-    num_points: int = 80
+    num_points: int = 100
     """Number of points to generate for the path."""
 
 
@@ -190,7 +190,7 @@ def main(config: StencilConfig):
     log.info(f"Generated {len(all_paths)} paths.")
 
     # Save visualization images
-    strokes_path = os.path.join(config.output_dir, "brush_stroke_patterns.png")
+    strokes_path = os.path.join(config.output_dir, "design.png")
     image_strokes.save(strokes_path)
     log.info(f"🖼️ Saved stroke patterns image to {strokes_path}")
 

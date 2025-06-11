@@ -36,17 +36,19 @@ class PathConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    design_dir: str = os.path.expanduser("~/tatbot/output/design/infinity")
+    # design_dir: str = os.path.expanduser("~/tatbot/output/design/infinity")
+    design_dir: str = os.path.expanduser("~/tatbot/output/stencil")
     """Directory with design outputs from design.py."""
 
     # repo_id: str = f"hu-po/tatbot-test-{int(time.time())}"
-    repo_id: str = f"hu-po/tatbot-infinity"
+    # repo_id: str = "hu-po/tatbot-infinity"
+    repo_id: str = f"hu-po/tatbot-stencil-{int(time.time())}"
     """Hugging Face Hub repository ID, e.g. 'hf-username/my-dataset'."""
     display_data: bool = True
     """Display data on screen using Rerun."""
     output_dir: str = os.path.expanduser("~/tatbot/output/record")
     """Directory to save the dataset."""
-    push_to_hub: bool = True
+    push_to_hub: bool = False
     """Push the dataset to the Hugging Face Hub."""
     num_image_writer_processes: int = 0
     """
@@ -100,12 +102,12 @@ class PathConfig:
 
     ee_inkcap_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
     """position of the inkcap ee transform."""
-    ee_inkcap_dip: tuple[float, float, float] = (0.0, 0.0, -0.032)
+    ee_inkcap_dip: tuple[float, float, float] = (0.0, 0.0, -0.034)
     """dip vector when performing inkcap dip."""
     ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the inkcap ee transform."""
 
-    ink_dip_interval: int = 4
+    ink_dip_interval: int = 1
     """
     Dip ink every N path segments.
     If N > 0, dips on segment 0, N, 2N, ...
@@ -124,7 +126,7 @@ def main(config: PathConfig):
     server.scene.set_environment_map(hdri=config.env_map_hdri, background=True)
 
     with server.gui.add_folder("Design"):
-        image_path = os.path.join(config.design_dir, "resized.png")
+        image_path = os.path.join(config.design_dir, "design.png")
         if os.path.exists(image_path):
             log.info(f"🖼️ Loading design image from {image_path}...")
             img_pil = PIL.Image.open(image_path).convert("RGB")
