@@ -14,7 +14,7 @@ import tyro
 from skimage.morphology import skeletonize
 import jax.numpy as jnp
 
-from path import Pose, Path, Pattern
+from path import Pose, Path, Pattern, make_pathviz_image
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,12 +26,12 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class DesignConfig:
-    # image_path: str | None = None
-    image_filename: str | None = "infinity/raw.png"
+    # imagepath: str | None = None
+    imagepath: str | None = os.path.expanduser("~/tatbot/assets/designs/infinity.png")
     """ (Optional) Local path to the tattoo design image."""
     prompt: str = "infinity"
     """ Prompt for the design image generation."""
-    output_dir: str = os.path.expanduser("~/tatbot/output/design")
+    output_dir: str = os.path.expanduser("~/tatbot/output/patterns")
     """ Directory to save the design image and patches."""
     image_width_px: int = 256
     """ Width of the design image (pixels)."""
@@ -49,12 +49,8 @@ class DesignConfig:
     """(0-255) Pixel intensity mean threshold to consider a patch empty. Higher is more aggressive."""
     binary_threshold: int = 127
     """(0-255) Pixel intensity threshold for binary conversion of patch. Lower is more aggressive."""
-    max_components_per_patch: int = 5
+    max_components_per_patch: int = 10
     """Maximum number of components to visualize per patch."""
-    min_path_length_px: int = 10
-    """(px) Minimum length of a tool path to be included."""
-    max_path_length_px: int = 200
-    """(px) Maximum length of a tool path to be included."""
 
 
 VIZ_COLORS = [
@@ -70,8 +66,8 @@ def main(config: DesignConfig):
     log.info(f"🔍 Using output directory: {config.output_dir}")
     os.makedirs(config.output_dir, exist_ok=True)
 
-    if config.image_filename:
-        design_name = os.path.splitext(os.path.basename(config.image_filename))[0]
+    if config.imagepath:
+        design_name = os.path.splitext(os.path.basename(config.imagepath))[0]
     else:
         design_name = config.prompt.replace(" ", "_")
 
@@ -79,7 +75,7 @@ def main(config: DesignConfig):
     log.info(f"🎨 All design outputs will be saved in: {design_output_dir}")
     os.makedirs(design_output_dir, exist_ok=True)
 
-    if config.image_filename is None:
+    if config.imagepath is None:
         raw_image_path = os.path.join(design_output_dir, "raw.png")
         image_path = os.path.join(design_output_dir, "design.png")
         log.info(" Generating design...")
@@ -104,9 +100,9 @@ def main(config: DesignConfig):
         log.info(f"Saved resized image to {image_path}")
 
     else:
-        source_image_path = config.image_filename
+        source_image_path = config.imagepath
         if not os.path.isabs(source_image_path) and not os.path.exists(source_image_path):
-            source_image_path = os.path.join(config.output_dir, config.image_filename)
+            source_image_path = os.path.join(config.output_dir, config.imagepath)
         
         if not os.path.exists(source_image_path):
             log.error(f"Image file not found: {source_image_path}")
@@ -259,37 +255,6 @@ def main(config: DesignConfig):
     log.info(f"Found {empty_patches} empty patches.")
 
     if all_paths:
-        original_path_count = len(all_paths)
-        paths_with_lengths = []
-        for path in all_paths:
-            length = (
-                sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path[:-1], path[1:]))
-                if len(path) > 1
-                else 0
-            )
-            paths_with_lengths.append((path, length))
-
-        all_paths = [
-            path
-            for path, length in paths_with_lengths
-            if config.min_path_length_px <= length <= config.max_path_length_px
-        ]
-        log.info(
-            f"Filtered tool paths from {original_path_count} to {len(all_paths)} based on length ({config.min_path_length_px}-{config.max_path_length_px} px)."
-        )
-
-    if all_paths:
-        # Draw filtered paths
-        for path in all_paths:
-            if len(path) > 1:
-                path_indices = np.linspace(0, 255, len(path), dtype=np.uint8)
-                colormap = cv2.applyColorMap(path_indices.reshape(-1, 1), cv2.COLORMAP_JET)
-                for path_idx in range(len(path) - 1):
-                    p1 = path[path_idx]
-                    p2 = path[path_idx + 1]
-                    color = colormap[path_idx][0].tolist()
-                    cv2.line(path_viz, p1, p2, color, 2)
-        
         scale_x = config.image_width_m / original_width
         scale_y = config.image_height_m / original_height
 
@@ -311,7 +276,10 @@ def main(config: DesignConfig):
             height_m=config.image_height_m,
             width_px=config.image_width_px,
             height_px=config.image_height_px,
+            image_np=img_viz,
         )
+
+        path_viz = make_pathviz_image(pattern)
 
         class NumpyEncoder(json.JSONEncoder):
             def default(self, obj):

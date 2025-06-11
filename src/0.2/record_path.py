@@ -289,10 +289,10 @@ def main(config: PathConfig):
             # initial actions such as ink dipping and hovering should be SLOW and blocking
             # This includes the first drawing point.
             if toolpoint_idx < len_prefix + 1:
-                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, blocking=True)
+                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, block_mode="left")
             else:
                 # rest of the actions should be FAST and non-blocking
-                sent_action = robot.send_action(action)
+                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_fast, block_mode="left")
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}

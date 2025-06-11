@@ -1,8 +1,10 @@
 import logging
 from dataclasses import dataclass, field
 
+import cv2
 import jax.numpy as jnp
 import jax_dataclasses as jdc
+import numpy as np
 from jaxtyping import Array, Float, Int
 
 log = logging.getLogger('tatbot')
@@ -37,10 +39,42 @@ class Pattern:
     """Width of the pattern in pixels."""
     height_px: int = 256
     """Height of the pattern in pixels."""
+    image_np: np.ndarray | None = field(default=None, repr=False, compare=False)
+    """Optional image for visualization."""
 
-def make_pathviz_image(pattern: Pattern):
-    # looks like image with overlayed paths, colorgradient for index of pose in path (time)
-    pass
+def make_pathviz_image(pattern: Pattern) -> np.ndarray:
+    """Creates an image with overlayed paths from a pattern.
+
+    The path is visualized with a color gradient indicating the order of poses (time).
+
+    Args:
+        pattern: The pattern containing the paths and optional image to visualize.
+
+    Returns:
+        The visualization image as a numpy array (BGR).
+    """
+    if pattern.image_np is None:
+        path_viz_np = np.full((pattern.height_px, pattern.width_px, 3), 255, dtype=np.uint8)
+    else:
+        path_viz_np = pattern.image_np.copy()
+
+    for path in pattern.paths:
+        # Convert JAX arrays to list of numpy arrays for processing
+        pixel_coords = [np.array(pose.pixel_coords) for pose in path.poses if pose.pixel_coords is not None]
+
+        if len(pixel_coords) < 2:
+            continue
+
+        path_indices = np.linspace(0, 255, len(pixel_coords), dtype=np.uint8)
+        colormap = cv2.applyColorMap(path_indices.reshape(-1, 1), cv2.COLORMAP_JET)
+
+        for path_idx in range(len(pixel_coords) - 1):
+            p1 = tuple(pixel_coords[path_idx].astype(int))
+            p2 = tuple(pixel_coords[path_idx + 1].astype(int))
+            color = colormap[path_idx][0].tolist()
+            cv2.line(path_viz_np, p1, p2, color, 2)
+
+    return path_viz_np
 
 def make_pathlen_image(pattern: Pattern):
     # two part image: top is path length histogram with colorbar, color is length

@@ -9,7 +9,7 @@ import cv2
 import tyro
 import jax.numpy as jnp
 
-from path import Pose, Path, Pattern
+from path import Pose, Path, Pattern, make_pathviz_image
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class StencilConfig:
     """Configuration for generating the stencil sheet."""
-    output_dir: str = os.path.expanduser("~/tatbot/output/stencil")
+    output_dir: str = os.path.expanduser("~/tatbot/output/patterns/stencil")
     """Directory to save the stencil sheet and paths."""
     image_width_px: int = 256
     """Width of the stencil image in pixels."""
@@ -141,7 +141,6 @@ def main(config: StencilConfig):
     # Create a blank canvas for visualization
     image_strokes = Image.new("RGB", (config.image_width_px, config.image_height_px), config.background_color)
     draw = ImageDraw.Draw(image_strokes)
-    path_viz_np = cv2.cvtColor(np.array(image_strokes), cv2.COLOR_RGB2BGR)
 
     strokes_to_generate = [
         (generate_vertical_line_path, VerticalLineConfig()),
@@ -174,26 +173,12 @@ def main(config: StencilConfig):
             is_curve = isinstance(stroke_config, (WaveConfig, CircleConfig))
             draw.line(path, fill="black", width=stroke_config.thickness, joint="curve" if is_curve else None)
 
-        # Draw thin, colored path for visualization
-        if len(path) > 1:
-            path_indices = np.linspace(0, 255, len(path), dtype=np.uint8)
-            colormap = cv2.applyColorMap(path_indices.reshape(-1, 1), cv2.COLORMAP_JET)
-            for path_idx in range(len(path) - 1):
-                p1 = path[path_idx]
-                p2 = path[path_idx + 1]
-                color = colormap[path_idx][0].tolist()
-                cv2.line(path_viz_np, p1, p2, color, 2)
-    
     log.info(f"Generated {len(all_paths)} paths.")
 
     # Save visualization images
     strokes_path = os.path.join(config.output_dir, "design.png")
     image_strokes.save(strokes_path)
     log.info(f"🖼️ Saved stroke patterns image to {strokes_path}")
-
-    path_viz_path = os.path.join(config.output_dir, "pathviz.png")
-    cv2.imwrite(path_viz_path, path_viz_np)
-    log.info(f"🖼️ Saved tool path visualization to {path_viz_path}")
 
     # Convert paths to meters and save to JSON
     scale_x = config.image_width_m / config.image_width_px
@@ -211,13 +196,19 @@ def main(config: StencilConfig):
         paths.append(Path(poses=poses))
 
     pattern = Pattern(
-        name="stencil_pattern",
+        name="stencil",
         paths=paths,
         width_m=config.image_width_m,
         height_m=config.image_height_m,
         width_px=config.image_width_px,
         height_px=config.image_height_px,
     )
+
+    # Generate and save path visualization
+    path_viz_np = make_pathviz_image(pattern)
+    path_viz_path = os.path.join(config.output_dir, "pathviz.png")
+    cv2.imwrite(path_viz_path, path_viz_np)
+    log.info(f"🖼️ Saved tool path visualization to {path_viz_path}")
 
     class NumpyEncoder(json.JSONEncoder):
         def default(self, obj):
