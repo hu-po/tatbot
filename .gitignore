@@ -155,6 +155,10 @@ cython_debug/
 *.out
 *.synctex.gz
 
+# include paper and figures
+!docs/paper/tatbot2025.pdf
+!docs/paper/figures/*
+
 # output directory
 output/
 

@@ -6,8 +6,9 @@
 \usepackage{algorithm}
 \usepackage{algorithmic}
 \usepackage{booktabs}
+\usepackage{wrapfig}
 
-\title{tatbot: Tattoo Robot}
+\title{ *WIP* tatbot: Tattoo Robot}
 \author{Hugo Ponte}
 \date{\today}
 
@@ -23,7 +24,7 @@
 
 
 \begin{abstract}
-We present \textbf{tatbot}, an autonomous robotic system designed to perform tattoo artistry.
+*WIP* We present \textbf{tatbot}, an autonomous robotic system designed to perform tattoo artistry.
 Our approach combines computer vision, trajectory optimization, and force control to enable precise and safe tattooing operations.
 We demonstrate the system's capabilities through extensive simulation and real-world experiments.
 \end{abstract}
@@ -57,6 +58,13 @@ As a result, most modern languages now use the loanword tattoo to describe the a
 
 \subsection{Biology}
 
+\begin{wrapfigure}{l}{0.5\textwidth}
+    \vspace{-20pt}
+    \includegraphics[width=\linewidth]{figures/timeline.png}
+    \caption{A history of tattoos.}
+    \label{fig:timeline_biology}
+\end{wrapfigure}
+
 The human skin is a complex organ, but it can roughly be divided into three layers:
 
 \begin{itemize}
@@ -71,7 +79,16 @@ Ink deposited in the subcutaneous tissue will "blow out" as it diffuses outwards
 because tattoos penetrate the skin, they can be a vector for disease transmission.
 medical grade equipment and sanitation protocols are required to prevent infection.
 
-\subsection{Principles}
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/biology.png}
+    \caption{A history of tattoos.}
+    \label{fig:timeline}
+\end{figure}
+
+\pagebreak
+
+\subsection{Technology}
 
 Tattoo machines can be classified into two rough categories: rotary and coil.
 rotary machines have become the standard for modern tattooing.
@@ -82,6 +99,16 @@ many cartridge types and vendors exist
 needles are classified by their diameter, a grouping pattern, taper type, and length.
 rotary machines use the rotational motion of a small electric motor to drive the up and down motion of the needle.
 The distance the needle travels is called the \textit{stroke length}.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/technology.png}
+    \caption{A history of tattoos.}
+    \label{fig:timeline}
+\end{figure}
+
+\subsection{Theory}
+
 the artist controls:
 \begin{itemize}
     \item the speed of the machine travel along the surface of the skin.
@@ -90,8 +117,6 @@ the artist controls:
     \item the choice of needle cartridge.
     \item the choice of ink color (and dilution)
 \end{itemize}
-
-\subsection{Theory}
 
 A tattoo $T = (m_1, m_2, \ldots, m_n)$ is a sequence of $n$ marks $m_i$.
 A mark $m_i$ is pattern of ink deposition on a bounded surface $S_i$ representing a small patch of skin.
@@ -118,6 +143,8 @@ Inverse kinematics (IK) is the process that converts the joint space coordinates
 condition the mark on a sequence of mesh vertices
 mesh transformers are probably very good for generating these kind of vertex sequences
 you can then condition the arm controller on the vertex sequence
+
+\pagebreak
 
 \section{tatbot}
 
@@ -161,6 +188,8 @@ The TatBot system relies on a suite of open-source software packages:
 \end{itemize}
 
 \subsection{VLA}
+
+vision language action model, lerobot dat
 
 \subsection{Data Recipe}
 
