@@ -6,15 +6,15 @@ import json
 import shutil
 
 import cv2
+import jax.numpy as jnp
 import networkx as nx
 import numpy as np
 import PIL.Image
 import replicate
-import tyro
 from skimage.morphology import skeletonize
-import jax.numpy as jnp
+import tyro
 
-from path import Pose, Path, Pattern, make_pathviz_image
+from pattern import Pose, Path, Pattern, make_pathviz_image
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,9 +25,9 @@ log = logging.getLogger(__name__)
 
 
 @dataclass
-class DesignConfig:
-    # imagepath: str | None = None
-    imagepath: str | None = os.path.expanduser("~/tatbot/assets/designs/infinity.png")
+class PatternFromImageConfig:
+    # image_path: str | None = None
+    image_path: str | None = os.path.expanduser("~/tatbot/assets/designs/infinity.png")
     """ (Optional) Local path to the tattoo design image."""
     prompt: str = "infinity"
     """ Prompt for the design image generation."""
@@ -62,12 +62,12 @@ VIZ_COLORS = [
 ]
 
 
-def main(config: DesignConfig):
+def make_pattern_from_image(config: PatternFromImageConfig):
     log.info(f"🔍 Using output directory: {config.output_dir}")
     os.makedirs(config.output_dir, exist_ok=True)
 
-    if config.imagepath:
-        design_name = os.path.splitext(os.path.basename(config.imagepath))[0]
+    if config.image_path:
+        design_name = os.path.splitext(os.path.basename(config.image_path))[0]
     else:
         design_name = config.prompt.replace(" ", "_")
 
@@ -75,7 +75,7 @@ def main(config: DesignConfig):
     log.info(f"🎨 All design outputs will be saved in: {design_output_dir}")
     os.makedirs(design_output_dir, exist_ok=True)
 
-    if config.imagepath is None:
+    if config.image_path is None:
         raw_image_path = os.path.join(design_output_dir, "raw.png")
         image_path = os.path.join(design_output_dir, "design.png")
         log.info(" Generating design...")
@@ -100,9 +100,9 @@ def main(config: DesignConfig):
         log.info(f"Saved resized image to {image_path}")
 
     else:
-        source_image_path = config.imagepath
+        source_image_path = config.image_path
         if not os.path.isabs(source_image_path) and not os.path.exists(source_image_path):
-            source_image_path = os.path.join(config.output_dir, config.imagepath)
+            source_image_path = os.path.join(config.output_dir, config.image_path)
         
         if not os.path.exists(source_image_path):
             log.error(f"Image file not found: {source_image_path}")
@@ -287,7 +287,7 @@ def main(config: DesignConfig):
                     return obj.tolist()
                 return json.JSONEncoder.default(self, obj)
 
-        paths_path = os.path.join(design_output_dir, "paths.json")
+        paths_path = os.path.join(design_output_dir, "pattern.json")
         with open(paths_path, "w") as f:
             json_data = [[asdict(pose) for pose in path.poses] for path in pattern.paths]
             json.dump(json_data, f, indent=4, cls=NumpyEncoder)
@@ -327,5 +327,5 @@ def main(config: DesignConfig):
 
 
 if __name__ == "__main__":
-    args = tyro.cli(DesignConfig)
-    main(args)
+    args = tyro.cli(PatternFromImageConfig)
+    make_pattern_from_image(args)

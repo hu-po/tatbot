@@ -37,9 +37,9 @@ class PathConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    # design_dir: str = os.path.expanduser("~/tatbot/output/design/infinity")
-    design_dir: str = os.path.expanduser("~/tatbot/output/stencil")
-    """Directory with design outputs from design.py."""
+    # pattern_dir: str = os.path.expanduser("~/tatbot/output/patterns/infinity")
+    pattern_dir: str = os.path.expanduser("~/tatbot/output/patterns/stencil")
+    """Directory with pattern.json and design.png."""
 
     # repo_id: str = f"hu-po/tatbot-test-{int(time.time())}"
     # repo_id: str = "hu-po/tatbot-infinity"
@@ -127,7 +127,7 @@ def main(config: PathConfig):
     server.scene.set_environment_map(hdri=config.env_map_hdri, background=True)
 
     with server.gui.add_folder("Design"):
-        image_path = os.path.join(config.design_dir, "design.png")
+        image_path = os.path.join(config.pattern_dir, "design.png")
         if os.path.exists(image_path):
             log.info(f"🖼️ Loading design image from {image_path}...")
             img_pil = PIL.Image.open(image_path).convert("RGB")
@@ -177,7 +177,7 @@ def main(config: PathConfig):
     robot.connect()
     listener, events = init_keyboard_listener()
 
-    path_file_path = os.path.join(config.design_dir, "paths.json")
+    path_file_path = os.path.join(config.pattern_dir, "pattern.json")
     with open(path_file_path, "r") as f:
         paths_json = json.load(f)
 
@@ -196,7 +196,7 @@ def main(config: PathConfig):
         ]
         paths.append(Path(poses=poses))
 
-    pattern = Pattern(paths=paths, name=os.path.basename(os.path.normpath(config.design_dir)))
+    pattern = Pattern(paths=paths, name=os.path.basename(os.path.normpath(config.pattern_dir)))
     log.info(f"Loaded pattern '{pattern.name}' with {len(pattern.paths)} paths.")
 
     for path_idx, path in enumerate(pattern.paths):

@@ -1,15 +1,16 @@
-import math
-import os
+from dataclasses import dataclass, asdict
 import json
 import logging
-from dataclasses import dataclass, asdict
-from PIL import Image, ImageDraw
-import numpy as np
-import cv2
-import tyro
-import jax.numpy as jnp
+import math
+import os
 
-from path import Pose, Path, Pattern, make_pathviz_image
+import cv2
+import jax.numpy as jnp
+import numpy as np
+from PIL import Image, ImageDraw
+import tyro
+
+from pattern import Pose, Path, Pattern, make_pathviz_image
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,24 +20,23 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 @dataclass
-class StencilConfig:
-    """Configuration for generating the stencil sheet."""
-    output_dir: str = os.path.expanduser("~/tatbot/output/patterns/stencil")
-    """Directory to save the stencil sheet and paths."""
+class CalibrationPatternConfig:
+    output_dir: str = os.path.expanduser("~/tatbot/output/patterns/calibration")
+    """Directory to save the calibration pattern and paths."""
     image_width_px: int = 256
-    """Width of the stencil image in pixels."""
+    """Width of the calibration pattern image in pixels."""
     image_height_px: int = 256
-    """Height of the stencil image in pixels."""
+    """Height of the calibration pattern image in pixels."""
     image_width_m: float = 0.04
-    """Width of the stencil image in meters."""
+    """Width of the calibration pattern image in meters."""
     image_height_m: float = 0.04
-    """Height of the stencil image in meters."""
+    """Height of the calibration pattern image in meters."""
     grid_cols: int = 2
-    """Number of columns in the grid."""
+    """Number of columns in the calibration pattern grid."""
     grid_rows: int = 2
-    """Number of rows in the grid."""
+    """Number of rows in the calibration pattern grid."""
     background_color: str = "white"
-    """Background color of the canvas."""
+    """Background color of the calibration pattern image."""
 
 @dataclass
 class VerticalLineConfig:
@@ -133,8 +133,7 @@ def generate_wave_path(config: WaveConfig, origin: tuple[int, int]) -> list[tupl
     return points
 
 
-def main(config: StencilConfig):
-    """Creates a canvas, generates stencil paths, and saves them."""
+def make_calibration_pattern(config: CalibrationPatternConfig):
     log.info(f"🔍 Using output directory: {config.output_dir}")
     os.makedirs(config.output_dir, exist_ok=True)
     
@@ -196,7 +195,7 @@ def main(config: StencilConfig):
         paths.append(Path(poses=poses))
 
     pattern = Pattern(
-        name="stencil",
+        name="calibration",
         paths=paths,
         width_m=config.image_width_m,
         height_m=config.image_height_m,
@@ -216,12 +215,12 @@ def main(config: StencilConfig):
                 return obj.tolist()
             return json.JSONEncoder.default(self, obj)
 
-    paths_path = os.path.join(config.output_dir, "paths.json")
+    paths_path = os.path.join(config.output_dir, "pattern.json")
     with open(paths_path, "w") as f:
         json_data = [[asdict(pose) for pose in path.poses] for path in pattern.paths]
         json.dump(json_data, f, indent=4, cls=NumpyEncoder)
     log.info(f"💾 Saved {len(pattern.paths)} tool paths to {paths_path}")
 
 if __name__ == "__main__":
-    args = tyro.cli(StencilConfig)
-    main(args)
+    args = tyro.cli(CalibrationPatternConfig)
+    make_calibration_pattern(args)
