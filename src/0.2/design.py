@@ -48,9 +48,9 @@ class DesignConfig:
     """(0-255) Pixel intensity threshold for binary conversion of patch. Lower is more aggressive."""
     max_components_per_patch: int = 5
     """Maximum number of components to visualize per patch."""
-    min_tool_path_length_px: int = 10
+    min_path_length_px: int = 10
     """(px) Minimum length of a tool path to be included."""
-    max_tool_path_length_px: int = 200
+    max_path_length_px: int = 200
     """(px) Maximum length of a tool path to be included."""
 
 @dataclass
@@ -142,7 +142,7 @@ def main(config: DesignConfig):
 
     full_patches = 0
     empty_patches = 0
-    all_tool_paths = []
+    all_paths = []
     x_coords = np.linspace(0, original_width, config.num_patches_width + 1, dtype=int)
     y_coords = np.linspace(0, original_height, config.num_patches_height + 1, dtype=int)
 
@@ -249,7 +249,7 @@ def main(config: DesignConfig):
                     if not global_path:
                         continue
 
-                    all_tool_paths.append(global_path)
+                    all_paths.append(global_path)
 
                 color_vis = VIZ_COLORS[k % len(VIZ_COLORS)]
                 patch_h, patch_w = labels.shape
@@ -260,10 +260,10 @@ def main(config: DesignConfig):
     log.info(f"Saved {full_patches} full patches.")
     log.info(f"Found {empty_patches} empty patches.")
 
-    if all_tool_paths:
-        original_path_count = len(all_tool_paths)
+    if all_paths:
+        original_path_count = len(all_paths)
         paths_with_lengths = []
-        for path in all_tool_paths:
+        for path in all_paths:
             length = (
                 sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path[:-1], path[1:]))
                 if len(path) > 1
@@ -271,18 +271,18 @@ def main(config: DesignConfig):
             )
             paths_with_lengths.append((path, length))
 
-        all_tool_paths = [
+        all_paths = [
             path
             for path, length in paths_with_lengths
-            if config.min_tool_path_length_px <= length <= config.max_tool_path_length_px
+            if config.min_path_length_px <= length <= config.max_path_length_px
         ]
         log.info(
-            f"Filtered tool paths from {original_path_count} to {len(all_tool_paths)} based on length ({config.min_tool_path_length_px}-{config.max_tool_path_length_px} px)."
+            f"Filtered tool paths from {original_path_count} to {len(all_paths)} based on length ({config.min_path_length_px}-{config.max_path_length_px} px)."
         )
 
-    if all_tool_paths:
+    if all_paths:
         # Draw filtered paths
-        for path in all_tool_paths:
+        for path in all_paths:
             if len(path) > 1:
                 path_indices = np.linspace(0, 255, len(path), dtype=np.uint8)
                 colormap = cv2.applyColorMap(path_indices.reshape(-1, 1), cv2.COLORMAP_JET)
@@ -296,7 +296,7 @@ def main(config: DesignConfig):
         scale_y = config.image_height_m / original_height
 
         all_paths_structured = []
-        for path_px in all_tool_paths:
+        for path_px in all_paths:
             path = []
             for p_px in path_px:
                 p_m = (p_px[0] * scale_x, p_px[1] * scale_y, 0.0)
@@ -304,24 +304,24 @@ def main(config: DesignConfig):
                 path.append(toolpoint)
             all_paths_structured.append(path)
 
-        tool_paths_path = os.path.join(design_output_dir, "paths.json")
-        with open(tool_paths_path, "w") as f:
+        paths_path = os.path.join(design_output_dir, "paths.json")
+        with open(paths_path, "w") as f:
             json.dump([[asdict(tp) for tp in path] for path in all_paths_structured], f, indent=4)
-        log.info(f"💾 Saved {len(all_paths_structured)} tool paths to {tool_paths_path}")
+        log.info(f"💾 Saved {len(all_paths_structured)} tool paths to {paths_path}")
 
         path_lengths_px = [
             sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path[:-1], path[1:]))
-            for path in all_tool_paths
+            for path in all_paths
         ]
 
-        all_tool_paths_m = [[tp.m for tp in path] for path in all_paths_structured]
+        all_paths_m = [[tp.m for tp in path] for path in all_paths_structured]
         path_lengths_m = [
             sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path[:-1], path[1:]))
-            for path in all_tool_paths_m
+            for path in all_paths_m
         ]
 
         log.info("--- Tool Path Statistics ---")
-        log.info(f"Total tool paths generated: {len(all_tool_paths)}")
+        log.info(f"Total tool paths generated: {len(all_paths)}")
         if path_lengths_px:
             log.info(f"Min path length: {np.min(path_lengths_px):.2f} pixels ({np.min(path_lengths_m):.4f} m)")
             log.info(f"Max path length: {np.max(path_lengths_px):.2f} pixels ({np.max(path_lengths_m):.4f} m)")
