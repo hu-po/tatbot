@@ -153,18 +153,12 @@ def main(config: PathConfig):
         client.camera.position = config.view_camera_position
         client.camera.look_at = config.view_camera_look_at
 
-    log.info("🦾 Adding vizer robots...")
+    log.info("🦾 Adding vizer robot...")
     urdf : yourdfpy.URDF = yourdfpy.URDF.load(config.urdf_path)
     viser_robot: pk.Robot = pk.Robot.from_urdf(urdf)
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/root")
 
-    if config.display_data:
-        _init_rerun(session_name="recording")
-    robot = make_robot_from_config(TatbotConfig())
-    action_features = hw_to_dataset_features(robot.action_features, "action", True)
-    obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
-    dataset_features = {**action_features, **obs_features}
-
+    log.info("🔍 Loading pattern...")
     pattern_path = os.path.join(config.pattern_dir, "pattern.json")
     assert os.path.exists(pattern_path), f"Pattern file not found at {pattern_path}"
     with open(pattern_path, "r") as f:
@@ -172,6 +166,13 @@ def main(config: PathConfig):
     pattern = Pattern.from_json(pattern_json)
     log.info(f"Loaded pattern '{pattern.name}' with {len(pattern.paths)} paths.")
 
+    log.info("🔍 Initializing dataset...")
+    if config.display_data:
+        _init_rerun(session_name="recording")
+    robot = make_robot_from_config(TatbotConfig())
+    action_features = hw_to_dataset_features(robot.action_features, "action", True)
+    obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
+    dataset_features = {**action_features, **obs_features}
     dataset_name = config.dataset_name or f"{pattern.name}-{int(time.time())}"
     repo_id = f"{config.hf_username}/{dataset_name}"
     sanity_check_dataset_name(repo_id, None)
@@ -185,7 +186,6 @@ def main(config: PathConfig):
         image_writer_processes=config.num_image_writer_processes,
         image_writer_threads=config.num_image_writer_threads_per_camera * len(robot.cameras),
     )
-
     robot.connect()
     listener, events = init_keyboard_listener()
 
@@ -343,9 +343,10 @@ def main(config: PathConfig):
 
 if __name__ == "__main__":
     args = tyro.cli(PathConfig)
+    logging.basicConfig(level=logging.INFO)
     if args.debug:
-        log.setLevel(logging.DEBUG)
-        # logging.getLogger('lerobot').setLevel(logging.DEBUG)
+        logging.basicConfig(level=logging.DEBUG)
+        logging.getLogger('lerobot').setLevel(logging.DEBUG)
         log.debug("🐛 Debug mode enabled.")
     os.makedirs(args.output_dir, exist_ok=True)
     log.info(f"💾 Saving output to {args.output_dir}")
