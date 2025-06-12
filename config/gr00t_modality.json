@@ -2,45 +2,45 @@
     "state": {
         "arm_l": {
             "start": 0,
-            "end": 5
-        },
-        "gripper_l": {
-            "start": 5,
             "end": 6
         },
-        "arm_r": {
+        "gripper_l": {
             "start": 6,
-            "end": 11
+            "end": 7
+        },
+        "arm_r": {
+            "start": 7,
+            "end": 13
         },
         "gripper_r": {
-            "start": 11,
-            "end": 12
+            "start": 13,
+            "end": 14
         }
     },
     "action": {
         "arm_l": {
             "start": 0,
-            "end": 5
-        },
-        "gripper_l": {
-            "start": 5,
             "end": 6
         },
-        "arm_r": {
+        "gripper_l": {
             "start": 6,
-            "end": 11
+            "end": 7
+        },
+        "arm_r": {
+            "start": 7,
+            "end": 13
         },
         "gripper_r": {
-            "start": 11,
-            "end": 12
+            "start": 13,
+            "end": 14
         }
     },
     "video": {
-        "head": {
-            "original_key": "observation.images.head"
+        "left.cam_head": {
+            "original_key": "observation.images.left.cam_head"
         },
-        "wrist": {
-            "original_key": "observation.images.wrist"
+        "right.cam_wrist": {
+            "original_key": "observation.images.right.cam_wrist"
         }
     },
     "annotation": {

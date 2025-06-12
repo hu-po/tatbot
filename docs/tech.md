@@ -28,7 +28,7 @@ Python dependencies are managed using [`uv`](https://docs.astral.sh/uv/getting-s
 
 ```bash
 # Basic install
-git clone https://github.com/hu-po/tatbot.git && \
+git clone --depth=1 https://github.com/hu-po/tatbot.git && \
 cd ~/tatbot && \
 git pull
 # Choose a release
@@ -41,23 +41,22 @@ rm uv.lock
 uv venv && \
 source .venv/bin/activate && \
 uv pip install .
-```
-
-keys, tokens, passwords are stored in the `.env` file.
-
-```bash
+# source env variables (i.e. keys, tokens, camera passwords)
 source .env
 ```
 
-## Run
+Turn on the robot
 
 1. flip power strip in the back to on.
 2. press power button on `trossen-ai`, it will glow blue.
 3. flip rocker switches to "on" on `arm-r` and `arm-l` control boxes underneath workspace.
 4. flip rocker switch on the back of the light to turn it on.
 
+Generate a tattoo pattern from a prompt and execute it on the robot:
+
 ```bash
-uv run python src/0.2/tatbot.py
+uv run pattern_image.py --prompt="growling cat"
+DISPLAY=:0 uv run record_pattern.py --pattern_dir ~/tatbot/output/patterns/growling_cat
 ```
 
 ## Devices
@@ -171,7 +170,7 @@ instructions for `oop`
 
 ```bash
 # basic install
-git clone https://github.com/hu-po/lerobot.git
+git clone --depth=1 https://github.com/hu-po/lerobot.git && \
 cd lerobot/
 # setup uv venv
 uv venv && \
@@ -186,7 +185,7 @@ uv run python ~/lerobot/lerobot/scripts/train.py \
   --batch_size=64 \
   --wandb.enable=true \
   --wandb.project=tatbot-calib \
-  --steps=20000
+  --steps=1000
 ```
 
 #### Eval
@@ -210,14 +209,14 @@ instructions for `oop`
 
 ```bash
 # basic install
-git clone https://github.com/NVIDIA/Isaac-GR00T.git
+git clone https://github.com/NVIDIA/Isaac-GR00T.git && \
 cd Isaac-GR00T/
 # setup uv venv
 uv venv --python=3.10 && \
 source .venv/bin/activate && \
 uv pip install .[base]
 # download dataset locally
-export DATASET_DIR="~/tatbot/output/train/tatbot-calib-test/dataset"
+export DATASET_DIR="~/tatbot/output/train/tatbot-calib-test/dataset" && \
 huggingface-cli download \
     --repo-type dataset tatbot/tatbot-calib-test \
     --local-dir $DATASET_DIR
