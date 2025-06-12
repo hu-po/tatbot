@@ -22,10 +22,10 @@ class Pose:
 
 @jdc.pytree_dataclass
 class Path:
-    positions: Float[Array, "N 3"] = field(default_factory=lambda: jnp.array([[0.0, 0.0, 0.0]]))
-    orientations: Float[Array, "N 4"] = field(default_factory=lambda: jnp.array([[1.0, 0.0, 0.0, 0.0]]))
-    pixel_coords: Int[Array, "N 2"] = field(default_factory=lambda: jnp.array([[0, 0]]))
-    metric_coords: Float[Array, "N 2"] = field(default_factory=lambda: jnp.array([[0.0, 0.0]]))
+    positions: Float[Array, "N 3"] = field(default_factory=lambda: Pose().pos)
+    orientations: Float[Array, "N 4"] = field(default_factory=lambda: Pose().wxyz)
+    pixel_coords: Int[Array, "N 2"] = field(default_factory=lambda: Pose().pixel_coords)
+    metric_coords: Float[Array, "N 2"] = field(default_factory=lambda: Pose().metric_coords)
 
     def __len__(self):
         return self.positions.shape[0]
