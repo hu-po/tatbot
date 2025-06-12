@@ -50,10 +50,10 @@ uv run python src/0.2/tatbot.py
 
 tatbot consists of several computers, cameras, and robotos connected via ethernet:
 
-- `ojo`: NVIDIA Jetson AGX Orin (12-core ARM Cortex-A78AE @ 2.2 GHz) (32GB Unified RAM) (200 TOPS)
-- `trossen-ai`: System76 Meerkat PC (13th Gen Intel i5-1340P, 16-core @ 4.6GHz) (15GB RAM)
-- `rpi1`: Raspberry Pi 5 (4-core ARM Cortex-A76 @ 2.4 GHz) (8GB RAM)
-- `rpi2`: Raspberry Pi 5 (4-core ARM Cortex-A76 @ 2.4 GHz) (8GB RAM)
+- `ojo`: NVIDIA Jetson AGX Orin (ARM Cortex-A78AE, 12-core @ 2.2 GHz) (32GB Unified RAM) (200 TOPS)
+- `trossen-ai`: System76 Meerkat PC (13th Gen Intel i5-1340P, 16-core @ 4.6 GHz) (15GB RAM)
+- `rpi1`: Raspberry Pi 5 (ARM Cortex-A76, 4-core @ 2.4 GHz) (8GB RAM)
+- `rpi2`: Raspberry Pi 5 (ARM Cortex-A76, 4-core @ 2.4 GHz) (8GB RAM)
 - `camera1`: Amcrest PoE cameras (5MP)
 - `camera2`: Amcrest PoE cameras (5MP)
 - `camera3`: Amcrest PoE cameras (5MP)
@@ -65,7 +65,10 @@ tatbot consists of several computers, cameras, and robotos connected via etherne
 - `switch-poe`: 8-port gigabit PoE switch
 - `arm-l`: Trossen Arm Controller box connected to WidowXAI arm
 - `arm-r`: Trossen Arm Controller box connected to WidowXAI arm
-- `oop`: TODO
+
+during development, the following pc is also available:
+
+- `oop`: Ubuntu PC w/ NVIDIA GeForce RTX 3090 (AMD Ryzen 9 5900X, 24-core @ 4.95 GHz) (66 GB RAM) (24 GB VRAM) (TOPS)
 
 ## Dependencies
 
@@ -151,6 +154,15 @@ Experiment logs on [wandb](https://wandb.ai/hug/tatbot-calib).
 instructions for `oop`
 
 ```bash
+# basic install
+git clone https://github.com/hu-po/lerobot.git
+cd lerobot/
+# setup uv venv
+uv venv && \
+source .venv/bin/activate && \
+uv pip install -e ".[smolvla]"
+# run training
+wandb login
 uv run python ~/lerobot/lerobot/scripts/train.py \
   --policy.path=lerobot/smolvla_base \
   --dataset.repo_id=tatbot/tatbot-calib-test \
@@ -163,7 +175,8 @@ uv run python ~/lerobot/lerobot/scripts/train.py \
 
 #### Eval
 
-instructions for `oop`
+instructions for `trossen-ai` performing model inference and running robot
+
 ```
 
 
@@ -195,11 +208,9 @@ huggingface-cli download \
 # copy modality config file
 cp ~/tatbot/config/gr00t_modality.json $DATASET_DIR/meta/modality.json
 # load dataset
-uv run scripts/load_dataset.py \
-    --dataset-path $DATASET_DIR \
-    --plot-state-action \
-    --video-backend torchvision_av
+uv run scripts/load_dataset.py --dataset-path $DATASET_DIR  --plot-state-action --video-backend torchvision_av
 # train
+wandb login
 export WANDB_RUN_ID="gr00t-test"
 export WANDB_PROJECT="tatbot-calib"
 uv run python ~/lerobot/lerobot/scripts/gr00t_finetune.py \
@@ -208,28 +219,39 @@ uv run python ~/lerobot/lerobot/scripts/gr00t_finetune.py \
    --output-dir ~/tatbot/output/train/tatbot-calib-test/gr00t  \
    --max-steps 10000 \
    --data-config tatbot \
-   --
+   --batch_size 8 \
    --video-backend torchvision_av
 ```
 
 #### Eval
 
-instructions for `ojo`
+instructions for `ojo`, acting as the policy server
 
 ```bash
 # basic install
 git clone https://github.com/NVIDIA/Isaac-GR00T.git
 cd Isaac-GR00T/
-# set uv venv
+# use dockerfile
+docker build -f orin.Dockerfile -t gr00t-eval .
+# launch inference service (policy host)
+docker run -it --gpus --rm gr00t-eval \
+    python 
+```
+
+instructions for `trossen-ai` acting as the robot client
+
+```bash
+git clone https://github.com/NVIDIA/Isaac-GR00T.git
+cd Isaac-GR00T/
+# setup uv venv
 uv venv --python=3.10 && \
 source .venv/bin/activate && \
-uv pip install .[orin]
-# eval
+uv pip install .[base]
+# run robot client
 python getting_started/examples/eval_lerobot.py \
     --robot.type=tatbot \
-    --robot.cameras="{ wrist: {type: opencv, index_or_path: 9, width: 640, height: 480, fps: 30}, head: {type: opencv, index_or_path: 15, width: 640, height: 480, fps: 30}}" \
-    --policy_host=10.112.209.136 \
-    --lang_instruction="Grab pens and place into pen holder."
+    --policy_host=192.168.1.96 \
+    --lang_instruction="Tattoo calibration pattern on skin"
 ```
 
 ## AprilTags
