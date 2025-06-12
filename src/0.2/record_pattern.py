@@ -1,3 +1,7 @@
+"""
+Records episodes using a Pattern from JSON.
+"""
+
 from dataclasses import asdict, dataclass
 import json
 import logging

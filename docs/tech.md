@@ -13,6 +13,10 @@ various software versions of tatbot with different dependencies and designs are 
 python dependencies are managed with environments using [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
 
 ```bash
+# Basic install
+git clone https://github.com/hu-po/tatbot.git && \
+cd ~/tatbot && \
+git pull
 # Choose a release
 cd src/0.2
 # Optional: Clean old uv environment
@@ -39,7 +43,7 @@ source .env
 4. flip rocker switch on the back of the light to turn it on.
 
 ```bash
-uv run python src/0.1/tatbot.py
+uv run python src/0.2/tatbot.py
 ```
 
 <!-- ## States

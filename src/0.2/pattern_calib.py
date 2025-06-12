@@ -3,6 +3,7 @@ import json
 import logging
 import math
 import os
+from pprint import pformat
 
 import cv2
 import jax.numpy as jnp
@@ -16,6 +17,8 @@ log = logging.getLogger('tatbot')
 
 @dataclass
 class CalibrationPatternConfig:
+    debug: bool = False
+    """Enable debug logging."""
     output_dir: str = os.path.expanduser("~/tatbot/output/patterns/calibration")
     """Directory to save the calibration pattern and paths."""
     image_width_px: int = 256
@@ -180,14 +183,20 @@ def make_calibration_pattern(config: CalibrationPatternConfig):
 
     paths = []
     for path_px in all_paths:
-        poses = [
-            Pose(
-                pixel_coords=jnp.array(p_px, dtype=jnp.int32),
-                pos=jnp.array([p_px[0] * scale_x, p_px[1] * scale_y, 0.0]),
+        if not path_px:
+            continue
+
+        num_points = len(path_px)
+        positions_list = [[p[0] * scale_x, p[1] * scale_y, 0.0] for p in path_px]
+
+        paths.append(
+            Path(
+                positions=jnp.array(positions_list),
+                orientations=jnp.tile(jnp.array([1.0, 0.0, 0.0, 0.0]), (num_points, 1)),
+                pixel_coords=jnp.array(path_px, dtype=jnp.int32),
+                metric_coords=jnp.zeros((num_points, 2)),
             )
-            for p_px in path_px
-        ]
-        paths.append(Path(poses=poses))
+        )
 
     pattern = Pattern(
         name="calibration",
@@ -212,10 +221,32 @@ def make_calibration_pattern(config: CalibrationPatternConfig):
 
     paths_path = os.path.join(config.output_dir, "pattern.json")
     with open(paths_path, "w") as f:
-        json_data = [[asdict(pose) for pose in path.poses] for path in pattern.paths]
+        json_data = []
+        for path in pattern.paths:
+            # Convert JAX arrays to numpy arrays first to avoid slow iteration
+            positions = np.asarray(path.positions)
+            orientations = np.asarray(path.orientations)
+            pixel_coords = np.asarray(path.pixel_coords)
+            metric_coords = np.asarray(path.metric_coords)
+
+            path_list = [
+                {
+                    "pos": positions[i].tolist(),
+                    "wxyz": orientations[i].tolist(),
+                    "pixel_coords": pixel_coords[i].tolist(),
+                    "metric_coords": metric_coords[i].tolist(),
+                }
+                for i in range(len(path))
+            ]
+            json_data.append(path_list)
         json.dump(json_data, f, indent=4, cls=NumpyEncoder)
     log.info(f"💾 Saved {len(pattern.paths)} tool paths to {paths_path}")
 
 if __name__ == "__main__":
     args = tyro.cli(CalibrationPatternConfig)
+    logging.basicConfig(level=logging.INFO)
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+        log.debug("🐛 Debug mode enabled.")
+    log.info(pformat(asdict(args)))
     make_calibration_pattern(args)

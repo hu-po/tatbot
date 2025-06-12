@@ -1,3 +1,7 @@
+"""
+Records episodes using a pretrained policy.
+"""
+
 import logging
 import os
 import time

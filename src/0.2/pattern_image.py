@@ -1,8 +1,8 @@
 from dataclasses import asdict, dataclass
-import io
 import json
 import logging
 import os
+from pprint import pformat
 import shutil
 
 import cv2
@@ -14,12 +14,14 @@ import replicate
 from skimage.morphology import skeletonize
 import tyro
 
-from pattern import Path, Pattern, Pose, make_pathviz_image
+from pattern import Path, Pattern, make_pathviz_image, COLORS
 
 log = logging.getLogger('tatbot')
 
 @dataclass
 class PatternFromImageConfig:
+    debug: bool = False
+    """Enable debug logging."""
     # image_path: str | None = None
     image_path: str | None = os.path.expanduser("~/tatbot/assets/designs/infinity.png")
     """ (Optional) Local path to the tattoo design image."""
@@ -47,25 +49,16 @@ class PatternFromImageConfig:
     """Maximum number of components to visualize per patch."""
 
 
-VIZ_COLORS = [
-    (0, 0, 255),  # Red
-    (0, 255, 0),  # Green
-    (255, 0, 0),  # Blue
-    (0, 255, 255),  # Yellow
-    (255, 0, 255),  # Magenta
-]
-
-
 def make_pattern_from_image(config: PatternFromImageConfig):
     log.info(f"🔍 Using output directory: {config.output_dir}")
     os.makedirs(config.output_dir, exist_ok=True)
 
     if config.image_path:
-        design_name = os.path.splitext(os.path.basename(config.image_path))[0]
+        pattern_name = os.path.splitext(os.path.basename(config.image_path))[0]
     else:
-        design_name = config.prompt.replace(" ", "_")
+        pattern_name = config.prompt.replace(" ", "_")
 
-    design_output_dir = os.path.join(config.output_dir, design_name)
+    design_output_dir = os.path.join(config.output_dir, pattern_name)
     log.info(f"🎨 All design outputs will be saved in: {design_output_dir}")
     os.makedirs(design_output_dir, exist_ok=True)
 
@@ -119,9 +112,9 @@ def make_pattern_from_image(config: PatternFromImageConfig):
     original_width, original_height = img_pil.size
     log.info(f"🖼️ Design image size: {original_width}x{original_height} pixels.")
 
-    img_viz = cv2.cvtColor(np.array(img_pil.convert("RGB")), cv2.COLOR_RGB2BGR)
-    comp_viz = img_viz.copy()
-    path_viz = img_viz.copy()
+    img_bgr = cv2.cvtColor(np.array(img_pil.convert("RGB")), cv2.COLOR_RGB2BGR)
+    img_viz = img_bgr.copy()
+    comp_viz = img_bgr.copy()
 
     log.info("Creating patches...")
     patches_dir = os.path.join(design_output_dir, "patches")
@@ -239,7 +232,7 @@ def make_pattern_from_image(config: PatternFromImageConfig):
 
                     all_paths.append(global_path)
 
-                color_vis = VIZ_COLORS[k % len(VIZ_COLORS)]
+                color_vis = list(COLORS.values())[k % len(COLORS)]
                 patch_h, patch_w = labels.shape
                 comp_viz[patch_start_y : patch_start_y + patch_h, patch_start_x : patch_start_x + patch_w][
                     component_mask
@@ -254,23 +247,29 @@ def make_pattern_from_image(config: PatternFromImageConfig):
 
         paths = []
         for path_px in all_paths:
-            poses = [
-                Pose(
-                    pixel_coords=jnp.array(p_px, dtype=jnp.int32),
-                    pos=jnp.array([p_px[0] * scale_x, p_px[1] * scale_y, 0.0]),
+            if not path_px:
+                continue
+
+            num_points = len(path_px)
+            positions_list = [[p[0] * scale_x, p[1] * scale_y, 0.0] for p in path_px]
+
+            paths.append(
+                Path(
+                    positions=jnp.array(positions_list),
+                    orientations=jnp.tile(jnp.array([1.0, 0.0, 0.0, 0.0]), (num_points, 1)),
+                    pixel_coords=jnp.array(path_px, dtype=jnp.int32),
+                    metric_coords=jnp.zeros((num_points, 2)),
                 )
-                for p_px in path_px
-            ]
-            paths.append(Path(poses=poses))
+            )
 
         pattern = Pattern(
-            name=design_name,
+            name=pattern_name,
             paths=paths,
             width_m=config.image_width_m,
             height_m=config.image_height_m,
             width_px=config.image_width_px,
             height_px=config.image_height_px,
-            image_np=img_viz,
+            image_np=img_bgr,
         )
 
         path_viz = make_pathviz_image(pattern)
@@ -283,7 +282,24 @@ def make_pattern_from_image(config: PatternFromImageConfig):
 
         paths_path = os.path.join(design_output_dir, "pattern.json")
         with open(paths_path, "w") as f:
-            json_data = [[asdict(pose) for pose in path.poses] for path in pattern.paths]
+            json_data = []
+            for path in pattern.paths:
+                # Convert JAX arrays to numpy arrays first to avoid slow iteration
+                positions = np.asarray(path.positions)
+                orientations = np.asarray(path.orientations)
+                pixel_coords = np.asarray(path.pixel_coords)
+                metric_coords = np.asarray(path.metric_coords)
+
+                path_list = [
+                    {
+                        "pos": positions[i].tolist(),
+                        "wxyz": orientations[i].tolist(),
+                        "pixel_coords": pixel_coords[i].tolist(),
+                        "metric_coords": metric_coords[i].tolist(),
+                    }
+                    for i in range(len(path))
+                ]
+                json_data.append(path_list)
             json.dump(json_data, f, indent=4, cls=NumpyEncoder)
         log.info(f"💾 Saved {len(pattern.paths)} tool paths to {paths_path}")
 
@@ -292,9 +308,8 @@ def make_pattern_from_image(config: PatternFromImageConfig):
             for path in all_paths
         ]
 
-        all_paths_m = [[pose.pos for pose in path.poses] for path in pattern.paths]
         path_lengths_m = [
-            sum(np.linalg.norm(p1 - p2) for p1, p2 in zip(path[:-1], path[1:])) for path in all_paths_m
+            float(jnp.sum(jnp.linalg.norm(jnp.diff(path.positions, axis=0), axis=1))) for path in pattern.paths
         ]
 
         log.info("--- Tool Path Statistics ---")
@@ -317,9 +332,14 @@ def make_pattern_from_image(config: PatternFromImageConfig):
 
     path_viz_path = os.path.join(design_output_dir, f"pathviz.png")
     cv2.imwrite(path_viz_path, path_viz)
-    log.info(f"🖼️ Saved tool path visualization to {path_viz_path}")
+    log.info(f"🖼️ Saved path visualization to {path_viz_path}")
 
 
 if __name__ == "__main__":
     args = tyro.cli(PatternFromImageConfig)
+    logging.basicConfig(level=logging.INFO)
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+        log.debug("🐛 Debug mode enabled.")
+    log.info(pformat(asdict(args)))
     make_pattern_from_image(args)
