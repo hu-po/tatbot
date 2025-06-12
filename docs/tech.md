@@ -46,37 +46,6 @@ source .env
 uv run python src/0.2/tatbot.py
 ```
 
-<!-- ## States
-
-tatbot operates using a state machine
-
-```mermaid
-stateDiagram-v2
-    direction LR
-
-    %% Define all states
-    state PAUSE
-    state PLAY
-    state STOP
-    state READY
-    state TRACK
-    state HOVER
-    state POKE
-    state DIP
-    state MANUAL
-
-    %% Transitions driven by the script logic
-    PAUSE --> PLAY
-    PLAY  --> TRACK
-    TRACK --> READY
-    READY --> DIP
-    DIP   --> HOVER
-    HOVER --> POKE
-    POKE  --> POKE
-    POKE  --> TRACK
-    STOP  --> PAUSE
-``` -->
-
 ## Devices
 
 tatbot consists of several computers, cameras, and robotos connected via ethernet:
@@ -90,13 +59,13 @@ tatbot consists of several computers, cameras, and robotos connected via etherne
 - `camera3`: Amcrest PoE cameras (5MP)
 - `camera4`: Amcrest PoE cameras (5MP)
 - `camera5`: Amcrest PoE cameras (5MP)
-- `camera-a`: Intel Realsense D405 (1280x720 RGBD, 90fps)
-- `camera-b`: Intel Realsense D405 (1280x720 RGBD, 90fps)
+- `head`: Intel Realsense D405 (1280x720 RGBD, 90fps)
+- `wrist`: Intel Realsense D405 (1280x720 RGBD, 90fps)
 - `switch-main`: 5-port gigabit ethernet switch
 - `switch-poe`: 8-port gigabit PoE switch
 - `arm-l`: Trossen Arm Controller box connected to WidowXAI arm
 - `arm-r`: Trossen Arm Controller box connected to WidowXAI arm
-- `oop`: (only used for development)
+- `oop`: TODO
 
 ## Dependencies
 
@@ -158,10 +127,110 @@ uv run python config/trossen.py
 
 tatbot uses two [D405 Intel Realsense cameras](https://www.intelrealsense.com/depth-camera-d405/).
 
-- `camera-a` is connected to `trossen-ai` via usb3 port and attached to the end effector of `arm-r`
-- `camera-b` is connected to `trossen-ai` via usb3 port and attached to alumnium frame, giving it an overhead view
+- `wrist` is connected to `trossen-ai` via usb3 port and attached to the end effector of `arm-r`
+- `head` is connected to `trossen-ai` via usb3 port and attached to alumnium frame, giving it an overhead view
 - Follow the [calibration guide](https://dev.intelrealsense.com/docs/self-calibration-for-depth-cameras).
 - Use the `rs-enumerate-devices` command to verify that both realsenses are connected. If this doesn't work, unplug and replug the realsense cameras.
+
+TODO: these will somewhat randomly fail, need to create robust exception handling
+
+## VLAs
+
+Vision Language Action models are used to perform robot behaviors.
+Finetuning pretrained VLAs is done by using lerobot dataset format, see [datasets here](https://huggingface.co/tatbot).
+Use the [lerobot dataset visualizer](https://huggingface.co/spaces/lerobot/visualize_dataset).
+Experiment logs on [wandb](https://wandb.ai/hug/tatbot-calib).
+
+### SmolVLA
+
+[blog](https://huggingface.co/blog/smolvla)
+[model](https://huggingface.co/lerobot/smolvla_base)
+
+#### Train
+
+instructions for `oop`
+
+```bash
+uv run python ~/lerobot/lerobot/scripts/train.py \
+  --policy.path=lerobot/smolvla_base \
+  --dataset.repo_id=tatbot/tatbot-calib-test \
+  --output_dir=~/tatbot/output/train/calib-test/smolvla \
+  --batch_size=64 \
+  --wandb.enable=true \
+  --wandb.project=tatbot-calib \
+  --steps=20000
+```
+
+#### Eval
+
+instructions for `oop`
+```
+
+
+```
+
+### Gr00t
+
+[blog](https://huggingface.co/blog/nvidia/gr00t-n1-5-so101-tuning)
+[model](https://huggingface.co/nvidia/GR00T-N1.5-3B)
+[repo](https://github.com/NVIDIA/Isaac-GR00T)
+
+#### Train
+
+instructions for `oop`
+
+```bash
+# basic install
+git clone https://github.com/NVIDIA/Isaac-GR00T.git
+cd Isaac-GR00T/
+# setup uv venv
+uv venv --python=3.10 && \
+source .venv/bin/activate && \
+uv pip install .[base]
+# download dataset locally
+export DATASET_DIR="~/tatbot/output/train/tatbot-calib-test/dataset"
+huggingface-cli download \
+    --repo-type dataset tatbot/tatbot-calib-test \
+    --local-dir $DATASET_DIR
+# copy modality config file
+cp ~/tatbot/config/gr00t_modality.json $DATASET_DIR/meta/modality.json
+# load dataset
+uv run scripts/load_dataset.py \
+    --dataset-path $DATASET_DIR \
+    --plot-state-action \
+    --video-backend torchvision_av
+# train
+export WANDB_RUN_ID="gr00t-test"
+export WANDB_PROJECT="tatbot-calib"
+uv run python ~/lerobot/lerobot/scripts/gr00t_finetune.py \
+   --dataset-path $DATASET_DIR \
+   --num-gpus 1 \
+   --output-dir ~/tatbot/output/train/tatbot-calib-test/gr00t  \
+   --max-steps 10000 \
+   --data-config tatbot \
+   --
+   --video-backend torchvision_av
+```
+
+#### Eval
+
+instructions for `ojo`
+
+```bash
+# basic install
+git clone https://github.com/NVIDIA/Isaac-GR00T.git
+cd Isaac-GR00T/
+# set uv venv
+uv venv --python=3.10 && \
+source .venv/bin/activate && \
+uv pip install .[orin]
+# eval
+python getting_started/examples/eval_lerobot.py \
+    --robot.type=tatbot \
+    --robot.cameras="{ wrist: {type: opencv, index_or_path: 9, width: 640, height: 480, fps: 30}, head: {type: opencv, index_or_path: 15, width: 640, height: 480, fps: 30}}" \
+    --policy_host=10.112.209.136 \
+    --lang_instruction="Grab pens and place into pen holder."
+```
 
 ## AprilTags
 
