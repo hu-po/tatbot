@@ -4,9 +4,10 @@
       // Documentation
       { "name": "tatbot-logs", "path": "../../tatbot-logs" }, // https://github.com/hu-po/tatbot-logs
       // Dependencies are useful to provide context for AI coding agents (e.g. Cursor)
+      { "name": "Isaac-GR00T", "path": "../../Isaac-GR00T" }, // https://github.com/NVIDIA/Isaac-GR00T
+      { "name": "lerobot", "path": "../../lerobot" }, // https://github.com/hu-po/lerobot
       { "name": "pyroki", "path": "../../pyroki" }, // https://github.com/chungmin99/pyroki
       { "name": "viser", "path": "../../viser" }, // https://github.com/nerfstudio-project/viser
-      { "name": "lerobot", "path": "../../lerobot" }, // https://github.com/hu-po/lerobot
       { "name": "librealsense", "path": "../../librealsense" }, // https://github.com/IntelRealSense/librealsense
       { "name": "trossen_arm", "path": "../../trossen_arm" }, // https://github.com/TrossenRobotics/trossen_arm
       { "name": "trossen_arm_description", "path": "../../trossen_arm_description" }, // https://github.com/TrossenRobotics/trossen_arm_description

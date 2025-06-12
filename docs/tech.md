@@ -1,16 +1,30 @@
 # Tech
 
-technical description of tatbot
+description of tatbot technical stack
 
-## URDF
+## Index
 
-tatbot is defined using URDF at `tatbot/assets/urdf/tatbot.urdf`.
-
-various software versions of tatbot with different dependencies and designs are available under `tatbot/src`.
+- [Setup](#setup)
+- [Run](#run)
+- [Devices](#devices)
+- [Train](#train)
+  - [SmolVLA](#smolvla)
+  - [Gr00t](#gr00t)
+- [Eval](#eval)
+  - [SmolVLA](#smolvla-1)
+  - [Gr00t](#gr00t-1)
+- [URDF](#urdf)
+- [AprilTags](#apriltags)
+- [Profiling](#profiling)
+  - [snakeviz](#snakeviz)
+  - [scalene](#scalene)
+  - [nsys](#nsys)
+  - [JAX profiler](#jax-profiler)
 
 ## Setup
 
-python dependencies are managed with environments using [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+Various software versions of tatbot with different dependencies and designs are available under `tatbot/src`.
+Python dependencies are managed using [`uv`](https://docs.astral.sh/uv/getting-started/installation/) and a `pyproject.toml` file.
 
 ```bash
 # Basic install
@@ -74,11 +88,13 @@ during development, the following pc is also available:
 
 tatbot makes use of the following dependencies:
 
+- [`lerobot`](https://github.com/hu-po/lerobot) - dataset, finetuning
+- [`gr00t`](https://github.com/NVIDIA/Isaac-GR00T) - VLA foundation model
+- [`jax`](https://github.com/jax-ml/jax) - gpu acceleration
 - [`pyroki`](https://github.com/chungmin99/pyroki) - inverse kinematics
 - [`viser`](https://github.com/nerfstudio-project/viser) - GUI
 - [`librealsense`](https://github.com/IntelRealSense/librealsense) - depth cameras
 - [`trossen_arm`](https://github.com/TrossenRobotics/trossen_arm) - robot arms
-- [`jax`](https://github.com/jax-ml/jax) - gpu acceleration
 - [`pupil-apriltags`](https://github.com/pupil-labs/apriltags) - object tracking
 
 ## Networking
@@ -253,6 +269,10 @@ python getting_started/examples/eval_lerobot.py \
     --policy_host=192.168.1.96 \
     --lang_instruction="Tattoo calibration pattern on skin"
 ```
+
+## URDF
+
+tatbot is defined using URDF at `tatbot/assets/urdf/tatbot.urdf`.
 
 ## AprilTags
 
