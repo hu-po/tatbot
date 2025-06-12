@@ -21,3 +21,6 @@ dependencies = [
 
 [tool.setuptools]
 py-modules = ["ik", "pattern", "pattern_image", "pattern_calib",  "record_iktest", "record_pattern", "record_policy"]
+
+[project.optional-dependencies]
+dev = ["isort>=5.0.0,<6.0.0"] 

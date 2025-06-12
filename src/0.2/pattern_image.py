@@ -1,9 +1,9 @@
 import io
-import os
-import logging
-from dataclasses import dataclass, asdict
 import json
+import logging
+import os
 import shutil
+from dataclasses import asdict, dataclass
 
 import cv2
 import jax.numpy as jnp
@@ -11,10 +11,9 @@ import networkx as nx
 import numpy as np
 import PIL.Image
 import replicate
-from skimage.morphology import skeletonize
 import tyro
-
-from pattern import Pose, Path, Pattern, make_pathviz_image
+from pattern import Path, Pattern, Pose, make_pathviz_image
+from skimage.morphology import skeletonize
 
 log = logging.getLogger('tatbot')
 
@@ -31,15 +30,15 @@ class PatternFromImageConfig:
     """ Width of the design image (pixels)."""
     image_height_px: int = 256
     """ Height of the design image (pixels)."""
-    image_width_m: float = 0.06
+    image_width_m: float = 0.060
     """ Width of the design image (meters)."""
-    image_height_m: float = 0.06
+    image_height_m: float = 0.060
     """ Height of the design image (meters)."""
     num_patches_width: int = 16
     """ Number of patches along the x-axis."""
     num_patches_height: int = 16
     """ Number of patches along the y-axis."""
-    patch_empty_threshold: float = 254
+    patch_empty_threshold: float = 254.0
     """(0-255) Pixel intensity mean threshold to consider a patch empty. Higher is more aggressive."""
     binary_threshold: int = 127
     """(0-255) Pixel intensity threshold for binary conversion of patch. Lower is more aggressive."""

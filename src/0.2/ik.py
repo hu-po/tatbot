@@ -6,10 +6,11 @@ import jax_dataclasses as jdc
 import jaxlie
 import jaxls
 from jaxtyping import Array, Float, Int
+
 import pyroki as pk
 
 log = logging.getLogger('tatbot')
-log.info(f" JAX devices: {jax.devices()}")
+log.info(f"🦾 JAX devices: {jax.devices()}")
 
 @jdc.pytree_dataclass
 class IKConfig:
@@ -30,7 +31,7 @@ def ik(
     target_position: Float[Array, "B 3"],
     config: IKConfig,
 ) -> Float[Array, "B 16"]:
-    log.debug(f" performing ik on batch of size {target_wxyz.shape[0]}")
+    log.debug(f"🤖 performing ik on batch of size {target_wxyz.shape[0]}")
     joint_var = robot.joint_var_cls(0)
     factors = [
         pk.costs.pose_cost(

@@ -20,19 +20,19 @@ from pprint import pformat
 from typing import Any, Dict
 
 import jax.numpy as jnp
-import lerobot.record
 import numpy as np
-import pyroki as pk
 import tyro
-import viser
 import yourdfpy
+from ik import IKConfig, ik
+
+import lerobot.record
+import pyroki as pk
+import viser
 from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.common.teleoperators.config import TeleoperatorConfig
 from lerobot.common.teleoperators.teleoperator import Teleoperator
 from lerobot.record import DatasetRecordConfig, RecordConfig
 from viser.extras import ViserUrdf
-
-from ik import IKConfig, ik
 
 log = logging.getLogger('tatbot')
 
