@@ -4,31 +4,34 @@ import logging
 import os
 from pprint import pformat
 import time
+from typing import Any, Dict
 
 import cv2
 import jax
 import jax.numpy as jnp
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.common.datasets.utils import build_dataset_frame, hw_to_dataset_features
+from lerobot.common.robots import make_robot_from_config
+from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
+from lerobot.common.utils.control_utils import (
+    init_keyboard_listener,
+    is_headless,
+    sanity_check_dataset_name,
+)
+from lerobot.common.utils.robot_utils import busy_wait
+from lerobot.common.utils.utils import log_say
+from lerobot.record import _init_rerun, record_loop
 import numpy as np
 import PIL.Image
 import pyroki as pk
 import rerun as rr
+import tyro
 import viser
 from viser.extras import ViserUrdf
 import yourdfpy
-from typing import Dict, Any
-import tyro
-
-from lerobot.record import _init_rerun, record_loop
-from lerobot.common.datasets.utils import build_dataset_frame, hw_to_dataset_features
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.common.robots import make_robot_from_config
-from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
-from lerobot.common.utils.utils import log_say
-from lerobot.common.utils.robot_utils import busy_wait
-from lerobot.common.utils.control_utils import init_keyboard_listener, is_headless, sanity_check_dataset_name
 
 from ik import IKConfig, ik
-from pattern import Pose, Path, Pattern
+from pattern import Path, Pattern, Pose
 
 log = logging.getLogger('tatbot')
 

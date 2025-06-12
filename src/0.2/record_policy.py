@@ -5,12 +5,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from pprint import pformat
 
-import tyro
-
-import lerobot.record
 from lerobot.common.policies.smolvla.configuration_smolvla import SmolVLAConfig
 from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.record import DatasetRecordConfig, RecordConfig
+import lerobot.record
+import tyro
 
 log = logging.getLogger('tatbot')
 

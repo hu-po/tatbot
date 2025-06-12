@@ -6,7 +6,6 @@ import jax_dataclasses as jdc
 import jaxlie
 import jaxls
 from jaxtyping import Array, Float, Int
-
 import pyroki as pk
 
 log = logging.getLogger('tatbot')

@@ -1,9 +1,9 @@
+from dataclasses import asdict, dataclass
 import io
 import json
 import logging
 import os
 import shutil
-from dataclasses import asdict, dataclass
 
 import cv2
 import jax.numpy as jnp
@@ -11,9 +11,10 @@ import networkx as nx
 import numpy as np
 import PIL.Image
 import replicate
-import tyro
-from pattern import Path, Pattern, Pose, make_pathviz_image
 from skimage.morphology import skeletonize
+import tyro
+
+from pattern import Path, Pattern, Pose, make_pathviz_image
 
 log = logging.getLogger('tatbot')
 
