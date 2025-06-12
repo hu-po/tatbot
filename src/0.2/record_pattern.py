@@ -227,7 +227,7 @@ def main(config: PathConfig):
             target_position=design_pos,
             config=config.ik_config,
         )
-        robot._set_positions_l(solution, goal_time=robot.config.goal_time_slow, blocking=True)
+        robot._set_positions_l(solution[:7], goal_time=robot.config.goal_time_slow, blocking=True)
         urdf_vis.update_cfg(np.array(solution))
         time.sleep(config.alignment_interval)
         log.info("📐 Aligning over inkcap...")
@@ -239,7 +239,7 @@ def main(config: PathConfig):
             target_position=inkcap_pos,
             config=config.ik_config,
         )
-        robot._set_positions_l(solution, goal_time=robot.config.goal_time_slow, blocking=True)
+        robot._set_positions_l(solution[:7], goal_time=robot.config.goal_time_slow, blocking=True)
         urdf_vis.update_cfg(np.array(solution))
         time.sleep(config.alignment_interval)
 
@@ -276,7 +276,7 @@ def main(config: PathConfig):
                     target_position=pose,
                     config=config.ik_config,
                 )
-                robot._set_positions_l(solution, goal_time=robot.config.goal_time_slow, blocking=True)
+                robot._set_positions_l(solution[:7], goal_time=robot.config.goal_time_slow, blocking=True)
                 urdf_vis.update_cfg(np.array(solution))
 
         # right hand follows left hand with an offset

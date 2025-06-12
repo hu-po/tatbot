@@ -36,11 +36,11 @@
         }
     },
     "video": {
-        "left.cam_head": {
-            "original_key": "observation.images.left.cam_head"
+        "head": {
+            "original_key": "observation.images.head"
         },
-        "right.cam_wrist": {
-            "original_key": "observation.images.right.cam_wrist"
+        "wrist": {
+            "original_key": "observation.images.wrist"
         }
     },
     "annotation": {
