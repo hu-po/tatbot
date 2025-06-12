@@ -87,14 +87,17 @@ during development, the following pc is also available:
 
 tatbot makes use of the following dependencies:
 
-- [`lerobot`](https://github.com/hu-po/lerobot) - dataset, finetuning
-- [`gr00t`](https://github.com/NVIDIA/Isaac-GR00T) - VLA foundation model
 - [`jax`](https://github.com/jax-ml/jax) - gpu acceleration
 - [`pyroki`](https://github.com/chungmin99/pyroki) - inverse kinematics
 - [`viser`](https://github.com/nerfstudio-project/viser) - GUI
 - [`librealsense`](https://github.com/IntelRealSense/librealsense) - depth cameras
 - [`trossen_arm`](https://github.com/TrossenRobotics/trossen_arm) - robot arms
 - [`pupil-apriltags`](https://github.com/pupil-labs/apriltags) - object tracking
+
+these dependencies use custom forks:
+
+- [`lerobot`](https://github.com/hu-po/lerobot) - dataset, finetuning
+- [`gr00t`](https://github.com/hu-po/Isaac-GR00T) - VLA foundation model
 
 ## Networking
 
@@ -209,7 +212,7 @@ instructions for `oop`
 
 ```bash
 # basic install
-git clone https://github.com/NVIDIA/Isaac-GR00T.git && \
+git clone https://github.com/hu-po/Isaac-GR00T.git && \
 cd Isaac-GR00T/
 # setup uv venv
 uv venv --python=3.11 && \
@@ -223,7 +226,8 @@ huggingface-cli download \
 # copy modality config file
 cp /home/oop/tatbot/config/gr00t_modality.json $DATASET_DIR/meta/modality.json
 # load dataset
-python scripts/load_dataset.py \
+uv pip install PyQt5
+MPLBACKEND=QtAgg python scripts/load_dataset.py \
   --dataset-path $DATASET_DIR \
   --embodiment-tag new_embodiment \
   --plot-state-action \
@@ -233,11 +237,11 @@ python scripts/load_dataset.py \
 wandb login
 export WANDB_RUN_ID="gr00t-test"
 export WANDB_PROJECT="tatbot-calib"
-uv run python ~/lerobot/lerobot/scripts/gr00t_finetune.py \
+python scripts/gr00t_finetune.py \
   --dataset-path $DATASET_DIR \
   --embodiment-tag new_embodiment \
   --num-gpus 1 \
-  --output-dir ~/tatbot/output/train/tatbot-calib-test/gr00t  \
+  --output-dir /home/oop/tatbot/output/train/tatbot-calib-test/gr00t  \
   --max-steps 10000 \
   --data-config tatbot \
   --batch_size 8 \
@@ -250,7 +254,7 @@ instructions for `ojo`, acting as the policy server
 
 ```bash
 # basic install
-git clone https://github.com/NVIDIA/Isaac-GR00T.git
+git clone https://github.com/hu-po/Isaac-GR00T.git && \
 cd Isaac-GR00T/
 # use dockerfile
 docker build -f orin.Dockerfile -t gr00t-eval .
@@ -262,10 +266,10 @@ docker run -it --gpus --rm gr00t-eval \
 instructions for `trossen-ai` acting as the robot client
 
 ```bash
-git clone https://github.com/NVIDIA/Isaac-GR00T.git
+git clone https://github.com/hu-po/Isaac-GR00T.git && \
 cd Isaac-GR00T/
 # setup uv venv
-uv venv --python=3.10 && \
+uv venv --python=3.11 && \
 source .venv/bin/activate && \
 uv pip install .[base]
 # run robot client
