@@ -221,7 +221,14 @@ def make_calibration_pattern(config: CalibrationPatternConfig):
 
     paths_path = os.path.join(config.output_dir, "pattern.json")
     with open(paths_path, "w") as f:
-        json_data = []
+        json_data = {
+            "name": pattern.name,
+            "width_m": pattern.width_m,
+            "height_m": pattern.height_m,
+            "width_px": pattern.width_px,
+            "height_px": pattern.height_px,
+            "paths": [],
+        }
         for path in pattern.paths:
             # Convert JAX arrays to numpy arrays first to avoid slow iteration
             positions = np.asarray(path.positions)
@@ -229,7 +236,7 @@ def make_calibration_pattern(config: CalibrationPatternConfig):
             pixel_coords = np.asarray(path.pixel_coords)
             metric_coords = np.asarray(path.metric_coords)
 
-            path_list = [
+            poses = [
                 {
                     "pos": positions[i].tolist(),
                     "wxyz": orientations[i].tolist(),
@@ -238,7 +245,7 @@ def make_calibration_pattern(config: CalibrationPatternConfig):
                 }
                 for i in range(len(path))
             ]
-            json_data.append(path_list)
+            json_data["paths"].append({"poses": poses})
         json.dump(json_data, f, indent=4, cls=NumpyEncoder)
     log.info(f"💾 Saved {len(pattern.paths)} tool paths to {paths_path}")
 

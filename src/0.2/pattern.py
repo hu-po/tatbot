@@ -66,8 +66,8 @@ class Pattern:
                 Path(
                     positions=jnp.array([p.get("pos", [0, 0, 0]) for p in poses_data]),
                     orientations=jnp.array([p.get("wxyz", [1, 0, 0, 0]) for p in poses_data]),
-                    pixel_coords=jnp.array([p["pixel_coords"] for p in poses_data]),
-                    metric_coords=jnp.array([p["metric_coords"] for p in poses_data]),
+                    pixel_coords=jnp.array([p.get("pixel_coords", [0, 0]) for p in poses_data]),
+                    metric_coords=jnp.array([p.get("metric_coords", [0.0, 0.0]) for p in poses_data]),
                 )
             )
         return cls(
