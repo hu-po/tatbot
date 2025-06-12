@@ -58,4 +58,6 @@ def ik(
             trust_region=jaxls.TrustRegionConfig(lambda_initial=config.lambda_initial),
         )
     )
-    return sol[joint_var]
+    _solution = sol[joint_var]
+    log.debug(f"🤖 ik solution: {_solution}")
+    return _solution

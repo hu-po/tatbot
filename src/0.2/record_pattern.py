@@ -79,8 +79,8 @@ class PathConfig:
     """Seed for random behavior."""
     urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
     """Local path to the URDF file for the robot."""
-    target_link_name: str = "left/tattoo_needle"
-    """Name of the link to be controlled."""
+    target_links_name: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link")
+    """Names of the ee links in the URDF for left and right ik solving."""
     ik_config: IKConfig = IKConfig()
     """Configuration for the IK solver."""
 
@@ -102,6 +102,10 @@ class PathConfig:
     """orientation quaternion (wxyz) of the design ee transform."""
     ee_design_hover_offset: tuple[float, float, float] = (0.0, 0.0, -0.0085)
     """offset of the design ee transform when hovering over a toolpoint."""
+    ee_design_view_offset: tuple[float, float, float] = (0.0, -0.2, 0.2)
+    """position of the design view ee transform (relative to design ee transform)."""
+    ee_design_view_wxyz: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
+    """orientation quaternion (wxyz) of the design view ee transform."""
 
     ee_inkcap_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
     """position of the inkcap ee transform."""
@@ -147,7 +151,7 @@ def main(config: PathConfig):
         client.camera.position = config.view_camera_position
         client.camera.look_at = config.view_camera_look_at
 
-    log.info("🦾 Adding robots...")
+    log.info("🦾 Adding vizer robots...")
     urdf : yourdfpy.URDF = yourdfpy.URDF.load(config.urdf_path)
     viser_robot: pk.Robot = pk.Robot.from_urdf(urdf)
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/root")
@@ -203,27 +207,37 @@ def main(config: PathConfig):
 
             design_image_gui.image = cv2.cvtColor(segment_viz_img, cv2.COLOR_BGR2RGB)
 
+        should_dip = (config.ink_dip_interval > 0 and path_idx % config.ink_dip_interval == 0) or (
+            config.ink_dip_interval == 0 and path_idx == 0
+        )
+        if should_dip:
+            log.info("✒️ dipping ink...")
+            log_say("dipping ink", config.play_sounds)
+            for desc, pose in [
+                ("hover over inkcap", config.ee_inkcap_pos),
+                ("dip into inkcap", (np.array(config.ee_inkcap_pos) + np.array(config.ee_inkcap_dip)).tolist()),
+                ("retract from inkcap", config.ee_inkcap_pos),
+            ]:
+                log_say(desc, config.play_sounds)
+                solution = ik(
+                    robot=viser_robot,
+                    target_link_indices=jnp.array([viser_robot.links.names.index(config.target_links_name[0])]),
+                    target_wxyz=jnp.array([config.ee_design_wxyz]),
+                    target_position=jnp.array([np.array(pose)]),
+                    config=config.ik_config,
+                )
+                robot._set_positions_l(solution, goal_time=robot.config.goal_time_slow, blocking=True)
+                urdf_vis.update_cfg(np.array(solution))
+
+        # TODO: this can be parallelized via JAX
         # The path from the design file is relative to the design's origin.
         # We make it absolute by adding the design's position.
         absolute_path_segment = [
             list(np.array(config.ee_design_pos) + np.array(p) + np.array(config.ee_design_hover_offset))
             for p in relative_path_segment_m
         ]
-
         # Each segment is an episode, and starts with an ink dip.
         episode_path = []
-
-        should_dip = (config.ink_dip_interval > 0 and path_idx % config.ink_dip_interval == 0) or (
-            config.ink_dip_interval == 0 and path_idx == 0
-        )
-
-        if should_dip:
-            log_say("Dipping ink", config.play_sounds)
-            # Ink dip sequence
-            episode_path.append(list(config.ee_inkcap_pos))
-            episode_path.append((np.array(config.ee_inkcap_pos) + np.array(config.ee_inkcap_dip)).tolist())
-            episode_path.append(list(config.ee_inkcap_pos))
-
         # Hover over the first toolpoint
         episode_path.append(list(absolute_path_segment[0] - np.array(config.ee_design_hover_offset)))
         # Add the rest of the path
@@ -231,28 +245,24 @@ def main(config: PathConfig):
         len_prefix = len(episode_path) - len(absolute_path_segment)
         num_toolpoints = len(episode_path)
 
-        log_say(f"Recording tool path {path_idx}", config.play_sounds)
-        for toolpoint_idx, toolpoint in enumerate(episode_path):
+        log.info(f"recording path {path_idx} of {len(pattern.paths)}")
+        log_say(f"recording path {path_idx} of {len(pattern.paths)}", config.play_sounds)
+        for pose_idx, pose in enumerate(episode_path):
+            log.info(f"pose: {pose} (index: {pose_idx}/{num_toolpoints})")
             start_loop_t = time.perf_counter()
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 
-            log.info(f"🔍 Solving IK for toolpoint: {toolpoint} (index: {toolpoint_idx}/{num_toolpoints})")
             solution = ik(
                 robot=viser_robot,
-                target_link_indices=jnp.array([viser_robot.links.names.index(config.target_link_name)]),
-                target_wxyz=jnp.array([config.ee_design_wxyz]),
-                target_position=jnp.array([np.array(toolpoint)]),
+                target_link_indices=jnp.array([
+                    viser_robot.links.names.index(config.target_links_name[0]),
+                    viser_robot.links.names.index(config.target_links_name[1]),
+                ]),
+                target_wxyz=jnp.array([config.ee_design_wxyz, config.ee_design_view_wxyz]),
+                target_position=jnp.array([np.array(pose), np.array(pose) + np.array(config.ee_design_view_offset)]),
                 config=config.ik_config,
             )
-            # hardcode the right arm
-            solution = solution.at[8].set(config.joint_pos_design_r[0])
-            solution = solution.at[9].set(config.joint_pos_design_r[1])
-            solution = solution.at[10].set(config.joint_pos_design_r[2])
-            solution = solution.at[11].set(config.joint_pos_design_r[3])
-            solution = solution.at[12].set(config.joint_pos_design_r[4])
-            solution = solution.at[13].set(config.joint_pos_design_r[5])
-            solution = solution.at[14].set(config.joint_pos_design_r[6])
             urdf_vis.update_cfg(np.array(solution))
             action = {
                 "left.joint_0.pos": solution[0],
@@ -271,20 +281,20 @@ def main(config: PathConfig):
                 "right.gripper.pos": solution[14],
             }
             log.debug(f"🦾 Action: {action}")
-            # initial actions such as ink dipping and hovering should be SLOW and blocking
+            # Initial actions such as ink dipping and hovering should be SLOW and blocking.
             # This includes the first drawing point.
-            if toolpoint_idx < len_prefix + 1:
+            if pose_idx < len_prefix:
                 sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, block_mode="left")
             else:
-                # rest of the actions should be FAST and non-blocking
+                # Rest of the actions should be FAST and non-blocking.
                 sent_action = robot.send_action(action, goal_time=robot.config.goal_time_fast, block_mode="left")
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
-            dataset.add_frame(frame, task=f"Tattoo path {toolpoint_idx}")
+            dataset.add_frame(frame, task=f"Tattoo path {pose_idx}")
 
             if img_bgr is not None and design_image_gui is not None:
-                current_drawing_point_idx = toolpoint_idx - len_prefix
+                current_drawing_point_idx = pose_idx - len_prefix
                 if current_drawing_point_idx >= 0:
                     # new image for each step
                     step_image = segment_viz_img.copy()
