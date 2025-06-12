@@ -4,7 +4,6 @@ import logging
 import os
 from pprint import pformat
 import time
-from typing import Any, Dict
 
 import cv2
 import jax
@@ -53,6 +52,8 @@ class PathConfig:
     """Directory to save the dataset."""
     push_to_hub: bool = False
     """Push the dataset to the Hugging Face Hub."""
+    tags: tuple[str, ...] = ("tatbot", "wxai", "trossen")
+    """Tags to add to the dataset on Hugging Face."""
     num_image_writer_processes: int = 0
     """
     Number of subprocesses handling the saving of frames as PNG. Set to 0 to use threads only;
@@ -260,7 +261,10 @@ def main(config: PathConfig):
                     viser_robot.links.names.index(config.target_links_name[1]),
                 ]),
                 target_wxyz=jnp.array([config.ee_design_wxyz, config.ee_design_view_wxyz]),
-                target_position=jnp.array([np.array(pose), np.array(pose) + np.array(config.ee_design_view_offset)]),
+                target_position=jnp.array([
+                    np.array(pose),
+                    np.array(pose) + np.array(config.ee_design_view_offset),
+                ]),
                 config=config.ik_config,
             )
             urdf_vis.update_cfg(np.array(solution))
@@ -281,9 +285,8 @@ def main(config: PathConfig):
                 "right.gripper.pos": solution[14],
             }
             log.debug(f"🦾 Action: {action}")
-            # Initial actions such as ink dipping and hovering should be SLOW and blocking.
-            # This includes the first drawing point.
             if pose_idx < len_prefix:
+                # Initial hovering should be SLOW and blocking.
                 sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, block_mode="left")
             else:
                 # Rest of the actions should be FAST and non-blocking.
@@ -291,7 +294,8 @@ def main(config: PathConfig):
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
-            dataset.add_frame(frame, task=f"Tattoo path {pose_idx}")
+            # TODO: add pattern closeup? progress image? patch?
+            dataset.add_frame(frame, task=f"{pattern.name} tattoo pattern path {path_idx} of {len(pattern.paths)}")
 
             if img_bgr is not None and design_image_gui is not None:
                 current_drawing_point_idx = pose_idx - len_prefix
@@ -323,10 +327,13 @@ def main(config: PathConfig):
             busy_wait(1 / config.fps - dt_s)
 
             if events["exit_early"]:
+                log.info("🛑 exit early")
+                log_say("exit", config.play_sounds)
                 events["exit_early"] = False
                 break
 
         if events["rerecord_episode"]:
+            log.info("🔄 re-recording episode")
             log_say("Re-record episode", config.play_sounds)
             events["rerecord_episode"] = False
             events["exit_early"] = False
@@ -346,7 +353,7 @@ def main(config: PathConfig):
         listener.stop()
 
     if config.push_to_hub:
-        dataset.push_to_hub(tags=["tatbot", "wxai", "trossen"], private=config.private)
+        dataset.push_to_hub(tags=list(config.tags), private=config.private)
 
     log_say("Exiting", config.play_sounds)
 
