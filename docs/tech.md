@@ -216,26 +216,32 @@ uv venv --python=3.11 && \
 source .venv/bin/activate && \
 uv pip install .[base]
 # download dataset locally
-export DATASET_DIR="~/tatbot/output/train/tatbot-calib-test/dataset" && \
+export DATASET_DIR="/home/oop/tatbot/output/train/tatbot-calib-test/dataset" && \
 huggingface-cli download \
-    --repo-type dataset tatbot/tatbot-calib-test \
-    --local-dir $DATASET_DIR
+  --repo-type dataset tatbot/tatbot-calib-test \
+  --local-dir $DATASET_DIR
 # copy modality config file
-cp ~/tatbot/config/gr00t_modality.json $DATASET_DIR/meta/modality.json
+cp /home/oop/tatbot/config/gr00t_modality.json $DATASET_DIR/meta/modality.json
 # load dataset
-uv run scripts/load_dataset.py --dataset-path $DATASET_DIR  --plot-state-action --video-backend torchvision_av
+python scripts/load_dataset.py \
+  --dataset-path $DATASET_DIR \
+  --embodiment-tag new_embodiment \
+  --plot-state-action \
+  --steps 64 \
+  --video-backend torchvision_av
 # train
 wandb login
 export WANDB_RUN_ID="gr00t-test"
 export WANDB_PROJECT="tatbot-calib"
 uv run python ~/lerobot/lerobot/scripts/gr00t_finetune.py \
-   --dataset-path $DATASET_DIR \
-   --num-gpus 1 \
-   --output-dir ~/tatbot/output/train/tatbot-calib-test/gr00t  \
-   --max-steps 10000 \
-   --data-config tatbot \
-   --batch_size 8 \
-   --video-backend torchvision_av
+  --dataset-path $DATASET_DIR \
+  --embodiment-tag new_embodiment \
+  --num-gpus 1 \
+  --output-dir ~/tatbot/output/train/tatbot-calib-test/gr00t  \
+  --max-steps 10000 \
+  --data-config tatbot \
+  --batch_size 8 \
+  --video-backend torchvision_av
 ```
 
 #### Eval

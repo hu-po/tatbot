@@ -119,7 +119,7 @@ class PathConfig:
     ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the inkcap ee transform."""
 
-    alignment_timeout: float = 10.0
+    alignment_timeout: float = 60.0
     """Timeout for alignment in seconds."""
     alignment_interval: float = 1.0
     """Interval for alignment switching between design and inkcap."""
@@ -219,7 +219,6 @@ def main(config: PathConfig):
             log_say("alignment complete", config.play_sounds)
             break
         log.info("📐 Aligning over design...")
-        log_say("align design", config.play_sounds)
         solution = ik(
             robot=viser_robot,
             target_link_indices=target_link_indices[0],
@@ -228,10 +227,10 @@ def main(config: PathConfig):
             config=config.ik_config,
         )
         robot._set_positions_l(solution[:7], goal_time=robot.config.goal_time_slow, blocking=True)
+        log_say("align design", config.play_sounds)
         urdf_vis.update_cfg(np.array(solution))
         time.sleep(config.alignment_interval)
         log.info("📐 Aligning over inkcap...")
-        log_say("align inkcap", config.play_sounds)
         solution = ik(
             robot=viser_robot,
             target_link_indices=target_link_indices[0],
@@ -240,6 +239,7 @@ def main(config: PathConfig):
             config=config.ik_config,
         )
         robot._set_positions_l(solution[:7], goal_time=robot.config.goal_time_slow, blocking=True)
+        log_say("align inkcap", config.play_sounds)
         urdf_vis.update_cfg(np.array(solution))
         time.sleep(config.alignment_interval)
 
