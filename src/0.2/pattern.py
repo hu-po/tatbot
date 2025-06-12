@@ -15,15 +15,28 @@ class Pose:
     """Position in meters (x, y, z)."""
     wxyz: Float[Array, "4"] = field(default_factory=lambda: jnp.array([1.0, 0.0, 0.0, 0.0]))
     """Orientation in quaternion (w, x, y, z)."""
-    pixel_coords: Int[Array, "2"] | None = None
+    pixel_coords: Int[Array, "2"] = field(default_factory=lambda: jnp.array([0, 0]))
     """Pixel coordinates of the pose in image space (width, height), origin is top left."""
-    metric_coords: Float[Array, "2"] | None = None
+    metric_coords: Float[Array, "2"] = field(default_factory=lambda: jnp.array([0.0, 0.0]))
     """Metric (meters) coordinates of the pose in foo space, origin is center of foo (x, y)."""
 
 @jdc.pytree_dataclass
 class Path:
-    poses: list[Pose] = field(default_factory=list)
-    """Ordered list of poses defining a path."""
+    positions: Float[Array, "N 3"] = field(default_factory=lambda: jnp.array([[0.0, 0.0, 0.0]]))
+    orientations: Float[Array, "N 4"] = field(default_factory=lambda: jnp.array([[1.0, 0.0, 0.0, 0.0]]))
+    pixel_coords: Int[Array, "N 2"] = field(default_factory=lambda: jnp.array([[0, 0]]))
+    metric_coords: Float[Array, "N 2"] = field(default_factory=lambda: jnp.array([[0.0, 0.0]]))
+
+    def __len__(self):
+        return self.positions.shape[0]
+
+    def __getitem__(self, idx) -> Pose:
+        return Pose(
+            pos=self.positions[idx],
+            wxyz=self.orientations[idx],
+            pixel_coords=self.pixel_coords[idx],
+            metric_coords=self.metric_coords[idx],
+        )
 
 @dataclass
 class Pattern:
@@ -41,6 +54,43 @@ class Pattern:
     """Height of the pattern in pixels."""
     image_np: np.ndarray | None = field(default=None, repr=False, compare=False)
     """Optional image for visualization."""
+
+    @classmethod
+    def from_json(cls, data: dict) -> "Pattern":
+        paths = []
+        for path_data in data.get("paths", []):
+            poses_data = path_data.get("poses", [])
+            if not poses_data:
+                continue
+            paths.append(
+                Path(
+                    positions=jnp.array([p.get("pos", [0, 0, 0]) for p in poses_data]),
+                    orientations=jnp.array([p.get("wxyz", [1, 0, 0, 0]) for p in poses_data]),
+                    pixel_coords=jnp.array([p["pixel_coords"] for p in poses_data]),
+                    metric_coords=jnp.array([p["metric_coords"] for p in poses_data]),
+                )
+            )
+        return cls(
+            paths=paths,
+            name=data.get("name", cls.name),
+            width_m=data.get("width_m", cls.width_m),
+            height_m=data.get("height_m", cls.height_m),
+            width_px=data.get("width_px", cls.width_px),
+            height_px=data.get("height_px", cls.height_px),
+        )
+    
+COLORS: dict[str, tuple[int, int, int]] = {
+    "blue": (255, 0, 0),
+    "green": (0, 255, 0),
+    "red": (0, 0, 255),
+    "yellow": (0, 255, 255),
+    "purple": (255, 0, 255),
+}
+
+@jdc.jit
+def offset_path(path: Path, offset: Float[Array, "3"]) -> Path:
+    """Offsets all poses in a path by a given vector. JIT-compiled."""
+    return path.replace(positions=path.positions + offset)
 
 def make_pathviz_image(pattern: Pattern) -> np.ndarray:
     """Creates an image with overlayed paths from a pattern.
@@ -60,7 +110,9 @@ def make_pathviz_image(pattern: Pattern) -> np.ndarray:
 
     for path in pattern.paths:
         # Convert JAX arrays to list of numpy arrays for processing
-        pixel_coords = [np.array(pose.pixel_coords) for pose in path.poses if pose.pixel_coords is not None]
+        if path.pixel_coords is None:
+            continue
+        pixel_coords = [np.array(pc) for pc in path.pixel_coords]
 
         if len(pixel_coords) < 2:
             continue

@@ -30,7 +30,7 @@ from viser.extras import ViserUrdf
 import yourdfpy
 
 from ik import IKConfig, ik
-from pattern import Path, Pattern, Pose
+from pattern import COLORS, Pattern, offset_path
 
 log = logging.getLogger('tatbot')
 
@@ -137,13 +137,10 @@ def main(config: PathConfig):
         image_path = os.path.join(config.pattern_dir, "image.png")
         assert os.path.exists(image_path), f"Pattern image not found at {image_path}"
         log.info(f"🖼️ Loading pattern image from {image_path}...")
-        img_pil = PIL.Image.open(image_path).convert("RGB")
-        img_bgr = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
-        # Viser GUI expects RGB
-        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-        design_image_gui = server.gui.add_image(
+        img_np = np.array(PIL.Image.open(image_path).convert("RGB"))
+        viser_img = server.gui.add_image(
             label="Pattern",
-            image=img_rgb,
+            image=img_np,
             format="png",
         )
 
@@ -188,25 +185,29 @@ def main(config: PathConfig):
     robot.connect()
     listener, events = init_keyboard_listener()
 
+    # convert to jnp arrays for jax operations
+    design_pos = jnp.array(config.ee_design_pos)
+    design_wxyz = jnp.array(config.ee_design_wxyz)
+    hover_offset = jnp.array(config.ee_design_hover_offset)
+    view_offset = jnp.array(config.ee_design_view_offset)
+    inkcap_pos = jnp.array(config.ee_inkcap_pos)
+    inkcap_dip = jnp.array(config.ee_inkcap_dip)
+    target_link_indices = jnp.array([
+        viser_robot.links.names.index(config.target_links_name[0]),
+        viser_robot.links.names.index(config.target_links_name[1]),
+    ])
+
     log.info(f"Recording {len(pattern.paths)} paths...")
     for path_idx, path in enumerate(pattern.paths):
         if path_idx >= config.max_episodes:
             log_say(f"Reached max episodes ({config.max_episodes})", config.play_sounds)
             break
 
-        # `path.poses` is a list of `Pose` objects.
-        relative_path_segment_m = [p.pos for p in path.poses]
-        segment_points_px = [tuple(p.pixel_coords.tolist()) for p in path.poses]
-
-        if img_bgr is not None and design_image_gui is not None:
-            # Create a fresh copy for this segment's visualization
-            segment_viz_img = img_bgr.copy()
-
-            # The pixel coordinates are now directly available in `segment_points_px`.
-            for k in range(len(segment_points_px) - 1):
-                cv2.line(segment_viz_img, segment_points_px[k], segment_points_px[k + 1], (255, 0, 0), 2)  # Blue
-
-            design_image_gui.image = cv2.cvtColor(segment_viz_img, cv2.COLOR_BGR2RGB)
+        log.info(f"🖼️ Updating visualization...")
+        path_viz_img_np = img_np.copy()
+        for pw, ph in path.pixel_coords:
+            cv2.circle(path_viz_img_np, (pw, ph), 5, COLORS["green"], -1)
+        viser_img.image = path_viz_img_np
 
         should_dip = (config.ink_dip_interval > 0 and path_idx % config.ink_dip_interval == 0) or (
             config.ink_dip_interval == 0 and path_idx == 0
@@ -215,55 +216,45 @@ def main(config: PathConfig):
             log.info("✒️ dipping ink...")
             log_say("dipping ink", config.play_sounds)
             for desc, pose in [
-                ("hover over inkcap", config.ee_inkcap_pos),
-                ("dip into inkcap", (np.array(config.ee_inkcap_pos) + np.array(config.ee_inkcap_dip)).tolist()),
-                ("retract from inkcap", config.ee_inkcap_pos),
+                ("hover over inkcap", inkcap_pos),
+                ("dip into inkcap", inkcap_pos + inkcap_dip),
+                ("retract from inkcap", inkcap_pos),
+                ("hover over path", path.positions[0] + hover_offset),
             ]:
                 log_say(desc, config.play_sounds)
                 solution = ik(
                     robot=viser_robot,
-                    target_link_indices=jnp.array([viser_robot.links.names.index(config.target_links_name[0])]),
-                    target_wxyz=jnp.array([config.ee_design_wxyz]),
-                    target_position=jnp.array([np.array(pose)]),
+                    target_link_indices=target_link_indices[0],
+                    target_wxyz=design_wxyz,
+                    target_position=pose,
                     config=config.ik_config,
                 )
                 robot._set_positions_l(solution, goal_time=robot.config.goal_time_slow, blocking=True)
                 urdf_vis.update_cfg(np.array(solution))
 
-        # TODO: this can be parallelized via JAX
-        # The path from the design file is relative to the design's origin.
-        # We make it absolute by adding the design's position.
-        absolute_path_segment = [
-            list(np.array(config.ee_design_pos) + np.array(p) + np.array(config.ee_design_hover_offset))
-            for p in relative_path_segment_m
-        ]
-        # Each segment is an episode, and starts with an ink dip.
-        episode_path = []
-        # Hover over the first toolpoint
-        episode_path.append(list(absolute_path_segment[0] - np.array(config.ee_design_hover_offset)))
-        # Add the rest of the path
-        episode_path.extend(absolute_path_segment)
-        len_prefix = len(episode_path) - len(absolute_path_segment)
-        num_toolpoints = len(episode_path)
+        # right hand follows left hand with an offset
+        path_l = offset_path(path, design_pos)
+        path_r = offset_path(path_l, view_offset)
+        pathlen = len(path_l)
 
         log.info(f"recording path {path_idx} of {len(pattern.paths)}")
         log_say(f"recording path {path_idx} of {len(pattern.paths)}", config.play_sounds)
-        for pose_idx, pose in enumerate(episode_path):
-            log.info(f"pose: {pose} (index: {pose_idx}/{num_toolpoints})")
+        for pose_idx in range(pathlen):
+            log.info(f"pose_idx: {pose_idx}/{pathlen})")
             start_loop_t = time.perf_counter()
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 
             solution = ik(
                 robot=viser_robot,
-                target_link_indices=jnp.array([
-                    viser_robot.links.names.index(config.target_links_name[0]),
-                    viser_robot.links.names.index(config.target_links_name[1]),
+                target_link_indices=target_link_indices,
+                target_wxyz=jnp.array([
+                    path_l.orientations[pose_idx],
+                    path_r.orientations[pose_idx],
                 ]),
-                target_wxyz=jnp.array([config.ee_design_wxyz, config.ee_design_view_wxyz]),
                 target_position=jnp.array([
-                    np.array(pose),
-                    np.array(pose) + np.array(config.ee_design_view_offset),
+                    path_l.positions[pose_idx],
+                    path_r.positions[pose_idx],
                 ]),
                 config=config.ik_config,
             )
@@ -285,33 +276,22 @@ def main(config: PathConfig):
                 "right.gripper.pos": solution[14],
             }
             log.debug(f"🦾 Action: {action}")
-            if pose_idx < len_prefix:
-                # Initial hovering should be SLOW and blocking.
-                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, block_mode="left")
-            else:
-                # Rest of the actions should be FAST and non-blocking.
-                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_fast, block_mode="left")
+            sent_action = robot.send_action(action, goal_time=robot.config.goal_time_fast, block_mode="left")
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
             # TODO: add pattern closeup? progress image? patch?
             dataset.add_frame(frame, task=f"{pattern.name} tattoo pattern path {path_idx} of {len(pattern.paths)}")
 
-            if img_bgr is not None and design_image_gui is not None:
-                current_drawing_point_idx = pose_idx - len_prefix
-                if current_drawing_point_idx >= 0:
-                    # new image for each step
-                    step_image = segment_viz_img.copy()
+            log.info(f"🖼️ Updating visualization...")
+            step_viz_img_np = path_viz_img_np.copy()
+            for pw, ph in path_l.pixel_coords[:pose_idx]:
+                # small green circles for all poses up to current pose
+                cv2.circle(step_viz_img_np, (pw, ph), 5, COLORS["green"], -1)
+            # big red circle for current pose
+            cv2.circle(step_viz_img_np, (path_l.pixel_coords[pose_idx][0], path_l.pixel_coords[pose_idx][1]), 5, COLORS["red"], -1)
+            viser_img.image = step_viz_img_np
 
-                    # draw path up to current point
-                    path_to_draw_px = segment_points_px[: current_drawing_point_idx + 1]
-                    for k in range(len(path_to_draw_px) - 1):
-                        cv2.line(step_image, path_to_draw_px[k], path_to_draw_px[k + 1], (0, 255, 0), 2)  # Green
-
-                    if path_to_draw_px:
-                        cv2.circle(step_image, path_to_draw_px[-1], 5, (0, 0, 255), -1)  # Red circle for current point
-
-                    design_image_gui.image = cv2.cvtColor(step_image, cv2.COLOR_BGR2RGB)
 
             if config.display_data:
                 for obs, val in observation.items():
