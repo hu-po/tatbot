@@ -1,5 +1,5 @@
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import cv2
 import jax.numpy as jnp
@@ -87,11 +87,6 @@ COLORS: dict[str, tuple[int, int, int]] = {
     "purple": (255, 0, 255),
 }
 
-@jdc.jit
-def offset_path(path: Path, offset: Float[Array, "3"]) -> Path:
-    """Offsets all poses in a path by a given vector. JIT-compiled."""
-    return path.replace(positions=path.positions + offset)
-
 def make_pathviz_image(pattern: Pattern) -> np.ndarray:
     """Creates an image with overlayed paths from a pattern.
 
@@ -132,6 +127,11 @@ def make_pathlen_image(pattern: Pattern):
     # two part image: top is path length histogram with colorbar, color is length
     # bottom is pathviz, but colored by path length histogram above
     pass
+
+# TODO: jit requires all paths the same len?
+def offset_path(path: Path, offset: Float[Array, "3"]) -> Path:
+    """Offsets all poses in a path by a given vector."""
+    return replace(path, positions=path.positions + offset)
 
 @jdc.jit
 def resample_path(path: Path, num_points: int):

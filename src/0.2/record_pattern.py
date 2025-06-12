@@ -105,24 +105,26 @@ class PathConfig:
     """position of the design ee transform."""
     ee_design_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the design ee transform."""
-    ee_design_hover_offset: tuple[float, float, float] = (0.0, 0.0, -0.0085)
-    """offset of the design ee transform when hovering over a toolpoint."""
-    ee_design_view_offset: tuple[float, float, float] = (0.0, -0.2, 0.2)
-    """position of the design view ee transform (relative to design ee transform)."""
-    ee_design_view_wxyz: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
-    """orientation quaternion (wxyz) of the design view ee transform."""
 
-    ee_inkcap_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
-    """position of the inkcap ee transform."""
-    ee_inkcap_dip: tuple[float, float, float] = (0.0, 0.0, -0.034)
-    """dip vector when performing inkcap dip."""
-    ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
-    """orientation quaternion (wxyz) of the inkcap ee transform."""
+    hover_offset: tuple[float, float, float] = (0.0, 0.0, -0.0085)
+    """position offset when hovering over point, relative to current ee frame."""
+
+    view_offset: tuple[float, float, float] = (0.0, -0.2, 0.2)
+    """position offset when viewing design with right arm (relative to design ee frame)."""
+    ee_view_wxyz: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
+    """orientation quaternion (wxyz) of the view ee transform."""
 
     alignment_timeout: float = 60.0
     """Timeout for alignment in seconds."""
     alignment_interval: float = 1.0
     """Interval for alignment switching between design and inkcap."""
+
+    ee_inkcap_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
+    """position of the inkcap ee transform."""
+    ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
+    """orientation quaternion (wxyz) of the inkcap ee transform."""
+    dip_offset: tuple[float, float, float] = (0.0, 0.0, -0.034)
+    """position offset when dipping inkcap (relative to current ee frame)."""
 
     ink_dip_interval: int = 1
     """
@@ -195,13 +197,15 @@ def main(config: PathConfig):
     listener, events = init_keyboard_listener()
 
     # convert to jnp arrays for jax operations
-    design_pos = jnp.array(config.ee_design_pos)
-    design_wxyz = jnp.array(config.ee_design_wxyz)
-    hover_offset = jnp.array(config.ee_design_hover_offset)
-    view_offset = jnp.array(config.ee_design_view_offset)
-    inkcap_pos = jnp.array(config.ee_inkcap_pos)
-    inkcap_wxyz = jnp.array(config.ee_inkcap_wxyz)
-    inkcap_dip = jnp.array(config.ee_inkcap_dip)
+    # ee_ means end effector, safe to use as ik target
+    ee_design_pos = jnp.array(config.ee_design_pos)
+    ee_design_wxyz = jnp.array(config.ee_design_wxyz)
+    hover_offset = jnp.array(config.hover_offset)
+    view_offset = jnp.array(config.view_offset)
+    ee_view_wxyz = jnp.array(config.ee_view_wxyz)
+    ee_inkcap_pos = jnp.array(config.ee_inkcap_pos)
+    ee_inkcap_wxyz = jnp.array(config.ee_inkcap_wxyz)
+    dip_offset = jnp.array(config.dip_offset)
     target_link_indices = jnp.array([
         viser_robot.links.names.index(config.target_links_name[0]),
         viser_robot.links.names.index(config.target_links_name[1]),
@@ -222,8 +226,8 @@ def main(config: PathConfig):
         solution = ik(
             robot=viser_robot,
             target_link_indices=target_link_indices[0],
-            target_wxyz=design_wxyz,
-            target_position=design_pos,
+            target_wxyz=ee_design_wxyz,
+            target_position=ee_design_pos,
             config=config.ik_config,
         )
         robot._set_positions_l(solution[:7], goal_time=robot.config.goal_time_slow, blocking=True)
@@ -234,8 +238,8 @@ def main(config: PathConfig):
         solution = ik(
             robot=viser_robot,
             target_link_indices=target_link_indices[0],
-            target_wxyz=inkcap_wxyz,
-            target_position=inkcap_pos,
+            target_wxyz=ee_inkcap_wxyz,
+            target_position=ee_inkcap_pos,
             config=config.ik_config,
         )
         robot._set_positions_l(solution[:7], goal_time=robot.config.goal_time_slow, blocking=True)
@@ -244,7 +248,6 @@ def main(config: PathConfig):
         time.sleep(config.alignment_interval)
 
     log.info(f"Recording {len(pattern.paths)} paths...")
-    log_say(f"recording paths", config.play_sounds)
     for path_idx, path in enumerate(pattern.paths):
         if path_idx >= config.max_episodes:
             log_say(f"max paths {config.max_episodes} exceeded", config.play_sounds)
@@ -253,36 +256,35 @@ def main(config: PathConfig):
         log.info(f"🖼️ Updating visualization...")
         path_viz_img_np = img_np.copy()
         for pw, ph in path.pixel_coords:
-            cv2.circle(path_viz_img_np, (pw, ph), 5, COLORS["green"], -1)
+            cv2.circle(path_viz_img_np, (int(pw), int(ph)), 5, COLORS["green"], -1)
         viser_img.image = path_viz_img_np
 
-        should_dip = (config.ink_dip_interval > 0 and path_idx % config.ink_dip_interval == 0) or (
-            config.ink_dip_interval == 0 and path_idx == 0
-        )
-        if should_dip:
+        # right hand follows left hand with an offset
+        log_say("calculating paths", config.play_sounds)
+        path_l = offset_path(path, ee_design_pos)
+        path_r = offset_path(path_l, view_offset)
+        pathlen = len(path_l)
+
+        if (config.ink_dip_interval > 0 and path_idx % config.ink_dip_interval == 0) or (
+            config.ink_dip_interval == 0 and path_idx == 0):
             log.info("✒️ dipping ink...")
             log_say("dipping ink", config.play_sounds)
             for desc, pose in [
-                ("hover over inkcap", inkcap_pos),
-                ("dip into inkcap", inkcap_pos + inkcap_dip),
-                ("retract from inkcap", inkcap_pos),
-                ("hover over path", path.positions[0] + hover_offset),
+                ("hover over inkcap", ee_inkcap_pos),
+                ("dip into inkcap", ee_inkcap_pos + dip_offset),
+                ("retract from inkcap", ee_inkcap_pos),
+                ("hover over path", path_l.positions[0] + hover_offset),
             ]:
                 log_say(desc, config.play_sounds)
                 solution = ik(
                     robot=viser_robot,
                     target_link_indices=target_link_indices[0],
-                    target_wxyz=design_wxyz,
+                    target_wxyz=ee_design_wxyz,
                     target_position=pose,
                     config=config.ik_config,
                 )
                 robot._set_positions_l(solution[:7], goal_time=robot.config.goal_time_slow, blocking=True)
                 urdf_vis.update_cfg(np.array(solution))
-
-        # right hand follows left hand with an offset
-        path_l = offset_path(path, design_pos)
-        path_r = offset_path(path_l, view_offset)
-        pathlen = len(path_l)
 
         log.info(f"recording path {path_idx} of {len(pattern.paths)}")
         log_say(f"recording path {path_idx} of {len(pattern.paths)}", config.play_sounds)
@@ -295,14 +297,8 @@ def main(config: PathConfig):
             solution = ik(
                 robot=viser_robot,
                 target_link_indices=target_link_indices,
-                target_wxyz=jnp.array([
-                    path_l.orientations[pose_idx],
-                    path_r.orientations[pose_idx],
-                ]),
-                target_position=jnp.array([
-                    path_l.positions[pose_idx],
-                    path_r.positions[pose_idx],
-                ]),
+                target_wxyz=jnp.array([ee_design_wxyz, ee_view_wxyz]),
+                target_position=jnp.array([path_l.positions[pose_idx], path_r.positions[pose_idx]]),
                 config=config.ik_config,
             )
             urdf_vis.update_cfg(np.array(solution))
@@ -334,9 +330,9 @@ def main(config: PathConfig):
             step_viz_img_np = path_viz_img_np.copy()
             for pw, ph in path_l.pixel_coords[:pose_idx]:
                 # small green circles for all poses up to current pose
-                cv2.circle(step_viz_img_np, (pw, ph), 5, COLORS["green"], -1)
+                cv2.circle(step_viz_img_np, (int(pw), int(ph)), 5, COLORS["green"], -1)
             # big red circle for current pose
-            cv2.circle(step_viz_img_np, (path_l.pixel_coords[pose_idx][0], path_l.pixel_coords[pose_idx][1]), 5, COLORS["red"], -1)
+            cv2.circle(step_viz_img_np, (int(path_l.pixel_coords[pose_idx][0]), int(path_l.pixel_coords[pose_idx][1])), 5, COLORS["red"], -1)
             viser_img.image = step_viz_img_np
 
 
@@ -372,7 +368,7 @@ def main(config: PathConfig):
         if events["stop_recording"]:
             break
 
-    log_say("Stop recording", config.play_sounds, blocking=True)
+    log_say("End", config.play_sounds, blocking=True)
 
     robot.disconnect()
 
@@ -382,11 +378,12 @@ def main(config: PathConfig):
     if config.push_to_hub:
         dataset.push_to_hub(tags=list(config.tags), private=config.private)
 
-    log_say("Exiting", config.play_sounds)
+    log_say("Aurevoir", config.play_sounds)
 
 if __name__ == "__main__":
     args = tyro.cli(PathConfig)
     logging.basicConfig(level=logging.INFO)
+    logging.getLogger('trossen_arm').setLevel(logging.ERROR)
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
         logging.getLogger('lerobot').setLevel(logging.DEBUG)
