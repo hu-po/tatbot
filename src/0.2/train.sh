@@ -4,5 +4,4 @@ uv run python ~/lerobot/lerobot/scripts/train.py \
   --output_dir=~/tatbot/output/train \
   --batch_size=64 \
   --wandb.enable=true \
-  --resume=true \
   --steps=20000
