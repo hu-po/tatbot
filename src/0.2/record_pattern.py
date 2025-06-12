@@ -20,7 +20,7 @@ from lerobot.common.utils.control_utils import (
 )
 from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.common.utils.utils import log_say
-from lerobot.record import _init_rerun, record_loop
+from lerobot.record import _init_rerun
 import numpy as np
 import PIL.Image
 import pyroki as pk
@@ -91,9 +91,9 @@ class PathConfig:
     env_map_hdri: str = "forest"
     """HDRI for the environment map."""
 
-    joint_pos_design_l: tuple[float, float, float, float, float, float, float] = (0.10, 1.23, 1.01, -1.35, 0, 0, 0.02)
+    joint_pos_design_l: tuple[float, float, float, float, float, float, float] = (0.1, 1.23, 1.01, -1.35, 0.0, 0.0, 0.02)
     """Joint positions of the left arm for robot hovering over design."""
-    joint_pos_design_r: tuple[float, float, float, float, float, float, float] = (3.05, 0.49, 1.09, -1.52, 0, 0, 0.04)
+    joint_pos_design_r: tuple[float, float, float, float, float, float, float] = (3.05, 0.49, 1.09, -1.52, 0.0, 0.0, 0.04)
     """Joint positions of the rgiht arm for robot hovering over design."""
 
     ee_design_pos: tuple[float, float, float] = (0.08, 0.0, 0.04)

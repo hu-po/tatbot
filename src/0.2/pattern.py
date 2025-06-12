@@ -1,11 +1,11 @@
-from dataclasses import dataclass, field
 import logging
+from dataclasses import dataclass, field
 
 import cv2
 import jax.numpy as jnp
 import jax_dataclasses as jdc
-from jaxtyping import Array, Float, Int
 import numpy as np
+from jaxtyping import Array, Float, Int
 
 log = logging.getLogger('tatbot')
 

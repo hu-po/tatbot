@@ -12,27 +12,27 @@ Records episodes using Vizer ik target controls.
 [right arrow] exit recording loop
 """
 
+from dataclasses import asdict, dataclass
 import logging
 import os
-import time
-from dataclasses import asdict, dataclass
 from pprint import pformat
+import time
 from typing import Any, Dict
 
 import jax.numpy as jnp
-import numpy as np
-import tyro
-import yourdfpy
-from ik import IKConfig, ik
-
 import lerobot.record
-import pyroki as pk
-import viser
 from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.common.teleoperators.config import TeleoperatorConfig
 from lerobot.common.teleoperators.teleoperator import Teleoperator
 from lerobot.record import DatasetRecordConfig, RecordConfig
+import numpy as np
+import pyroki as pk
+import tyro
+import viser
 from viser.extras import ViserUrdf
+import yourdfpy
+
+from ik import IKConfig, ik
 
 log = logging.getLogger('tatbot')
 

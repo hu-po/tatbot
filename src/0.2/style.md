@@ -9,7 +9,7 @@
 - Utilize the high-level abstractions provided in `pattern.py` and `ik.py` where applicable.
 - Strive for self-documenting code through clear variable and function names that have short names and adhere to the clean reusable abstractions.
 - Use `log.info()` for important status updates and `log.debug()` for detailed debugging information. Use emojis to enhance log readability.
-- When defining float values in configuration `dataclasses`, format them with four decimal places (e.g., `0.0123`), unless the value is a whole number, in which case use one decimal place (e.g., `50.0`). Do not add any extra trailing zeros (e.g. `50.040`).
+- When defining float values in configuration `dataclasses`, use up to four decimal places, omitting unnecessary trailing zeros (e.g., use `0.2` not `0.2000`, and `0.04` not `0.040`). For whole numbers, use one decimal place (e.g., `50.0`).
 - Do not remove any TODOs or comments
 - Put all dependencies in `pyproject.toml`, use pinned versions
 - ⚙️ Use emojis tastefully

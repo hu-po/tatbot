@@ -31,9 +31,9 @@ class PatternFromImageConfig:
     """ Width of the design image (pixels)."""
     image_height_px: int = 256
     """ Height of the design image (pixels)."""
-    image_width_m: float = 0.060
+    image_width_m: float = 0.06
     """ Width of the design image (meters)."""
-    image_height_m: float = 0.060
+    image_height_m: float = 0.06
     """ Height of the design image (meters)."""
     num_patches_width: int = 16
     """ Number of patches along the x-axis."""
