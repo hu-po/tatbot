@@ -212,7 +212,7 @@ instructions for `oop`
 git clone https://github.com/NVIDIA/Isaac-GR00T.git && \
 cd Isaac-GR00T/
 # setup uv venv
-uv venv --python=3.10 && \
+uv venv --python=3.11 && \
 source .venv/bin/activate && \
 uv pip install .[base]
 # download dataset locally

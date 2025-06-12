@@ -119,6 +119,11 @@ class PathConfig:
     ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the inkcap ee transform."""
 
+    alignment_timeout: float = 10.0
+    """Timeout for alignment in seconds."""
+    alignment_interval: float = 1.0
+    """Interval for alignment switching between design and inkcap."""
+
     ink_dip_interval: int = 1
     """
     Dip ink every N path segments.
@@ -195,16 +200,54 @@ def main(config: PathConfig):
     hover_offset = jnp.array(config.ee_design_hover_offset)
     view_offset = jnp.array(config.ee_design_view_offset)
     inkcap_pos = jnp.array(config.ee_inkcap_pos)
+    inkcap_wxyz = jnp.array(config.ee_inkcap_wxyz)
     inkcap_dip = jnp.array(config.ee_inkcap_dip)
     target_link_indices = jnp.array([
         viser_robot.links.names.index(config.target_links_name[0]),
         viser_robot.links.names.index(config.target_links_name[1]),
     ])
 
+    log.info("📐 Waiting for alignment, press right arrow key to continue...")
+    start_time = time.time()
+    while True:
+        if time.time() - start_time > config.alignment_timeout:
+            log.error("❌📐 Alignment timeout")
+            log_say("alignment timeout", config.play_sounds)
+            raise RuntimeError("❌📐 Alignment timeout")
+        if events["exit_early"]:
+            log.info("✅📐 Alignment complete")
+            log_say("alignment complete", config.play_sounds)
+            break
+        log.info("📐 Aligning over design...")
+        log_say("align design", config.play_sounds)
+        solution = ik(
+            robot=viser_robot,
+            target_link_indices=target_link_indices[0],
+            target_wxyz=design_wxyz,
+            target_position=design_pos,
+            config=config.ik_config,
+        )
+        robot._set_positions_l(solution, goal_time=robot.config.goal_time_slow, blocking=True)
+        urdf_vis.update_cfg(np.array(solution))
+        time.sleep(config.alignment_interval)
+        log.info("📐 Aligning over inkcap...")
+        log_say("align inkcap", config.play_sounds)
+        solution = ik(
+            robot=viser_robot,
+            target_link_indices=target_link_indices[0],
+            target_wxyz=inkcap_wxyz,
+            target_position=inkcap_pos,
+            config=config.ik_config,
+        )
+        robot._set_positions_l(solution, goal_time=robot.config.goal_time_slow, blocking=True)
+        urdf_vis.update_cfg(np.array(solution))
+        time.sleep(config.alignment_interval)
+
     log.info(f"Recording {len(pattern.paths)} paths...")
+    log_say(f"recording paths", config.play_sounds)
     for path_idx, path in enumerate(pattern.paths):
         if path_idx >= config.max_episodes:
-            log_say(f"Reached max episodes ({config.max_episodes})", config.play_sounds)
+            log_say(f"max paths {config.max_episodes} exceeded", config.play_sounds)
             break
 
         log.info(f"🖼️ Updating visualization...")
