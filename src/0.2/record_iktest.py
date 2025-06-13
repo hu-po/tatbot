@@ -44,7 +44,7 @@ class RecordIKTestConfig:
     """Push the dataset to the Hugging Face Hub."""
     tags: tuple[str, ...] = ("tatbot", "wxai", "trossen")
     """Tags to add to the dataset on Hugging Face."""
-    episode_time_s: float = 60.0
+    episode_time_s: float = 120.0
     """Time of each episode."""
     num_episodes: int = 1
     """Number of episodes to record."""
@@ -214,10 +214,13 @@ if __name__ == "__main__":
     logging.getLogger('trossen_arm').setLevel(logging.ERROR)
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
-        logging.getLogger('lerobot').setLevel(logging.DEBUG)
+        logging.getLogger('tatbot').setLevel(logging.DEBUG)
+        # logging.getLogger('lerobot').setLevel(logging.DEBUG)
         log.debug("🐛 Debug mode enabled.")
     os.makedirs(args.output_dir, exist_ok=True)
     log.info(f"💾 Saving output to {args.output_dir}")
+    dataset_name = args.dataset_name or f"iktest-{int(time.time())}"
+    repo_id = f"{args.hf_username}/{dataset_name}"
     log.info("🎮 Using IKTargetTeleop.")
     cfg = RecordConfig(
         robot=TatbotConfig(
@@ -226,14 +229,14 @@ if __name__ == "__main__":
             block_mode=args.robot_block_mode,
         ),
         dataset=DatasetRecordConfig(
-            repo_id=f"hu-po/tatbot-iktarget-{args.dataset_name}",
+            repo_id=repo_id,
             single_task="Move using cartesian control",
-            root=f"{args.output_dir}/{args.dataset_name}",
-            fps=10,
+            root=f"{args.output_dir}/{dataset_name}",
+            fps=30,
             episode_time_s=args.episode_time_s,
             num_episodes=args.num_episodes,
             video=True,
-            tags=["tatbot", "wxai", "trossen"],
+            tags=list(args.tags),
             push_to_hub=args.push_to_hub,
         ),
         teleop=IKTargetTeleopConfig(),

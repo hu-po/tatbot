@@ -166,7 +166,7 @@
   </joint>
   <link name="camera5_optical_frame"/>
 
-  <!-- realsense_b (overhead) -->
+  <!-- realsense (head) -->
   <joint name="cam_high_joint" type="fixed">
     <origin rpy="0 0.7853981633974483 0" xyz="-0.22 0 0.63"/>
     <parent link="root"/>
@@ -564,7 +564,7 @@
 
   <!-- arm_r -->
   <joint name="right/mount_joint" type="fixed">
-    <origin rpy="0 0 -1.57079632679" xyz="0 -0.238125 0"/>
+    <origin rpy="0 0 0" xyz="0 -0.238125 0"/>
     <parent link="root"/>
     <child link="right/base_link"/>
   </joint>
@@ -824,7 +824,7 @@
       </geometry>
     </collision>
   </link>
-  <!-- realsense_a -->
+  <!-- realsense (wrist) -->
   <joint name="right/camera_mount_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0.012 0 0"/>
     <parent link="right/link_6"/>
