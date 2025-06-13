@@ -44,7 +44,7 @@ class RecordIKTestConfig:
     """Push the dataset to the Hugging Face Hub."""
     tags: tuple[str, ...] = ("tatbot", "wxai", "trossen")
     """Tags to add to the dataset on Hugging Face."""
-    episode_time_s: float = 120.0
+    episode_time_s: float = 240.0
     """Time of each episode."""
     num_episodes: int = 1
     """Number of episodes to record."""
@@ -77,14 +77,14 @@ class IKTargetTeleopConfig(TeleoperatorConfig):
     env_map_hdri: str = "forest"
     """HDRI for the environment map."""
     
-    ik_target_l_pos_init: tuple[float, float, float] = (0.08, 0.0, 0.04)
-    """Initial position of the left IK target."""
-    ik_target_l_ori_init: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
-    """Initial orientation of the left IK target."""
-    ik_target_r_pos_init: tuple[float, float, float] = (0.2, -0.2, 0.1)
-    """Initial position of the right IK target."""
-    ik_target_r_ori_init: tuple[float, float, float, float] = (0.7071, 0.0, 0.7071, 0.0)
-    """Initial orientation of the right IK target."""
+    ee_ik_target_l_pos_init: tuple[float, float, float] = (0.08, 0.0, 0.04)
+    """Initial position of the left end effector IK target."""
+    ee_ik_target_l_wxyz_init: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
+    """Initial orientation quaternion (wxyz) of the left end effector IK target."""
+    ee_ik_target_r_pos_init: tuple[float, float, float] = (0.08, -0.16, 0.16)
+    """Initial position of the right end effector IK target."""
+    ee_ik_target_r_wxyz_init: tuple[float, float, float, float] = (0.67360666, -0.25201478, 0.24747439, 0.64922119)
+    """Initial orientation quaternion (wxyz) of the right end effector IK target."""
 
 
 class IKTargetTeleop(Teleoperator):
@@ -107,15 +107,15 @@ class IKTargetTeleop(Teleoperator):
         log.info("🎯 Adding ik targets...")
         self.ik_target_l = self.server.scene.add_transform_controls(
             "/ik_target_l",
-            position=config.ik_target_l_pos_init,
-            wxyz=config.ik_target_l_ori_init,
+            position=config.ee_ik_target_l_pos_init,
+            wxyz=config.ee_ik_target_l_wxyz_init,
             scale=config.transform_control_scale,
             opacity=config.transform_control_opacity,
         )
         self.ik_target_r = self.server.scene.add_transform_controls(
             "/ik_target_r",
-            position=config.ik_target_r_pos_init,
-            wxyz=config.ik_target_r_ori_init,
+            position=config.ee_ik_target_r_pos_init,
+            wxyz=config.ee_ik_target_r_wxyz_init,
             scale=config.transform_control_scale,
             opacity=config.transform_control_opacity,
         )
