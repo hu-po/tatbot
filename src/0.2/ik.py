@@ -1,4 +1,5 @@
 import logging
+import time
 
 import jax
 import jax.numpy as jnp
@@ -9,7 +10,7 @@ from jaxtyping import Array, Float, Int
 import pyroki as pk
 
 log = logging.getLogger('tatbot')
-log.info(f"🦾 JAX devices: {jax.devices()}")
+log.info(f"🧠 JAX devices: {jax.devices()}")
 
 @jdc.pytree_dataclass
 class IKConfig:
@@ -25,12 +26,13 @@ class IKConfig:
 @jdc.jit
 def ik(
     robot: pk.Robot,
-    target_link_indices: Int[Array, "B"],
-    target_wxyz: Float[Array, "B 4"],
-    target_position: Float[Array, "B 3"],
+    target_link_indices: Int[Array, "b"],
+    target_wxyz: Float[Array, "b 4"],
+    target_position: Float[Array, "b 3"],
     config: IKConfig,
-) -> Float[Array, "B 16"]:
-    log.debug(f"🤖 performing ik on batch of size {target_wxyz.shape[0]}")
+) -> Float[Array, "b 16"]:
+    log.debug(f"🎛️ performing ik on batch of size {target_wxyz.shape[0]}")
+    start_time = time.time()
     joint_var = robot.joint_var_cls(0)
     factors = [
         pk.costs.pose_cost(
@@ -59,5 +61,6 @@ def ik(
         )
     )
     _solution = sol[joint_var]
-    log.debug(f"🤖 ik solution: {_solution}")
+    log.debug(f"🎛️ ik solution: {_solution}")
+    log.debug(f"🎛️ ik time: {time.time() - start_time:.2f}s")
     return _solution

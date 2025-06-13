@@ -76,8 +76,8 @@ tatbot consists of several computers, cameras, and robotos connected via etherne
 - `wrist`: Intel Realsense D405 (1280x720 RGBD, 90fps)
 - `switch-main`: 5-port gigabit ethernet switch
 - `switch-poe`: 8-port gigabit PoE switch
-- `arm-l`: Trossen Arm Controller box connected to WidowXAI arm
-- `arm-r`: Trossen Arm Controller box connected to WidowXAI arm
+- `arm-l`: Trossen Arm Controller box (back) connected to WidowXAI arm
+- `arm-r`: Trossen Arm Controller box (front) connected to WidowXAI arm
 
 during development, the following pc is also available:
 
@@ -140,8 +140,10 @@ tatbot uses two [Trossen WidowXAI arms](https://docs.trossenrobotics.com/trossen
 - [Driver API Documentation](https://docs.trossenrobotics.com/trossen_arm/main/api/library_root.html#)
 - [official URDF](https://github.com/TrossenRobotics/trossen_arm_description)
 
+each arm has a config file in `config/trossen_arm_{l|r}.yaml`, push/pull config with:
+
 ```bash
-uv run python config/trossen.py
+uv run ~/tatbot/config/trossen.py --arm r
 ```
 
 ## Realsense Cameras

@@ -11,6 +11,7 @@ from typing import Any, Dict
 
 import jax.numpy as jnp
 import lerobot.record
+from lerobot.common.robots import make_robot_from_config
 from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.common.teleoperators.config import TeleoperatorConfig
 from lerobot.common.teleoperators.teleoperator import Teleoperator
@@ -27,21 +28,33 @@ from ik import IKConfig, ik
 log = logging.getLogger('tatbot')
 
 @dataclass
-class CLIArgs:
+class RecordIKTestConfig:
     debug: bool = False
     """Enable debug logging."""
-    teleop: str = "iktarget"
-    """Type of custom teleoperator to use, one of: iktarget, path"""
-    dataset_name: str = f"test-{int(time.time())}"
-    """Name of the dataset to record."""
+
+    hf_username: str = os.environ.get("HF_USER", "hu-po")
+    """Hugging Face username."""
+    dataset_name: str | None = None
+    """Dataset will be saved to Hugging Face Hub repository ID, e.g. 'hf_username/dataset_name'."""
+    display_data: bool = True
+    """Display data on screen using Rerun."""
     output_dir: str = os.path.expanduser("~/tatbot/output/record")
     """Directory to save the dataset."""
+    push_to_hub: bool = False
+    """Push the dataset to the Hugging Face Hub."""
+    tags: tuple[str, ...] = ("tatbot", "wxai", "trossen")
+    """Tags to add to the dataset on Hugging Face."""
     episode_time_s: float = 60.0
     """Time of each episode."""
     num_episodes: int = 1
     """Number of episodes to record."""
-    push_to_hub: bool = False
-    """Push the dataset to the Hugging Face Hub."""
+
+    robot_goal_time_fast: float = 2.0
+    """Goal time for the robot when moving fast."""
+    robot_goal_time_slow: float = 3.0
+    """Goal time for the robot when moving slowly."""
+    robot_block_mode: str = "left"
+    """Block mode for the robot. One of: left, right, both."""
 
 
 @dataclass
@@ -49,9 +62,10 @@ class IKTargetTeleopConfig(TeleoperatorConfig):
     urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
     """Local path to the URDF file for the robot."""
     target_links_name: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link")
-    """Names of the links to be controlled."""
+    """Names of the ee links in the URDF for left and right ik solving."""
     ik_config: IKConfig = IKConfig()
     """Configuration for the IK solver."""
+
     transform_control_scale: float = 0.2
     """Scale of the transform control frames for visualization."""
     transform_control_opacity: float = 0.2
@@ -62,6 +76,7 @@ class IKTargetTeleopConfig(TeleoperatorConfig):
     """Initial camera look_at in the Viser scene."""
     env_map_hdri: str = "forest"
     """HDRI for the environment map."""
+    
     ik_target_l_pos_init: tuple[float, float, float] = (0.08, 0.0, 0.04)
     """Initial position of the left IK target."""
     ik_target_l_ori_init: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
@@ -194,16 +209,22 @@ def make_teleoperator_from_config(config: TeleoperatorConfig):
 lerobot.record.make_teleoperator_from_config = make_teleoperator_from_config
 
 if __name__ == "__main__":
-    args = tyro.cli(CLIArgs)
+    args = tyro.cli(RecordIKTestConfig)
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger('trossen_arm').setLevel(logging.ERROR)
     if args.debug:
-        log.setLevel(logging.DEBUG)
-        # logging.getLogger('lerobot').setLevel(logging.DEBUG)
+        logging.basicConfig(level=logging.DEBUG)
+        logging.getLogger('lerobot').setLevel(logging.DEBUG)
         log.debug("🐛 Debug mode enabled.")
     os.makedirs(args.output_dir, exist_ok=True)
     log.info(f"💾 Saving output to {args.output_dir}")
     log.info("🎮 Using IKTargetTeleop.")
     cfg = RecordConfig(
-        robot=TatbotConfig(),
+        robot=TatbotConfig(
+            goal_time_slow=args.robot_goal_time_slow,
+            goal_time_fast=args.robot_goal_time_fast,
+            block_mode=args.robot_block_mode,
+        ),
         dataset=DatasetRecordConfig(
             repo_id=f"hu-po/tatbot-iktarget-{args.dataset_name}",
             single_task="Move using cartesian control",
@@ -221,4 +242,17 @@ if __name__ == "__main__":
         resume=False,
     )
     log.info(pformat(asdict(cfg)))
-    lerobot.record.record(cfg)
+    try:
+        lerobot.record.record(cfg)
+    except Exception as e:
+        log.error(f"Error: {e}")
+    except KeyboardInterrupt:
+        log.info("🛑⌨️ Keyboard interrupt detected. Disconnecting robot...")
+    finally:
+        log.info("🛑🤖 Disconnecting robot...")
+        robot = make_robot_from_config(TatbotConfig())
+        robot._connect_l(clear_error=False)
+        log.error(robot._get_error_str_l())
+        robot._connect_r(clear_error=False)
+        log.error(robot._get_error_str_r())
+        robot.disconnect()

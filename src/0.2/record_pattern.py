@@ -39,9 +39,11 @@ from pattern import COLORS, Pattern, offset_path
 log = logging.getLogger('tatbot')
 
 @dataclass
-class PathConfig:
+class RecordPathConfig:
     debug: bool = False
     """Enable debug logging."""
+    seed: int = 42
+    """Seed for random behavior."""
 
     pattern_dir: str = os.path.expanduser("~/tatbot/output/patterns/calibration")
     """Directory with pattern.json and image.png."""
@@ -80,14 +82,18 @@ class PathConfig:
     max_episodes: int = 100
     """Maximum number of episodes to record."""
 
-    seed: int = 42
-    """Seed for random behavior."""
     urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
     """Local path to the URDF file for the robot."""
     target_links_name: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link")
     """Names of the ee links in the URDF for left and right ik solving."""
     ik_config: IKConfig = IKConfig()
     """Configuration for the IK solver."""
+    robot_block_mode: str = "left"
+    """Block mode for the robot. One of: left, right, both."""
+    robot_goal_time_slow: float = 3.0
+    """Goal time for the robot when moving slowly."""
+    robot_goal_time_fast: float = 0.5
+    """Goal time for the robot when moving fast."""
 
     view_camera_position: tuple[float, float, float] = (0.5, 0.5, 0.5)
     """Initial camera position in the Viser scene."""
@@ -135,7 +141,7 @@ class PathConfig:
     """
 
 
-def main(config: PathConfig):
+def record_path(config: RecordPathConfig):
     config = config
     log.info(f"🌱 Setting random seed to {config.seed}...")
     rng = jax.random.PRNGKey(config.seed)
@@ -173,10 +179,18 @@ def main(config: PathConfig):
     pattern = Pattern.from_json(pattern_json)
     log.info(f"Loaded pattern '{pattern.name}' with {len(pattern.paths)} paths.")
 
+    log.info("🦾 Adding lerobot robot...")
+    robot = make_robot_from_config(TatbotConfig(
+        goal_time_slow=config.robot_goal_time_slow,
+        goal_time_fast=config.robot_goal_time_fast,
+        block_mode=config.robot_block_mode,
+    ))
+    robot.connect()
+    listener, events = init_keyboard_listener()
+
     log.info("🔍 Initializing dataset...")
     if config.display_data:
         _init_rerun(session_name="recording")
-    robot = make_robot_from_config(TatbotConfig())
     action_features = hw_to_dataset_features(robot.action_features, "action", True)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
     dataset_features = {**action_features, **obs_features}
@@ -193,8 +207,6 @@ def main(config: PathConfig):
         image_writer_processes=config.num_image_writer_processes,
         image_writer_threads=config.num_image_writer_threads_per_camera * len(robot.cameras),
     )
-    robot.connect()
-    listener, events = init_keyboard_listener()
 
     # convert to jnp arrays for jax operations
     # ee_ means end effector, safe to use as ik target
@@ -381,7 +393,7 @@ def main(config: PathConfig):
     log_say("Aurevoir", config.play_sounds)
 
 if __name__ == "__main__":
-    args = tyro.cli(PathConfig)
+    args = tyro.cli(RecordPathConfig)
     logging.basicConfig(level=logging.INFO)
     logging.getLogger('trossen_arm').setLevel(logging.ERROR)
     if args.debug:
@@ -392,13 +404,13 @@ if __name__ == "__main__":
     log.info(f"💾 Saving output to {args.output_dir}")
     log.info(pformat(asdict(args)))
     try:
-        main(args)
+        record_path(args)
     except Exception as e:
         log.error(f"Error: {e}")
     except KeyboardInterrupt:
-        log.info("🛑 Keyboard interrupt detected. Disconnecting robot...")
+        log.info("🛑⌨️ Keyboard interrupt detected. Disconnecting robot...")
     finally:
-        log.info("🛑 Disconnecting robot...")
+        log.info("🛑🤖 Disconnecting robot...")
         robot = make_robot_from_config(TatbotConfig())
         robot._connect_l(clear_error=False)
         log.error(robot._get_error_str_l())

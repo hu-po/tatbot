@@ -28,9 +28,11 @@ https://docs.trossenrobotics.com/trossen_arm/main/api/structtrossen__arm_1_1EndE
 
 """
 
-import trossen_arm
 from dataclasses import dataclass
+import os
+
 import tyro
+import trossen_arm
 
 @dataclass
 class CLIArgs:
@@ -120,17 +122,23 @@ if __name__=='__main__':
         print("Configuring left arm")
         ip = "192.168.1.3"
         ee = trossen_arm.StandardEndEffector.wxai_v0_base
-        yaml_file = "config/trossen_arm_r.yaml"
+        yaml_file = os.path.expanduser("~/tatbot/config/trossen_arm_l.yaml")
+        assert os.path.exists(yaml_file), f"❌📄 yaml file does not exist: {yaml_file}"
     elif args.arm == "r":
         print("Configuring right arm")
         ip = "192.168.1.2"
         ee = trossen_arm.StandardEndEffector.wxai_v0_follower
-        yaml_file = "config/trossen_arm_l.yaml"
+        yaml_file = os.path.expanduser("~/tatbot/config/trossen_arm_r.yaml")
+        assert os.path.exists(yaml_file), f"❌📄 yaml file does not exist: {yaml_file}"
     else:
         raise ValueError(f"Invalid arm: {args.arm}")
 
     driver.configure(trossen_arm.Model.wxai_v0, ee, ip, False)
+    assert driver is not None, f"❌🦾 failed to connect to arm {args.arm} at {ip}"
     print_configurations(driver)
     driver.save_configs_to_file(yaml_file)
+    print(f"✅📄 saved configs to {yaml_file}")
     driver.load_configs_from_file(yaml_file)
+    print(f"✅📄 loaded configs from {yaml_file}")
     print_configurations(driver)
+    print(f"✅🦾 arm {args.arm} configured successfully")
