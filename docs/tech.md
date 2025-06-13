@@ -248,13 +248,15 @@ python scripts/gr00t_finetune.py \
   --video-backend torchvision_av
 # train with docker
 docker build -f Dockerfile -t gr00t-train .
-docker run -it --gpus --rm \
+docker run -it --gpus all --shm-size=8g --rm \
   -e WANDB_RUN_ID="gr00t-test" \
   -e WANDB_PROJECT="tatbot-calib" \
   -v $DATASET_DIR:/dataset \
-  -v $HF_HOME:/.cache/huggingface \
+  -v $HF_HOME:/root/.cache/huggingface \
   -v /home/oop/tatbot/output/train/tatbot-calib-test/gr00t:/output \
+  -v /home/oop/Isaac-GR00T:/workspace \
   gr00t-train \
+  bash -c "pip install -e . --no-deps && \
   python scripts/gr00t_finetune.py \
     --dataset-path /dataset \
     --embodiment-tag new_embodiment \
@@ -262,8 +264,8 @@ docker run -it --gpus --rm \
     --output-dir /output \
     --max-steps 10000 \
     --data-config tatbot \
-    --batch_size 8 \
-    --video-backend torchvision_av
+    --batch_size 2 \
+    --video-backend torchvision_av"
 ```
 
 #### Eval
@@ -274,11 +276,20 @@ instructions for `ojo`, acting as the policy server
 # basic install
 git clone https://github.com/hu-po/Isaac-GR00T.git && \
 cd Isaac-GR00T/
-# use dockerfile
+# copy policy checkpoint into ojo
+scp oop@192.168.1.53:/home/oop/tatbot/output/train/tatbot-calib-test/gr00t /tmp/gr00t
+# policy with dockerfile
 docker build -f orin.Dockerfile -t gr00t-eval .
-# launch inference service (policy host)
-docker run -it --gpus --rm gr00t-eval \
-    python 
+docker run -it --gpus all --rm \
+  -v /tmp/gr00t:/checkpoint \
+  -v /home/ojo/Isaac-GR00T:/workspace \
+  gr00t-eval \
+  bash -c "pip3 install .[orin] && \
+  python scripts/inference_service.py --server \
+    --model_path /checkpoint \
+    --embodiment-tag new_embodiment \
+    --data-config tatbot \
+    --denoising-steps 4"
 ```
 
 instructions for `trossen-ai` acting as the robot client
@@ -294,7 +305,7 @@ uv pip install .[base]
 python getting_started/examples/eval_lerobot.py \
     --robot.type=tatbot \
     --policy_host=192.168.1.96 \
-    --lang_instruction="Tattoo calibration pattern on skin"
+    --lang_instruction="move slightly upwards in z"
 ```
 
 ## URDF
