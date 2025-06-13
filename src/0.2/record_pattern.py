@@ -115,9 +115,9 @@ class RecordPathConfig:
     hover_offset: tuple[float, float, float] = (0.0, 0.0, -0.0085)
     """position offset when hovering over point, relative to current ee frame."""
 
-    view_offset: tuple[float, float, float] = (0.0, -0.2, 0.2)
+    view_offset: tuple[float, float, float] = (0.0, -0.16, 0.16)
     """position offset when viewing design with right arm (relative to design ee frame)."""
-    ee_view_wxyz: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
+    ee_view_wxyz: tuple[float, float, float, float] = (0.67360666, -0.25201478, 0.24747439, 0.64922119)
     """orientation quaternion (wxyz) of the view ee transform."""
 
     alignment_timeout: float = 60.0
