@@ -246,6 +246,24 @@ python scripts/gr00t_finetune.py \
   --data-config tatbot \
   --batch_size 8 \
   --video-backend torchvision_av
+# train with docker
+docker build -f Dockerfile -t gr00t-train .
+docker run -it --gpus --rm \
+  -e WANDB_RUN_ID="gr00t-test" \
+  -e WANDB_PROJECT="tatbot-calib" \
+  -v $DATASET_DIR:/dataset \
+  -v $HF_HOME:/.cache/huggingface \
+  -v /home/oop/tatbot/output/train/tatbot-calib-test/gr00t:/output \
+  gr00t-train \
+  python scripts/gr00t_finetune.py \
+    --dataset-path /dataset \
+    --embodiment-tag new_embodiment \
+    --num-gpus 1 \
+    --output-dir /output \
+    --max-steps 10000 \
+    --data-config tatbot \
+    --batch_size 8 \
+    --video-backend torchvision_av
 ```
 
 #### Eval
