@@ -233,19 +233,6 @@ MPLBACKEND=QtAgg python scripts/load_dataset.py \
   --plot-state-action \
   --steps 64 \
   --video-backend torchvision_av
-# train
-wandb login
-export WANDB_RUN_ID="gr00t-test" && \
-export WANDB_PROJECT="tatbot-calib" && \
-python scripts/gr00t_finetune.py \
-  --dataset-path $DATASET_DIR \
-  --embodiment-tag new_embodiment \
-  --num-gpus 1 \
-  --output-dir /home/oop/tatbot/output/train/tatbot-calib-test/gr00t  \
-  --max-steps 10000 \
-  --data-config tatbot \
-  --batch_size 8 \
-  --video-backend torchvision_av
 # train with docker
 docker build -f Dockerfile -t gr00t-train .
 docker run -it --gpus all --shm-size=8g --rm \
@@ -264,7 +251,7 @@ docker run -it --gpus all --shm-size=8g --rm \
     --output-dir /output \
     --max-steps 10000 \
     --data-config tatbot \
-    --batch_size 2 \
+    --batch_size 1 \
     --video-backend torchvision_av"
 ```
 
