@@ -212,7 +212,7 @@ instructions for `oop`
 
 ```bash
 # basic install
-git clone https://github.com/hu-po/Isaac-GR00T.git && \
+git clone --depth 1 https://github.com/hu-po/Isaac-GR00T.git && \
 cd Isaac-GR00T/
 # setup uv venv
 uv venv --python=3.11 && \
@@ -235,8 +235,8 @@ MPLBACKEND=QtAgg python scripts/load_dataset.py \
   --video-backend torchvision_av
 # train
 wandb login
-export WANDB_RUN_ID="gr00t-test"
-export WANDB_PROJECT="tatbot-calib"
+export WANDB_RUN_ID="gr00t-test" && \
+export WANDB_PROJECT="tatbot-calib" && \
 python scripts/gr00t_finetune.py \
   --dataset-path $DATASET_DIR \
   --embodiment-tag new_embodiment \
