@@ -46,7 +46,7 @@ class RecordPathConfig:
     seed: int = 42
     """Seed for random behavior."""
 
-    pattern_dir: str = os.path.expanduser("~/tatbot/output/patterns/calibration")
+    pattern_dir: str = os.path.expanduser("~/tatbot/output/patterns/cat")
     """Directory with pattern.json and image.png."""
 
     hf_username: str = os.environ.get("HF_USER", "hu-po")
@@ -80,7 +80,7 @@ class RecordPathConfig:
     """Whether to push the dataset to a private repository."""
     fps: int = 5
     """Frames per second."""
-    max_episodes: int = 100
+    max_episodes: int = 256
     """Maximum number of episodes to record."""
 
     urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
@@ -133,7 +133,7 @@ class RecordPathConfig:
     dip_offset: tuple[float, float, float] = (0.0, 0.0, -0.034)
     """position offset when dipping inkcap (relative to current ee frame)."""
 
-    ink_dip_interval: int = 1
+    ink_dip_interval: int = 3
     """
     Dip ink every N path segments.
     If N > 0, dips on segment 0, N, 2N, ...

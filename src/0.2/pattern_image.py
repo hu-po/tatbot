@@ -23,23 +23,23 @@ class PatternFromImageConfig:
     debug: bool = False
     """Enable debug logging."""
     # image_path: str | None = None
-    image_path: str | None = os.path.expanduser("~/tatbot/assets/designs/infinity.png")
+    image_path: str | None = os.path.expanduser("~/tatbot/assets/designs/cat.png")
     """ (Optional) Local path to the tattoo design image."""
-    prompt: str = "infinity"
+    prompt: str = "cat"
     """ Prompt for the design image generation."""
     output_dir: str = os.path.expanduser("~/tatbot/output/patterns")
     """ Directory to save the design image and patches."""
-    image_width_px: int = 256
+    image_width_px: int = 640
     """ Width of the design image (pixels)."""
-    image_height_px: int = 256
+    image_height_px: int = 640
     """ Height of the design image (pixels)."""
     image_width_m: float = 0.06
     """ Width of the design image (meters)."""
     image_height_m: float = 0.06
     """ Height of the design image (meters)."""
-    num_patches_width: int = 16
+    num_patches_width: int = 24
     """ Number of patches along the x-axis."""
-    num_patches_height: int = 16
+    num_patches_height: int = 24
     """ Number of patches along the y-axis."""
     patch_empty_threshold: float = 254.0
     """(0-255) Pixel intensity mean threshold to consider a patch empty. Higher is more aggressive."""
