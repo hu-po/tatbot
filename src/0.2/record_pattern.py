@@ -20,6 +20,7 @@ from lerobot.common.utils.control_utils import (
     init_keyboard_listener,
     is_headless,
     sanity_check_dataset_name,
+    sanity_check_dataset_robot_compatibility,
 )
 from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.common.utils.utils import log_say
@@ -52,7 +53,7 @@ class RecordPathConfig:
     """Hugging Face username."""
     dataset_name: str | None = None
     """Dataset will be saved to Hugging Face Hub repository ID, e.g. 'hf_username/dataset_name'."""
-    display_data: bool = True
+    display_data: bool = False
     """Display data on screen using Rerun."""
     output_dir: str = os.path.expanduser("~/tatbot/output/record")
     """Directory to save the dataset."""
@@ -188,7 +189,7 @@ def record_path(config: RecordPathConfig):
     robot.connect()
     listener, events = init_keyboard_listener()
 
-    log.info("🔍 Initializing dataset...")
+    log.info("📦 Initializing dataset...")
     if config.display_data:
         _init_rerun(session_name="recording")
     action_features = hw_to_dataset_features(robot.action_features, "action", True)
@@ -196,17 +197,32 @@ def record_path(config: RecordPathConfig):
     dataset_features = {**action_features, **obs_features}
     dataset_name = config.dataset_name or f"{pattern.name}-{int(time.time())}"
     repo_id = f"{config.hf_username}/{dataset_name}"
-    sanity_check_dataset_name(repo_id, None)
-    dataset = LeRobotDataset.create(
-        repo_id,
-        config.fps,
-        root=f"{config.output_dir}/{dataset_name}",
-        robot_type=robot.name,
-        features=dataset_features,
-        use_videos=True,
-        image_writer_processes=config.num_image_writer_processes,
-        image_writer_threads=config.num_image_writer_threads_per_camera * len(robot.cameras),
-    )
+    if config.resume:
+        log.info("📦 Resuming dataset...")
+        dataset = LeRobotDataset(
+            repo_id,
+            root=f"{config.output_dir}/{dataset_name}",
+        )
+
+        if hasattr(robot, "cameras") and len(robot.cameras) > 0:
+            dataset.start_image_writer(
+                num_processes=config.num_image_writer_processes,
+                num_threads=config.num_image_writer_threads_per_camera * len(robot.cameras),
+            )
+        sanity_check_dataset_robot_compatibility(dataset, robot, config.fps, dataset_features)
+    else:
+        log.info("📦 Creating new dataset...")
+        sanity_check_dataset_name(repo_id, None)
+        dataset = LeRobotDataset.create(
+            repo_id,
+            config.fps,
+            root=f"{config.output_dir}/{dataset_name}",
+            robot_type=robot.name,
+            features=dataset_features,
+            use_videos=True,
+            image_writer_processes=config.num_image_writer_processes,
+            image_writer_threads=config.num_image_writer_threads_per_camera * len(robot.cameras),
+        )
 
     # convert to jnp arrays for jax operations
     # ee_ means end effector, safe to use as ik target
@@ -260,7 +276,8 @@ def record_path(config: RecordPathConfig):
         time.sleep(config.alignment_interval)
 
     log.info(f"Recording {len(pattern.paths)} paths...")
-    for path_idx, path in enumerate(pattern.paths):
+    # when resuming, start from the idx of the next episode
+    for path_idx, path in enumerate(pattern.paths, start=dataset.num_episodes):
         if path_idx >= config.max_episodes:
             log_say(f"max paths {config.max_episodes} exceeded", config.play_sounds)
             break
