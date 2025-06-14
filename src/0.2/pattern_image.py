@@ -14,7 +14,7 @@ import replicate
 from skimage.morphology import skeletonize
 import tyro
 
-from pattern import Path, Pattern, make_pathviz_image, COLORS
+from pattern import Path, Pattern, make_pathviz_image, COLORS, make_pathlen_image
 
 log = logging.getLogger('tatbot')
 
@@ -308,26 +308,9 @@ def make_pattern_from_image(config: PatternFromImageConfig):
                 ]
                 json_data["paths"].append({"poses": poses})
             json.dump(json_data, f, indent=4, cls=NumpyEncoder)
-        log.info(f"💾 Saved {len(pattern.paths)} tool paths to {paths_path}")
-
-        path_lengths_px = [
-            sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path[:-1], path[1:]))
-            for path in all_paths
-        ]
-
-        path_lengths_m = [
-            float(jnp.sum(jnp.linalg.norm(jnp.diff(path.positions, axis=0), axis=1))) for path in pattern.paths
-        ]
-
-        log.info("--- Tool Path Statistics ---")
-        log.info(f"Total tool paths generated: {len(pattern.paths)}")
-        if path_lengths_px:
-            log.info(f"Min path length: {np.min(path_lengths_px):.2f} pixels ({np.min(path_lengths_m):.4f} m)")
-            log.info(f"Max path length: {np.max(path_lengths_px):.2f} pixels ({np.max(path_lengths_m):.4f} m)")
-            log.info(f"Average path length: {np.mean(path_lengths_px):.2f} pixels ({np.mean(path_lengths_m):.4f} m)")
-            log.info(f"Total path length: {np.sum(path_lengths_px):.2f} pixels ({np.sum(path_lengths_m):.4f} m)")
+        log.info(f"💾 Saved {len(pattern.paths)} paths to {paths_path}")
     else:
-        log.info("No tool paths were generated.")
+        log.info("No paths were generated.")
 
     viz_path = os.path.join(design_output_dir, f"patchviz.png")
     cv2.imwrite(viz_path, img_viz)
@@ -340,6 +323,12 @@ def make_pattern_from_image(config: PatternFromImageConfig):
     path_viz_path = os.path.join(design_output_dir, f"pathviz.png")
     cv2.imwrite(path_viz_path, path_viz)
     log.info(f"🖼️ Saved path visualization to {path_viz_path}")
+
+    # Generate and save path length visualization
+    pathlen_img = make_pathlen_image(pattern)
+    pathlen_path = os.path.join(design_output_dir, "pathlen.png")
+    cv2.imwrite(pathlen_path, pathlen_img)
+    log.info(f"🖼️ Saved path length visualization to {pathlen_path}")
 
 
 if __name__ == "__main__":

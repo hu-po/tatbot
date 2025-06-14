@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 import tyro
 
-from pattern import Pose, Path, Pattern, make_pathviz_image
+from pattern import Pose, Path, Pattern, make_pathviz_image, make_pathlen_image
 
 log = logging.getLogger('tatbot')
 
@@ -40,7 +40,7 @@ class CalibrationPatternConfig:
 class VerticalLineConfig:
     """Parameters for a vertical line."""
     length: int = 80
-    thickness: int = 10
+    thickness: int = 4
     num_points: int = 30
     """Number of points to generate for the path."""
 
@@ -48,7 +48,7 @@ class VerticalLineConfig:
 class HorizontalLineConfig:
     """Parameters for a horizontal line."""
     length: int = 80
-    thickness: int = 10
+    thickness: int = 4
     num_points: int = 30
     """Number of points to generate for the path."""
 
@@ -56,7 +56,7 @@ class HorizontalLineConfig:
 class CircleConfig:
     """Parameters for a full circle."""
     radius: int = 40
-    thickness: int = 10
+    thickness: int = 4
     num_points: int = 60
     """Number of points to generate for the path."""
 
@@ -66,7 +66,7 @@ class WaveConfig:
     amplitude: int = 15
     frequency: float = 0.15
     length: int = 80
-    thickness: int = 6
+    thickness: int = 4
     num_points: int = 100
     """Number of points to generate for the path."""
 
@@ -212,6 +212,12 @@ def make_calibration_pattern(config: CalibrationPatternConfig):
     path_viz_path = os.path.join(config.output_dir, "pathviz.png")
     cv2.imwrite(path_viz_path, path_viz_np)
     log.info(f"🖼️ Saved tool path visualization to {path_viz_path}")
+
+    # Generate and save path length visualization
+    pathlen_img = make_pathlen_image(pattern)
+    pathlen_path = os.path.join(config.output_dir, "pathlen.png")
+    cv2.imwrite(pathlen_path, pathlen_img)
+    log.info(f"🖼️ Saved path length visualization to {pathlen_path}")
 
     class NumpyEncoder(json.JSONEncoder):
         def default(self, obj):
