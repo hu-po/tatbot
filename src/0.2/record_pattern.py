@@ -117,7 +117,7 @@ class RecordPathConfig:
 
     hover_offset: tuple[float, float, float] = (0.0, 0.0, 0.01)
     """position offset when hovering over point, relative to current ee frame."""
-    needle_offset: tuple[float, float, float] = (0.0, 0.0, -0.0085)
+    needle_offset: tuple[float, float, float] = (0.0, 0.0, -0.006)
     """position offset to ensure needle touches skin, relative to current ee frame."""
 
     view_offset: tuple[float, float, float] = (0.0, -0.16, 0.16)
@@ -310,8 +310,7 @@ def record_path(config: RecordPathConfig):
         # path needs to be offset to the design position
         path_l = offset_path(path, ee_design_pos)
         # center the path in design frame
-        path_l = offset_path(path_l, jnp.array([pattern.width_m / 2, 0.0, 0.0]))
-        path_r = offset_path(path_l, jnp.array([0.0, pattern.height_m / 2, 0.0]))
+        path_l = offset_path(path_l, jnp.array([-pattern.width_m / 2, -pattern.height_m / 2, 0.0]))
         # append hover position to the beginnning and end of path
         path_l = add_entry_exit_hover(path_l, hover_offset)
         # add needle depth offset
@@ -337,8 +336,8 @@ def record_path(config: RecordPathConfig):
                     target_position=jnp.array([pose_l, pose_r]),
                     config=config.ik_config,
                 )
-                robot._set_positions_r(solution[7:], goal_time=robot.config.goal_time_slow, blocking=True)
                 robot._set_positions_l(solution[:7], goal_time=robot.config.goal_time_slow, blocking=True)
+                robot._set_positions_r(solution[7:], goal_time=robot.config.goal_time_slow, blocking=True)
                 urdf_vis.update_cfg(np.array(solution))
 
         log.info(f"recording path {path_idx} of {len(pattern.paths)}")
