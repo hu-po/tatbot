@@ -1,4 +1,3 @@
-import logging
 from dataclasses import dataclass, field, replace
 
 import cv2
@@ -7,7 +6,9 @@ import jax_dataclasses as jdc
 import numpy as np
 from jaxtyping import Array, Float, Int
 
-log = logging.getLogger('tatbot')
+from log import get_logger
+
+log = get_logger('pattern')
 
 @jdc.pytree_dataclass
 class Pose:
@@ -78,14 +79,6 @@ class Pattern:
             width_px=data.get("width_px", cls.width_px),
             height_px=data.get("height_px", cls.height_px),
         )
-    
-COLORS: dict[str, tuple[int, int, int]] = {
-    "blue": (255, 0, 0),
-    "green": (0, 255, 0),
-    "red": (0, 0, 255),
-    "yellow": (0, 255, 255),
-    "purple": (255, 0, 255),
-}
 
 # TODO: jit requires all paths the same len?
 def offset_path(path: Path, offset: Float[Array, "3"]) -> Path:

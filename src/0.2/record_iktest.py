@@ -18,14 +18,15 @@ from lerobot.common.teleoperators.teleoperator import Teleoperator
 from lerobot.record import DatasetRecordConfig, RecordConfig
 import numpy as np
 import pyroki as pk
-import tyro
 import viser
 from viser.extras import ViserUrdf
 import yourdfpy
 
 from ik import IKConfig, ik
+from log import setup_log_with_config, get_logger, print_config
+from robot import robot_safe_loop
 
-log = logging.getLogger('tatbot')
+log = get_logger('record_iktest')
 
 @dataclass
 class RecordIKTestConfig:
@@ -209,16 +210,9 @@ def make_teleoperator_from_config(config: TeleoperatorConfig):
 lerobot.record.make_teleoperator_from_config = make_teleoperator_from_config
 
 if __name__ == "__main__":
-    args = tyro.cli(RecordIKTestConfig)
-    logging.basicConfig(level=logging.INFO)
     logging.getLogger('trossen_arm').setLevel(logging.ERROR)
-    if args.debug:
-        logging.basicConfig(level=logging.DEBUG)
-        logging.getLogger('tatbot').setLevel(logging.DEBUG)
-        # logging.getLogger('lerobot').setLevel(logging.DEBUG)
-        log.debug("🐛 Debug mode enabled.")
-    os.makedirs(args.output_dir, exist_ok=True)
-    log.info(f"💾 Saving output to {args.output_dir}")
+    logging.getLogger('lerobot').setLevel(logging.DEBUG)
+    args = setup_log_with_config(RecordIKTestConfig)
     dataset_name = args.dataset_name or f"iktest-{int(time.time())}"
     repo_id = f"{args.hf_username}/{dataset_name}"
     log.info("🎮 Using IKTargetTeleop.")
@@ -230,6 +224,7 @@ if __name__ == "__main__":
         ),
         dataset=DatasetRecordConfig(
             repo_id=repo_id,
+            # TODO: task done per episode using direction vector to natural language
             single_task="Move using cartesian control",
             root=f"{args.output_dir}/{dataset_name}",
             fps=30,
@@ -244,18 +239,5 @@ if __name__ == "__main__":
         play_sounds=True,
         resume=False,
     )
-    log.info(pformat(asdict(cfg)))
-    try:
-        lerobot.record.record(cfg)
-    except Exception as e:
-        log.error(f"Error: {e}")
-    except KeyboardInterrupt:
-        log.info("🛑⌨️ Keyboard interrupt detected. Disconnecting robot...")
-    finally:
-        log.info("🛑🤖 Disconnecting robot...")
-        robot = make_robot_from_config(TatbotConfig())
-        robot._connect_l(clear_error=False)
-        log.error(robot._get_error_str_l())
-        robot._connect_r(clear_error=False)
-        log.error(robot._get_error_str_r())
-        robot.disconnect()
+    print_config(cfg)
+    robot_safe_loop(lambda: lerobot.record.record(cfg), cfg)

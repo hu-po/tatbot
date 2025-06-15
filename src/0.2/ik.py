@@ -1,4 +1,3 @@
-import logging
 import time
 
 import jax
@@ -9,7 +8,9 @@ import jaxls
 from jaxtyping import Array, Float, Int
 import pyroki as pk
 
-log = logging.getLogger('tatbot')
+from log import get_logger
+
+log = get_logger('ik')
 log.info(f"🧠 JAX devices: {jax.devices()}")
 
 @jdc.pytree_dataclass

@@ -1,6 +1,5 @@
 from dataclasses import dataclass, asdict
 import json
-import logging
 import math
 import os
 from pprint import pformat
@@ -9,11 +8,11 @@ import cv2
 import jax.numpy as jnp
 import numpy as np
 from PIL import Image, ImageDraw
-import tyro
 
 from pattern import Pose, Path, Pattern, make_pathviz_image, make_pathlen_image
+from log import setup_log_with_config, get_logger
 
-log = logging.getLogger('tatbot')
+log = get_logger('pattern_calib')
 
 @dataclass
 class CalibrationPatternConfig:
@@ -132,9 +131,6 @@ def generate_wave_path(config: WaveConfig, origin: tuple[int, int]) -> list[tupl
 
 
 def make_calibration_pattern(config: CalibrationPatternConfig):
-    log.info(f"🔍 Using output directory: {config.output_dir}")
-    os.makedirs(config.output_dir, exist_ok=True)
-    
     # Create a blank canvas for visualization
     image_strokes = Image.new("RGB", (config.image_width_px, config.image_height_px), config.background_color)
     draw = ImageDraw.Draw(image_strokes)
@@ -256,10 +252,5 @@ def make_calibration_pattern(config: CalibrationPatternConfig):
     log.info(f"💾 Saved {len(pattern.paths)} tool paths to {paths_path}")
 
 if __name__ == "__main__":
-    args = tyro.cli(CalibrationPatternConfig)
-    logging.basicConfig(level=logging.INFO)
-    if args.debug:
-        logging.basicConfig(level=logging.DEBUG)
-        log.debug("🐛 Debug mode enabled.")
-    log.info(pformat(asdict(args)))
+    args = setup_log_with_config(CalibrationPatternConfig)
     make_calibration_pattern(args)

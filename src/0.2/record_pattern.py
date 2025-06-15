@@ -38,8 +38,10 @@ import yourdfpy
 
 from ik import IKConfig, ik
 from pattern import COLORS, Pattern, offset_path, add_entry_exit_hover
+from robot import robot_safe_loop
+from log import get_logger, setup_log_with_config, print_config, robot_safe_loop
 
-log = logging.getLogger('tatbot')
+log = get_logger('record_pattern')
 
 @dataclass
 class RecordPathConfig:
@@ -249,7 +251,7 @@ def record_path(config: RecordPathConfig):
             episode_log_buffer.write(msg + "\n")
 
     episode_handler = EpisodeLogHandler()
-    episode_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s: %(message)s'))
+    episode_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=TIME_FORMAT))
     logging.getLogger().addHandler(episode_handler)
 
     # convert to jnp arrays for jax operations
@@ -447,7 +449,8 @@ def record_path(config: RecordPathConfig):
             dataset.clear_episode_buffer()
             continue
 
-        log_path = logs_dir / f"episode_{path_idx:06d}.txt"
+        log_path = os.path.join(logs_dir, f"episode_{path_idx:06d}.txt")
+        log.info(f"🗃️ Writing episode log to {log_path}")
         with open(log_path, "w") as f:
             f.write(episode_log_buffer.getvalue())
 
@@ -471,27 +474,9 @@ def record_path(config: RecordPathConfig):
     log_say("Aurevoir", config.play_sounds)
 
 if __name__ == "__main__":
-    args = tyro.cli(RecordPathConfig)
-    logging.basicConfig(level=logging.INFO)
+    args = setup_log_with_config(RecordPathConfig)
+    print_config(args)
+    # TODO: waiting on https://github.com/TrossenRobotics/trossen_arm/issues/86#issue-3144375498
     logging.getLogger('trossen_arm').setLevel(logging.ERROR)
-    if args.debug:
-        logging.basicConfig(level=logging.DEBUG)
-        logging.getLogger('lerobot').setLevel(logging.DEBUG)
-        log.debug("🐛 Debug mode enabled.")
-    os.makedirs(args.output_dir, exist_ok=True)
-    log.info(f"💾 Saving output to {args.output_dir}")
-    log.info(pformat(asdict(args)))
-    try:
-        record_path(args)
-    except Exception as e:
-        log.error(f"Error: {e}")
-    except KeyboardInterrupt:
-        log.info("🛑⌨️ Keyboard interrupt detected. Disconnecting robot...")
-    finally:
-        log.info("🛑🤖 Disconnecting robot...")
-        robot = make_robot_from_config(TatbotConfig())
-        robot._connect_l(clear_error=False)
-        log.error(robot._get_error_str_l())
-        robot._connect_r(clear_error=False)
-        log.error(robot._get_error_str_r())
-        robot.disconnect()
+    logging.getLogger('lerobot').setLevel(logging.INFO)
+    robot_safe_loop(record_path, args)

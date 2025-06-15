@@ -15,8 +15,9 @@ from skimage.morphology import skeletonize
 import tyro
 
 from pattern import Path, Pattern, make_pathviz_image, COLORS, make_pathlen_image
+from log import setup_log_with_config, get_logger
 
-log = logging.getLogger('tatbot')
+log = get_logger('pattern_image')
 
 @dataclass
 class PatternFromImageConfig:
@@ -50,9 +51,6 @@ class PatternFromImageConfig:
 
 
 def make_pattern_from_image(config: PatternFromImageConfig):
-    log.info(f"🔍 Using output directory: {config.output_dir}")
-    os.makedirs(config.output_dir, exist_ok=True)
-
     if config.image_path:
         pattern_name = os.path.splitext(os.path.basename(config.image_path))[0]
     else:
@@ -332,10 +330,5 @@ def make_pattern_from_image(config: PatternFromImageConfig):
 
 
 if __name__ == "__main__":
-    args = tyro.cli(PatternFromImageConfig)
-    logging.basicConfig(level=logging.INFO)
-    if args.debug:
-        logging.basicConfig(level=logging.DEBUG)
-        log.debug("🐛 Debug mode enabled.")
-    log.info(pformat(asdict(args)))
+    args = setup_log_with_config(PatternFromImageConfig)
     make_pattern_from_image(args)

@@ -30,12 +30,17 @@ https://docs.trossenrobotics.com/trossen_arm/main/api/structtrossen__arm_1_1EndE
 
 from dataclasses import dataclass
 import os
+from typing import Callable
 
-import tyro
+from lerobot.robot import make_robot_from_config, TatbotConfig
 import trossen_arm
 
+from log import setup_log_with_config, get_logger
+
+log = get_logger('robot')
+
 @dataclass
-class CLIArgs:
+class ConfigureArgs:
     arm: str = "l"  # 'l' for left, 'r' for right
     """Which arm to configure ('l' or 'r')."""
 
@@ -114,10 +119,27 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
     print("Algorithm parameter:")
     print("  singularity threshold:", algorithm_parameter.singularity_threshold)
 
-if __name__=='__main__':
-    args = tyro.cli(CLIArgs)
-    driver = trossen_arm.TrossenArmDriver()
+def robot_safe_loop(loop: Callable, args: Any) -> Exception | None:
+    try:
+        loop(args)
+    except Exception as e:
+        log.error(f"Error: {e}")
+    except KeyboardInterrupt:
+        log.info("🛑⌨️ Keyboard interrupt detected. Disconnecting robot...")
+    finally:
+        log.info("🛑🤖 Disconnecting robot...")
+        robot = make_robot_from_config(TatbotConfig())
+        robot._connect_l(clear_error=False)
+        log.error(robot._get_error_str_l())
+        robot._connect_r(clear_error=False)
+        log.error(robot._get_error_str_r())
+        robot.disconnect()
+        raise e
 
+if __name__=='__main__':
+    args = setup_log_with_config(ConfigureArgs)
+
+    driver = trossen_arm.TrossenArmDriver()
     if args.arm == "l":
         print("Configuring left arm")
         ip = "192.168.1.3"
