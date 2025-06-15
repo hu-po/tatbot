@@ -8,6 +8,8 @@ import logging
 import os
 from pprint import pformat
 import time
+from io import StringIO
+from pathlib import Path
 
 import cv2
 import jax
@@ -236,6 +238,20 @@ def record_path(config: RecordPathConfig):
             image_writer_threads=config.num_image_writer_threads_per_camera * len(robot.cameras),
         )
 
+    logs_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/logs")
+    log.info(f"🗃️ Creating logs directory at {logs_dir}...")
+    os.makedirs(logs_dir, exist_ok=True)
+    episode_log_buffer = StringIO()
+
+    class EpisodeLogHandler(logging.Handler):
+        def emit(self, record):
+            msg = self.format(record)
+            episode_log_buffer.write(msg + "\n")
+
+    episode_handler = EpisodeLogHandler()
+    episode_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s: %(message)s'))
+    logging.getLogger().addHandler(episode_handler)
+
     # convert to jnp arrays for jax operations
     # ee_ means end effector, safe to use as ik target
     ee_design_pos = jnp.array(config.ee_design_pos)
@@ -296,6 +312,10 @@ def record_path(config: RecordPathConfig):
     log.info(f"Recording {len(pattern.paths)} paths...")
     # when resuming, start from the idx of the next episode
     for path_idx, path in enumerate(pattern.paths, start=dataset.num_episodes):
+        # Reset in-memory log buffer for the new episode
+        episode_log_buffer.seek(0)
+        episode_log_buffer.truncate(0)
+
         if path_idx >= config.max_episodes:
             log_say(f"max paths {config.max_episodes} exceeded", config.play_sounds)
             break
@@ -427,10 +447,16 @@ def record_path(config: RecordPathConfig):
             dataset.clear_episode_buffer()
             continue
 
+        log_path = logs_dir / f"episode_{path_idx:06d}.txt"
+        with open(log_path, "w") as f:
+            f.write(episode_log_buffer.getvalue())
+
         dataset.save_episode()
 
         if events["stop_recording"]:
             break
+
+    logging.getLogger().removeHandler(episode_handler)
 
     log_say("End", config.play_sounds, blocking=True)
 
