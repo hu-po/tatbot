@@ -382,7 +382,13 @@ def record_path(config: RecordPathConfig):
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
             # TODO: add pattern closeup? progress image? patch?
-            dataset.add_frame(frame, task=f"{pattern.name} tattoo pattern path {path_idx} of {len(pattern.paths)}")
+            _task = f"{pattern.name} tattoo pattern"
+            # _task += f", {color} {needle_type} line"
+            _task += f", <{path_l.metric_coords[pose_idx][0]:.2f}, {path_l.metric_coords[pose_idx][1]:.2f}> m"
+            _task += f", <{path_l.pixel_coords[pose_idx][0]:.2f}, {path_l.pixel_coords[pose_idx][1]:.2f}> px"
+            _task += f", pose {pose_idx} of {len(path_l)-2}"
+            _task += f", path {path_idx} of {len(pattern.paths)}"
+            dataset.add_frame(frame, task=_task)
 
             log.info(f"🖼️ Updating visualization...")
             step_viz_img_np = path_viz_img_np.copy()
