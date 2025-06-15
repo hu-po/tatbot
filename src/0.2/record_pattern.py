@@ -125,7 +125,7 @@ class RecordPathConfig:
     ee_view_wxyz: tuple[float, float, float, float] = (0.67360666, -0.25201478, 0.24747439, 0.64922119)
     """orientation quaternion (wxyz) of the view ee transform."""
 
-    alignment_timeout: float = 10.0
+    alignment_timeout: float = 20.0
     """Timeout for alignment in seconds."""
     alignment_interval: float = 1.0
     """Interval for alignment switching between design and inkcap."""
@@ -137,7 +137,7 @@ class RecordPathConfig:
     dip_offset: tuple[float, float, float] = (0.0, 0.0, -0.034)
     """position offset when dipping inkcap (relative to current ee frame)."""
 
-    ink_dip_interval: int = 3
+    ink_dip_interval: int = 10
     """
     Dip ink every N path segments.
     If N > 0, dips on segment 0, N, 2N, ...
@@ -309,13 +309,15 @@ def record_path(config: RecordPathConfig):
         log_say("calculating paths", config.play_sounds)
         # path needs to be offset to the design position
         path_l = offset_path(path, ee_design_pos)
+        # center the path in design frame
+        path_l = offset_path(path_l, jnp.array([pattern.width_m / 2, 0.0, 0.0]))
+        path_r = offset_path(path_l, jnp.array([0.0, pattern.height_m / 2, 0.0]))
         # append hover position to the beginnning and end of path
         path_l = add_entry_exit_hover(path_l, hover_offset)
         # add needle depth offset
         path_l = offset_path(path_l, needle_offset)
         # right hand follows left hand with a view offset
         path_r = offset_path(path_l, view_offset)
-        pathlen = len(path_l)
 
         if (config.ink_dip_interval > 0 and path_idx % config.ink_dip_interval == 0) or (
             config.ink_dip_interval == 0 and path_idx == 0):
@@ -335,13 +337,14 @@ def record_path(config: RecordPathConfig):
                     target_position=jnp.array([pose_l, pose_r]),
                     config=config.ik_config,
                 )
+                robot._set_positions_r(solution[7:], goal_time=robot.config.goal_time_slow, blocking=True)
                 robot._set_positions_l(solution[:7], goal_time=robot.config.goal_time_slow, blocking=True)
                 urdf_vis.update_cfg(np.array(solution))
 
         log.info(f"recording path {path_idx} of {len(pattern.paths)}")
         log_say(f"recording path {path_idx}", config.play_sounds)
-        for pose_idx in range(pathlen):
-            log.info(f"pose_idx: {pose_idx}/{pathlen})")
+        for pose_idx in range(len(path_l)):
+            log.info(f"pose_idx: {pose_idx}/{len(path_l)})")
             start_loop_t = time.perf_counter()
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
@@ -371,7 +374,11 @@ def record_path(config: RecordPathConfig):
                 "right.gripper.pos": solution[14],
             }
             log.debug(f"🦾 Action: {action}")
-            sent_action = robot.send_action(action, goal_time=robot.config.goal_time_fast, block_mode="left")
+            if pose_idx == 0 or pose_idx == len(path_l) - 1:
+                # move slowly into and out of hover positions
+                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, block_mode="left")
+            else:
+                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_fast, block_mode="left")
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
