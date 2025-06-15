@@ -35,7 +35,7 @@ from viser.extras import ViserUrdf
 import yourdfpy
 
 from ik import IKConfig, ik
-from pattern import COLORS, Pattern, offset_path
+from pattern import COLORS, Pattern, offset_path, add_entry_exit_hover
 
 log = logging.getLogger('tatbot')
 
@@ -82,6 +82,8 @@ class RecordPathConfig:
     """Frames per second."""
     max_episodes: int = 256
     """Maximum number of episodes to record."""
+    resume: bool = False
+    """If true, resumes recording from the last episode, dataset name must match."""
 
     urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
     """Local path to the URDF file for the robot."""
@@ -113,15 +115,17 @@ class RecordPathConfig:
     ee_design_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the design ee transform."""
 
-    hover_offset: tuple[float, float, float] = (0.0, 0.0, -0.0085)
+    hover_offset: tuple[float, float, float] = (0.0, 0.0, 0.01)
     """position offset when hovering over point, relative to current ee frame."""
+    needle_offset: tuple[float, float, float] = (0.0, 0.0, -0.0085)
+    """position offset to ensure needle touches skin, relative to current ee frame."""
 
     view_offset: tuple[float, float, float] = (0.0, -0.16, 0.16)
     """position offset when viewing design with right arm (relative to design ee frame)."""
     ee_view_wxyz: tuple[float, float, float, float] = (0.67360666, -0.25201478, 0.24747439, 0.64922119)
     """orientation quaternion (wxyz) of the view ee transform."""
 
-    alignment_timeout: float = 60.0
+    alignment_timeout: float = 10.0
     """Timeout for alignment in seconds."""
     alignment_interval: float = 1.0
     """Interval for alignment switching between design and inkcap."""
@@ -157,8 +161,16 @@ def record_path(config: RecordPathConfig):
         log.info(f"🖼️ Loading pattern image from {image_path}...")
         img_np = np.array(PIL.Image.open(image_path).convert("RGB"))
         viser_img = server.gui.add_image(
-            label="Pattern",
+            label="pattern",
             image=img_np,
+            format="png",
+        )
+        pathlen_image_path = os.path.join(config.pattern_dir, "pathlen.png")
+        log.info(f"🖼️ Loading pathlen image from {pathlen_image_path}...")
+        pathlen_img_np = np.array(PIL.Image.open(pathlen_image_path).convert("RGB"))
+        server.gui.add_image(
+            label="pathlen",
+            image=pathlen_img_np,
             format="png",
         )
 
@@ -229,6 +241,7 @@ def record_path(config: RecordPathConfig):
     ee_design_pos = jnp.array(config.ee_design_pos)
     ee_design_wxyz = jnp.array(config.ee_design_wxyz)
     hover_offset = jnp.array(config.hover_offset)
+    needle_offset = jnp.array(config.needle_offset)
     view_offset = jnp.array(config.view_offset)
     ee_view_wxyz = jnp.array(config.ee_view_wxyz)
     ee_inkcap_pos = jnp.array(config.ee_inkcap_pos)
@@ -242,11 +255,16 @@ def record_path(config: RecordPathConfig):
     log.info("📐 Waiting for alignment, press right arrow key to continue...")
     start_time = time.time()
     while True:
+        # if time.time() - start_time > config.alignment_timeout:
+        #     log.error("❌📐 Alignment timeout")
+        #     log_say("alignment timeout", config.play_sounds)
+        #     raise RuntimeError("❌📐 Alignment timeout")
+        # # TODO: keyboard listener does not work anymore?
+        # if events["exit_early"]:
+        #     log.info("✅📐 Alignment complete")
+        #     log_say("alignment complete", config.play_sounds)
+        #     break
         if time.time() - start_time > config.alignment_timeout:
-            log.error("❌📐 Alignment timeout")
-            log_say("alignment timeout", config.play_sounds)
-            raise RuntimeError("❌📐 Alignment timeout")
-        if events["exit_early"]:
             log.info("✅📐 Alignment complete")
             log_say("alignment complete", config.play_sounds)
             break
@@ -288,9 +306,14 @@ def record_path(config: RecordPathConfig):
             cv2.circle(path_viz_img_np, (int(pw), int(ph)), 5, COLORS["green"], -1)
         viser_img.image = path_viz_img_np
 
-        # right hand follows left hand with an offset
         log_say("calculating paths", config.play_sounds)
+        # path needs to be offset to the design position
         path_l = offset_path(path, ee_design_pos)
+        # append hover position to the beginnning and end of path
+        path_l = add_entry_exit_hover(path_l, hover_offset)
+        # add needle depth offset
+        path_l = offset_path(path_l, needle_offset)
+        # right hand follows left hand with a view offset
         path_r = offset_path(path_l, view_offset)
         pathlen = len(path_l)
 
@@ -298,25 +321,25 @@ def record_path(config: RecordPathConfig):
             config.ink_dip_interval == 0 and path_idx == 0):
             log.info("✒️ dipping ink...")
             log_say("dipping ink", config.play_sounds)
-            for desc, pose in [
-                ("hover over inkcap", ee_inkcap_pos),
-                ("dip into inkcap", ee_inkcap_pos + dip_offset),
-                ("retract from inkcap", ee_inkcap_pos),
-                ("hover over path", path_l.positions[0] + hover_offset),
+            for desc, (pose_l, pose_r) in [
+                ("hover over inkcap", (ee_inkcap_pos, path_r.positions[0])),
+                ("dip into inkcap", (ee_inkcap_pos + dip_offset, path_r.positions[0])),
+                ("retract from inkcap", (ee_inkcap_pos, path_r.positions[0])),
+                ("hover over path", (path_l.positions[0], path_r.positions[0])),
             ]:
                 log_say(desc, config.play_sounds)
                 solution = ik(
                     robot=viser_robot,
-                    target_link_indices=target_link_indices[0],
-                    target_wxyz=ee_design_wxyz,
-                    target_position=pose,
+                    target_link_indices=target_link_indices,
+                    target_wxyz=jnp.array([ee_design_wxyz, ee_view_wxyz]),
+                    target_position=jnp.array([pose_l, pose_r]),
                     config=config.ik_config,
                 )
                 robot._set_positions_l(solution[:7], goal_time=robot.config.goal_time_slow, blocking=True)
                 urdf_vis.update_cfg(np.array(solution))
 
         log.info(f"recording path {path_idx} of {len(pattern.paths)}")
-        log_say(f"recording path {path_idx} of {len(pattern.paths)}", config.play_sounds)
+        log_say(f"recording path {path_idx}", config.play_sounds)
         for pose_idx in range(pathlen):
             log.info(f"pose_idx: {pose_idx}/{pathlen})")
             start_loop_t = time.perf_counter()

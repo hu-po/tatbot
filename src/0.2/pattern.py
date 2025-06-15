@@ -92,6 +92,53 @@ def offset_path(path: Path, offset: Float[Array, "3"]) -> Path:
     """Offsets all poses in a path by a given vector."""
     return replace(path, positions=path.positions + offset)
 
+def add_entry_exit_hover(path: Path, offset: Float[Array, "3"]) -> Path:
+    """
+    Returns a new Path with an entry pose prepended and an exit pose appended.
+    The entry pose is the first pose offset by `offset`, and the exit pose is the last pose offset by `offset`.
+    All fields (positions, orientations, pixel_coords, metric_coords) are handled.
+    """
+    # Entry pose: first pose with position offset
+    entry_pos = path.positions[0] + offset
+    exit_pos = path.positions[-1] + offset
+    # For orientations, just copy first/last
+    entry_ori = path.orientations[0]
+    exit_ori = path.orientations[-1]
+    # For pixel_coords and metric_coords, just copy first/last
+    entry_pix = path.pixel_coords[0]
+    exit_pix = path.pixel_coords[-1]
+    entry_metric = path.metric_coords[0]
+    exit_metric = path.metric_coords[-1]
+
+    new_positions = jnp.concatenate([
+        entry_pos[None],
+        path.positions,
+        exit_pos[None],
+    ], axis=0)
+    new_orientations = jnp.concatenate([
+        entry_ori[None],
+        path.orientations,
+        exit_ori[None],
+    ], axis=0)
+    new_pixel_coords = jnp.concatenate([
+        entry_pix[None],
+        path.pixel_coords,
+        exit_pix[None],
+    ], axis=0)
+    new_metric_coords = jnp.concatenate([
+        entry_metric[None],
+        path.metric_coords,
+        exit_metric[None],
+    ], axis=0)
+
+    return replace(
+        path,
+        positions=new_positions,
+        orientations=new_orientations,
+        pixel_coords=new_pixel_coords,
+        metric_coords=new_metric_coords,
+    )
+
 @jdc.jit
 def resample_path(path: Path, num_points: int):
     # resample path to num_points length
