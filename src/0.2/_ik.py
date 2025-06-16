@@ -49,6 +49,7 @@ def ik(
         pk.costs.limit_cost(
             robot,
             joint_var,
+            # TODO: limit weights should be higher for finger joints on left arm
             jnp.array([config.limit_weight] * robot.joints.num_joints),
         ),
     ]

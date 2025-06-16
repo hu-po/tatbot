@@ -8,14 +8,14 @@ from jaxtyping import Array, Float, Int
 
 from _log import COLORS, get_logger
 
-log = get_logger('pattern')
+log = get_logger('_path')
 
 @jdc.pytree_dataclass
 class Pose:
     pos: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.0, 0.0, 0.0]))
     """Position in meters (x, y, z)."""
     wxyz: Float[Array, "4"] = field(default_factory=lambda: jnp.array([1.0, 0.0, 0.0, 0.0]))
-    """Orientation in quaternion (w, x, y, z)."""
+    """Orientation as quaternion (w, x, y, z)."""
     pixel_coords: Int[Array, "2"] = field(default_factory=lambda: jnp.array([0, 0]))
     """Pixel coordinates of the pose in image space (width, height), origin is top left."""
     metric_coords: Float[Array, "2"] = field(default_factory=lambda: jnp.array([0.0, 0.0]))
@@ -23,10 +23,10 @@ class Pose:
 
 @jdc.pytree_dataclass
 class Path:
-    positions: Float[Array, "N 3"] = field(default_factory=lambda: Pose().pos)
-    orientations: Float[Array, "N 4"] = field(default_factory=lambda: Pose().wxyz)
-    pixel_coords: Int[Array, "N 2"] = field(default_factory=lambda: Pose().pixel_coords)
-    metric_coords: Float[Array, "N 2"] = field(default_factory=lambda: Pose().metric_coords)
+    positions: Float[Array, "l 3"] = field(default_factory=lambda: Pose().pos)
+    orientations: Float[Array, "l 4"] = field(default_factory=lambda: Pose().wxyz)
+    pixel_coords: Int[Array, "l 2"] = field(default_factory=lambda: Pose().pixel_coords)
+    metric_coords: Float[Array, "l 2"] = field(default_factory=lambda: Pose().metric_coords)
 
     def __len__(self):
         return self.positions.shape[0]
@@ -214,7 +214,7 @@ def make_pathlen_image(pattern: Pattern, n_bins: int = 24) -> np.ndarray:
     # --- Compute stats ---
     stats = get_path_length_stats(pattern)
     stats_lines = [
-        f"Total tool paths: {stats['count']}",
+        f"Total paths in pattern: {stats['count']}",
         f"Min path length: {stats['min_px']:.2f} px ({stats['min_m']:.4f} m)",
         f"Max path length: {stats['max_px']:.2f} px ({stats['max_m']:.4f} m)",
         f"Average path length: {stats['mean_px']:.2f} px ({stats['mean_m']:.4f} m)",

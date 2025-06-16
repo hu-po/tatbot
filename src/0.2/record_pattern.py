@@ -42,7 +42,7 @@ from _path import Pattern, offset_path, add_entry_exit_hover
 log = get_logger('record_pattern')
 
 @dataclass
-class RecordPathConfig:
+class RecordPatternConfig:
     debug: bool = False
     """Enable debug logging."""
     seed: int = 42
@@ -141,8 +141,7 @@ class RecordPathConfig:
     """Dip ink every N poses, will complete the full path before dipping again."""
 
 
-def record_path(config: RecordPathConfig):
-    config = config
+def record_pattern(config: RecordPatternConfig):
     log.info(f"🌱 Setting random seed to {config.seed}...")
     rng = jax.random.PRNGKey(config.seed)
 
@@ -461,9 +460,9 @@ def record_path(config: RecordPathConfig):
     log_say("Aurevoir", config.play_sounds)
 
 if __name__ == "__main__":
-    args = setup_log_with_config(RecordPathConfig)
+    args = setup_log_with_config(RecordPatternConfig)
     print_config(args)
     # TODO: waiting on https://github.com/TrossenRobotics/trossen_arm/issues/86#issue-3144375498
     logging.getLogger('trossen_arm').setLevel(logging.ERROR)
     logging.getLogger('lerobot').setLevel(logging.DEBUG)
-    robot_safe_loop(record_path, args)
+    robot_safe_loop(record_pattern, args)

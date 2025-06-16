@@ -64,7 +64,8 @@ DISPLAY=:0 uv run record_pattern.py --pattern_dir ~/tatbot/output/patterns/cat
 tatbot consists of several computers, cameras, and robotos connected via ethernet:
 
 - `ojo`: NVIDIA Jetson AGX Orin (ARM Cortex-A78AE, 12-core @ 2.2 GHz) (32GB Unified RAM) (200 TOPS)
-- `trossen-ai`: System76 Meerkat PC (13th Gen Intel i5-1340P, 16-core @ 4.6 GHz) (15GB RAM)
+- `trossen-ai`: System76 Meerkat PC (Intel i5-1340P, 16-core @ 4.6 GHz) (15GB RAM)
+- `ook`: Acer Nitro V 15 w/ NVIDIA RTX 4050 (Intel i7-13620H, 10-core @ 3.6 GHz) (16GB RAM) (6GB VRAM) (194 TOPS)
 - `rpi1`: Raspberry Pi 5 (ARM Cortex-A76, 4-core @ 2.4 GHz) (8GB RAM)
 - `rpi2`: Raspberry Pi 5 (ARM Cortex-A76, 4-core @ 2.4 GHz) (8GB RAM)
 - `camera1`: Amcrest PoE cameras (5MP)
@@ -81,7 +82,7 @@ tatbot consists of several computers, cameras, and robotos connected via etherne
 
 during development, the following pc is also available:
 
-- `oop`: Ubuntu PC w/ NVIDIA GeForce RTX 3090 (AMD Ryzen 9 5900X, 24-core @ 4.95 GHz) (66 GB RAM) (24 GB VRAM) (TOPS)
+- `oop`: Ubuntu PC w/ NVIDIA RTX 3090 (AMD Ryzen 9 5900X, 24-core @ 4.95 GHz) (66GB RAM) (24GB VRAM) (TOPS)
 
 ## Dependencies
 
