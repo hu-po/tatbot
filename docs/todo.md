@@ -2,14 +2,15 @@
 
 Roughly sorted by priority
 
-- record path log in text form using rerun/lerobot, path specific task text, path meta data field
+- seperate out lerobot/trossen code on meerkat, pattern/gui on ook
+- path object has travel distance and travel duration between points
 - resample paths based on distance between poses, don't enforce a pathlen, enforce a posedist
-- concentric circles and increasing distance parallel waves and lines
-- compare fake skin and real skin calibration pattern
 - pad paths for batched operations
+- pattern wrapping over skin mesh using jax
+- mcp to expose all robot nodes as tool for agent, mcp replace ros as middleware
+- compare fake skin and real skin calibration pattern
 - right hand orbiting movement for optimal skin reconstruction
 - random start spawn for design and inkcap for domain randomization in episode recording
-- mcp to expose all robot nodes as tool for agent, mcp replace ros as middleware
 - train splats on lerobot style data
 - crop wrist pointcloud using cone from left hand, combine with cropped head pointcloud for skin mesh
 - swiftsketch pattern
@@ -17,7 +18,6 @@ Roughly sorted by priority
 - tatbot website
 - host policy on replicate
 - camera pose as joint in urdf frame for extrinsic calibration
-- design wrapping using jax
 - policy switching and composition into longer behaviors
 - apriltag on righthand wrist frame for extrinsic camera calibration
 - use ik solver for extrinsic camera calibration using apriltags
