@@ -40,7 +40,7 @@ import trossen_arm
 
 from _log import setup_log_with_config, get_logger
 
-log = get_logger('robot')
+log = get_logger('_bot')
 
 @dataclass
 class ConfigureArgs:

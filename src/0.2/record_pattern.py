@@ -36,8 +36,8 @@ import yourdfpy
 
 from _ik import IKConfig, ik
 from _bot import ik_solution_to_action, robot_safe_loop
-from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT, LOG_FORMAT
-from pattern import COLORS, Pattern, offset_path, add_entry_exit_hover
+from _log import COLORS, get_logger, setup_log_with_config, print_config, TIME_FORMAT, LOG_FORMAT
+from _path import Pattern, offset_path, add_entry_exit_hover
 
 log = get_logger('record_pattern')
 

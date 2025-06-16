@@ -32,7 +32,7 @@ def get_logger(name: str) -> logging.Logger:
     """Get a logger with a specific name."""
     return logging.getLogger(f"tatbot.{name}")
 
-log = get_logger('log')
+log = get_logger('_log')
 
 def print_config(args: Any):
     log.info(f"🛠️ Full Config of type {type(args)}:")
@@ -43,11 +43,10 @@ def setup_log_with_config(config: Any) -> Any:
     logging.basicConfig(level=logging.INFO)
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
+        for submodule in ['_ik', '_bot', '_log', '_path']:
+            logging.getLogger(f"tatbot.{submodule}").setLevel(logging.DEBUG)
         log.debug("🐛 Debug mode enabled.")
-        for submodule in ['ik', 'bot', 'log', 'pattern']:
-            logging.getLogger(submodule).setLevel(logging.DEBUG)
     if hasattr(args, "output_dir"):
         os.makedirs(args.output_dir, exist_ok=True)
         log.info(f"💾 Saving output to {args.output_dir}")
-    print_config(args)
     return args

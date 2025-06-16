@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 from PIL import Image, ImageDraw
 
-from pattern import Pose, Path, Pattern, make_pathviz_image, make_pathlen_image
+from _path import Pose, Path, Pattern, make_pathviz_image, make_pathlen_image
 from _log import setup_log_with_config, get_logger
 
 log = get_logger('pattern_calib')

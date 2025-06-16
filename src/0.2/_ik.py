@@ -10,7 +10,7 @@ import pyroki as pk
 
 from _log import get_logger
 
-log = get_logger('ik')
+log = get_logger('_ik')
 log.info(f"🧠 JAX devices: {jax.devices()}")
 
 @jdc.pytree_dataclass

@@ -11,7 +11,7 @@ import PIL.Image
 import replicate
 from skimage.morphology import skeletonize
 
-from pattern import Path, Pattern, make_pathviz_image, COLORS, make_pathlen_image
+from _path import Path, Pattern, make_pathviz_image, COLORS, make_pathlen_image
 from _log import get_logger, setup_log_with_config
 
 log = get_logger('pattern_image')
