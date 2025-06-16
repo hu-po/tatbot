@@ -313,15 +313,14 @@ def record_path(config: RecordPathConfig):
         episode_log_buffer.seek(0)
         episode_log_buffer.truncate(0)
 
+        if not robot.is_connected:
+            log.warning("🤖⚠️ robot is not connected, attempting reconnect...")
+            robot.connect()
+
         if path_idx >= config.max_episodes:
+            log.info(f"⚠️ max episodes {config.max_episodes} exceeded, breaking...")
             log_say(f"max paths {config.max_episodes} exceeded", config.play_sounds, blocking=True)
             break
-
-        log.info(f"🖼️ Updating visualization...")
-        path_viz_img_np = img_np.copy()
-        for pw, ph in path.pixel_coords:
-            cv2.circle(path_viz_img_np, (int(pw), int(ph)), 5, COLORS["green"], -1)
-        viser_img.image = path_viz_img_np
 
         log_say("calculating paths", config.play_sounds)
         # path needs to be offset to the design position
@@ -392,14 +391,15 @@ def record_path(config: RecordPathConfig):
             dataset.add_frame(frame, task=_task)
 
             log.info(f"🖼️ Updating visualization...")
-            step_viz_img_np = path_viz_img_np.copy()
+            _img_np = img_np.copy()
             for pw, ph in path_l.pixel_coords[:pose_idx]:
-                # small green circles for all poses up to current pose
-                cv2.circle(step_viz_img_np, (int(pw), int(ph)), 5, COLORS["green"], -1)
-            # big red circle for current pose
-            cv2.circle(step_viz_img_np, (int(path_l.pixel_coords[pose_idx][0]), int(path_l.pixel_coords[pose_idx][1])), 5, COLORS["red"], -1)
-            viser_img.image = step_viz_img_np
-
+                # small circle for all poses up to current pose
+                cv2.circle(_img_np, (int(pw), int(ph)), 3, COLORS["green"], -1)
+            # bigger circle indicating current pose
+            cv2.circle(_img_np, (int(path_l.pixel_coords[pose_idx][0]), int(path_l.pixel_coords[pose_idx][1])), 6, COLORS["magenta"], -1)
+            # even bigger circle indicating current pose for easier visual tracking
+            cv2.circle(_img_np, (int(path_l.pixel_coords[pose_idx][0]), int(path_l.pixel_coords[pose_idx][1])), 64, COLORS["red"], -1)
+            viser_img.image = _img_np
 
             if config.display_data:
                 for obs, val in observation.items():
