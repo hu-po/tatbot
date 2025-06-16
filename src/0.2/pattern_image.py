@@ -236,76 +236,40 @@ def make_pattern_from_image(config: PatternFromImageConfig):
     log.info(f"Saved {full_patches} full patches.")
     log.info(f"Found {empty_patches} empty patches.")
 
-    if all_paths:
-        scale_x = config.image_width_m / original_width
-        scale_y = config.image_height_m / original_height
+    scale_x = config.image_width_m / original_width
+    scale_y = config.image_height_m / original_height
 
-        paths = []
-        for path_px in all_paths:
-            if not path_px:
-                continue
+    paths = []
+    for path_px in all_paths:
+        if not path_px:
+            continue
 
-            num_points = len(path_px)
-            positions_list = [[p[0] * scale_x, p[1] * scale_y, 0.0] for p in path_px]
+        num_points = len(path_px)
+        positions_list = [[p[0] * scale_x, p[1] * scale_y, 0.0] for p in path_px]
 
-            paths.append(
-                Path(
-                    positions=jnp.array(positions_list),
-                    orientations=jnp.tile(jnp.array([1.0, 0.0, 0.0, 0.0]), (num_points, 1)),
-                    pixel_coords=jnp.array(path_px, dtype=jnp.int32),
-                    metric_coords=jnp.zeros((num_points, 2)),
-                )
+        paths.append(
+            Path(
+                positions=jnp.array(positions_list),
+                orientations=jnp.tile(jnp.array([1.0, 0.0, 0.0, 0.0]), (num_points, 1)),
+                pixel_coords=jnp.array(path_px, dtype=jnp.int32),
+                metric_coords=jnp.zeros((num_points, 2)),
             )
-
-        pattern = Pattern(
-            name=pattern_name,
-            paths=paths,
-            width_m=config.image_width_m,
-            height_m=config.image_height_m,
-            width_px=config.image_width_px,
-            height_px=config.image_height_px,
-            image_np=img_bgr,
         )
 
-        path_viz = make_pathviz_image(pattern)
+    pattern = Pattern(
+        name=pattern_name,
+        paths=paths,
+        width_m=config.image_width_m,
+        height_m=config.image_height_m,
+        width_px=config.image_width_px,
+        height_px=config.image_height_px,
+        image_np=img_bgr,
+    )
 
-        class NumpyEncoder(json.JSONEncoder):
-            def default(self, obj):
-                if isinstance(obj, (np.ndarray, jnp.ndarray)):
-                    return obj.tolist()
-                return json.JSONEncoder.default(self, obj)
-
-        paths_path = os.path.join(design_output_dir, "pattern.json")
-        with open(paths_path, "w") as f:
-            json_data = {
-                "name": pattern.name,
-                "width_m": pattern.width_m,
-                "height_m": pattern.height_m,
-                "width_px": pattern.width_px,
-                "height_px": pattern.height_px,
-                "paths": [],
-            }
-            for path in pattern.paths:
-                # Convert JAX arrays to numpy arrays first to avoid slow iteration
-                positions = np.asarray(path.positions)
-                orientations = np.asarray(path.orientations)
-                pixel_coords = np.asarray(path.pixel_coords)
-                metric_coords = np.asarray(path.metric_coords)
-
-                poses = [
-                    {
-                        "pos": positions[i].tolist(),
-                        "wxyz": orientations[i].tolist(),
-                        "pixel_coords": pixel_coords[i].tolist(),
-                        "metric_coords": metric_coords[i].tolist(),
-                    }
-                    for i in range(len(path))
-                ]
-                json_data["paths"].append({"poses": poses})
-            json.dump(json_data, f, indent=4, cls=NumpyEncoder)
-        log.info(f"💾 Saved {len(pattern.paths)} paths to {paths_path}")
-    else:
-        log.info("No paths were generated.")
+    paths_path = os.path.join(design_output_dir, "pattern.json")
+    with open(paths_path, "w") as f:
+        json.dump(pattern.to_json(), f)
+    log.info(f"💾 Saved {len(pattern.paths)} paths to {paths_path}")
 
     viz_path = os.path.join(design_output_dir, f"patchviz.png")
     cv2.imwrite(viz_path, img_viz)
@@ -315,11 +279,11 @@ def make_pattern_from_image(config: PatternFromImageConfig):
     cv2.imwrite(comp_viz_path, comp_viz)
     log.info(f"🖼️ Saved component visualization to {comp_viz_path}")
 
+    path_viz = make_pathviz_image(pattern)
     path_viz_path = os.path.join(design_output_dir, f"pathviz.png")
     cv2.imwrite(path_viz_path, path_viz)
     log.info(f"🖼️ Saved path visualization to {path_viz_path}")
 
-    # Generate and save path length visualization
     pathlen_img = make_pathlen_image(pattern)
     pathlen_path = os.path.join(design_output_dir, "pathlen.png")
     cv2.imwrite(pathlen_path, pathlen_img)

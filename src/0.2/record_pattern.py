@@ -200,7 +200,7 @@ def record_pattern(config: RecordPatternConfig):
     action_features = hw_to_dataset_features(robot.action_features, "action", True)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
     dataset_features = {**action_features, **obs_features}
-    dataset_name = config.dataset_name or f"{pattern.name}-{int(time.time())}"
+    dataset_name = config.dataset_name or f"{pattern.name}-{time.strftime(TIME_FORMAT, time.localtime())}"
     repo_id = f"{config.hf_username}/{dataset_name}"
     if config.resume:
         log.info("📦 Resuming dataset...")

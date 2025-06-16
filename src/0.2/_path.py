@@ -5,6 +5,7 @@ import jax.numpy as jnp
 import jax_dataclasses as jdc
 import numpy as np
 from jaxtyping import Array, Float, Int
+import json
 
 from _log import COLORS, get_logger
 
@@ -80,10 +81,46 @@ class Pattern:
             height_px=data.get("height_px", cls.height_px),
         )
 
-# TODO: jit requires all paths the same len?
+    def to_json(self) -> dict:
+        """Serializes the Pattern to a JSON-serializable dict."""
+        json_data = {
+            "name": self.name,
+            "width_m": self.width_m,
+            "height_m": self.height_m,
+            "width_px": self.width_px,
+            "height_px": self.height_px,
+            "paths": [],
+        }
+        for path in self.paths:
+            positions = np.asarray(path.positions)
+            orientations = np.asarray(path.orientations)
+            pixel_coords = np.asarray(path.pixel_coords)
+            metric_coords = np.asarray(path.metric_coords)
+            poses = [
+                {
+                    "pos": positions[i].tolist(),
+                    "wxyz": orientations[i].tolist(),
+                    "pixel_coords": pixel_coords[i].tolist(),
+                    "metric_coords": metric_coords[i].tolist(),
+                }
+                for i in range(len(path))
+            ]
+            json_data["paths"].append({"poses": poses})
+        return json_data
+
+# TODO: make this fast with JAX
 def offset_path(path: Path, offset: Float[Array, "3"]) -> Path:
     """Offsets all poses in a path by a given vector."""
     return replace(path, positions=path.positions + offset)
+
+# TODO: make this fast with JAX
+def resample_path(path: Path, num_points: int):
+    # resample path to num_points length
+    pass
+
+def resample_pattern(pattern: Pattern, num_points: int):
+    # resample each path in pattern to num_points length
+    pass
 
 def add_entry_exit_hover(path: Path, offset: Float[Array, "3"]) -> Path:
     """
@@ -131,15 +168,6 @@ def add_entry_exit_hover(path: Path, offset: Float[Array, "3"]) -> Path:
         pixel_coords=new_pixel_coords,
         metric_coords=new_metric_coords,
     )
-
-@jdc.jit
-def resample_path(path: Path, num_points: int):
-    # resample path to num_points length
-    pass
-
-def resample_pattern(pattern: Pattern, num_points: int):
-    # resample each path in pattern to num_points length
-    pass
 
 def make_pathviz_image(pattern: Pattern) -> np.ndarray:
     """Creates an image with overlayed paths from a pattern.

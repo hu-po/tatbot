@@ -305,40 +305,9 @@ def make_calibration_pattern(config: CalibrationPatternConfig):
     cv2.imwrite(pathlen_path, pathlen_img)
     log.info(f"🖼️ Saved path length visualization to {pathlen_path}")
 
-    class NumpyEncoder(json.JSONEncoder):
-        def default(self, obj):
-            if isinstance(obj, (np.ndarray, jnp.ndarray)):
-                return obj.tolist()
-            return json.JSONEncoder.default(self, obj)
-
     paths_path = os.path.join(config.output_dir, "pattern.json")
     with open(paths_path, "w") as f:
-        json_data = {
-            "name": pattern.name,
-            "width_m": pattern.width_m,
-            "height_m": pattern.height_m,
-            "width_px": pattern.width_px,
-            "height_px": pattern.height_px,
-            "paths": [],
-        }
-        for path in pattern.paths:
-            # Convert JAX arrays to numpy arrays first to avoid slow iteration
-            positions = np.asarray(path.positions)
-            orientations = np.asarray(path.orientations)
-            pixel_coords = np.asarray(path.pixel_coords)
-            metric_coords = np.asarray(path.metric_coords)
-
-            poses = [
-                {
-                    "pos": positions[i].tolist(),
-                    "wxyz": orientations[i].tolist(),
-                    "pixel_coords": pixel_coords[i].tolist(),
-                    "metric_coords": metric_coords[i].tolist(),
-                }
-                for i in range(len(path))
-            ]
-            json_data["paths"].append({"poses": poses})
-        json.dump(json_data, f, indent=4, cls=NumpyEncoder)
+        json.dump(pattern.to_json(), f)
     log.info(f"💾 Saved {len(pattern.paths)} tool paths to {paths_path}")
 
 if __name__ == "__main__":
