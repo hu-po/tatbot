@@ -35,7 +35,7 @@ from viser.extras import ViserUrdf
 import yourdfpy
 
 from _ik import IKConfig, ik
-from _bot import robot_safe_loop
+from _bot import ik_solution_to_action, robot_safe_loop
 from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT, LOG_FORMAT
 from pattern import COLORS, Pattern, offset_path, add_entry_exit_hover
 
@@ -93,8 +93,6 @@ class RecordPathConfig:
     """Names of the ee links in the URDF for left and right ik solving."""
     ik_config: IKConfig = IKConfig()
     """Configuration for the IK solver."""
-    robot_block_mode: str = "left"
-    """Block mode for the robot. One of: left, right, both."""
     robot_goal_time_slow: float = 3.0
     """Goal time for the robot when moving slowly."""
     robot_goal_time_fast: float = 0.5
@@ -198,7 +196,6 @@ def record_path(config: RecordPathConfig):
     robot = make_robot_from_config(TatbotConfig(
         goal_time_slow=config.robot_goal_time_slow,
         goal_time_fast=config.robot_goal_time_fast,
-        block_mode=config.robot_block_mode,
     ))
     robot.connect()
     listener, events = init_keyboard_listener()
@@ -282,7 +279,7 @@ def record_path(config: RecordPathConfig):
         #     break
         if time.time() - start_time > config.alignment_timeout:
             log.info("✅📐 Alignment complete")
-            log_say("alignment complete", config.play_sounds)
+            log_say("alignment complete", config.play_sounds, blocking=True)
             break
         log.info("📐 Aligning over design...")
         solution = ik(
@@ -292,9 +289,9 @@ def record_path(config: RecordPathConfig):
             target_position=ee_design_pos,
             config=config.ik_config,
         )
-        robot._set_positions_l(solution[:7], goal_time=robot.config.goal_time_slow, blocking=True)
-        log_say("align design", config.play_sounds)
         urdf_vis.update_cfg(np.array(solution))
+        robot._set_positions_l(solution[:7], goal_time=robot.config.goal_time_slow)
+        log_say("align design", config.play_sounds)
         time.sleep(config.alignment_interval)
         log.info("📐 Aligning over inkcap...")
         solution = ik(
@@ -304,9 +301,9 @@ def record_path(config: RecordPathConfig):
             target_position=ee_inkcap_pos,
             config=config.ik_config,
         )
-        robot._set_positions_l(solution[:7], goal_time=robot.config.goal_time_slow, blocking=True)
-        log_say("align inkcap", config.play_sounds)
         urdf_vis.update_cfg(np.array(solution))
+        robot._set_positions_l(solution[:7], goal_time=robot.config.goal_time_slow)
+        log_say("align inkcap", config.play_sounds)
         time.sleep(config.alignment_interval)
 
     log.info(f"Recording {len(pattern.paths)} paths...")
@@ -317,7 +314,7 @@ def record_path(config: RecordPathConfig):
         episode_log_buffer.truncate(0)
 
         if path_idx >= config.max_episodes:
-            log_say(f"max paths {config.max_episodes} exceeded", config.play_sounds)
+            log_say(f"max paths {config.max_episodes} exceeded", config.play_sounds, blocking=True)
             break
 
         log.info(f"🖼️ Updating visualization...")
@@ -356,9 +353,9 @@ def record_path(config: RecordPathConfig):
                     target_position=jnp.array([pose_l, pose_r]),
                     config=config.ik_config,
                 )
-                robot._set_positions_l(solution[:7], goal_time=robot.config.goal_time_slow, blocking=True)
-                robot._set_positions_r(solution[7:], goal_time=robot.config.goal_time_slow, blocking=True)
                 urdf_vis.update_cfg(np.array(solution))
+                action = ik_solution_to_action(solution)
+                robot.send_action(action, goal_time=robot.config.goal_time_slow)
 
         log.info(f"recording path {path_idx} of {len(pattern.paths)}")
         log_say(f"recording path {path_idx}", config.play_sounds)
@@ -376,28 +373,12 @@ def record_path(config: RecordPathConfig):
                 config=config.ik_config,
             )
             urdf_vis.update_cfg(np.array(solution))
-            action = {
-                "left.joint_0.pos": solution[0],
-                "left.joint_1.pos": solution[1],
-                "left.joint_2.pos": solution[2],
-                "left.joint_3.pos": solution[3],
-                "left.joint_4.pos": solution[4],
-                "left.joint_5.pos": solution[5],
-                "left.gripper.pos": solution[6],
-                "right.joint_0.pos": solution[8],
-                "right.joint_1.pos": solution[9],
-                "right.joint_2.pos": solution[10],
-                "right.joint_3.pos": solution[11],
-                "right.joint_4.pos": solution[12],
-                "right.joint_5.pos": solution[13],
-                "right.gripper.pos": solution[14],
-            }
-            log.debug(f"🦾 Action: {action}")
+            action = ik_solution_to_action(solution)
             if pose_idx == 0 or pose_idx == len(path_l) - 1:
                 # move slowly into and out of hover positions
-                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, block_mode="left")
+                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow)
             else:
-                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_fast, block_mode="left")
+                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_fast)
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}

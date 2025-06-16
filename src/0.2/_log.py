@@ -44,6 +44,8 @@ def setup_log_with_config(config: Any) -> Any:
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
         log.debug("🐛 Debug mode enabled.")
+        for submodule in ['ik', 'bot', 'log', 'pattern']:
+            logging.getLogger(submodule).setLevel(logging.DEBUG)
     if hasattr(args, "output_dir"):
         os.makedirs(args.output_dir, exist_ok=True)
         log.info(f"💾 Saving output to {args.output_dir}")

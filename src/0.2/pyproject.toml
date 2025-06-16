@@ -20,4 +20,4 @@ dependencies = [
 ]
 
 [tool.setuptools]
-py-modules = ["_bot", "_ik", "_log",  "pattern", "pattern_image", "pattern_calib",  "record_iktest", "record_pattern", "record_policy"]
+py-modules = ["_bot", "_ik", "_log",  "pattern", "pattern_image", "pattern_calib",  "record_iktest", "record_pattern"]

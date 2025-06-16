@@ -32,6 +32,8 @@ from dataclasses import dataclass
 import os
 from typing import Any, Callable
 
+from jaxtyping import Array, Float
+
 from lerobot.common.robots import make_robot_from_config
 from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
 import trossen_arm
@@ -136,6 +138,26 @@ def robot_safe_loop(loop: Callable, args: Any) -> Exception | None:
         log.error(robot._get_error_str_r())
         robot.disconnect()
         raise e
+
+def ik_solution_to_action(solution: Float[Array, "16"]) -> dict[str, float]:
+    _action = {
+        "left.joint_0.pos": solution[0],
+        "left.joint_1.pos": solution[1],
+        "left.joint_2.pos": solution[2],
+        "left.joint_3.pos": solution[3],
+        "left.joint_4.pos": solution[4],
+        "left.joint_5.pos": solution[5],
+        "left.gripper.pos": solution[6],
+        "right.joint_0.pos": solution[8],
+        "right.joint_1.pos": solution[9],
+        "right.joint_2.pos": solution[10],
+        "right.joint_3.pos": solution[11],
+        "right.joint_4.pos": solution[12],
+        "right.joint_5.pos": solution[13],
+        "right.gripper.pos": solution[14],
+    }
+    log.debug(f"🦾 Action: {_action}")
+    return _action
 
 if __name__=='__main__':
     args = setup_log_with_config(ConfigureArgs)

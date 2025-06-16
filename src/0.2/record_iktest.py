@@ -23,7 +23,7 @@ import yourdfpy
 
 from _ik import IKConfig, ik
 from _log import get_logger, print_config, setup_log_with_config
-from _bot import robot_safe_loop
+from _bot import ik_solution_to_action, robot_safe_loop
 
 log = get_logger('record_iktest')
 
@@ -171,24 +171,7 @@ class IKTargetTeleop(Teleoperator):
             config=self.config.ik_config,
         )
         self.urdf_vis.update_cfg(np.array(solution))
-        action = {
-            "left.joint_0.pos": solution[0],
-            "left.joint_1.pos": solution[1],
-            "left.joint_2.pos": solution[2],
-            "left.joint_3.pos": solution[3],
-            "left.joint_4.pos": solution[4],
-            "left.joint_5.pos": solution[5],
-            "left.gripper.pos": solution[6],
-            "right.joint_0.pos": solution[8],
-            "right.joint_1.pos": solution[9],
-            "right.joint_2.pos": solution[10],
-            "right.joint_3.pos": solution[11],
-            "right.joint_4.pos": solution[12],
-            "right.joint_5.pos": solution[13],
-            "right.gripper.pos": solution[14],
-        }
-        log.debug(f"🦾 Action: {action}")
-        return action
+        return ik_solution_to_action(solution)
 
     def send_feedback(self, feedback: Dict[str, Any]) -> None:
         pass
