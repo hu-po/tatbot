@@ -72,7 +72,7 @@ class VerticalLineGroupConfig:
     num_lines: int = 3
     spacing: int = 20
     """pixels between adjacent line center-lines"""
-    num_points: list[int] = field(default_factory=lambda: [16, 16, 32])
+    num_points: list[int] = field(default_factory=lambda: [32, 32, 64])
     length: list[int] = field(default_factory=lambda: [32, 48, 64])
 
 @dataclass
@@ -80,21 +80,21 @@ class HorizontalLineGroupConfig:
     """Parameters for a group of parallel horizontal lines."""
     num_lines: int = 3
     spacing: int = 20
-    num_points: list[int] = field(default_factory=lambda: [16, 16, 32])
+    num_points: list[int] = field(default_factory=lambda: [32, 32, 64])
     length: list[int] = field(default_factory=lambda: [32, 48, 64])
 
 @dataclass
 class CircleGroupConfig:
     """Parameters for a group of concentric circles."""
     radii: list[int] = field(default_factory=lambda: [16, 32, 48])
-    num_points: list[int] = field(default_factory=lambda: [16, 32, 48])
+    num_points: list[int] = field(default_factory=lambda: [32, 64, 96])
 
 @dataclass
 class WaveGroupConfig:
     """Parameters for a group of parallel waveforms."""
     num_waves: int = 3
     spacing: int = 24
-    num_points: list[int] = field(default_factory=lambda: [24, 24, 24])
+    num_points: list[int] = field(default_factory=lambda: [48, 64, 96])
     amplitude: int = WaveConfig.amplitude
     frequency: float = WaveConfig.frequency
     length: int = WaveConfig.length

@@ -93,9 +93,9 @@ class RecordPathConfig:
     """Names of the ee links in the URDF for left and right ik solving."""
     ik_config: IKConfig = IKConfig()
     """Configuration for the IK solver."""
-    robot_goal_time_slow: float = 3.0
+    robot_goal_time_slow: float = 2.8
     """Goal time for the robot when moving slowly."""
-    robot_goal_time_fast: float = 0.5
+    robot_goal_time_fast: float = 0.1
     """Goal time for the robot when moving fast."""
 
     view_camera_position: tuple[float, float, float] = (0.5, 0.5, 0.5)
@@ -115,7 +115,7 @@ class RecordPathConfig:
     ee_design_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the design ee transform."""
 
-    hover_offset: tuple[float, float, float] = (0.0, 0.0, 0.008)
+    hover_offset: tuple[float, float, float] = (0.0, 0.0, 0.006)
     """position offset when hovering over point, relative to current ee frame."""
     needle_offset: tuple[float, float, float] = (0.0, 0.0, -0.0065)
     """position offset to ensure needle touches skin, relative to current ee frame."""
@@ -137,7 +137,7 @@ class RecordPathConfig:
     dip_offset: tuple[float, float, float] = (0.0, 0.0, -0.029)
     """position offset when dipping inkcap (relative to current ee frame)."""
 
-    ink_dip_every_n_poses: int = 32
+    ink_dip_every_n_poses: int = 64
     """Dip ink every N poses, will complete the full path before dipping again."""
 
 
@@ -380,9 +380,9 @@ def record_path(config: RecordPathConfig):
             )
             urdf_vis.update_cfg(np.array(solution))
             action = ik_solution_to_action(solution)
-            if pose_idx == 0 or pose_idx == len(path_l) - 1:
+            if pose_idx <= 1 or pose_idx >= len(path_l) - 2:
                 # move slowly into and out of hover positions
-                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, block="left")
+                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, block="both")
             else:
                 sent_action = robot.send_action(action, goal_time=robot.config.goal_time_fast, block="left")
                 ink_dip_tracker += 1
