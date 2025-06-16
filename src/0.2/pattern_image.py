@@ -1,8 +1,6 @@
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 import json
-import logging
 import os
-from pprint import pformat
 import shutil
 
 import cv2
@@ -12,10 +10,9 @@ import numpy as np
 import PIL.Image
 import replicate
 from skimage.morphology import skeletonize
-import tyro
 
 from pattern import Path, Pattern, make_pathviz_image, COLORS, make_pathlen_image
-from log import setup_log_with_config, get_logger
+from _log import get_logger, setup_log_with_config
 
 log = get_logger('pattern_image')
 

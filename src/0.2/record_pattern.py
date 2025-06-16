@@ -2,14 +2,12 @@
 Records episodes using a Pattern from JSON.
 """
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 import json
 import logging
 import os
-from pprint import pformat
 import time
 from io import StringIO
-from pathlib import Path
 
 import cv2
 import jax
@@ -36,10 +34,10 @@ import viser
 from viser.extras import ViserUrdf
 import yourdfpy
 
-from ik import IKConfig, ik
+from _ik import IKConfig, ik
+from _bot import robot_safe_loop
+from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT, LOG_FORMAT
 from pattern import COLORS, Pattern, offset_path, add_entry_exit_hover
-from robot import robot_safe_loop
-from log import get_logger, setup_log_with_config, print_config, robot_safe_loop
 
 log = get_logger('record_pattern')
 
@@ -365,7 +363,7 @@ def record_path(config: RecordPathConfig):
         log.info(f"recording path {path_idx} of {len(pattern.paths)}")
         log_say(f"recording path {path_idx}", config.play_sounds)
         for pose_idx in range(len(path_l)):
-            log.info(f"pose_idx: {pose_idx}/{len(path_l)})")
+            log.debug(f"pose_idx: {pose_idx}/{len(path_l)}")
             start_loop_t = time.perf_counter()
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")

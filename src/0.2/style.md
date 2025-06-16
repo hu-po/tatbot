@@ -3,7 +3,7 @@
 - Sort imports alphabetically within three groups, separated by a blank line:
   1. Standard library imports (e.g., `os`, `logging`)
   2. External module imports (e.g., `numpy`, `tyro`)
-  3. Local module imports (e.g., `from ik import ik`)
+  3. Local module imports (e.g., `from _log import get_logger`)
 - Use `dataclasses`  and `jdc.pytree_dataclass` to define and store configuration parameters for scripts.
 - Use `_l` and `_r` suffixes for variables and parameters related to the left and right robot arms, respectively (e.g., `joint_pos_l`, `ik_target_r`).
 - Utilize the high-level abstractions provided in `pattern.py` and `ik.py` where applicable.

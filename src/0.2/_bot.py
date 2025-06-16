@@ -30,12 +30,13 @@ https://docs.trossenrobotics.com/trossen_arm/main/api/structtrossen__arm_1_1EndE
 
 from dataclasses import dataclass
 import os
-from typing import Callable
+from typing import Any, Callable
 
-from lerobot.robot import make_robot_from_config, TatbotConfig
+from lerobot.common.robots import make_robot_from_config
+from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
 import trossen_arm
 
-from log import setup_log_with_config, get_logger
+from _log import setup_log_with_config, get_logger
 
 log = get_logger('robot')
 

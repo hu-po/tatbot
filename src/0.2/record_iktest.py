@@ -2,10 +2,9 @@
 Records episodes using Vizer ik target controls.
 """
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 import logging
 import os
-from pprint import pformat
 import time
 from typing import Any, Dict
 
@@ -22,9 +21,9 @@ import viser
 from viser.extras import ViserUrdf
 import yourdfpy
 
-from ik import IKConfig, ik
-from log import setup_log_with_config, get_logger, print_config
-from robot import robot_safe_loop
+from _ik import IKConfig, ik
+from _log import get_logger, print_config, setup_log_with_config
+from _bot import robot_safe_loop
 
 log = get_logger('record_iktest')
 

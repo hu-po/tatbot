@@ -55,8 +55,8 @@ Turn on the robot
 Generate a tattoo pattern from a prompt and execute it on the robot:
 
 ```bash
-uv run pattern_image.py --prompt="growling cat"
-DISPLAY=:0 uv run record_pattern.py --pattern_dir ~/tatbot/output/patterns/growling_cat
+uv run pattern_image.py --prompt="cat"
+DISPLAY=:0 uv run record_pattern.py --pattern_dir ~/tatbot/output/patterns/cat
 ```
 
 ## Devices

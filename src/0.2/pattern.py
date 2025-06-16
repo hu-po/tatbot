@@ -6,7 +6,7 @@ import jax_dataclasses as jdc
 import numpy as np
 from jaxtyping import Array, Float, Int
 
-from log import get_logger
+from _log import COLORS, get_logger
 
 log = get_logger('pattern')
 
