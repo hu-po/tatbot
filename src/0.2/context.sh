@@ -50,8 +50,6 @@ declare -A FILES=(
   # ----------------------------- ADD FILES HERE
   ["$TATBOT_ROOT/README.md"]=""
   ["$TATBOT_ROOT/docs/tech.md"]=""
-  ["$TATBOT_ROOT/src/$VERSION/.env.example"]=""
-  ["$TATBOT_ROOT/src/$VERSION/pyproject.toml"]=""
 )
 
 echo "Below is a list of files for the $CODEBASE_NAME codebase." >> "$OUTPUT_FILE"
