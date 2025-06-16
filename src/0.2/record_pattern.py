@@ -48,7 +48,7 @@ class RecordPathConfig:
     seed: int = 42
     """Seed for random behavior."""
 
-    pattern_dir: str = os.path.expanduser("~/tatbot/output/patterns/cat")
+    pattern_dir: str = os.path.expanduser("~/tatbot/output/patterns/calibration")
     """Directory with pattern.json and image.png."""
 
     hf_username: str = os.environ.get("HF_USER", "hu-po")
@@ -457,5 +457,5 @@ if __name__ == "__main__":
     print_config(args)
     # TODO: waiting on https://github.com/TrossenRobotics/trossen_arm/issues/86#issue-3144375498
     logging.getLogger('trossen_arm').setLevel(logging.ERROR)
-    logging.getLogger('lerobot').setLevel(logging.INFO)
+    logging.getLogger('lerobot').setLevel(logging.DEBUG)
     robot_safe_loop(record_path, args)
