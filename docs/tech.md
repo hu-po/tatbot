@@ -1,6 +1,6 @@
 # Tech
 
-description of tatbot technical stack
+description of tatbot (tattoo robot) technical stack
 
 ## Index
 
@@ -15,11 +15,6 @@ description of tatbot technical stack
   - [Gr00t](#gr00t-1)
 - [URDF](#urdf)
 - [AprilTags](#apriltags)
-- [Profiling](#profiling)
-  - [snakeviz](#snakeviz)
-  - [scalene](#scalene)
-  - [nsys](#nsys)
-  - [JAX profiler](#jax-profiler)
 
 ## Setup
 
@@ -305,35 +300,3 @@ tatbot is defined using URDF at `tatbot/assets/urdf/tatbot.urdf`.
 ## AprilTags
 
 Objects (i.e. ink palette) in the scene are tracked using [AprilTags](https://chaitanyantr.github.io/apriltag.html).
-
-## Profiling
-
-TODO: none of these feel great...
-
-### [snakeviz](https://github.com/jiffyclub/snakeviz)
-
-```bash
-uv pip install snakeviz
-snakeviz tatbot.prof
-```
-
-### [scalene](https://github.com/plasma-umass/scalene)
-
-```bash
-uv pip install scalene
-scalene --cpu --gpu --memory tatbot.py
-```
-
-### [nsys](https://docs.nvidia.com/nsight-systems/UserGuide/index.html)
-
-```bash
-nsys profile -t cuda,nvtx,osrt --stats=true -o tatbot uv run python tatbot.py --debug
-nsys-ui tatbot.nsys-rep
-```
-
-### JAX profiler
-
-```bash
-uv run python tatbot.py 
-tensorboard --logdir ./jax_trace
-```
