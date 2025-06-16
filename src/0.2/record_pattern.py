@@ -59,7 +59,7 @@ class RecordPathConfig:
     """Display data on screen using Rerun."""
     output_dir: str = os.path.expanduser("~/tatbot/output/record")
     """Directory to save the dataset."""
-    push_to_hub: bool = False
+    push_to_hub: bool = True
     """Push the dataset to the Hugging Face Hub."""
     tags: tuple[str, ...] = ("tatbot", "wxai", "trossen")
     """Tags to add to the dataset on Hugging Face."""
@@ -115,9 +115,9 @@ class RecordPathConfig:
     ee_design_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the design ee transform."""
 
-    hover_offset: tuple[float, float, float] = (0.0, 0.0, 0.01)
+    hover_offset: tuple[float, float, float] = (0.0, 0.0, 0.008)
     """position offset when hovering over point, relative to current ee frame."""
-    needle_offset: tuple[float, float, float] = (0.0, 0.0, -0.006)
+    needle_offset: tuple[float, float, float] = (0.0, 0.0, -0.0065)
     """position offset to ensure needle touches skin, relative to current ee frame."""
 
     view_offset: tuple[float, float, float] = (0.0, -0.16, 0.16)
@@ -134,16 +134,11 @@ class RecordPathConfig:
     """position of the inkcap ee transform."""
     ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the inkcap ee transform."""
-    dip_offset: tuple[float, float, float] = (0.0, 0.0, -0.034)
+    dip_offset: tuple[float, float, float] = (0.0, 0.0, -0.029)
     """position offset when dipping inkcap (relative to current ee frame)."""
 
-    ink_dip_interval: int = 10
-    """
-    Dip ink every N path segments.
-    If N > 0, dips on segment 0, N, 2N, ...
-    If N = 0, dips only on the first segment.
-    If N < 0, never dips.
-    """
+    ink_dip_every_n_poses: int = 32
+    """Dip ink every N poses, will complete the full path before dipping again."""
 
 
 def record_path(config: RecordPathConfig):
@@ -306,6 +301,10 @@ def record_path(config: RecordPathConfig):
         log_say("align inkcap", config.play_sounds)
         time.sleep(config.alignment_interval)
 
+    ink_dip_tracker: int = 0
+    has_dipped: bool = False
+    log.info(f"🎨 ink dip tracker at {ink_dip_tracker}, threshold at {config.ink_dip_every_n_poses}")
+
     log.info(f"Recording {len(pattern.paths)} paths...")
     # when resuming, start from the idx of the next episode
     for path_idx, path in enumerate(pattern.paths, start=dataset.num_episodes):
@@ -334,8 +333,15 @@ def record_path(config: RecordPathConfig):
         # right hand follows left hand with a view offset
         path_r = offset_path(path_l, view_offset)
 
-        if (config.ink_dip_interval > 0 and path_idx % config.ink_dip_interval == 0) or (
-            config.ink_dip_interval == 0 and path_idx == 0):
+        perform_ink_dip: bool = False
+        if not has_dipped:
+            log.info("🎨 dipping ink for the first time")
+            has_dipped = True
+            perform_ink_dip = True
+        elif ink_dip_tracker >= config.ink_dip_every_n_poses:
+            log.info(f"🎨 dipping ink since ({ink_dip_tracker} >= {config.ink_dip_every_n_poses})")
+            perform_ink_dip = True
+        if perform_ink_dip:
             log.info("✒️ dipping ink...")
             log_say("dipping ink", config.play_sounds)
             for desc, (pose_l, pose_r) in [
@@ -354,7 +360,8 @@ def record_path(config: RecordPathConfig):
                 )
                 urdf_vis.update_cfg(np.array(solution))
                 action = ik_solution_to_action(solution)
-                robot.send_action(action, goal_time=robot.config.goal_time_slow)
+                robot.send_action(action, goal_time=robot.config.goal_time_slow, block="both")
+            ink_dip_tracker = 0
 
         log.info(f"recording path {path_idx} of {len(pattern.paths)}")
         log_say(f"recording path {path_idx}", config.play_sounds)
@@ -375,9 +382,10 @@ def record_path(config: RecordPathConfig):
             action = ik_solution_to_action(solution)
             if pose_idx == 0 or pose_idx == len(path_l) - 1:
                 # move slowly into and out of hover positions
-                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow)
+                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, block="left")
             else:
-                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_fast)
+                sent_action = robot.send_action(action, goal_time=robot.config.goal_time_fast, block="left")
+                ink_dip_tracker += 1
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
