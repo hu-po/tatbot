@@ -181,7 +181,7 @@ def record_path(config: RecordPathConfig):
 
     log.info("🦾 Adding vizer robot...")
     urdf : yourdfpy.URDF = yourdfpy.URDF.load(config.urdf_path)
-    viser_robot: pk.Robot = pk.Robot.from_urdf(urdf)
+    pk_robot: pk.Robot = pk.Robot.from_urdf(urdf)
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/root")
 
     log.info("🔍 Loading pattern...")
@@ -261,8 +261,8 @@ def record_path(config: RecordPathConfig):
     ee_inkcap_wxyz = jnp.array(config.ee_inkcap_wxyz)
     dip_offset = jnp.array(config.dip_offset)
     target_link_indices = jnp.array([
-        viser_robot.links.names.index(config.target_links_name[0]),
-        viser_robot.links.names.index(config.target_links_name[1]),
+        pk_robot.links.names.index(config.target_links_name[0]),
+        pk_robot.links.names.index(config.target_links_name[1]),
     ])
 
     log.info("📐 Waiting for alignment, press right arrow key to continue...")
@@ -283,7 +283,7 @@ def record_path(config: RecordPathConfig):
             break
         log.info("📐 Aligning over design...")
         solution = ik(
-            robot=viser_robot,
+            robot=pk_robot,
             target_link_indices=target_link_indices[0],
             target_wxyz=ee_design_wxyz,
             target_position=ee_design_pos,
@@ -295,7 +295,7 @@ def record_path(config: RecordPathConfig):
         time.sleep(config.alignment_interval)
         log.info("📐 Aligning over inkcap...")
         solution = ik(
-            robot=viser_robot,
+            robot=pk_robot,
             target_link_indices=target_link_indices[0],
             target_wxyz=ee_inkcap_wxyz,
             target_position=ee_inkcap_pos,
@@ -347,7 +347,7 @@ def record_path(config: RecordPathConfig):
             ]:
                 log_say(desc, config.play_sounds)
                 solution = ik(
-                    robot=viser_robot,
+                    robot=pk_robot,
                     target_link_indices=target_link_indices,
                     target_wxyz=jnp.array([ee_design_wxyz, ee_view_wxyz]),
                     target_position=jnp.array([pose_l, pose_r]),
@@ -366,7 +366,7 @@ def record_path(config: RecordPathConfig):
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 
             solution = ik(
-                robot=viser_robot,
+                robot=pk_robot,
                 target_link_indices=target_link_indices,
                 target_wxyz=jnp.array([ee_design_wxyz, ee_view_wxyz]),
                 target_position=jnp.array([path_l.positions[pose_idx], path_r.positions[pose_idx]]),

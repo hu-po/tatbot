@@ -53,8 +53,6 @@ class RecordIKTestConfig:
     """Goal time for the robot when moving fast."""
     robot_goal_time_slow: float = 3.0
     """Goal time for the robot when moving slowly."""
-    robot_block_mode: str = "left"
-    """Block mode for the robot. One of: left, right, both."""
 
 
 @dataclass
@@ -202,7 +200,6 @@ if __name__ == "__main__":
         robot=TatbotConfig(
             goal_time_slow=args.robot_goal_time_slow,
             goal_time_fast=args.robot_goal_time_fast,
-            block_mode=args.robot_block_mode,
         ),
         dataset=DatasetRecordConfig(
             repo_id=repo_id,
