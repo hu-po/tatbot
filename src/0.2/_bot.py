@@ -122,7 +122,7 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
     print("Algorithm parameter:")
     print("  singularity threshold:", algorithm_parameter.singularity_threshold)
 
-def robot_safe_loop(loop: Callable, args: Any) -> Exception | None:
+def robot_safe_loop(loop: Callable, args: Any) -> None:
     try:
         loop(args)
     except Exception as e:
@@ -137,7 +137,6 @@ def robot_safe_loop(loop: Callable, args: Any) -> Exception | None:
         robot._connect_r(clear_error=False)
         log.error(robot._get_error_str_r())
         robot.disconnect()
-        raise e
 
 def ik_solution_to_action(solution: Float[Array, "16"]) -> dict[str, float]:
     _action = {
