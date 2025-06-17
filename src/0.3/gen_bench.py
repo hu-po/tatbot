@@ -61,10 +61,6 @@ class BenchmarkPlanConfig:
     """Width of the image in pixels."""
     image_height_px: int = 256
     """Height of the image in pixels."""
-    image_width_m: float = 0.04
-    """Width of the image in meters."""
-    image_height_m: float = 0.04
-    """Height of the image in meters."""
     background_color: str = "white"
     """Background color of the image."""
 
@@ -152,8 +148,6 @@ def plan_from_calib(config: BenchmarkPlanConfig):
         path_pad_len=config.pad_len,
         image_width_px=config.image_width_px,
         image_height_px=config.image_height_px,
-        image_width_m=config.image_width_m, 
-        image_height_m=config.image_height_m,
     )
 
     log.info(f"🖼️ Creating blank canvas of shape {config.image_width_px}x{config.image_height_px}")

@@ -31,10 +31,6 @@ class ImagePlanConfig:
     """ Width of the design image (pixels)."""
     image_height_px: int = 640
     """ Height of the design image (pixels)."""
-    image_width_m: float = 0.06
-    """ Width of the design image (meters)."""
-    image_height_m: float = 0.06
-    """ Height of the design image (meters)."""
 
     # image_path: str | None = None
     image_path: str | None = os.path.expanduser("~/tatbot/assets/designs/cat.png")
@@ -46,7 +42,7 @@ class ImagePlanConfig:
     """ Number of patches along the x-axis."""
     num_patches_height: int = 24
     """ Number of patches along the y-axis."""
-    patch_empty_threshold: float = 254.0
+    patch_empty_threshold: float = 250.0
     """(0-255) Pixel intensity mean threshold to consider a patch empty. Higher is more aggressive."""
     binary_threshold: int = 127
     """(0-255) Pixel intensity threshold for binary conversion of patch. Lower is more aggressive."""
@@ -66,8 +62,6 @@ def plan_from_image(config: ImagePlanConfig):
         path_pad_len=config.pad_len,
         image_width_px=config.image_width_px,
         image_height_px=config.image_height_px,
-        image_width_m=config.image_width_m,
-        image_height_m=config.image_height_m,
     )
     plan.save() # creates directory
 
