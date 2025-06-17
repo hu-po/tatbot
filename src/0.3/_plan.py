@@ -4,6 +4,7 @@ import os
 import numpy as np
 import yaml
 from PIL import Image
+import jax.numpy as jnp
 
 from _ik import batch_ik
 from _log import get_logger
@@ -127,44 +128,46 @@ class Plan:
                     self.ee_design_pos[1] + y_m - self.image_height_m / 2,
                     self.ee_design_pos[2] + self.needle_offset[2],
                 ]
-                path.ee_pos_l = path.ee_pos_l.at[i + 1, :].set(_pos_left)
-                path.ee_wxyz_l = path.ee_wxyz_l.at[i + 1, :].set(self.ee_design_wxyz)
+                path.ee_pos_l[i + 1, :] = _pos_left
+                path.ee_wxyz_l[i + 1, :] = self.ee_design_wxyz
                 # right hand just stares at center of design frame
                 _pos_right = [
                     self.ee_design_pos[0] + self.view_offset[0],
                     self.ee_design_pos[1] + self.view_offset[1],
                     _pos_left[2] + self.view_offset[2],
                 ]
-                path.ee_pos_r = path.ee_pos_r.at[i + 1, :].set(_pos_right)
-                path.ee_wxyz_r = path.ee_wxyz_r.at[i + 1, :].set(self.ee_view_wxyz)
+                path.ee_pos_r[i + 1, :] = _pos_right
+                path.ee_wxyz_r[i + 1, :] = self.ee_view_wxyz
             # add hover positions to the beginning and end of the path
             _hover_pos_start_left = [
                 path.ee_pos_l[0, 0] + self.hover_offset[0],
                 path.ee_pos_l[0, 1] + self.hover_offset[1],
                 path.ee_pos_l[0, 2] + self.hover_offset[2],
             ]
-            path.ee_pos_l = path.ee_pos_l.at[0, :].set(_hover_pos_start_left)
-            path.ee_wxyz_l = path.ee_wxyz_l.at[0, :].set(self.ee_design_wxyz)
-            path.ee_pos_l = path.ee_pos_l.at[-1, :].set([
+            path.ee_pos_l[0, :] = _hover_pos_start_left
+            path.ee_wxyz_l[0, :] = self.ee_design_wxyz
+            path.ee_pos_l[-1, :] = [
                 path.ee_pos_l[-1, 0] + self.hover_offset[0],
                 path.ee_pos_l[-1, 1] + self.hover_offset[1],
                 path.ee_pos_l[-1, 2] + self.hover_offset[2],
-            ])
-            path.ee_wxyz_l = path.ee_wxyz_l.at[-1, :].set(self.ee_design_wxyz)
+            ]
+            path.ee_wxyz_l[-1, :] = self.ee_design_wxyz
             # make sure right hand has same number of poses, but no hover
-            path.ee_pos_r = path.ee_pos_r.at[0, :].set(path.ee_pos_r[1, :])
-            path.ee_wxyz_r = path.ee_wxyz_r.at[0, :].set(path.ee_wxyz_r[1, :])
-            path.ee_pos_r = path.ee_pos_r.at[-1, :].set(path.ee_pos_r[-2, :])
-            path.ee_wxyz_r = path.ee_wxyz_r.at[-1, :].set(path.ee_wxyz_r[-2, :])
+            path.ee_pos_r[0, :] = path.ee_pos_r[1, :]
+            path.ee_wxyz_r[0, :] = path.ee_wxyz_r[1, :]
+            path.ee_pos_r[-1, :] = path.ee_pos_r[-2, :]
+            path.ee_wxyz_r[-1, :] = path.ee_wxyz_r[-2, :]
             # compute joint positions
-            path.joints = path.joints.at[:, :].set(batch_ik(
-                target_wxyz=jnp.array([path.ee_wxyz_l[:, :], path.ee_wxyz_r[:, :]]),
-                target_position=jnp.array([path.ee_pos_l[:, :], path.ee_pos_r[:, :]]),
-            ))
+            target_wxyz = jnp.stack([path.ee_wxyz_l, path.ee_wxyz_r], axis=1)
+            target_pos = jnp.stack([path.ee_pos_l, path.ee_pos_r], axis=1)
+            path.joints = batch_ik(
+                target_wxyz=target_wxyz,
+                target_pos=target_pos,
+            )
             # slow movement at the hover positions
-            path.dt = path.dt.at[0, 0].set(self.path_dt_slow)
-            path.dt = path.dt.at[1:-1, 0].set(self.path_dt_fast)
-            path.dt = path.dt.at[-1, 0].set(self.path_dt_slow)
+            path.dt[0, 0] = self.path_dt_slow
+            path.dt[1:-1, 0] = self.path_dt_fast
+            path.dt[-1, 0] = self.path_dt_slow
 
             all_paths.append(path)
 

@@ -72,7 +72,7 @@ def ik(
 
 def batch_ik(
     target_wxyz: Float[Array, "b n 4"],
-    target_positions: Float[Array, "b n 3"], # b is batch size
+    target_pos: Float[Array, "b n 3"], # b is batch size
     config: IKConfig = IKConfig(),
     urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf"),
     target_links_name: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link"),
@@ -84,9 +84,9 @@ def batch_ik(
         robot.links.names.index(target_links_name[0]),
         robot.links.names.index(target_links_name[1]),
     ])
-    log.info(f"🧮 performing batch ik on batch of size {target_positions.shape[0]}")
+    log.info(f"🧮 performing batch ik on batch of size {target_pos.shape[0]}")
     start_time = time.time()
     _ik_vmap = jax.vmap(lambda pos: ik(robot, target_link_indices, target_wxyz, pos, config), in_axes=0)
-    solutions = _ik_vmap(target_positions)
+    solutions = _ik_vmap(target_pos)
     log.info(f"🧮 batch ik time: {time.time() - start_time:.2f}s")
     return solutions

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import jax.numpy as jnp
 import jax_dataclasses as jdc
 from jaxtyping import Array, Float, Int
+import numpy as np
 from safetensors.flax import load_file, save_file
 
 from _log import get_logger
@@ -27,12 +28,12 @@ class Path:
     @classmethod
     def padded(cls, pad_len: int) -> "Path":
         return cls(
-            ee_pos_l=jnp.zeros((pad_len, 3), dtype=jnp.float32),
-            ee_pos_r=jnp.zeros((pad_len, 3), dtype=jnp.float32),
-            ee_wxyz_l=jnp.tile(jnp.array([1.0, 0.0, 0.0, 0.0], dtype=jnp.float32), (pad_len, 1)),
-            ee_wxyz_r=jnp.tile(jnp.array([1.0, 0.0, 0.0, 0.0], dtype=jnp.float32), (pad_len, 1)),
-            joints=jnp.zeros((pad_len, 16), dtype=jnp.float32),
-            dt=jnp.zeros((pad_len, 1), dtype=jnp.float32),
+            ee_pos_l=np.zeros((pad_len, 3), dtype=np.float32),
+            ee_pos_r=np.zeros((pad_len, 3), dtype=np.float32),
+            ee_wxyz_l=np.tile(np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32), (pad_len, 1)),
+            ee_wxyz_r=np.tile(np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32), (pad_len, 1)),
+            joints=np.zeros((pad_len, 16), dtype=np.float32),
+            dt=np.zeros((pad_len, 1), dtype=np.float32),
         )
 
 @jdc.pytree_dataclass
