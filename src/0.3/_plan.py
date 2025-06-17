@@ -1,59 +1,22 @@
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
-import cv2
-import jax.numpy as jnp
-import jax_dataclasses as jdc
-import numpy as np
-from jaxtyping import Array, Float, Int
-import json
-
-from _log import COLORS, get_logger
+from _log import get_logger
 
 log = get_logger('_plan')
 
-@jdc.pytree_dataclass
-class Pose:
-    pos: Float[Array, "3"] = field(default_factory=lambda: jnp.array([0.0, 0.0, 0.0]))
-    """Position in meters (x, y, z)."""
-    wxyz: Float[Array, "4"] = field(default_factory=lambda: jnp.array([1.0, 0.0, 0.0, 0.0]))
-    """Orientation as quaternion (w, x, y, z)."""
-    pixel_coords: Int[Array, "2"] = field(default_factory=lambda: jnp.array([0, 0]))
-    """Pixel coordinates of the pose in image space (width, height), origin is top left."""
-    metric_coords: Float[Array, "2"] = field(default_factory=lambda: jnp.array([0.0, 0.0]))
-    """Metric (meters) coordinates of the pose in foo space, origin is center of foo (x, y)."""
-
-@jdc.pytree_dataclass
-class Path:
-    positions: Float[Array, "l 3"]
-    orientations: Float[Array, "l 4"]
-    pixel_coords: Int[Array, "l 2"]
-    metric_coords: Float[Array, "l 2"]
+# plan objects stored inside folder, these are the filenames
+PLAN_METADATA_FILENAME: str = "meta.yaml"
+PLAN_IMAGE_FILENAME: str = "image.png"
+PLAN_PATHS_FILENAME: str = "paths.safetensors"
 
 @dataclass
-class PathMetadata:
-    description: str = ""
-    """Description of the path in natural language."""
-
-@jdc.pytree_dataclass
-class PathBatch:
-    positions: Float[Array, "b l 3"]
-    orientations: Float[Array, "b l 4"]
-    pixel_coords: Int[Array, "b l 2"]
-    metric_coords: Float[Array, "b l 2"]
-    mask: Int[Array, "b l"]
-    """Paths are padded to same length, mask is 1 for valid poses in path."""
-
-@jdc.pytree_dataclass
 class Plan:
-    paths: PathBatch
-
-@dataclass
-class PlanMetadata:
     name: str = "plan"
     """Name of the plan."""
 
-    image_path: str = ""
-    """Path to the image for the plan."""
+    path_descriptions: list[str] = field(default_factory=list)
+    """Descriptions for each path in the plan."""
+
     image_width_m: float = 0.04
     """Width of the image in meters."""
     image_height_m: float = 0.04
@@ -65,3 +28,28 @@ class PlanMetadata:
 
     path_pad_len: int = 128
     """Length to pad paths to."""
+
+    ee_design_pos: tuple[float, float, float] = (0.08, 0.0, 0.04)
+    """position of the design ee transform."""
+    ee_design_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
+    """orientation quaternion (wxyz) of the design ee transform."""
+
+    hover_offset: tuple[float, float, float] = (0.0, 0.0, 0.006)
+    """position offset when hovering over point, relative to current ee frame."""
+    needle_offset: tuple[float, float, float] = (0.0, 0.0, -0.0065)
+    """position offset to ensure needle touches skin, relative to current ee frame."""
+
+    view_offset: tuple[float, float, float] = (0.0, -0.16, 0.16)
+    """position offset when viewing design with right arm (relative to design ee frame)."""
+    ee_view_wxyz: tuple[float, float, float, float] = (0.67360666, -0.25201478, 0.24747439, 0.64922119)
+    """orientation quaternion (wxyz) of the view ee transform."""
+
+    ee_inkcap_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
+    """position of the inkcap ee transform."""
+    ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
+    """orientation quaternion (wxyz) of the inkcap ee transform."""
+    dip_offset: tuple[float, float, float] = (0.0, 0.0, -0.029)
+    """position offset when dipping inkcap (relative to current ee frame)."""
+
+    ink_dip_every_n_poses: int = 64
+    """Dip ink every N poses, will complete the full path before dipping again."""

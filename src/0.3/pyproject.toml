@@ -27,6 +27,7 @@ classifiers = [
 ]
 dependencies = [
     "pyyaml==6.0.2",
+    "tyro==0.9.24",
 ]
 
 [project.optional-dependencies]
@@ -36,21 +37,26 @@ bot = [
     "pyroki @ git+https://github.com/chungmin99/pyroki.git@main#egg=pyroki",
     "trossen-arm==1.8.2",
 ]
-art = [
+viz = [
+    "Pillow>=9.0.0,<11.0.0",
+    "viser==0.2.23",
+]
+path = [
+    "safetensors==0.5.3",
     "jax[cuda12]>=0.4.0,<0.5.0",
     "jaxtyping>=0.2.25,<1.0.0",
     "jaxlie>=1.3.4,<2.0.0",
+]
+art = [
     "networkx==3.5",
     "opencv-python==4.11.0.86",
-    "Pillow>=9.0.0,<11.0.0",
     "pyroki @ git+https://github.com/chungmin99/pyroki.git@main#egg=pyroki",
     "replicate==1.0.7",
     "scikit-image==0.25.2",
-    "viser==0.2.23",
 ]
 tag = [
     "pupil-apriltags==1.0.4.post11",
 ]
 
 [tool.setuptools]
-py-modules = ["_bot", "_ik", "_log",  "_plan"]
+py-modules = ["_bot", "_ik", "_log",  "_path", "_plan", "_viz"]

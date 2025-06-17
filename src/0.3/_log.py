@@ -8,7 +8,7 @@ import tyro
 
 TIME_FORMAT: str = "%Yy-%mm-%dd-%Hh-%Mm-%Ss"
 LOG_FORMAT: str = "%(asctime)s %(levelname)s: %(message)s"
-SUBMODULES: list[str] = ['_ik', '_bot', '_log', '_plan']
+SUBMODULES: list[str] = ['_ik', '_bot', '_log', '_path', '_plan', '_viz']
 
 # used for gui log text/circles/bboxes
 COLORS: dict[str, tuple[int, int, int]] = {

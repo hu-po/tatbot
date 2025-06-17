@@ -58,7 +58,7 @@ def ik(
         .analyze()
         .solve(
             verbose=False,
-            linear_solver="dense_cholesky", # TODO: is this the best?
+            linear_solver="dense_cholesky", # TODO: try other solvers
             trust_region=jaxls.TrustRegionConfig(lambda_initial=config.lambda_initial),
         )
     )
