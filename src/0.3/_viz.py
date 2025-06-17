@@ -51,10 +51,9 @@ class Viz:
         log.debug(f"🖥️🤖 Adding URDF to viser from {config.urdf_path}...")
         self.urdf = ViserUrdf(self.server, yourdfpy.URDF.load(config.urdf_path), root_node_name="/root")
 
-        image_filepath = self.plan.image_filepath(config.plan_dir)
-        log.debug(f"️🖥️🖼️ Adding image from {image_filepath}...")
-        self.image_np = np.array(PIL.Image.open(image_filepath).convert("RGB"))
-        self.image = self.server.gui.add_image(label=self.plan.name, image=img_np, format="png")
+        log.debug(f"️🖥️🖼️ Adding image from {config.plan_dir}...")
+        self.image_np = self.plan.image_np(config.plan_dir)
+        self.image = self.server.gui.add_image(label=self.plan.name, image=self.image_np, format="png")
 
     def update_robot(self, joints: np.ndarray):
         log.debug(f"🖥️🤖 Updating Viser robot...")

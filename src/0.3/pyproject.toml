@@ -29,6 +29,8 @@ dependencies = [
     "pyyaml==6.0.2",
     "tyro==0.9.24",
     "safetensors==0.5.3",
+    "opencv-python==4.11.0.86",
+    "Pillow>=9.0.0,<11.0.0",
 ]
 
 [project.optional-dependencies]
@@ -54,8 +56,6 @@ tag = [
     "pupil-apriltags==1.0.4.post11",
 ]
 viz = [
-    "opencv-python==4.11.0.86",
-    "Pillow>=9.0.0,<11.0.0",
     "viser==0.2.23",
 ]
 vla = [

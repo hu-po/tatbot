@@ -68,6 +68,7 @@ def plan_from_image(config: ImagePlanConfig):
         image_width_m=config.image_width_m,
         image_height_m=config.image_height_m,
     )
+    plan.save() # creates directory
 
     if config.image_path is None:
         log.info("🖼️ generating design using replicate...")

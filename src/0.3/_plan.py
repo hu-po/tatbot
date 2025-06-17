@@ -3,6 +3,7 @@ import os
 
 import numpy as np
 import yaml
+from PIL import Image
 
 from _log import get_logger
 from _path import Path, PathBatch
@@ -70,9 +71,9 @@ class Plan:
             return cls(**yaml.safe_load(f))
 
     @classmethod
-    def image_filepath(cls, dirpath: str) -> str:
+    def image_np(cls, dirpath: str) -> np.ndarray:
         filepath = os.path.join(dirpath, IMAGE_FILENAME)
-        return filepath
+        return np.array(Image.open(filepath).convert("RGB"))
 
     @classmethod
     def paths_np(cls, dirpath: str) -> np.ndarray:
@@ -89,6 +90,8 @@ class Plan:
             yaml.safe_dump(self.__dict__, f)
 
         if image is not None:
+            if isinstance(image, np.ndarray):
+                image = Image.fromarray(image)
             image_path = os.path.join(self.dirpath, IMAGE_FILENAME)
             log.info(f"⚙️💾 Saving image to {image_path}")
             image.save(image_path)
