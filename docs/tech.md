@@ -101,7 +101,7 @@ tatbot is designed as a multi-node system, with the following roles:
 
 ```bash
 uv pip install .[bot] && \
-uv run bot.py
+uv run run_bot.py
 ```
 
 `ook` creates plans (from generated images), batch generating paths using ik, and runs the visualization
@@ -113,7 +113,7 @@ uv run gen_bench.py # creates a benchmark plan
 uv run gen_image.py --prompt "cat" # creates a plan from a generated image using prompt "cat"
 # run visualization server
 uv pip install .[viz] && \
-uv run viz.py
+uv run run_viz.py
 ```
 
 `ojo` runs the policy server for the VLA model:
@@ -127,7 +127,7 @@ uv pip install .[vla] && \
 
 ```bash
 uv pip install .[tag] && \
-uv run tag.py
+uv run run_tag.py
 ```
 
 ## Networking

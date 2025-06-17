@@ -33,7 +33,7 @@ def ik(
     target_wxyz: Float[Array, "n 4"],
     target_position: Float[Array, "n 3"],
     config: IKConfig,
-) -> Float[Array, "n 16"]:
+) -> Float[Array, "16"]:
     log.debug(f"🧮 performing ik on batch of size {target_wxyz.shape[0]}")
     start_time = time.time()
     joint_var = robot.joint_var_cls(0)
@@ -71,15 +71,19 @@ def ik(
 
 
 def batch_ik(
-    target_link_indices: Int[Array, "n"], # n is number of targets (2 for bimanual)
-    target_wxyz: Float[Array, "n 4"],
+    target_wxyz: Float[Array, "b n 4"],
     target_positions: Float[Array, "b n 3"], # b is batch size
-    config: IKConfig,
+    config: IKConfig = IKConfig(),
     urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf"),
-) -> Float[Array, "b n 16"]:
+    target_links_name: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link"),
+) -> Float[Array, "b 16"]:
     log.info(f"🧮🤖 Making PyRoKi robot from URDF at {urdf_path}...")
     urdf: yourdfpy.URDF = yourdfpy.URDF.load(urdf_path)
     robot: pk.Robot = pk.Robot.from_urdf(urdf)
+    target_link_indices = jnp.array([
+        robot.links.names.index(target_links_name[0]),
+        robot.links.names.index(target_links_name[1]),
+    ])
     log.info(f"🧮 performing batch ik on batch of size {target_positions.shape[0]}")
     start_time = time.time()
     _ik_vmap = jax.vmap(lambda pos: ik(robot, target_link_indices, target_wxyz, pos, config), in_axes=0)
