@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import jax.numpy as jnp
 import jax_dataclasses as jdc
 from jaxtyping import Array, Float, Int
@@ -7,7 +9,7 @@ from _log import get_logger
 
 log = get_logger('_path')
 
-@jdc.pytree_dataclass
+@dataclass
 class Path:
     ee_pos_l: Float[Array, "l 3"]
     """End effector frame position in meters (x, y, z) for left arm."""
@@ -27,8 +29,8 @@ class Path:
         return cls(
             ee_pos_l=jnp.zeros((pad_len, 3), dtype=jnp.float32),
             ee_pos_r=jnp.zeros((pad_len, 3), dtype=jnp.float32),
-            ee_wxyz_l=jnp.full((pad_len, 4), [1.0, 0.0, 0.0, 0.0], dtype=jnp.float32),
-            ee_wxyz_r=jnp.full((pad_len, 4), [1.0, 0.0, 0.0, 0.0], dtype=jnp.float32),
+            ee_wxyz_l=jnp.tile(jnp.array([1.0, 0.0, 0.0, 0.0], dtype=jnp.float32), (pad_len, 1)),
+            ee_wxyz_r=jnp.tile(jnp.array([1.0, 0.0, 0.0, 0.0], dtype=jnp.float32), (pad_len, 1)),
             joints=jnp.zeros((pad_len, 16), dtype=jnp.float32),
             dt=jnp.zeros((pad_len, 1), dtype=jnp.float32),
         )
