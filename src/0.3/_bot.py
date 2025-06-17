@@ -23,7 +23,6 @@ https://docs.trossenrobotics.com/trossen_arm/main/api/structtrossen__arm_1_1EndE
 
 from dataclasses import dataclass
 import os
-from typing import Any, Callable
 
 import trossen_arm
 
@@ -134,57 +133,16 @@ def configure_arm(config: SingleArmConfig):
     assert driver is not None, f"❌🦾 failed to connect to arm {config.ip}"
     print_configurations(driver)
     driver.save_configs_to_file(config.config_filepath)
-    log.debug(f"✅📄 saved configs to {config.config_filepath}")
+    log.debug(f"✅🎛️📄 saved config to {config.config_filepath}")
     driver.load_configs_from_file(config.config_filepath)
-    log.debug(f"✅📄 loaded configs from {config.config_filepath}")
+    log.debug(f"✅🎛️📄 loaded config from {config.config_filepath}")
     print_configurations(driver)
-    log.debug(f"✅🦾 arm {config.ip} configured successfully")
-    
+    log.debug(f"✅🎛️🦾 arm {config.ip} configured successfully")
 
-def robot_safe_loop(loop: Callable, config: Any) -> None:
-    # TODO: should this be in bot.py?
-    from lerobot.common.robots import make_robot_from_config
-    from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
-
-    try:
-        loop(config)
-    except Exception as e:
-        log.error(f"Error: {e}")
-    except KeyboardInterrupt:
-        log.info("🛑⌨️ Keyboard interrupt detected. Disconnecting robot...")
-    finally:
-        log.info("🛑🤖 Disconnecting robot...")
-        robot = make_robot_from_config(TatbotConfig())
-        robot._connect_l(clear_error=False)
-        log.error(robot._get_error_str_l())
-        robot._connect_r(clear_error=False)
-        log.error(robot._get_error_str_r())
-        robot.disconnect()
-
-
-def ik_solution_to_action(solution: list[float]) -> dict[str, float]:
-    _action = {
-        "left.joint_0.pos": solution[0],
-        "left.joint_1.pos": solution[1],
-        "left.joint_2.pos": solution[2],
-        "left.joint_3.pos": solution[3],
-        "left.joint_4.pos": solution[4],
-        "left.joint_5.pos": solution[5],
-        "left.gripper.pos": solution[6],
-        "right.joint_0.pos": solution[8],
-        "right.joint_1.pos": solution[9],
-        "right.joint_2.pos": solution[10],
-        "right.joint_3.pos": solution[11],
-        "right.joint_4.pos": solution[12],
-        "right.joint_5.pos": solution[13],
-        "right.gripper.pos": solution[14],
-    }
-    log.debug(f"🦾 Action: {_action}")
-    return _action
 
 if __name__=='__main__':
     args = setup_log_with_config(BotConfig)
-    log.debug("⚙️🦾 Configuring left arm")
+    log.debug("🎛️🦾 Configuring left arm")
     configure_arm(args.arm_l)
-    log.debug("⚙️🦾 Configuring right arm")
+    log.debug("🎛️🦾 Configuring right arm")
     configure_arm(args.arm_r)

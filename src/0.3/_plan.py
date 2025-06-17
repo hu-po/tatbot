@@ -1,13 +1,18 @@
 from dataclasses import dataclass, field
+import os
+
+import numpy as np
+import yaml
 
 from _log import get_logger
+from _path import PathBatch
 
 log = get_logger('_plan')
 
 # plan objects stored inside folder, these are the filenames
-PLAN_METADATA_FILENAME: str = "meta.yaml"
-PLAN_IMAGE_FILENAME: str = "image.png"
-PLAN_PATHS_FILENAME: str = "paths.safetensors"
+METADATA_FILENAME: str = "meta.yaml"
+IMAGE_FILENAME: str = "image.png"
+PATHS_FILENAME: str = "paths.safetensors"
 
 @dataclass
 class Plan:
@@ -53,3 +58,21 @@ class Plan:
 
     ink_dip_every_n_poses: int = 64
     """Dip ink every N poses, will complete the full path before dipping again."""
+
+    @classmethod
+    def from_yaml(cls, dirpath: str) -> "Plan":
+        log.info(f"⚙️ Loading plan from {dirpath}...")
+        filepath = os.path.join(dirpath, METADATA_FILENAME)
+        with open(filepath, "r") as f:
+            return cls(**yaml.safe_load(f))
+
+    @classmethod
+    def image_filepath(cls, dirpath: str) -> str:
+        filepath = os.path.join(dirpath, IMAGE_FILENAME)
+        return filepath
+
+    @classmethod
+    def paths_np(cls, dirpath: str) -> np.ndarray:
+        filepath = os.path.join(dirpath, PATHS_FILENAME)
+        return np.array(PathBatch.load(filepath))
+    

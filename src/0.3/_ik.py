@@ -32,7 +32,7 @@ def ik(
     target_position: Float[Array, "n 3"],
     config: IKConfig,
 ) -> Float[Array, "n 16"]:
-    log.debug(f"🎛️ performing ik on batch of size {target_wxyz.shape[0]}")
+    log.debug(f"🧮 performing ik on batch of size {target_wxyz.shape[0]}")
     start_time = time.time()
     joint_var = robot.joint_var_cls(0)
     factors = [
@@ -63,8 +63,8 @@ def ik(
         )
     )
     _solution = sol[joint_var]
-    log.debug(f"🎛️ ik solution: {_solution}")
-    log.debug(f"🎛️ ik time: {time.time() - start_time:.2f}s")
+    log.debug(f"🧮 ik solution: {_solution}")
+    log.debug(f"🧮 ik time: {time.time() - start_time:.2f}s")
     return _solution
 
 
@@ -75,9 +75,9 @@ def batch_ik(
     target_positions: Float[Array, "b n 3"], # b is batch size
     config: IKConfig,
 ) -> Float[Array, "b n 16"]:
-    log.info(f"🎛️ performing batch ik on batch of size {target_positions.shape[0]}")
+    log.info(f"🧮 performing batch ik on batch of size {target_positions.shape[0]}")
     start_time = time.time()
     _ik_vmap = jax.vmap(lambda pos: ik(robot, target_link_indices, target_wxyz, pos, config), in_axes=0)
     solutions = _ik_vmap(target_positions)
-    log.info(f"🎛️ batch ik time: {time.time() - start_time:.2f}s")
+    log.info(f"🧮 batch ik time: {time.time() - start_time:.2f}s")
     return solutions
