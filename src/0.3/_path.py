@@ -19,6 +19,9 @@ class PixelPath:
     description: str = ""
     """Description of the path."""
 
+    def __len__(self) -> int:
+        return len(self.pixels)
+
 @dataclass
 class Path:
     ee_pos_l: Float[Array, "l 3"]

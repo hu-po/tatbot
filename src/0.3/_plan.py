@@ -113,13 +113,13 @@ class Plan:
         for path_idx, pixel_path in enumerate(pixel_paths):
             log.debug(f"🧮 Adding path {path_idx} of {num_paths}...")
             path = Path.padded(self.path_pad_len)
-            self.path_descriptions[f'path_{path_idx}'] = pixel_path.description
+            self.path_descriptions[f'path_{path_idx:03d}'] = pixel_path.description
 
             if len(pixel_path) + 2 > self.path_pad_len:
                 log.warning(f"path {path_idx} has more than {self.path_pad_len} poses, truncating...")
                 pixel_path = pixel_path[:self.path_pad_len - 2] # -2 for hover positions
 
-            for i, (pw, ph) in enumerate(pixel_path):
+            for i, (pw, ph) in enumerate(pixel_path.pixels):
                 # pixel coordinates first need to be converted to meters
                 x_m, y_m = pw * scale_x, ph * scale_y
                 # center in design frame, add needle offset
