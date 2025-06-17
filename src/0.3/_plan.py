@@ -8,7 +8,7 @@ import jax.numpy as jnp
 
 from _ik import batch_ik
 from _log import get_logger
-from _path import Path, PathBatch
+from _path import Path, PathBatch, PixelPath
 
 log = get_logger('_plan')
 
@@ -25,7 +25,7 @@ class Plan:
     dirpath: str = ""
     """Path to the directory containing the plan files."""
 
-    path_descriptions: list[str] = field(default_factory=list)
+    path_descriptions: dict[str, str] = field(default_factory=dict)
     """Descriptions for each path in the plan."""
 
     image_width_m: float = 0.04
@@ -102,24 +102,24 @@ class Plan:
             log.info(f"⚙️💾 Saving image to {image_path}")
             image.save(image_path)
 
-    def add_pixel_paths(self, pixel_paths: list[list[tuple[int, int]]]):
+    def add_pixel_paths(self, pixel_paths: list[PixelPath]):
         num_paths = len(pixel_paths)
         log.info(f"⚙️ Adding {num_paths} pixel paths...")
 
         scale_x = self.image_width_m / self.image_width_px
         scale_y = self.image_height_m / self.image_height_px
 
-        all_paths = []
-        for path_idx, path_px in enumerate(pixel_paths):
+        paths = []
+        for path_idx, pixel_path in enumerate(pixel_paths):
+            log.debug(f"🧮 Adding path {path_idx} of {num_paths}...")
             path = Path.padded(self.path_pad_len)
+            self.path_descriptions[f'path_{path_idx}'] = pixel_path.description
 
-            self.path_descriptions.append(f"black line path {path_idx} of {num_paths}")
-
-            if len(path_px) + 2 > self.path_pad_len:
+            if len(pixel_path) + 2 > self.path_pad_len:
                 log.warning(f"path {path_idx} has more than {self.path_pad_len} poses, truncating...")
-                path_px = path_px[:self.path_pad_len - 2] # -2 for hover positions
+                pixel_path = pixel_path[:self.path_pad_len - 2] # -2 for hover positions
 
-            for i, (pw, ph) in enumerate(path_px):
+            for i, (pw, ph) in enumerate(pixel_path):
                 # pixel coordinates first need to be converted to meters
                 x_m, y_m = pw * scale_x, ph * scale_y
                 # center in design frame, add needle offset
@@ -169,9 +169,9 @@ class Plan:
             path.dt[1:-1, 0] = self.path_dt_fast
             path.dt[-1, 0] = self.path_dt_slow
 
-            all_paths.append(path)
+            paths.append(path)
 
-        path_batch = PathBatch.from_paths(all_paths)
+        path_batch = PathBatch.from_paths(paths)
         path_batch.save(os.path.join(self.dirpath, PATHS_FILENAME))
 
 

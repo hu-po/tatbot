@@ -11,6 +11,15 @@ from _log import get_logger
 log = get_logger('_path')
 
 @dataclass
+class PixelPath:
+    pixels: list[tuple[int, int]]
+    """List of pixel coordinates in the image."""
+    color: str = "black"
+    """Natural language description of the color of the path."""
+    description: str = ""
+    """Description of the path."""
+
+@dataclass
 class Path:
     ee_pos_l: Float[Array, "l 3"]
     """End effector frame position in meters (x, y, z) for left arm."""

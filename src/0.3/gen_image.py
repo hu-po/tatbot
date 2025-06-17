@@ -11,6 +11,7 @@ from skimage.morphology import skeletonize
 
 from _log import get_logger, setup_log_with_config, COLORS
 from _plan import Plan
+from _path import PixelPath
 
 log = get_logger('gen_image')
 
@@ -238,7 +239,12 @@ def plan_from_image(config: ImagePlanConfig):
                     if not global_path:
                         continue
 
-                    all_paths.append(global_path)
+                    # Build description string
+                    area = areas[k] if k < len(areas) else 'NA'
+                    desc = (
+                        f"patch=({i},{j}) component={k} area={area} num_points={len(global_path)} color=black"
+                    )
+                    all_paths.append(PixelPath(pixels=global_path, description=desc, color='black'))
 
                 color_vis = list(COLORS.values())[k % len(COLORS)]
                 patch_h, patch_w = labels.shape

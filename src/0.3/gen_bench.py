@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw
 
 from _log import get_logger, setup_log_with_config
 from _plan import Plan
+from _path import PixelPath
 
 log = get_logger('gen_bench')
 
@@ -180,10 +181,27 @@ def plan_from_calib(config: BenchmarkPlanConfig):
         if not paths:
             continue
 
-        for path in paths:
+        for j, path in enumerate(paths):
             if not path:
                 continue
-            all_paths.append(path)
+            # Build description string
+            if isinstance(stroke_config, VerticalLineGroupConfig):
+                length = stroke_config.length[j] if j < len(stroke_config.length) else stroke_config.length[-1]
+                desc = f"vertical_line length={length} thickness={config.thickness} index={j}"
+            elif isinstance(stroke_config, HorizontalLineGroupConfig):
+                length = stroke_config.length[j] if j < len(stroke_config.length) else stroke_config.length[-1]
+                desc = f"horizontal_line length={length} thickness={config.thickness} index={j}"
+            elif isinstance(stroke_config, CircleGroupConfig):
+                radius = stroke_config.radii[j] if j < len(stroke_config.radii) else stroke_config.radii[-1]
+                desc = f"circle radius={radius} thickness={config.thickness} index={j}"
+            elif isinstance(stroke_config, WaveGroupConfig):
+                length = stroke_config.length[j] if j < len(stroke_config.length) else stroke_config.length[-1]
+                amplitude = stroke_config.amplitude
+                frequency = stroke_config.frequency
+                desc = f"wave length={length} amplitude={amplitude} frequency={frequency} thickness={config.thickness} index={j}"
+            else:
+                desc = f"unknown type thickness={config.thickness} index={j}"
+            all_paths.append(PixelPath(pixels=path, description=desc, color="black"))
 
             if len(path) > 1:
                 is_curve = isinstance(stroke_config, (WaveGroupConfig, CircleGroupConfig))
