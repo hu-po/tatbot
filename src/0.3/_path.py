@@ -44,10 +44,12 @@ class PathBatch:
     """Paths are padded to same length, mask is 1 for valid poses in path."""
 
     def save(self, filepath: str) -> None:
+        log.debug(f"💾 Saving PathBatch to {filepath}")
         save_file(self, filepath)
 
     @classmethod
     def load(cls, filepath: str) -> "PathBatch":
+        log.debug(f"💾 Loading PathBatch from {filepath}")
         return load_file(filepath)
 
 @jax.jit

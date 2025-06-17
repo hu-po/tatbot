@@ -24,7 +24,6 @@ from lerobot.common.utils.control_utils import (
 from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.common.utils.utils import log_say
 from lerobot.record import _init_rerun
-import pyroki as pk
 
 from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT, LOG_FORMAT
 from _plan import Plan

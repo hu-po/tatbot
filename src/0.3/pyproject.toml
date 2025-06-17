@@ -31,15 +31,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-art = [
-    "networkx==3.5",
-    "replicate==1.0.7",
-    "scikit-image==0.25.2",
-]
 bot = [
     "lerobot[tatbot,intelrealsense,smolvla] @ git+https://github.com/hu-po/lerobot.git@main",
     "pyrealsense2==2.55.1.6486",
     "trossen-arm==1.8.2",
+]
+gen = [
+    "networkx==3.5",
+    "replicate==1.0.7",
+    "scikit-image==0.25.2",
 ]
 ik = [
     "pyroki @ git+https://github.com/chungmin99/pyroki.git@main#egg=pyroki",
@@ -58,6 +58,9 @@ viz = [
     "Pillow>=9.0.0,<11.0.0",
     "viser==0.2.23",
 ]
+vla = [
+    "lerobot[tatbot,smolvla] @ git+https://github.com/hu-po/lerobot.git@main",
+]
 
 [tool.setuptools]
-py-modules = ["_bot", "_ik", "_log",  "_path", "_plan", "_viz"]
+py-modules = ["_bot", "_ik", "_log", "_path", "_plan", "_viz"]

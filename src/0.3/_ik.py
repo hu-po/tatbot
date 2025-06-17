@@ -1,4 +1,5 @@
 import time
+import os
 
 import jax
 import jax.numpy as jnp
@@ -7,6 +8,7 @@ import jaxlie
 import jaxls
 from jaxtyping import Array, Float, Int
 import pyroki as pk
+import yourdfpy
 
 from _log import get_logger
 
@@ -69,12 +71,15 @@ def ik(
 
 
 def batch_ik(
-    robot: pk.Robot,
     target_link_indices: Int[Array, "n"], # n is number of targets (2 for bimanual)
     target_wxyz: Float[Array, "n 4"],
     target_positions: Float[Array, "b n 3"], # b is batch size
     config: IKConfig,
+    urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf"),
 ) -> Float[Array, "b n 16"]:
+    log.info(f"🧮🤖 Making PyRoKi robot from URDF at {urdf_path}...")
+    urdf: yourdfpy.URDF = yourdfpy.URDF.load(urdf_path)
+    robot: pk.Robot = pk.Robot.from_urdf(urdf)
     log.info(f"🧮 performing batch ik on batch of size {target_positions.shape[0]}")
     start_time = time.time()
     _ik_vmap = jax.vmap(lambda pos: ik(robot, target_link_indices, target_wxyz, pos, config), in_axes=0)

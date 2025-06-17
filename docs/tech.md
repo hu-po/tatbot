@@ -7,6 +7,7 @@ description of tatbot (tattoo robot) technical stack
 - [Dependencies](#dependencies)
 - [Setup](#setup)
 - [Devices](#devices)
+- [Run](#run)
 - [Networking](#networking)
 - [Trossen Robot Arms](#trossen-robot-arms)
 - [Realsense Cameras](#realsense-cameras)
@@ -106,7 +107,12 @@ uv run bot.py
 `ook` creates plans (from generated images), batch generating paths using ik, and runs the visualization
 
 ```bash
-uv pip install .[art,ik,viz] && \
+# to generate art
+uv pip install .[gen,ik] && \
+uv run gen_bench.py # creates a benchmark plan
+uv run gen_image.py --prompt "cat" # creates a plan from a generated image using prompt "cat"
+# run visualization server
+uv pip install .[viz] && \
 uv run viz.py
 ```
 
