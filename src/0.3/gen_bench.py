@@ -17,8 +17,8 @@ class VerticalLineGroupConfig:
     num_lines: int = 3
     spacing: int = 20
     """pixels between adjacent line center-lines"""
-    length: tuple[int] = (32, 48, 64)
-    num_points: tuple[int] = (32, 32, 64)
+    length: tuple[int, ...] = (32, 48, 64)
+    num_points: tuple[int, ...] = (32, 32, 64)
     """Number of individual points per line"""
 
 @dataclass
@@ -26,14 +26,14 @@ class HorizontalLineGroupConfig:
     """Parameters for a group of parallel horizontal lines."""
     num_lines: int = 3
     spacing: int = 20
-    length: tuple[int] = (32, 48, 64)
-    num_points: tuple[int] = (32, 32, 64)
+    length: tuple[int, ...] = (32, 48, 64)
+    num_points: tuple[int, ...] = (32, 32, 64)
 
 @dataclass
 class CircleGroupConfig:
     """Parameters for a group of concentric circles."""
-    radii: tuple[int] = (16, 32, 48)
-    num_points: tuple[int] = (32, 64, 96)
+    radii: tuple[int, ...] = (16, 32, 48)
+    num_points: tuple[int, ...] = (32, 64, 96)
 
 @dataclass
 class WaveGroupConfig:
@@ -42,8 +42,8 @@ class WaveGroupConfig:
     spacing: int = 24
     amplitude: int = 16
     frequency: float = 0.08
-    length: tuple[int] = (108, 108, 108)
-    num_points: tuple[int] = (48, 64, 96)
+    length: tuple[int, ...] = (108, 108, 108)
+    num_points: tuple[int, ...] = (48, 64, 96)
 
 @dataclass
 class BenchmarkPlanConfig:
@@ -69,14 +69,6 @@ class BenchmarkPlanConfig:
 
     thickness: int = 4
     """Thickness of the lines."""
-
-    shapes: tuple[Any] = (
-        VerticalLineGroupConfig(),
-        HorizontalLineGroupConfig(),
-        CircleGroupConfig(),
-        WaveGroupConfig(),
-    )
-    """List of shape configurations to generate."""
     
 
 def linspace_points(p1: tuple[int, int], p2: tuple[int, int], n: int) -> list[tuple[int, int]]:
@@ -175,15 +167,12 @@ def plan_from_calib(config: BenchmarkPlanConfig):
     ]
 
     all_paths = []
-    cell_width = config.image_width_px // config.grid_cols
-    cell_height = config.image_height_px // config.grid_rows
+    cell_width = config.image_width_px // 2
+    cell_height = config.image_height_px // 2
 
     for i, (generate_func, stroke_config) in enumerate(strokes_to_generate):
-        if i >= config.grid_cols * config.grid_rows:
-            break
-
-        col = i % config.grid_cols
-        row = i // config.grid_cols
+        col = i % 2
+        row = i // 2
         cell_center_x = col * cell_width + cell_width // 2
         cell_center_y = row * cell_height + cell_height // 2
         

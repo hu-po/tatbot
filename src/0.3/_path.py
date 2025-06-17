@@ -45,7 +45,7 @@ class PathBatch:
 
     def save(self, filepath: str) -> None:
         log.debug(f"💾 Saving PathBatch to {filepath}")
-        save_file(self, filepath)
+        save_file({k: getattr(self, k) for k in self.__dataclass_fields__}, filepath)
 
     @classmethod
     def load(cls, filepath: str) -> "PathBatch":
