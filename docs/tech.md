@@ -4,17 +4,37 @@ description of tatbot (tattoo robot) technical stack
 
 ## Index
 
+- [Dependencies](#dependencies)
 - [Setup](#setup)
-- [Run](#run)
 - [Devices](#devices)
-- [Train](#train)
-  - [SmolVLA](#smolvla)
-  - [Gr00t](#gr00t)
-- [Eval](#eval)
-  - [SmolVLA](#smolvla-1)
-  - [Gr00t](#gr00t-1)
+- [Networking](#networking)
+- [Trossen Robot Arms](#trossen-robot-arms)
+- [Realsense Cameras](#realsense-cameras)
+- [VLAs](#vlas)
+  - [Train](#train)
+    - [SmolVLA](#smolvla)
+    - [Gr00t](#gr00t)
+  - [Eval](#eval)
+    - [SmolVLA](#smolvla-1)
+    - [Gr00t](#gr00t-1)
 - [URDF](#urdf)
 - [AprilTags](#apriltags)
+
+## Dependencies
+
+tatbot makes use of the following dependencies:
+
+- [`jax`](https://github.com/jax-ml/jax) - gpu acceleration
+- [`pyroki`](https://github.com/chungmin99/pyroki) - inverse kinematics
+- [`viser`](https://github.com/nerfstudio-project/viser) - GUI
+- [`librealsense`](https://github.com/IntelRealSense/librealsense) - depth cameras
+- [`trossen_arm`](https://github.com/TrossenRobotics/trossen_arm) - robot arms
+- [`pupil-apriltags`](https://github.com/pupil-labs/apriltags) - object tracking
+
+these dependencies use custom forks:
+
+- [`lerobot`](https://github.com/hu-po/lerobot) - dataset, finetuning
+- [`gr00t`](https://github.com/hu-po/Isaac-GR00T) - VLA foundation model
 
 ## Setup
 
@@ -31,7 +51,7 @@ cd src/0.3
 # Optional: Clean old uv environment
 deactivate && \
 rm -rf .venv && \
-rm uv.lock
+rm uv.lock && \
 # Setup new uv environment
 uv venv && \
 source .venv/bin/activate && \
@@ -47,20 +67,13 @@ Turn on the robot
 3. flip rocker switches to "on" on `arm-r` and `arm-l` control boxes underneath workspace.
 4. flip rocker switch on the back of the light to turn it on.
 
-Generate a tattoo pattern from a prompt and execute it on the robot:
-
-```bash
-uv run pattern_image.py --prompt="cat"
-DISPLAY=:0 uv run record_pattern.py --pattern_dir ~/tatbot/output/patterns/cat
-```
-
 ## Devices
 
 tatbot consists of several computers, cameras, and robotos connected via ethernet:
 
 - `ojo`: NVIDIA Jetson AGX Orin (ARM Cortex-A78AE, 12-core @ 2.2 GHz) (32GB Unified RAM) (200 TOPS)
 - `trossen-ai`: System76 Meerkat PC (Intel i5-1340P, 16-core @ 4.6 GHz) (15GB RAM)
-- `ook`: Acer Nitro V 15 w/ NVIDIA RTX 4050 (Intel i7-13620H, 10-core @ 3.6 GHz) (16GB RAM) (6GB VRAM) (194 TOPS)
+- `ook`: Acer Nitro V 15 w/ NVIDIA RTX 4050 (Intel i7-13620H, 16-core @ 3.6 GHz) (16GB RAM) (6GB VRAM) (194 TOPS)
 - `rpi1`: Raspberry Pi 5 (ARM Cortex-A76, 4-core @ 2.4 GHz) (8GB RAM)
 - `rpi2`: Raspberry Pi 5 (ARM Cortex-A76, 4-core @ 2.4 GHz) (8GB RAM)
 - `camera1`: Amcrest PoE cameras (5MP)
@@ -79,21 +92,37 @@ during development, the following pc is also available:
 
 - `oop`: Ubuntu PC w/ NVIDIA RTX 3090 (AMD Ryzen 9 5900X, 24-core @ 4.95 GHz) (66GB RAM) (24GB VRAM) (TOPS)
 
-## Dependencies
+## Run
 
-tatbot makes use of the following dependencies:
+tatbot is designed as a multi-node system, with the following roles:
 
-- [`jax`](https://github.com/jax-ml/jax) - gpu acceleration
-- [`pyroki`](https://github.com/chungmin99/pyroki) - inverse kinematics
-- [`viser`](https://github.com/nerfstudio-project/viser) - GUI
-- [`librealsense`](https://github.com/IntelRealSense/librealsense) - depth cameras
-- [`trossen_arm`](https://github.com/TrossenRobotics/trossen_arm) - robot arms
-- [`pupil-apriltags`](https://github.com/pupil-labs/apriltags) - object tracking
+`trossen-ai` sends commands to robot arms and records datasets:
 
-these dependencies use custom forks:
+```bash
+uv pip install .[bot] && \
+uv run bot.py
+```
 
-- [`lerobot`](https://github.com/hu-po/lerobot) - dataset, finetuning
-- [`gr00t`](https://github.com/hu-po/Isaac-GR00T) - VLA foundation model
+`ook` creates plans (from generated images), batch generating paths using ik, and runs the visualization
+
+```bash
+uv pip install .[art,ik,viz] && \
+uv run viz.py
+```
+
+`ojo` runs the policy server for the VLA model:
+
+```bash
+uv pip install .[vla] && \
+# TODO
+```
+
+`rpi1` runs apriltag tracking:
+
+```bash
+uv pip install .[tag] && \
+uv run tag.py
+```
 
 ## Networking
 
@@ -132,15 +161,10 @@ hardcoded ip addresses:
 
 tatbot uses two [Trossen WidowXAI arms](https://docs.trossenrobotics.com/trossen_arm/main/specifications.html).
 
-- [trossen_arm](ttps://github.com/TrossenRobotics/trossen_arm)
 - [Driver API Documentation](https://docs.trossenrobotics.com/trossen_arm/main/api/library_root.html#)
 - [official URDF](https://github.com/TrossenRobotics/trossen_arm_description)
 
-each arm has a config file in `config/trossen_arm_{l|r}.yaml`, push/pull config with:
-
-```bash
-uv run ~/tatbot/config/trossen.py --arm r
-```
+each arm has a config file in `config/trossen_arm_{l|r}.yaml`, update configs using `_bot.py`
 
 ## Realsense Cameras
 
@@ -194,9 +218,8 @@ uv run python ~/lerobot/lerobot/scripts/train.py \
 
 instructions for `trossen-ai` performing model inference and running robot
 
-```
-
-
+```bash
+# TODO
 ```
 
 ### Gr00t
