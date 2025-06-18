@@ -12,6 +12,8 @@ SUBMODULES: list[str] = ['_ik', '_bot', '_log', '_path', '_plan']
 
 # used for gui log text/circles/bboxes
 COLORS: dict[str, tuple[int, int, int]] = {
+    "black":      (  0,   0,   0),
+    "white":      (255, 255, 255),
     "blue":       ( 82, 153, 224),
     "green":      ( 82, 224, 105),
     "red":        (224,  86,  82),

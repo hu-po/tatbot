@@ -32,6 +32,10 @@ class VizConfig:
     """Initial camera position in the Viser scene."""
     view_camera_look_at: tuple[float, float, float] = (0.0, 0.0, 0.0)
     """Initial camera look_at in the Viser scene."""
+    point_size: float = 0.001
+    """Size of points in the point cloud visualization (meters)."""
+    point_shape: str = "rounded"
+    """Shape of points in the point cloud visualization."""
 
     path_highlight_radius: int = 3
     """Radius of the path highlight in pixels."""
@@ -101,21 +105,36 @@ class Viz:
         log.debug(f"️🖥️🖼️ Adding images from {config.plan_dir}...")
         self.image_np = self.plan.image_np(config.plan_dir)
         self.image = self.server.gui.add_image(label=self.plan.name, image=self.image_np, format="png")
-        self.pathlen_np = make_pathlen_image(self.plan)
+        self.pathlen_np = make_pathlen_image(self.plan, self.pathbatch)
         self.pathlen = self.server.gui.add_image(image=self.pathlen_np, format="png")
-        self.pathviz_np = make_pathviz_image(self.plan)
+        self.pathviz_np = make_pathviz_image(self.plan, self.pathbatch)
         self.pathviz = self.server.gui.add_image(image=self.pathviz_np, format="png")
 
+        log.debug(f"🖥️🖼️ Adding design pointcloud...")
+        design_points = []
+        for i in range(self.pathbatch.ee_pos_l.shape[0]):
+            for j in range(self.pathbatch.ee_pos_l.shape[1]):
+                if self.pathbatch.mask[i, j]:
+                    design_points.append(self.pathbatch.ee_pos_l[i, j])
+        design_points = np.stack(design_points, axis=0)
+        design_colors = np.tile(np.array(COLORS["black"], dtype=np.uint8), (design_points.shape[0], 1))
+        self.design_pointcloud = self.server.scene.add_point_cloud(
+            name="/design/targets",
+            points=design_points,
+            colors=design_colors,
+            point_size=self.config.point_size,
+            point_shape=self.config.point_shape,
+        )
 
     def run(self):
         while True:
-            if self.path_idx >= self.num_paths:
-                log.debug(f"🖥️ Looping back to path 0")
-                self.path_idx = 0
             if self.pose_idx >= self.path_lengths[self.path_idx]:
                 self.path_idx += 1
                 log.debug(f"🖥️ Moving to next path {self.path_idx}")
                 self.pose_idx = 0
+            if self.path_idx >= self.num_paths:
+                log.debug(f"🖥️ Looping back to path 0")
+                self.path_idx = 0
             self.path_idx_slider.value = self.path_idx
             self.pose_idx_slider.value = self.pose_idx
             log.debug(f"🖥️🤖 Visualizing path {self.path_idx} pose {self.pose_idx}")
@@ -151,8 +170,6 @@ class Viz:
 
 def get_path_pixel_coords(plan: Plan, pathbatch: PathBatch) -> list[PixelPath]:
     """Reconstruct pixel coordinates for each path in the plan from ee_pos_l using plan's image and metadata, as PixelPath objects."""
-    px_per_m_x = plan.image_width_px / plan.image_width_m
-    px_per_m_y = plan.image_height_px / plan.image_height_m
     pixel_paths = []
     for path_idx in range(pathbatch.ee_pos_l.shape[0]):
         coords = []
@@ -160,18 +177,22 @@ def get_path_pixel_coords(plan: Plan, pathbatch: PathBatch) -> list[PixelPath]:
             if pathbatch.mask[path_idx, pose_idx] == 0:
                 continue
             x_m, y_m, _ = pathbatch.ee_pos_l[path_idx, pose_idx]
-            x_m_img = x_m - plan.ee_design_pos[0] + plan.image_width_m / 2
-            y_m_img = y_m - plan.ee_design_pos[1] + plan.image_height_m / 2
-            px = int(round(x_m_img * px_per_m_x))
-            py = int(round(y_m_img * px_per_m_y))
+            px = int(round(((x_m - plan.ee_design_pos[0] + plan.image_width_m / 2) * plan.image_width_px) / plan.image_width_m))
+            py = int(round(((y_m - plan.ee_design_pos[1] + plan.image_height_m / 2) * plan.image_height_px) / plan.image_height_m))
+            in_bounds = 0 <= px < plan.image_width_px and 0 <= py < plan.image_height_px
+            if not in_bounds:
+                log.warning(f"🖥️⚠️ Path {path_idx} Pose {pose_idx} has pixel out of bounds! (px, py)=({px}, {py})")
             coords.append((px, py))
+        if len(coords) < 2:
+            log.warning(f"🖥️⚠️ Path {path_idx} has <2 valid points, skipping")
         pixel_paths.append(PixelPath(pixels=coords))
     return pixel_paths
 
-def make_pathviz_image(plan: Plan) -> np.ndarray:
+def make_pathviz_image(plan: Plan, pathbatch: PathBatch = None) -> np.ndarray:
     """Creates an image with overlayed paths from a plan, saves to plan.dirpath/pathviz.png, and returns the image."""
     image_np = plan.image_np(plan.dirpath)
-    pathbatch = plan.pathbatch(plan.dirpath)
+    if pathbatch is None:
+        pathbatch = plan.pathbatch(plan.dirpath)
     pixel_paths = get_path_pixel_coords(plan, pathbatch)
     if image_np is None:
         path_viz_np = np.full((plan.image_height_px, plan.image_width_px, 3), 255, dtype=np.uint8)
@@ -191,9 +212,10 @@ def make_pathviz_image(plan: Plan) -> np.ndarray:
     cv2.imwrite(out_path, path_viz_np)
     return path_viz_np
 
-def get_path_length_stats(plan: Plan) -> dict:
+def get_path_length_stats(plan: Plan, pathbatch: PathBatch = None) -> dict:
     """Compute path length statistics for a plan in both pixels and meters."""
-    pathbatch = plan.pathbatch(plan.dirpath)
+    if pathbatch is None:
+        pathbatch = plan.pathbatch(plan.dirpath)
     pixel_paths = get_path_pixel_coords(plan, pathbatch)
     # Pixel lengths
     path_lengths_px = [
@@ -220,10 +242,10 @@ def get_path_length_stats(plan: Plan) -> dict:
     }
     return stats
 
-def make_pathlen_image(plan: Plan, n_bins: int = 24) -> np.ndarray:
+def make_pathlen_image(plan: Plan, pathbatch: PathBatch = None, n_bins: int = 24) -> np.ndarray:
     """Creates a three-part image: plan name, stats, histogram, and pathviz colored by path length, saves to plan.dirpath/pathlen.png, and returns the image."""
     border_px = 16
-    stats = get_path_length_stats(plan)
+    stats = get_path_length_stats(plan, pathbatch)
     stats_lines = [
         f"Total paths in plan: {stats['count']}",
         f"Min path length: {stats['min_px']:.2f} px ({stats['min_m']:.4f} m)",

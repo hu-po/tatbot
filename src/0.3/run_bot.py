@@ -1,9 +1,3 @@
-"""
-runs on trossen-ai
-executes plans
-records to lerobot dataset format
-should be lightweight and fast, robot can fail if too many things are happening at once
-"""
 from dataclasses import dataclass
 import logging
 import os
@@ -269,5 +263,6 @@ if __name__ == "__main__":
     # TODO: waiting on https://github.com/TrossenRobotics/trossen_arm/issues/86#issue-3144375498
     logging.getLogger('trossen_arm').setLevel(logging.ERROR)
     if args.debug:
+        log.setLevel(logging.DEBUG)
         logging.getLogger('lerobot').setLevel(logging.DEBUG)
     safe_loop(perform, args)
