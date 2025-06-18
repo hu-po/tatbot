@@ -111,18 +111,31 @@ class Viz:
         self.pathviz_np = make_pathviz_image(self.plan)
         self.pathviz = self.server.gui.add_image(image=self.pathviz_np, format="png")
 
-        log.debug(f"🖥️🖼️ Adding pointcloud...")
-        points = []
+        log.debug(f"🖥️🖼️ Adding pointclouds...")
+        points_hover = []
+        points_path = []
         for i in range(self.pathbatch.ee_pos_l.shape[0]):
             for j in range(self.pathbatch.ee_pos_l.shape[1]):
                 if self.pathbatch.mask[i, j]:
-                    points.append(self.pathbatch.ee_pos_l[i, j])
-        points = np.stack(points, axis=0)
-        point_colors = np.tile(np.array(COLORS["black"], dtype=np.uint8), (points.shape[0], 1))
-        self.pointcloud = self.server.scene.add_point_cloud(
-            name="/points",
-            points=points,
-            colors=point_colors,
+                    if j == 0 or j == self.path_lengths[i] - 1:
+                        points_hover.append(self.pathbatch.ee_pos_l[i, j])
+                    else:
+                        points_path.append(self.pathbatch.ee_pos_l[i, j])
+        points_hover = np.stack(points_hover, axis=0)
+        points_path = np.stack(points_path, axis=0)
+        point_colors_hover = np.tile(np.array(COLORS["orange"], dtype=np.uint8), (points_hover.shape[0], 1))
+        point_colors_path = np.tile(np.array(COLORS["black"], dtype=np.uint8), (points_path.shape[0], 1))
+        self.pointcloud_hover = self.server.scene.add_point_cloud(
+            name="/points_hover",
+            points=points_hover,
+            colors=point_colors_hover,
+            point_size=self.config.point_size,
+            point_shape=self.config.point_shape,
+        )
+        self.pointcloud_path = self.server.scene.add_point_cloud(
+            name="/points_path",
+            points=points_path,
+            colors=point_colors_path,
             point_size=self.config.point_size,
             point_shape=self.config.point_shape,
         )
