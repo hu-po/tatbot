@@ -82,9 +82,9 @@ class Plan:
         return np.array(Image.open(filepath).convert("RGB"))
 
     @classmethod
-    def paths_np(cls, dirpath: str) -> np.ndarray:
+    def pathbatch(cls, dirpath: str) -> 'PathBatch':
         filepath = os.path.join(dirpath, PATHS_FILENAME)
-        return np.array(PathBatch.load(filepath))
+        return PathBatch.load(filepath)
     
     def save(self, image: np.ndarray = None):
         log.info(f"⚙️ Saving plan to {self.dirpath}")

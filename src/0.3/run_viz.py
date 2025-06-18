@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import os
+import time
 
 import cv2
 import numpy as np
@@ -8,13 +9,17 @@ import viser
 from viser.extras import ViserUrdf
 import yourdfpy
 
-from _log import get_logger, COLORS
+from _log import get_logger, COLORS, print_config, setup_log_with_config
+from _path import PixelPath, PathBatch
 from _plan import Plan
 
 log = get_logger('run_viz')
 
 @dataclass
 class VizConfig:
+    debug: bool = False
+    """Enable debug logging."""
+
     plan_dir: str = os.path.expanduser("~/tatbot/output/plans/bench")
     """Directory containing plan."""
 
@@ -33,11 +38,17 @@ class VizConfig:
     pose_highlight_radius: int = 6
     """Radius of the pose highlight in pixels."""
 
+    speed: float = 1.0
+    """Speed multipler for visualization."""
+
 class Viz:
     def __init__(self, config: VizConfig):
         self.config = config
         self.plan = Plan.from_yaml(config.plan_dir)
-        self.paths_np = self.plan.paths_np(config.plan_dir)
+        self.pathbatch = self.plan.pathbatch(config.plan_dir)
+        self.speed = config.speed
+        # Cache pixel paths as PixelPath objects
+        self.pixel_paths = get_path_pixel_coords(self.plan, self.pathbatch)
 
         log.info("🖥️ Starting viser server...")
         self.server: viser.ViserServer = viser.ViserServer()
@@ -59,6 +70,41 @@ class Viz:
         self.pathviz_np = make_pathviz_image(self.plan)
         self.pathviz = self.server.gui.add_image(label="info", image=self.pathviz_np, format="png")
 
+        # --- Add GUI sliders for path_idx and pose_idx ---
+        self.num_paths = len(self.plan.path_descriptions)
+        self.path_lengths = [self.pathbatch.dt[i].shape[0] for i in range(self.num_paths)]
+        with self.server.gui.add_folder("Session"):
+            self.path_idx_slider = self.server.gui.add_slider(
+                "path",
+                min=0,
+                max=self.num_paths - 1,
+                step=1,
+                initial_value=0,
+            )
+            self.pose_idx_slider = self.server.gui.add_slider(
+                "pose",
+                min=0,
+                max=self.path_lengths[0] - 1,
+                step=1,
+                initial_value=0,
+            )
+        # Update pose_idx slider max when path_idx changes
+        @self.path_idx_slider.on_update
+        def _(_):
+            path_idx = self.path_idx_slider.value
+            self.pose_idx_slider.max = self.path_lengths[path_idx] - 1
+            if self.pose_idx_slider.value > self.pose_idx_slider.max:
+                self.pose_idx_slider.value = self.pose_idx_slider.max
+
+    def run(self):
+        while True:
+            path_idx = self.path_idx_slider.value
+            pose_idx = self.pose_idx_slider.value
+            log.info(f"🖥️🤖 Visualizing path {path_idx} pose {pose_idx}...")
+            self.update_image(path_idx, pose_idx)
+            self.update_robot(self.pathbatch.joints[path_idx, pose_idx])
+            time.sleep(self.pathbatch.dt[path_idx, pose_idx] / self.speed)
+
     def update_robot(self, joints: np.ndarray):
         log.debug(f"🖥️🤖 Updating Viser robot...")
         self.urdf.update_cfg(joints)
@@ -66,54 +112,54 @@ class Viz:
     def update_image(self, path_idx: int, pose_idx: int):
         log.debug(f"🖥️🖼️ Updating Viser image...")
         image_np = self.image_np.copy()
-        for _, pw, ph in self.paths_np[path_idx].pixel_coords[:, :]:
-            # highlight entire path in red
+        # highlight entire path in red
+        for pw, ph in self.pixel_paths[path_idx].pixels:
             cv2.circle(image_np, (int(pw), int(ph)), self.path_highlight_radius, COLORS["red"], -1)
-        for _, pw, ph in self.paths_np[path_idx].pixel_coords[:pose_idx, :]:
-            # highlight path up until current pose in green
+        # highlight path up until current pose in green
+        for pw, ph in self.pixel_paths[path_idx].pixels[:pose_idx]:
             cv2.circle(image_np, (int(pw), int(ph)), self.path_highlight_radius, COLORS["green"], -1)
         # highlight current pose in magenta
-        cv2.circle(image_np, (int(self.paths_np[path_idx].pixel_coords[pose_idx, 0]), int(self.paths_np[path_idx].pixel_coords[pose_idx, 1])), self.pose_highlight_radius, COLORS["magenta"], -1)
+        if self.pixel_paths[path_idx].pixels:
+            px, py = self.pixel_paths[path_idx].pixels[pose_idx]
+            cv2.circle(image_np, (int(px), int(py)), self.pose_highlight_radius, COLORS["magenta"], -1)
         self.image.image = image_np
 
-def get_path_pixel_coords(plan: Plan, paths_np: np.ndarray) -> list[list[tuple[int, int]]]:
-    """Reconstruct pixel coordinates for each path in the plan from ee_pos_l using plan's image and metadata."""
-    # Convert ee_pos_l (meters) to pixel coordinates
+def get_path_pixel_coords(plan: Plan, pathbatch: PathBatch) -> list[PixelPath]:
+    """Reconstruct pixel coordinates for each path in the plan from ee_pos_l using plan's image and metadata, as PixelPath objects."""
     px_per_m_x = plan.image_width_px / plan.image_width_m
     px_per_m_y = plan.image_height_px / plan.image_height_m
     pixel_paths = []
-    for path_idx in range(paths_np.ee_pos_l.shape[0]):
+    for path_idx in range(pathbatch.ee_pos_l.shape[0]):
         coords = []
-        for pose_idx in range(paths_np.ee_pos_l.shape[1]):
-            if paths_np.mask[path_idx, pose_idx] == 0:
+        for pose_idx in range(pathbatch.ee_pos_l.shape[1]):
+            if pathbatch.mask[path_idx, pose_idx] == 0:
                 continue
-            x_m, y_m, _ = paths_np.ee_pos_l[path_idx, pose_idx]
-            # Undo the design frame centering and offset
+            x_m, y_m, _ = pathbatch.ee_pos_l[path_idx, pose_idx]
             x_m_img = x_m - plan.ee_design_pos[0] + plan.image_width_m / 2
             y_m_img = y_m - plan.ee_design_pos[1] + plan.image_height_m / 2
             px = int(round(x_m_img * px_per_m_x))
             py = int(round(y_m_img * px_per_m_y))
             coords.append((px, py))
-        pixel_paths.append(coords)
+        pixel_paths.append(PixelPath(pixels=coords))
     return pixel_paths
 
 def make_pathviz_image(plan: Plan) -> np.ndarray:
     """Creates an image with overlayed paths from a plan, saves to plan.dirpath/pathviz.png, and returns the image."""
     image_np = plan.image_np(plan.dirpath)
-    paths_np = plan.paths_np(plan.dirpath)
-    pixel_paths = get_path_pixel_coords(plan, paths_np)
+    pathbatch = plan.pathbatch(plan.dirpath)
+    pixel_paths = get_path_pixel_coords(plan, pathbatch)
     if image_np is None:
         path_viz_np = np.full((plan.image_height_px, plan.image_width_px, 3), 255, dtype=np.uint8)
     else:
         path_viz_np = image_np.copy()
     for path in pixel_paths:
-        if len(path) < 2:
+        if len(path.pixels) < 2:
             continue
-        path_indices = np.linspace(0, 255, len(path), dtype=np.uint8)
+        path_indices = np.linspace(0, 255, len(path.pixels), dtype=np.uint8)
         colormap = cv2.applyColorMap(path_indices.reshape(-1, 1), cv2.COLORMAP_JET)
-        for path_idx in range(len(path) - 1):
-            p1 = tuple(map(int, path[path_idx]))
-            p2 = tuple(map(int, path[path_idx + 1]))
+        for path_idx in range(len(path.pixels) - 1):
+            p1 = tuple(map(int, path.pixels[path_idx]))
+            p2 = tuple(map(int, path.pixels[path_idx + 1]))
             color = colormap[path_idx][0].tolist()
             cv2.line(path_viz_np, p1, p2, color, 2)
     out_path = os.path.join(plan.dirpath, "pathviz.png")
@@ -122,19 +168,19 @@ def make_pathviz_image(plan: Plan) -> np.ndarray:
 
 def get_path_length_stats(plan: Plan) -> dict:
     """Compute path length statistics for a plan in both pixels and meters."""
-    paths_np = plan.paths_np(plan.dirpath)
-    pixel_paths = get_path_pixel_coords(plan, paths_np)
+    pathbatch = plan.pathbatch(plan.dirpath)
+    pixel_paths = get_path_pixel_coords(plan, pathbatch)
     # Pixel lengths
     path_lengths_px = [
-        sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path[:-1], path[1:]))
-        if len(path) > 1 else 0.0
+        sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path.pixels[:-1], path.pixels[1:]))
+        if len(path.pixels) > 1 else 0.0
         for path in pixel_paths
     ]
     # Metric lengths
     path_lengths_m = [
-        float(np.sum(np.linalg.norm(np.diff(paths_np.ee_pos_l[i][paths_np.mask[i] == 1], axis=0), axis=1)))
-        if np.sum(paths_np.mask[i]) > 1 else 0.0
-        for i in range(paths_np.ee_pos_l.shape[0])
+        float(np.sum(np.linalg.norm(np.diff(pathbatch.ee_pos_l[i][pathbatch.mask[i] == 1], axis=0), axis=1)))
+        if np.sum(pathbatch.mask[i]) > 1 else 0.0
+        for i in range(pathbatch.ee_pos_l.shape[0])
     ]
     stats = {
         "count": len(path_lengths_px),
@@ -178,11 +224,11 @@ def make_pathlen_image(plan: Plan, n_bins: int = 24) -> np.ndarray:
         cv2.putText(stats_img, line, (10, y), font, stats_font_scale, (0,0,0), stats_font_thickness, lineType=cv2.LINE_AA)
         y += 15
     # Path lengths for histogram and coloring
-    paths_np = plan.paths_np(plan.dirpath)
-    pixel_paths = get_path_pixel_coords(plan, paths_np)
+    pathbatch = plan.pathbatch(plan.dirpath)
+    pixel_paths = get_path_pixel_coords(plan, pathbatch)
     path_lengths = [
-        sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path[:-1], path[1:]))
-        if len(path) > 1 else 0.0
+        sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path.pixels[:-1], path.pixels[1:]))
+        if len(path.pixels) > 1 else 0.0
         for path in pixel_paths
     ]
     path_lengths = np.array(path_lengths)
@@ -248,13 +294,13 @@ def make_pathlen_image(plan: Plan, n_bins: int = 24) -> np.ndarray:
             img = cv2.resize(img, (plan.image_width_px, plan.image_height_px))
         path_viz_np = img
     for idx, path in enumerate(pixel_paths):
-        if len(path) < 2:
+        if len(path.pixels) < 2:
             continue
         color_val = int(255 * norm_lengths[idx])
         color = tuple(int(c) for c in cv2.applyColorMap(np.array([[color_val]], dtype=np.uint8), cv2.COLORMAP_JET)[0,0])
-        for path_idx in range(len(path) - 1):
-            p1 = tuple(map(int, path[path_idx]))
-            p2 = tuple(map(int, path[path_idx + 1]))
+        for path_idx in range(len(path.pixels) - 1):
+            p1 = tuple(map(int, path.pixels[path_idx]))
+            p2 = tuple(map(int, path.pixels[path_idx + 1]))
             cv2.line(path_viz_np, p1, p2, color, 2)
     sep_thick = 2
     sep_color = (0,0,0)
@@ -284,4 +330,6 @@ def make_pathlen_image(plan: Plan, n_bins: int = 24) -> np.ndarray:
 
 if __name__ == "__main__":
     args = setup_log_with_config(VizConfig)
+    print_config(args)
     viz = Viz(args)
+    viz.run()

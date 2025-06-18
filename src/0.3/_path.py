@@ -84,4 +84,5 @@ class PathBatch:
     @classmethod
     def load(cls, filepath: str) -> "PathBatch":
         log.debug(f"💾 Loading PathBatch from {filepath}")
-        return load_file(filepath)
+        data = load_file(filepath)
+        return cls(**data)
