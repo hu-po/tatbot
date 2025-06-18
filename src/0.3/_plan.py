@@ -174,6 +174,27 @@ class Plan:
         path_batch = PathBatch.from_paths(paths)
         path_batch.save(os.path.join(self.dirpath, PATHS_FILENAME))
 
+    def get_pixel_paths(self, pathbatch: PathBatch = None) -> list[PixelPath]:
+        """Reconstruct pixel coordinates for each path in the plan from ee_pos_l using plan's image and metadata, as PixelPath objects."""
+        if pathbatch is None:
+            pathbatch = self.pathbatch(self.dirpath)
+        pixel_paths = []
+        for path_idx in range(pathbatch.ee_pos_l.shape[0]):
+            coords = []
+            for pose_idx in range(pathbatch.ee_pos_l.shape[1]):
+                if pathbatch.mask[path_idx, pose_idx] == 0:
+                    continue
+                x_m, y_m, _ = pathbatch.ee_pos_l[path_idx, pose_idx]
+                px = int(round(((x_m - self.ee_design_pos[0] + self.image_width_m / 2) * self.image_width_px) / self.image_width_m))
+                py = int(round(((y_m - self.ee_design_pos[1] + self.image_height_m / 2) * self.image_height_px) / self.image_height_m))
+                in_bounds = 0 <= px < self.image_width_px and 0 <= py < self.image_height_px
+                if not in_bounds:
+                    log.warning(f"🖥️⚠️ Path {path_idx} Pose {pose_idx} has pixel out of bounds! (px, py)=({px}, {py})")
+                coords.append((px, py))
+            if len(coords) < 2:
+                log.warning(f"🖥️⚠️ Path {path_idx} has <2 valid points, skipping")
+            pixel_paths.append(PixelPath(pixels=coords))
+        return pixel_paths
 
 def wrap(plan: Plan, mesh) -> Plan:
     """Wrap a 2D plan onto a 3D mesh. """

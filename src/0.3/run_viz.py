@@ -62,7 +62,7 @@ class Viz:
         self.pose_idx = 0
         self.plan = Plan.from_yaml(config.plan_dir)
         self.pathbatch = self.plan.pathbatch(config.plan_dir)
-        self.pixel_paths = get_path_pixel_coords(self.plan, self.pathbatch)
+        self.pixel_paths = self.plan.get_pixel_paths(self.pathbatch)
         self.num_paths = len(self.plan.path_descriptions)
         self.path_lengths = [self.pathbatch.dt[i].shape[0] for i in range(self.num_paths)]
         with self.server.gui.add_folder("Plan"):
@@ -168,32 +168,12 @@ class Viz:
             cv2.circle(image_np, (int(px), int(py)), self.config.pose_highlight_radius, COLORS["magenta"], -1)
         self.image.image = image_np
 
-def get_path_pixel_coords(plan: Plan, pathbatch: PathBatch) -> list[PixelPath]:
-    """Reconstruct pixel coordinates for each path in the plan from ee_pos_l using plan's image and metadata, as PixelPath objects."""
-    pixel_paths = []
-    for path_idx in range(pathbatch.ee_pos_l.shape[0]):
-        coords = []
-        for pose_idx in range(pathbatch.ee_pos_l.shape[1]):
-            if pathbatch.mask[path_idx, pose_idx] == 0:
-                continue
-            x_m, y_m, _ = pathbatch.ee_pos_l[path_idx, pose_idx]
-            px = int(round(((x_m - plan.ee_design_pos[0] + plan.image_width_m / 2) * plan.image_width_px) / plan.image_width_m))
-            py = int(round(((y_m - plan.ee_design_pos[1] + plan.image_height_m / 2) * plan.image_height_px) / plan.image_height_m))
-            in_bounds = 0 <= px < plan.image_width_px and 0 <= py < plan.image_height_px
-            if not in_bounds:
-                log.warning(f"🖥️⚠️ Path {path_idx} Pose {pose_idx} has pixel out of bounds! (px, py)=({px}, {py})")
-            coords.append((px, py))
-        if len(coords) < 2:
-            log.warning(f"🖥️⚠️ Path {path_idx} has <2 valid points, skipping")
-        pixel_paths.append(PixelPath(pixels=coords))
-    return pixel_paths
-
 def make_pathviz_image(plan: Plan, pathbatch: PathBatch = None) -> np.ndarray:
     """Creates an image with overlayed paths from a plan, saves to plan.dirpath/pathviz.png, and returns the image."""
     image_np = plan.image_np(plan.dirpath)
     if pathbatch is None:
         pathbatch = plan.pathbatch(plan.dirpath)
-    pixel_paths = get_path_pixel_coords(plan, pathbatch)
+    pixel_paths = plan.get_pixel_paths(pathbatch)
     if image_np is None:
         path_viz_np = np.full((plan.image_height_px, plan.image_width_px, 3), 255, dtype=np.uint8)
     else:
@@ -216,7 +196,7 @@ def get_path_length_stats(plan: Plan, pathbatch: PathBatch = None) -> dict:
     """Compute path length statistics for a plan in both pixels and meters."""
     if pathbatch is None:
         pathbatch = plan.pathbatch(plan.dirpath)
-    pixel_paths = get_path_pixel_coords(plan, pathbatch)
+    pixel_paths = plan.get_pixel_paths(pathbatch)
     # Pixel lengths
     path_lengths_px = [
         sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path.pixels[:-1], path.pixels[1:]))
@@ -272,7 +252,7 @@ def make_pathlen_image(plan: Plan, pathbatch: PathBatch = None, n_bins: int = 24
         y += 15
     # Path lengths for histogram and coloring
     pathbatch = plan.pathbatch(plan.dirpath)
-    pixel_paths = get_path_pixel_coords(plan, pathbatch)
+    pixel_paths = plan.get_pixel_paths(pathbatch)
     path_lengths = [
         sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path.pixels[:-1], path.pixels[1:]))
         if len(path.pixels) > 1 else 0.0
