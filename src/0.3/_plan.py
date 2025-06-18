@@ -34,11 +34,14 @@ class Plan:
     """Width of the image in meters."""
     image_height_m: float = 0.04
     """Height of the image in meters."""
-    image_width_px: int = 256
+    image_width_px: int | None = None
     """Width of the image in pixels."""
-    image_height_px: int = 256
+    image_height_px: int | None = None
     """Height of the image in pixels."""
 
+    ik_batch_size: int = 1024
+    """Batch size for IK computation."""
+    
     path_pad_len: int = 64
     """Length to pad paths to."""
     path_dt_fast: float = 0.1
@@ -176,19 +179,28 @@ class Plan:
             path.ee_wxyz_r[0, :] = path.ee_wxyz_r[1, :]
             path.ee_pos_r[-1, :] = path.ee_pos_r[-2, :]
             path.ee_wxyz_r[-1, :] = path.ee_wxyz_r[-2, :]
-            # compute joint positions in batch
-            target_wxyz = jnp.stack([path.ee_wxyz_l, path.ee_wxyz_r], axis=1)
-            target_pos = jnp.stack([path.ee_pos_l, path.ee_pos_r], axis=1)
-            path.joints = batch_ik(
-                target_wxyz=target_wxyz,
-                target_pos=target_pos,
-            )
             # slow movement at the hover positions
             path.dt[0, 0] = self.path_dt_slow
             path.dt[1:-1, 0] = self.path_dt_fast
             path.dt[-1, 0] = self.path_dt_slow
-
             paths.append(path)
+
+        # compute ik in batches
+        ee_pos_l = jnp.stack([path.ee_pos_l for path in paths])
+        ee_pos_r = jnp.stack([path.ee_pos_r for path in paths])
+        ee_wxyz_l = jnp.stack([path.ee_wxyz_l for path in paths])
+        ee_wxyz_r = jnp.stack([path.ee_wxyz_r for path in paths])
+        for i in range(0, len(paths), self.ik_batch_size):
+            batch_ee_wxyz_l = ee_wxyz_l[i:i + self.ik_batch_size]
+            batch_ee_wxyz_r = ee_wxyz_r[i:i + self.ik_batch_size]
+            batch_ee_pos_l = ee_pos_l[i:i + self.ik_batch_size]
+            batch_ee_pos_r = ee_pos_r[i:i + self.ik_batch_size]
+            batch_joints = batch_ik(
+                target_wxyz=jnp.stack([batch_ee_wxyz_l, batch_ee_wxyz_r], axis=1),
+                target_pos=jnp.stack([batch_ee_pos_l, batch_ee_pos_r], axis=1),
+            )
+            for j in range(len(batch_joints)):
+                paths[i + j].joints = batch_joints[j]
 
         pathbatch = PathBatch.from_paths(paths)
         pathbatch.save(os.path.join(self.dirpath, PATHS_FILENAME)) 

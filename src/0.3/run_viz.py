@@ -61,9 +61,9 @@ class Viz:
         self.path_idx = 0
         self.pose_idx = 0
         self.plan = Plan.from_yaml(config.plan_dir)
-        self.pathbatch = self.plan.pathbatch(config.plan_dir)
-        self.pixelpaths = self.plan.get_pixelpaths(self.pathbatch)
         self.num_paths = len(self.plan.path_descriptions)
+        self.pixelpaths = self.plan.load_pixelpaths()
+        self.pathbatch = self.plan.load_pathbatch()
         self.path_lengths = [int(np.sum(self.pathbatch.mask[i])) for i in range(self.num_paths)]
         with self.server.gui.add_folder("Plan"):
             self.path_idx_slider = self.server.gui.add_slider(

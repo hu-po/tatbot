@@ -46,6 +46,7 @@ class Path:
 
     @classmethod
     def padded(cls, pad_len: int) -> "Path":
+        log.debug(f"🔳 Creating empty padded path (pad_len={pad_len})...")
         return cls(
             ee_pos_l=np.zeros((pad_len, 3), dtype=np.float32),
             ee_pos_r=np.zeros((pad_len, 3), dtype=np.float32),
@@ -74,6 +75,7 @@ class PathBatch:
 
     @classmethod
     def from_paths(cls, paths: list[Path]) -> "PathBatch":
+        log.debug(f"🔳 Creating PathBatch from {len(paths)} paths...")
         return cls(
             ee_pos_l=jnp.array([path.ee_pos_l for path in paths]),
             ee_pos_r=jnp.array([path.ee_pos_r for path in paths]),
@@ -85,11 +87,11 @@ class PathBatch:
         )
 
     def save(self, filepath: str) -> None:
-        log.debug(f"💾 Saving PathBatch to {filepath}")
+        log.debug(f"🔳💾 Saving PathBatch to {filepath}")
         save_file({k: getattr(self, k) for k in self.__dataclass_fields__}, filepath)
 
     @classmethod
     def load(cls, filepath: str) -> "PathBatch":
-        log.debug(f"💾 Loading PathBatch from {filepath}")
+        log.debug(f"🔳💾 Loading PathBatch from {filepath}")
         data = load_file(filepath)
         return cls(**data)
