@@ -8,7 +8,7 @@ from PIL import Image
 import jax.numpy as jnp
 
 from _ik import batch_ik
-from _ink import InkPalette
+from _ink import InkCap, InkPalette
 from _log import get_logger
 from _path import Path, PathBatch, PixelPath
 
@@ -20,6 +20,7 @@ IMAGE_FILENAME: str = "image.png"
 PATHS_FILENAME: str = "paths.safetensors"
 PIXELPATHS_FILENAME: str = "pixelpaths.yaml"
 PATHSTATS_FILENAME: str = "pathstats.yaml"
+INKPALETTE_FILENAME: str = "inkpalette.yaml"
 
 @dataclass
 class Plan:
@@ -65,13 +66,15 @@ class Plan:
     ee_view_wxyz: tuple[float, float, float, float] = (0.67360666, -0.25201478, 0.24747439, 0.64922119)
     """orientation quaternion (wxyz) of the view ee transform."""
 
+    inkpalette: InkPalette = field(default_factory=InkPalette)
+    """Ink palette to use for the plan."""
     ee_inkpalette_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
     """position of the inkpalette ee transform."""
     ee_inkpalette_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
     """orientation quaternion (wxyz) of the inkpalette ee transform."""
     inkdip_hover_offset: tuple[float, float, float] = (0.0, 0.0, 0.03)
     """position offset when hovering over inkcap, relative to current ee frame."""
-    pathlen_per_inkdip: int = 2
+    pathlen_per_inkdip: int = 64
     """Number of poses (path length) per inkdip."""
 
     @classmethod
@@ -105,8 +108,12 @@ class Plan:
 
         meta_path = os.path.join(self.dirpath, METADATA_FILENAME)
         log.info(f"⚙️💾 Saving metadata to {meta_path}")
+        # Convert inkpalette to dict for YAML serialization
+        meta_dict = self.__dict__.copy()
+        if isinstance(meta_dict.get('inkpalette'), InkPalette):
+            meta_dict['inkpalette'] = {'inkcaps': {k: v.to_dict() for k, v in self.inkpalette.inkcaps.items()}}
         with open(meta_path, "w") as f:
-            yaml.safe_dump(self.__dict__, f)
+            yaml.safe_dump(meta_dict, f)
 
         if image is not None:
             if isinstance(image, np.ndarray):
@@ -253,15 +260,190 @@ class Plan:
         with open(pathstats_path, "w") as f:
             yaml.safe_dump(stats, f)
 
-    def add_ink_dips(self, inkpalette: InkPalette = InkPalette()):
-        # seperate paths based on color
-        # go through each path
-        # after each pathlen_per_inkdip, add an inkdip on the next path
-        # an inkdip is a short path that includes first (1) the inkcap position with hover offset, (2) the inkcap position, (3) the inkcap position with a dip of 1/2 the depth of the inkcap (4) back to the inkcap position then (5) with hover offset
-        # all the dt s for the inkdip should be slow (path_dt_slow)
-        # the inkdip pathsshould have a description of the color of the inkcap and the inkcap name
+        # add inkdips
+        self.add_inkdips()
 
-        # calculate the ik for the inkdip paths in a batch
+    def add_inkdips(self) -> None:
+        """
+        Append short inkdip paths plus dummy PixelPath entries so that:
+        - every inkdip is executed by the robot (in `paths.safetensors`);
+        - indexing in run_viz stays 1:1 (`pixelpaths.yaml` length matches `PathBatch` length);
+        - leave `pathstats.yaml` unchanged.
 
-        # 
-        pass
+        A dip path is 5 poses, all executed with the slow dt:
+
+              0 ─ hover  (palette_frame + inkdip_hover_offset)
+              1 ─ rim    (top of inkcap)
+              2 ─ half   (half-depth of inkcap)
+              3 ─ rim    (top of inkcap)
+              4 ─ hover  (palette_frame + inkdip_hover_offset)
+
+        Right arm keeps the "view" pose for the whole dip.
+        A dip is inserted after drawing `pathlen_per_inkdip` poses have been accumulated over drawing paths.
+        """
+        # --- 1. Load existing artefacts -------------------------------------------------
+        pixelpaths: list[PixelPath] = self.load_pixelpaths()
+        pathbatch: PathBatch = self.load_pathbatch()
+        pad_len = self.path_pad_len
+
+        # Convert PathBatch arrays to NumPy for easy concatenation
+        epl, epr = np.asarray(pathbatch.ee_pos_l),  np.asarray(pathbatch.ee_pos_r)
+        ewl, ewr = np.asarray(pathbatch.ee_wxyz_l), np.asarray(pathbatch.ee_wxyz_r)
+        joints   = np.asarray(pathbatch.joints)
+        dt_arr   = np.asarray(pathbatch.dt)
+        mask_arr = np.asarray(pathbatch.mask)
+
+        # --- 2. Helper to build one dip path -------------------------------------------
+        right_fixed_pos = np.array(
+            [self.ee_design_pos[0] + self.view_offset[0],
+             self.ee_design_pos[1] + self.view_offset[1],
+             self.ee_design_pos[2] + self.view_offset[2]],
+            dtype=np.float32,
+        )
+        right_fixed_wxyz = np.array(self.ee_view_wxyz, dtype=np.float32)
+
+        def _make_dip_path(cap_name: str, cap: InkCap) -> dict[str, np.ndarray]:
+            """Return dict containing all Path fields (pad_len × … ndarray)."""
+            base = np.array(self.ee_inkpalette_pos) + np.array(cap.palette_pos)
+            hover = base + np.array(self.inkdip_hover_offset)
+            rim   = base
+            half  = base + np.array([0.0, 0.0, -cap.depth_m * 0.5])
+
+            poses_l = np.stack([hover, rim, half, rim, hover], axis=0)
+            poses_r = np.tile(right_fixed_pos, (5, 1))
+
+            epl_dip = np.zeros((pad_len, 3), dtype=np.float32)
+            epr_dip = np.zeros_like(epl_dip)
+            ewl_dip = np.tile(np.array(self.ee_inkpalette_wxyz, dtype=np.float32), (pad_len, 1))
+            ewr_dip = np.tile(right_fixed_wxyz, (pad_len, 1))
+            dt_dip  = np.zeros((pad_len,), dtype=np.float32)
+            msk_dip = np.zeros((pad_len,), dtype=np.int32)
+            jnt_dip = np.zeros((pad_len, 16), dtype=np.float32)
+
+            # write first 5 poses
+            epl_dip[:5] = poses_l
+            epr_dip[:5] = poses_r
+            dt_dip[:5]  = self.path_dt_slow
+            msk_dip[:5] = 1
+            # orientations already correct in ewl_dip / ewr_dip
+
+            return dict(
+                ee_pos_l=epl_dip,
+                ee_pos_r=epr_dip,
+                ee_wxyz_l=ewl_dip,
+                ee_wxyz_r=ewr_dip,
+                joints=jnt_dip,
+                dt=dt_dip,
+                mask=msk_dip,
+                description=f"inkdip_{cap_name} ({cap.color})",
+                color=cap.color,
+            )
+
+        # --- 3. Walk paths, insert dips -------------------------------------------------
+        new_pixelpaths: list[PixelPath] = []
+        dip_paths_raw: list[dict[str, np.ndarray]] = []
+
+        pose_counter = 0
+        for p_idx, p in enumerate(pixelpaths):
+            new_pixelpaths.append(p)
+            pose_counter += len(p)            # count drawing poses
+
+            if pose_counter >= self.pathlen_per_inkdip:
+                # choose an ink‑cap that matches current path colour (fallback to large_0)
+                chosen_name = None
+                for name, cap in self.inkpalette.inkcaps.items():
+                    if cap.color.lower() == p.color.lower():
+                        chosen_name = name
+                        break
+                if chosen_name is None:
+                    chosen_name = "large_0"
+                cap = self.inkpalette.inkcaps[chosen_name]
+
+                dip = _make_dip_path(chosen_name, cap)
+                dip_paths_raw.append(dip)
+
+                # dummy PixelPath keeps indexing intact
+                new_pixelpaths.append(
+                    PixelPath(
+                        pixels=[],               # nothing to draw on the 2‑D image
+                        color=cap.color,
+                        description=dip["description"],
+                    )
+                )
+                pose_counter = 0  # reset after dipping
+
+        # No dips? nothing to do
+        if not dip_paths_raw:
+            return
+
+        # --- 4. Batch‑IK for the dip paths ---------------------------------------------
+        flat_pos, flat_wxyz, idx_map = [], [], []
+        for dp_idx, dip in enumerate(dip_paths_raw):
+            for pose_idx in range(pad_len):
+                if dip["mask"][pose_idx] == 0:
+                    continue
+                flat_pos.append(
+                    [dip["ee_pos_l"][pose_idx], dip["ee_pos_r"][pose_idx]]
+                )
+                flat_wxyz.append(
+                    [dip["ee_wxyz_l"][pose_idx], dip["ee_wxyz_r"][pose_idx]]
+                )
+                idx_map.append((dp_idx, pose_idx))
+
+        if flat_pos:  # should always be true
+            import jax.numpy as jnp
+            sols = batch_ik(
+                target_wxyz=jnp.array(flat_wxyz),
+                target_pos=jnp.array(flat_pos),
+            )
+
+            for s_idx, joints_sol in enumerate(np.asarray(sols)):
+                dp, ps = idx_map[s_idx]
+                dip_paths_raw[dp]["joints"][ps] = joints_sol.astype(np.float32)
+
+        # --- 5. Stitch arrays and overwrite files --------------------------------------
+        # concatenate old arrays with new dip arrays
+        for field in ("ee_pos_l", "ee_pos_r", "ee_wxyz_l", "ee_wxyz_r",
+                      "joints", "dt", "mask"):
+            dip_stack = np.stack([d[field] for d in dip_paths_raw], axis=0)
+
+        epl_new = np.concatenate([epl, dip_stack := np.stack([d["ee_pos_l"] for d in dip_paths_raw])], axis=0)
+        epr_new = np.concatenate([epr, np.stack([d["ee_pos_r"] for d in dip_paths_raw])], axis=0)
+        ewl_new = np.concatenate([ewl, np.stack([d["ee_wxyz_l"] for d in dip_paths_raw])], axis=0)
+        ewr_new = np.concatenate([ewr, np.stack([d["ee_wxyz_r"] for d in dip_paths_raw])], axis=0)
+        jnt_new = np.concatenate([joints, np.stack([d["joints"] for d in dip_paths_raw])], axis=0)
+        dt_new  = np.concatenate([dt_arr, np.stack([d["dt"] for d in dip_paths_raw])], axis=0)
+        msk_new = np.concatenate([mask_arr, np.stack([d["mask"] for d in dip_paths_raw])], axis=0)
+
+        # rebuild PathBatch and save
+        new_batch = PathBatch(
+            ee_pos_l=jnp.array(epl_new),
+            ee_pos_r=jnp.array(epr_new),
+            ee_wxyz_l=jnp.array(ewl_new),
+            ee_wxyz_r=jnp.array(ewr_new),
+            joints=jnp.array(jnt_new),
+            dt=jnp.array(dt_new),
+            mask=jnp.array(msk_new),
+        )
+        pathbatch_path = os.path.join(self.dirpath, PATHS_FILENAME)
+        log.debug(f"⚙️💾 Saving pathbatch to {pathbatch_path}...")
+        new_batch.save(pathbatch_path)
+
+        # overwrite pixelpaths.yaml
+        pixelpaths_path = os.path.join(self.dirpath, PIXELPATHS_FILENAME)
+        log.debug(f"⚙️💾 Saving pixelpaths to {pixelpaths_path}...")
+        with open(pixelpaths_path, "w") as f:
+            yaml.safe_dump([pp.to_dict() for pp in new_pixelpaths], f)
+
+        # overwrite inkpalette.yaml
+        inkpalette_path = os.path.join(self.dirpath, INKPALETTE_FILENAME)
+        log.debug(f"⚙️💾 Saving inkpalette to {inkpalette_path}...")
+        self.inkpalette.save_yaml(inkpalette_path)
+
+        # update descriptions
+        log.debug(f"⚙️💾 Updating descriptions...")
+        start_idx = len(self.path_descriptions)
+        for k, dip in enumerate(dip_paths_raw, start=start_idx):
+            self.path_descriptions[f"path_{k:03d}"] = dip["description"]
+        # updates meta.yaml (image unchanged)
+        self.save()          
