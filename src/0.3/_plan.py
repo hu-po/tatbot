@@ -136,9 +136,12 @@ class Plan:
             path = Path.padded(self.path_pad_len)
             self.path_descriptions[f'path_{path_idx:03d}'] = pixelpath.description
 
-            if len(pixelpath) + 2 > self.path_pad_len:
+            pixelpath_length = len(pixelpath.pixels)
+            if pixelpath_length + 2 > self.path_pad_len:
+                # TODO: resample to fit within pad_len
                 log.warning(f"⚙️⚠️ pixelpath {path_idx} has more than {self.path_pad_len} poses, truncating...")
                 pixelpath.pixels = pixelpath.pixels[:self.path_pad_len - 2] # -2 for hover positions
+                pixelpath_length = len(pixelpath.pixels)
 
             for i, (pw, ph) in enumerate(pixelpath.pixels):
                 # pixel coordinates first need to be converted to meters
@@ -157,6 +160,7 @@ class Plan:
                     self.ee_design_pos[2] + self.view_offset[2],
                 ]
                 path.ee_wxyz_r[i + 1, :] = self.ee_view_wxyz
+
             # add hover positions to the beginning and end of the path
             path.ee_pos_l[0, :] = [
                 path.ee_pos_l[1, 0] + self.hover_offset[0],
@@ -164,21 +168,24 @@ class Plan:
                 path.ee_pos_l[1, 2] + self.hover_offset[2],
             ]
             path.ee_wxyz_l[0, :] = self.ee_design_wxyz
-            path.ee_pos_l[-1, :] = [
-                path.ee_pos_l[-2, 0] + self.hover_offset[0],
-                path.ee_pos_l[-2, 1] + self.hover_offset[1],
-                path.ee_pos_l[-2, 2] + self.hover_offset[2],
+            path.ee_pos_l[pixelpath_length + 1, :] = [
+                path.ee_pos_l[pixelpath_length, 0] + self.hover_offset[0],
+                path.ee_pos_l[pixelpath_length, 1] + self.hover_offset[1],
+                path.ee_pos_l[pixelpath_length, 2] + self.hover_offset[2],
             ]
-            path.ee_wxyz_l[-1, :] = self.ee_design_wxyz
-            # right hand has no hover offset, just use the first and last poses
+            path.ee_wxyz_l[pixelpath_length + 1, :] = self.ee_design_wxyz
+            # right hand has no hover offset, just use the first and last valid poses
             path.ee_pos_r[0, :] = path.ee_pos_r[1, :]
             path.ee_wxyz_r[0, :] = path.ee_wxyz_r[1, :]
-            path.ee_pos_r[-1, :] = path.ee_pos_r[-2, :]
-            path.ee_wxyz_r[-1, :] = path.ee_wxyz_r[-2, :]
+            path.ee_pos_r[pixelpath_length + 1, :] = path.ee_pos_r[pixelpath_length, :]
+            path.ee_wxyz_r[pixelpath_length + 1, :] = path.ee_wxyz_r[pixelpath_length, :]
             # slow movement at the hover positions
-            path.dt[0, 0] = self.path_dt_slow
-            path.dt[1:-1, 0] = self.path_dt_fast
-            path.dt[-1, 0] = self.path_dt_slow
+            path.dt[0] = self.path_dt_slow
+            path.dt[1:pixelpath_length + 1] = self.path_dt_fast
+            path.dt[pixelpath_length + 1] = self.path_dt_slow
+            # set mask: 1 for all valid points (hover + path)
+            path.mask[:pixelpath_length + 2] = 1
+
             paths.append(path)
 
         # ---- Batch IK ----
