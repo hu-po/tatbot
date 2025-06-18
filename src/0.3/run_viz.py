@@ -170,38 +170,31 @@ class Viz:
         self.image.image = image_np
 
 def make_pathviz_image(plan: Plan) -> np.ndarray:
-    """Creates an image with overlayed paths from a plan, saves to plan.dirpath/pathviz.png, and returns the image."""
-    image_np = plan.load_image_np()
+    """Creates an image with overlayed paths from a plan."""
     pixelpaths = plan.load_pixelpaths()
-    if image_np is None:
-        path_viz_np = np.full((plan.image_height_px, plan.image_width_px, 3), 255, dtype=np.uint8)
-    else:
-        path_viz_np = image_np.copy()
+    image = plan.load_image_np()
     for path in pixelpaths:
-        if len(path.pixels) < 2:
-            continue
         path_indices = np.linspace(0, 255, len(path.pixels), dtype=np.uint8)
         colormap = cv2.applyColorMap(path_indices.reshape(-1, 1), cv2.COLORMAP_JET)
         for path_idx in range(len(path.pixels) - 1):
             p1 = tuple(map(int, path.pixels[path_idx]))
             p2 = tuple(map(int, path.pixels[path_idx + 1]))
             color = colormap[path_idx][0].tolist()
-            cv2.line(path_viz_np, p1, p2, color, 2)
+            cv2.line(image, p1, p2, color, 2)
     out_path = os.path.join(plan.dirpath, "pathviz.png")
-    cv2.imwrite(out_path, path_viz_np)
-    return path_viz_np
+    cv2.imwrite(out_path, image)
+    return image
 
-def make_pathlen_image(plan: Plan, n_bins: int = 24) -> np.ndarray:
-    """Creates a three-part image: plan name, stats, histogram, and pathviz colored by path length, saves to plan.dirpath/pathlen.png, and returns the image."""
-    border_px = 16
-    stats = plan.load_pathstats()
+def make_pathlen_image(plan: Plan) -> np.ndarray:
+    """Creates a three-part image: stats, histogram, and pathviz colored by path length."""
     pixelpaths = plan.load_pixelpaths()
+    stats = plan.load_pathstats()
     stats_lines = [
-        f"Total paths in plan: {stats['count']}",
-        f"Min path length: {stats['min_px']:.2f} px ({stats['min_m']:.4f} m)",
-        f"Max path length: {stats['max_px']:.2f} px ({stats['max_m']:.4f} m)",
-        f"Average path length: {stats['mean_px']:.2f} px ({stats['mean_m']:.4f} m)",
-        f"Total path length: {stats['sum_px']:.2f} px ({stats['sum_m']:.4f} m)",
+        f"num paths: {stats['count']}",
+        f"min pathlen: {stats['min_px']:.2f} px ({stats['min_m']:.4f} m)",
+        f"avg pathlen: {stats['mean_px']:.2f} px ({stats['mean_m']:.4f} m)",
+        f"max pathlen: {stats['max_px']:.2f} px ({stats['max_m']:.4f} m)",
+        f"sum pathlen: {stats['sum_px']:.2f} px ({stats['sum_m']:.4f} m)",
     ]
     font = cv2.FONT_HERSHEY_SIMPLEX
     name_font_scale = 0.6
@@ -232,6 +225,7 @@ def make_pathlen_image(plan: Plan, n_bins: int = 24) -> np.ndarray:
     else:
         norm_lengths = np.zeros_like(path_lengths)
     hist_height = 64
+    n_bins = 24
     colorbar_height = 12
     label_height = 8
     indicator_height = 32
@@ -282,12 +276,7 @@ def make_pathlen_image(plan: Plan, n_bins: int = 24) -> np.ndarray:
         label_y = indicator_y + text_height + whitespace_between_numbers_and_label + label_height_text - 6
         cv2.putText(hist_img, axis_label, (label_x, label_y), font, font_scale_label, (0,0,0), stats_font_thickness)
     path_viz_np = np.full((plan.image_height_px, plan.image_width_px, 3), 255, dtype=np.uint8)
-    image_np = plan.image_np(plan.dirpath)
-    if image_np is not None:
-        img = image_np.copy()
-        if img.shape[:2] != (plan.image_height_px, plan.image_width_px):
-            img = cv2.resize(img, (plan.image_width_px, plan.image_height_px))
-        path_viz_np = img
+    path_viz_np = plan.load_image_np()
     for idx, path in enumerate(pixelpaths):
         if len(path.pixels) < 2:
             continue
@@ -312,6 +301,7 @@ def make_pathlen_image(plan: Plan, n_bins: int = 24) -> np.ndarray:
         hist_sep,
         path_viz_np
     ])
+    border_px = 16
     border_color = (255, 255, 255)
     bordered_img = np.full(
         (content_img.shape[0] + 2 * border_px, content_img.shape[1] + 2 * border_px, 3),

@@ -22,6 +22,13 @@ class PixelPath:
     def __len__(self) -> int:
         return len(self.pixels)
 
+    def to_dict(self):
+        return {
+            "pixels": self.pixels,
+            "color": self.color,
+            "description": self.description,
+        }
+
 @dataclass
 class Path:
     ee_pos_l: Float[Array, "l 3"]

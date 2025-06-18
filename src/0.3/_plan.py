@@ -39,7 +39,7 @@ class Plan:
     image_height_px: int = 256
     """Height of the image in pixels."""
 
-    path_pad_len: int = 128
+    path_pad_len: int = 64
     """Length to pad paths to."""
     path_dt_fast: float = 0.1
     """Time between poses in seconds for fast movement."""
@@ -78,10 +78,23 @@ class Plan:
         with open(filepath, "r") as f:
             return cls(**yaml.safe_load(f))
 
-    @classmethod
-    def image_np(cls, dirpath: str) -> np.ndarray:
-        filepath = os.path.join(dirpath, IMAGE_FILENAME)
+    def load_image_np(self) -> np.ndarray:
+        filepath = os.path.join(self.dirpath, IMAGE_FILENAME)
         return np.array(Image.open(filepath).convert("RGB"))
+    
+    def load_pathbatch(self) -> 'PathBatch':
+        filepath = os.path.join(self.dirpath, PATHS_FILENAME)
+        return PathBatch.load(filepath)
+
+    def load_pixelpaths(self) -> list[PixelPath]:
+        filepath = os.path.join(self.dirpath, PIXELPATHS_FILENAME)
+        with open(filepath, "r") as f:
+            return yaml.safe_load(f)
+
+    def load_pathstats(self) -> dict:
+        filepath = os.path.join(self.dirpath, PATHSTATS_FILENAME)
+        with open(filepath, "r") as f:
+            return yaml.safe_load(f)
     
     def save(self, image: np.ndarray = None):
         log.info(f"⚙️💾 Saving plan to {self.dirpath}")
@@ -99,13 +112,13 @@ class Plan:
             log.info(f"⚙️💾 Saving image to {image_path}")
             image.save(image_path)
 
-    def add_pixelpaths(self, pixelpaths: list[PixelPath], image: np.ndarray):
+    def add_pixelpaths(self, pixelpaths: list[PixelPath], image: Image):
         num_paths = len(pixelpaths)
         log.info(f"⚙️ Adding {num_paths} pixel paths...")
 
-        log.debug(f"⚙️ Image shape: {image.shape}")
-        self.image_width_m = image.shape[0]
-        self.image_height_m = image.shape[1]
+        log.debug(f"⚙️ Image shape: {image.size}")
+        self.image_width_m = image.size[0]
+        self.image_height_m = image.size[1]
         self.save(image)
         scale_x = self.image_width_m / self.image_width_px
         scale_y = self.image_height_m / self.image_height_px
@@ -113,7 +126,7 @@ class Plan:
         pixelpaths_path = os.path.join(self.dirpath, PIXELPATHS_FILENAME)
         log.debug(f"⚙️💾 Saving pixelpaths to {pixelpaths_path}...")
         with open(pixelpaths_path, "w") as f:
-            yaml.safe_dump(pixelpaths, f)
+            yaml.safe_dump([p.to_dict() for p in pixelpaths], f)
 
         paths = []
         for path_idx, pixelpath in enumerate(pixelpaths):
@@ -163,7 +176,7 @@ class Plan:
             path.ee_wxyz_r[0, :] = path.ee_wxyz_r[1, :]
             path.ee_pos_r[-1, :] = path.ee_pos_r[-2, :]
             path.ee_wxyz_r[-1, :] = path.ee_wxyz_r[-2, :]
-            # compute joint positions
+            # compute joint positions in batch
             target_wxyz = jnp.stack([path.ee_wxyz_l, path.ee_wxyz_r], axis=1)
             target_pos = jnp.stack([path.ee_pos_l, path.ee_pos_r], axis=1)
             path.joints = batch_ik(
@@ -207,17 +220,3 @@ class Plan:
         log.debug(f"⚙️💾 Saving pathstats to {pathstats_path}...")
         with open(pathstats_path, "w") as f:
             yaml.safe_dump(stats, f)
-
-    def load_pathbatch(self) -> 'PathBatch':
-        filepath = os.path.join(self.dirpath, PATHS_FILENAME)
-        return PathBatch.load(filepath)
-
-    def load_pixelpaths(self) -> list[PixelPath]:
-        filepath = os.path.join(self.dirpath, PIXELPATHS_FILENAME)
-        with open(filepath, "r") as f:
-            return yaml.safe_load(f)
-
-    def load_pathstats(self) -> dict:
-        filepath = os.path.join(self.dirpath, PATHSTATS_FILENAME)
-        with open(filepath, "r") as f:
-            return yaml.safe_load(f)
