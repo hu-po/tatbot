@@ -66,6 +66,13 @@ class Viz:
         self.pixelpaths = self.plan.load_pixelpaths()
         self.pathbatch = self.plan.load_pathbatch()
         self.path_lengths = [int(np.sum(self.pathbatch.mask[i])) for i in range(self.num_paths)]
+
+        # Define the path description getter before using it in the GUI
+        def _get_path_description(idx):
+            key = f"path_{idx:03d}"
+            return self.plan.path_descriptions.get(key, "")
+        self._get_path_description = _get_path_description
+
         with self.server.gui.add_folder("Plan"):
             self.time_label = self.server.gui.add_text(
                 label="time",
@@ -78,6 +85,11 @@ class Viz:
                 max=self.num_paths - 1,
                 step=1,
                 initial_value=0,
+            )
+            self.path_desc_label = self.server.gui.add_text(
+                label="description",
+                initial_value=self._get_path_description(0),
+                disabled=True,
             )
             self.pose_idx_slider = self.server.gui.add_slider(
                 "pose",
@@ -116,6 +128,7 @@ class Viz:
             if self.pose_idx_slider.value > self.pose_idx_slider.max:
                 self.pose_idx_slider.value = self.pose_idx_slider.max
             _update_time_label()
+            self.path_desc_label.value = self._get_path_description(self.path_idx)
 
         @self.pose_idx_slider.on_update
         def _(_):
@@ -129,7 +142,7 @@ class Viz:
 
         log.debug(f"️🖥️🖼️ Adding images from {config.plan_dir}...")
         self.image_np = self.plan.load_image_np()
-        self.image = self.server.gui.add_image(label=self.plan.name, image=self.image_np, format="png")
+        self.image = self.server.gui.add_image(image=self.image_np, format="png")
         self.pathlen_np = make_pathlen_image(self.plan)
         self.pathlen = self.server.gui.add_image(image=self.pathlen_np, format="png")
         self.pathviz_np = make_pathviz_image(self.plan)
