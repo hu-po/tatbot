@@ -8,6 +8,7 @@ from PIL import Image
 import jax.numpy as jnp
 
 from _ik import batch_ik
+from _ink import InkPalette
 from _log import get_logger
 from _path import Path, PathBatch, PixelPath
 
@@ -64,15 +65,14 @@ class Plan:
     ee_view_wxyz: tuple[float, float, float, float] = (0.67360666, -0.25201478, 0.24747439, 0.64922119)
     """orientation quaternion (wxyz) of the view ee transform."""
 
-    ee_inkcap_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
-    """position of the inkcap ee transform."""
-    ee_inkcap_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
-    """orientation quaternion (wxyz) of the inkcap ee transform."""
-    dip_offset: tuple[float, float, float] = (0.0, 0.0, -0.029)
-    """position offset when dipping inkcap (relative to current ee frame)."""
-
-    ink_dip_interval: int = 2
-    """Dip ink every 2 paths."""
+    ee_inkpalette_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
+    """position of the inkpalette ee transform."""
+    ee_inkpalette_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
+    """orientation quaternion (wxyz) of the inkpalette ee transform."""
+    inkdip_hover_offset: tuple[float, float, float] = (0.0, 0.0, 0.03)
+    """position offset when hovering over inkcap, relative to current ee frame."""
+    pathlen_per_inkdip: int = 2
+    """Number of poses (path length) per inkdip."""
 
     @classmethod
     def from_yaml(cls, dirpath: str) -> "Plan":
@@ -223,7 +223,7 @@ class Plan:
         # overwrites image and metadata
         self.save(image)
         pathbatch = PathBatch.from_paths(paths)
-        pathbatch.save(os.path.join(self.dirpath, PATHS_FILENAME)) 
+        pathbatch.save(os.path.join(self.dirpath, PATHS_FILENAME))
 
         # compute path stats
         path_lengths_px = [
@@ -252,3 +252,16 @@ class Plan:
         log.debug(f"⚙️💾 Saving pathstats to {pathstats_path}...")
         with open(pathstats_path, "w") as f:
             yaml.safe_dump(stats, f)
+
+    def add_ink_dips(self, inkpalette: InkPalette = InkPalette()):
+        # seperate paths based on color
+        # go through each path
+        # after each pathlen_per_inkdip, add an inkdip on the next path
+        # an inkdip is a short path that includes first (1) the inkcap position with hover offset, (2) the inkcap position, (3) the inkcap position with a dip of 1/2 the depth of the inkcap (4) back to the inkcap position then (5) with hover offset
+        # all the dt s for the inkdip should be slow (path_dt_slow)
+        # the inkdip pathsshould have a description of the color of the inkcap and the inkcap name
+
+        # calculate the ik for the inkdip paths in a batch
+
+        # 
+        pass
