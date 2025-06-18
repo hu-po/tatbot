@@ -1,5 +1,6 @@
 import time
 import os
+import functools
 
 import jax
 import jax.numpy as jnp
@@ -69,6 +70,15 @@ def ik(
     log.debug(f"🧮 ik time: {time.time() - start_time:.2f}s")
     return _solution
 
+@functools.lru_cache(maxsize=2)
+def load_robot(urdf_path: str, target_links_name: tuple[str, str]) -> tuple[pk.Robot, Int[Array, "2"]]:
+    urdf = yourdfpy.URDF.load(urdf_path)
+    robot = pk.Robot.from_urdf(urdf)
+    target_link_indices = jnp.array([
+        robot.links.names.index(target_links_name[0]),
+        robot.links.names.index(target_links_name[1]),
+    ])
+    return robot, target_link_indices
 
 def batch_ik(
     target_wxyz: Float[Array, "b n 4"],
@@ -77,16 +87,13 @@ def batch_ik(
     urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf"),
     target_links_name: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link"),
 ) -> Float[Array, "b 16"]:
-    log.info(f"🧮🤖 Making PyRoKi robot from URDF at {urdf_path}...")
-    urdf: yourdfpy.URDF = yourdfpy.URDF.load(urdf_path)
-    robot: pk.Robot = pk.Robot.from_urdf(urdf)
-    target_link_indices = jnp.array([
-        robot.links.names.index(target_links_name[0]),
-        robot.links.names.index(target_links_name[1]),
-    ])
-    log.info(f"🧮 performing batch ik on batch of size {target_pos.shape[0]}")
+    log.debug(f"🧮🤖 Loading PyRoKi robot from URDF at {urdf_path}...")
+    start_time = time.time()
+    robot, target_link_indices = load_robot(urdf_path, target_links_name)
+    log.debug(f"🧮 load robot time: {time.time() - start_time:.4f}s")
+    log.debug(f"🧮 performing batch ik on batch of size {target_pos.shape[0]}")
     start_time = time.time()
     _ik_vmap = jax.vmap(lambda pos: ik(robot, target_link_indices, target_wxyz, pos, config), in_axes=0)
     solutions = _ik_vmap(target_pos)
-    log.info(f"🧮 batch ik time: {time.time() - start_time:.2f}s")
+    log.debug(f"🧮 batch ik time: {time.time() - start_time:.4f}s")
     return solutions

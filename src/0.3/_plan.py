@@ -87,7 +87,7 @@ class Plan:
         return PathBatch.load(filepath)
     
     def save(self, image: np.ndarray = None):
-        log.info(f"⚙️ Saving plan to {self.dirpath}")
+        log.info(f"⚙️💾 Saving plan to {self.dirpath}")
         os.makedirs(self.dirpath, exist_ok=True)
 
         meta_path = os.path.join(self.dirpath, METADATA_FILENAME)

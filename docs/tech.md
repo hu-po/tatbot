@@ -109,8 +109,10 @@ uv run run_bot.py
 ```bash
 # to generate art
 uv pip install .[gen] && \
-uv run gen_bench.py # creates a benchmark plan
-uv run gen_image.py --prompt "cat" # creates a plan from a generated image using prompt "cat"
+# generate a benchmark plan (~12 paths of different types)
+uv run gen_bench.py
+# use a generated image to create a plan
+uv run gen_image.py --prompt "cat"
 # run visualization server
 uv pip install .[viz] && \
 uv run run_viz.py
