@@ -1,7 +1,8 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 import os
 import math
 
+import dacite
 import numpy as np
 import yaml
 from PIL import Image
@@ -51,28 +52,28 @@ class Plan:
     path_dt_slow: float = 2.0
     """Time between poses in seconds for slow movement."""
 
-    ee_design_pos: tuple[float, float, float] = (0.08, 0.0, 0.04)
+    ee_design_pos: list[float] = field(default_factory=lambda: [0.08, 0.0, 0.04])
     """position of the design ee transform."""
-    ee_design_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
+    ee_design_wxyz: list[float] = field(default_factory=lambda: [0.5, 0.5, 0.5, -0.5])
     """orientation quaternion (wxyz) of the design ee transform."""
 
-    hover_offset: tuple[float, float, float] = (0.0, 0.0, 0.006)
+    hover_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.006])
     """position offset when hovering over point, relative to current ee frame."""
-    needle_offset: tuple[float, float, float] = (0.0, 0.0, -0.0065)
+    needle_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, -0.0065])
     """position offset to ensure needle touches skin, relative to current ee frame."""
 
-    view_offset: tuple[float, float, float] = (0.0, -0.16, 0.16)
+    view_offset: list[float] = field(default_factory=lambda: [0.0, -0.16, 0.16])
     """position offset when viewing design with right arm (relative to design ee frame)."""
-    ee_view_wxyz: tuple[float, float, float, float] = (0.67360666, -0.25201478, 0.24747439, 0.64922119)
+    ee_view_wxyz: list[float] = field(default_factory=lambda: [0.67360666, -0.25201478, 0.24747439, 0.64922119])
     """orientation quaternion (wxyz) of the view ee transform."""
 
     inkpalette: InkPalette = field(default_factory=InkPalette)
     """Ink palette to use for the plan."""
-    ee_inkpalette_pos: tuple[float, float, float] = (0.16, 0.0, 0.04)
+    ee_inkpalette_pos: list[float] = field(default_factory=lambda: [0.16, 0.0, 0.04])
     """position of the inkpalette ee transform."""
-    ee_inkpalette_wxyz: tuple[float, float, float, float] = (0.5, 0.5, 0.5, -0.5)
+    ee_inkpalette_wxyz: list[float] = field(default_factory=lambda: [0.5, 0.5, 0.5, -0.5])
     """orientation quaternion (wxyz) of the inkpalette ee transform."""
-    inkdip_hover_offset: tuple[float, float, float] = (0.0, 0.0, 0.03)
+    inkdip_hover_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.03])
     """position offset when hovering over inkcap, relative to current ee frame."""
     pathlen_per_inkdip: int = 64
     """Number of poses (path length) per inkdip."""
@@ -82,7 +83,8 @@ class Plan:
         log.info(f"⚙️ Loading plan from {dirpath}...")
         filepath = os.path.join(dirpath, METADATA_FILENAME)
         with open(filepath, "r") as f:
-            return cls(**yaml.safe_load(f))
+            data = yaml.safe_load(f)
+        return dacite.from_dict(cls, data)
 
     def load_image_np(self) -> np.ndarray:
         filepath = os.path.join(self.dirpath, IMAGE_FILENAME)
@@ -95,7 +97,8 @@ class Plan:
     def load_pixelpaths(self) -> list[PixelPath]:
         filepath = os.path.join(self.dirpath, PIXELPATHS_FILENAME)
         with open(filepath, "r") as f:
-            return [PixelPath.from_dict(p) for p in yaml.safe_load(f)]
+            data = yaml.safe_load(f)
+        return [dacite.from_dict(PixelPath, p) for p in data]
 
     def load_pathstats(self) -> dict:
         filepath = os.path.join(self.dirpath, PATHSTATS_FILENAME)
@@ -108,12 +111,8 @@ class Plan:
 
         meta_path = os.path.join(self.dirpath, METADATA_FILENAME)
         log.info(f"⚙️💾 Saving metadata to {meta_path}")
-        # Convert inkpalette to dict for YAML serialization
-        meta_dict = self.__dict__.copy()
-        if isinstance(meta_dict.get('inkpalette'), InkPalette):
-            meta_dict['inkpalette'] = {'inkcaps': {k: v.to_dict() for k, v in self.inkpalette.inkcaps.items()}}
         with open(meta_path, "w") as f:
-            yaml.safe_dump(meta_dict, f)
+            yaml.safe_dump(asdict(self), f)
 
         if image is not None:
             if isinstance(image, np.ndarray):
@@ -135,7 +134,7 @@ class Plan:
         pixelpaths_path = os.path.join(self.dirpath, PIXELPATHS_FILENAME)
         log.debug(f"⚙️💾 Saving pixelpaths to {pixelpaths_path}...")
         with open(pixelpaths_path, "w") as f:
-            yaml.safe_dump([p.to_dict() for p in pixelpaths], f)
+            yaml.safe_dump([asdict(p) for p in pixelpaths], f)
 
         paths = []
         for path_idx, pixelpath in enumerate(pixelpaths):
@@ -433,7 +432,7 @@ class Plan:
         pixelpaths_path = os.path.join(self.dirpath, PIXELPATHS_FILENAME)
         log.debug(f"⚙️💾 Saving pixelpaths to {pixelpaths_path}...")
         with open(pixelpaths_path, "w") as f:
-            yaml.safe_dump([pp.to_dict() for pp in new_pixelpaths], f)
+            yaml.safe_dump([asdict(pp) for pp in new_pixelpaths], f)
 
         # overwrite inkpalette.yaml
         inkpalette_path = os.path.join(self.dirpath, INKPALETTE_FILENAME)

@@ -170,6 +170,20 @@ class Viz:
             point_shape=self.config.point_shape,
         )
 
+        # Add icospheres for each inkcap in the inkpalette
+        for cap_name, cap in self.plan.inkpalette.inkcaps.items():
+            pos = tuple(np.array(self.plan.ee_inkpalette_pos) + np.array(cap.palette_pos))
+            radius = cap.diameter_m / 2
+            color = COLORS.get(cap.color.lower(), (0, 0, 0))
+            self.server.scene.add_icosphere(
+                name=f"/inkcaps/{cap_name}",
+                radius=radius,
+                color=color,
+                position=pos,
+                subdivisions=4,
+                visible=True,
+            )
+
     def run(self):
         while True:
             if self.pose_idx >= self.path_lengths[self.path_idx]:

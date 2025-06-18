@@ -1,10 +1,12 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
+import dacite
 import jax.numpy as jnp
 import jax_dataclasses as jdc
 from jaxtyping import Array, Float, Int
 import numpy as np
 from safetensors.flax import load_file, save_file
+import yaml
 
 from _log import get_logger
 
@@ -12,7 +14,7 @@ log = get_logger('_path')
 
 @dataclass
 class PixelPath:
-    pixels: list[tuple[int, int]]
+    pixels: list[list[int]]
     """List of pixel coordinates in the image."""
     color: str = "black"
     """Natural language description of the color of the path."""
@@ -22,20 +24,16 @@ class PixelPath:
     def __len__(self) -> int:
         return len(self.pixels)
 
-    def to_dict(self):
-        return {
-            "pixels": self.pixels,
-            "color": self.color,
-            "description": self.description,
-        }
-
     @classmethod
-    def from_dict(cls, data: dict) -> "PixelPath":
-        return cls(
-            pixels=data["pixels"],
-            color=data["color"],
-            description=data["description"],
-        )
+    def from_yaml(cls, filepath: str) -> list["PixelPath"]:
+        with open(filepath, "r") as f:
+            data = yaml.safe_load(f)
+        return [dacite.from_dict(cls, p) for p in data]
+
+    @staticmethod
+    def to_yaml(pixelpaths: list["PixelPath"], filepath: str):
+        with open(filepath, "w") as f:
+            yaml.safe_dump([asdict(p) for p in pixelpaths], f)
 
 @dataclass
 class Path:
