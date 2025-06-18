@@ -123,7 +123,6 @@ class Plan:
         log.debug(f"⚙️ Image shape: {image.size}")
         self.image_width_px = image.size[0]
         self.image_height_px = image.size[1]
-        self.save(image)
         scale_x = self.image_width_m / self.image_width_px
         scale_y = self.image_height_m / self.image_height_px
 
@@ -238,6 +237,8 @@ class Plan:
             for i in range(num_paths):
                 paths[i].joints = all_joints_reshaped[i]
 
+        # overwrites image and metadata
+        self.save(image)
         pathbatch = PathBatch.from_paths(paths)
         pathbatch.save(os.path.join(self.dirpath, PATHS_FILENAME)) 
 
