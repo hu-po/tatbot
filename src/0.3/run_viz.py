@@ -110,18 +110,18 @@ class Viz:
         self.pathviz_np = make_pathviz_image(self.plan, self.pathbatch)
         self.pathviz = self.server.gui.add_image(image=self.pathviz_np, format="png")
 
-        log.debug(f"🖥️🖼️ Adding design pointcloud...")
-        design_points = []
+        log.debug(f"🖥️🖼️ Adding pointcloud...")
+        points = []
         for i in range(self.pathbatch.ee_pos_l.shape[0]):
             for j in range(self.pathbatch.ee_pos_l.shape[1]):
                 if self.pathbatch.mask[i, j]:
-                    design_points.append(self.pathbatch.ee_pos_l[i, j])
-        design_points = np.stack(design_points, axis=0)
-        design_colors = np.tile(np.array(COLORS["black"], dtype=np.uint8), (design_points.shape[0], 1))
-        self.design_pointcloud = self.server.scene.add_point_cloud(
-            name="/design/targets",
-            points=design_points,
-            colors=design_colors,
+                    points.append(self.pathbatch.ee_pos_l[i, j])
+        points = np.stack(points, axis=0)
+        point_colors = np.tile(np.array(COLORS["black"], dtype=np.uint8), (points.shape[0], 1))
+        self.pointcloud = self.server.scene.add_point_cloud(
+            name="/points",
+            points=points,
+            colors=point_colors,
             point_size=self.config.point_size,
             point_shape=self.config.point_shape,
         )
