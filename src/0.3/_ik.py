@@ -71,11 +71,11 @@ def ik(
             joint_var,
             jnp.array([config.limit_weight] * robot.joints.num_joints),
         ),
-        # pk.costs.rest_cost(
-        #     joint_var,
-        #     rest_pose,
-        #     config.rest_weight,
-        # ),
+        pk.costs.rest_cost(
+            joint_var,
+            rest_pose,
+            weight=config.rest_weight,
+        ),
     ]
     sol = (
         jaxls.LeastSquaresProblem(factors, [joint_var])
