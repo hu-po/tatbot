@@ -138,13 +138,19 @@ class Viz:
         log.debug(f"🖥️🖼️ Adding pointclouds...")
         points_hover = []
         points_path = []
+        self.path_point_ranges = []  # List of (start_idx, end_idx) for each path in points_path
+        path_point_idx = 0
         for i in range(self.pathbatch.ee_pos_l.shape[0]):
+            path_start = path_point_idx
             for j in range(self.pathbatch.ee_pos_l.shape[1]):
                 if self.pathbatch.mask[i, j]:
                     if j == 0 or j == self.path_lengths[i] - 1:
                         points_hover.append(self.pathbatch.ee_pos_l[i, j])
                     else:
                         points_path.append(self.pathbatch.ee_pos_l[i, j])
+                        path_point_idx += 1
+            path_end = path_point_idx
+            self.path_point_ranges.append((path_start, path_end))
         points_hover = np.stack(points_hover, axis=0)
         points_path = np.stack(points_path, axis=0)
         point_colors_hover = np.tile(np.array(COLORS["orange"], dtype=np.uint8), (points_hover.shape[0], 1))
@@ -201,7 +207,19 @@ class Viz:
             self.urdf.update_cfg(joints_np)
 
             log.debug(f"🖥️🤖 Updating Viser pointclouds...")
-            # TODO: highlight entire path in red, path up until current pose in green, current pose in magenta
+            # Highlight entire path in red, path up until current pose in green, current pose in magenta
+            path_start, path_end = self.path_point_ranges[self.path_idx]
+            new_colors = np.tile(np.array(COLORS["black"], dtype=np.uint8), (self.pointcloud_path.points.shape[0], 1))
+            # Highlight current path in red
+            new_colors[path_start:path_end] = np.array(COLORS["red"], dtype=np.uint8)
+            # Highlight up to current pose in green (excluding endpoints)
+            pose_in_path = max(0, min(self.pose_idx - 1, path_end - path_start - 1))
+            if pose_in_path > 0:
+                new_colors[path_start:path_start + pose_in_path] = np.array(COLORS["green"], dtype=np.uint8)
+            # Highlight current pose in magenta (if not endpoint)
+            if 0 <= self.pose_idx - 1 < (path_end - path_start):
+                new_colors[path_start + self.pose_idx - 1] = np.array(COLORS["magenta"], dtype=np.uint8)
+            self.pointcloud_path.colors = new_colors
 
             dt_val = self.pathbatch.dt[self.path_idx, self.pose_idx]
             if hasattr(dt_val, "item"):
