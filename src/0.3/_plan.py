@@ -42,7 +42,6 @@ class Plan:
 
     ik_batch_size: int = 256
     """Batch size for IK computation."""
-    
     path_pad_len: int = 128
     """Length to pad paths to."""
     path_dt_fast: float = 0.1
@@ -145,36 +144,33 @@ class Plan:
                 # pixel coordinates first need to be converted to meters
                 x_m, y_m = pw * scale_x, ph * scale_y
                 # center in design frame, add needle offset
-                _pos_left = [
+                path.ee_pos_l[i + 1, :] = [
                     self.ee_design_pos[0] + x_m - self.image_width_m / 2,
                     self.ee_design_pos[1] + y_m - self.image_height_m / 2,
                     self.ee_design_pos[2] + self.needle_offset[2],
                 ]
-                path.ee_pos_l[i + 1, :] = _pos_left
                 path.ee_wxyz_l[i + 1, :] = self.ee_design_wxyz
                 # right hand just stares at center of design frame
-                _pos_right = [
+                path.ee_pos_r[i + 1, :] = [
                     self.ee_design_pos[0] + self.view_offset[0],
                     self.ee_design_pos[1] + self.view_offset[1],
-                    _pos_left[2] + self.view_offset[2],
+                    self.ee_design_pos[2] + self.view_offset[2],
                 ]
-                path.ee_pos_r[i + 1, :] = _pos_right
                 path.ee_wxyz_r[i + 1, :] = self.ee_view_wxyz
             # add hover positions to the beginning and end of the path
-            _hover_pos_start_left = [
-                path.ee_pos_l[0, 0] + self.hover_offset[0],
-                path.ee_pos_l[0, 1] + self.hover_offset[1],
-                path.ee_pos_l[0, 2] + self.hover_offset[2],
+            path.ee_pos_l[0, :] = [
+                path.ee_pos_l[1, 0] + self.hover_offset[0],
+                path.ee_pos_l[1, 1] + self.hover_offset[1],
+                path.ee_pos_l[1, 2] + self.hover_offset[2],
             ]
-            path.ee_pos_l[0, :] = _hover_pos_start_left
             path.ee_wxyz_l[0, :] = self.ee_design_wxyz
             path.ee_pos_l[-1, :] = [
-                path.ee_pos_l[-1, 0] + self.hover_offset[0],
-                path.ee_pos_l[-1, 1] + self.hover_offset[1],
-                path.ee_pos_l[-1, 2] + self.hover_offset[2],
+                path.ee_pos_l[-2, 0] + self.hover_offset[0],
+                path.ee_pos_l[-2, 1] + self.hover_offset[1],
+                path.ee_pos_l[-2, 2] + self.hover_offset[2],
             ]
             path.ee_wxyz_l[-1, :] = self.ee_design_wxyz
-            # make sure right hand has same number of poses, but no hover
+            # right hand has no hover offset, just use the first and last poses
             path.ee_pos_r[0, :] = path.ee_pos_r[1, :]
             path.ee_wxyz_r[0, :] = path.ee_wxyz_r[1, :]
             path.ee_pos_r[-1, :] = path.ee_pos_r[-2, :]
@@ -185,57 +181,37 @@ class Plan:
             path.dt[-1, 0] = self.path_dt_slow
             paths.append(path)
 
-        # First, concatenate all poses from all paths into a single large batch.
-        ee_pos_l = jnp.stack([path.ee_pos_l for path in paths])
-        ee_pos_r = jnp.stack([path.ee_pos_r for path in paths])
-        ee_wxyz_l = jnp.stack([path.ee_wxyz_l for path in paths])
-        ee_wxyz_r = jnp.stack([path.ee_wxyz_r for path in paths])
-
-        num_paths, path_len, _ = ee_pos_l.shape
-        total_poses = num_paths * path_len
-
-        # Reshape to flatten all poses into a single batch dimension.
-        # The shape becomes (total_poses, 3) for positions and (total_poses, 4) for orientations.
-        all_ee_pos_l = ee_pos_l.reshape((total_poses, 3))
-        all_ee_pos_r = ee_pos_r.reshape((total_poses, 3))
-        all_ee_wxyz_l = ee_wxyz_l.reshape((total_poses, 4))
-        all_ee_wxyz_r = ee_wxyz_r.reshape((total_poses, 4))
-
-        # Stack the left and right arm data to match the expected input shape for batch_ik,
-        # which is (batch_size, num_arms, ...). Here num_arms is 2.
-        # Shape for all_target_pos: (total_poses, 2, 3)
-        # Shape for all_target_wxyz: (total_poses, 2, 4)
-        all_target_pos = jnp.stack([all_ee_pos_l, all_ee_pos_r], axis=1)
-        all_target_wxyz = jnp.stack([all_ee_wxyz_l, all_ee_wxyz_r], axis=1)
-
-        # Process the poses in batches to manage memory and compute resources.
-        all_joints_flat = []
-        for i in range(0, total_poses, self.ik_batch_size):
-            log.info(f"⚙️ Computing IK for batch {i // self.ik_batch_size + 1}/{math.ceil(total_poses / self.ik_batch_size)}...")
-            # Create a batch of poses and orientations.
-            batch_target_pos = all_target_pos[i:i + self.ik_batch_size]
-            batch_target_wxyz = all_target_wxyz[i:i + self.ik_batch_size]
-
-            # Call the batch_ik function. Note: This assumes that `batch_ik` in `_ik.py`
-            # is corrected to handle batching over both position and orientation, as the
-            # provided version has a bug in its `vmap` implementation.
+        # ---- Batch IK ----
+        flat_target_pos   : list[list[np.ndarray]] = []
+        flat_target_wxyz  : list[list[np.ndarray]] = []
+        index_map: list[tuple[int, int]] = [] # (path_idx, pose_idx)
+        for p_idx, path in enumerate(paths):
+            for pose_idx in range(path.ee_pos_l.shape[0]):
+                # Skip padded entries (both arms at zero => unused slot)
+                if (np.allclose(path.ee_pos_l[pose_idx], 0.0) and
+                    np.allclose(path.ee_pos_r[pose_idx], 0.0)):
+                    continue
+                index_map.append((p_idx, pose_idx))
+                flat_target_pos.append(
+                    [path.ee_pos_l[pose_idx], path.ee_pos_r[pose_idx]]
+                )
+                flat_target_wxyz.append(
+                    [path.ee_wxyz_l[pose_idx], path.ee_wxyz_r[pose_idx]]
+                )
+        target_pos   = jnp.array(flat_target_pos)    # (B, 2, 3)
+        target_wxyz  = jnp.array(flat_target_wxyz)   # (B, 2, 4)
+        for start in range(0, target_pos.shape[0], self.ik_batch_size):
+            end = start + self.ik_batch_size
+            batch_pos   = target_pos[start:end]       # (b, 2, 3)
+            batch_wxyz  = target_wxyz[start:end]      # (b, 2, 4)
             batch_joints = batch_ik(
-                target_wxyz=batch_target_wxyz,
-                target_pos=batch_target_pos,
-            )
-            all_joints_flat.append(batch_joints)
-
-        # Concatenate the results from all batches.
-        if all_joints_flat:
-            all_joints = jnp.concatenate(all_joints_flat, axis=0)
-
-            # Reshape the flat joint results back to the original structure of (num_paths, path_len, num_joints).
-            # The number of joints is 16.
-            all_joints_reshaped = all_joints.reshape((num_paths, path_len, 16))
-
-            # Assign the computed joint configurations back to each path.
-            for i in range(num_paths):
-                paths[i].joints = all_joints_reshaped[i]
+                target_wxyz=batch_wxyz,
+                target_pos=batch_pos,
+            )                                         # (b, 16)
+            # write results back into the corresponding path / pose slots
+            for local_idx, joints in enumerate(batch_joints):
+                p_idx, pose_idx = index_map[start + local_idx]
+                paths[p_idx].joints[pose_idx] = np.asarray(joints, dtype=np.float32)
 
         # overwrites image and metadata
         self.save(image)
@@ -248,7 +224,7 @@ class Plan:
             if len(path.pixels) > 1 else 0.0
             for path in pixelpaths
         ]
-        # Metric lengths
+        # metric lengths
         path_lengths_m = [
             float(np.sum(np.linalg.norm(np.diff(pathbatch.ee_pos_l[i][pathbatch.mask[i] == 1], axis=0), axis=1)))
             if np.sum(pathbatch.mask[i]) > 1 else 0.0

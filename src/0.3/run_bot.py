@@ -75,9 +75,9 @@ def safe_loop(loop: Callable, config: Any) -> None:
     except Exception as e:
         log.error(f"Error: {e}")
     except KeyboardInterrupt:
-        log.info("🛑⌨️ Keyboard interrupt detected. Disconnecting robot...")
+        log.info("🤖🛑⌨️ Keyboard interrupt detected. Disconnecting robot...")
     finally:
-        log.info("🛑🤖 Disconnecting robot...")
+        log.info("🤖🛑 Disconnecting robot...")
         robot = make_robot_from_config(TatbotConfig())
         robot._connect_l(clear_error=False)
         log.error(robot._get_error_str_l())
@@ -103,7 +103,7 @@ def urdf_joints_to_action(urdf_joints: list[float]) -> dict[str, float]:
         "right.joint_5.pos": urdf_joints[13],
         "right.gripper.pos": urdf_joints[14],
     }
-    log.debug(f"🦾 Action: {_action}")
+    log.debug(f"🤖 Action: {_action}")
     return _action
 
 def perform(config: PerformConfig):
@@ -113,7 +113,7 @@ def perform(config: PerformConfig):
     robot = make_robot_from_config(TatbotConfig())
     robot.connect()
 
-    log.info("⌨️ Adding keyboard listener...")
+    log.info("🤖⌨️ Adding keyboard listener...")
     listener, events = init_keyboard_listener()
 
     dataset_name = config.dataset_name or f"{plan.name}-{time.strftime(TIME_FORMAT, time.localtime())}"
@@ -122,7 +122,7 @@ def perform(config: PerformConfig):
     dataset_features = {**action_features, **obs_features}
     repo_id = f"{config.hf_username}/{dataset_name}"
     if config.resume:
-        log.info(f"📦🤗 Resuming LeRobot dataset at {repo_id}...")
+        log.info(f"🤖📦🤗 Resuming LeRobot dataset at {repo_id}...")
         dataset = LeRobotDataset(
             repo_id,
             root=f"{config.output_dir}/{dataset_name}",
@@ -135,7 +135,7 @@ def perform(config: PerformConfig):
             )
         sanity_check_dataset_robot_compatibility(dataset, robot, config.fps, dataset_features)
     else:
-        log.info(f"📦🤗 Creating new LeRobot dataset at {repo_id}...")
+        log.info(f"🤖📦🤗 Creating new LeRobot dataset at {repo_id}...")
         sanity_check_dataset_name(repo_id, None)
         dataset = LeRobotDataset.create(
             repo_id,
@@ -151,7 +151,7 @@ def perform(config: PerformConfig):
         _init_rerun(session_name="recording")
 
     logs_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/logs")
-    log.info(f"🗃️ Creating logs directory at {logs_dir}...")
+    log.info(f"🤖🗃️ Creating logs directory at {logs_dir}...")
     os.makedirs(logs_dir, exist_ok=True)
     episode_log_buffer = StringIO()
 
@@ -177,11 +177,11 @@ def perform(config: PerformConfig):
             robot.connect()
 
         if path_idx >= config.max_episodes:
-            log.info(f"⚠️ max episodes {config.max_episodes} exceeded, breaking...")
+            log.info(f"🤖⚠️ max episodes {config.max_episodes} exceeded, breaking...")
             log_say(f"max paths {config.max_episodes} exceeded", config.play_sounds, blocking=True)
             break
 
-        log.info(f"recording path {path_idx} of {len(plan.paths)}")
+        log.info(f"🤖 recording path {path_idx} of {len(plan.paths)}")
         log_say(f"recording path {path_idx}", config.play_sounds)
         for pose_idx in range(len(path)):
             log.debug(f"pose_idx: {pose_idx}/{len(path)}")

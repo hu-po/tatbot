@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import logging
 import os
 import time
 
@@ -20,7 +21,7 @@ class VizConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    plan_dir: str = os.path.expanduser("~/tatbot/output/plans/cat")
+    plan_dir: str = os.path.expanduser("~/tatbot/output/plans/bench")
     """Directory containing plan."""
 
     urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
@@ -135,8 +136,12 @@ class Viz:
             if self.path_idx >= self.num_paths:
                 log.debug(f"🖥️ Looping back to path 0")
                 self.path_idx = 0
+                self.pose_idx = 0
             self.path_idx_slider.value = self.path_idx
             self.pose_idx_slider.value = self.pose_idx
+            self.pose_idx_slider.max = self.path_lengths[self.path_idx] - 1
+            if self.pose_idx_slider.value > self.pose_idx_slider.max:
+                self.pose_idx_slider.value = self.pose_idx_slider.max
             log.debug(f"🖥️🤖 Visualizing path {self.path_idx} pose {self.pose_idx}")
             self.update_image(self.path_idx, self.pose_idx)
             self.update_robot(self.pathbatch.joints[self.path_idx, self.pose_idx])
@@ -316,5 +321,7 @@ def make_pathlen_image(plan: Plan) -> np.ndarray:
 if __name__ == "__main__":
     args = setup_log_with_config(VizConfig)
     print_config(args)
+    if args.debug:
+        log.setLevel(logging.DEBUG)
     viz = Viz(args)
     viz.run()
