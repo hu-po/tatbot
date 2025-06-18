@@ -20,7 +20,7 @@ class VizConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    plan_dir: str = os.path.expanduser("~/tatbot/output/plans/bench")
+    plan_dir: str = os.path.expanduser("~/tatbot/output/plans/cat")
     """Directory containing plan."""
 
     urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
