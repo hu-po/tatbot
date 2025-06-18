@@ -40,7 +40,7 @@ class Plan:
     image_height_px: int | None = None
     """Height of the image in pixels."""
 
-    ik_batch_size: int = 1024
+    ik_batch_size: int = 256
     """Batch size for IK computation."""
     
     path_pad_len: int = 64
