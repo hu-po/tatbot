@@ -93,7 +93,7 @@ class Plan:
     def load_pixelpaths(self) -> list[PixelPath]:
         filepath = os.path.join(self.dirpath, PIXELPATHS_FILENAME)
         with open(filepath, "r") as f:
-            return yaml.safe_load(f)
+            return [PixelPath.from_dict(p) for p in yaml.safe_load(f)]
 
     def load_pathstats(self) -> dict:
         filepath = os.path.join(self.dirpath, PATHSTATS_FILENAME)

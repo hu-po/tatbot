@@ -103,11 +103,11 @@ class Viz:
         self.urdf = ViserUrdf(self.server, yourdfpy.URDF.load(config.urdf_path), root_node_name="/root")
 
         log.debug(f"️🖥️🖼️ Adding images from {config.plan_dir}...")
-        self.image_np = self.plan.image_np(config.plan_dir)
+        self.image_np = self.plan.load_image_np()
         self.image = self.server.gui.add_image(label=self.plan.name, image=self.image_np, format="png")
-        self.pathlen_np = make_pathlen_image(self.plan, self.pathbatch)
+        self.pathlen_np = make_pathlen_image(self.plan)
         self.pathlen = self.server.gui.add_image(image=self.pathlen_np, format="png")
-        self.pathviz_np = make_pathviz_image(self.plan, self.pathbatch)
+        self.pathviz_np = make_pathviz_image(self.plan)
         self.pathviz = self.server.gui.add_image(image=self.pathviz_np, format="png")
 
         log.debug(f"🖥️🖼️ Adding pointcloud...")
@@ -164,7 +164,7 @@ class Viz:
         for pw, ph in self.pixelpaths[path_idx].pixels[:min(pose_idx, valid_len)]:
             cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["green"], -1)
         # highlight current pose in magenta
-        if valid_len > 0 and pose_idx < valid_len:
+        if valid_len > 0 and pose_idx < len(self.pixelpaths[path_idx].pixels):
             px, py = self.pixelpaths[path_idx].pixels[pose_idx]
             cv2.circle(image_np, (int(px), int(py)), self.config.pose_highlight_radius, COLORS["magenta"], -1)
         self.image.image = image_np

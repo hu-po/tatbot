@@ -29,6 +29,14 @@ class PixelPath:
             "description": self.description,
         }
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "PixelPath":
+        return cls(
+            pixels=data["pixels"],
+            color=data["color"],
+            description=data["description"],
+        )
+
 @dataclass
 class Path:
     ee_pos_l: Float[Array, "l 3"]
