@@ -67,6 +67,11 @@ class Viz:
         self.pathbatch = self.plan.load_pathbatch()
         self.path_lengths = [int(np.sum(self.pathbatch.mask[i])) for i in range(self.num_paths)]
         with self.server.gui.add_folder("Plan"):
+            self.time_label = self.server.gui.add_text(
+                label="time",
+                initial_value=" 00h00m00s / 00h00m00s",
+                disabled=True,
+            )
             self.path_idx_slider = self.server.gui.add_slider(
                 "path",
                 min=0,
@@ -89,16 +94,35 @@ class Viz:
                 initial_value=self.config.speed,
             )
         
+        def _format_seconds(secs):
+            secs = int(secs)
+            h = secs // 3600
+            m = (secs % 3600) // 60
+            s = secs % 60
+            return f"{h:02}h{m:02}m{s:02}s"
+
+        def _update_time_label():
+            current_time = 0.0
+            for i in range(self.path_idx):
+                current_time += self.pathbatch.dt[i, :self.path_lengths[i]].sum().item()
+            current_time += self.pathbatch.dt[self.path_idx, :self.pose_idx+1].sum().item()
+            total_time = self.pathbatch.dt.sum().item()
+            self.time_label.value = f"{_format_seconds(current_time)} / {_format_seconds(total_time)}"
+
         @self.path_idx_slider.on_update
         def _(_):
             self.path_idx = self.path_idx_slider.value
             self.pose_idx_slider.max = self.path_lengths[self.path_idx] - 1
             if self.pose_idx_slider.value > self.pose_idx_slider.max:
                 self.pose_idx_slider.value = self.pose_idx_slider.max
+            _update_time_label()
 
         @self.pose_idx_slider.on_update
         def _(_):
             self.pose_idx = self.pose_idx_slider.value
+            _update_time_label()
+
+        _update_time_label()
 
         log.debug(f"🖥️🤖 Adding URDF to viser from {config.urdf_path}...")
         self.urdf = ViserUrdf(self.server, yourdfpy.URDF.load(config.urdf_path), root_node_name="/root")
@@ -156,8 +180,29 @@ class Viz:
             if self.pose_idx_slider.value > self.pose_idx_slider.max:
                 self.pose_idx_slider.value = self.pose_idx_slider.max
             log.debug(f"🖥️🤖 Visualizing path {self.path_idx} pose {self.pose_idx}")
-            self.update_image(self.path_idx, self.pose_idx)
-            self.update_robot(self.pathbatch.joints[self.path_idx, self.pose_idx])
+
+            log.debug(f"🖥️🖼️ Updating Viser image...")
+            image_np = self.image_np.copy()
+            valid_len = self.path_lengths[self.path_idx]
+            # highlight entire path in red (only valid points)
+            for pw, ph in self.pixelpaths[self.path_idx].pixels[:valid_len]:
+                cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["red"], -1)
+            # highlight path up until current pose in green
+            for pw, ph in self.pixelpaths[self.path_idx].pixels[:min(self.pose_idx, valid_len)]:
+                cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["green"], -1)
+            # highlight current pose in magenta
+            if valid_len > 0 and self.pose_idx < len(self.pixelpaths[self.path_idx].pixels):
+                px, py = self.pixelpaths[self.path_idx].pixels[self.pose_idx]
+                cv2.circle(image_np, (int(px), int(py)), self.config.pose_highlight_radius, COLORS["magenta"], -1)
+            self.image.image = image_np
+
+            log.debug(f"🖥️🤖 Updating Viser robot...")
+            joints_np = np.asarray(self.pathbatch.joints[self.path_idx, self.pose_idx], dtype=np.float64).flatten()
+            self.urdf.update_cfg(joints_np)
+
+            log.debug(f"🖥️🤖 Updating Viser pointclouds...")
+            # TODO: highlight entire path in red, path up until current pose in green, current pose in magenta
+
             dt_val = self.pathbatch.dt[self.path_idx, self.pose_idx]
             if hasattr(dt_val, "item"):
                 dt_val = dt_val.item()
@@ -165,27 +210,6 @@ class Viz:
                 dt_val = float(dt_val)
             time.sleep(dt_val / self.speed_slider.value)
             self.pose_idx += 1
-
-    def update_robot(self, joints: np.ndarray):
-        log.debug(f"🖥️🤖 Updating Viser robot...")
-        joints_np = np.asarray(joints, dtype=np.float64).flatten()
-        self.urdf.update_cfg(joints_np)
-
-    def update_image(self, path_idx: int, pose_idx: int):
-        log.debug(f"🖥️🖼️ Updating Viser image...")
-        image_np = self.image_np.copy()
-        valid_len = self.path_lengths[path_idx]
-        # highlight entire path in red (only valid points)
-        for pw, ph in self.pixelpaths[path_idx].pixels[:valid_len]:
-            cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["red"], -1)
-        # highlight path up until current pose in green
-        for pw, ph in self.pixelpaths[path_idx].pixels[:min(pose_idx, valid_len)]:
-            cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["green"], -1)
-        # highlight current pose in magenta
-        if valid_len > 0 and pose_idx < len(self.pixelpaths[path_idx].pixels):
-            px, py = self.pixelpaths[path_idx].pixels[pose_idx]
-            cv2.circle(image_np, (int(px), int(py)), self.config.pose_highlight_radius, COLORS["magenta"], -1)
-        self.image.image = image_np
 
 def make_pathviz_image(plan: Plan) -> np.ndarray:
     """Creates an image with overlayed paths from a plan."""
