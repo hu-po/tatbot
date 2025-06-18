@@ -44,11 +44,6 @@ class VizConfig:
 class Viz:
     def __init__(self, config: VizConfig):
         self.config = config
-        self.plan = Plan.from_yaml(config.plan_dir)
-        self.pathbatch = self.plan.pathbatch(config.plan_dir)
-        self.speed = config.speed
-        # Cache pixel paths as PixelPath objects
-        self.pixel_paths = get_path_pixel_coords(self.plan, self.pathbatch)
 
         log.info("🖥️ Starting viser server...")
         self.server: viser.ViserServer = viser.ViserServer()
@@ -59,21 +54,14 @@ class Viz:
             client.camera.position = config.view_camera_position
             client.camera.look_at = config.view_camera_look_at
 
-        log.debug(f"🖥️🤖 Adding URDF to viser from {config.urdf_path}...")
-        self.urdf = ViserUrdf(self.server, yourdfpy.URDF.load(config.urdf_path), root_node_name="/root")
-
-        log.debug(f"️🖥️🖼️ Adding images from {config.plan_dir}...")
-        self.image_np = self.plan.image_np(config.plan_dir)
-        self.image = self.server.gui.add_image(label=self.plan.name, image=self.image_np, format="png")
-        self.pathlen_np = make_pathlen_image(self.plan)
-        self.pathlen = self.server.gui.add_image(label="paths", image=self.pathlen_np, format="png")
-        self.pathviz_np = make_pathviz_image(self.plan)
-        self.pathviz = self.server.gui.add_image(label="info", image=self.pathviz_np, format="png")
-
-        # --- Add GUI sliders for path_idx and pose_idx ---
+        self.path_idx = 0
+        self.pose_idx = 0
+        self.plan = Plan.from_yaml(config.plan_dir)
+        self.pathbatch = self.plan.pathbatch(config.plan_dir)
+        self.pixel_paths = get_path_pixel_coords(self.plan, self.pathbatch)
         self.num_paths = len(self.plan.path_descriptions)
         self.path_lengths = [self.pathbatch.dt[i].shape[0] for i in range(self.num_paths)]
-        with self.server.gui.add_folder("Session"):
+        with self.server.gui.add_folder("Plan"):
             self.path_idx_slider = self.server.gui.add_slider(
                 "path",
                 min=0,
@@ -88,40 +76,77 @@ class Viz:
                 step=1,
                 initial_value=0,
             )
-        # Update pose_idx slider max when path_idx changes
+            self.speed_slider = self.server.gui.add_slider(
+                "speed",
+                min=0.1,
+                max=100.0,
+                step=0.1,
+                initial_value=self.config.speed,
+            )
+        
         @self.path_idx_slider.on_update
         def _(_):
-            path_idx = self.path_idx_slider.value
-            self.pose_idx_slider.max = self.path_lengths[path_idx] - 1
+            self.path_idx = self.path_idx_slider.value
+            self.pose_idx_slider.max = self.path_lengths[self.path_idx] - 1
             if self.pose_idx_slider.value > self.pose_idx_slider.max:
                 self.pose_idx_slider.value = self.pose_idx_slider.max
 
+        @self.pose_idx_slider.on_update
+        def _(_):
+            self.pose_idx = self.pose_idx_slider.value
+
+        log.debug(f"🖥️🤖 Adding URDF to viser from {config.urdf_path}...")
+        self.urdf = ViserUrdf(self.server, yourdfpy.URDF.load(config.urdf_path), root_node_name="/root")
+
+        log.debug(f"️🖥️🖼️ Adding images from {config.plan_dir}...")
+        self.image_np = self.plan.image_np(config.plan_dir)
+        self.image = self.server.gui.add_image(label=self.plan.name, image=self.image_np, format="png")
+        self.pathlen_np = make_pathlen_image(self.plan)
+        self.pathlen = self.server.gui.add_image(image=self.pathlen_np, format="png")
+        self.pathviz_np = make_pathviz_image(self.plan)
+        self.pathviz = self.server.gui.add_image(image=self.pathviz_np, format="png")
+
+
     def run(self):
         while True:
-            path_idx = self.path_idx_slider.value
-            pose_idx = self.pose_idx_slider.value
-            log.info(f"🖥️🤖 Visualizing path {path_idx} pose {pose_idx}...")
-            self.update_image(path_idx, pose_idx)
-            self.update_robot(self.pathbatch.joints[path_idx, pose_idx])
-            time.sleep(self.pathbatch.dt[path_idx, pose_idx] / self.speed)
+            if self.path_idx >= self.num_paths:
+                log.debug(f"🖥️ Looping back to path 0")
+                self.path_idx = 0
+            if self.pose_idx >= self.path_lengths[self.path_idx]:
+                self.path_idx += 1
+                log.debug(f"🖥️ Moving to next path {self.path_idx}")
+                self.pose_idx = 0
+            self.path_idx_slider.value = self.path_idx
+            self.pose_idx_slider.value = self.pose_idx
+            log.debug(f"🖥️🤖 Visualizing path {self.path_idx} pose {self.pose_idx}")
+            self.update_image(self.path_idx, self.pose_idx)
+            self.update_robot(self.pathbatch.joints[self.path_idx, self.pose_idx])
+            dt_val = self.pathbatch.dt[self.path_idx, self.pose_idx]
+            if hasattr(dt_val, "item"):
+                dt_val = dt_val.item()
+            else:
+                dt_val = float(dt_val)
+            time.sleep(dt_val / self.speed_slider.value)
+            self.pose_idx += 1
 
     def update_robot(self, joints: np.ndarray):
         log.debug(f"🖥️🤖 Updating Viser robot...")
-        self.urdf.update_cfg(joints)
+        joints_np = np.asarray(joints, dtype=np.float64).flatten()
+        self.urdf.update_cfg(joints_np)
 
     def update_image(self, path_idx: int, pose_idx: int):
         log.debug(f"🖥️🖼️ Updating Viser image...")
         image_np = self.image_np.copy()
         # highlight entire path in red
         for pw, ph in self.pixel_paths[path_idx].pixels:
-            cv2.circle(image_np, (int(pw), int(ph)), self.path_highlight_radius, COLORS["red"], -1)
+            cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["red"], -1)
         # highlight path up until current pose in green
         for pw, ph in self.pixel_paths[path_idx].pixels[:pose_idx]:
-            cv2.circle(image_np, (int(pw), int(ph)), self.path_highlight_radius, COLORS["green"], -1)
+            cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["green"], -1)
         # highlight current pose in magenta
         if self.pixel_paths[path_idx].pixels:
             px, py = self.pixel_paths[path_idx].pixels[pose_idx]
-            cv2.circle(image_np, (int(px), int(py)), self.pose_highlight_radius, COLORS["magenta"], -1)
+            cv2.circle(image_np, (int(px), int(py)), self.config.pose_highlight_radius, COLORS["magenta"], -1)
         self.image.image = image_np
 
 def get_path_pixel_coords(plan: Plan, pathbatch: PathBatch) -> list[PixelPath]:
