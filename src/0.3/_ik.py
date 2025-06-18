@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 import time
 import os
 import functools
@@ -16,24 +17,40 @@ from _log import get_logger
 log = get_logger('_ik')
 log.info(f"🧠 JAX devices: {jax.devices()}")
 
+@dataclass
+class IKRobotConfig:
+    urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
+    """Local path to the URDF file for the robot."""
+    target_link_names: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link")
+    """Names of the ee links in the URDF for left and right ik solving."""
+    rest_pose: Float[Array, "16"] = field(default_factory=lambda: jnp.array([
+        # left arm
+        0.42, 1.01, 0.49, 0.60, 0.0, 0.0, 0.0, 0.0,
+        # right arm
+        0.58, 0.05, 0.93, 1.56, 0.10, 0.0, 0.04, 0.04]))
+    """Rest pose for the robot."""
+
 @jdc.pytree_dataclass
 class IKConfig:
     pos_weight: float = 50.0
     """Weight for the position part of the IK cost function."""
     ori_weight: float = 10.0
     """Weight for the orientation part of the IK cost function."""
+    rest_weight: float = 1.0
+    """Weight for the rest pose cost function."""
     limit_weight: float = 100.0
-    """Weight for the joint limit part of the IK cost function."""
+    """Weight for the limit cost function."""
     lambda_initial: float = 1.0
     """Initial lambda value for the IK trust region solver."""
 
 @jdc.jit
 def ik(
     robot: pk.Robot,
-    target_link_indices: Int[Array, "n"], # n is number of targets (2 for bimanual)
+    config: IKConfig,
+    target_link_indices: Int[Array, "n"], # n=2 for bimanual
     target_wxyz: Float[Array, "n 4"],
     target_position: Float[Array, "n 3"],
-    config: IKConfig,
+    rest_pose: Float[Array, "16"],
 ) -> Float[Array, "16"]:
     log.debug(f"🧮 performing ik on batch of size {target_wxyz.shape[0]}")
     start_time = time.time()
@@ -52,9 +69,13 @@ def ik(
         pk.costs.limit_cost(
             robot,
             joint_var,
-            # TODO: limit weights should be higher for finger joints on left arm
             jnp.array([config.limit_weight] * robot.joints.num_joints),
         ),
+        # pk.costs.rest_cost(
+        #     joint_var,
+        #     rest_pose,
+        #     config.rest_weight,
+        # ),
     ]
     sol = (
         jaxls.LeastSquaresProblem(factors, [joint_var])
@@ -82,18 +103,20 @@ def load_robot(urdf_path: str, target_links_name: tuple[str, str]) -> tuple[pk.R
 
 def batch_ik(
     target_wxyz: Float[Array, "b n 4"],
-    target_pos: Float[Array, "b n 3"], # b is batch size
-    config: IKConfig = IKConfig(),
-    urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf"),
-    target_links_name: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link"),
+    target_pos: Float[Array, "b n 3"],
+    ik_config: IKConfig = IKConfig(),
+    robot_config: IKRobotConfig = IKRobotConfig(),
 ) -> Float[Array, "b 16"]:
-    log.debug(f"🧮🤖 Loading PyRoKi robot from URDF at {urdf_path}...")
+    log.debug(f"🧮🤖 Loading PyRoKi robot from URDF at {robot_config.urdf_path}...")
     start_time = time.time()
-    robot, target_link_indices = load_robot(urdf_path, target_links_name)
+    robot, target_link_indices = load_robot(robot_config.urdf_path, robot_config.target_link_names)
     log.debug(f"🧮 load robot time: {time.time() - start_time:.4f}s")
     log.debug(f"🧮 performing batch ik on batch of size {target_pos.shape[0]}")
     start_time = time.time()
-    _ik_vmap = jax.vmap(lambda pos: ik(robot, target_link_indices, target_wxyz, pos, config), in_axes=0)
-    solutions = _ik_vmap(target_pos)
+    _ik_vmap = jax.vmap(
+        lambda wxyz, pos, rest: ik(robot, ik_config, target_link_indices, wxyz, pos, rest),
+        in_axes=(0, 0, None),
+    )
+    solutions = _ik_vmap(target_wxyz, target_pos, robot_config.rest_pose)
     log.debug(f"🧮 batch ik time: {time.time() - start_time:.4f}s")
     return solutions
