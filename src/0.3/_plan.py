@@ -268,24 +268,26 @@ class Plan:
         - every inkdip is executed by the robot (in `paths.safetensors`);
         - indexing in run_viz stays 1:1 (`pixelpaths.yaml` length matches `PathBatch` length);
         - leave `pathstats.yaml` unchanged.
-
         A dip path is 5 poses, all executed with the slow dt:
-
               0 ─ hover  (palette_frame + inkdip_hover_offset)
               1 ─ rim    (top of inkcap)
               2 ─ half   (half-depth of inkcap)
               3 ─ rim    (top of inkcap)
               4 ─ hover  (palette_frame + inkdip_hover_offset)
-
         Right arm keeps the "view" pose for the whole dip.
-        A dip is inserted after drawing `pathlen_per_inkdip` poses have been accumulated over drawing paths.
+        A dip is inserted:
+        - before the very first drawing path;
+        - before a path of a new color;
+        - if `pathlen_per_inkdip` poses have been accumulated for the current color.
         """
         # --- 1. Load existing artefacts -------------------------------------------------
         pixelpaths: list[PixelPath] = self.load_pixelpaths()
+        if not pixelpaths:
+            return
         pathbatch: PathBatch = self.load_pathbatch()
         pad_len = self.path_pad_len
 
-        # Convert PathBatch arrays to NumPy for easy concatenation
+        # Convert PathBatch arrays to NumPy for easy reference
         epl, epr = np.asarray(pathbatch.ee_pos_l),  np.asarray(pathbatch.ee_pos_r)
         ewl, ewr = np.asarray(pathbatch.ee_wxyz_l), np.asarray(pathbatch.ee_wxyz_r)
         joints   = np.asarray(pathbatch.joints)
@@ -339,15 +341,28 @@ class Plan:
             )
 
         # --- 3. Walk paths, insert dips -------------------------------------------------
+        final_paths_data: list[dict[str, np.ndarray]] = []
         new_pixelpaths: list[PixelPath] = []
-        dip_paths_raw: list[dict[str, np.ndarray]] = []
-
+        
         pose_counter = 0
-        for p_idx, p in enumerate(pixelpaths):
-            new_pixelpaths.append(p)
-            pose_counter += len(p)            # count drawing poses
+        current_color = None
 
-            if pose_counter >= self.pathlen_per_inkdip:
+        for p_idx, p in enumerate(pixelpaths):
+            needs_dip = False
+            # First path always gets a dip
+            if not final_paths_data:
+                needs_dip = True
+            # Color changed
+            elif p.color.lower() != current_color.lower():
+                needs_dip = True
+                pose_counter = 0
+            # accumulated length exceeds threshold
+            if len(p) > 0 and (pose_counter + len(p) >= self.pathlen_per_inkdip):
+                needs_dip = True
+                pose_counter = 0
+
+            if needs_dip:
+                current_color = p.color
                 # choose an ink‑cap that matches current path colour (fallback to large_0)
                 chosen_name = None
                 for name, cap in self.inkpalette.inkcaps.items():
@@ -359,9 +374,7 @@ class Plan:
                 cap = self.inkpalette.inkcaps[chosen_name]
 
                 dip = _make_dip_path(chosen_name, cap)
-                dip_paths_raw.append(dip)
-
-                # dummy PixelPath keeps indexing intact
+                final_paths_data.append(dip)
                 new_pixelpaths.append(
                     PixelPath(
                         pixels=[],               # nothing to draw on the 2‑D image
@@ -369,50 +382,54 @@ class Plan:
                         description=dip["description"],
                     )
                 )
-                pose_counter = 0  # reset after dipping
 
-        # No dips? nothing to do
-        if not dip_paths_raw:
+            # add original path
+            path_data = {
+                "ee_pos_l": epl[p_idx], "ee_pos_r": epr[p_idx],
+                "ee_wxyz_l": ewl[p_idx], "ee_wxyz_r": ewr[p_idx],
+                "joints": joints[p_idx], "dt": dt_arr[p_idx], "mask": mask_arr[p_idx],
+                "description": p.description, "color": p.color,
+            }
+            final_paths_data.append(path_data)
+            new_pixelpaths.append(p)
+            pose_counter += len(p)
+
+        # No change? nothing to do
+        if len(final_paths_data) == len(pixelpaths):
             return
 
         # --- 4. Batch‑IK for the dip paths ---------------------------------------------
         flat_pos, flat_wxyz, idx_map = [], [], []
-        for dp_idx, dip in enumerate(dip_paths_raw):
-            for pose_idx in range(pad_len):
-                if dip["mask"][pose_idx] == 0:
-                    continue
-                flat_pos.append(
-                    [dip["ee_pos_l"][pose_idx], dip["ee_pos_r"][pose_idx]]
-                )
-                flat_wxyz.append(
-                    [dip["ee_wxyz_l"][pose_idx], dip["ee_wxyz_r"][pose_idx]]
-                )
-                idx_map.append((dp_idx, pose_idx))
+        for path_idx, path_data in enumerate(final_paths_data):
+            if "inkdip" in path_data.get("description", ""):
+                for pose_idx in range(pad_len):
+                    if path_data["mask"][pose_idx] == 0:
+                        continue
+                    flat_pos.append(
+                        [path_data["ee_pos_l"][pose_idx], path_data["ee_pos_r"][pose_idx]]
+                    )
+                    flat_wxyz.append(
+                        [path_data["ee_wxyz_l"][pose_idx], path_data["ee_wxyz_r"][pose_idx]]
+                    )
+                    idx_map.append((path_idx, pose_idx))
 
-        if flat_pos:  # should always be true
-            import jax.numpy as jnp
+        if flat_pos:
             sols = batch_ik(
                 target_wxyz=jnp.array(flat_wxyz),
                 target_pos=jnp.array(flat_pos),
             )
-
             for s_idx, joints_sol in enumerate(np.asarray(sols)):
-                dp, ps = idx_map[s_idx]
-                dip_paths_raw[dp]["joints"][ps] = joints_sol.astype(np.float32)
+                path_idx, pose_idx = idx_map[s_idx]
+                final_paths_data[path_idx]["joints"][pose_idx] = joints_sol.astype(np.float32)
 
         # --- 5. Stitch arrays and overwrite files --------------------------------------
-        # concatenate old arrays with new dip arrays
-        for field in ("ee_pos_l", "ee_pos_r", "ee_wxyz_l", "ee_wxyz_r",
-                      "joints", "dt", "mask"):
-            dip_stack = np.stack([d[field] for d in dip_paths_raw], axis=0)
-
-        epl_new = np.concatenate([epl, dip_stack := np.stack([d["ee_pos_l"] for d in dip_paths_raw])], axis=0)
-        epr_new = np.concatenate([epr, np.stack([d["ee_pos_r"] for d in dip_paths_raw])], axis=0)
-        ewl_new = np.concatenate([ewl, np.stack([d["ee_wxyz_l"] for d in dip_paths_raw])], axis=0)
-        ewr_new = np.concatenate([ewr, np.stack([d["ee_wxyz_r"] for d in dip_paths_raw])], axis=0)
-        jnt_new = np.concatenate([joints, np.stack([d["joints"] for d in dip_paths_raw])], axis=0)
-        dt_new  = np.concatenate([dt_arr, np.stack([d["dt"] for d in dip_paths_raw])], axis=0)
-        msk_new = np.concatenate([mask_arr, np.stack([d["mask"] for d in dip_paths_raw])], axis=0)
+        epl_new = np.stack([d["ee_pos_l"] for d in final_paths_data])
+        epr_new = np.stack([d["ee_pos_r"] for d in final_paths_data])
+        ewl_new = np.stack([d["ee_wxyz_l"] for d in final_paths_data])
+        ewr_new = np.stack([d["ee_wxyz_r"] for d in final_paths_data])
+        jnt_new = np.stack([d["joints"] for d in final_paths_data])
+        dt_new  = np.stack([d["dt"] for d in final_paths_data])
+        msk_new = np.stack([d["mask"] for d in final_paths_data])
 
         # rebuild PathBatch and save
         new_batch = PathBatch(
@@ -441,8 +458,8 @@ class Plan:
 
         # update descriptions
         log.debug(f"⚙️💾 Updating descriptions...")
-        start_idx = len(self.path_descriptions)
-        for k, dip in enumerate(dip_paths_raw, start=start_idx):
-            self.path_descriptions[f"path_{k:03d}"] = dip["description"]
+        self.path_descriptions = {}
+        for k, p in enumerate(new_pixelpaths):
+            self.path_descriptions[f"path_{k:03d}"] = p.description
         # updates meta.yaml (image unchanged)
-        self.save()          
+        self.save()

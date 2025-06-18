@@ -108,7 +108,10 @@ def urdf_joints_to_action(urdf_joints: list[float]) -> dict[str, float]:
 
 def perform(config: PerformConfig):
     plan = Plan.from_yaml(config.plan_dir)
-    
+    pathbatch = plan.load_pathbatch()
+    num_paths = pathbatch.joints.shape[0]
+    path_lengths = [int(sum(pathbatch.mask[i])) for i in range(num_paths)]
+
     log.info("🤖🤗 Adding LeRobot robot...")
     robot = make_robot_from_config(TatbotConfig())
     robot.connect()
@@ -164,11 +167,11 @@ def perform(config: PerformConfig):
     episode_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=TIME_FORMAT))
     logging.getLogger().addHandler(episode_handler)
 
-    log.info(f"Recording {len(plan.paths)} paths...")
+    log.info(f"Recording {num_paths} paths...")
     # one episode is a single path
     # when resuming, start from the idx of the next episode
-    for path_idx, path in enumerate(plan.paths, start=dataset.num_episodes):
-        # Reset in-memory log buffer for the new episode
+    for path_idx in range(num_paths, start=dataset.num_episodes):
+        # reset in-memory log buffer for the new episode
         episode_log_buffer.seek(0)
         episode_log_buffer.truncate(0)
 
@@ -181,28 +184,23 @@ def perform(config: PerformConfig):
             log_say(f"max paths {config.max_episodes} exceeded", config.play_sounds, blocking=True)
             break
 
-        log.info(f"🤖 recording path {path_idx} of {len(plan.paths)}")
+        log.info(f"🤖 recording path {path_idx} of {num_paths}")
         log_say(f"recording path {path_idx}", config.play_sounds)
-        for pose_idx in range(len(path)):
-            log.debug(f"pose_idx: {pose_idx}/{len(path)}")
+        path_len = path_lengths[path_idx]
+        for pose_idx in range(path_len):
+            log.debug(f"pose_idx: {pose_idx}/{path_len}")
             start_loop_t = time.perf_counter()
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 
-            joints = 0 # TODO: get joints from plan, need to be calculated from ik
-            goal_time = 0 # TODO: get goal time from plan
+            joints = pathbatch.joints[path_idx, pose_idx]
+            goal_time = pathbatch.dt[path_idx, pose_idx]
             action = urdf_joints_to_action(joints)
             sent_action = robot.send_action(action, goal_time=goal_time, block="left")
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
-            # TODO: add pattern closeup? progress image? patch?
-            _task = f"{pattern.name} tattoo pattern"
-            # _task += f", {color} {needle_type} line"
-            _task += f", <{path_l.metric_coords[pose_idx][0]:.2f}, {path_l.metric_coords[pose_idx][1]:.2f}> m"
-            _task += f", <{path_l.pixel_coords[pose_idx][0]:.2f}, {path_l.pixel_coords[pose_idx][1]:.2f}> px"
-            _task += f", pose {pose_idx} of {len(path_l)-2}"
-            _task += f", path {path_idx} of {len(pattern.paths)}"
+            _task = f"path {path_idx}, pose {pose_idx}"
             dataset.add_frame(frame, task=_task)
 
             if config.display_data:
@@ -216,7 +214,7 @@ def perform(config: PerformConfig):
                         rr.log(f"action.{act}", rr.Scalar(val))
 
             dt_s = time.perf_counter() - start_loop_t
-            busy_wait(1 / config.fps - dt_s)
+            busy_wait(max(0, goal_time - dt_s))
 
             if events["exit_early"]:
                 log.info("🛑 exit early")

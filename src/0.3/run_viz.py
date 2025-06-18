@@ -73,6 +73,16 @@ class Viz:
             return self.plan.path_descriptions.get(key, "")
         self._get_path_description = _get_path_description
 
+        # Helper to map PathBatch pose_idx to PixelPath index
+        def _pose_to_pixel_idx(path_idx: int, pose_idx: int) -> int | None:
+            pixels = self.pixelpaths[path_idx].pixels
+            if not pixels:
+                return None  # ink-dip: nothing to draw
+            if pose_idx == 0 or pose_idx == self.path_lengths[path_idx] - 1:
+                return None  # hover poses have no pixel
+            return pose_idx - 1  # shift to account for first hover
+        self._pose_to_pixel_idx = _pose_to_pixel_idx
+
         with self.server.gui.add_folder("Plan"):
             self.time_label = self.server.gui.add_text(
                 label="time",
@@ -216,17 +226,20 @@ class Viz:
 
             log.debug(f"🖥️🖼️ Updating Viser image...")
             image_np = self.image_np.copy()
-            valid_len = self.path_lengths[self.path_idx]
-            # highlight entire path in red (only valid points)
-            for pw, ph in self.pixelpaths[self.path_idx].pixels[:valid_len]:
-                cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["red"], -1)
-            # highlight path up until current pose in green
-            for pw, ph in self.pixelpaths[self.path_idx].pixels[:min(self.pose_idx, valid_len)]:
-                cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["green"], -1)
-            # highlight current pose in magenta
-            if valid_len > 0 and self.pose_idx < len(self.pixelpaths[self.path_idx].pixels):
-                px, py = self.pixelpaths[self.path_idx].pixels[self.pose_idx]
-                cv2.circle(image_np, (int(px), int(py)), self.config.pose_highlight_radius, COLORS["magenta"], -1)
+            # Draw the entire path in red (all drawing pixels, not hover)
+            pixels = self.pixelpaths[self.path_idx].pixels
+            if pixels:
+                for pw, ph in pixels:
+                    cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["red"], -1)
+                # Highlight path up until current pose in green
+                pix_idx = self._pose_to_pixel_idx(self.path_idx, self.pose_idx)
+                if pix_idx is not None and pix_idx > 0:
+                    for pw, ph in pixels[:pix_idx]:
+                        cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["green"], -1)
+                # Highlight current pose in magenta
+                if pix_idx is not None and 0 <= pix_idx < len(pixels):
+                    px, py = pixels[pix_idx]
+                    cv2.circle(image_np, (int(px), int(py)), self.config.pose_highlight_radius, COLORS["magenta"], -1)
             self.image.image = image_np
 
             log.debug(f"🖥️🤖 Updating Viser robot...")
@@ -239,13 +252,14 @@ class Viz:
             new_colors = np.tile(np.array(COLORS["black"], dtype=np.uint8), (self.pointcloud_path.points.shape[0], 1))
             # Highlight current path in red
             new_colors[path_start:path_end] = np.array(COLORS["red"], dtype=np.uint8)
+            # Compute pixel index for current pose
+            pix_idx = self._pose_to_pixel_idx(self.path_idx, self.pose_idx)
             # Highlight up to current pose in green (excluding endpoints)
-            pose_in_path = max(0, min(self.pose_idx - 1, path_end - path_start - 1))
-            if pose_in_path > 0:
-                new_colors[path_start:path_start + pose_in_path] = np.array(COLORS["green"], dtype=np.uint8)
+            if pix_idx is not None and pix_idx > 0:
+                new_colors[path_start:path_start + pix_idx] = np.array(COLORS["green"], dtype=np.uint8)
             # Highlight current pose in magenta (if not endpoint)
-            if 0 <= self.pose_idx - 1 < (path_end - path_start):
-                new_colors[path_start + self.pose_idx - 1] = np.array(COLORS["magenta"], dtype=np.uint8)
+            if pix_idx is not None and 0 <= pix_idx < (path_end - path_start):
+                new_colors[path_start + pix_idx] = np.array(COLORS["magenta"], dtype=np.uint8)
             self.pointcloud_path.colors = new_colors
 
             dt_val = self.pathbatch.dt[self.path_idx, self.pose_idx]
