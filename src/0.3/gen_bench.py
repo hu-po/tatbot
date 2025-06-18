@@ -202,8 +202,7 @@ def plan_from_calib(config: BenchmarkPlanConfig):
                 draw.line(path, fill="black", width=config.thickness, joint="curve" if is_curve else None)
 
     log.info(f"✍️ Generated {len(all_paths)} paths.")
-    plan.add_pixel_paths(all_paths)
-    plan.save(image)
+    plan.add_pixelpaths(all_paths, image)
 
 if __name__ == "__main__":
     args = setup_log_with_config(BenchmarkPlanConfig)

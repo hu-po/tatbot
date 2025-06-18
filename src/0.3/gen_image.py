@@ -114,7 +114,6 @@ def plan_from_image(config: ImagePlanConfig):
     img_pil = PIL.Image.open(image_path)
     original_width, original_height = img_pil.size
     img_np = np.array(img_pil.convert("RGB"))
-    plan.save(img_np)
     img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
     img_viz = img_bgr.copy()
     comp_viz = img_bgr.copy()
@@ -249,7 +248,7 @@ def plan_from_image(config: ImagePlanConfig):
     log.info(f"Saved {full_patches} full patches.")
     log.info(f"Found {empty_patches} empty patches.")
 
-    plan.add_pixel_paths(all_paths)
+    plan.add_pixelpaths(all_paths, img_np)
 
     viz_path = os.path.join(plan.dirpath, f"patches.png")
     cv2.imwrite(viz_path, img_viz)

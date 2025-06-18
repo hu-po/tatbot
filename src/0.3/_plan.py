@@ -16,6 +16,8 @@ log = get_logger('_plan')
 METADATA_FILENAME: str = "meta.yaml"
 IMAGE_FILENAME: str = "image.png"
 PATHS_FILENAME: str = "paths.safetensors"
+PIXELPATHS_FILENAME: str = "pixelpaths.yaml"
+PATHSTATS_FILENAME: str = "pathstats.yaml"
 
 @dataclass
 class Plan:
@@ -80,11 +82,6 @@ class Plan:
     def image_np(cls, dirpath: str) -> np.ndarray:
         filepath = os.path.join(dirpath, IMAGE_FILENAME)
         return np.array(Image.open(filepath).convert("RGB"))
-
-    @classmethod
-    def pathbatch(cls, dirpath: str) -> 'PathBatch':
-        filepath = os.path.join(dirpath, PATHS_FILENAME)
-        return PathBatch.load(filepath)
     
     def save(self, image: np.ndarray = None):
         log.info(f"⚙️💾 Saving plan to {self.dirpath}")
@@ -102,24 +99,33 @@ class Plan:
             log.info(f"⚙️💾 Saving image to {image_path}")
             image.save(image_path)
 
-    def add_pixel_paths(self, pixel_paths: list[PixelPath]):
-        num_paths = len(pixel_paths)
+    def add_pixelpaths(self, pixelpaths: list[PixelPath], image: np.ndarray):
+        num_paths = len(pixelpaths)
         log.info(f"⚙️ Adding {num_paths} pixel paths...")
 
+        log.debug(f"⚙️ Image shape: {image.shape}")
+        self.image_width_m = image.shape[0]
+        self.image_height_m = image.shape[1]
+        self.save(image)
         scale_x = self.image_width_m / self.image_width_px
         scale_y = self.image_height_m / self.image_height_px
 
+        pixelpaths_path = os.path.join(self.dirpath, PIXELPATHS_FILENAME)
+        log.debug(f"⚙️💾 Saving pixelpaths to {pixelpaths_path}...")
+        with open(pixelpaths_path, "w") as f:
+            yaml.safe_dump(pixelpaths, f)
+
         paths = []
-        for path_idx, pixel_path in enumerate(pixel_paths):
-            log.debug(f"🧮 Adding path {path_idx} of {num_paths}...")
+        for path_idx, pixelpath in enumerate(pixelpaths):
+            log.debug(f"⚙️ Adding pixelpath {path_idx} of {num_paths}...")
             path = Path.padded(self.path_pad_len)
-            self.path_descriptions[f'path_{path_idx:03d}'] = pixel_path.description
+            self.path_descriptions[f'path_{path_idx:03d}'] = pixelpath.description
 
-            if len(pixel_path) + 2 > self.path_pad_len:
-                log.warning(f"path {path_idx} has more than {self.path_pad_len} poses, truncating...")
-                pixel_path = pixel_path[:self.path_pad_len - 2] # -2 for hover positions
+            if len(pixelpath) + 2 > self.path_pad_len:
+                log.warning(f"⚙️⚠️ pixelpath {path_idx} has more than {self.path_pad_len} poses, truncating...")
+                pixelpath = pixelpath[:self.path_pad_len - 2] # -2 for hover positions
 
-            for i, (pw, ph) in enumerate(pixel_path.pixels):
+            for i, (pw, ph) in enumerate(pixelpath.pixels):
                 # pixel coordinates first need to be converted to meters
                 x_m, y_m = pw * scale_x, ph * scale_y
                 # center in design frame, add needle offset
@@ -171,31 +177,47 @@ class Plan:
 
             paths.append(path)
 
-        path_batch = PathBatch.from_paths(paths)
-        path_batch.save(os.path.join(self.dirpath, PATHS_FILENAME))
+        pathbatch = PathBatch.from_paths(paths)
+        pathbatch.save(os.path.join(self.dirpath, PATHS_FILENAME)) 
 
-    def get_pixel_paths(self, pathbatch: PathBatch = None) -> list[PixelPath]:
-        """Reconstruct pixel coordinates for each path in the plan from ee_pos_l using plan's image and metadata, as PixelPath objects."""
-        if pathbatch is None:
-            pathbatch = self.pathbatch(self.dirpath)
-        pixel_paths = []
-        for path_idx in range(pathbatch.ee_pos_l.shape[0]):
-            coords = []
-            for pose_idx in range(pathbatch.ee_pos_l.shape[1]):
-                if pathbatch.mask[path_idx, pose_idx] == 0:
-                    continue
-                x_m, y_m, _ = pathbatch.ee_pos_l[path_idx, pose_idx]
-                px = int(round(((x_m - self.ee_design_pos[0] + self.image_width_m / 2) * self.image_width_px) / self.image_width_m))
-                py = int(round(((y_m - self.ee_design_pos[1] + self.image_height_m / 2) * self.image_height_px) / self.image_height_m))
-                in_bounds = 0 <= px < self.image_width_px and 0 <= py < self.image_height_px
-                if not in_bounds:
-                    log.warning(f"🖥️⚠️ Path {path_idx} Pose {pose_idx} has pixel out of bounds! (px, py)=({px}, {py})")
-                coords.append((px, py))
-            if len(coords) < 2:
-                log.warning(f"🖥️⚠️ Path {path_idx} has <2 valid points, skipping")
-            pixel_paths.append(PixelPath(pixels=coords))
-        return pixel_paths
+        # compute path stats
+        path_lengths_px = [
+            sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path.pixels[:-1], path.pixels[1:]))
+            if len(path.pixels) > 1 else 0.0
+            for path in pixelpaths
+        ]
+        # Metric lengths
+        path_lengths_m = [
+            float(np.sum(np.linalg.norm(np.diff(pathbatch.ee_pos_l[i][pathbatch.mask[i] == 1], axis=0), axis=1)))
+            if np.sum(pathbatch.mask[i]) > 1 else 0.0
+            for i in range(pathbatch.ee_pos_l.shape[0])
+        ]
+        stats = {
+            "count": len(path_lengths_px),
+            "min_px": float(np.min(path_lengths_px)) if path_lengths_px else 0.0,
+            "max_px": float(np.max(path_lengths_px)) if path_lengths_px else 0.0,
+            "mean_px": float(np.mean(path_lengths_px)) if path_lengths_px else 0.0,
+            "sum_px": float(np.sum(path_lengths_px)) if path_lengths_px else 0.0,
+            "min_m": float(np.min(path_lengths_m)) if path_lengths_m else 0.0,
+            "max_m": float(np.max(path_lengths_m)) if path_lengths_m else 0.0,
+            "mean_m": float(np.mean(path_lengths_m)) if path_lengths_m else 0.0,
+            "sum_m": float(np.sum(path_lengths_m)) if path_lengths_m else 0.0,
+        }
+        pathstats_path = os.path.join(self.dirpath, PATHSTATS_FILENAME)
+        log.debug(f"⚙️💾 Saving pathstats to {pathstats_path}...")
+        with open(pathstats_path, "w") as f:
+            yaml.safe_dump(stats, f)
 
-def wrap(plan: Plan, mesh) -> Plan:
-    """Wrap a 2D plan onto a 3D mesh. """
-    pass
+    def load_pathbatch(self) -> 'PathBatch':
+        filepath = os.path.join(self.dirpath, PATHS_FILENAME)
+        return PathBatch.load(filepath)
+
+    def load_pixelpaths(self) -> list[PixelPath]:
+        filepath = os.path.join(self.dirpath, PIXELPATHS_FILENAME)
+        with open(filepath, "r") as f:
+            return yaml.safe_load(f)
+
+    def load_pathstats(self) -> dict:
+        filepath = os.path.join(self.dirpath, PATHSTATS_FILENAME)
+        with open(filepath, "r") as f:
+            return yaml.safe_load(f)
