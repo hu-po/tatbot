@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 import os
+import math
 
 import numpy as np
 import yaml
@@ -120,8 +121,8 @@ class Plan:
         log.info(f"⚙️ Adding {num_paths} pixel paths...")
 
         log.debug(f"⚙️ Image shape: {image.size}")
-        self.image_width_m = image.size[0]
-        self.image_height_m = image.size[1]
+        self.image_width_px = image.size[0]
+        self.image_height_px = image.size[1]
         self.save(image)
         scale_x = self.image_width_m / self.image_width_px
         scale_y = self.image_height_m / self.image_height_px
@@ -185,22 +186,57 @@ class Plan:
             path.dt[-1, 0] = self.path_dt_slow
             paths.append(path)
 
-        # compute ik in batches
+        # First, concatenate all poses from all paths into a single large batch.
         ee_pos_l = jnp.stack([path.ee_pos_l for path in paths])
         ee_pos_r = jnp.stack([path.ee_pos_r for path in paths])
         ee_wxyz_l = jnp.stack([path.ee_wxyz_l for path in paths])
         ee_wxyz_r = jnp.stack([path.ee_wxyz_r for path in paths])
-        for i in range(0, len(paths), self.ik_batch_size):
-            batch_ee_wxyz_l = ee_wxyz_l[i:i + self.ik_batch_size]
-            batch_ee_wxyz_r = ee_wxyz_r[i:i + self.ik_batch_size]
-            batch_ee_pos_l = ee_pos_l[i:i + self.ik_batch_size]
-            batch_ee_pos_r = ee_pos_r[i:i + self.ik_batch_size]
+
+        num_paths, path_len, _ = ee_pos_l.shape
+        total_poses = num_paths * path_len
+
+        # Reshape to flatten all poses into a single batch dimension.
+        # The shape becomes (total_poses, 3) for positions and (total_poses, 4) for orientations.
+        all_ee_pos_l = ee_pos_l.reshape((total_poses, 3))
+        all_ee_pos_r = ee_pos_r.reshape((total_poses, 3))
+        all_ee_wxyz_l = ee_wxyz_l.reshape((total_poses, 4))
+        all_ee_wxyz_r = ee_wxyz_r.reshape((total_poses, 4))
+
+        # Stack the left and right arm data to match the expected input shape for batch_ik,
+        # which is (batch_size, num_arms, ...). Here num_arms is 2.
+        # Shape for all_target_pos: (total_poses, 2, 3)
+        # Shape for all_target_wxyz: (total_poses, 2, 4)
+        all_target_pos = jnp.stack([all_ee_pos_l, all_ee_pos_r], axis=1)
+        all_target_wxyz = jnp.stack([all_ee_wxyz_l, all_ee_wxyz_r], axis=1)
+
+        # Process the poses in batches to manage memory and compute resources.
+        all_joints_flat = []
+        for i in range(0, total_poses, self.ik_batch_size):
+            log.info(f"⚙️ Computing IK for batch {i // self.ik_batch_size + 1}/{math.ceil(total_poses / self.ik_batch_size)}...")
+            # Create a batch of poses and orientations.
+            batch_target_pos = all_target_pos[i:i + self.ik_batch_size]
+            batch_target_wxyz = all_target_wxyz[i:i + self.ik_batch_size]
+
+            # Call the batch_ik function. Note: This assumes that `batch_ik` in `_ik.py`
+            # is corrected to handle batching over both position and orientation, as the
+            # provided version has a bug in its `vmap` implementation.
             batch_joints = batch_ik(
-                target_wxyz=jnp.stack([batch_ee_wxyz_l, batch_ee_wxyz_r], axis=1),
-                target_pos=jnp.stack([batch_ee_pos_l, batch_ee_pos_r], axis=1),
+                target_wxyz=batch_target_wxyz,
+                target_pos=batch_target_pos,
             )
-            for j in range(len(batch_joints)):
-                paths[i + j].joints = batch_joints[j]
+            all_joints_flat.append(batch_joints)
+
+        # Concatenate the results from all batches.
+        if all_joints_flat:
+            all_joints = jnp.concatenate(all_joints_flat, axis=0)
+
+            # Reshape the flat joint results back to the original structure of (num_paths, path_len, num_joints).
+            # The number of joints is 16.
+            all_joints_reshaped = all_joints.reshape((num_paths, path_len, 16))
+
+            # Assign the computed joint configurations back to each path.
+            for i in range(num_paths):
+                paths[i].joints = all_joints_reshaped[i]
 
         pathbatch = PathBatch.from_paths(paths)
         pathbatch.save(os.path.join(self.dirpath, PATHS_FILENAME)) 
