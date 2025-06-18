@@ -54,9 +54,6 @@ class BenchmarkPlanConfig:
     output_dir: str = os.path.expanduser("~/tatbot/output/plans/bench")
     """Directory to save the plan."""
 
-    pad_len: int = 128
-    """Number of points to pad the paths to."""
-    
     image_width_px: int = 256
     """Width of the image in pixels."""
     image_height_px: int = 256
@@ -145,7 +142,6 @@ def plan_from_calib(config: BenchmarkPlanConfig):
     plan = Plan(
         name="bench",
         dirpath=config.output_dir,
-        path_pad_len=config.pad_len,
         image_width_px=config.image_width_px,
         image_height_px=config.image_height_px,
     )

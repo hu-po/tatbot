@@ -23,10 +23,6 @@ class ImagePlanConfig:
     output_dir: str = os.path.expanduser("~/tatbot/output/plans/")
     """Directory to save the plan directory into."""
 
-    pad_len: int = 128
-    """Number of points to pad the paths to."""
-
-
     image_width_px: int = 640
     """ Width of the design image (pixels)."""
     image_height_px: int = 640
@@ -59,7 +55,6 @@ def plan_from_image(config: ImagePlanConfig):
     plan = Plan(
         name=name,
         dirpath=os.path.join(config.output_dir, name),
-        path_pad_len=config.pad_len,
         image_width_px=config.image_width_px,
         image_height_px=config.image_height_px,
     )
@@ -67,8 +62,8 @@ def plan_from_image(config: ImagePlanConfig):
 
     if config.image_path is None:
         log.info("🖼️ generating design using replicate...")
-        raw_image_path = os.path.join(plan_dir, "raw.png")
-        image_path = os.path.join(plan_dir, "image.png")
+        raw_image_path = os.path.join(plan.dirpath, "raw.png")
+        image_path = os.path.join(plan.dirpath, "image.png")
         # https://replicate.com/black-forest-labs/flux-1.1-pro-ultra/api/schema
         output = replicate.run(
             "black-forest-labs/flux-1.1-pro-ultra",
@@ -248,7 +243,7 @@ def plan_from_image(config: ImagePlanConfig):
     log.info(f"Saved {full_patches} full patches.")
     log.info(f"Found {empty_patches} empty patches.")
 
-    plan.add_pixelpaths(all_paths, img_np)
+    plan.add_pixelpaths(all_paths, img_pil)
 
     viz_path = os.path.join(plan.dirpath, f"patches.png")
     cv2.imwrite(viz_path, img_viz)

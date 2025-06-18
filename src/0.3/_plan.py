@@ -43,7 +43,7 @@ class Plan:
     ik_batch_size: int = 256
     """Batch size for IK computation."""
     
-    path_pad_len: int = 64
+    path_pad_len: int = 128
     """Length to pad paths to."""
     path_dt_fast: float = 0.1
     """Time between poses in seconds for fast movement."""
@@ -140,7 +140,7 @@ class Plan:
 
             if len(pixelpath) + 2 > self.path_pad_len:
                 log.warning(f"⚙️⚠️ pixelpath {path_idx} has more than {self.path_pad_len} poses, truncating...")
-                pixelpath = pixelpath[:self.path_pad_len - 2] # -2 for hover positions
+                pixelpath.pixels = pixelpath.pixels[:self.path_pad_len - 2] # -2 for hover positions
 
             for i, (pw, ph) in enumerate(pixelpath.pixels):
                 # pixel coordinates first need to be converted to meters
