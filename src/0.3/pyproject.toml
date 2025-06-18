@@ -59,4 +59,4 @@ vla = [
 ]
 
 [tool.setuptools]
-py-modules = ["_bot", "_ik", "_log", "_path", "_plan", "_viz"]
+py-modules = ["_bot", "_ik", "_log", "_path", "_plan"]
