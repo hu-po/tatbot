@@ -1,0 +1,25 @@
+nodes:
+  - name: ojo
+    ip: 192.168.1.96
+    user: ojo
+    emoji: "🦎"
+  - name: trossen-ai
+    ip: 192.168.1.97
+    user: trossen
+    emoji: "🦾"
+  - name: ook
+    ip: 192.168.1.100
+    user: ook
+    emoji: "🦧"
+  - name: rpi1
+    ip: 192.168.1.98
+    user: pi
+    emoji: "🥧"
+  - name: rpi2
+    ip: 192.168.1.99
+    user: pi
+    emoji: "🫐"
+  - name: oop
+    ip: 192.168.1.53
+    user: oop
+    emoji: "🦊"
