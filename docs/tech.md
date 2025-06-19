@@ -50,7 +50,10 @@ uv run gen_image.py --prompt "cat"
 
 ```bash
 uv pip install .[bot] && \
-uv run run_bot.py
+# configure trossen arms
+uv run bot_config.py --debug
+# run lerobot dataset recording from plan
+uv run bot_record.py
 ```
 
 `ojo` 🦎 runs the policy servers for the VLA model and for the 3d reconstruction model
@@ -159,7 +162,7 @@ during development *dev mode*, the following pc is also available:
 
 ## Networking
 
-tatbot uses a shared ssh key for nodes to talk, send files, and run remote commands: see `_net.py` and `config/nodes.yaml`.
+tatbot uses shared ssh keys for nodes to talk, send files, and run remote commands: see `_net.py` and `config/nodes.yaml`.
 
 - `switch-lan`:
     - (1) short black ethernet cable to `switch-poe`
@@ -182,19 +185,11 @@ tatbot uses a shared ssh key for nodes to talk, send files, and run remote comma
     - (uplink-1) -
     - (uplink-2) short black ethernet cable to `switch-lan`
 
-hardcoded ip addresses:
+to setup the network:
 
-- `192.168.1.51` - `oop`
-- `192.168.1.90` - `ook`
-- `192.168.1.91` - `camera1`
-- `192.168.1.92` - `camera2`
-- `192.168.1.93` - `camera3`
-- `192.168.1.94` - `camera4`
-- `192.168.1.95` - `camera5`
-- `192.168.1.96` - `ojo`
-- `192.168.1.97` - `trossen-ai`
-- `192.168.1.98` - `rpi1`
-- `192.168.1.99` - `rpi2`
+```bash
+uv run _net.py --debug
+```
 
 ## Trossen Robot Arms
 
@@ -203,7 +198,7 @@ tatbot uses two [Trossen WidowXAI arms](https://docs.trossenrobotics.com/trossen
 - [Driver API Documentation](https://docs.trossenrobotics.com/trossen_arm/main/api/library_root.html#)
 - [official URDF](https://github.com/TrossenRobotics/trossen_arm_description)
 
-each arm has a config file in `config/trossen_arm_{l|r}.yaml`, update configs using `_bot.py`
+each arm has a config file in `config/trossen_arm_{l|r}.yaml`, update configs using `bot_config.py`
 
 ## URDF
 

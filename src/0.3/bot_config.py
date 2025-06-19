@@ -28,7 +28,7 @@ import trossen_arm
 
 from _log import setup_log_with_config, get_logger
 
-log = get_logger('_bot')
+log = get_logger('bot_config')
 
 @dataclass
 class SingleArmConfig:

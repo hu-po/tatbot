@@ -19,7 +19,7 @@ from lerobot.record import _init_rerun
 from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT, LOG_FORMAT
 from _plan import Plan
 
-log = get_logger('run_bot')
+log = get_logger('bot_record')
 
 @dataclass
 class PerformConfig:
