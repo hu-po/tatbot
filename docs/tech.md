@@ -84,12 +84,12 @@ tatbot consists of several computers, cameras, and robotos connected via etherne
 - `camera5`: Amcrest PoE cameras (5MP)
 - `head`: Intel Realsense D405 (1280x720 RGBD, 90fps)
 - `wrist`: Intel Realsense D405 (1280x720 RGBD, 90fps)
-- `switch-main`: 5-port gigabit ethernet switch
+- `switch-lan`: 8-port gigabit ethernet switch
 - `switch-poe`: 8-port gigabit PoE switch
 - `arm-l`: Trossen Arm Controller box (back) connected to WidowXAI arm
 - `arm-r`: Trossen Arm Controller box (front) connected to WidowXAI arm
 
-during development, the following pc is also available:
+during development *dev mode*, the following pc is also available:
 
 - `oop`: Ubuntu PC w/ NVIDIA RTX 3090 (AMD Ryzen 9 5900X, 24-core @ 4.95 GHz) (66GB RAM) (24GB VRAM) (TOPS)
 
@@ -97,28 +97,24 @@ during development, the following pc is also available:
 
 tatbot is designed as a multi-node system, with the following roles:
 
-`trossen-ai` sends commands to robot arms and records datasets:
+`ook` creates plans heuristically or from generated images, using the local gpu for batch ik of paths
+
+```bash
+uv pip install .[gen] && \
+# generate a benchmark plan (~12 paths of different types)
+uv run gen_bench.py --debug
+# use a generated image to create a plan
+uv run gen_image.py --prompt "cat"
+```
+
+`trossen-ai` sends commands to robot arms, receives realsense camera images, and records lerobot datasets:
 
 ```bash
 uv pip install .[bot] && \
 uv run run_bot.py
 ```
 
-`ook` creates plans (from generated images), batch generating paths using ik, and runs the visualization
-
-```bash
-# to generate art
-uv pip install .[gen] && \
-# generate a benchmark plan (~12 paths of different types)
-uv run gen_bench.py
-# use a generated image to create a plan
-uv run gen_image.py --prompt "cat"
-# run visualization server
-uv pip install .[viz] && \
-uv run run_viz.py
-```
-
-`ojo` runs the policy server for the VLA model:
+`ojo` runs the policy servers for the VLA model and for the 3d reconstruction model
 
 ```bash
 uv pip install .[vla] && \
@@ -132,16 +128,26 @@ uv pip install .[tag] && \
 uv run run_tag.py
 ```
 
+`rpi2` runs visualization:
+
+```bash
+uv pip install .[viz] && \
+uv run run_viz.py
+```
+
 ## Networking
 
 tatbot uses a shared ssh key for nodes to talk, send files, and run remote commands: see `_net.py` and `config/nodes.yaml`.
 
-- `switch-main`:
+- `switch-lan`:
     - (1) short black ethernet cable to `switch-poe`
     - (2) short black ethernet cable to `trossen-ai`
     - (3) short black ethernet cable to `ojo`
-    - (4) blue ethernet cable to `arm-r` controller box
-    - (5) blue ethernet cable to `arm-l` controller box
+    - (4) long black ethernet cable to `ook`
+    - (5) *dev mode* long ethernet cable to `oop`
+    - (6) blue ethernet cable to `arm-r` controller box
+    - (7) blue ethernet cable to `arm-l` controller box
+    - (8)
 - `switch-poe`:
     - (1) long black ethernet cable to `camera1`
     - (2) long black ethernet cable to `camera2`
@@ -152,11 +158,12 @@ tatbot uses a shared ssh key for nodes to talk, send files, and run remote comma
     - (7) short black ethernet cable to `rpi1`
     - (8) short black ethernet cable to `rpi2`
     - (uplink-1) -
-    - (uplink-2) short black ethernet cable to `switch-main`
+    - (uplink-2) short black ethernet cable to `switch-lan`
 
 hardcoded ip addresses:
 
-- `192.168.1.53` - `oop`
+- `192.168.1.51` - `oop`
+- `192.168.1.90` - `ook`
 - `192.168.1.91` - `camera1`
 - `192.168.1.92` - `camera2`
 - `192.168.1.93` - `camera3`
