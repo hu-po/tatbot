@@ -193,7 +193,7 @@ class Viz:
             point_shape=self.config.point_shape,
         )
 
-        # Add icospheres for each inkcap in the inkpalette
+        log.debug(f"🖥️🖼️ Adding inkcaps...")
         for cap_name, cap in self.plan.inkpalette.inkcaps.items():
             pos = tuple(np.array(self.plan.ee_inkpalette_pos) + np.array(cap.palette_pos))
             radius = cap.diameter_m / 2
@@ -204,6 +204,7 @@ class Viz:
                 color=color,
                 position=pos,
                 subdivisions=4,
+                opacity=0.4,
                 visible=True,
             )
 
