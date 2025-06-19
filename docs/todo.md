@@ -6,7 +6,10 @@ Roughly sorted by priority
 - bimanual using ik collision (faster tattoo, plays to strengths of tatbot)
 - two color pattern (black w/ white higlights) seperated by arms
 - three color pattern (black with 3d effect using blue andred) with one needle switch
+- bimanual arm with bendy stereo realsense cameras, central light, big Ethernet, and laptop on battery is hardware v3
 - pattern wrapping over skin mesh using jax
+- workspace tag to get realsense extrinsic, realsense extrinsic and intrinsics to get palette and skin tag, Realsense extrinsic to find big tag pose, big tag pose to get IP cameras extrinsic. Big tag is visible from all cameras
+- rpi2 screen is on tatbot tower, 2 screens, put sound bar screen on top and non sound screen underneath connected to trossen.
 - mcp to expose all robot nodes as tool for agent, mcp replace ros as middleware
 - isaacsim (https://www.youtube.com/live/z7KdHGkUTNE)
 - compare fake skin and real skin calibration pattern
