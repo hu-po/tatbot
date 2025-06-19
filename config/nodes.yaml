@@ -8,7 +8,7 @@ nodes:
     user: trossen
     emoji: "🦾"
   - name: ook
-    ip: 192.168.1.100
+    ip: 192.168.1.90
     user: ook
     emoji: "🦧"
   - name: rpi1
@@ -20,6 +20,6 @@ nodes:
     user: pi
     emoji: "🫐"
   - name: oop
-    ip: 192.168.1.53
+    ip: 192.168.1.51
     user: oop
     emoji: "🦊"

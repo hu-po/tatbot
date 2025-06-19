@@ -36,6 +36,7 @@ dependencies = [
     "tyro==0.9.24",
     "dacite==1.9.2",
     "paramiko==3.5.1",
+    "mcp[cli]==1.9.4",
 ]
 
 [project.optional-dependencies]
@@ -51,6 +52,7 @@ gen = [
     "pyroki @ git+https://github.com/chungmin99/pyroki.git@main#egg=pyroki",
 ]
 tag = [
+    "ffmpeg-python==0.2.0",
     "pupil-apriltags==1.0.4.post11",
 ]
 viz = [
@@ -61,4 +63,4 @@ vla = [
 ]
 
 [tool.setuptools]
-py-modules = ['_bot', '_ik', '_ink', '_log', '_map', '_path', '_plan']
+py-modules = ['_bot', '_cam', '_ik', '_ink', '_log', '_map', '_net', '_path', '_plan']

@@ -4,38 +4,97 @@ description of tatbot (tattoo robot) technical stack
 
 ## Index
 
-- [Dependencies](#dependencies)
-- [Setup](#setup)
-- [Devices](#devices)
-- [Run](#run)
-- [Networking](#networking)
-- [Trossen Robot Arms](#trossen-robot-arms)
-- [Realsense Cameras](#realsense-cameras)
-- [VLAs](#vlas)
-  - [Train](#train)
-    - [SmolVLA](#smolvla)
-    - [Gr00t](#gr00t)
-  - [Eval](#eval)
-    - [SmolVLA](#smolvla-1)
-    - [Gr00t](#gr00t-1)
-- [URDF](#urdf)
-- [AprilTags](#apriltags)
+- [Software](#software)
+  - [Run](#run)
+  - [Setup](#setup)
+  - [Dependencies](#dependencies)
+  - [Devices](#devices)
+  - [Networking](#networking)
+- [Hardware](#hardware)
+  - [Trossen Robot Arms](#trossen-robot-arms)
+  - [URDF](#urdf)
+  - [Realsense Cameras](#realsense-cameras)
+  - [PoE IP Cameras](#poe-ip-cameras)
+  - [AprilTags](#apriltags)
+- [Models - VLAs](#models---vlas)
+  - [SmolVLA](#smolvla)
+    - [Train](#train-smolvla)
+    - [Eval](#eval-smolvla)
+  - [Gr00t](#gr00t)
+    - [Train](#train-gr00t) 
+    - [Eval](#eval-gr00t)
+- [Models - VGGT](#models---vggt)
+
+## Run
+
+tatbot is designed as a multi-node system, with the following roles:R
+
+`ook` 🦧 creates plans heuristically or from generated images, using the local gpu for batch ik of paths
+
+```bash
+uv pip install .[gen] && \
+# generate a benchmark plan (~12 paths of different types)
+uv run gen_bench.py --debug
+# use a generated image to create a plan
+uv run gen_image.py --prompt "cat"
+```
+
+`trossen-ai` 🦾 sends commands to robot arms, receives realsense camera images, and records lerobot datasets:
+
+```bash
+uv pip install .[bot] && \
+uv run run_bot.py
+```
+
+`ojo` 🦎 runs the policy servers for the VLA model and for the 3d reconstruction model
+
+```bash
+uv pip install .[vla] && \
+# TODO
+```
+
+`rpi1` 🥧 runs apriltag tracking:
+
+```bash
+uv pip install .[tag] && \
+uv run run_tag.py
+```
+
+`rpi2` 🫐 runs visualization:
+
+```bash
+uv pip install .[viz] && \
+uv run run_viz.py
+```
 
 ## Dependencies
 
 tatbot makes use of the following dependencies:
 
+- [`mcp-python`](https://github.com/modelcontextprotocol/python-sdk) - model context protocol
+- [`paramiko`](https://github.com/paramiko/paramiko) - multi-node management (ftl, ssh)
+
+`gen`
 - [`jax`](https://github.com/jax-ml/jax) - gpu acceleration
 - [`pyroki`](https://github.com/chungmin99/pyroki) - inverse kinematics
-- [`viser`](https://github.com/nerfstudio-project/viser) - GUI
-- [`librealsense`](https://github.com/IntelRealSense/librealsense) - depth cameras
+
+`vla`
+- [`gr00t`](https://github.com/hu-po/Isaac-GR00T) - VLA foundation model
+
+`bot`
 - [`trossen_arm`](https://github.com/TrossenRobotics/trossen_arm) - robot arms
+- [`pyrealsense2`](https://github.com/IntelRealSense/librealsense) - depth cameras
+- [`lerobot`](https://github.com/hu-po/lerobot) - dataset, finetuning
+
+`viz`
+- [`viser`](https://github.com/nerfstudio-project/viser) - GUI
+
+`tag`
 - [`pupil-apriltags`](https://github.com/pupil-labs/apriltags) - object tracking
+- [`ffmpeg-python`](https://github.com/kkroening/ffmpeg-python) - cameras
 
 these dependencies use custom forks:
 
-- [`lerobot`](https://github.com/hu-po/lerobot) - dataset, finetuning
-- [`gr00t`](https://github.com/hu-po/Isaac-GR00T) - VLA foundation model
 
 ## Setup
 
@@ -93,48 +152,6 @@ during development *dev mode*, the following pc is also available:
 
 - `oop`: Ubuntu PC w/ NVIDIA RTX 3090 (AMD Ryzen 9 5900X, 24-core @ 4.95 GHz) (66GB RAM) (24GB VRAM) (TOPS)
 
-## Run
-
-tatbot is designed as a multi-node system, with the following roles:R
-
-`ook` 🦧 creates plans heuristically or from generated images, using the local gpu for batch ik of paths
-
-```bash
-uv pip install .[gen] && \
-# generate a benchmark plan (~12 paths of different types)
-uv run gen_bench.py --debug
-# use a generated image to create a plan
-uv run gen_image.py --prompt "cat"
-```
-
-`trossen-ai` 🦾 sends commands to robot arms, receives realsense camera images, and records lerobot datasets:
-
-```bash
-uv pip install .[bot] && \
-uv run run_bot.py
-```
-
-`ojo` 🦎 runs the policy servers for the VLA model and for the 3d reconstruction model
-
-```bash
-uv pip install .[vla] && \
-# TODO
-```
-
-`rpi1` 🥧 runs apriltag tracking:
-
-```bash
-uv pip install .[tag] && \
-uv run run_tag.py
-```
-
-`rpi2` 🫐 runs visualization:
-
-```bash
-uv pip install .[viz] && \
-uv run run_viz.py
-```
-
 ## Networking
 
 tatbot uses a shared ssh key for nodes to talk, send files, and run remote commands: see `_net.py` and `config/nodes.yaml`.
@@ -183,6 +200,10 @@ tatbot uses two [Trossen WidowXAI arms](https://docs.trossenrobotics.com/trossen
 
 each arm has a config file in `config/trossen_arm_{l|r}.yaml`, update configs using `_bot.py`
 
+## URDF
+
+tatbot is defined using URDF at `tatbot/assets/urdf/tatbot.urdf`.
+
 ## Realsense Cameras
 
 tatbot uses two [D405 Intel Realsense cameras](https://www.intelrealsense.com/depth-camera-d405/).
@@ -195,7 +216,15 @@ tatbot uses two [D405 Intel Realsense cameras](https://www.intelrealsense.com/de
 
 TODO: these will somewhat randomly fail, need to create robust exception handling
 
-## VLAs
+## PoE IP Cameras
+
+tatbot uses 5 poe ip cameras to create a 3d skin reconstruction: see `_cam.py` and `config/cameras.yaml`.
+
+## AprilTags
+
+Objects (i.e. ink palette) in the scene are tracked using [AprilTags](https://chaitanyantr.github.io/apriltag.html).
+
+## Models - VLAs
 
 Vision Language Action models are used to perform robot behaviors.
 Finetuning pretrained VLAs is done by using lerobot dataset format, see [datasets here](https://huggingface.co/tatbot).
@@ -333,10 +362,5 @@ python getting_started/examples/eval_lerobot.py \
     --lang_instruction="move slightly upwards in z"
 ```
 
-## URDF
+## Models - VGGT
 
-tatbot is defined using URDF at `tatbot/assets/urdf/tatbot.urdf`.
-
-## AprilTags
-
-Objects (i.e. ink palette) in the scene are tracked using [AprilTags](https://chaitanyantr.github.io/apriltag.html).
