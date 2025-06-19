@@ -95,9 +95,9 @@ during development *dev mode*, the following pc is also available:
 
 ## Run
 
-tatbot is designed as a multi-node system, with the following roles:
+tatbot is designed as a multi-node system, with the following roles:R
 
-`ook` creates plans heuristically or from generated images, using the local gpu for batch ik of paths
+`ook` 🦧 creates plans heuristically or from generated images, using the local gpu for batch ik of paths
 
 ```bash
 uv pip install .[gen] && \
@@ -107,28 +107,28 @@ uv run gen_bench.py --debug
 uv run gen_image.py --prompt "cat"
 ```
 
-`trossen-ai` sends commands to robot arms, receives realsense camera images, and records lerobot datasets:
+`trossen-ai` 🦾 sends commands to robot arms, receives realsense camera images, and records lerobot datasets:
 
 ```bash
 uv pip install .[bot] && \
 uv run run_bot.py
 ```
 
-`ojo` runs the policy servers for the VLA model and for the 3d reconstruction model
+`ojo` 🦎 runs the policy servers for the VLA model and for the 3d reconstruction model
 
 ```bash
 uv pip install .[vla] && \
 # TODO
 ```
 
-`rpi1` runs apriltag tracking:
+`rpi1` 🥧 runs apriltag tracking:
 
 ```bash
 uv pip install .[tag] && \
 uv run run_tag.py
 ```
 
-`rpi2` runs visualization:
+`rpi2` 🫐 runs visualization:
 
 ```bash
 uv pip install .[viz] && \
