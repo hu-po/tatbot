@@ -134,6 +134,8 @@ uv run run_tag.py
 
 ## Networking
 
+tatbot uses a shared ssh key for nodes to talk, send files, and run remote commands: see `_net.py` and `config/nodes.yaml`.
+
 - `switch-main`:
     - (1) short black ethernet cable to `switch-poe`
     - (2) short black ethernet cable to `trossen-ai`
