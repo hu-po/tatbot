@@ -10,13 +10,10 @@ from lerobot.common.datasets.utils import build_dataset_frame, hw_to_dataset_fea
 from lerobot.common.robots import make_robot_from_config
 from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.common.utils.control_utils import (
-    init_keyboard_listener,
-    is_headless,
     sanity_check_dataset_name,
     sanity_check_dataset_robot_compatibility,
 )
 from lerobot.common.utils.robot_utils import busy_wait
-from lerobot.common.utils.utils import log_say
 from lerobot.record import _init_rerun
 
 from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT, LOG_FORMAT
@@ -57,8 +54,6 @@ class PerformConfig:
     Too many threads might cause unstable teleoperation fps due to main thread being blocked.
     Not enough threads might cause low camera fps.
     """
-    play_sounds: bool = True
-    """Whether to play sounds."""
     private: bool = False
     """Whether to push the dataset to a private repository."""
     fps: int = 5
@@ -115,9 +110,6 @@ def perform(config: PerformConfig):
     log.info("🤖🤗 Adding LeRobot robot...")
     robot = make_robot_from_config(TatbotConfig())
     robot.connect()
-
-    log.info("🤖⌨️ Adding keyboard listener...")
-    listener, events = init_keyboard_listener()
 
     dataset_name = config.dataset_name or f"{plan.name}-{time.strftime(TIME_FORMAT, time.localtime())}"
     action_features = hw_to_dataset_features(robot.action_features, "action", True)
@@ -181,11 +173,9 @@ def perform(config: PerformConfig):
 
         if path_idx >= config.max_episodes:
             log.info(f"🤖⚠️ max episodes {config.max_episodes} exceeded, breaking...")
-            log_say(f"max paths {config.max_episodes} exceeded", config.play_sounds, blocking=True)
             break
 
         log.info(f"🤖 recording path {path_idx} of {num_paths}")
-        log_say(f"recording path {path_idx}", config.play_sounds)
         path_len = path_lengths[path_idx]
         for pose_idx in range(path_len):
             log.debug(f"pose_idx: {pose_idx}/{path_len}")
@@ -216,44 +206,21 @@ def perform(config: PerformConfig):
             dt_s = time.perf_counter() - start_loop_t
             busy_wait(max(0, goal_time - dt_s))
 
-            if events["exit_early"]:
-                log.info("🛑 exit early")
-                log_say("exit", config.play_sounds)
-                events["exit_early"] = False
-                break
-
-        if events["rerecord_episode"]:
-            log.info("🔄 re-recording episode")
-            log_say("Re-record episode", config.play_sounds)
-            events["rerecord_episode"] = False
-            events["exit_early"] = False
-            dataset.clear_episode_buffer()
-            continue
-
         log_path = os.path.join(logs_dir, f"episode_{path_idx:06d}.txt")
-        log.info(f"🗃️ Writing episode log to {log_path}")
+        log.info(f"🤖🗃️ Writing episode log to {log_path}")
         with open(log_path, "w") as f:
             f.write(episode_log_buffer.getvalue())
 
         dataset.save_episode()
 
-        if events["stop_recording"]:
-            break
-
     logging.getLogger().removeHandler(episode_handler)
 
-    log_say("End", config.play_sounds, blocking=True)
-
+    log.info("🤖✅ End")
     robot.disconnect()
 
-    if not is_headless() and listener is not None:
-        listener.stop()
-
     if config.push_to_hub:
+        log.info("🤖📦🤗 Pushing dataset to Hugging Face Hub...")
         dataset.push_to_hub(tags=list(config.tags), private=config.private)
-
-    log_say("Aurevoir", config.play_sounds)
-
 
 if __name__ == "__main__":
     args = setup_log_with_config(PerformConfig)
