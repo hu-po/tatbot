@@ -35,7 +35,7 @@ class SingleArmConfig:
     # defaults are for left arm
     ip: str = "192.168.1.3"
     """IP address of the arm."""
-    ee: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_base
+    ee: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_base # TODO: wxai_v0_tatbot_l
     """End effector of the arm."""
     config_filepath: str = os.path.expanduser("~/tatbot/config/trossen_arm_l.yaml")
     """YAML file containing robot config."""
@@ -44,8 +44,9 @@ class SingleArmConfig:
 class BotConfig:
     arm_l: SingleArmConfig = SingleArmConfig()
     arm_r: SingleArmConfig = SingleArmConfig(
+        # right arm
         ip="192.168.1.2",
-        ee=trossen_arm.StandardEndEffector.wxai_v0_follower,
+        ee=trossen_arm.StandardEndEffector.wxai_v0_follower, # TODO: wxai_v0_tatbot_r
         config_filepath=os.path.expanduser("~/tatbot/config/trossen_arm_r.yaml"),
     )
 
