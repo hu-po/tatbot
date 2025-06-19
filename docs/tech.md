@@ -27,7 +27,14 @@ description of tatbot (tattoo robot) technical stack
 
 ## Run
 
-tatbot is designed as a multi-node system, with the following roles:R
+tatbot is designed as a multi-node system, with the following roles:
+
+`oop` 🦊 runs the primary mcp server
+
+```bash
+uv pip install . && \
+uv run run_mcp.py
+```
 
 `ook` 🦧 creates plans heuristically or from generated images, using the local gpu for batch ik of paths
 
@@ -53,14 +60,14 @@ uv pip install .[vla] && \
 # TODO
 ```
 
-`rpi1` 🥧 runs apriltag tracking:
+`rpi1` 🍓 runs apriltag tracking:
 
 ```bash
 uv pip install .[tag] && \
 uv run run_tag.py
 ```
 
-`rpi2` 🫐 runs visualization:
+`rpi2` 🍇 runs visualization:
 
 ```bash
 uv pip install .[viz] && \
@@ -69,37 +76,35 @@ uv run run_viz.py
 
 ## Dependencies
 
-tatbot makes use of the following dependencies:
+tatbot makes use of python dependencies managed using [`uv`](https://docs.astral.sh/uv/getting-started/installation/): see `pyproject.toml`.
+dependencies are seperated into optional groups:
 
+`.`
 - [`mcp-python`](https://github.com/modelcontextprotocol/python-sdk) - model context protocol
 - [`paramiko`](https://github.com/paramiko/paramiko) - multi-node management (ftl, ssh)
 
-`gen`
+`.[gen]`
 - [`jax`](https://github.com/jax-ml/jax) - gpu acceleration
 - [`pyroki`](https://github.com/chungmin99/pyroki) - inverse kinematics
 
-`vla`
+`.[vla]`
 - [`gr00t`](https://github.com/hu-po/Isaac-GR00T) - VLA foundation model
 
-`bot`
+`.[bot]`
 - [`trossen_arm`](https://github.com/TrossenRobotics/trossen_arm) - robot arms
 - [`pyrealsense2`](https://github.com/IntelRealSense/librealsense) - depth cameras
 - [`lerobot`](https://github.com/hu-po/lerobot) - dataset, finetuning
 
-`viz`
+`.[viz]`
 - [`viser`](https://github.com/nerfstudio-project/viser) - GUI
 
-`tag`
+`.[tag]`
 - [`pupil-apriltags`](https://github.com/pupil-labs/apriltags) - object tracking
 - [`ffmpeg-python`](https://github.com/kkroening/ffmpeg-python) - cameras
-
-these dependencies use custom forks:
-
 
 ## Setup
 
 Various software versions of tatbot with different dependencies and designs are available under `tatbot/src`.
-Python dependencies are managed using [`uv`](https://docs.astral.sh/uv/getting-started/installation/) and a `pyproject.toml` file.
 
 ```bash
 # Basic install

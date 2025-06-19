@@ -5,7 +5,7 @@ nodes:
     emoji: "🦎"
   - name: trossen-ai
     ip: 192.168.1.97
-    user: trossen
+    user: trossen-ai
     emoji: "🦾"
   - name: ook
     ip: 192.168.1.90
@@ -13,12 +13,12 @@ nodes:
     emoji: "🦧"
   - name: rpi1
     ip: 192.168.1.98
-    user: pi
-    emoji: "🥧"
+    user: rpi1
+    emoji: "🍓"
   - name: rpi2
     ip: 192.168.1.99
-    user: pi
-    emoji: "🫐"
+    user: rpi2
+    emoji: "🍇"
   - name: oop
     ip: 192.168.1.51
     user: oop

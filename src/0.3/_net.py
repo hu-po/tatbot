@@ -1,15 +1,16 @@
 import concurrent.futures
 from dataclasses import dataclass
+import getpass
 import logging
 import os
 import socket
 import subprocess
 from typing import Optional, Union, Tuple
 
-import yaml
 import paramiko
 from paramiko.client import SSHClient
 from paramiko.sftp_client import SFTPClient
+import yaml
 
 from _log import get_logger, setup_log_with_config, print_config
 
@@ -47,20 +48,102 @@ def load_nodes(yaml_file: str):
     log.debug(f"🌐 Loaded nodes: {nodes}")
     return nodes
 
+def _get_local_ips() -> set[str]:
+    """Return a set of IP addresses assigned to this host.
+
+    Uses socket utilities only to avoid external dependencies.
+    """
+    ips: set[str] = set()
+    hostname = socket.gethostname()
+
+    # Add addresses resolved via hostname
+    try:
+        ips.update(socket.gethostbyname_ex(hostname)[2])
+    except socket.gaierror:
+        pass
+
+    # Add addresses gathered from all interfaces
+    try:
+        addrinfo = socket.getaddrinfo(hostname, None)
+        ips.update(ai[4][0] for ai in addrinfo)
+    except socket.gaierror:
+        pass
+
+    # Common loopback addresses
+    ips.update({"127.0.0.1", "0.0.0.0"})
+    return ips
+
+# Pre-compute to avoid repeated system calls
+_LOCAL_IPS = _get_local_ips()
+_LOCAL_HOSTNAMES = {socket.gethostname(), socket.getfqdn(), "localhost"}
+
+def _is_local_node(node) -> bool:
+    """Return True if the node represents this host."""
+    return node.get("ip") in _LOCAL_IPS or node.get("name") in _LOCAL_HOSTNAMES
+
 def distribute_keys(nodes, config: SetupNetConfig):
+    """Copy SSH keys to each remote node and authorize the public key.
+
+    Uses a single Paramiko SSH connection per node, so the user only needs to
+    enter their password once for each node (or not at all if the key already
+    works).
+    """
+    password_cache: dict[str, str] = {}
+
     for node in nodes:
-        name, ip, user, emoji = node["name"], node["ip"], node["user"], node.get("emoji", "🌐")
+        if _is_local_node(node):
+            log.debug(f"🛑 Skipping key distribution for local node {node['name']} ({node['ip']})")
+            continue
+
+        name, ip, user, emoji = (
+            node["name"],
+            node["ip"],
+            node["user"],
+            node.get("emoji", "🌐"),
+        )
+
         log.info(f"{emoji} Setting up {name} ({ip})")
 
-        # Copy keys
-        run(f"scp {config.key_path} {user}@{ip}:~/.ssh/{config.shared_key_name}")
-        run(f"scp {config.pub_key_path} {user}@{ip}:~/.ssh/{config.shared_key_name}.pub")
+        # Try key-based auth first (may already be configured from previous run)
+        try:
+            client = get_ssh_client(ip, user, config.key_path)
+            log.debug(f"{emoji} Connected to {name} with existing key – no password needed 🎉")
+            need_password = False
+        except Exception:
+            need_password = True
 
-        # Append public key to authorized_keys
-        run(
-            f'ssh {user}@{ip} "cat ~/.ssh/{config.shared_key_name}.pub >> ~/.ssh/authorized_keys && '
-            f'chmod 600 ~/.ssh/authorized_keys ~/.ssh/{config.shared_key_name}"'
+        if need_password:
+            pw = password_cache.get(user)
+            if pw is None:
+                pw = getpass.getpass(prompt=f"🔑 Enter password for {user}@{ip}: ")
+                password_cache[user] = pw
+
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(ip, username=user, password=pw, timeout=5.0)
+
+        # Ensure ~/.ssh exists
+        client.exec_command("mkdir -p ~/.ssh && chmod 700 ~/.ssh")
+
+        # Use SFTP to copy the key files
+        sftp: SFTPClient = client.open_sftp()
+        # NOTE: Paramiko SFTP does not expand '~', so we use relative paths
+        remote_priv = f".ssh/{config.shared_key_name}"
+        remote_pub = f".ssh/{config.shared_key_name}.pub"
+        log.debug(f"{emoji} Uploading private key → {remote_priv}")
+        sftp.put(config.key_path, remote_priv)
+        log.debug(f"{emoji} Uploading public key → {remote_pub}")
+        sftp.put(config.pub_key_path, remote_pub)
+        sftp.close()
+
+        # Append pub key to authorized_keys and set proper permissions
+        chmod_cmd = (
+            f"cat $HOME/{remote_pub} >> $HOME/.ssh/authorized_keys && "
+            f"chmod 600 $HOME/.ssh/authorized_keys $HOME/{remote_priv}"
         )
+        run_remote_command(client, chmod_cmd)
+
+        client.close()
         log.debug(f"{emoji} Keys distributed and authorized_keys updated for {name} ({ip})")
 
 def write_ssh_config(nodes, config: SetupNetConfig):
@@ -83,6 +166,8 @@ def test_node_connection(node, timeout: float) -> tuple[str, bool, str]:
     Returns:
         tuple: (node_name, success, message)
     """
+    if _is_local_node(node):
+        return node["name"], True, f"🌐 {node['name']} is local: skipping connectivity test"
     name, ip, emoji = node["name"], node["ip"], node.get("emoji", "🌐")
     
     # First test if we can reach the host
