@@ -33,6 +33,8 @@ ideas:
 - trossen: reset/check realsenses, configure robot, run bot with CLI kwargs(0.3) 
 
 """
+import os
+import subprocess
 from dataclasses import dataclass
 import logging
 from typing import List
@@ -40,7 +42,14 @@ from typing import List
 from mcp.server.fastmcp import FastMCP
 
 from _log import get_logger, setup_log_with_config, print_config
-from _net import SetupNetConfig, test_nodes
+from _net import (
+    SetupNetConfig,
+    test_nodes,
+    load_nodes,
+    _is_local_node,
+    get_ssh_client,
+    run_remote_command,
+)
 
 log = get_logger('run_mcp')
 
@@ -62,10 +71,59 @@ def ping_nodes() -> str:
     log.info("Pinging all nodes...")
     config = SetupNetConfig()
     all_success, messages = test_nodes(config)
-    
     header = "✅ All nodes are responding" if all_success else "❌ Some nodes are not responding"
-    
     return f"{header}:\n" + "\n".join(f"- {msg}" for msg in messages)
+
+@mcp.tool()
+def git_pull_all() -> str:
+    """
+    Runs 'git pull' on the tatbot repository on all configured nodes.
+    Assumes the tatbot repository is located at '~/tatbot' on each node.
+    """
+    log.info("Executing git pull on all nodes...")
+    config = SetupNetConfig()
+    nodes = load_nodes(config.yaml_file)
+    results = []
+
+    for node in nodes:
+        name = node["name"]
+        ip = node["ip"]
+        user = node["user"]
+        emoji = node.get("emoji", "🌐")
+
+        log.info(f"{emoji} Pulling on {name} ({ip})")
+
+        try:
+            if _is_local_node(node):
+                repo_path = os.path.expanduser("~/tatbot")
+                process = subprocess.run(
+                    ["git", "-C", repo_path, "pull"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if process.returncode == 0:
+                    results.append(
+                        f"{emoji} {name}: Success\n{process.stdout.strip()}"
+                    )
+                else:
+                    results.append(f"{emoji} {name}: Failed\n{process.stderr.strip()}")
+            else:
+                client = get_ssh_client(ip, user, config.key_path)
+                exit_code, out, err = run_remote_command(
+                    client, "git -C ~/tatbot pull"
+                )
+                client.close()
+                if exit_code == 0:
+                    results.append(f"{emoji} {name}: Success\n{out}")
+                else:
+                    results.append(f"{emoji} {name}: Failed\n{err}")
+
+        except Exception as e:
+            results.append(f"{emoji} {name}: Exception occurred: {str(e)}")
+            log.error(f"Failed to pull on {name}: {e}")
+
+    return "\n\n".join(results)
 
 @mcp.resource("greeting://{name}")
 def get_greeting(name: str) -> str:
@@ -73,7 +131,6 @@ def get_greeting(name: str) -> str:
     return f"Hello, {name}!"
 
 def run_mcp(config: MCPConfig):
-    del config
     log.info(f"🔌 Starting MCP server")
     mcp.run()
 
