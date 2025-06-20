@@ -201,10 +201,13 @@ def get_plan(plan_name: str) -> dict:
     return response
 
 def run_mcp(config: MCPConfig):
-    log.info(f"🔌 Starting MCP server")
-    mcp.run()
+    log.info("🔌 Starting MCP server")
+    # transport can be 'stdio' or 'streamable-http'
+    mcp.run(transport="streamable-http")
 
 if __name__ == "__main__":
     args = setup_log_with_config(MCPConfig)
+    if args.debug:
+        log.setLevel(logging.DEBUG)
     print_config(args)
     run_mcp(args)
