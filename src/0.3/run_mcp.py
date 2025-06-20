@@ -34,24 +34,15 @@ ideas:
 - trossen: reset/check realsenses, configure robot, run bot with CLI kwargs(0.3) 
 
 """
-import os
-import subprocess
+import concurrent.futures
 from dataclasses import dataclass
 import logging
-from typing import List
-import yaml
+from typing import List, Optional
 
 from mcp.server.fastmcp import FastMCP
 
 from _log import get_logger, setup_log_with_config, print_config
-from _net import (
-    SetupNetConfig,
-    test_nodes,
-    load_nodes,
-    _is_local_node,
-    get_ssh_client,
-    run_remote_command,
-)
+from _net import NetworkManager, run_remote_command
 
 log = get_logger('run_mcp')
 
@@ -59,43 +50,75 @@ log = get_logger('run_mcp')
 class MCPConfig:
     debug: bool = False
     """Enable debug logging."""
+    transport: str = "streamable-http"
+    """Transport type for MCP server."""
 
 mcp = FastMCP("tatbot")
+net = NetworkManager()
 
 @mcp.tool()
-def ping_nodes() -> str:
-    """Tests connectivity to all configured nodes and returns a status summary."""
-    log.info("Pinging all nodes...")
-    config = SetupNetConfig()
-    all_success, messages = test_nodes(config)
-    header = "✅ All nodes are responding" if all_success else "❌ Some nodes are not responding"
-    return f"{header}:\n" + "\n".join(f"- {msg}" for msg in messages)
+def ping_nodes(nodes: Optional[List[str]] = None) -> str:
+    """
+    Tests connectivity to configured nodes and returns a status summary.
+    If `nodes` is provided, only pings the specified nodes. Otherwise, pings all nodes.
+    """
+    log.info(f"Pinging nodes: {nodes or 'all'}")
+    target_nodes, error = net.get_target_nodes(nodes)
+    if error:
+        return error
+    if not target_nodes:
+        return "No nodes to ping."
+
+    messages = []
+    all_success = True
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future_to_node = {
+            executor.submit(net._test_node_connection, node): node for node in target_nodes
+        }
+        for future in concurrent.futures.as_completed(future_to_node):
+            _name, success, message = future.result()
+            messages.append(message)
+            if not success:
+                all_success = False
+
+    header = "✅ All specified nodes are responding" if all_success else "❌ Some specified nodes are not responding"
+    if not nodes:
+        header = "✅ All nodes are responding" if all_success else "❌ Some nodes are not responding"
+
+    return f"{header}:\n" + "\n".join(f"- {msg}" for msg in sorted(messages))
 
 @mcp.tool()
-def update_all() -> str:
+def update_all(nodes: Optional[List[str]] = None) -> str:
     """
     Runs 'git pull' on the tatbot repository on all configured nodes,
     then reinstalls the Python dependencies using uv.
-    Assumes the tatbot repository is located at '~/tatbot' on each node.
+    If `nodes` is provided, only updates the specified nodes.
     """
-    log.info("Executing git pull and reinstalling dependencies on all nodes...")
-    config = SetupNetConfig()
-    nodes = load_nodes(config.yaml_file)
+    log.info(f"Executing git pull and reinstalling dependencies on nodes: {nodes or 'all'}...")
+    target_nodes, error = net.get_target_nodes(nodes)
+    if error:
+        return error
+    if not target_nodes:
+        return "No nodes to update."
+
     results = []
 
-    for node in nodes:
+    for node in target_nodes:
         name = node["name"]
         ip = node["ip"]
         user = node["user"]
         emoji = node.get("emoji", "🌐")
+        deps = node.get("deps", ".")
 
         log.info(f"{emoji} Updating {name} ({ip})")
 
-        if _is_local_node(node):
+        if net.is_local_node(node):
+            # Handle local update logic if necessary
             pass
 
         try:
-            client = get_ssh_client(ip, user, config.key_path)
+            client = net.get_ssh_client(ip, user)
             command = (
                 "export PATH=\"$HOME/.local/bin:$PATH\" && "
                 "git -C ~/tatbot pull && "
@@ -104,7 +127,7 @@ def update_all() -> str:
                 "rm -rf .venv && "
                 "rm -f uv.lock && "
                 "uv venv && "
-                "uv pip install ."
+                f"uv pip install '{deps}'"
             )
             exit_code, out, err = run_remote_command(client, command, timeout=300.0)
             client.close()
@@ -120,19 +143,26 @@ def update_all() -> str:
     return "\n\n".join(results)
 
 @mcp.tool()
-def node_usage() -> dict[str, dict]:
+def node_usage(nodes: Optional[List[str]] = None) -> dict[str, dict]:
     """
     For every node in config/nodes.yaml, report basic CPU/RAM usage.
     Falls back to 'unreachable' if SSH fails.
+    If `nodes` is provided, only reports usage for the specified nodes.
     """
     import psutil
     import json
 
-    config = SetupNetConfig()
-    nodes = load_nodes(config.yaml_file)
+    log.info(f"Getting usage for nodes: {nodes or 'all'}")
+    target_nodes, error = net.get_target_nodes(nodes)
+    if error:
+        return {"error": error}
+
     report: dict[str, dict] = {}
-    for n in nodes:
-        if _is_local_node(n):
+    if not target_nodes:
+        return report
+
+    for n in target_nodes:
+        if net.is_local_node(n):
             # local machine – use psutil directly
             report[n["name"]] = {
                 "cpu_percent": psutil.cpu_percent(),
@@ -140,7 +170,7 @@ def node_usage() -> dict[str, dict]:
             }
             continue
         try:
-            client = get_ssh_client(n["ip"], n["user"], config.key_path)
+            client = net.get_ssh_client(n["ip"], n["user"])
             command = (
                 "python - << 'EOF'\n"
                 "import psutil, json, sys;"
@@ -160,50 +190,9 @@ def node_usage() -> dict[str, dict]:
             report[n["name"]] = {"error": "unreachable"}
     return report
 
-@mcp.resource("plan/{plan_name}")
-def get_plan(plan_name: str) -> dict:
-    """
-    Provides detailed information about a specific tattoo plan.
-    """
-    log.info(f"Fetching plan data for '{plan_name}'")
-    base_path = "output/plans"
-    plan_path = os.path.join(base_path, plan_name)
-
-    if not os.path.isdir(plan_path):
-        return {"error": f"Plan '{plan_name}' not found."}
-
-    meta_path = os.path.join(plan_path, "meta.yaml")
-    stats_path = os.path.join(plan_path, "pathstats.yaml")
-    image_path = os.path.join(plan_path, "image.png")
-
-    response = {"name": plan_name}
-
-    if os.path.exists(meta_path):
-        with open(meta_path, "r") as f:
-            response["metadata"] = yaml.safe_load(f)
-    else:
-        response["metadata"] = {"error": "meta.yaml not found"}
-
-    if os.path.exists(stats_path):
-        with open(stats_path, "r") as f:
-            stats = yaml.safe_load(f)
-            response["path_count"] = stats.get("count", 0)
-            response["path_stats"] = stats
-    else:
-        response["path_count"] = 0
-        response["path_stats"] = {"error": "pathstats.yaml not found"}
-
-    if os.path.exists(image_path):
-        response["image"] = image_path
-    else:
-        response["image"] = "not_found"
-
-    return response
-
 def run_mcp(config: MCPConfig):
     log.info("🔌 Starting MCP server")
-    # transport can be 'stdio' or 'streamable-http'
-    mcp.run(transport="streamable-http")
+    mcp.run(transport=config.transport)
 
 if __name__ == "__main__":
     args = setup_log_with_config(MCPConfig)
