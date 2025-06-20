@@ -207,9 +207,9 @@ def poweroff_nodes(nodes: Optional[List[str]] = None) -> str:
     remote_node_names = [n.name for n in remote_nodes]
     remote_node_map = {n.name: n for n in remote_nodes}
 
-    command = "sudo poweroff"
+    command = "nohup sudo poweroff > /dev/null 2>&1 &"
     # Use a short timeout because the command may not return on success
-    results = net.run_command_on_nodes(command, node_names=remote_node_names, timeout=10.0)
+    results = net.run_command_on_nodes(command, node_names=remote_node_names, timeout=5.0)
 
     for name, (exit_code, out, err) in results.items():
         node = remote_node_map[name]
