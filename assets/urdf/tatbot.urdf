@@ -250,7 +250,7 @@
 
   <!-- arm_l -->
   <joint name="left/mount_joint" type="fixed">
-    <origin rpy="0 0 -1.57079632679" xyz="0 0.238125 0"/>
+    <origin rpy="0 0 0" xyz="0 0.238125 0"/>
     <parent link="root"/>
     <child link="left/base_link"/>
   </joint>
