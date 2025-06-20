@@ -10,6 +10,7 @@ description of tatbot (tattoo robot) technical stack
   - [Dependencies](#dependencies)
   - [Devices](#devices)
   - [Networking](#networking)
+  - [MCP](#mcp)
 - [Hardware](#hardware)
   - [Trossen Robot Arms](#trossen-robot-arms)
   - [URDF](#urdf)
@@ -75,6 +76,24 @@ uv run run_tag.py
 ```bash
 uv pip install .[viz] && \
 uv run run_viz.py
+```
+
+## MCP
+
+tatbot uses the [MCP](https://github.com/modelcontextprotocol/python-sdk) protocol to communicate between nodes.
+
+```bash
+uv run run_mcp.py
+```
+
+use the [mcp inspector](https://modelcontextprotocol.io/docs/tools/inspector#python) to inspect the mcp server.
+
+```bash
+npx @modelcontextprotocol/inspector \
+  uv \
+  --directory path/to/server \
+  run \
+  run_mcp.py
 ```
 
 ## Dependencies
