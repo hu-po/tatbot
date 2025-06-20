@@ -215,9 +215,9 @@ def poweroff_nodes(nodes: Optional[List[str]] = None) -> str:
         node = remote_node_map[name]
         # -1 exit code from our wrapper means an exception happened (like a timeout or connection drop)
         # which is expected if poweroff succeeds.
-        if exit_code == -1 and ('timeout' in err.lower() or 'session timed out' in err.lower() or 'socket is closed' in err.lower()):
+        if exit_code == -1 and ('session timed out' in err.lower() or 'socket is closed' in err.lower()):
             report.append(f"✅ {node.emoji} {name}: Power off command sent, connection lost as expected.")
-        elif exit_code == -1 and "Failed to connect" in err:
+        elif exit_code == -1 and ("Failed to connect" in err or 'timed out' in err.lower() or 'unable to connect' in err.lower()):
             report.append(f"🔌 {node.emoji} {name}: Already offline or unreachable.")
         elif exit_code == 0: # This might happen if poweroff returns immediately
              report.append(f"✅ {node.emoji} {name}: Power off command sent.")
