@@ -106,7 +106,8 @@ def update_nodes(nodes: Optional[List[str]] = None, timeout: float = 300.0) -> s
         log.info(f"{emoji} Updating {node.name} ({node.ip})")
 
         if net.is_local_node(node):
-            pass
+            results.append(f"{emoji} {node.name}: Skipped (local node)")
+            continue
 
         try:
             client = net.get_ssh_client(node.ip, node.user)
@@ -160,8 +161,9 @@ def node_cpu_ram_usage(nodes: Optional[List[str]] = None) -> dict[str, dict]:
     # Handle remote nodes
     if remote_node_names:
         command = (
-            "export PATH=\"$HOME/.local/bin:$PATH\" && uv run"
-            "python - << 'EOF'\n"
+            "export PATH=\"$HOME/.local/bin:$PATH\" && "
+            "cd ~/tatbot/src/0.3 && "
+            "uv run python - << 'EOF'\n"
             "import psutil, json, sys;"
             "print(json.dumps({'cpu_percent': psutil.cpu_percent(),"
             "'mem_percent': psutil.virtual_memory().percent}))\nEOF"
@@ -179,7 +181,7 @@ def node_cpu_ram_usage(nodes: Optional[List[str]] = None) -> dict[str, dict]:
                 report[name] = {"error": "unreachable"}
             else:
                 log.error(f"Failed to get usage for {name}: {err}")
-                report[name] = {"error": "command failed"}
+                report[name] = {"error": f"command failed: {err}"}
 
     return report
 

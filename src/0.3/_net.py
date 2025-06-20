@@ -246,10 +246,10 @@ class NetworkManager:
         log.info(f"🌐 🖥️ Running remote command: {command}")
 
         try:
-            stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
+            stdin, stdout, stderr = client.exec_command(command, timeout=timeout, get_pty=True)
             exit_code = stdout.channel.recv_exit_status()
-            out = stdout.read().decode().strip()
-            err = stderr.read().decode().strip()
+            out = stdout.read().decode("utf-8").strip()
+            err = stderr.read().decode("utf-8").strip()
 
             if exit_code != 0:
                 log.error(f"🌐 ❌ Command failed with exit code {exit_code}")
