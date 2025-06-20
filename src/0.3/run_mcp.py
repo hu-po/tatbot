@@ -185,6 +185,49 @@ def node_cpu_ram_usage(nodes: Optional[List[str]] = None) -> dict[str, dict]:
 
     return report
 
+@mcp.tool(description="Powers off the specified nodes. Requires passwordless sudo for the 'poweroff' command.")
+def poweroff_nodes(nodes: Optional[List[str]] = None) -> str:
+    log.info(f"🔌 Powering off nodes: {nodes or 'all'}")
+    target_nodes, error = net.get_target_nodes(nodes)
+    if error:
+        return error
+    if not target_nodes:
+        return "No nodes to power off."
+
+    remote_nodes = [n for n in target_nodes if not net.is_local_node(n)]
+    local_nodes = [n for n in target_nodes if net.is_local_node(n)]
+    
+    report = [f"⚠️ {node.emoji} {node.name}: Skipped (local node)." for node in local_nodes]
+
+    if not remote_nodes:
+        if report:
+             return "\n".join(sorted(report))
+        return "No remote nodes specified to power off."
+    
+    remote_node_names = [n.name for n in remote_nodes]
+    remote_node_map = {n.name: n for n in remote_nodes}
+
+    command = "sudo poweroff"
+    # Use a short timeout because the command may not return on success
+    results = net.run_command_on_nodes(command, node_names=remote_node_names, timeout=10.0)
+
+    for name, (exit_code, out, err) in results.items():
+        node = remote_node_map[name]
+        # -1 exit code from our wrapper means an exception happened (like a timeout or connection drop)
+        # which is expected if poweroff succeeds.
+        if exit_code == -1 and ('timeout' in err.lower() or 'session timed out' in err.lower() or 'socket is closed' in err.lower()):
+            report.append(f"✅ {node.emoji} {name}: Power off command sent, connection lost as expected.")
+        elif exit_code == -1 and "Failed to connect" in err:
+            report.append(f"🔌 {node.emoji} {name}: Already offline or unreachable.")
+        elif exit_code == 0: # This might happen if poweroff returns immediately
+             report.append(f"✅ {node.emoji} {name}: Power off command sent.")
+        else:
+            error_message = err or out
+            report.append(f"❌ {node.emoji} {name}: Failed to power off. Exit code: {exit_code}, Error: {error_message}")
+            log.error(f"Failed to power off {name}: Code={exit_code}, out={out}, err={err}")
+    
+    return "\n".join(sorted(report))
+
 def run_mcp(config: MCPConfig):
     log.info("🔌 Starting MCP server")
     mcp.run(transport=config.transport)
