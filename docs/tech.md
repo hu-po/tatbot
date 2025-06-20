@@ -89,11 +89,8 @@ uv run run_mcp.py
 use the [mcp inspector](https://modelcontextprotocol.io/docs/tools/inspector#python) to inspect the mcp server.
 
 ```bash
-npx @modelcontextprotocol/inspector \
-  uv \
-  --directory path/to/server \
-  run \
-  run_mcp.py
+uv run mcp dev run_mcp.py
+# click on the "Open inspector with token pre-filled" link
 ```
 
 ## Dependencies

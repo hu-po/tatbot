@@ -33,3 +33,51 @@ ideas:
 - trossen: reset/check realsenses, configure robot, run bot with CLI kwargs(0.3) 
 
 """
+from dataclasses import dataclass
+import logging
+from typing import List
+
+from mcp.server.fastmcp import FastMCP
+
+from _log import get_logger, setup_log_with_config, print_config
+from _net import SetupNetConfig, test_nodes
+
+log = get_logger('run_mcp')
+
+@dataclass
+class MCPConfig:
+    debug: bool = False
+    """Enable debug logging."""
+
+mcp = FastMCP("tatbot")
+
+@mcp.tool()
+def add(a: int, b: int) -> int:
+    """Add two numbers"""
+    return a + b
+
+@mcp.tool()
+def ping_nodes() -> str:
+    """Tests connectivity to all configured nodes and returns a status summary."""
+    log.info("Pinging all nodes...")
+    config = SetupNetConfig()
+    all_success, messages = test_nodes(config)
+    
+    header = "✅ All nodes are responding" if all_success else "❌ Some nodes are not responding"
+    
+    return f"{header}:\n" + "\n".join(f"- {msg}" for msg in messages)
+
+@mcp.resource("greeting://{name}")
+def get_greeting(name: str) -> str:
+    """Get a personalized greeting"""
+    return f"Hello, {name}!"
+
+def run_mcp(config: MCPConfig):
+    del config
+    log.info(f"🔌 Starting MCP server")
+    mcp.run()
+
+if __name__ == "__main__":
+    args = setup_log_with_config(MCPConfig)
+    print_config(args)
+    run_mcp(args)

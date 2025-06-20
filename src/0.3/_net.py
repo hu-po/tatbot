@@ -187,14 +187,16 @@ def test_node_connection(node, timeout: float) -> tuple[str, bool, str]:
     except subprocess.CalledProcessError as e:
         return name, False, f"{emoji} {name} ({ip}): SSH test failed - {e.stderr.strip()}"
 
-def test_nodes(config: SetupNetConfig) -> bool:
+def test_nodes(config: SetupNetConfig) -> Tuple[bool, list[str]]:
     """Test connectivity to all nodes in parallel.
     
     Returns:
-        bool: True if all nodes are reachable, False otherwise.
+        Tuple[bool, list[str]]: A tuple containing a boolean indicating if all
+        nodes were successful, and a list of status messages for each node.
     """
     nodes = load_nodes(config.yaml_file)
     all_success = True
+    messages: list[str] = []
     
     log.info("🌐 Testing connectivity to all nodes...")
     with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -204,7 +206,8 @@ def test_nodes(config: SetupNetConfig) -> bool:
         ]
         
         for future in concurrent.futures.as_completed(futures):
-            name, success, message = future.result()
+            _name, success, message = future.result()
+            messages.append(message)
             if success:
                 log.info(message)
             else:
@@ -216,7 +219,7 @@ def test_nodes(config: SetupNetConfig) -> bool:
     else:
         log.error("🌐 ❌ Some nodes are not responding")
     
-    return all_success
+    return all_success, sorted(messages)
 
 def setup_net(config: SetupNetConfig):
     nodes = load_nodes(config.yaml_file)
