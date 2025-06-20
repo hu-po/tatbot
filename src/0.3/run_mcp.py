@@ -36,13 +36,14 @@ ideas:
 """
 import concurrent.futures
 from dataclasses import dataclass
+import json
 import logging
 from typing import List, Optional
 
 from mcp.server.fastmcp import FastMCP
 
 from _log import get_logger, setup_log_with_config, print_config
-from _net import NetworkManager, run_remote_command
+from _net import NetworkManager
 
 log = get_logger('run_mcp')
 
@@ -56,13 +57,13 @@ class MCPConfig:
 mcp = FastMCP("tatbot")
 net = NetworkManager()
 
-@mcp.tool()
+@mcp.resource("nodes://all")
+def get_nodes() -> str:
+    return "\n".join(f"{node.emoji} {node.name}" for node in net.nodes)
+
+@mcp.tool(description="Tests connectivity to configured nodes and returns a status summary. If `nodes` is provided, only pings the specified nodes. Otherwise, pings all nodes.")
 def ping_nodes(nodes: Optional[List[str]] = None) -> str:
-    """
-    Tests connectivity to configured nodes and returns a status summary.
-    If `nodes` is provided, only pings the specified nodes. Otherwise, pings all nodes.
-    """
-    log.info(f"Pinging nodes: {nodes or 'all'}")
+    log.info(f"🔌 Pinging nodes: {nodes or 'all'}")
     target_nodes, error = net.get_target_nodes(nodes)
     if error:
         return error
@@ -88,14 +89,9 @@ def ping_nodes(nodes: Optional[List[str]] = None) -> str:
 
     return f"{header}:\n" + "\n".join(f"- {msg}" for msg in sorted(messages))
 
-@mcp.tool()
-def update_all(nodes: Optional[List[str]] = None) -> str:
-    """
-    Runs 'git pull' on the tatbot repository on all configured nodes,
-    then reinstalls the Python dependencies using uv.
-    If `nodes` is provided, only updates the specified nodes.
-    """
-    log.info(f"Executing git pull and reinstalling dependencies on nodes: {nodes or 'all'}...")
+@mcp.tool(description="Runs 'git pull' on the tatbot repository on all configured nodes, then reinstalls the Python dependencies using uv. If `nodes` is provided, only updates the specified nodes.")
+def update_nodes(nodes: Optional[List[str]] = None, timeout: float = 300.0) -> str:
+    log.info(f"🔌 Updating nodes: {nodes or 'all'}")
     target_nodes, error = net.get_target_nodes(nodes)
     if error:
         return error
@@ -105,20 +101,15 @@ def update_all(nodes: Optional[List[str]] = None) -> str:
     results = []
 
     for node in target_nodes:
-        name = node["name"]
-        ip = node["ip"]
-        user = node["user"]
-        emoji = node.get("emoji", "🌐")
-        deps = node.get("deps", ".")
+        emoji = node.emoji
 
-        log.info(f"{emoji} Updating {name} ({ip})")
+        log.info(f"{emoji} Updating {node.name} ({node.ip})")
 
         if net.is_local_node(node):
-            # Handle local update logic if necessary
             pass
 
         try:
-            client = net.get_ssh_client(ip, user)
+            client = net.get_ssh_client(node.ip, node.user)
             command = (
                 "export PATH=\"$HOME/.local/bin:$PATH\" && "
                 "git -C ~/tatbot pull && "
@@ -127,30 +118,24 @@ def update_all(nodes: Optional[List[str]] = None) -> str:
                 "rm -rf .venv && "
                 "rm -f uv.lock && "
                 "uv venv && "
-                f"uv pip install '{deps}'"
+                f"uv pip install '{node.deps}'"
             )
-            exit_code, out, err = run_remote_command(client, command, timeout=300.0)
+            exit_code, out, err = net._run_remote_command(client, command, timeout=timeout)
             client.close()
             if exit_code == 0:
-                results.append(f"{emoji} {name}: Success\n{out}")
+                results.append(f"{emoji} {node.name}: Success\n{out}")
             else:
-                results.append(f"{emoji} {name}: Failed\n{err}")
+                results.append(f"{emoji} {node.name}: Failed\n{err}")
 
         except Exception as e:
-            results.append(f"{emoji} {name}: Exception occurred: {str(e)}")
-            log.error(f"Failed to pull on {name}: {e}")
+            results.append(f"{emoji} {node.name}: Exception occurred: {str(e)}")
+            log.error(f"Failed to pull on {node.name}: {e}")
 
     return "\n\n".join(results)
 
-@mcp.tool()
-def node_usage(nodes: Optional[List[str]] = None) -> dict[str, dict]:
-    """
-    For every node in config/nodes.yaml, report basic CPU/RAM usage.
-    Falls back to 'unreachable' if SSH fails.
-    If `nodes` is provided, only reports usage for the specified nodes.
-    """
+@mcp.tool(description="For every node in config/nodes.yaml, report basic CPU/RAM usage. Falls back to 'unreachable' if SSH fails. If `nodes` is provided, only reports usage for the specified nodes.")
+def node_cpu_ram_usage(nodes: Optional[List[str]] = None) -> dict[str, dict]:
     import psutil
-    import json
 
     log.info(f"Getting usage for nodes: {nodes or 'all'}")
     target_nodes, error = net.get_target_nodes(nodes)
@@ -161,33 +146,41 @@ def node_usage(nodes: Optional[List[str]] = None) -> dict[str, dict]:
     if not target_nodes:
         return report
 
+    remote_nodes = [n for n in target_nodes if not net.is_local_node(n)]
+    remote_node_names = [n.name for n in remote_nodes]
+
+    # Handle local node
     for n in target_nodes:
         if net.is_local_node(n):
-            # local machine – use psutil directly
-            report[n["name"]] = {
+            report[n.name] = {
                 "cpu_percent": psutil.cpu_percent(),
                 "mem_percent": psutil.virtual_memory().percent,
             }
-            continue
-        try:
-            client = net.get_ssh_client(n["ip"], n["user"])
-            command = (
-                "python - << 'EOF'\n"
-                "import psutil, json, sys;"
-                "print(json.dumps({'cpu': psutil.cpu_percent(),"
-                "'mem': psutil.virtual_memory().percent}))\nEOF"
-            )
-            exit_code, out, err = run_remote_command(client, command)
-            client.close()
-            if exit_code == 0:
-                report[n["name"]] = json.loads(out)
-            else:
-                log.error(f"Failed to get usage for {n['name']}: {err}")
-                report[n["name"]] = {"error": "command failed"}
 
-        except Exception as e:
-            log.error(f"Failed to connect or run command on {n['name']}: {e}")
-            report[n["name"]] = {"error": "unreachable"}
+    # Handle remote nodes
+    if remote_node_names:
+        command = (
+            "export PATH=\"$HOME/.local/bin:$PATH\" && uv run"
+            "python - << 'EOF'\n"
+            "import psutil, json, sys;"
+            "print(json.dumps({'cpu_percent': psutil.cpu_percent(),"
+            "'mem_percent': psutil.virtual_memory().percent}))\nEOF"
+        )
+        results = net.run_command_on_nodes(command, node_names=remote_node_names)
+
+        for name, (exit_code, out, err) in results.items():
+            if exit_code == 0:
+                try:
+                    report[name] = json.loads(out)
+                except json.JSONDecodeError:
+                    log.error(f"Failed to parse usage JSON from {name}: {out}")
+                    report[name] = {"error": "invalid output"}
+            elif exit_code == -1 and "Failed to connect" in err:
+                report[name] = {"error": "unreachable"}
+            else:
+                log.error(f"Failed to get usage for {name}: {err}")
+                report[name] = {"error": "command failed"}
+
     return report
 
 def run_mcp(config: MCPConfig):
