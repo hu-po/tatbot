@@ -37,6 +37,7 @@ dependencies = [
     "dacite==1.9.2",
     "paramiko==3.5.1",
     "mcp[cli]==1.9.4",
+    "psutil==7.0.0",
 ]
 
 [project.optional-dependencies]
