@@ -25,9 +25,9 @@ class IKRobotConfig:
     """Names of the ee links in the URDF for left and right ik solving."""
     rest_pose: Float[Array, "16"] = field(default_factory=lambda: jnp.array([
         # left arm
-        0.42, 1.01, 0.49, 0.60, 0.0, 0.0, 0.0, 0.0,
+        -0.8, 0.6, 0.5, -1.0, 0.0, 0.0, 0.0, 0.0,
         # right arm
-        0.58, 0.05, 0.93, 1.56, 0.10, 0.0, 0.04, 0.04]))
+        0.8, 0.6, 0.5, -1.0, 0.0, 0.0, 0.0, 0.0]))
     """Rest pose for the robot."""
 
 @jdc.pytree_dataclass

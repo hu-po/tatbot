@@ -53,9 +53,12 @@ class Plan:
     """Time between poses in seconds for slow movement."""
 
     ee_design_pos: list[float] = field(default_factory=lambda: [0.08, 0.0, 0.04])
-    """position of the design ee transform."""
-    ee_design_wxyz: list[float] = field(default_factory=lambda: [0.5, 0.5, 0.5, -0.5])
-    """orientation quaternion (wxyz) of the design ee transform."""
+    """position in meters (xyz) of end effector when centered on design."""
+    
+    ee_design_wxyz_l: list[float] = field(default_factory=lambda: [0.5, 0.5, 0.5, -0.5])
+    """orientation quaternion (wxyz) of left arm end effector when centered on design."""
+    ee_design_wxyz_r: list[float] = field(default_factory=lambda: [0.5, 0.5, 0.5, -0.5])
+    """orientation quaternion (wxyz) of right arm end effector when centered on design."""
 
     hover_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.006])
     """position offset when hovering over point, relative to current ee frame."""
