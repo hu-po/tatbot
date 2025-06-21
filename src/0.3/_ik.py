@@ -21,7 +21,7 @@ log.info(f"🧠 JAX devices: {jax.devices()}")
 class IKRobotConfig:
     urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
     """Local path to the URDF file for the robot."""
-    target_link_names: tuple[str, str] = ("left/tattoo_needle", "right/ee_gripper_link")
+    target_link_names: tuple[str, str] = ("left/tattoo_needle", "right/tattoo_needle")
     """Names of the ee links in the URDF for left and right ik solving."""
     rest_pose: Float[Array, "16"] = field(default_factory=lambda: jnp.array([
         # left arm
