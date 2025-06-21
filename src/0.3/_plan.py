@@ -11,7 +11,7 @@ import jax.numpy as jnp
 from _ik import batch_ik
 from _ink import InkCap, InkPalette
 from _log import get_logger
-from _path import Path, PathBatch, PathMeta
+from _path import Path, PathBatch, Stroke
 
 log = get_logger('_plan')
 
@@ -19,8 +19,6 @@ log = get_logger('_plan')
 METADATA_FILENAME: str = "meta.yaml"
 IMAGE_FILENAME: str = "image.png"
 PATHBATCH_FILENAME: str = "pathbatch.safetensors"
-PATHMETAS_FILENAME: str = "pathmetas.yaml"
-PATHSTATS_FILENAME: str = "pathstats.yaml"
 
 @dataclass
 class Plan:
@@ -30,8 +28,10 @@ class Plan:
     dirpath: str = ""
     """Path to the directory containing the plan files."""
 
-    path_descriptions: dict[str, str] = field(default_factory=dict)
-    """Descriptions for each path in the plan."""
+    strokes: dict[str, Stroke] = field(default_factory=dict)
+    """Dictionary of path metadata objects."""
+    pathstats: dict = field(default_factory=dict)
+    """Path statistics."""
 
     image_width_m: float = 0.04
     """Width of the image in meters."""
@@ -115,57 +115,61 @@ class Plan:
         log.debug(f"⚙️💾 Saving pathbatch to {filepath}")
         pathbatch.save(filepath)
 
-    def load_pathmetas(self) -> list[PathMeta]:
-        filepath = os.path.join(self.dirpath, PATHMETAS_FILENAME)
-        with open(filepath, "r") as f:
-            data = yaml.safe_load(f)
-        pathmetas = [dacite.from_dict(PathMeta, p) for p in data]
-        log.info(f"⚙️ Loaded {len(pathmetas)} pathmetas from {filepath}")
-        return pathmetas
-    
-    def save_pathmetas(self, pathmetas: list[PathMeta]) -> None:
-        log.info(f"⚙️💾 Saving {len(pathmetas)} pathmetas to {self.dirpath}")
-        filepath = os.path.join(self.dirpath, PATHMETAS_FILENAME)
-        with open(filepath, "w") as f:
-            yaml.safe_dump([asdict(p) for p in pathmetas], f)
-
-    def load_pathstats(self) -> dict:
-        filepath = os.path.join(self.dirpath, PATHSTATS_FILENAME)
-        with open(filepath, "r") as f:
-            return yaml.safe_load(f)
-
-    def add_pathmetas(self, pathmetas: list[PathMeta], image: Image):
-        self.save_pathmetas(pathmetas)
+    def add_strokes(self, raw_strokes: list[Stroke], image: Image):
+        log.debug(f"⚙️ Input image shape: {image.size}")
         self.save_image_np(image)
-        num_paths = len(pathmetas)
-
-        log.debug(f"⚙️ Image shape: {image.size}")
         self.image_width_px = image.size[0]
         self.image_height_px = image.size[1]
         scale_x = self.image_width_m / self.image_width_px
         scale_y = self.image_height_m / self.image_height_px
 
-        # TODO: sort pathmetas by Y axis
+        log.info(f"⚙️ Adding {len(raw_strokes)} raw paths to plan...")
+        for idx, stroke in enumerate(raw_strokes):
+            # crop all strokes to fit within pad_len
+            stroke_length = len(stroke.pixel_coords)
+            if stroke_length + 2 > self.path_pad_len:
+                # TODO: resample to fit within pad_len
+                log.warning(f"⚙️⚠️ stroke {idx} has len {stroke_length} more than {self.path_pad_len} poses, cropping...")
+                stroke.pixel_coords = stroke.pixel_coords[:self.path_pad_len - 2] # -2 for hover positions
+            # add normalized coordinates
+            stroke.norm_coords = [
+                [pw / self.image_width_px, ph / self.image_height_px]
+                for pw, ph in stroke.pixel_coords
+            ]
+            # calculate center of mass of stroke
+            stroke.norm_center = (
+                sum(pw for pw, _ in stroke.norm_coords) / stroke_length,
+                sum(ph for _, ph in stroke.norm_coords) / stroke_length,
+            )
+            stroke.meter_coords = [
+                [pw * scale_x, ph * scale_y]
+                for pw, ph in stroke.norm_coords
+            ]
+            stroke.meters_center = (
+                sum(pw for pw, _ in stroke.meter_coords) / stroke_length,
+                sum(ph for _, ph in stroke.meter_coords) / stroke_length,
+            )
+            self.strokes[f'raw_path_{idx:03d}'] = stroke
+
+        # sort strokes by width in norm coords
+        sorted_strokes = sorted(self.strokes.values(), key=lambda x: x.norm_center[0])
+
+
+        # TODO: sort strokes by Y axis
         # TODO: right arm starts poping queue from middle moves to right edge
         # TODO: left arm starts popping queue from left edge moves to middle
-        # TODO: seperate files for pathmetas and inkdips, dictionary with "order" of execution
+        # TODO: seperate files for strokes and inkdips, dictionary with "order" of execution
         # TODO: add path metadata (completion time, is completed, is inkdip, left or right arm, etc)
         # TODO: ability to recalculate ik for remaining paths (if adjustment is done mid-session)
 
-        paths = []
-        for path_idx, pathmeta in enumerate(pathmetas):
-            log.debug(f"⚙️ Adding pathmeta {path_idx} of {num_paths}...")
+        paths: list[Path] = []
+        for path_idx, stroke in enumerate(input_strokes):
+            log.debug(f"⚙️ Adding path {path_idx} of {num_paths}...")
+            self.strokes[f'path_{path_idx:03d}'] = stroke
             path = Path.padded(self.path_pad_len)
-            self.path_descriptions[f'path_{path_idx:03d}'] = pathmeta.description
+            stroke_length = len(stroke.pixel_coords)
 
-            pathmeta_length = len(pathmeta.pixels)
-            if pathmeta_length + 2 > self.path_pad_len:
-                # TODO: resample to fit within pad_len
-                log.warning(f"⚙️⚠️ pathmeta {path_idx} has more than {self.path_pad_len} poses, truncating...")
-                pathmeta.pixels = pathmeta.pixels[:self.path_pad_len - 2] # -2 for hover positions
-                pathmeta_length = len(pathmeta.pixels)
-
-            for i, (pw, ph) in enumerate(pathmeta.pixels):
+            for i, (pw, ph) in enumerate(stroke.pixel_coords):
                 # pixel coordinates first need to be converted to meters
                 x_m, y_m = pw * scale_x, ph * scale_y
                 # center in design frame, add needle offset
@@ -190,23 +194,23 @@ class Plan:
                 path.ee_pos_l[1, 2] + self.hover_offset[2],
             ]
             path.ee_wxyz_l[0, :] = self.ee_design_wxyz
-            path.ee_pos_l[pathmeta_length + 1, :] = [
-                path.ee_pos_l[pathmeta_length, 0] + self.hover_offset[0],
-                path.ee_pos_l[pathmeta_length, 1] + self.hover_offset[1],
-                path.ee_pos_l[pathmeta_length, 2] + self.hover_offset[2],
+            path.ee_pos_l[stroke_length + 1, :] = [
+                path.ee_pos_l[stroke_length, 0] + self.hover_offset[0],
+                path.ee_pos_l[stroke_length, 1] + self.hover_offset[1],
+                path.ee_pos_l[stroke_length, 2] + self.hover_offset[2],
             ]
-            path.ee_wxyz_l[pathmeta_length + 1, :] = self.ee_design_wxyz
+            path.ee_wxyz_l[stroke_length + 1, :] = self.ee_design_wxyz
             # right hand has no hover offset, just use the first and last valid poses
             path.ee_pos_r[0, :] = path.ee_pos_r[1, :]
             path.ee_wxyz_r[0, :] = path.ee_wxyz_r[1, :]
-            path.ee_pos_r[pathmeta_length + 1, :] = path.ee_pos_r[pathmeta_length, :]
-            path.ee_wxyz_r[pathmeta_length + 1, :] = path.ee_wxyz_r[pathmeta_length, :]
+            path.ee_pos_r[stroke_length + 1, :] = path.ee_pos_r[stroke_length, :]
+            path.ee_wxyz_r[stroke_length + 1, :] = path.ee_wxyz_r[stroke_length, :]
             # slow movement at the hover positions
             path.dt[0] = self.path_dt_slow
-            path.dt[1:pathmeta_length + 1] = self.path_dt_fast
-            path.dt[pathmeta_length + 1] = self.path_dt_slow
+            path.dt[1:stroke_length + 1] = self.path_dt_fast
+            path.dt[stroke_length + 1] = self.path_dt_slow
             # set mask: 1 for all valid points (hover + path)
-            path.mask[:pathmeta_length + 2] = 1
+            path.mask[:stroke_length + 2] = 1
 
             paths.append(path)
 
@@ -242,46 +246,41 @@ class Plan:
                 p_idx, pose_idx = index_map[start + local_idx]
                 paths[p_idx].joints[pose_idx] = np.asarray(joints, dtype=np.float32)
 
-        self.save() # overwrites metadata
         pathbatch = PathBatch.from_paths(paths)
         self.save_pathbatch(pathbatch)
+        self.calculate_pathstats()
+        self.add_inkdips()
 
-        # compute path stats
+    def calculate_pathstats(self) -> None:
         path_lengths_px = [
-            sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path.pixels[:-1], path.pixels[1:]))
-            if len(path.pixels) > 1 else 0.0
-            for path in pathmetas
+            sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path.pixel_coords[:-1], path.pixel_coords[1:]))
+            if len(path.pixel_coords) > 1 else 0.0
+            for path in self.strokes
         ]
-        # metric lengths
-        path_lengths_m = [
-            float(np.sum(np.linalg.norm(np.diff(pathbatch.ee_pos_l[i][pathbatch.mask[i] == 1], axis=0), axis=1)))
-            if np.sum(pathbatch.mask[i]) > 1 else 0.0
-            for i in range(pathbatch.ee_pos_l.shape[0])
-        ]
-        stats = {
+        # # metric lengths
+        # path_lengths_m = [
+        #     float(np.sum(np.linalg.norm(np.diff(pathbatch.ee_pos_l[i][pathbatch.mask[i] == 1], axis=0), axis=1)))
+        #     if np.sum(pathbatch.mask[i]) > 1 else 0.0
+        #     for i in range(pathbatch.ee_pos_l.shape[0])
+        # ]
+        self.pathstats = {
             "count": len(path_lengths_px),
             "min_px": float(np.min(path_lengths_px)) if path_lengths_px else 0.0,
             "max_px": float(np.max(path_lengths_px)) if path_lengths_px else 0.0,
             "mean_px": float(np.mean(path_lengths_px)) if path_lengths_px else 0.0,
             "sum_px": float(np.sum(path_lengths_px)) if path_lengths_px else 0.0,
-            "min_m": float(np.min(path_lengths_m)) if path_lengths_m else 0.0,
-            "max_m": float(np.max(path_lengths_m)) if path_lengths_m else 0.0,
-            "mean_m": float(np.mean(path_lengths_m)) if path_lengths_m else 0.0,
-            "sum_m": float(np.sum(path_lengths_m)) if path_lengths_m else 0.0,
+            # "min_m": float(np.min(path_lengths_m)) if path_lengths_m else 0.0,
+            # "max_m": float(np.max(path_lengths_m)) if path_lengths_m else 0.0,
+            # "mean_m": float(np.mean(path_lengths_m)) if path_lengths_m else 0.0,
+            # "sum_m": float(np.sum(path_lengths_m)) if path_lengths_m else 0.0,
         }
-        pathstats_path = os.path.join(self.dirpath, PATHSTATS_FILENAME)
-        log.debug(f"⚙️💾 Saving pathstats to {pathstats_path}...")
-        with open(pathstats_path, "w") as f:
-            yaml.safe_dump(stats, f)
-
-        # add inkdips
-        self.add_inkdips()
+        self.save()
 
     def add_inkdips(self) -> None:
         """
-        Append short inkdip paths plus dummy PathMeta entries so that:
+        Append short inkdip paths plus dummy Stroke entries so that:
         - every inkdip is executed by the robot (in `paths.safetensors`);
-        - indexing in run_viz stays 1:1 (`pathmetas.yaml` length matches `PathBatch` length);
+        - indexing in run_viz stays 1:1 (`strokes.yaml` length matches `PathBatch` length);
         - leave `pathstats.yaml` unchanged.
         A dip path is 5 poses, all executed with the slow dt:
               0 ─ hover  (palette_frame + inkdip_hover_offset)
@@ -296,8 +295,8 @@ class Plan:
         - if `pathlen_per_inkdip` poses have been accumulated for the current color.
         """
         # --- 1. Load existing artefacts -------------------------------------------------
-        pathmetas: list[PathMeta] = self.load_pathmetas()
-        if not pathmetas:
+        strokes: list[Stroke] = self.strokes
+        if not strokes:
             return
         pathbatch: PathBatch = self.load_pathbatch()
         pad_len = self.path_pad_len
@@ -357,12 +356,12 @@ class Plan:
 
         # --- 3. Walk paths, insert dips -------------------------------------------------
         final_paths_data: list[dict[str, np.ndarray]] = []
-        new_pathmetas: list[PathMeta] = []
+        new_strokes: list[Stroke] = []
         
         pose_counter = 0
         current_color = None
 
-        for p_idx, p in enumerate(pathmetas):
+        for p_idx, p in enumerate(strokes):
             needs_dip = False
             # First path always gets a dip
             if not final_paths_data:
@@ -390,8 +389,8 @@ class Plan:
 
                 dip = _make_dip_path(chosen_name, cap)
                 final_paths_data.append(dip)
-                new_pathmetas.append(
-                    PathMeta(
+                new_strokes.append(
+                    Stroke(
                         pixels=[],               # nothing to draw on the 2‑D image
                         color=cap.color,
                         description=dip["description"],
@@ -406,11 +405,11 @@ class Plan:
                 "description": p.description, "color": p.color,
             }
             final_paths_data.append(path_data)
-            new_pathmetas.append(p)
+            new_strokes.append(p)
             pose_counter += len(p)
 
         # No change? nothing to do
-        if len(final_paths_data) == len(pathmetas):
+        if len(final_paths_data) == len(strokes):
             return
 
         # --- 4. Batch‑IK for the dip paths ---------------------------------------------
@@ -457,12 +456,5 @@ class Plan:
             mask=jnp.array(msk_new),
         )
         self.save_pathbatch(new_batch)
-        self.save_pathmetas(new_pathmetas)
-
-        # update descriptions
-        log.debug(f"⚙️💾 Updating descriptions...")
-        self.path_descriptions = {}
-        for k, p in enumerate(new_pathmetas):
-            self.path_descriptions[f"path_{k:03d}"] = p.description
-        
+        self.strokes = new_strokes
         self.save() # overwrites metadata

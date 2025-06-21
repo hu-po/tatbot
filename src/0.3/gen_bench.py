@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw
 
 from _log import get_logger, setup_log_with_config
 from _plan import Plan
-from _path import PathMeta
+from _path import Stroke
 
 log = get_logger('gen_bench')
 
@@ -191,7 +191,7 @@ def plan_from_calib(config: BenchmarkPlanConfig):
                 desc = f"wave length={length} amplitude={amplitude} frequency={frequency} thickness={config.thickness} index={j}"
             else:
                 desc = f"unknown type thickness={config.thickness} index={j}"
-            all_paths.append(PathMeta(pixels=path, description=desc, color="black"))
+            all_paths.append(Stroke(pixels=path, description=desc, color="black"))
 
             if len(path) > 1:
                 is_curve = isinstance(stroke_config, (WaveGroupConfig, CircleGroupConfig))
