@@ -11,7 +11,7 @@ import jax.numpy as jnp
 from _ik import batch_ik
 from _ink import InkCap, InkPalette
 from _log import get_logger
-from _path import Path, PathBatch, PixelPath
+from _path import Path, PathBatch, PathMeta
 
 log = get_logger('_plan')
 
@@ -19,7 +19,7 @@ log = get_logger('_plan')
 METADATA_FILENAME: str = "meta.yaml"
 IMAGE_FILENAME: str = "image.png"
 PATHS_FILENAME: str = "paths.safetensors"
-PIXELPATHS_FILENAME: str = "pixelpaths.yaml"
+PATHMETAS_FILENAME: str = "pathmetas.yaml"
 PATHSTATS_FILENAME: str = "pathstats.yaml"
 INKPALETTE_FILENAME: str = "inkpalette.yaml"
 
@@ -94,11 +94,11 @@ class Plan:
         filepath = os.path.join(self.dirpath, PATHS_FILENAME)
         return PathBatch.load(filepath)
 
-    def load_pixelpaths(self) -> list[PixelPath]:
-        filepath = os.path.join(self.dirpath, PIXELPATHS_FILENAME)
+    def load_pathmetas(self) -> list[PathMeta]:
+        filepath = os.path.join(self.dirpath, PATHMETAS_FILENAME)
         with open(filepath, "r") as f:
             data = yaml.safe_load(f)
-        return [dacite.from_dict(PixelPath, p) for p in data]
+        return [dacite.from_dict(PathMeta, p) for p in data]
 
     def load_pathstats(self) -> dict:
         filepath = os.path.join(self.dirpath, PATHSTATS_FILENAME)
@@ -121,8 +121,8 @@ class Plan:
             log.info(f"⚙️💾 Saving image to {image_path}")
             image.save(image_path)
 
-    def add_pixelpaths(self, pixelpaths: list[PixelPath], image: Image):
-        num_paths = len(pixelpaths)
+    def add_pathmetas(self, pathmetas: list[PathMeta], image: Image):
+        num_paths = len(pathmetas)
         log.info(f"⚙️ Adding {num_paths} pixel paths...")
 
         log.debug(f"⚙️ Image shape: {image.size}")
@@ -131,32 +131,32 @@ class Plan:
         scale_x = self.image_width_m / self.image_width_px
         scale_y = self.image_height_m / self.image_height_px
 
-        pixelpaths_path = os.path.join(self.dirpath, PIXELPATHS_FILENAME)
-        log.debug(f"⚙️💾 Saving pixelpaths to {pixelpaths_path}...")
-        with open(pixelpaths_path, "w") as f:
-            yaml.safe_dump([asdict(p) for p in pixelpaths], f)
+        pathmetas_path = os.path.join(self.dirpath, PATHMETAS_FILENAME)
+        log.debug(f"⚙️💾 Saving pathmetas to {pathmetas_path}...")
+        with open(pathmetas_path, "w") as f:
+            yaml.safe_dump([asdict(p) for p in pathmetas], f)
 
-        # TODO: sort pixelpaths by Y axis
+        # TODO: sort pathmetas by Y axis
         # TODO: right arm starts poping queue from middle moves to right edge
         # TODO: left arm starts popping queue from left edge moves to middle
-        # TODO: seperate files for pixelpaths and inkdips, dictionary with "order" of execution
-        # TODO: path metadata (completion time, is completed, is inkdip, left or right arm, etc)
+        # TODO: seperate files for pathmetas and inkdips, dictionary with "order" of execution
+        # TODO: add path metadata (completion time, is completed, is inkdip, left or right arm, etc)
         # TODO: ability to recalculate ik for remaining paths (if adjustment is done mid-session)
 
         paths = []
-        for path_idx, pixelpath in enumerate(pixelpaths):
-            log.debug(f"⚙️ Adding pixelpath {path_idx} of {num_paths}...")
+        for path_idx, pathmeta in enumerate(pathmetas):
+            log.debug(f"⚙️ Adding pathmeta {path_idx} of {num_paths}...")
             path = Path.padded(self.path_pad_len)
-            self.path_descriptions[f'path_{path_idx:03d}'] = pixelpath.description
+            self.path_descriptions[f'path_{path_idx:03d}'] = pathmeta.description
 
-            pixelpath_length = len(pixelpath.pixels)
-            if pixelpath_length + 2 > self.path_pad_len:
+            pathmeta_length = len(pathmeta.pixels)
+            if pathmeta_length + 2 > self.path_pad_len:
                 # TODO: resample to fit within pad_len
-                log.warning(f"⚙️⚠️ pixelpath {path_idx} has more than {self.path_pad_len} poses, truncating...")
-                pixelpath.pixels = pixelpath.pixels[:self.path_pad_len - 2] # -2 for hover positions
-                pixelpath_length = len(pixelpath.pixels)
+                log.warning(f"⚙️⚠️ pathmeta {path_idx} has more than {self.path_pad_len} poses, truncating...")
+                pathmeta.pixels = pathmeta.pixels[:self.path_pad_len - 2] # -2 for hover positions
+                pathmeta_length = len(pathmeta.pixels)
 
-            for i, (pw, ph) in enumerate(pixelpath.pixels):
+            for i, (pw, ph) in enumerate(pathmeta.pixels):
                 # pixel coordinates first need to be converted to meters
                 x_m, y_m = pw * scale_x, ph * scale_y
                 # center in design frame, add needle offset
@@ -181,23 +181,23 @@ class Plan:
                 path.ee_pos_l[1, 2] + self.hover_offset[2],
             ]
             path.ee_wxyz_l[0, :] = self.ee_design_wxyz
-            path.ee_pos_l[pixelpath_length + 1, :] = [
-                path.ee_pos_l[pixelpath_length, 0] + self.hover_offset[0],
-                path.ee_pos_l[pixelpath_length, 1] + self.hover_offset[1],
-                path.ee_pos_l[pixelpath_length, 2] + self.hover_offset[2],
+            path.ee_pos_l[pathmeta_length + 1, :] = [
+                path.ee_pos_l[pathmeta_length, 0] + self.hover_offset[0],
+                path.ee_pos_l[pathmeta_length, 1] + self.hover_offset[1],
+                path.ee_pos_l[pathmeta_length, 2] + self.hover_offset[2],
             ]
-            path.ee_wxyz_l[pixelpath_length + 1, :] = self.ee_design_wxyz
+            path.ee_wxyz_l[pathmeta_length + 1, :] = self.ee_design_wxyz
             # right hand has no hover offset, just use the first and last valid poses
             path.ee_pos_r[0, :] = path.ee_pos_r[1, :]
             path.ee_wxyz_r[0, :] = path.ee_wxyz_r[1, :]
-            path.ee_pos_r[pixelpath_length + 1, :] = path.ee_pos_r[pixelpath_length, :]
-            path.ee_wxyz_r[pixelpath_length + 1, :] = path.ee_wxyz_r[pixelpath_length, :]
+            path.ee_pos_r[pathmeta_length + 1, :] = path.ee_pos_r[pathmeta_length, :]
+            path.ee_wxyz_r[pathmeta_length + 1, :] = path.ee_wxyz_r[pathmeta_length, :]
             # slow movement at the hover positions
             path.dt[0] = self.path_dt_slow
-            path.dt[1:pixelpath_length + 1] = self.path_dt_fast
-            path.dt[pixelpath_length + 1] = self.path_dt_slow
+            path.dt[1:pathmeta_length + 1] = self.path_dt_fast
+            path.dt[pathmeta_length + 1] = self.path_dt_slow
             # set mask: 1 for all valid points (hover + path)
-            path.mask[:pixelpath_length + 2] = 1
+            path.mask[:pathmeta_length + 2] = 1
 
             paths.append(path)
 
@@ -242,7 +242,7 @@ class Plan:
         path_lengths_px = [
             sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path.pixels[:-1], path.pixels[1:]))
             if len(path.pixels) > 1 else 0.0
-            for path in pixelpaths
+            for path in pathmetas
         ]
         # metric lengths
         path_lengths_m = [
@@ -271,9 +271,9 @@ class Plan:
 
     def add_inkdips(self) -> None:
         """
-        Append short inkdip paths plus dummy PixelPath entries so that:
+        Append short inkdip paths plus dummy PathMeta entries so that:
         - every inkdip is executed by the robot (in `paths.safetensors`);
-        - indexing in run_viz stays 1:1 (`pixelpaths.yaml` length matches `PathBatch` length);
+        - indexing in run_viz stays 1:1 (`pathmetas.yaml` length matches `PathBatch` length);
         - leave `pathstats.yaml` unchanged.
         A dip path is 5 poses, all executed with the slow dt:
               0 ─ hover  (palette_frame + inkdip_hover_offset)
@@ -288,8 +288,8 @@ class Plan:
         - if `pathlen_per_inkdip` poses have been accumulated for the current color.
         """
         # --- 1. Load existing artefacts -------------------------------------------------
-        pixelpaths: list[PixelPath] = self.load_pixelpaths()
-        if not pixelpaths:
+        pathmetas: list[PathMeta] = self.load_pathmetas()
+        if not pathmetas:
             return
         pathbatch: PathBatch = self.load_pathbatch()
         pad_len = self.path_pad_len
@@ -349,12 +349,12 @@ class Plan:
 
         # --- 3. Walk paths, insert dips -------------------------------------------------
         final_paths_data: list[dict[str, np.ndarray]] = []
-        new_pixelpaths: list[PixelPath] = []
+        new_pathmetas: list[PathMeta] = []
         
         pose_counter = 0
         current_color = None
 
-        for p_idx, p in enumerate(pixelpaths):
+        for p_idx, p in enumerate(pathmetas):
             needs_dip = False
             # First path always gets a dip
             if not final_paths_data:
@@ -382,8 +382,8 @@ class Plan:
 
                 dip = _make_dip_path(chosen_name, cap)
                 final_paths_data.append(dip)
-                new_pixelpaths.append(
-                    PixelPath(
+                new_pathmetas.append(
+                    PathMeta(
                         pixels=[],               # nothing to draw on the 2‑D image
                         color=cap.color,
                         description=dip["description"],
@@ -398,11 +398,11 @@ class Plan:
                 "description": p.description, "color": p.color,
             }
             final_paths_data.append(path_data)
-            new_pixelpaths.append(p)
+            new_pathmetas.append(p)
             pose_counter += len(p)
 
         # No change? nothing to do
-        if len(final_paths_data) == len(pixelpaths):
+        if len(final_paths_data) == len(pathmetas):
             return
 
         # --- 4. Batch‑IK for the dip paths ---------------------------------------------
@@ -452,11 +452,11 @@ class Plan:
         log.debug(f"⚙️💾 Saving pathbatch to {pathbatch_path}...")
         new_batch.save(pathbatch_path)
 
-        # overwrite pixelpaths.yaml
-        pixelpaths_path = os.path.join(self.dirpath, PIXELPATHS_FILENAME)
-        log.debug(f"⚙️💾 Saving pixelpaths to {pixelpaths_path}...")
-        with open(pixelpaths_path, "w") as f:
-            yaml.safe_dump([asdict(pp) for pp in new_pixelpaths], f)
+        # overwrite pathmetas.yaml
+        pathmetas_path = os.path.join(self.dirpath, PATHMETAS_FILENAME)
+        log.debug(f"⚙️💾 Saving pathmetas to {pathmetas_path}...")
+        with open(pathmetas_path, "w") as f:
+            yaml.safe_dump([asdict(pp) for pp in new_pathmetas], f)
 
         # overwrite inkpalette.yaml
         inkpalette_path = os.path.join(self.dirpath, INKPALETTE_FILENAME)
@@ -466,7 +466,7 @@ class Plan:
         # update descriptions
         log.debug(f"⚙️💾 Updating descriptions...")
         self.path_descriptions = {}
-        for k, p in enumerate(new_pixelpaths):
+        for k, p in enumerate(new_pathmetas):
             self.path_descriptions[f"path_{k:03d}"] = p.description
         # updates meta.yaml (image unchanged)
         self.save()

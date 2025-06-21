@@ -11,7 +11,7 @@ from skimage.morphology import skeletonize
 
 from _log import get_logger, setup_log_with_config, COLORS
 from _plan import Plan
-from _path import PixelPath
+from _path import PathMeta
 
 log = get_logger('gen_image')
 
@@ -232,7 +232,7 @@ def plan_from_image(config: ImagePlanConfig):
                     desc = (
                         f"patch=({i},{j}) component={k} area={area} num_points={len(global_path)} color=black"
                     )
-                    all_paths.append(PixelPath(pixels=global_path, description=desc, color='black'))
+                    all_paths.append(PathMeta(pixels=global_path, description=desc, color='black'))
 
                 color_vis = list(COLORS.values())[k % len(COLORS)]
                 patch_h, patch_w = labels.shape
@@ -243,7 +243,7 @@ def plan_from_image(config: ImagePlanConfig):
     log.info(f"Saved {full_patches} full patches.")
     log.info(f"Found {empty_patches} empty patches.")
 
-    plan.add_pixelpaths(all_paths, img_pil)
+    plan.add_pathmetas(all_paths, img_pil)
 
     viz_path = os.path.join(plan.dirpath, f"patches.png")
     cv2.imwrite(viz_path, img_viz)

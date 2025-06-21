@@ -13,29 +13,6 @@ from _log import get_logger
 log = get_logger('_path')
 
 @dataclass
-class PixelPath:
-    pixels: list[list[int]]
-    """List of pixel coordinates in the image."""
-    color: str = "black"
-    """Natural language description of the color of the path."""
-    description: str = ""
-    """Description of the path."""
-
-    def __len__(self) -> int:
-        return len(self.pixels)
-
-    @classmethod
-    def from_yaml(cls, filepath: str) -> list["PixelPath"]:
-        with open(filepath, "r") as f:
-            data = yaml.safe_load(f)
-        return [dacite.from_dict(cls, p) for p in data]
-
-    @staticmethod
-    def to_yaml(pixelpaths: list["PixelPath"], filepath: str):
-        with open(filepath, "w") as f:
-            yaml.safe_dump([asdict(p) for p in pixelpaths], f)
-
-@dataclass
 class Path:
     ee_pos_l: Float[Array, "l 3"]
     """End effector frame position in meters (x, y, z) for left arm."""
@@ -104,3 +81,34 @@ class PathBatch:
         log.debug(f"🔳💾 Loading PathBatch from {filepath}")
         data = load_file(filepath)
         return cls(**data)
+    
+@dataclass
+class PathMeta:
+    pixels: list[list[int]]
+    """List of pixel coordinates in the image."""
+    color: str = "black"
+    """Natural language description of the color of the path."""
+    description: str = ""
+    """Description of the path."""
+    arm: str = "left"
+    """Arm that will execute the path, either left or right."""
+    is_inkdip: bool = False
+    """Whether the path is an inkdip."""
+    is_completed: bool = False
+    """Whether the path is completed."""
+    completion_time: float = 0.0
+    """Time taken to complete the path in seconds."""
+
+    def __len__(self) -> int:
+        return len(self.pixels)
+
+    @classmethod
+    def from_yaml(cls, filepath: str) -> list["PathMeta"]:
+        with open(filepath, "r") as f:
+            data = yaml.safe_load(f)
+        return [dacite.from_dict(cls, p) for p in data]
+
+    @staticmethod
+    def to_yaml(pathmetas: list["PathMeta"], filepath: str):
+        with open(filepath, "w") as f:
+            yaml.safe_dump([asdict(p) for p in pathmetas], f)
