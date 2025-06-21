@@ -168,7 +168,7 @@
 
   <!-- realsense1 -->
   <joint name="realsense1_joint" type="fixed">
-    <origin rpy="0 0.7853981633974483 0" xyz="-0.22 0 0.63"/>
+    <origin rpy="0 0.7853981633974483 0" xyz="-0.22 0 0.2"/>
     <parent link="root"/>
     <child link="realsense1_bottom_screw_frame"/>
   </joint>
@@ -250,7 +250,7 @@
 
   <!-- realsense2 -->
   <joint name="realsense2_joint" type="fixed">
-    <origin rpy="0 0.7853981633974483 0" xyz="-0.22 0.1 0.63"/>
+    <origin rpy="0 0.7853981633974483 2.3" xyz="0.2 -0.15 0.05"/>
     <parent link="root"/>
     <child link="realsense2_bottom_screw_frame"/>
   </joint>
