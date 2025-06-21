@@ -18,10 +18,9 @@ log = get_logger('_plan')
 # plan objects stored inside folder, these are the filenames
 METADATA_FILENAME: str = "meta.yaml"
 IMAGE_FILENAME: str = "image.png"
-PATHS_FILENAME: str = "paths.safetensors"
+PATHBATCH_FILENAME: str = "pathbatch.safetensors"
 PATHMETAS_FILENAME: str = "pathmetas.yaml"
 PATHSTATS_FILENAME: str = "pathstats.yaml"
-INKPALETTE_FILENAME: str = "inkpalette.yaml"
 
 @dataclass
 class Plan:
@@ -81,6 +80,14 @@ class Plan:
     pathlen_per_inkdip: int = 64
     """Number of poses (path length) per inkdip."""
 
+    def save(self):
+        log.info(f"⚙️💾 Saving plan to {self.dirpath}")
+        os.makedirs(self.dirpath, exist_ok=True)
+        meta_path = os.path.join(self.dirpath, METADATA_FILENAME)
+        log.info(f"⚙️💾 Saving metadata to {meta_path}")
+        with open(meta_path, "w") as f:
+            yaml.safe_dump(asdict(self), f)
+
     @classmethod
     def from_yaml(cls, dirpath: str) -> "Plan":
         log.info(f"⚙️ Loading plan from {dirpath}...")
@@ -91,53 +98,52 @@ class Plan:
 
     def load_image_np(self) -> np.ndarray:
         filepath = os.path.join(self.dirpath, IMAGE_FILENAME)
+        log.debug(f"⚙️💾 Loading plan image from {filepath}")
         return np.array(Image.open(filepath).convert("RGB"))
     
+    def save_image_np(self, image: np.ndarray) -> None:
+        filepath = os.path.join(self.dirpath, IMAGE_FILENAME)
+        log.debug(f"⚙️💾 Saving plan image to {filepath}")
+        Image.fromarray(image).save(filepath)
+    
     def load_pathbatch(self) -> 'PathBatch':
-        filepath = os.path.join(self.dirpath, PATHS_FILENAME)
+        filepath = os.path.join(self.dirpath, PATHBATCH_FILENAME)
         return PathBatch.load(filepath)
+    
+    def save_pathbatch(self, pathbatch: PathBatch) -> None:
+        filepath = os.path.join(self.dirpath, PATHBATCH_FILENAME)
+        log.debug(f"⚙️💾 Saving pathbatch to {filepath}")
+        pathbatch.save(filepath)
 
     def load_pathmetas(self) -> list[PathMeta]:
         filepath = os.path.join(self.dirpath, PATHMETAS_FILENAME)
         with open(filepath, "r") as f:
             data = yaml.safe_load(f)
-        return [dacite.from_dict(PathMeta, p) for p in data]
+        pathmetas = [dacite.from_dict(PathMeta, p) for p in data]
+        log.info(f"⚙️ Loaded {len(pathmetas)} pathmetas from {filepath}")
+        return pathmetas
+    
+    def save_pathmetas(self, pathmetas: list[PathMeta]) -> None:
+        log.info(f"⚙️💾 Saving {len(pathmetas)} pathmetas to {self.dirpath}")
+        filepath = os.path.join(self.dirpath, PATHMETAS_FILENAME)
+        with open(filepath, "w") as f:
+            yaml.safe_dump([asdict(p) for p in pathmetas], f)
 
     def load_pathstats(self) -> dict:
         filepath = os.path.join(self.dirpath, PATHSTATS_FILENAME)
         with open(filepath, "r") as f:
             return yaml.safe_load(f)
-    
-    def save(self, image: np.ndarray = None):
-        log.info(f"⚙️💾 Saving plan to {self.dirpath}")
-        os.makedirs(self.dirpath, exist_ok=True)
-
-        meta_path = os.path.join(self.dirpath, METADATA_FILENAME)
-        log.info(f"⚙️💾 Saving metadata to {meta_path}")
-        with open(meta_path, "w") as f:
-            yaml.safe_dump(asdict(self), f)
-
-        if image is not None:
-            if isinstance(image, np.ndarray):
-                image = Image.fromarray(image)
-            image_path = os.path.join(self.dirpath, IMAGE_FILENAME)
-            log.info(f"⚙️💾 Saving image to {image_path}")
-            image.save(image_path)
 
     def add_pathmetas(self, pathmetas: list[PathMeta], image: Image):
+        self.save_pathmetas(pathmetas)
+        self.save_image_np(image)
         num_paths = len(pathmetas)
-        log.info(f"⚙️ Adding {num_paths} pixel paths...")
 
         log.debug(f"⚙️ Image shape: {image.size}")
         self.image_width_px = image.size[0]
         self.image_height_px = image.size[1]
         scale_x = self.image_width_m / self.image_width_px
         scale_y = self.image_height_m / self.image_height_px
-
-        pathmetas_path = os.path.join(self.dirpath, PATHMETAS_FILENAME)
-        log.debug(f"⚙️💾 Saving pathmetas to {pathmetas_path}...")
-        with open(pathmetas_path, "w") as f:
-            yaml.safe_dump([asdict(p) for p in pathmetas], f)
 
         # TODO: sort pathmetas by Y axis
         # TODO: right arm starts poping queue from middle moves to right edge
@@ -236,10 +242,9 @@ class Plan:
                 p_idx, pose_idx = index_map[start + local_idx]
                 paths[p_idx].joints[pose_idx] = np.asarray(joints, dtype=np.float32)
 
-        # overwrites image and metadata
-        self.save(image)
+        self.save() # overwrites metadata
         pathbatch = PathBatch.from_paths(paths)
-        pathbatch.save(os.path.join(self.dirpath, PATHS_FILENAME))
+        self.save_pathbatch(pathbatch)
 
         # compute path stats
         path_lengths_px = [
@@ -451,25 +456,13 @@ class Plan:
             dt=jnp.array(dt_new),
             mask=jnp.array(msk_new),
         )
-        pathbatch_path = os.path.join(self.dirpath, PATHS_FILENAME)
-        log.debug(f"⚙️💾 Saving pathbatch to {pathbatch_path}...")
-        new_batch.save(pathbatch_path)
-
-        # overwrite pathmetas.yaml
-        pathmetas_path = os.path.join(self.dirpath, PATHMETAS_FILENAME)
-        log.debug(f"⚙️💾 Saving pathmetas to {pathmetas_path}...")
-        with open(pathmetas_path, "w") as f:
-            yaml.safe_dump([asdict(pp) for pp in new_pathmetas], f)
-
-        # overwrite inkpalette.yaml
-        inkpalette_path = os.path.join(self.dirpath, INKPALETTE_FILENAME)
-        log.debug(f"⚙️💾 Saving inkpalette to {inkpalette_path}...")
-        self.inkpalette.save_yaml(inkpalette_path)
+        self.save_pathbatch(new_batch)
+        self.save_pathmetas(new_pathmetas)
 
         # update descriptions
         log.debug(f"⚙️💾 Updating descriptions...")
         self.path_descriptions = {}
         for k, p in enumerate(new_pathmetas):
             self.path_descriptions[f"path_{k:03d}"] = p.description
-        # updates meta.yaml (image unchanged)
-        self.save()
+        
+        self.save() # overwrites metadata
