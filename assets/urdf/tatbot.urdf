@@ -166,19 +166,19 @@
   </joint>
   <link name="camera5_optical_frame"/>
 
-  <!-- realsense (head) -->
-  <joint name="cam_high_joint" type="fixed">
+  <!-- realsense1 -->
+  <joint name="realsense1_joint" type="fixed">
     <origin rpy="0 0.7853981633974483 0" xyz="-0.22 0 0.63"/>
     <parent link="root"/>
-    <child link="cam_high_bottom_screw_frame"/>
+    <child link="realsense1_bottom_screw_frame"/>
   </joint>
-  <link name="cam_high_bottom_screw_frame"/>
-  <joint name="cam_high_link_joint" type="fixed">
+  <link name="realsense1_bottom_screw_frame"/>
+  <joint name="realsense1_link_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0.01085 0.009 0.021"/>
-    <parent link="cam_high_bottom_screw_frame"/>
-    <child link="cam_high_link"/>
+    <parent link="realsense1_bottom_screw_frame"/>
+    <child link="realsense1_link"/>
   </joint>
-  <link name="cam_high_link">
+  <link name="realsense1_link">
     <visual>
       <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0038 -0.009 0"/>
       <geometry>
@@ -198,54 +198,136 @@
       <inertia ixx="0.00002117" ixy="0.0" ixz="0.0" iyy="0.000013758" iyz="0.0" izz="0.000013758"/>
     </inertial>
   </link>
-  <joint name="cam_high_depth_joint" type="fixed">
+  <joint name="realsense1_depth_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0"/>
-    <parent link="cam_high_link"/>
-    <child link="cam_high_depth_frame"/>
+    <parent link="realsense1_link"/>
+    <child link="realsense1_depth_frame"/>
   </joint>
-  <link name="cam_high_depth_frame"/>
-  <joint name="cam_high_depth_optical_joint" type="fixed">
+  <link name="realsense1_depth_frame"/>
+  <joint name="realsense1_depth_optical_joint" type="fixed">
     <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="cam_high_depth_frame"/>
-    <child link="cam_high_depth_optical_frame"/>
+    <parent link="realsense1_depth_frame"/>
+    <child link="realsense1_depth_optical_frame"/>
   </joint>
-  <link name="cam_high_depth_optical_frame"/>
-  <joint name="cam_high_infra1_joint" type="fixed">
+  <link name="realsense1_depth_optical_frame"/>
+  <joint name="realsense1_infra1_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0.0 0"/>
-    <parent link="cam_high_link"/>
-    <child link="cam_high_infra1_frame"/>
+    <parent link="realsense1_link"/>
+    <child link="realsense1_infra1_frame"/>
   </joint>
-  <link name="cam_high_infra1_frame"/>
-  <joint name="cam_high_infra1_optical_joint" type="fixed">
+  <link name="realsense1_infra1_frame"/>
+  <joint name="realsense1_infra1_optical_joint" type="fixed">
     <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="cam_high_infra1_frame"/>
-    <child link="cam_high_infra1_optical_frame"/>
+    <parent link="realsense1_infra1_frame"/>
+    <child link="realsense1_infra1_optical_frame"/>
   </joint>
-  <link name="cam_high_infra1_optical_frame"/>
-  <joint name="cam_high_infra2_joint" type="fixed">
+  <link name="realsense1_infra1_optical_frame"/>
+  <joint name="realsense1_infra2_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 -0.018 0"/>
-    <parent link="cam_high_link"/>
-    <child link="cam_high_infra2_frame"/>
+    <parent link="realsense1_link"/>
+    <child link="realsense1_infra2_frame"/>
   </joint>
-  <link name="cam_high_infra2_frame"/>
-  <joint name="cam_high_infra2_optical_joint" type="fixed">
+  <link name="realsense1_infra2_frame"/>
+  <joint name="realsense1_infra2_optical_joint" type="fixed">
     <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="cam_high_infra2_frame"/>
-    <child link="cam_high_infra2_optical_frame"/>
+    <parent link="realsense1_infra2_frame"/>
+    <child link="realsense1_infra2_optical_frame"/>
   </joint>
-  <link name="cam_high_infra2_optical_frame"/>
-  <joint name="cam_high_color_joint" type="fixed">
+  <link name="realsense1_infra2_optical_frame"/>
+  <joint name="realsense1_color_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0.0 0"/>
-    <parent link="cam_high_link"/>
-    <child link="cam_high_color_frame"/>
+    <parent link="realsense1_link"/>
+    <child link="realsense1_color_frame"/>
   </joint>
-  <link name="cam_high_color_frame"/>
-  <joint name="cam_high_color_optical_joint" type="fixed">
+  <link name="realsense1_color_frame"/>
+  <joint name="realsense1_color_optical_joint" type="fixed">
     <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="cam_high_color_frame"/>
-    <child link="cam_high_color_optical_frame"/>
+    <parent link="realsense1_color_frame"/>
+    <child link="realsense1_color_optical_frame"/>
   </joint>
-  <link name="cam_high_color_optical_frame"/>
+  <link name="realsense1_color_optical_frame"/>
+
+
+  <!-- realsense2 -->
+  <joint name="realsense2_joint" type="fixed">
+    <origin rpy="0 0.7853981633974483 0" xyz="-0.22 0.1 0.63"/>
+    <parent link="root"/>
+    <child link="realsense2_bottom_screw_frame"/>
+  </joint>
+  <link name="realsense2_bottom_screw_frame"/>
+  <joint name="realsense2_link_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.01085 0.009 0.021"/>
+    <parent link="realsense2_bottom_screw_frame"/>
+    <child link="realsense2_link"/>
+  </joint>
+  <link name="realsense2_link">
+    <visual>
+      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0038 -0.009 0"/>
+      <geometry>
+        <mesh filename="meshes/cameras/d405.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="-0.0078 -0.009 0"/>
+      <geometry>
+        <box size="0.023 0.042 0.042"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.072"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.00002117" ixy="0.0" ixz="0.0" iyy="0.000013758" iyz="0.0" izz="0.000013758"/>
+    </inertial>
+  </link>
+  <joint name="realsense2_depth_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="realsense2_link"/>
+    <child link="realsense2_depth_frame"/>
+  </joint>
+  <link name="realsense2_depth_frame"/>
+  <joint name="realsense2_depth_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="realsense2_depth_frame"/>
+    <child link="realsense2_depth_optical_frame"/>
+  </joint>
+  <link name="realsense2_depth_optical_frame"/>
+  <joint name="realsense2_infra1_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.0 0"/>
+    <parent link="realsense2_link"/>
+    <child link="realsense2_infra1_frame"/>
+  </joint>
+  <link name="realsense2_infra1_frame"/>
+  <joint name="realsense2_infra1_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="realsense2_infra1_frame"/>
+    <child link="realsense2_infra1_optical_frame"/>
+  </joint>
+  <link name="realsense2_infra1_optical_frame"/>
+  <joint name="realsense2_infra2_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 -0.018 0"/>
+    <parent link="realsense2_link"/>
+    <child link="realsense2_infra2_frame"/>
+  </joint>
+  <link name="realsense2_infra2_frame"/>
+  <joint name="realsense2_infra2_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="realsense2_infra2_frame"/>
+    <child link="realsense2_infra2_optical_frame"/>
+  </joint>
+  <link name="realsense2_infra2_optical_frame"/>
+  <joint name="realsense2_color_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.0 0"/>
+    <parent link="realsense2_link"/>
+    <child link="realsense2_color_frame"/>
+  </joint>
+  <link name="realsense2_color_frame"/>
+  <joint name="realsense2_color_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="realsense2_color_frame"/>
+    <child link="realsense2_color_optical_frame"/>
+  </joint>
+  <link name="realsense2_color_optical_frame"/>
 
 
   <!-- arm_l -->
@@ -804,112 +886,6 @@
     <axis xyz="0 1 0"/>
     <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
   </joint>
-  <link name="right/camera_mount_d405">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.03023383 0.00679835 0.05006687"/>
-      <mass value="0.04518012"/>
-      <inertia ixx="0.00003426" ixy="-0.00000027" ixz="-0.00000309" iyy="0.00001980" iyz="-0.00000319" izz="0.00002470"/>
-    </inertial>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/camera_mount_d405.stl"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/camera_mount_d405.stl"/>
-      </geometry>
-    </collision>
-  </link>
-  <!-- realsense (wrist) -->
-  <joint name="right/camera_mount_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.012 0 0"/>
-    <parent link="right/link_6"/>
-    <child link="right/camera_mount_d405"/>
-    <axis xyz="0 0 0"/>
-  </joint>
-  <joint name="right/camera_joint" type="fixed">
-    <origin rpy="0 0.3490658503988659 0" xyz="0.02927207801 0 0.03824951197"/>
-    <parent link="right/camera_mount_d405"/>
-    <child link="right/camera_bottom_screw_frame"/>
-  </joint>
-  <link name="right/camera_bottom_screw_frame"/>
-  <joint name="right/camera_link_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.01085 0.009 0.021"/>
-    <parent link="right/camera_bottom_screw_frame"/>
-    <child link="right/camera_link"/>
-  </joint>
-  <link name="right/camera_link">
-    <visual>
-      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0038 -0.009 0"/>
-      <geometry>
-        <mesh filename="meshes/cameras/d405.stl" scale="0.001 0.001 0.001"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="-0.0078 -0.009 0"/>
-      <geometry>
-        <box size="0.023 0.042 0.042"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0.072"/>
-      <origin xyz="0 0 0"/>
-      <inertia ixx="0.00002117" ixy="0.0" ixz="0.0" iyy="0.000013758" iyz="0.0" izz="0.000013758"/>
-    </inertial>
-  </link>
-  <joint name="right/camera_depth_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
-    <parent link="right/camera_link"/>
-    <child link="right/camera_depth_frame"/>
-  </joint>
-  <link name="right/camera_depth_frame"/>
-  <joint name="right/camera_depth_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="right/camera_depth_frame"/>
-    <child link="right/camera_depth_optical_frame"/>
-  </joint>
-  <link name="right/camera_depth_optical_frame"/>
-  <joint name="right/camera_infra1_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0.0 0"/>
-    <parent link="right/camera_link"/>
-    <child link="right/camera_infra1_frame"/>
-  </joint>
-  <link name="right/camera_infra1_frame"/>
-  <joint name="right/camera_infra1_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="right/camera_infra1_frame"/>
-    <child link="right/camera_infra1_optical_frame"/>
-  </joint>
-  <link name="right/camera_infra1_optical_frame"/>
-  <joint name="right/camera_infra2_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 -0.018 0"/>
-    <parent link="right/camera_link"/>
-    <child link="right/camera_infra2_frame"/>
-  </joint>
-  <link name="right/camera_infra2_frame"/>
-  <joint name="right/camera_infra2_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="right/camera_infra2_frame"/>
-    <child link="right/camera_infra2_optical_frame"/>
-  </joint>
-  <link name="right/camera_infra2_optical_frame"/>
-  <joint name="right/camera_color_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0.0 0"/>
-    <parent link="right/camera_link"/>
-    <child link="right/camera_color_frame"/>
-  </joint>
-  <link name="right/camera_color_frame"/>
-  <joint name="right/camera_color_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="right/camera_color_frame"/>
-    <child link="right/camera_color_optical_frame"/>
-  </joint>
-  <link name="right/camera_color_optical_frame"/>
   <joint name="right/right_gripper_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0"/>
     <parent link="right/carriage_right"/>

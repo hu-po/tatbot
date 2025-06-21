@@ -166,8 +166,8 @@ tatbot consists of several computers, cameras, and robotos connected via etherne
 - `camera3`: Amcrest PoE cameras (5MP)
 - `camera4`: Amcrest PoE cameras (5MP)
 - `camera5`: Amcrest PoE cameras (5MP)
-- `head`: Intel Realsense D405 (1280x720 RGBD, 90fps)
-- `wrist`: Intel Realsense D405 (1280x720 RGBD, 90fps)
+- `realsense1`: Intel Realsense D405 (1280x720 RGBD, 90fps)
+- `realsense2`: Intel Realsense D405 (1280x720 RGBD, 90fps)
 - `switch-lan`: 8-port gigabit ethernet switch
 - `switch-poe`: 8-port gigabit PoE switch
 - `arm-l`: Trossen Arm Controller box (back) connected to WidowXAI arm
@@ -225,8 +225,8 @@ tatbot is defined using URDF at `tatbot/assets/urdf/tatbot.urdf`.
 
 tatbot uses two [D405 Intel Realsense cameras](https://www.intelrealsense.com/depth-camera-d405/).
 
-- `wrist` is connected to `trossen-ai` via usb3 port and attached to the end effector of `arm-r`
-- `head` is connected to `trossen-ai` via usb3 port and attached to alumnium frame, giving it an overhead view
+- both realsense cameras are connected to `trossen-ai` via usb3 port
+- both realsense cameras are mounted on adjustable goosenecks, so their extrinsic position changes often
 - Follow the [calibration guide](https://dev.intelrealsense.com/docs/self-calibration-for-depth-cameras).
 - Use the `rs-enumerate-devices` command to verify that both realsenses are connected. If this doesn't work, unplug and replug the realsense cameras.
 - Should be calibrated out of the box, but can be recalibrated: [example1](https://github.com/IntelRealSense/librealsense/blob/master/wrappers/python/examples/depth_auto_calibration_example.py), [example2](https://github.com/IntelRealSense/librealsense/blob/master/wrappers/python/examples/depth_ucal_example.py).
