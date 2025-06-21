@@ -136,6 +136,13 @@ class Plan:
         with open(pixelpaths_path, "w") as f:
             yaml.safe_dump([asdict(p) for p in pixelpaths], f)
 
+        # TODO: sort pixelpaths by Y axis
+        # TODO: right arm starts poping queue from middle moves to right edge
+        # TODO: left arm starts popping queue from left edge moves to middle
+        # TODO: seperate files for pixelpaths and inkdips, dictionary with "order" of execution
+        # TODO: path metadata (completion time, is completed, is inkdip, left or right arm, etc)
+        # TODO: ability to recalculate ik for remaining paths (if adjustment is done mid-session)
+
         paths = []
         for path_idx, pixelpath in enumerate(pixelpaths):
             log.debug(f"⚙️ Adding pixelpath {path_idx} of {num_paths}...")
