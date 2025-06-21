@@ -1,4 +1,4 @@
-<?xml version="0.3" ?>
+<?xml version="1.0" ?>
 <robot name="tatbot">
   <material name="black">
     <color rgba="0.1 0.1 0.1 1"/>
@@ -933,7 +933,7 @@
     </collision>
   </link>
   <joint name="right/tattoo_pen_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.1 -0.01 0.055"/>
+    <origin rpy="0 0 0" xyz="0.1 0.01 0.055"/>
     <parent link="right/leader_finger_right_thumb"/>
     <child link="right/tattoo_pen"/>
   </joint>
