@@ -86,17 +86,17 @@ class Stroke:
     """Natural language description of the color of the path."""
 
     pixel_coords: list[list[int]] | None = None
-    """List of pixel coordinates for each pose in path."""
+    """List of pixel coordinates for each pose in path <x (0-width), y (0-height)>."""
 
     meter_coords: list[list[float]] | None = None
-    """List of coordinates for each pose in path in meters."""
-    meters_center: tuple[float, float] | None = None
+    """List of coordinates for each pose in path in meters <x, y, z>."""
+    meters_center: tuple[float, float, float] | None = None
     """Center of Mass of the path in meters."""
 
     norm_coords: list[list[float]] | None = None
-    """List of coordinates for each pose in path in normalized image coordinates (0-1)."""
+    """List of coordinates for each pose in path in normalized image coordinates <x (0-1), y (0-1)>."""
     norm_center: tuple[float, float] | None = None
-    """Center of Mass of the path in normalized image coordinates (0-1)."""
+    """Center of Mass of the path in normalized image coordinates."""
 
     is_inkdip: bool = False
     """Whether the path is an inkdip."""

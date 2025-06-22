@@ -162,13 +162,18 @@ class Plan:
             )
             # calculate meters coordinates: center is 0, 0
             stroke.meter_coords = [
-                [pw * scale_x - self.image_width_m / 2, ph * scale_y - self.image_height_m / 2]
+                [
+                    pw * scale_x - self.image_width_m / 2,
+                    ph * scale_y - self.image_height_m / 2,
+                    0.0,
+                ]
                 for pw, ph in stroke.pixel_coords
             ]
             # calculate center of mass of stroke
             stroke.meters_center = (
-                sum(pw for pw, _ in stroke.meter_coords) / stroke_length,
-                sum(ph for _, ph in stroke.meter_coords) / stroke_length,
+                sum(pw for pw, _, _ in stroke.meter_coords) / stroke_length,
+                sum(ph for _, ph, _ in stroke.meter_coords) / stroke_length,
+                sum(z for _, _, z in stroke.meter_coords) / stroke_length,
             )
             self.strokes[f'raw_stroke_{idx:03d}'] = stroke
 
@@ -176,15 +181,15 @@ class Plan:
 
     def make_inkdip_path(self, inkcap_name: str, rest_pos: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         assert inkcap_name in self.inkpalette.inkcaps, f"⚙️❌ Inkcap {inkcap_name} not found in palette"
-        inkcap_pos = self.inkpalette.inkcaps[inkcap_name].palette_pos
-        inkdip_pos = np.tile(np.array(inkcap_pos, dtype=np.float32), (self.path_length, 1))
+        inkcap_pos = np.array(self.inkpalette.inkcaps[inkcap_name].palette_pos, dtype=np.float32)
+        inkdip_pos = np.tile(inkcap_pos, (self.path_length, 1))
         inkdip_wxyz = np.tile(np.array(self.ee_inkpalette_wxyz, dtype=np.float32), (self.path_length, 1))
         # hover over the inkcap
         inkcap_hover_pos = transform_and_offset(
             inkcap_pos,
-            self.ee_inkpalette_pos,
-            self.ee_inkpalette_wxyz,
-            self.inkdip_hover_offset,
+            np.array(self.ee_inkpalette_pos, dtype=np.float32),
+            np.array(self.ee_inkpalette_wxyz, dtype=np.float32),
+            np.array(self.inkdip_hover_offset, dtype=np.float32),
         )
         # start and end of inkdip are rest positions
         inkdip_pos[0, :] = rest_pos
@@ -194,10 +199,10 @@ class Plan:
         inkdip_pos[-2, :] = inkcap_hover_pos
         # middle of inkdip is a series of points traveling to depth of inkcap
         inkdip_middle = np.linspace(0, self.inkpalette.inkcaps[inkcap_name].depth_m, self.path_length - 4)
-        inkdip_pos[1:-1, :] = transform_and_offset(
+        inkdip_pos[2:-2, :] = transform_and_offset(
             inkdip_middle,
-            self.ee_inkpalette_pos,
-            self.ee_inkpalette_wxyz,
+            np.array(self.ee_inkpalette_pos, dtype=np.float32),
+            np.array(self.ee_inkpalette_wxyz, dtype=np.float32),
         )
         return inkdip_pos, inkdip_wxyz
 
@@ -249,23 +254,23 @@ class Plan:
                 # left arm pointer hits a stroke with an inkcap
                 # transform to design frame, add needle offset
                 path.ee_pos_l[2:-2, :] = transform_and_offset(
-                    self.strokes[stroke_name_l].meter_coords,
-                    self.ee_design_pos,
-                    self.ee_design_wxyz_l,
-                    self.needle_offset_l,
+                    np.array(self.strokes[stroke_name_l].meter_coords, dtype=np.float32),
+                    np.array(self.ee_design_pos, dtype=np.float32),
+                    np.array(self.ee_design_wxyz_l, dtype=np.float32),
+                    np.array(self.needle_offset_l, dtype=np.float32),
                 )
                 # add hover positions to start+1 and end-1
                 path.ee_pos_l[1, :] = transform_and_offset(
-                    self.strokes[stroke_name_l].meter_coords[0],
-                    self.ee_design_pos,
-                    self.ee_design_wxyz_l,
-                    self.hover_offset,
+                    np.array(self.strokes[stroke_name_l].meter_coords[0], dtype=np.float32),
+                    np.array(self.ee_design_pos, dtype=np.float32),
+                    np.array(self.ee_design_wxyz_l, dtype=np.float32),
+                    np.array(self.hover_offset, dtype=np.float32),
                 )
                 path.ee_pos_l[-2, :] = transform_and_offset(
-                    self.strokes[stroke_name_l].meter_coords[-1],
-                    self.ee_design_pos,
-                    self.ee_design_wxyz_l,
-                    self.hover_offset,
+                    np.array(self.strokes[stroke_name_l].meter_coords[-1], dtype=np.float32),
+                    np.array(self.ee_design_pos, dtype=np.float32),
+                    np.array(self.ee_design_wxyz_l, dtype=np.float32),
+                    np.array(self.hover_offset, dtype=np.float32),
                 )
                 # orientation is always in design frame
                 path.ee_wxyz_l[:, :] = self.ee_design_wxyz_l
@@ -281,23 +286,23 @@ class Plan:
                 # right arm pointer hits a stroke with an inkcap
                 # transform to design frame, add needle offset
                 path.ee_pos_r[2:-2, :] = transform_and_offset(
-                    self.strokes[stroke_name_r].meter_coords,
-                    self.ee_design_pos,
-                    self.ee_design_wxyz_r,
-                    self.needle_offset_r,
+                    np.array(self.strokes[stroke_name_r].meter_coords, dtype=np.float32),
+                    np.array(self.ee_design_pos, dtype=np.float32),
+                    np.array(self.ee_design_wxyz_r, dtype=np.float32),
+                    np.array(self.needle_offset_r, dtype=np.float32),
                 )
                 # add hover positions to start+1 and end-1
                 path.ee_pos_r[1, :] = transform_and_offset(
-                    self.strokes[stroke_name_r].meter_coords[0],
-                    self.ee_design_pos,
-                    self.ee_design_wxyz_r,
-                    self.hover_offset,
+                    np.array(self.strokes[stroke_name_r].meter_coords[0], dtype=np.float32),
+                    np.array(self.ee_design_pos, dtype=np.float32),
+                    np.array(self.ee_design_wxyz_r, dtype=np.float32),
+                    np.array(self.hover_offset, dtype=np.float32),
                 )
                 path.ee_pos_r[-2, :] = transform_and_offset(
-                    self.strokes[stroke_name_r].meter_coords[-1],
-                    self.ee_design_pos,
-                    self.ee_design_wxyz_r,
-                    self.hover_offset,
+                    np.array(self.strokes[stroke_name_r].meter_coords[-1], dtype=np.float32),
+                    np.array(self.ee_design_pos, dtype=np.float32),
+                    np.array(self.ee_design_wxyz_r, dtype=np.float32),
+                    np.array(self.hover_offset, dtype=np.float32),
                 )
                 # orientation is always in design frame
                 path.ee_wxyz_r[:, :] = self.ee_design_wxyz_r
