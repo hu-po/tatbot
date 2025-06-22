@@ -64,11 +64,6 @@ class Plan:
     needle_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, -0.0065])
     """position offset to ensure needle touches skin, relative to current ee frame."""
 
-    view_offset: list[float] = field(default_factory=lambda: [0.0, -0.16, 0.16])
-    """position offset when viewing design with right arm (relative to design ee frame)."""
-    ee_view_wxyz: list[float] = field(default_factory=lambda: [0.67360666, -0.25201478, 0.24747439, 0.64922119])
-    """orientation quaternion (wxyz) of the view ee transform."""
-
     inkpalette: InkPalette = field(default_factory=InkPalette)
     """Ink palette to use for the plan."""
     ee_inkpalette_pos: list[float] = field(default_factory=lambda: [0.16, 0.0, 0.04])
@@ -77,8 +72,8 @@ class Plan:
     """orientation quaternion (wxyz) of the inkpalette ee transform."""
     inkdip_hover_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.03])
     """position offset when hovering over inkcap, relative to current ee frame."""
-    pathlen_per_inkdip: int = 64
-    """Number of poses (path length) per inkdip."""
+    inkdip_steps_per_pose: int = 16
+    """Number of poses per inkdip sub-step."""
 
     def save(self):
         log.info(f"⚙️💾 Saving plan to {self.dirpath}")
@@ -141,19 +136,18 @@ class Plan:
                 sum(pw for pw, _ in stroke.norm_coords) / stroke_length,
                 sum(ph for _, ph in stroke.norm_coords) / stroke_length,
             )
-            stroke.meter_coords = [
-                [pw * scale_x, ph * scale_y]
-                for pw, ph in stroke.norm_coords
-            ]
-            stroke.meters_center = (
-                sum(pw for pw, _ in stroke.meter_coords) / stroke_length,
-                sum(ph for _, ph in stroke.meter_coords) / stroke_length,
-            )
-            self.strokes[f'raw_path_{idx:03d}'] = stroke
+            self.strokes[f'raw_stroke_{idx:03d}'] = stroke
 
         # sort strokes by width in norm coords
         sorted_strokes = sorted(self.strokes.values(), key=lambda x: x.norm_center[0])
+        # assign arm to each stroke:
+        for stroke in sorted_strokes[0:len(sorted_strokes)//2]:
+            stroke.arm = "left"
+        for stroke in sorted_strokes[len(sorted_strokes)//2:]:
+            stroke.arm = "right"
 
+        self.calculate_pathbatch()
+        self.calculate_pathstats()
 
         # TODO: sort strokes by Y axis
         # TODO: right arm starts poping queue from middle moves to right edge
@@ -162,10 +156,32 @@ class Plan:
         # TODO: add path metadata (completion time, is completed, is inkdip, left or right arm, etc)
         # TODO: ability to recalculate ik for remaining paths (if adjustment is done mid-session)
 
+    def make_inkdip_path(self,inkcap: str) -> Path:
+        """
+        inkdips have the following intermediate poses:
+
+        # 0 ─ hover  (palette_frame + inkdip_hover_offset)
+        # 1 ─ rim    (top of inkcap)
+        # 2 ─ half   (half-depth of inkcap)
+        # 3 ─ rim    (top of inkcap)
+        # 4 ─ hover  (palette_frame + inkdip_hover_offset)
+
+        """
+        # hover over the inkcap
+        hover_pos = self.ee_inkpalette_pos + self.inkdip_hover_offset + self.inkpalette.inkcaps[inkcap].palette_pos
+        hover_wxyz = self.ee_inkpalette_wxyz
+        # rim of the inkcap
+        rim_pos = self.ee_inkpalette_pos + self.inkpalette.inkcaps[inkcap].palette_pos
+        rim_wxyz = self.ee_inkpalette_wxyz
+        # half-depth of the inkcap
+        half_pos = self.ee_inkpalette_pos + self.inkpalette.inkcaps[inkcap].palette_pos + [0.0, 0.0, -self.inkpalette.inkcaps[inkcap].depth_m / 2]
+        half_wxyz = self.ee_inkpalette_wxyz
+        return 
+
+    def calculate_pathbatch(self) -> None:
         paths: list[Path] = []
-        for path_idx, stroke in enumerate(input_strokes):
-            log.debug(f"⚙️ Adding path {path_idx} of {num_paths}...")
-            self.strokes[f'path_{path_idx:03d}'] = stroke
+        for key, stroke in self.strokes.items():
+            log.debug(f"⚙️ Building path from stroke {key}...")
             path = Path.padded(self.path_pad_len)
             stroke_length = len(stroke.pixel_coords)
 
@@ -178,14 +194,7 @@ class Plan:
                     self.ee_design_pos[1] + y_m - self.image_height_m / 2,
                     self.ee_design_pos[2] + self.needle_offset[2],
                 ]
-                path.ee_wxyz_l[i + 1, :] = self.ee_design_wxyz
-                # right hand just stares at center of design frame
-                path.ee_pos_r[i + 1, :] = [
-                    self.ee_design_pos[0] + self.view_offset[0],
-                    self.ee_design_pos[1] + self.view_offset[1],
-                    self.ee_design_pos[2] + self.view_offset[2],
-                ]
-                path.ee_wxyz_r[i + 1, :] = self.ee_view_wxyz
+                path.ee_wxyz_l[i + 1, :] = self.ee_design_wxyz_l
 
             # add hover positions to the beginning and end of the path
             path.ee_pos_l[0, :] = [
@@ -200,15 +209,12 @@ class Plan:
                 path.ee_pos_l[stroke_length, 2] + self.hover_offset[2],
             ]
             path.ee_wxyz_l[stroke_length + 1, :] = self.ee_design_wxyz
-            # right hand has no hover offset, just use the first and last valid poses
-            path.ee_pos_r[0, :] = path.ee_pos_r[1, :]
-            path.ee_wxyz_r[0, :] = path.ee_wxyz_r[1, :]
-            path.ee_pos_r[stroke_length + 1, :] = path.ee_pos_r[stroke_length, :]
-            path.ee_wxyz_r[stroke_length + 1, :] = path.ee_wxyz_r[stroke_length, :]
+
             # slow movement at the hover positions
             path.dt[0] = self.path_dt_slow
             path.dt[1:stroke_length + 1] = self.path_dt_fast
             path.dt[stroke_length + 1] = self.path_dt_slow
+
             # set mask: 1 for all valid points (hover + path)
             path.mask[:stroke_length + 2] = 1
 
@@ -248,8 +254,6 @@ class Plan:
 
         pathbatch = PathBatch.from_paths(paths)
         self.save_pathbatch(pathbatch)
-        self.calculate_pathstats()
-        self.add_inkdips()
 
     def calculate_pathstats(self) -> None:
         path_lengths_px = [
@@ -275,186 +279,3 @@ class Plan:
             # "sum_m": float(np.sum(path_lengths_m)) if path_lengths_m else 0.0,
         }
         self.save()
-
-    def add_inkdips(self) -> None:
-        """
-        Append short inkdip paths plus dummy Stroke entries so that:
-        - every inkdip is executed by the robot (in `paths.safetensors`);
-        - indexing in run_viz stays 1:1 (`strokes.yaml` length matches `PathBatch` length);
-        - leave `pathstats.yaml` unchanged.
-        A dip path is 5 poses, all executed with the slow dt:
-              0 ─ hover  (palette_frame + inkdip_hover_offset)
-              1 ─ rim    (top of inkcap)
-              2 ─ half   (half-depth of inkcap)
-              3 ─ rim    (top of inkcap)
-              4 ─ hover  (palette_frame + inkdip_hover_offset)
-        Right arm keeps the "view" pose for the whole dip.
-        A dip is inserted:
-        - before the very first drawing path;
-        - before a path of a new color;
-        - if `pathlen_per_inkdip` poses have been accumulated for the current color.
-        """
-        # --- 1. Load existing artefacts -------------------------------------------------
-        strokes: list[Stroke] = self.strokes
-        if not strokes:
-            return
-        pathbatch: PathBatch = self.load_pathbatch()
-        pad_len = self.path_pad_len
-
-        # Convert PathBatch arrays to NumPy for easy reference
-        epl, epr = np.asarray(pathbatch.ee_pos_l),  np.asarray(pathbatch.ee_pos_r)
-        ewl, ewr = np.asarray(pathbatch.ee_wxyz_l), np.asarray(pathbatch.ee_wxyz_r)
-        joints   = np.asarray(pathbatch.joints)
-        dt_arr   = np.asarray(pathbatch.dt)
-        mask_arr = np.asarray(pathbatch.mask)
-
-        # --- 2. Helper to build one dip path -------------------------------------------
-        right_fixed_pos = np.array(
-            [self.ee_design_pos[0] + self.view_offset[0],
-             self.ee_design_pos[1] + self.view_offset[1],
-             self.ee_design_pos[2] + self.view_offset[2]],
-            dtype=np.float32,
-        )
-        right_fixed_wxyz = np.array(self.ee_view_wxyz, dtype=np.float32)
-
-        def _make_dip_path(cap_name: str, cap: InkCap) -> dict[str, np.ndarray]:
-            """Return dict containing all Path fields (pad_len × … ndarray)."""
-            base = np.array(self.ee_inkpalette_pos) + np.array(cap.palette_pos)
-            hover = base + np.array(self.inkdip_hover_offset)
-            rim   = base
-            half  = base + np.array([0.0, 0.0, -cap.depth_m * 0.5])
-
-            poses_l = np.stack([hover, rim, half, rim, hover], axis=0)
-            poses_r = np.tile(right_fixed_pos, (5, 1))
-
-            epl_dip = np.zeros((pad_len, 3), dtype=np.float32)
-            epr_dip = np.zeros_like(epl_dip)
-            ewl_dip = np.tile(np.array(self.ee_inkpalette_wxyz, dtype=np.float32), (pad_len, 1))
-            ewr_dip = np.tile(right_fixed_wxyz, (pad_len, 1))
-            dt_dip  = np.zeros((pad_len,), dtype=np.float32)
-            msk_dip = np.zeros((pad_len,), dtype=np.int32)
-            jnt_dip = np.zeros((pad_len, 16), dtype=np.float32)
-
-            # write first 5 poses
-            epl_dip[:5] = poses_l
-            epr_dip[:5] = poses_r
-            dt_dip[:5]  = self.path_dt_slow
-            msk_dip[:5] = 1
-            # orientations already correct in ewl_dip / ewr_dip
-
-            return dict(
-                ee_pos_l=epl_dip,
-                ee_pos_r=epr_dip,
-                ee_wxyz_l=ewl_dip,
-                ee_wxyz_r=ewr_dip,
-                joints=jnt_dip,
-                dt=dt_dip,
-                mask=msk_dip,
-                description=f"inkdip_{cap_name} ({cap.color})",
-                color=cap.color,
-            )
-
-        # --- 3. Walk paths, insert dips -------------------------------------------------
-        final_paths_data: list[dict[str, np.ndarray]] = []
-        new_strokes: list[Stroke] = []
-        
-        pose_counter = 0
-        current_color = None
-
-        for p_idx, p in enumerate(strokes):
-            needs_dip = False
-            # First path always gets a dip
-            if not final_paths_data:
-                needs_dip = True
-            # Color changed
-            elif p.color.lower() != current_color.lower():
-                needs_dip = True
-                pose_counter = 0
-            # accumulated length exceeds threshold
-            if len(p) > 0 and (pose_counter + len(p) >= self.pathlen_per_inkdip):
-                needs_dip = True
-                pose_counter = 0
-
-            if needs_dip:
-                current_color = p.color
-                # choose an ink‑cap that matches current path colour (fallback to large_0)
-                chosen_name = None
-                for name, cap in self.inkpalette.inkcaps.items():
-                    if cap.color.lower() == p.color.lower():
-                        chosen_name = name
-                        break
-                if chosen_name is None:
-                    chosen_name = "large_0"
-                cap = self.inkpalette.inkcaps[chosen_name]
-
-                dip = _make_dip_path(chosen_name, cap)
-                final_paths_data.append(dip)
-                new_strokes.append(
-                    Stroke(
-                        pixels=[],               # nothing to draw on the 2‑D image
-                        color=cap.color,
-                        description=dip["description"],
-                    )
-                )
-
-            # add original path
-            path_data = {
-                "ee_pos_l": epl[p_idx], "ee_pos_r": epr[p_idx],
-                "ee_wxyz_l": ewl[p_idx], "ee_wxyz_r": ewr[p_idx],
-                "joints": joints[p_idx], "dt": dt_arr[p_idx], "mask": mask_arr[p_idx],
-                "description": p.description, "color": p.color,
-            }
-            final_paths_data.append(path_data)
-            new_strokes.append(p)
-            pose_counter += len(p)
-
-        # No change? nothing to do
-        if len(final_paths_data) == len(strokes):
-            return
-
-        # --- 4. Batch‑IK for the dip paths ---------------------------------------------
-        flat_pos, flat_wxyz, idx_map = [], [], []
-        for path_idx, path_data in enumerate(final_paths_data):
-            if "inkdip" in path_data.get("description", ""):
-                for pose_idx in range(pad_len):
-                    if path_data["mask"][pose_idx] == 0:
-                        continue
-                    flat_pos.append(
-                        [path_data["ee_pos_l"][pose_idx], path_data["ee_pos_r"][pose_idx]]
-                    )
-                    flat_wxyz.append(
-                        [path_data["ee_wxyz_l"][pose_idx], path_data["ee_wxyz_r"][pose_idx]]
-                    )
-                    idx_map.append((path_idx, pose_idx))
-
-        if flat_pos:
-            sols = batch_ik(
-                target_wxyz=jnp.array(flat_wxyz),
-                target_pos=jnp.array(flat_pos),
-            )
-            for s_idx, joints_sol in enumerate(np.asarray(sols)):
-                path_idx, pose_idx = idx_map[s_idx]
-                final_paths_data[path_idx]["joints"][pose_idx] = joints_sol.astype(np.float32)
-
-        # --- 5. Stitch arrays and overwrite files --------------------------------------
-        epl_new = np.stack([d["ee_pos_l"] for d in final_paths_data])
-        epr_new = np.stack([d["ee_pos_r"] for d in final_paths_data])
-        ewl_new = np.stack([d["ee_wxyz_l"] for d in final_paths_data])
-        ewr_new = np.stack([d["ee_wxyz_r"] for d in final_paths_data])
-        jnt_new = np.stack([d["joints"] for d in final_paths_data])
-        dt_new  = np.stack([d["dt"] for d in final_paths_data])
-        msk_new = np.stack([d["mask"] for d in final_paths_data])
-
-        # rebuild PathBatch and save
-        new_batch = PathBatch(
-            ee_pos_l=jnp.array(epl_new),
-            ee_pos_r=jnp.array(epr_new),
-            ee_wxyz_l=jnp.array(ewl_new),
-            ee_wxyz_r=jnp.array(ewr_new),
-            joints=jnp.array(jnt_new),
-            dt=jnp.array(dt_new),
-            mask=jnp.array(msk_new),
-        )
-        self.save_pathbatch(new_batch)
-        self.strokes = new_strokes
-        self.save() # overwrites metadata
