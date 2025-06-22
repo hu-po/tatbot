@@ -198,10 +198,15 @@ These models leverage massive datasets and transformer-based architectures to br
 swiftsketch dataset - flux/ideogram/sdxl -> switftketch svg -> ply/mesh
 meshformer dataset -
 
-the starting point for the model is the $\pi_0$ model, an open source VLA model for robotic control \cite{Black2024pi0}.
+Vision Language Action (VLA) models are used to merge the semantic intelligence of large pretrained VLMs and fast robotic control performed with a Diffusion Model.
+$\pi_0$ \cite{Black2024pi0}, GR00T N1 \cite{Bjorck2025gr00t}, and SmolVLA \cite{Shukor2025smolvla} have demonstrated the potential of large-scale, generalist VLA models to perform a wide range of tasks across diverse robotic platforms.
 
-3B VLM
-300M action expert
+
+finetuned VLA with 
+synthetic data generated heuristically from sim
+real data from recorded tatbot sessions
+
+huggingface for dataset management
 
 there is a fundamental magic inside modern pretrained transformers.
 The space of neural programs encoded in the weights just from human data on the internet is enormous. 
