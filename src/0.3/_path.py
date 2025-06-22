@@ -93,6 +93,7 @@ class Stroke:
 
     pixel_coords: list[list[int]] | None = None
     """List of pixel coordinates for each pose in path."""
+
     meter_coords: list[list[float]] | None = None
     """List of coordinates for each pose in path in meters."""
     meters_center: tuple[float, float] | None = None

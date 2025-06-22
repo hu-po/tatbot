@@ -8,7 +8,7 @@ import yaml
 from PIL import Image
 import jax.numpy as jnp
 
-from _ik import batch_ik
+from _ik import batch_ik, transform_and_offset
 from _ink import InkCap, InkPalette
 from _log import get_logger
 from _path import Path, PathBatch, Stroke
@@ -72,8 +72,6 @@ class Plan:
     """orientation quaternion (wxyz) of the inkpalette ee transform."""
     inkdip_hover_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.03])
     """position offset when hovering over inkcap, relative to current ee frame."""
-    inkdip_steps_per_pose: int = 16
-    """Number of poses per inkdip sub-step."""
 
     def save(self):
         log.info(f"⚙️💾 Saving plan to {self.dirpath}")
@@ -126,7 +124,7 @@ class Plan:
                 # TODO: resample to fit within pad_len
                 log.warning(f"⚙️⚠️ stroke {idx} has len {stroke_length} more than {self.path_pad_len} poses, cropping...")
                 stroke.pixel_coords = stroke.pixel_coords[:self.path_pad_len - 2] # -2 for hover positions
-            # add normalized coordinates
+            # add normalized coordinates: top left is 0, 0
             stroke.norm_coords = [
                 [pw / self.image_width_px, ph / self.image_height_px]
                 for pw, ph in stroke.pixel_coords
@@ -135,6 +133,16 @@ class Plan:
             stroke.norm_center = (
                 sum(pw for pw, _ in stroke.norm_coords) / stroke_length,
                 sum(ph for _, ph in stroke.norm_coords) / stroke_length,
+            )
+            # calculate meters coordinates: center is 0, 0
+            stroke.meter_coords = [
+                [pw * scale_x - self.image_width_m / 2, ph * scale_y - self.image_height_m / 2]
+                for pw, ph in stroke.pixel_coords
+            ]
+            # calculate center of mass of stroke
+            stroke.meters_center = (
+                sum(pw for pw, _ in stroke.meter_coords) / stroke_length,
+                sum(ph for _, ph in stroke.meter_coords) / stroke_length,
             )
             self.strokes[f'raw_stroke_{idx:03d}'] = stroke
 
@@ -149,32 +157,45 @@ class Plan:
         self.calculate_pathbatch()
         self.calculate_pathstats()
 
-        # TODO: sort strokes by Y axis
-        # TODO: right arm starts poping queue from middle moves to right edge
-        # TODO: left arm starts popping queue from left edge moves to middle
-        # TODO: seperate files for strokes and inkdips, dictionary with "order" of execution
-        # TODO: add path metadata (completion time, is completed, is inkdip, left or right arm, etc)
-        # TODO: ability to recalculate ik for remaining paths (if adjustment is done mid-session)
-
-    def make_inkdip_path(self,inkcap: str) -> Path:
-        """
-        inkdips have the following intermediate poses:
-
-        # 0 ─ hover  (palette_frame + inkdip_hover_offset)
-        # 1 ─ rim    (top of inkcap)
-        # 2 ─ half   (half-depth of inkcap)
-        # 3 ─ rim    (top of inkcap)
-        # 4 ─ hover  (palette_frame + inkdip_hover_offset)
-
-        """
+    def make_inkdip_path(self, inkcap: str):
+        assert inkcap in self.inkpalette.inkcaps, f"⚙️❌ Inkcap {inkcap} not found in palette"
+        inkcap_pos = self.inkpalette.inkcaps[inkcap].palette_pos
+        inkdip_pos = np.tile(np.array(inkcap_pos, dtype=np.float32), (self.path_pad_len, 1))
+        inkdip_wxyz = np.tile(np.array(self.ee_inkpalette_wxyz, dtype=np.float32), (self.path_pad_len, 1))
         # hover over the inkcap
-        hover_pos = self.ee_inkpalette_pos + self.inkdip_hover_offset + self.inkpalette.inkcaps[inkcap].palette_pos
+        inkdip_pos[0, :] = transform_and_offset(
+            self.ee_inkpalette_pos,
+            self.ee_inkpalette_wxyz,
+            self.inkdip_hover_offset,
+        )
+        inkdip_wxyz[0, :] = self.ee_inkpalette_wxyz
+        # rim of the inkcap
+        inkdip_pos[1, :] = transform_and_offset(
+            self.ee_inkpalette_pos,
+            self.ee_inkpalette_wxyz,
+            self.inkdip_hover_offset,
+        )
+        inkdip_wxyz[1, :] = self.ee_inkpalette_wxyz
+        # half-depth of the inkcap
+        hover_pos = [
+            self.ee_inkpalette_pos[0] + self.inkdip_hover_offset[0] + self.inkpalette.inkcaps[inkcap].palette_pos[0],
+            self.ee_inkpalette_pos[1] + self.inkdip_hover_offset[1] + self.inkpalette.inkcaps[inkcap].palette_pos[1],
+            self.ee_inkpalette_pos[2] + self.inkdip_hover_offset[2] + self.inkpalette.inkcaps[inkcap].palette_pos[2],
+        ]
         hover_wxyz = self.ee_inkpalette_wxyz
         # rim of the inkcap
-        rim_pos = self.ee_inkpalette_pos + self.inkpalette.inkcaps[inkcap].palette_pos
+        rim_pos = [
+            self.ee_inkpalette_pos[0] + self.inkpalette.inkcaps[inkcap].palette_pos[0],
+            self.ee_inkpalette_pos[1] + self.inkpalette.inkcaps[inkcap].palette_pos[1],
+            self.ee_inkpalette_pos[2] + self.inkpalette.inkcaps[inkcap].palette_pos[2],
+        ]
         rim_wxyz = self.ee_inkpalette_wxyz
         # half-depth of the inkcap
-        half_pos = self.ee_inkpalette_pos + self.inkpalette.inkcaps[inkcap].palette_pos + [0.0, 0.0, -self.inkpalette.inkcaps[inkcap].depth_m / 2]
+        half_pos = [
+            self.ee_inkpalette_pos[0] + self.inkpalette.inkcaps[inkcap].palette_pos[0],
+            self.ee_inkpalette_pos[1] + self.inkpalette.inkcaps[inkcap].palette_pos[1],
+            self.ee_inkpalette_pos[2] + self.inkpalette.inkcaps[inkcap].palette_pos[2] + self.inkpalette.inkcaps[inkcap].depth_m / 2,
+        ]
         half_wxyz = self.ee_inkpalette_wxyz
         return 
 
@@ -184,40 +205,61 @@ class Plan:
             log.debug(f"⚙️ Building path from stroke {key}...")
             path = Path.padded(self.path_pad_len)
             stroke_length = len(stroke.pixel_coords)
+            if stroke.arm == "left":
+                # transform to design frame, add needle offset
+                path.ee_pos_l[1:stroke_length + 1, :] = transform_and_offset(
+                    stroke.meter_coords,
+                    self.ee_design_pos,
+                    self.ee_design_wxyz_l,
+                    self.needle_offset,
+                )
+                # add hover positions to beginning and end
+                path.ee_pos_l[0, :] = transform_and_offset(
+                    stroke.meter_coords[0],
+                    self.ee_design_pos,
+                    self.ee_design_wxyz_l,
+                    self.hover_offset,
+                )
+                path.ee_pos_l[stroke_length + 1, :] = transform_and_offset(
+                    stroke.meter_coords[-1],
+                    self.ee_design_pos,
+                    self.ee_design_wxyz_l,
+                    self.hover_offset,
+                )
+                # orientation is always in design frame
+                path.ee_wxyz_l[:, :] = self.ee_design_wxyz_l
+                # right arm will be ink dipping
 
-            for i, (pw, ph) in enumerate(stroke.pixel_coords):
-                # pixel coordinates first need to be converted to meters
-                x_m, y_m = pw * scale_x, ph * scale_y
-                # center in design frame, add needle offset
-                path.ee_pos_l[i + 1, :] = [
-                    self.ee_design_pos[0] + x_m - self.image_width_m / 2,
-                    self.ee_design_pos[1] + y_m - self.image_height_m / 2,
-                    self.ee_design_pos[2] + self.needle_offset[2],
-                ]
-                path.ee_wxyz_l[i + 1, :] = self.ee_design_wxyz_l
-
-            # add hover positions to the beginning and end of the path
-            path.ee_pos_l[0, :] = [
-                path.ee_pos_l[1, 0] + self.hover_offset[0],
-                path.ee_pos_l[1, 1] + self.hover_offset[1],
-                path.ee_pos_l[1, 2] + self.hover_offset[2],
-            ]
-            path.ee_wxyz_l[0, :] = self.ee_design_wxyz
-            path.ee_pos_l[stroke_length + 1, :] = [
-                path.ee_pos_l[stroke_length, 0] + self.hover_offset[0],
-                path.ee_pos_l[stroke_length, 1] + self.hover_offset[1],
-                path.ee_pos_l[stroke_length, 2] + self.hover_offset[2],
-            ]
-            path.ee_wxyz_l[stroke_length + 1, :] = self.ee_design_wxyz
+            else:
+                # transform to design frame, add needle offset
+                path.ee_pos_r[1:stroke_length + 1, :] = transform_and_offset(
+                    stroke.meter_coords,
+                    self.ee_design_pos,
+                    self.ee_design_wxyz_r,
+                    self.needle_offset,
+                )
+                # add hover positions to beginning and end
+                path.ee_pos_r[0, :] = transform_and_offset(
+                    stroke.meter_coords[0],
+                    self.ee_design_pos,
+                    self.ee_design_wxyz_r,
+                    self.hover_offset,
+                )
+                path.ee_pos_r[stroke_length + 1, :] = transform_and_offset(
+                    stroke.meter_coords[-1],
+                    self.ee_design_pos,
+                    self.ee_design_wxyz_r,
+                    self.hover_offset,
+                )
+                # orientation is always in design frame
+                path.ee_wxyz_r[:, :] = self.ee_design_wxyz_r
 
             # slow movement at the hover positions
             path.dt[0] = self.path_dt_slow
             path.dt[1:stroke_length + 1] = self.path_dt_fast
             path.dt[stroke_length + 1] = self.path_dt_slow
-
             # set mask: 1 for all valid points (hover + path)
             path.mask[:stroke_length + 2] = 1
-
             paths.append(path)
 
         # ---- Batch IK ----

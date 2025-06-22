@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
-import time
-import os
 import functools
+import os
+from typing import Optional
+import time
 
 import jax
 import jax.numpy as jnp
@@ -120,3 +121,16 @@ def batch_ik(
     solutions = _ik_vmap(target_wxyz, target_pos, robot_config.rest_pose)
     log.debug(f"🧮 batch ik time: {time.time() - start_time:.4f}s")
     return solutions
+
+@jdc.jit
+def transform_and_offset(
+    target_pos: Float[Array, "b 3"],
+    frame_pos: Float[Array, "3"],
+    frame_wxyz: Float[Array, "4"],
+    offsets: Optional[Float[Array, "b 3"]] = None,
+) -> Float[Array, "b 3"]:
+    log.debug(f"🧮 transforming ik targets to new frame with offset")
+    if offsets is None:
+        offsets = jnp.zeros_like(target_pos)
+    frame_transform = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(frame_wxyz), frame_pos)
+    return jax.vmap(lambda pos, offset: frame_transform @ pos + offset)(target_pos, offsets)
