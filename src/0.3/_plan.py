@@ -229,10 +229,10 @@ class Plan:
             # create a new path for this stroke to add to the pathbatch
             path = Path.empty(self.path_length)
             # set default to rest positions
-            path.ee_pos_l = rest_pos_l
-            path.ee_pos_r = rest_pos_r
-            path.ee_wxyz_l = rest_wxyz_l
-            path.ee_wxyz_r = rest_wxyz_r
+            path.ee_pos_l[:] = np.tile(np.asarray(rest_pos_l), (self.path_length, 1))
+            path.ee_pos_r[:] = np.tile(np.asarray(rest_pos_r), (self.path_length, 1))
+            path.ee_wxyz_l[:] = np.tile(np.asarray(rest_wxyz_l), (self.path_length, 1))
+            path.ee_wxyz_r[:] = np.tile(np.asarray(rest_wxyz_r), (self.path_length, 1))
             # set the default time between poses to fast movement
             path.dt[:] = self.path_dt_fast
             # slow movement to and from rest and hover positions
@@ -262,13 +262,13 @@ class Plan:
                 )
                 # add hover positions to start+1 and end-1
                 path.ee_pos_l[1, :] = transform_and_offset(
-                    np.array(self.strokes[stroke_name_l].meter_coords[0], dtype=np.float32),
+                    np.expand_dims(np.array(self.strokes[stroke_name_l].meter_coords[0], dtype=np.float32), axis=0),
                     np.array(self.ee_design_pos, dtype=np.float32),
                     np.array(self.ee_design_wxyz_l, dtype=np.float32),
                     np.array(self.hover_offset, dtype=np.float32),
                 )
                 path.ee_pos_l[-2, :] = transform_and_offset(
-                    np.array(self.strokes[stroke_name_l].meter_coords[-1], dtype=np.float32),
+                    np.expand_dims(np.array(self.strokes[stroke_name_l].meter_coords[-1], dtype=np.float32), axis=0),
                     np.array(self.ee_design_pos, dtype=np.float32),
                     np.array(self.ee_design_wxyz_l, dtype=np.float32),
                     np.array(self.hover_offset, dtype=np.float32),
@@ -294,13 +294,13 @@ class Plan:
                 )
                 # add hover positions to start+1 and end-1
                 path.ee_pos_r[1, :] = transform_and_offset(
-                    np.array(self.strokes[stroke_name_r].meter_coords[0], dtype=np.float32),
+                    np.expand_dims(np.array(self.strokes[stroke_name_r].meter_coords[0], dtype=np.float32), axis=0),
                     np.array(self.ee_design_pos, dtype=np.float32),
                     np.array(self.ee_design_wxyz_r, dtype=np.float32),
                     np.array(self.hover_offset, dtype=np.float32),
                 )
                 path.ee_pos_r[-2, :] = transform_and_offset(
-                    np.array(self.strokes[stroke_name_r].meter_coords[-1], dtype=np.float32),
+                    np.expand_dims(np.array(self.strokes[stroke_name_r].meter_coords[-1], dtype=np.float32), axis=0),
                     np.array(self.ee_design_pos, dtype=np.float32),
                     np.array(self.ee_design_wxyz_r, dtype=np.float32),
                     np.array(self.hover_offset, dtype=np.float32),
