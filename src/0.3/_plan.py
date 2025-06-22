@@ -51,9 +51,6 @@ class Plan:
     path_dt_slow: float = 2.0
     """Time between poses in seconds for slow movement."""
 
-    ik_robot_config: IKRobotConfig = field(default_factory=IKRobotConfig)
-    """Configuration for the IK robot."""
-
     ee_design_pos: list[float] = field(default_factory=lambda: [0.08, 0.0, 0.04])
     """position in meters (xyz) of end effector when centered on design."""
     
@@ -212,7 +209,7 @@ class Plan:
         paths: list[Path] = []
 
         # get rest positions for both arms using forward kinematics
-        rest_pos_l, rest_pos_r, rest_wxyz_l, rest_wxyz_r = fk(self.ik_robot_config.rest_pose)
+        rest_pos_l, rest_pos_r, rest_wxyz_l, rest_wxyz_r = fk()
 
         # sort strokes along the X axis (width) in normalized coords
         sorted_strokes = sorted(self.strokes.items(), key=lambda x: x[1].norm_center[0])
@@ -333,7 +330,6 @@ class Plan:
             batch_joints = batch_ik(
                 target_wxyz=batch_wxyz,
                 target_pos=batch_pos,
-                robot_config=self.ik_robot_config,
             )                                         # (b, 16)
             # write results back into the corresponding path / pose slots
             for local_idx, joints in enumerate(batch_joints):

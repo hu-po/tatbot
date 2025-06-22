@@ -24,11 +24,11 @@ class IKRobotConfig:
     """Local path to the URDF file for the robot."""
     target_link_names: tuple[str, str] = ("left/tattoo_needle", "right/tattoo_needle")
     """Names of the ee links in the URDF for left and right ik solving."""
-    rest_pose: Float[Array, "16"] = field(default_factory=lambda: jnp.array([
+    rest_pose: list[float] = field(default_factory=lambda: [
         # left arm
         -0.8, 0.6, 0.5, -1.0, 0.0, 0.0, 0.0, 0.0,
         # right arm
-        0.8, 0.6, 0.5, -1.0, 0.0, 0.0, 0.0, 0.0]))
+        0.8, 0.6, 0.5, -1.0, 0.0, 0.0, 0.0, 0.0])
     """Rest pose for the robot."""
 
 @jdc.pytree_dataclass
@@ -112,21 +112,24 @@ def batch_ik(
     robot_config: IKRobotConfig = IKRobotConfig(),
 ) -> Float[Array, "b 16"]:
     robot, target_link_indices = load_robot(robot_config.urdf_path, robot_config.target_link_names)
+    rest_pose = jnp.array(robot_config.rest_pose)
     log.debug(f"🧮 performing batch ik on batch of size {target_pos.shape[0]}")
     start_time = time.time()
     _ik_vmap = jax.vmap(
         lambda wxyz, pos, rest: ik(robot, ik_config, target_link_indices, wxyz, pos, rest),
         in_axes=(0, 0, None),
     )
-    solutions = _ik_vmap(target_wxyz, target_pos, robot_config.rest_pose)
+    solutions = _ik_vmap(target_wxyz, target_pos, rest_pose)
     log.debug(f"🧮 batch ik time: {time.time() - start_time:.4f}s")
     return solutions
 
 def fk(
-    joint_positions: Float[Array, "16"],
+    joint_positions: Float[Array, "16"] | None = None,
     robot_config: IKRobotConfig = IKRobotConfig(),
 ) -> tuple[Float[Array, "1 3"], Float[Array, "1 3"], Float[Array, "1 4"], Float[Array, "1 4"]]:
     robot, target_link_indices = load_robot(robot_config.urdf_path, robot_config.target_link_names)
+    if joint_positions is None:
+        joint_positions = jnp.array(robot_config.rest_pose)
     log.debug("🧮 performing fk...")
     start_time = time.time()
     all_link_poses = robot.forward_kinematics(joint_positions)
