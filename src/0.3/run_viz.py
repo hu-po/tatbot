@@ -214,7 +214,7 @@ class Viz:
             log.debug(f"🖥️🖼️ Updating Viser image...")
             image_np = self.image_np.copy()
             # Draw the entire path in red (all drawing pixels, not hover)
-            for stroke in self.plan.path_idx_to_strokes[self.path_idx]:
+            for stroke_idx, stroke in enumerate(self.plan.path_idx_to_strokes[self.path_idx]):
                 if stroke.pixel_coords:
                     for pw, ph in stroke.pixel_coords:
                         cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["red"], -1)
@@ -227,6 +227,10 @@ class Viz:
                     if pix_idx is not None and 0 <= pix_idx < len(stroke.pixel_coords):
                         px, py = stroke.pixel_coords[pix_idx]
                         cv2.circle(image_np, (int(px), int(py)), self.config.pose_highlight_radius, COLORS["magenta"], -1)
+                        # Add L or R text
+                        text = "L" if stroke_idx == 0 else "R"
+                        text_pos = (int(px) - 5, int(py) - self.config.pose_highlight_radius - 5)
+                        cv2.putText(image_np, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS["black"], 2)
             self.image.image = image_np
 
             log.debug(f"🖥️🤖 Updating Viser robot...")
