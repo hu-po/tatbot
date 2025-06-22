@@ -72,3 +72,13 @@ class InkPalette:
     def save_yaml(self, filepath: str):
         with open(filepath, "w") as f:
             yaml.safe_dump(asdict(self), f)
+
+    def find_best_inkcap(self, color: str) -> str:
+        """Find the best inkcap for a given color."""
+        for name, inkcap in self.inkcaps.items():
+            # TODO: something more sophisticated here
+            if inkcap.color == color:
+                log.debug(f"🎨 found inkcap {name} for color {color}")
+                return name
+        log.warning(f"🎨❌ No inkcap found for color {color}, using large_0")
+        return "large_0"

@@ -30,6 +30,8 @@ class Plan:
 
     strokes: dict[str, Stroke] = field(default_factory=dict)
     """Dictionary of path metadata objects."""
+    stroke_order: list[str] = field(default_factory=list)
+    """Order of strokes in the plan."""
     pathstats: dict = field(default_factory=dict)
     """Path statistics."""
 
@@ -170,14 +172,6 @@ class Plan:
             )
             self.strokes[f'raw_stroke_{idx:03d}'] = stroke
 
-        # sort strokes by width in norm coords
-        sorted_strokes = sorted(self.strokes.values(), key=lambda x: x.norm_center[0])
-        # assign arm to each stroke:
-        for stroke in sorted_strokes[0:len(sorted_strokes)//2]:
-            stroke.arm = "left"
-        for stroke in sorted_strokes[len(sorted_strokes)//2:]:
-            stroke.arm = "right"
-
         self.calculate_pathbatch()
         self.calculate_pathstats()
 
@@ -208,9 +202,33 @@ class Plan:
 
     def calculate_pathbatch(self) -> None:
         paths: list[Path] = []
+
+        # get rest positions for both arms using forward kinematics
         rest_pos_l, rest_pos_r, rest_wxyz_l, rest_wxyz_r = fk(self.ik_robot_config.rest_pose)
-        for key, stroke in self.strokes.items():
-            log.debug(f"⚙️ Building path from stroke {key}...")
+
+        # sort strokes by width in norm coords
+        sorted_strokes = sorted(self.strokes.values(), key=lambda x: x.norm_center[0])
+        left_arm_pointer = 0 # left arm starts with leftmost stroke, moves rightwards
+        half_length = len(sorted_strokes) // 2
+        right_arm_pointer = half_length # right arm starts from middle moves rightwards
+        while left_arm_pointer < half_length and right_arm_pointer < len(sorted_strokes):
+            
+            if sorted_strokes[left_arm_pointer].inkcap is None:
+                # get ink color from stroke, left are will dip
+                inkcap_name = self.inkpalette.find_best_inkcap(sorted_strokes[left_arm_pointer].color)
+                sorted_strokes[left_arm_pointer].inkcap = inkcap_name
+                inkdip_pos, inkdip_wxyz = self.make_inkdip_path(inkcap_name)
+                path.ee_pos_l[1:stroke_length + 1, :] = inkdip_pos
+                path.ee_wxyz_l[:, :] = inkdip_wxyz
+                if right_arm_pointer == half_length:
+                    # this is the first stroke of the session, keep right arm at rest for this path
+                    
+
+
+
+            assert stroke_name in self.strokes, f"⚙️❌ Stroke {stroke_name} not found in plan"
+            log.debug(f"⚙️ Building path from stroke {stroke_name}...")
+            stroke = self.strokes[stroke_name]
             stroke_length = len(stroke.meter_coords)
             path = Path.padded(self.path_pad_len)
             if stroke.arm == "left":
@@ -270,12 +288,10 @@ class Plan:
                 path.ee_pos_l[1:stroke_length + 1, :] = inkdip_pos
                 path.ee_wxyz_l[:, :] = inkdip_wxyz
 
-            # slow movement at the hover positions
-            path.dt[0] = self.path_dt_slow
-            path.dt[1:stroke_length + 1] = self.path_dt_fast
-            path.dt[stroke_length + 1] = self.path_dt_slow
-            # set mask: 1 for all valid points (hover + path)
-            path.mask[:stroke_length + 2] = 1
+            # slow movement at the rest and hover positions
+            path.dt[:] = self.path_dt_fast
+            path.dt[:2] = self.path_dt_slow
+            path.dt[-2:] = self.path_dt_slow
             paths.append(path)
 
         # ---- Batch IK ----

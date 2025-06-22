@@ -106,6 +106,9 @@ class Stroke:
 
     is_inkdip: bool = False
     """Whether the path is an inkdip."""
+    inkcap: str | None = None
+    """Name of the inkcap which provided the ink for the stroke."""
+
     is_completed: bool = False
     """Whether the path is completed."""
     completion_time: float | None = None
