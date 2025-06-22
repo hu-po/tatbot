@@ -115,7 +115,7 @@ class Plan:
         log.debug(f"⚙️💾 Saving pathbatch to {filepath}")
         pathbatch.save(filepath)
 
-    def add_strokes(self, raw_strokes: list[Stroke], image: Image):
+    def add_strokes(self, strokes: list[Stroke], image: Image):
         log.debug(f"⚙️ Input image shape: {image.size}")
         self.save_image_np(image)
         self.image_width_px = image.size[0]
@@ -123,8 +123,8 @@ class Plan:
         scale_x = self.image_width_m / self.image_width_px
         scale_y = self.image_height_m / self.image_height_px
 
-        log.info(f"⚙️ Adding {len(raw_strokes)} raw paths to plan...")
-        for idx, stroke in enumerate(raw_strokes):
+        log.info(f"⚙️ Adding {len(strokes)} raw paths to plan...")
+        for idx, stroke in enumerate(strokes):
             stroke_length = len(stroke.pixel_coords)
             desired_length = self.path_length - 4 # -4 for rest/hover positions
             if stroke_length != desired_length:
@@ -175,32 +175,33 @@ class Plan:
                 sum(ph for _, ph, _ in stroke.meter_coords) / stroke_length,
                 sum(z for _, _, z in stroke.meter_coords) / stroke_length,
             )
-            self.strokes[f'raw_stroke_{idx:03d}'] = stroke
+            self.strokes[f'stroke_{idx:03d}'] = stroke
 
         self.calculate_pathbatch()
 
     def make_inkdip_path(self, inkcap_name: str, rest_pos: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         assert inkcap_name in self.inkpalette.inkcaps, f"⚙️❌ Inkcap {inkcap_name} not found in palette"
-        inkcap_pos = np.array(self.inkpalette.inkcaps[inkcap_name].palette_pos, dtype=np.float32)
-        inkdip_pos = np.tile(inkcap_pos, (self.path_length, 1))
+        # default to rest positions and palette wxyz
+        inkdip_pos = np.tile(rest_pos, (self.path_length, 1))
         inkdip_wxyz = np.tile(np.array(self.ee_inkpalette_wxyz, dtype=np.float32), (self.path_length, 1))
         # hover over the inkcap
+        inkcap_pos = np.array(self.inkpalette.inkcaps[inkcap_name].palette_pos, dtype=np.float32)
         inkcap_hover_pos = transform_and_offset(
-            inkcap_pos,
+            np.expand_dims(inkcap_pos, axis=0),
             np.array(self.ee_inkpalette_pos, dtype=np.float32),
             np.array(self.ee_inkpalette_wxyz, dtype=np.float32),
             np.array(self.inkdip_hover_offset, dtype=np.float32),
         )
-        # start and end of inkdip are rest positions
-        inkdip_pos[0, :] = rest_pos
-        inkdip_pos[-1, :] = rest_pos
         # start+1 and end-1 are hover positions
         inkdip_pos[1, :] = inkcap_hover_pos
         inkdip_pos[-2, :] = inkcap_hover_pos
         # middle of inkdip is a series of points traveling to depth of inkcap
-        inkdip_middle = np.linspace(0, self.inkpalette.inkcaps[inkcap_name].depth_m, self.path_length - 4)
+        num_dip_points = self.path_length - 4
+        dip_depths = np.linspace(0, self.inkpalette.inkcaps[inkcap_name].depth_m, num_dip_points)
+        dip_target_pos = np.tile(inkcap_pos, (num_dip_points, 1))
+        dip_target_pos[:, 2] -= dip_depths
         inkdip_pos[2:-2, :] = transform_and_offset(
-            inkdip_middle,
+            dip_target_pos,
             np.array(self.ee_inkpalette_pos, dtype=np.float32),
             np.array(self.ee_inkpalette_wxyz, dtype=np.float32),
         )
