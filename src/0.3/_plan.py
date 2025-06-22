@@ -30,8 +30,8 @@ class Plan:
 
     strokes: dict[str, Stroke] = field(default_factory=dict)
     """Dictionary of path metadata objects."""
-    stroke_order: list[str] = field(default_factory=list)
-    """Order of strokes in the plan."""
+    path_idx_to_strokes: dict[int, list[Stroke]] = field(default_factory=dict)
+    """Map from pathbatch idx to list of strokes that make up that path."""
 
     image_width_m: float = 0.04
     """Width of the image in meters."""
@@ -204,22 +204,31 @@ class Plan:
         )
         return inkdip_pos, inkdip_wxyz
 
-    def calculate_pathbatch(self) -> None:
+    def calculate_pathbatch(self, filter_completed: bool = False) -> None:
         # paths will be concatenated into a pathbatch object
         paths: list[Path] = []
 
         # get rest positions for both arms using forward kinematics
         rest_pos_l, rest_pos_r, rest_wxyz_l, rest_wxyz_r = fk()
 
+        if filter_completed:
+            # if pathbatch is re-calculated halfway through the session
+            log.debug(f"⚙️ Filtering out completed strokes...")
+            _strokes = {k: v for k, v in self.strokes.items() if v.is_completed}
+        else:
+            _strokes = self.strokes
+
         # sort strokes along the X axis (width) in normalized coords
-        sorted_strokes = sorted(self.strokes.items(), key=lambda x: x[1].norm_center[0])
+        sorted_strokes = sorted(_strokes.items(), key=lambda x: x[1].norm_center[0])
         left_arm_pointer = 0 # left arm starts with leftmost stroke, moves rightwards
         half_length = len(sorted_strokes) // 2
         right_arm_pointer = half_length # right arm starts from middle moves rightwards
         while left_arm_pointer < half_length and right_arm_pointer < len(sorted_strokes):
-            stroke_name_l, _ = sorted_strokes[left_arm_pointer]
+            stroke_name_l, stroke_l = sorted_strokes[left_arm_pointer]
+            stroke_description_l = self.strokes[stroke_name_l].description
             assert stroke_name_l in self.strokes, f"⚙️❌ Stroke {stroke_name_l} not found in plan"
-            stroke_name_r, _ = sorted_strokes[right_arm_pointer]
+            stroke_name_r, stroke_r = sorted_strokes[right_arm_pointer]
+            stroke_description_r = self.strokes[stroke_name_r].description
             assert stroke_name_r in self.strokes, f"⚙️❌ Stroke {stroke_name_r} not found in plan"
             log.debug(f"⚙️ Building path from strokes left: {stroke_name_l} and right: {stroke_name_r}...")
             
@@ -244,8 +253,19 @@ class Plan:
                 inkdip_pos, inkdip_wxyz = self.make_inkdip_path(inkcap_name, rest_pos_l)
                 path.ee_pos_l = inkdip_pos
                 path.ee_wxyz_l = inkdip_wxyz
+                stroke_l = Stroke(
+                    description=f"left arm inkdip into {inkcap_name}",
+                    arm="left",
+                    is_inkdip=True,
+                    inkcap=inkcap_name,
+                )
                 if left_arm_pointer == 0:
                     # this is the first stroke of the session, keep right arm at rest for this path
+                    stroke_r = Stroke(
+                        description="right arm rest",
+                        arm="right",
+                    )
+                    self.path_idx_to_strokes[len(paths)] = [stroke_l, stroke_r]
                     paths.append(path)
                     continue
             else:
@@ -280,6 +300,12 @@ class Plan:
                 inkdip_pos, inkdip_wxyz = self.make_inkdip_path(inkcap_name, rest_pos_r)
                 path.ee_pos_r = inkdip_pos
                 path.ee_wxyz_r = inkdip_wxyz
+                stroke_r = Stroke(
+                    description=f"right arm inkdip into {inkcap_name}",
+                    arm="right",
+                    is_inkdip=True,
+                    inkcap=inkcap_name,
+                )
             else:
                 # right arm pointer hits a stroke with an inkcap
                 # transform to design frame, add needle offset
@@ -306,6 +332,7 @@ class Plan:
                 path.ee_wxyz_r[:, :] = self.ee_design_wxyz_r
                 right_arm_pointer += 1
 
+            self.path_idx_to_strokes[len(paths)] = [stroke_l, stroke_r]
             paths.append(path)
 
         # ---- Batch IK ----

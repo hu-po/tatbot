@@ -11,7 +11,7 @@ from viser.extras import ViserUrdf
 import yourdfpy
 
 from _log import get_logger, COLORS, print_config, setup_log_with_config
-from _path import PixelPath, PathBatch
+from _path import PathBatch, Stroke
 from _plan import Plan
 
 log = get_logger('run_viz')
@@ -62,26 +62,8 @@ class Viz:
         self.path_idx = 0
         self.pose_idx = 0
         self.plan = Plan.from_yaml(config.plan_dir)
-        self.num_paths = len(self.plan.path_descriptions)
-        self.pixelpaths = self.plan.load_pixelpaths()
-        self.pathbatch = self.plan.load_pathbatch()
-        self.path_lengths = [int(np.sum(self.pathbatch.mask[i])) for i in range(self.num_paths)]
-
-        # Define the path description getter before using it in the GUI
-        def _get_path_description(idx):
-            key = f"path_{idx:03d}"
-            return self.plan.path_descriptions.get(key, "")
-        self._get_path_description = _get_path_description
-
-        # Helper to map PathBatch pose_idx to PixelPath index
-        def _pose_to_pixel_idx(path_idx: int, pose_idx: int) -> int | None:
-            pixels = self.pixelpaths[path_idx].pixels
-            if not pixels:
-                return None  # ink-dip: nothing to draw
-            if pose_idx == 0 or pose_idx == self.path_lengths[path_idx] - 1:
-                return None  # hover poses have no pixel
-            return pose_idx - 1  # shift to account for first hover
-        self._pose_to_pixel_idx = _pose_to_pixel_idx
+        self.pathbatch: PathBatch = self.plan.load_pathbatch()
+        self.num_paths = self.pathbatch.ee_pos_l.shape[0]
 
         with self.server.gui.add_folder("Plan"):
             self.time_label = self.server.gui.add_text(
@@ -96,15 +78,20 @@ class Viz:
                 step=1,
                 initial_value=0,
             )
-            self.path_desc_label = self.server.gui.add_text(
-                label="description",
-                initial_value=self._get_path_description(0),
+            self.path_desc_label_l = self.server.gui.add_text(
+                label="left arm description",
+                initial_value=self.plan.path_idx_to_strokes[0][0].description,
+                disabled=True,
+            )
+            self.path_desc_label_r = self.server.gui.add_text(
+                label="right arm description",
+                initial_value=self.plan.path_idx_to_strokes[0][1].description,
                 disabled=True,
             )
             self.pose_idx_slider = self.server.gui.add_slider(
                 "pose",
                 min=0,
-                max=self.path_lengths[0] - 1,
+                max=self.plan.path_length - 1,
                 step=1,
                 initial_value=0,
             )
@@ -126,7 +113,7 @@ class Viz:
         def _update_time_label():
             current_time = 0.0
             for i in range(self.path_idx):
-                current_time += self.pathbatch.dt[i, :self.path_lengths[i]].sum().item()
+                current_time += self.pathbatch.dt[i, :].sum().item()
             current_time += self.pathbatch.dt[self.path_idx, :self.pose_idx+1].sum().item()
             total_time = self.pathbatch.dt.sum().item()
             self.time_label.value = f"{_format_seconds(current_time)} / {_format_seconds(total_time)}"
@@ -134,11 +121,12 @@ class Viz:
         @self.path_idx_slider.on_update
         def _(_):
             self.path_idx = self.path_idx_slider.value
-            self.pose_idx_slider.max = self.path_lengths[self.path_idx] - 1
+            self.pose_idx_slider.max = self.plan.path_length - 1
             if self.pose_idx_slider.value > self.pose_idx_slider.max:
                 self.pose_idx_slider.value = self.pose_idx_slider.max
             _update_time_label()
-            self.path_desc_label.value = self._get_path_description(self.path_idx)
+            self.path_desc_label_l.value = self.plan.path_idx_to_strokes[self.path_idx][0].description
+            self.path_desc_label_r.value = self.plan.path_idx_to_strokes[self.path_idx][1].description
 
         @self.pose_idx_slider.on_update
         def _(_):
@@ -165,7 +153,7 @@ class Viz:
             path_start = path_point_idx
             for j in range(self.pathbatch.ee_pos_l.shape[1]):
                 if self.pathbatch.mask[i, j]:
-                    if j == 0 or j == self.path_lengths[i] - 1:
+                    if j < 2 or j > self.plan.path_length - 3:
                         points_hover.append(self.pathbatch.ee_pos_l[i, j])
                     else:
                         points_path.append(self.pathbatch.ee_pos_l[i, j])
@@ -208,7 +196,7 @@ class Viz:
 
     def run(self):
         while True:
-            if self.pose_idx >= self.path_lengths[self.path_idx]:
+            if self.pose_idx >= self.plan.path_length:
                 self.path_idx += 1
                 log.debug(f"🖥️ Moving to next path {self.path_idx}")
                 self.pose_idx = 0
@@ -218,7 +206,7 @@ class Viz:
                 self.pose_idx = 0
             self.path_idx_slider.value = self.path_idx
             self.pose_idx_slider.value = self.pose_idx
-            self.pose_idx_slider.max = self.path_lengths[self.path_idx] - 1
+            self.pose_idx_slider.max = self.plan.path_length - 1
             if self.pose_idx_slider.value > self.pose_idx_slider.max:
                 self.pose_idx_slider.value = self.pose_idx_slider.max
             log.debug(f"🖥️🤖 Visualizing path {self.path_idx} pose {self.pose_idx}")
@@ -226,19 +214,19 @@ class Viz:
             log.debug(f"🖥️🖼️ Updating Viser image...")
             image_np = self.image_np.copy()
             # Draw the entire path in red (all drawing pixels, not hover)
-            pixels = self.pixelpaths[self.path_idx].pixels
-            if pixels:
-                for pw, ph in pixels:
-                    cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["red"], -1)
-                # Highlight path up until current pose in green
-                pix_idx = self._pose_to_pixel_idx(self.path_idx, self.pose_idx)
-                if pix_idx is not None and pix_idx > 0:
-                    for pw, ph in pixels[:pix_idx]:
-                        cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["green"], -1)
-                # Highlight current pose in magenta
-                if pix_idx is not None and 0 <= pix_idx < len(pixels):
-                    px, py = pixels[pix_idx]
-                    cv2.circle(image_np, (int(px), int(py)), self.config.pose_highlight_radius, COLORS["magenta"], -1)
+            for stroke in self.plan.path_idx_to_strokes[self.path_idx]:
+                if stroke.pixel_coords:
+                    for pw, ph in stroke.pixel_coords:
+                        cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["red"], -1)
+                    # Highlight path up until current pose in green
+                    pix_idx = self.pose_idx + 2 # skip over rest and hover poses
+                    if pix_idx is not None and pix_idx > 0:
+                        for pw, ph in stroke.pixel_coords[:pix_idx]:
+                            cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["green"], -1)
+                    # Highlight current pose in magenta
+                    if pix_idx is not None and 0 <= pix_idx < len(stroke.pixel_coords):
+                        px, py = stroke.pixel_coords[pix_idx]
+                        cv2.circle(image_np, (int(px), int(py)), self.config.pose_highlight_radius, COLORS["magenta"], -1)
             self.image.image = image_np
 
             log.debug(f"🖥️🤖 Updating Viser robot...")
@@ -252,7 +240,7 @@ class Viz:
             # Highlight current path in red
             new_colors[path_start:path_end] = np.array(COLORS["red"], dtype=np.uint8)
             # Compute pixel index for current pose
-            pix_idx = self._pose_to_pixel_idx(self.path_idx, self.pose_idx)
+            pix_idx = self.pose_idx + 2 # skip over rest and hover poses
             # Highlight up to current pose in green (excluding endpoints)
             if pix_idx is not None and pix_idx > 0:
                 new_colors[path_start:path_start + pix_idx] = np.array(COLORS["green"], dtype=np.uint8)
@@ -271,14 +259,13 @@ class Viz:
 
 def make_pathviz_image(plan: Plan) -> np.ndarray:
     """Creates an image with overlayed paths from a plan."""
-    pixelpaths = plan.load_pixelpaths()
     image = plan.load_image_np()
-    for path in pixelpaths:
-        path_indices = np.linspace(0, 255, len(path.pixels), dtype=np.uint8)
+    for stroke in plan.strokes.values():
+        path_indices = np.linspace(0, 255, len(stroke.pixel_coords), dtype=np.uint8)
         colormap = cv2.applyColorMap(path_indices.reshape(-1, 1), cv2.COLORMAP_JET)
-        for path_idx in range(len(path.pixels) - 1):
-            p1 = tuple(map(int, path.pixels[path_idx]))
-            p2 = tuple(map(int, path.pixels[path_idx + 1]))
+        for path_idx in range(len(stroke.pixel_coords) - 1):
+            p1 = tuple(map(int, stroke.pixel_coords[path_idx]))
+            p2 = tuple(map(int, stroke.pixel_coords[path_idx + 1]))
             color = colormap[path_idx][0].tolist()
             cv2.line(image, p1, p2, color, 2)
     out_path = os.path.join(plan.dirpath, "pathviz.png")

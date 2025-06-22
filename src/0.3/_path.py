@@ -82,7 +82,7 @@ class Stroke:
     """Natural language description of the path."""
     arm: str | None = None
     """Arm that will execute the path, either left or right."""
-    color: str = "solid black"
+    color: str | None = None
     """Natural language description of the color of the path."""
 
     pixel_coords: list[list[int]] | None = None
