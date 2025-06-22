@@ -30,7 +30,7 @@ class Plan:
 
     strokes: dict[str, Stroke] = field(default_factory=dict)
     """Dictionary of path metadata objects."""
-    path_idx_to_strokes: dict[int, list[Stroke]] = field(default_factory=dict)
+    path_idx_to_strokes: list[list[Stroke]] = field(default_factory=list)
     """Map from pathbatch idx to list of strokes that make up that path."""
 
     image_width_m: float = 0.04
@@ -265,7 +265,7 @@ class Plan:
                         description="right arm rest",
                         arm="right",
                     )
-                    self.path_idx_to_strokes[len(paths)] = [stroke_l, stroke_r]
+                    self.path_idx_to_strokes.append([stroke_l, stroke_r])
                     paths.append(path)
                     continue
             else:
@@ -332,7 +332,7 @@ class Plan:
                 path.ee_wxyz_r[:, :] = self.ee_design_wxyz_r
                 right_arm_pointer += 1
 
-            self.path_idx_to_strokes[len(paths)] = [stroke_l, stroke_r]
+            self.path_idx_to_strokes.append([stroke_l, stroke_r])
             paths.append(path)
 
         # ---- Batch IK ----
@@ -365,3 +365,4 @@ class Plan:
 
         pathbatch = PathBatch.from_paths(paths)
         self.save_pathbatch(pathbatch)
+        self.save() # update metadata

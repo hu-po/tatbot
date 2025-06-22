@@ -66,11 +66,27 @@ class Viz:
         self.num_paths = self.pathbatch.ee_pos_l.shape[0]
 
         with self.server.gui.add_folder("Plan"):
+            def _format_seconds(secs):
+                secs = int(secs)
+                h = secs // 3600
+                m = (secs % 3600) // 60
+                s = secs % 60
+                return f"{h:02}h{m:02}m{s:02}s"
+
             self.time_label = self.server.gui.add_text(
                 label="time",
-                initial_value=" 00h00m00s / 00h00m00s",
+                initial_value=f"{_format_seconds(0)} / {_format_seconds(0)}",
                 disabled=True,
             )
+
+            def _update_time_label():
+                current_time = 0.0
+                for i in range(self.path_idx):
+                    current_time += self.pathbatch.dt[i, :].sum().item()
+                current_time += self.pathbatch.dt[self.path_idx, :self.pose_idx+1].sum().item()
+                total_time = self.pathbatch.dt.sum().item()
+                self.time_label.value = f"{_format_seconds(current_time)} / {_format_seconds(total_time)}"
+
             self.path_idx_slider = self.server.gui.add_slider(
                 "path",
                 min=0,
@@ -103,20 +119,6 @@ class Viz:
                 initial_value=self.config.speed,
             )
         
-        def _format_seconds(secs):
-            secs = int(secs)
-            h = secs // 3600
-            m = (secs % 3600) // 60
-            s = secs % 60
-            return f"{h:02}h{m:02}m{s:02}s"
-
-        def _update_time_label():
-            current_time = 0.0
-            for i in range(self.path_idx):
-                current_time += self.pathbatch.dt[i, :].sum().item()
-            current_time += self.pathbatch.dt[self.path_idx, :self.pose_idx+1].sum().item()
-            total_time = self.pathbatch.dt.sum().item()
-            self.time_label.value = f"{_format_seconds(current_time)} / {_format_seconds(total_time)}"
 
         @self.path_idx_slider.on_update
         def _(_):
