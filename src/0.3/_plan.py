@@ -8,7 +8,7 @@ import yaml
 from PIL import Image
 import jax.numpy as jnp
 
-from _ik import batch_ik, transform_and_offset
+from _ik import batch_ik, fk, transform_and_offset
 from _ink import InkCap, InkPalette
 from _log import get_logger
 from _path import Path, PathBatch, Stroke
@@ -51,6 +51,9 @@ class Plan:
     path_dt_slow: float = 2.0
     """Time between poses in seconds for slow movement."""
 
+    ik_robot_config: IKRobotConfig = field(default_factory=IKRobotConfig)
+    """Configuration for the IK robot."""
+
     ee_design_pos: list[float] = field(default_factory=lambda: [0.08, 0.0, 0.04])
     """position in meters (xyz) of end effector when centered on design."""
     
@@ -61,7 +64,9 @@ class Plan:
 
     hover_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.006])
     """position offset when hovering over point, relative to current ee frame."""
-    needle_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, -0.0065])
+    needle_offset_l: list[float] = field(default_factory=lambda: [0.0, 0.0, -0.0065])
+    """position offset to ensure needle touches skin, relative to current ee frame."""
+    needle_offset_r: list[float] = field(default_factory=lambda: [0.0, 0.0, -0.0065])
     """position offset to ensure needle touches skin, relative to current ee frame."""
 
     inkpalette: InkPalette = field(default_factory=InkPalette)
@@ -118,12 +123,31 @@ class Plan:
 
         log.info(f"⚙️ Adding {len(raw_strokes)} raw paths to plan...")
         for idx, stroke in enumerate(raw_strokes):
-            # crop all strokes to fit within pad_len
             stroke_length = len(stroke.pixel_coords)
-            if stroke_length + 2 > self.path_pad_len:
-                # TODO: resample to fit within pad_len
-                log.warning(f"⚙️⚠️ stroke {idx} has len {stroke_length} more than {self.path_pad_len} poses, cropping...")
-                stroke.pixel_coords = stroke.pixel_coords[:self.path_pad_len - 2] # -2 for hover positions
+            desired_length = self.path_pad_len - 4 # -4 for rest/hover positions
+            if stroke_length != desired_length:
+                log.warning(f"⚙️⚠️ stroke {idx} has len {stroke_length}, resampling to {desired_length}...")
+                if stroke_length > 1:
+                    pixel_coords_np = np.array(stroke.pixel_coords)
+                    
+                    # Calculate the cumulative distance along the path
+                    distances = np.sqrt(np.sum(np.diff(pixel_coords_np, axis=0)**2, axis=1))
+                    cumulative_distances = np.insert(np.cumsum(distances), 0, 0)
+                    
+                    # Create a new set of evenly spaced distances
+                    new_distances = np.linspace(0, cumulative_distances[-1], desired_length)
+                    
+                    # Interpolate the x and y coordinates
+                    x_coords_resampled = np.interp(new_distances, cumulative_distances, pixel_coords_np[:, 0])
+                    y_coords_resampled = np.interp(new_distances, cumulative_distances, pixel_coords_np[:, 1])
+                    
+                    stroke.pixel_coords = np.stack((x_coords_resampled, y_coords_resampled), axis=-1).tolist()
+                elif stroke_length == 1:
+                    stroke.pixel_coords = stroke.pixel_coords * desired_length
+                else: # stroke_length == 0
+                    stroke.pixel_coords = [[0,0]] * desired_length
+                stroke_length = desired_length
+                
             # add normalized coordinates: top left is 0, 0
             stroke.norm_coords = [
                 [pw / self.image_width_px, ph / self.image_height_px]
@@ -157,86 +181,74 @@ class Plan:
         self.calculate_pathbatch()
         self.calculate_pathstats()
 
-    def make_inkdip_path(self, inkcap: str):
+    def make_inkdip_path(self, inkcap: str) -> tuple[np.ndarray, np.ndarray]:
         assert inkcap in self.inkpalette.inkcaps, f"⚙️❌ Inkcap {inkcap} not found in palette"
         inkcap_pos = self.inkpalette.inkcaps[inkcap].palette_pos
         inkdip_pos = np.tile(np.array(inkcap_pos, dtype=np.float32), (self.path_pad_len, 1))
         inkdip_wxyz = np.tile(np.array(self.ee_inkpalette_wxyz, dtype=np.float32), (self.path_pad_len, 1))
         # hover over the inkcap
-        inkdip_pos[0, :] = transform_and_offset(
+        inkcap_hover_pos = transform_and_offset(
+            inkcap_pos,
             self.ee_inkpalette_pos,
             self.ee_inkpalette_wxyz,
             self.inkdip_hover_offset,
         )
-        inkdip_wxyz[0, :] = self.ee_inkpalette_wxyz
-        # rim of the inkcap
-        inkdip_pos[1, :] = transform_and_offset(
+        inkcap_hover_wxyz = self.ee_inkpalette_wxyz
+        # start and end of inkdip are hover positions
+        inkdip_pos[0, :] = inkcap_hover_pos
+        inkdip_pos[-1, :] = inkcap_hover_pos
+        # middle of inkdip is a series of points traveling to depth of inkcap
+        inkdip_middle = np.linspace(0, self.inkpalette.inkcaps[inkcap].depth_m, self.path_pad_len - 2)
+        inkdip_pos[1:-1, :] = transform_and_offset(
+            inkdip_middle,
             self.ee_inkpalette_pos,
             self.ee_inkpalette_wxyz,
-            self.inkdip_hover_offset,
         )
-        inkdip_wxyz[1, :] = self.ee_inkpalette_wxyz
-        # half-depth of the inkcap
-        hover_pos = [
-            self.ee_inkpalette_pos[0] + self.inkdip_hover_offset[0] + self.inkpalette.inkcaps[inkcap].palette_pos[0],
-            self.ee_inkpalette_pos[1] + self.inkdip_hover_offset[1] + self.inkpalette.inkcaps[inkcap].palette_pos[1],
-            self.ee_inkpalette_pos[2] + self.inkdip_hover_offset[2] + self.inkpalette.inkcaps[inkcap].palette_pos[2],
-        ]
-        hover_wxyz = self.ee_inkpalette_wxyz
-        # rim of the inkcap
-        rim_pos = [
-            self.ee_inkpalette_pos[0] + self.inkpalette.inkcaps[inkcap].palette_pos[0],
-            self.ee_inkpalette_pos[1] + self.inkpalette.inkcaps[inkcap].palette_pos[1],
-            self.ee_inkpalette_pos[2] + self.inkpalette.inkcaps[inkcap].palette_pos[2],
-        ]
-        rim_wxyz = self.ee_inkpalette_wxyz
-        # half-depth of the inkcap
-        half_pos = [
-            self.ee_inkpalette_pos[0] + self.inkpalette.inkcaps[inkcap].palette_pos[0],
-            self.ee_inkpalette_pos[1] + self.inkpalette.inkcaps[inkcap].palette_pos[1],
-            self.ee_inkpalette_pos[2] + self.inkpalette.inkcaps[inkcap].palette_pos[2] + self.inkpalette.inkcaps[inkcap].depth_m / 2,
-        ]
-        half_wxyz = self.ee_inkpalette_wxyz
-        return 
+        return inkdip_pos, inkdip_wxyz
 
     def calculate_pathbatch(self) -> None:
         paths: list[Path] = []
+        rest_pos_l, rest_pos_r, rest_wxyz_l, rest_wxyz_r = fk(self.ik_robot_config.rest_pose)
         for key, stroke in self.strokes.items():
             log.debug(f"⚙️ Building path from stroke {key}...")
+            stroke_length = len(stroke.meter_coords)
             path = Path.padded(self.path_pad_len)
-            stroke_length = len(stroke.pixel_coords)
             if stroke.arm == "left":
                 # transform to design frame, add needle offset
                 path.ee_pos_l[1:stroke_length + 1, :] = transform_and_offset(
                     stroke.meter_coords,
                     self.ee_design_pos,
                     self.ee_design_wxyz_l,
-                    self.needle_offset,
+                    self.needle_offset_l,
                 )
-                # add hover positions to beginning and end
-                path.ee_pos_l[0, :] = transform_and_offset(
+                # add rest and hover positions to beginning and end
+                path.ee_pos_l[0, :] = rest_pos_l
+                path.ee_pos_l[1, :] = transform_and_offset(
                     stroke.meter_coords[0],
                     self.ee_design_pos,
                     self.ee_design_wxyz_l,
                     self.hover_offset,
                 )
-                path.ee_pos_l[stroke_length + 1, :] = transform_and_offset(
+                path.ee_pos_l[-2, :] = transform_and_offset(
                     stroke.meter_coords[-1],
                     self.ee_design_pos,
                     self.ee_design_wxyz_l,
                     self.hover_offset,
                 )
+                path.ee_pos_l[-1, :] = rest_pos_l
                 # orientation is always in design frame
                 path.ee_wxyz_l[:, :] = self.ee_design_wxyz_l
                 # right arm will be ink dipping
-
+                inkdip_pos, inkdip_wxyz = self.make_inkdip_path(stroke.inkcap)
+                path.ee_pos_r[1:stroke_length + 1, :] = inkdip_pos
+                path.ee_wxyz_r[:, :] = inkdip_wxyz
             else:
                 # transform to design frame, add needle offset
                 path.ee_pos_r[1:stroke_length + 1, :] = transform_and_offset(
                     stroke.meter_coords,
                     self.ee_design_pos,
                     self.ee_design_wxyz_r,
-                    self.needle_offset,
+                    self.needle_offset_r,
                 )
                 # add hover positions to beginning and end
                 path.ee_pos_r[0, :] = transform_and_offset(
@@ -253,6 +265,10 @@ class Plan:
                 )
                 # orientation is always in design frame
                 path.ee_wxyz_r[:, :] = self.ee_design_wxyz_r
+                # left arm will be ink dipping
+                inkdip_pos, inkdip_wxyz = self.make_inkdip_path(stroke.inkcap)
+                path.ee_pos_l[1:stroke_length + 1, :] = inkdip_pos
+                path.ee_wxyz_l[:, :] = inkdip_wxyz
 
             # slow movement at the hover positions
             path.dt[0] = self.path_dt_slow
@@ -288,6 +304,7 @@ class Plan:
             batch_joints = batch_ik(
                 target_wxyz=batch_wxyz,
                 target_pos=batch_pos,
+                robot_config=self.ik_robot_config,
             )                                         # (b, 16)
             # write results back into the corresponding path / pose slots
             for local_idx, joints in enumerate(batch_joints):

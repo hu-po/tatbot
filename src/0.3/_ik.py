@@ -94,12 +94,15 @@ def ik(
 
 @functools.lru_cache(maxsize=2)
 def load_robot(urdf_path: str, target_links_name: tuple[str, str]) -> tuple[pk.Robot, Int[Array, "2"]]:
+    log.debug(f"🧮🤖 Loading PyRoKi robot from URDF at {robot_config.urdf_path}...")
+    start_time = time.time()
     urdf = yourdfpy.URDF.load(urdf_path)
     robot = pk.Robot.from_urdf(urdf)
     target_link_indices = jnp.array([
         robot.links.names.index(target_links_name[0]),
         robot.links.names.index(target_links_name[1]),
     ])
+    log.debug(f"🧮 load robot time: {time.time() - start_time:.4f}s")
     return robot, target_link_indices
 
 def batch_ik(
@@ -108,10 +111,7 @@ def batch_ik(
     ik_config: IKConfig = IKConfig(),
     robot_config: IKRobotConfig = IKRobotConfig(),
 ) -> Float[Array, "b 16"]:
-    log.debug(f"🧮🤖 Loading PyRoKi robot from URDF at {robot_config.urdf_path}...")
-    start_time = time.time()
     robot, target_link_indices = load_robot(robot_config.urdf_path, robot_config.target_link_names)
-    log.debug(f"🧮 load robot time: {time.time() - start_time:.4f}s")
     log.debug(f"🧮 performing batch ik on batch of size {target_pos.shape[0]}")
     start_time = time.time()
     _ik_vmap = jax.vmap(
@@ -121,6 +121,23 @@ def batch_ik(
     solutions = _ik_vmap(target_wxyz, target_pos, robot_config.rest_pose)
     log.debug(f"🧮 batch ik time: {time.time() - start_time:.4f}s")
     return solutions
+
+def fk(
+    joint_positions: Float[Array, "16"],
+    robot_config: IKRobotConfig = IKRobotConfig(),
+) -> tuple[Float[Array, "1 3"], Float[Array, "1 3"], Float[Array, "1 4"], Float[Array, "1 4"]]:
+    robot, target_link_indices = load_robot(robot_config.urdf_path, robot_config.target_link_names)
+    log.debug("🧮 performing fk...")
+    start_time = time.time()
+    all_link_poses = robot.forward_kinematics(joint_positions)
+    pos = all_link_poses[target_link_indices, :3]
+    wxyz = all_link_poses[target_link_indices, 3:]
+    rest_pos_l = rest_pos[0, :]
+    rest_pos_r = rest_pos[1, :]
+    rest_wxyz_l = rest_wxyz[0, :]
+    rest_wxyz_r = rest_wxyz[1, :]
+    log.debug(f"🧮 fk time: {time.time() - start_time:.4f}s")
+    return rest_pos_l, rest_pos_r, rest_wxyz_l, rest_wxyz_r
 
 @jdc.jit
 def transform_and_offset(
@@ -132,5 +149,7 @@ def transform_and_offset(
     log.debug(f"🧮 transforming ik targets to new frame with offset")
     if offsets is None:
         offsets = jnp.zeros_like(target_pos)
+    if offsets.shape[0] != target_pos.shape[0]:
+        offsets = jnp.tile(offsets, (target_pos.shape[0], 1))
     frame_transform = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(frame_wxyz), frame_pos)
     return jax.vmap(lambda pos, offset: frame_transform @ pos + offset)(target_pos, offsets)
