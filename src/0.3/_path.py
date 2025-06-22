@@ -26,20 +26,17 @@ class Path:
     """Joint positions in radians (URDF convention)."""
     dt: Float[Array, "l"]
     """Travel time from pose N to pose N+1 in seconds."""
-    mask: Int[Array, "l"]
-    """Mask for valid poses in path (1 for valid, 0 for padding)."""
 
     @classmethod
-    def padded(cls, pad_len: int) -> "Path":
-        log.debug(f"🔳 Creating empty padded path (pad_len={pad_len})...")
+    def empty(cls, length: int) -> "Path":
+        log.debug(f"🔳 Creating empty path of length {length}...")
         return cls(
-            ee_pos_l=np.zeros((pad_len, 3), dtype=np.float32),
-            ee_pos_r=np.zeros((pad_len, 3), dtype=np.float32),
-            ee_wxyz_l=np.tile(np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32), (pad_len, 1)),
-            ee_wxyz_r=np.tile(np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32), (pad_len, 1)),
-            joints=np.zeros((pad_len, 16), dtype=np.float32),
-            dt=np.zeros((pad_len,), dtype=np.float32),
-            mask=np.zeros((pad_len,), dtype=np.int32),
+            ee_pos_l=np.zeros((length, 3), dtype=np.float32),
+            ee_pos_r=np.zeros((length, 3), dtype=np.float32),
+            ee_wxyz_l=np.tile(np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32), (length, 1)),
+            ee_wxyz_r=np.tile(np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32), (length, 1)),
+            joints=np.zeros((length, 16), dtype=np.float32),
+            dt=np.zeros((length,), dtype=np.float32),
         )
 
 @jdc.pytree_dataclass
@@ -56,8 +53,6 @@ class PathBatch:
     """Joint positions in radians (URDF convention)."""
     dt: Float[Array, "b l"]
     """Travel time from pose N to pose N+1 in seconds."""
-    mask: Int[Array, "b l"]
-    """Paths are padded to same length, mask is 1 for valid poses in path."""
 
     @classmethod
     def from_paths(cls, paths: list[Path]) -> "PathBatch":
@@ -69,7 +64,6 @@ class PathBatch:
             ee_wxyz_r=jnp.array([path.ee_wxyz_r for path in paths]),
             joints=jnp.array([path.joints for path in paths]),
             dt=jnp.array([path.dt for path in paths]),
-            mask=jnp.array([path.mask for path in paths]),
         )
 
     def save(self, filepath: str) -> None:
