@@ -94,7 +94,7 @@ def ik(
 
 @functools.lru_cache(maxsize=2)
 def load_robot(urdf_path: str, target_links_name: tuple[str, str]) -> tuple[pk.Robot, Int[Array, "2"]]:
-    log.debug(f"🧮🤖 Loading PyRoKi robot from URDF at {robot_config.urdf_path}...")
+    log.debug(f"🧮🤖 Loading PyRoKi robot from URDF at {urdf_path}...")
     start_time = time.time()
     urdf = yourdfpy.URDF.load(urdf_path)
     robot = pk.Robot.from_urdf(urdf)
@@ -132,10 +132,10 @@ def fk(
     all_link_poses = robot.forward_kinematics(joint_positions)
     pos = all_link_poses[target_link_indices, :3]
     wxyz = all_link_poses[target_link_indices, 3:]
-    rest_pos_l = rest_pos[0, :]
-    rest_pos_r = rest_pos[1, :]
-    rest_wxyz_l = rest_wxyz[0, :]
-    rest_wxyz_r = rest_wxyz[1, :]
+    rest_pos_l = pos[0, :]
+    rest_pos_r = pos[1, :]
+    rest_wxyz_l = wxyz[0, :]
+    rest_wxyz_r = wxyz[1, :]
     log.debug(f"🧮 fk time: {time.time() - start_time:.4f}s")
     return rest_pos_l, rest_pos_r, rest_wxyz_l, rest_wxyz_r
 

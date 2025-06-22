@@ -191,14 +191,14 @@ def plan_from_calib(config: BenchmarkPlanConfig):
                 desc = f"wave length={length} amplitude={amplitude} frequency={frequency} thickness={config.thickness} index={j}"
             else:
                 desc = f"unknown type thickness={config.thickness} index={j}"
-            all_paths.append(Stroke(pixels=path, description=desc, color="black"))
+            all_paths.append(Stroke(pixel_coords=path, description=desc, color="black"))
 
             if len(path) > 1:
                 is_curve = isinstance(stroke_config, (WaveGroupConfig, CircleGroupConfig))
                 draw.line(path, fill="black", width=config.thickness, joint="curve" if is_curve else None)
 
     log.info(f"✍️ Generated {len(all_paths)} paths.")
-    plan.add_pathmetas(all_paths, image)
+    plan.add_strokes(all_paths, image)
 
 if __name__ == "__main__":
     args = setup_log_with_config(BenchmarkPlanConfig)

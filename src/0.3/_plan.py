@@ -8,7 +8,7 @@ import yaml
 from PIL import Image
 import jax.numpy as jnp
 
-from _ik import batch_ik, fk, transform_and_offset
+from _ik import batch_ik, fk, transform_and_offset, IKRobotConfig
 from _ink import InkCap, InkPalette
 from _log import get_logger
 from _path import Path, PathBatch, Stroke
@@ -32,8 +32,6 @@ class Plan:
     """Dictionary of path metadata objects."""
     stroke_order: list[str] = field(default_factory=list)
     """Order of strokes in the plan."""
-    pathstats: dict = field(default_factory=dict)
-    """Path statistics."""
 
     image_width_m: float = 0.04
     """Width of the image in meters."""
@@ -101,10 +99,12 @@ class Plan:
         log.debug(f"⚙️💾 Loading plan image from {filepath}")
         return np.array(Image.open(filepath).convert("RGB"))
     
-    def save_image_np(self, image: np.ndarray) -> None:
+    def save_image_np(self, image: np.ndarray | Image.Image) -> None:
         filepath = os.path.join(self.dirpath, IMAGE_FILENAME)
         log.debug(f"⚙️💾 Saving plan image to {filepath}")
-        Image.fromarray(image).save(filepath)
+        if isinstance(image, np.ndarray):
+            image = Image.fromarray(image)
+        image.save(filepath)
     
     def load_pathbatch(self) -> 'PathBatch':
         filepath = os.path.join(self.dirpath, PATHBATCH_FILENAME)
@@ -173,11 +173,10 @@ class Plan:
             self.strokes[f'raw_stroke_{idx:03d}'] = stroke
 
         self.calculate_pathbatch()
-        self.calculate_pathstats()
 
-    def make_inkdip_path(self, inkcap: str) -> tuple[np.ndarray, np.ndarray]:
-        assert inkcap in self.inkpalette.inkcaps, f"⚙️❌ Inkcap {inkcap} not found in palette"
-        inkcap_pos = self.inkpalette.inkcaps[inkcap].palette_pos
+    def make_inkdip_path(self, inkcap_name: str, rest_pos: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        assert inkcap_name in self.inkpalette.inkcaps, f"⚙️❌ Inkcap {inkcap_name} not found in palette"
+        inkcap_pos = self.inkpalette.inkcaps[inkcap_name].palette_pos
         inkdip_pos = np.tile(np.array(inkcap_pos, dtype=np.float32), (self.path_length, 1))
         inkdip_wxyz = np.tile(np.array(self.ee_inkpalette_wxyz, dtype=np.float32), (self.path_length, 1))
         # hover over the inkcap
@@ -187,15 +186,14 @@ class Plan:
             self.ee_inkpalette_wxyz,
             self.inkdip_hover_offset,
         )
-        inkcap_hover_wxyz = self.ee_inkpalette_wxyz
         # start and end of inkdip are rest positions
-        inkdip_pos[0, :] = rest_pos_l
-        inkdip_pos[-1, :] = rest_pos_l
+        inkdip_pos[0, :] = rest_pos
+        inkdip_pos[-1, :] = rest_pos
         # start+1 and end-1 are hover positions
         inkdip_pos[1, :] = inkcap_hover_pos
         inkdip_pos[-2, :] = inkcap_hover_pos
         # middle of inkdip is a series of points traveling to depth of inkcap
-        inkdip_middle = np.linspace(0, self.inkpalette.inkcaps[inkcap].depth_m, self.path_length - 2)
+        inkdip_middle = np.linspace(0, self.inkpalette.inkcaps[inkcap_name].depth_m, self.path_length - 4)
         inkdip_pos[1:-1, :] = transform_and_offset(
             inkdip_middle,
             self.ee_inkpalette_pos,
@@ -210,8 +208,8 @@ class Plan:
         # get rest positions for both arms using forward kinematics
         rest_pos_l, rest_pos_r, rest_wxyz_l, rest_wxyz_r = fk(self.ik_robot_config.rest_pose)
 
-        # sort strokes by width in norm coords
-        sorted_strokes = sorted(self.strokes.values(), key=lambda x: x.norm_center[0])
+        # sort strokes along the X axis (width) in normalized coords
+        sorted_strokes = sorted(self.strokes.items(), key=lambda x: x[1].norm_center[0])
         left_arm_pointer = 0 # left arm starts with leftmost stroke, moves rightwards
         half_length = len(sorted_strokes) // 2
         right_arm_pointer = half_length # right arm starts from middle moves rightwards
@@ -240,7 +238,7 @@ class Plan:
                 # get ink color from stroke, left arm will dip for this path
                 inkcap_name = self.inkpalette.find_best_inkcap(self.strokes[stroke_name_l].color)
                 self.strokes[stroke_name_l].inkcap = inkcap_name
-                inkdip_pos, inkdip_wxyz = self.make_inkdip_path(inkcap_name)
+                inkdip_pos, inkdip_wxyz = self.make_inkdip_path(inkcap_name, rest_pos_l)
                 path.ee_pos_l = inkdip_pos
                 path.ee_wxyz_l = inkdip_wxyz
                 if left_arm_pointer == 0:
@@ -276,7 +274,7 @@ class Plan:
             if self.strokes[stroke_name_r].inkcap is None:
                 inkcap_name = self.inkpalette.find_best_inkcap(self.strokes[stroke_name_r].color)
                 self.strokes[stroke_name_r].inkcap = inkcap_name
-                inkdip_pos, inkdip_wxyz = self.make_inkdip_path(inkcap_name)
+                inkdip_pos, inkdip_wxyz = self.make_inkdip_path(inkcap_name, rest_pos_r)
                 path.ee_pos_r = inkdip_pos
                 path.ee_wxyz_r = inkdip_wxyz
             else:
@@ -338,18 +336,3 @@ class Plan:
 
         pathbatch = PathBatch.from_paths(paths)
         self.save_pathbatch(pathbatch)
-
-    def calculate_pathstats(self) -> None:
-        path_lengths_px = [
-            sum(np.linalg.norm(np.array(p1) - np.array(p2)) for p1, p2 in zip(path.pixel_coords[:-1], path.pixel_coords[1:]))
-            if len(path.pixel_coords) > 1 else 0.0
-            for path in self.strokes
-        ]
-        self.pathstats = {
-            "count": len(path_lengths_px),
-            "min_px": float(np.min(path_lengths_px)) if path_lengths_px else 0.0,
-            "max_px": float(np.max(path_lengths_px)) if path_lengths_px else 0.0,
-            "mean_px": float(np.mean(path_lengths_px)) if path_lengths_px else 0.0,
-            "sum_px": float(np.sum(path_lengths_px)) if path_lengths_px else 0.0,
-        }
-        self.save()
