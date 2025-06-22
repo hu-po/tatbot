@@ -154,12 +154,11 @@ class Viz:
         for i in range(self.pathbatch.ee_pos_l.shape[0]):
             path_start = path_point_idx
             for j in range(self.pathbatch.ee_pos_l.shape[1]):
-                if self.pathbatch.mask[i, j]:
-                    if j < 2 or j > self.plan.path_length - 3:
-                        points_hover.append(self.pathbatch.ee_pos_l[i, j])
-                    else:
-                        points_path.append(self.pathbatch.ee_pos_l[i, j])
-                        path_point_idx += 1
+                if j < 2 or j > self.plan.path_length - 3:
+                    points_hover.append(self.pathbatch.ee_pos_l[i, j])
+                else:
+                    points_path.append(self.pathbatch.ee_pos_l[i, j])
+                    path_point_idx += 1
             path_end = path_point_idx
             self.path_point_ranges.append((path_start, path_end))
         points_hover = np.stack(points_hover, axis=0)
@@ -183,7 +182,7 @@ class Viz:
 
         log.debug(f"🖥️🖼️ Adding inkcaps...")
         for cap_name, cap in self.plan.inkpalette.inkcaps.items():
-            pos = tuple(np.array(self.plan.ee_inkpalette_pos) + np.array(cap.palette_pos))
+            pos = tuple(np.array(self.plan.inkpalette_pos) + np.array(cap.palette_pos))
             radius = cap.diameter_m / 2
             color = COLORS.get(cap.color.lower(), (0, 0, 0))
             self.server.scene.add_icosphere(
@@ -192,7 +191,6 @@ class Viz:
                 color=color,
                 position=pos,
                 subdivisions=4,
-                opacity=0.4,
                 visible=True,
             )
 

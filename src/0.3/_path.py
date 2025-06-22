@@ -90,12 +90,12 @@ class Stroke:
 
     meter_coords: list[list[float]] | None = None
     """List of coordinates for each pose in path in meters <x, y, z>."""
-    meters_center: tuple[float, float, float] | None = None
+    meters_center: list[float] | None = None
     """Center of Mass of the path in meters."""
 
     norm_coords: list[list[float]] | None = None
     """List of coordinates for each pose in path in normalized image coordinates <x (0-1), y (0-1)>."""
-    norm_center: tuple[float, float] | None = None
+    norm_center: list[float] | None = None
     """Center of Mass of the path in normalized image coordinates."""
 
     is_inkdip: bool = False
