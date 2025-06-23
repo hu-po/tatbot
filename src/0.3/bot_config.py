@@ -137,9 +137,9 @@ def configure_arm(filepath: str, ip: str, test_pose: list[float], test_tolerance
         True # clear_error
     )
     assert driver is not None, f"❌🦾 failed to connect to arm {ip}"
-    print_configurations(driver)
-    driver.save_configs_to_file(filepath)
-    log.info(f"✅🎛️📄 saved config to {filepath}")
+    # print_configurations(driver)
+    # driver.save_configs_to_file(filepath)
+    # log.info(f"✅🎛️📄 saved config to {filepath}")
     driver.load_configs_from_file(filepath)
     log.info(f"✅🎛️📄 loaded config from {filepath}")
     print_configurations(driver)
