@@ -51,31 +51,31 @@ class Plan:
     path_dt_slow: float = 2.0
     """Time between poses in seconds for slow movement."""
 
-    design_pos: list[float] = field(default_factory=lambda: [0.2, 0.0, -0.04])
+    design_pos: np.ndarray = field(default_factory=lambda: np.array([0.2, 0.0, -0.04], dtype=np.float32))
     """position in meters (xyz) of origin of design frame."""
-    design_wxyz: list[float] = field(default_factory=lambda: [1.0, 0.0, 0.0, 0.0])
+    design_wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
     """orientation quaternion (wxyz) of the design frame."""
 
     # TODO: these will have to be updated to be relative to the design frame
-    ee_design_wxyz_l: list[float] = field(default_factory=lambda: [0.5, 0.5, 0.5, -0.5])
+    ee_design_wxyz_l: np.ndarray = field(default_factory=lambda: np.array([0.5, 0.5, 0.5, -0.5], dtype=np.float32))
     """orientation quaternion (wxyz) of left arm end effector when performing a path."""
-    ee_design_wxyz_r: list[float] = field(default_factory=lambda: [0.5, -0.5, 0.5, 0.5])
+    ee_design_wxyz_r: np.ndarray = field(default_factory=lambda: np.array([0.5, -0.5, 0.5, 0.5], dtype=np.float32))
     """orientation quaternion (wxyz) of right arm end effector when performing a path."""
 
-    hover_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.006])
+    hover_offset: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.006], dtype=np.float32))
     """position offset when hovering over point, relative to current ee frame."""
-    needle_offset_l: list[float] = field(default_factory=lambda: [0.0, 0.0, -0.0065])
+    needle_offset_l: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, -0.0065], dtype=np.float32))
     """position offset to ensure needle touches skin, relative to current ee frame."""
-    needle_offset_r: list[float] = field(default_factory=lambda: [0.0, 0.0, -0.0065])
+    needle_offset_r: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, -0.0065], dtype=np.float32))
     """position offset to ensure needle touches skin, relative to current ee frame."""
 
     inkpalette: InkPalette = field(default_factory=InkPalette)
     """Ink palette to use for the plan."""
-    inkpalette_pos: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.04])
+    inkpalette_pos: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.04], dtype=np.float32))
     """position of the inkpalette ee transform."""
-    inkpalette_wxyz: list[float] = field(default_factory=lambda: [1.0, 0.0, 0.0, 0.0])
+    inkpalette_wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
     """orientation quaternion (wxyz) of the inkpalette ee transform."""
-    inkdip_hover_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.03])
+    inkdip_hover_offset: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.03], dtype=np.float32))
     """position offset when hovering over inkcap, relative to current ee frame."""
 
     def save(self):
@@ -92,7 +92,7 @@ class Plan:
         filepath = os.path.join(dirpath, METADATA_FILENAME)
         with open(filepath, "r") as f:
             data = yaml.safe_load(f)
-        return dacite.from_dict(cls, data)
+        return dacite.from_dict(cls, data, config=dacite.Config(type_hooks={np.ndarray: np.array}))
 
     def load_image_np(self) -> np.ndarray:
         filepath = os.path.join(self.dirpath, IMAGE_FILENAME)
@@ -187,9 +187,9 @@ class Plan:
         inkcap_pos = np.array(self.inkpalette.inkcaps[inkcap_name].palette_pos, dtype=np.float32)
         inkcap_hover_pos = transform_and_offset(
             np.expand_dims(inkcap_pos, axis=0),
-            np.array(self.inkpalette_pos, dtype=np.float32),
-            np.array(self.inkpalette_wxyz, dtype=np.float32),
-            np.array(self.inkdip_hover_offset, dtype=np.float32),
+            self.inkpalette_pos,
+            self.inkpalette_wxyz,
+            self.inkdip_hover_offset,
         )
         # start+1 and end-1 are hover positions
         inkdip_pos[1, :] = inkcap_hover_pos
@@ -198,8 +198,8 @@ class Plan:
         num_dip_points = self.path_length - 4
         inkdip_pos[2:-2, :] = transform_and_offset(
             np.tile(inkcap_pos, (num_dip_points, 1)),
-            np.array(self.inkpalette_pos, dtype=np.float32),
-            np.array(self.inkpalette_wxyz, dtype=np.float32),
+            self.inkpalette_pos,
+            self.inkpalette_wxyz,
             np.concatenate([
                 np.zeros((num_dip_points, 2)),
                 np.linspace(0, self.inkpalette.inkcaps[inkcap_name].depth_m, num_dip_points).reshape(-1, 1),
@@ -273,22 +273,22 @@ class Plan:
                 # transform to design frame, add needle offset
                 path.ee_pos_l[2:-2, :] = transform_and_offset(
                     np.array(self.strokes[stroke_name_l].meter_coords, dtype=np.float32),
-                    np.array(self.design_pos, dtype=np.float32),
-                    np.array(self.design_wxyz, dtype=np.float32),
-                    np.array(self.needle_offset_l, dtype=np.float32),
+                    self.design_pos,
+                    self.design_wxyz,
+                    self.needle_offset_l,
                 )
                 # add hover positions to start+1 and end-1
                 path.ee_pos_l[1, :] = transform_and_offset(
                     np.expand_dims(np.array(self.strokes[stroke_name_l].meter_coords[0], dtype=np.float32), axis=0),
-                    np.array(self.design_pos, dtype=np.float32),
-                    np.array(self.design_wxyz, dtype=np.float32),
-                    np.array(self.hover_offset, dtype=np.float32),
+                    self.design_pos,
+                    self.design_wxyz,
+                    self.hover_offset,
                 )
                 path.ee_pos_l[-2, :] = transform_and_offset(
                     np.expand_dims(np.array(self.strokes[stroke_name_l].meter_coords[-1], dtype=np.float32), axis=0),
-                    np.array(self.design_pos, dtype=np.float32),
-                    np.array(self.design_wxyz, dtype=np.float32),
-                    np.array(self.hover_offset, dtype=np.float32),
+                    self.design_pos,
+                    self.design_wxyz,
+                    self.hover_offset,
                 )
                 # orientation is always in design frame
                 path.ee_wxyz_l[:, :] = self.ee_design_wxyz_l
@@ -310,22 +310,22 @@ class Plan:
                 # transform to design frame, add needle offset
                 path.ee_pos_r[2:-2, :] = transform_and_offset(
                     np.array(self.strokes[stroke_name_r].meter_coords, dtype=np.float32),
-                    np.array(self.design_pos, dtype=np.float32),
-                    np.array(self.design_wxyz, dtype=np.float32),
-                    np.array(self.needle_offset_r, dtype=np.float32),
+                    self.design_pos,
+                    self.design_wxyz,
+                    self.needle_offset_r,
                 )
                 # add hover positions to start+1 and end-1
                 path.ee_pos_r[1, :] = transform_and_offset(
                     np.expand_dims(np.array(self.strokes[stroke_name_r].meter_coords[0], dtype=np.float32), axis=0),
-                    np.array(self.design_pos, dtype=np.float32),
-                    np.array(self.design_wxyz, dtype=np.float32),
-                    np.array(self.hover_offset, dtype=np.float32),
+                    self.design_pos,
+                    self.design_wxyz,
+                    self.hover_offset,
                 )
                 path.ee_pos_r[-2, :] = transform_and_offset(
                     np.expand_dims(np.array(self.strokes[stroke_name_r].meter_coords[-1], dtype=np.float32), axis=0),
-                    np.array(self.design_pos, dtype=np.float32),
-                    np.array(self.design_wxyz, dtype=np.float32),
-                    np.array(self.hover_offset, dtype=np.float32),
+                    self.design_pos,
+                    self.design_wxyz,
+                    self.hover_offset,
                 )
                 # orientation is always in design frame
                 path.ee_wxyz_r[:, :] = self.ee_design_wxyz_r
@@ -365,3 +365,8 @@ class Plan:
         pathbatch = PathBatch.from_paths(paths)
         self.save_pathbatch(pathbatch)
         self.save() # update metadata
+
+def _represent_numpy(dumper: yaml.SafeDumper, data: np.ndarray) -> yaml.nodes.Node:
+    """Converts numpy arrays to lists for YAML serialization."""
+    return dumper.represent_list(data.tolist())
+yaml.add_representer(np.ndarray, _represent_numpy, Dumper=yaml.SafeDumper)

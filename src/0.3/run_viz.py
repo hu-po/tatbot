@@ -140,11 +140,22 @@ class Viz:
         log.debug(f"🖥️🤖 Adding URDF to viser from {config.urdf_path}...")
         self.urdf = ViserUrdf(self.server, yourdfpy.URDF.load(config.urdf_path), root_node_name="/root")
 
-        log.debug(f"️🖥️🖼️ Adding images from {config.plan_dir}...")
+        log.debug(f"️🖥️🖼️ Adding GUI images from {config.plan_dir}...")
         self.image_np = self.plan.load_image_np()
         self.image = self.server.gui.add_image(image=self.image_np, format="png")
         self.pathviz_np = make_pathviz_image(self.plan)
         self.pathviz = self.server.gui.add_image(image=self.pathviz_np, format="png")
+
+        log.debug(f"🖥️🖼️ Adding 2D image (design frame)...")
+        self.server.scene.add_image(
+            name="/design",
+            image=self.image_np,
+            wxyz=self.plan.design_wxyz,
+            position=self.plan.design_pos,
+            render_width=self.plan.image_width_m,
+            render_height=self.plan.image_height_m,
+        )
+
 
         log.debug(f"🖥️🖼️ Adding pointclouds...")
         points_hover = []
