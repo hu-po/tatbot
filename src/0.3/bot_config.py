@@ -39,7 +39,7 @@ log = get_logger('bot_config')
 class TrossenConfig:
     debug: bool = False
     """Enable debug logging."""
-    arm_l_ip: str = "192.168.1.17"
+    arm_l_ip: str = "192.168.1.2"
     """IP address of the left arm."""
     arm_l_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen_arm_l.yaml")
     """YAML file containing left arm config."""
@@ -173,5 +173,5 @@ if __name__=='__main__':
     print_config(args)
     log.info("🎛️🦾 Configuring left arm")
     configure_arm(args.arm_l_config_filepath, args.arm_l_ip, args.test_pose_l, args.test_tolerance)
-    log.info("🎛️🦾 Configuring right arm")
-    configure_arm(args.arm_r_config_filepath, args.arm_r_ip, args.test_pose_r, args.test_tolerance)
+    # log.info("🎛️🦾 Configuring right arm")
+    # configure_arm(args.arm_r_config_filepath, args.arm_r_ip, args.test_pose_r, args.test_tolerance)
