@@ -35,10 +35,8 @@ class VizScan(BaseViz):
     def __init__(self, config: VizScanConfig):
         super().__init__(config)
 
-
-    def run(self):
-        while True:
-            pass
+    def step(self):
+        pass
 
 if __name__ == "__main__":
     args = setup_log_with_config(VizScanConfig)

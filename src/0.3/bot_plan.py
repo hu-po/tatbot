@@ -15,18 +15,18 @@ from lerobot.common.utils.control_utils import (
 from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.record import _init_rerun
 
-from _bot import urdf_joints_to_action
+from _bot import urdf_joints_to_action, safe_loop
 from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT, LOG_FORMAT
 from _plan import Plan
 
-log = get_logger('bot_record')
+log = get_logger('bot_plan')
 
 @dataclass
-class PerformConfig:
+class BotPlanConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    plan_dir: str = os.path.expanduser("~/tatbot/output/plans/calibration")
+    plan_dir: str = os.path.expanduser("~/tatbot/output/plans/bench")
     """Directory containing plan."""
 
     hf_username: str = os.environ.get("HF_USER", "hu-po")
@@ -63,7 +63,7 @@ class PerformConfig:
     resume: bool = False
     """If true, resumes recording from the last episode, dataset name must match."""
 
-def perform(config: PerformConfig):
+def record_plan(config: BotPlanConfig):
     plan = Plan.from_yaml(config.plan_dir)
     pathbatch = plan.load_pathbatch()
     num_paths = pathbatch.joints.shape[0]
@@ -73,7 +73,7 @@ def perform(config: PerformConfig):
     robot = make_robot_from_config(TatbotConfig())
     robot.connect()
 
-    dataset_name = config.dataset_name or f"{plan.name}-{time.strftime(TIME_FORMAT, time.localtime())}"
+    dataset_name = config.dataset_name or f"plan-{plan.name}-{time.strftime(TIME_FORMAT, time.localtime())}"
     action_features = hw_to_dataset_features(robot.action_features, "action", True)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
     dataset_features = {**action_features, **obs_features}
@@ -185,11 +185,11 @@ def perform(config: PerformConfig):
         dataset.push_to_hub(tags=list(config.tags), private=config.private)
 
 if __name__ == "__main__":
-    args = setup_log_with_config(PerformConfig)
+    args = setup_log_with_config(BotPlanConfig)
     print_config(args)
     # TODO: waiting on https://github.com/TrossenRobotics/trossen_arm/issues/86#issue-3144375498
     logging.getLogger('trossen_arm').setLevel(logging.ERROR)
     if args.debug:
         log.setLevel(logging.DEBUG)
         logging.getLogger('lerobot').setLevel(logging.DEBUG)
-    safe_loop(perform, args)
+    safe_loop(record_plan, args)

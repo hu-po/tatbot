@@ -59,7 +59,7 @@ def urdf_joints_to_action(urdf_joints: list[float]) -> dict[str, float]:
 
 def safe_loop(loop: Callable, config: Any) -> None:
     from lerobot.common.robots import make_robot_from_config
-    from lerobot.common.robots.tatbot.config_tatbot import TatbotConfig
+    from lerobot.common.robots.tatbot.config_tatbot import TatbotBotOnlyConfig
 
     try:
         loop(config)
@@ -69,7 +69,7 @@ def safe_loop(loop: Callable, config: Any) -> None:
         log.info("🤖🛑⌨️ Keyboard interrupt detected. Disconnecting robot...")
     finally:
         log.info("🤖🛑 Disconnecting robot...")
-        robot = make_robot_from_config(TatbotConfig())
+        robot = make_robot_from_config(TatbotBotOnlyConfig())
         robot._connect_l(clear_error=False)
         log.error(robot._get_error_str_l())
         robot._connect_r(clear_error=False)
