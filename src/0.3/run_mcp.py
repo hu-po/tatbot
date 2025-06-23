@@ -228,9 +228,9 @@ def poweroff_nodes(nodes: Optional[List[str]] = None) -> str:
     
     return "\n".join(sorted(report))
 
-@mcp.tool(description="Turns on the visualization on the rpi1 node: pulls latest code, updates environment, kills existing Chromium, launches Chromium and the viz process. Logs all steps.")
+@mcp.tool(description="Turns on the visualization on the rpi1 node: pulls latest code, updates environment, kills existing Chromium and python3, launches viz process, waits for server, then launches Chromium. Logs all steps.")
 def turn_on_viz() -> str:
-    log.info(f"🔌 Turning on viz for rpi1: git pull, update uv env, kill old Chromium, launch Chromium and viz process, with full logging.")
+    log.info(f"🔌 Turning on viz for rpi1: git pull, update uv env, kill old Chromium and python3, launch viz, wait for server, launch Chromium, with full logging.")
 
     rpi1_node = next((n for n in net.nodes if n.name == "rpi1"), None)
     if not rpi1_node:
@@ -249,6 +249,8 @@ def turn_on_viz() -> str:
             "env >> ~/chromium-viz.log\n"
             "echo killing existing chromium... >> ~/chromium-viz.log\n"
             "pkill -f chromium-browser >> ~/chromium-viz.log 2>&1\n"
+            "echo killing existing python3... >> ~/chromium-viz.log\n"
+            "pkill -f python3 >> ~/chromium-viz.log 2>&1\n"
             "echo git pulling... >> ~/chromium-viz.log\n"
             "git -C ~/tatbot pull >> ~/chromium-viz.log 2>&1\n"
             "echo updating uv environment... >> ~/chromium-viz.log\n"
@@ -261,11 +263,19 @@ def turn_on_viz() -> str:
             "echo exporting display... >> ~/chromium-viz.log\n"
             "export DISPLAY=:0\n"
             "export XAUTHORITY=/home/rpi1/.Xauthority\n"
-            "echo launching chromium... >> ~/chromium-viz.log\n"
-            "setsid chromium-browser --kiosk http://localhost:8080 --disable-gpu >> ~/chromium-viz.log 2>&1 &\n"
             "echo launching viz process... >> ~/chromium-viz.log\n"
             "source .venv/bin/activate\n"
             "setsid uv run _viz.py >> ~/chromium-viz.log 2>&1 &\n"
+            "echo waiting for viser server on port 8080... >> ~/chromium-viz.log\n"
+            "for i in {1..20}; do\n"
+            "    if nc -z localhost 8080; then\n"
+            "        echo viser server is up! >> ~/chromium-viz.log\n"
+            "        break\n"
+            "    fi\n"
+            "    sleep 1\n"
+            "done\n"
+            "echo launching chromium... >> ~/chromium-viz.log\n"
+            "setsid chromium-browser --kiosk http://localhost:8080 --disable-gpu >> ~/chromium-viz.log 2>&1 &\n"
         )
         # Write the script to a file on the remote machine
         sftp = client.open_sftp()
@@ -275,10 +285,10 @@ def turn_on_viz() -> str:
         sftp.close()
         # Run the script with an interactive shell
         command = "bash -i ~/mcp_chromium_test.sh"
-        exit_code, out, err = net._run_remote_command(client, command, timeout=60)
+        exit_code, out, err = net._run_remote_command(client, command, timeout=80)
         client.close()
         if exit_code == 0:
-            return f"✅ rpi1: Viz script executed (git pull, uv update, Chromium+viz launched).\n{out}"
+            return f"✅ rpi1: Viz script executed (waits for server, launches Chromium after, kills python3).\n{out}"
         else:
             return f"❌ rpi1: Viz script failed.\n{err}"
     except Exception as e:

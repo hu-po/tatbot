@@ -161,20 +161,14 @@ tatbot uses [viser](https://github.com/nerfstudio-project/viser) for visualizati
 setup the `rpi1` to run viser:
 
 ```bash
-sudo apt install --reinstall raspberrypi-ui-mods lxsession lightdm
+sudo apt install --reinstall chromium-browser netcat-openbsd raspberrypi-ui-mods lxsession lightdm
 sudo raspi-config # System Options > Boot / Auto Login > Desktop Autologin
 sudo systemctl set-default graphical.target
-
+# set autologin with display
 sudo nano /etc/lightdm/lightdm.conf
 > [Seat:*]
 > autologin-user=rpi1
 > autologin-session=LXDE
-sudo reboot
-
-sudo apt-get install build-essential python3-dev cmake
-
-sudo apt install chromium-browser -y
-DISPLAY=:0 chromium-browser --kiosk http://localhost:8080
 ```
 
 ## VLAs
