@@ -228,9 +228,9 @@ def poweroff_nodes(nodes: Optional[List[str]] = None) -> str:
     
     return "\n".join(sorted(report))
 
-@mcp.tool(description="Test launching Chromium for viz on rpi1, with full logging for debugging.")
+@mcp.tool(description="Turns on the visualization on the rpi1 node: pulls latest code, updates environment, kills existing Chromium, launches Chromium and the viz process. Logs all steps.")
 def turn_on_viz() -> str:
-    log.info(f"🔌 Testing Chromium launch for viz on rpi1 node, with full logging")
+    log.info(f"🔌 Turning on viz for rpi1: git pull, update uv env, kill old Chromium, launch Chromium and viz process, with full logging.")
 
     rpi1_node = next((n for n in net.nodes if n.name == "rpi1"), None)
     if not rpi1_node:
@@ -241,27 +241,48 @@ def turn_on_viz() -> str:
 
     try:
         client = net.get_ssh_client(rpi1_node.ip, rpi1_node.user)
-        command = (
-            "bash -l -c '"
-            "echo whoami: > ~/chromium-viz.log && "
-            "whoami >> ~/chromium-viz.log && "
-            "echo env: >> ~/chromium-viz.log && "
-            "env >> ~/chromium-viz.log && "
-            "echo exporting display... >> ~/chromium-viz.log && "
-            "export DISPLAY=:0 && "
-            "export XAUTHORITY=/home/rpi1/.Xauthority && "
-            "echo launching chromium... >> ~/chromium-viz.log && "
-            "setsid chromium-browser --kiosk http://localhost:8080 >> ~/chromium-viz.log 2>&1 & "
-            "'"
+        script_content = (
+            "#!/bin/bash\n"
+            "echo whoami: > ~/chromium-viz.log\n"
+            "whoami >> ~/chromium-viz.log\n"
+            "echo env: >> ~/chromium-viz.log\n"
+            "env >> ~/chromium-viz.log\n"
+            "echo killing existing chromium... >> ~/chromium-viz.log\n"
+            "pkill -f chromium-browser >> ~/chromium-viz.log 2>&1\n"
+            "echo git pulling... >> ~/chromium-viz.log\n"
+            "git -C ~/tatbot pull >> ~/chromium-viz.log 2>&1\n"
+            "echo updating uv environment... >> ~/chromium-viz.log\n"
+            "cd ~/tatbot/src/0.3\n"
+            "deactivate >/dev/null 2>&1 || true\n"
+            "rm -rf .venv\n"
+            "rm -f uv.lock\n"
+            "uv venv >> ~/chromium-viz.log 2>&1\n"
+            "uv pip install '.[tag]' >> ~/chromium-viz.log 2>&1\n"
+            "echo exporting display... >> ~/chromium-viz.log\n"
+            "export DISPLAY=:0\n"
+            "export XAUTHORITY=/home/rpi1/.Xauthority\n"
+            "echo launching chromium... >> ~/chromium-viz.log\n"
+            "setsid chromium-browser --kiosk http://localhost:8080 --disable-gpu >> ~/chromium-viz.log 2>&1 &\n"
+            "echo launching viz process... >> ~/chromium-viz.log\n"
+            "source .venv/bin/activate\n"
+            "setsid uv run _viz.py >> ~/chromium-viz.log 2>&1 &\n"
         )
-        exit_code, out, err = net._run_remote_command(client, command, timeout=30)
+        # Write the script to a file on the remote machine
+        sftp = client.open_sftp()
+        with sftp.file('/home/rpi1/mcp_chromium_test.sh', 'w') as f:
+            f.write(script_content)
+        sftp.chmod('/home/rpi1/mcp_chromium_test.sh', 0o755)
+        sftp.close()
+        # Run the script with an interactive shell
+        command = "bash -i ~/mcp_chromium_test.sh"
+        exit_code, out, err = net._run_remote_command(client, command, timeout=60)
         client.close()
         if exit_code == 0:
-            return f"✅ rpi1: Chromium launch command executed.\n{out}"
+            return f"✅ rpi1: Viz script executed (git pull, uv update, Chromium+viz launched).\n{out}"
         else:
-            return f"❌ rpi1: Chromium launch command failed.\n{err}"
+            return f"❌ rpi1: Viz script failed.\n{err}"
     except Exception as e:
-        log.error(f"Failed to run Chromium launch command on rpi1: {e}")
+        log.error(f"Failed to run viz script on rpi1: {e}")
         return f"❌ rpi1: Exception occurred: {str(e)}"
 
 def run_mcp(config: MCPConfig):
