@@ -5,41 +5,41 @@ dns: 8.8.8.8
 gateway: 192.168.1.1
 subnet: 255.255.255.0
 joint_characteristics:
-  - effort_correction: 1.5005325078964233
+  - effort_correction: 1.4806543588638306
     friction_transition_velocity: 0
-    friction_constant_term: -0.009999999776482582
-    friction_coulomb_coef: 0.23910273611545563
-    friction_viscous_coef: 0.25152266025543213
-  - effort_correction: 1.2989336252212524
+    friction_constant_term: 0.019999999552965164
+    friction_coulomb_coef: 0.2683880925178528
+    friction_viscous_coef: 0.30923911929130554
+  - effort_correction: 1.2873475551605225
     friction_transition_velocity: 0
-    friction_constant_term: 0.25
-    friction_coulomb_coef: 0.12398207932710648
-    friction_viscous_coef: -0.004761803895235062
-  - effort_correction: 1.3286081552505493
+    friction_constant_term: 0.23999999463558197
+    friction_coulomb_coef: 0.15188711881637573
+    friction_viscous_coef: 0.05997909605503082
+  - effort_correction: 1.3086028099060059
     friction_transition_velocity: 0
-    friction_constant_term: 0.2199999988079071
-    friction_coulomb_coef: 0.11595069617033005
-    friction_viscous_coef: -0.1738549917936325
-  - effort_correction: 1.2467381954193115
+    friction_constant_term: 0.3100000023841858
+    friction_coulomb_coef: 0.11961762607097626
+    friction_viscous_coef: -0.1878223419189453
+  - effort_correction: 1.285477638244629
     friction_transition_velocity: 0
-    friction_constant_term: -0.07000000029802322
-    friction_coulomb_coef: 0.02338099665939808
-    friction_viscous_coef: 0.024639787152409554
-  - effort_correction: 1.1713294982910156
+    friction_constant_term: -0.03999999910593033
+    friction_coulomb_coef: 0.017903614789247513
+    friction_viscous_coef: 0.021309087052941322
+  - effort_correction: 1.1643311977386475
     friction_transition_velocity: 0
-    friction_constant_term: -0.009999999776482582
-    friction_coulomb_coef: 0.011764136143028736
-    friction_viscous_coef: 0.027401674538850784
+    friction_constant_term: 0
+    friction_coulomb_coef: 0.052614640444517136
+    friction_viscous_coef: 0.030950793996453285
   - effort_correction: 1.2000000476837158
     friction_transition_velocity: 0
-    friction_constant_term: -0.009999999776482582
+    friction_constant_term: 0.019999999552965164
     friction_coulomb_coef: 0
-    friction_viscous_coef: 0.016608310863375664
+    friction_viscous_coef: 0.02139633521437645
   - effort_correction: 1.2000000476837158
     friction_transition_velocity: 0
-    friction_constant_term: 11.569999694824219
+    friction_constant_term: 7.329999923706055
     friction_coulomb_coef: 0
-    friction_viscous_coef: 63.876773834228516
+    friction_viscous_coef: 118.87408447265625
 modes:
   - idle
   - idle
@@ -50,21 +50,21 @@ modes:
   - idle
 end_effector:
   palm:
-    mass: 0.642300009727478
+    mass: 0.5378000140190125
     inertia:
-      - 0.0010848400415852666
-      - 6.299999881775875e-07
-      - -4.180000178166665e-05
-      - 6.299999881775875e-07
-      - 0.0007517000194638968
-      - -1.5580000763293356e-05
-      - -4.180000178166665e-05
-      - -1.5580000763293356e-05
-      - 0.0011099399998784065
+      - 0.0007991900201886892
+      - -4.899999908047903e-07
+      - 1.0000000116860974e-07
+      - -4.899999908047903e-07
+      - 0.0004727400082629174
+      - 3.999999975690116e-08
+      - 1.0000000116860974e-07
+      - 3.999999975690116e-08
+      - 0.0010529300197958946
     origin_xyz:
-      - 0.046995919197797775
-      - 0.0004593599878717214
-      - 0.008277719840407372
+      - 0.0457276813685894
+      - -7.260000074893469e-06
+      - 1.401999998051906e-05
     origin_rpy:
       - 0
       - 0
