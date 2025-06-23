@@ -29,7 +29,7 @@ class BotPlanConfig:
     plan_dir: str = os.path.expanduser("~/tatbot/output/plans/bench")
     """Directory containing plan."""
 
-    hf_username: str = os.environ.get("HF_USER", "tatbot")
+    hf_username: str = "tatbot"
     """Hugging Face username."""
     dataset_name: str | None = None
     """Dataset will be saved to Hugging Face Hub repository ID, e.g. 'hf_username/dataset_name'."""

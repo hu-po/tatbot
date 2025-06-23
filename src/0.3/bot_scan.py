@@ -26,7 +26,7 @@ class BotScanConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    hf_username: str = os.environ.get("HF_USER", "tatbot")
+    hf_username: str = "tatbot"
     """Hugging Face username."""
     dataset_name: str | None = None
     """Dataset will be saved to Hugging Face Hub repository ID, e.g. 'hf_username/dataset_name'."""
@@ -105,7 +105,7 @@ def record_scan(config: BotScanConfig):
         observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 
         action = urdf_joints_to_action(BotConfig().rest_pose)
-        sent_action = robot.send_action(action, goal_time=3.0, block="both")
+        sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, block="both")
 
         action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
         frame = {**observation_frame, **action_frame}
