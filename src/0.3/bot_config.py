@@ -12,8 +12,8 @@ Download latest firmware:
 https://docs.trossenrobotics.com/trossen_arm/main/downloads.html
 
 > cd ~/Downloads && wget <get link from above>
-> unzip firmware-wxai_v0- <version>.zip
-> teensy_loader_cli --mcu=TEENSY41 -s firmware-wxai_v0- <version>.hex
+> unzip firmware-wxai_v0-v1.8.3.zip
+> teensy_loader_cli --mcu=TEENSY41 -s firmware-wxai_v0-v1.8.3.hex
 
 TODO: Set the velocity_tolerance to 0.2 times the velocity max
 https://docs.trossenrobotics.com/trossen_arm/main/getting_started/configuration.html#joint-limits
@@ -138,12 +138,8 @@ def configure_arm(filepath: str, ip: str, test_pose: list[float], test_tolerance
     )
     assert driver is not None, f"❌🦾 failed to connect to arm {ip}"
     print_configurations(driver)
-    # driver.save_configs_to_file(filepath)
+    driver.save_configs_to_file(filepath)
     log.info(f"✅🎛️📄 saved config to {filepath}")
-    log.info(f"🎛️🦾 factory reset flag: {driver.get_factory_reset_flag()}")
-    driver.set_factory_reset_flag(True)
-    # Reboot the controller to apply the default EEPROM settings
-    driver.cleanup(True)
     driver.load_configs_from_file(filepath)
     log.info(f"✅🎛️📄 loaded config from {filepath}")
     print_configurations(driver)
