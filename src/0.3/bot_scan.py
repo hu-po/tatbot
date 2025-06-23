@@ -60,7 +60,7 @@ class BotScanConfig:
 
 def record_scan(config: BotScanConfig):
     log.info("🤖🤗 Adding LeRobot robot...")
-    robot = make_robot_from_config(TatbotScanConfig())
+    robot = make_robot_from_config(TatbotScanConfig)
     robot.connect()
 
     dataset_name = config.dataset_name or f"scan-{time.strftime(TIME_FORMAT, time.localtime())}"
@@ -80,10 +80,6 @@ def record_scan(config: BotScanConfig):
         image_writer_processes=config.num_image_writer_processes,
         image_writer_threads=config.num_image_writer_threads_per_camera * len(robot.cameras),
     )
-
-    logs_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/logs")
-    log.info(f"🤖🗃️ Creating logs directory at {logs_dir}...")
-    os.makedirs(logs_dir, exist_ok=True)
 
     log.info(f"🤖 performing scan...")
     for step in range(config.num_steps):
