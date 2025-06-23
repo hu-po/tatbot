@@ -50,6 +50,8 @@ class TrossenConfig:
     """YAML file containing right arm config."""
     test_pose_r: list[float] = field(default_factory=lambda: BotConfig().rest_pose[8:].tolist())
     """Test pose for the right arm."""
+    test_tolerance: float = 0.1
+    """Tolerance for the test pose."""
 
 def print_configurations(driver: trossen_arm.TrossenArmDriver):
     log.debug("EEPROM factory reset flag:", driver.get_factory_reset_flag())
@@ -126,7 +128,7 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
     log.debug("Algorithm parameter:")
     log.debug("  singularity threshold:", algorithm_parameter.singularity_threshold)
 
-def configure_arm(filepath: str, ip: str, test_pose: list[float]):
+def configure_arm(filepath: str, ip: str, test_pose: list[float], test_tolerance: float):
     assert os.path.exists(filepath), f"❌📄 yaml file does not exist: {filepath}"
     driver = trossen_arm.TrossenArmDriver()
     driver.configure(
@@ -153,14 +155,14 @@ def configure_arm(filepath: str, ip: str, test_pose: list[float]):
             blocking=True,
         )
     current_pose = driver.get_all_positions()
-    assert np.allclose(current_pose, test_pose), f"❌🦾 current pose {current_pose} does not match test pose {test_pose}"
+    assert np.allclose(current_pose, test_pose, atol=test_tolerance), f"❌🦾 current pose {current_pose} does not match test pose {test_pose}"
     driver.set_all_positions(
             trossen_arm.VectorDouble(sleep_pose),
             goal_time=3.0,
             blocking=True,
         )
     current_pose = driver.get_all_positions()
-    assert np.allclose(current_pose, sleep_pose), f"❌🦾 current pose {current_pose} does not match sleep pose {sleep_pose}"
+    assert np.allclose(current_pose, sleep_pose, atol=test_tolerance), f"❌🦾 current pose {current_pose} does not match sleep pose {sleep_pose}"
     driver.set_all_modes(trossen_arm.Mode.idle)
 
 if __name__=='__main__':
@@ -171,6 +173,6 @@ if __name__=='__main__':
         log.setLevel(logging.DEBUG)
     print_config(args)
     log.info("🎛️🦾 Configuring left arm")
-    configure_arm(args.arm_l_config_filepath, args.arm_l_ip, args.test_pose_l)
+    configure_arm(args.arm_l_config_filepath, args.arm_l_ip, args.test_pose_l, args.test_tolerance)
     log.info("🎛️🦾 Configuring right arm")
-    configure_arm(args.arm_r_config_filepath, args.arm_r_ip, args.test_pose_r)
+    configure_arm(args.arm_r_config_filepath, args.arm_r_ip, args.test_pose_r, args.test_tolerance)
