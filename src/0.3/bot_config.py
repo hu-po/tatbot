@@ -19,6 +19,7 @@ https://docs.trossenrobotics.com/trossen_arm/main/getting_started/configuration.
 
 TODO: Edit end effector parameters for left arm (tattoo needle arm):
 https://docs.trossenrobotics.com/trossen_arm/main/api/structtrossen__arm_1_1EndEffector.html#struct-documentation
+TODO: Create trossen_arm.StandardEndEffector.wxai_v0_tatbot_l and trossen_arm.StandardEndEffector.wxai_v0_tatbot_r
 """
 
 from dataclasses import dataclass
@@ -31,25 +32,19 @@ from _log import setup_log_with_config, get_logger
 log = get_logger('bot_config')
 
 @dataclass
-class SingleArmConfig:
-    # defaults are for left arm
-    ip: str = "192.168.1.3"
-    """IP address of the arm."""
-    ee: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_base # TODO: wxai_v0_tatbot_l
-    """End effector of the arm."""
-    config_filepath: str = os.path.expanduser("~/tatbot/config/trossen_arm_l.yaml")
-    """YAML file containing robot config."""
-
-@dataclass
-class BotConfig:
-    arm_l: SingleArmConfig = SingleArmConfig()
-    arm_r: SingleArmConfig = SingleArmConfig(
-        # right arm
-        ip="192.168.1.2",
-        ee=trossen_arm.StandardEndEffector.wxai_v0_follower, # TODO: wxai_v0_tatbot_r
-        config_filepath=os.path.expanduser("~/tatbot/config/trossen_arm_r.yaml"),
-    )
-
+class TrossenConfig:
+    arm_l_ip: str = "192.168.1.3"
+    """IP address of the left arm."""
+    arm_l_ee: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_base 
+    """End effector type for the left arm."""
+    arm_l_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen_arm_l.yaml")
+    """YAML file containing left arm config."""
+    arm_r_ip: str = "192.168.1.2"
+    """IP address of the right arm."""
+    arm_r_ee: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_follower
+    """End effector type for the right arm."""
+    arm_r_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen_arm_r.yaml")
+    """YAML file containing right arm config."""
 
 def print_configurations(driver: trossen_arm.TrossenArmDriver):
     log.debug("EEPROM factory reset flag:", driver.get_factory_reset_flag())
@@ -126,24 +121,23 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
     log.debug("Algorithm parameter:")
     log.debug("  singularity threshold:", algorithm_parameter.singularity_threshold)
 
-
-def configure_arm(config: SingleArmConfig):
-    driver = trossen_arm.TrossenArmDriver(config=config)
-    assert os.path.exists(config.config_filepath), f"❌📄 yaml file does not exist: {config.config_filepath}"
-    driver.configure(trossen_arm.Model.wxai_v0, config.ee, config.ip, False)
-    assert driver is not None, f"❌🦾 failed to connect to arm {config.ip}"
+def configure_arm(filepath: str, ip: str, ee: trossen_arm.StandardEndEffector):
+    driver = trossen_arm.TrossenArmDriver(config=filepath)
+    assert os.path.exists(filepath), f"❌📄 yaml file does not exist: {filepath}"
+    driver.configure(trossen_arm.Model.wxai_v0, ee, ip, False)
+    assert driver is not None, f"❌🦾 failed to connect to arm {ip}"
     print_configurations(driver)
-    driver.save_configs_to_file(config.config_filepath)
-    log.debug(f"✅🎛️📄 saved config to {config.config_filepath}")
-    driver.load_configs_from_file(config.config_filepath)
-    log.debug(f"✅🎛️📄 loaded config from {config.config_filepath}")
+    driver.save_configs_to_file(filepath)
+    log.debug(f"✅🎛️📄 saved config to {filepath}")
+    driver.load_configs_from_file(filepath)
+    log.debug(f"✅🎛️📄 loaded config from {filepath}")
     print_configurations(driver)
-    log.debug(f"✅🎛️🦾 arm {config.ip} configured successfully")
+    log.debug(f"✅🎛️🦾 arm {ip} configured successfully")
 
 
 if __name__=='__main__':
-    args = setup_log_with_config(BotConfig)
+    args = setup_log_with_config(TrossenConfig)
     log.debug("🎛️🦾 Configuring left arm")
-    configure_arm(args.arm_l)
+    configure_arm(args.arm_l_config_filepath, args.arm_l_ip, args.arm_l_ee)
     log.debug("🎛️🦾 Configuring right arm")
-    configure_arm(args.arm_r)
+    configure_arm(args.arm_r_config_filepath, args.arm_r_ip, args.arm_r_ee)

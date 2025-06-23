@@ -228,6 +228,41 @@ def poweroff_nodes(nodes: Optional[List[str]] = None) -> str:
     
     return "\n".join(sorted(report))
 
+@mcp.tool(description="Test launching Chromium for viz on rpi1, logging environment and user info for debugging.")
+def turn_on_viz() -> str:
+    log.info(f"🔌 Testing Chromium launch for viz on rpi1 node")
+
+    rpi1_node = next((n for n in net.nodes if n.name == "rpi1"), None)
+    if not rpi1_node:
+        return "❌ rpi1 node not found in configuration."
+
+    if net.is_local_node(rpi1_node):
+        return "❌ rpi1 is the local node; this function is intended for remote execution."
+
+    try:
+        client = net.get_ssh_client(rpi1_node.ip, rpi1_node.user)
+        command = (
+            "bash -l -c '"
+            "echo "'whoami:'" > ~/chromium-viz.log && "
+            "whoami >> ~/chromium-viz.log && "
+            "echo "'env:'" >> ~/chromium-viz.log && "
+            "env >> ~/chromium-viz.log && "
+            "echo "'starting chromium'" >> ~/chromium-viz.log && "
+            "export DISPLAY=:0 && "
+            "export XAUTHORITY=/home/rpi1/.Xauthority && "
+            "setsid chromium-browser --kiosk http://localhost:8080 >> ~/chromium-viz.log 2>&1 & "
+            "'"
+        )
+        exit_code, out, err = net._run_remote_command(client, command, timeout=30)
+        client.close()
+        if exit_code == 0:
+            return f"✅ rpi1: Chromium launch command executed.\n{out}"
+        else:
+            return f"❌ rpi1: Chromium launch command failed.\n{err}"
+    except Exception as e:
+        log.error(f"Failed to run Chromium launch command on rpi1: {e}")
+        return f"❌ rpi1: Exception occurred: {str(e)}"
+
 def run_mcp(config: MCPConfig):
     log.info("🔌 Starting MCP server")
     mcp.run(transport=config.transport)
