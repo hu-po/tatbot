@@ -1,13 +1,10 @@
 from dataclasses import dataclass
-import os
 
-import numpy as np
 import viser
 from viser.extras import ViserUrdf
-import yourdfpy
 
 from _bot import BotConfig, load_robot
-from _log import get_logger, COLORS
+from _log import get_logger
 log = get_logger('_viz')
 
 @dataclass
@@ -32,6 +29,6 @@ class BaseViz:
             client.camera.position = config.view_camera_position
             client.camera.look_at = config.view_camera_look_at
 
-        log.debug(f"🖥️🤖 Adding URDF to viser from {bot_config.urdf_path}...")
+        log.debug(f"🖥️ Adding robot to viser from URDF at {bot_config.urdf_path}...")
         self.robot, self.ee_link_indices = load_robot(bot_config.urdf_path, bot_config.target_link_names)
         self.urdf = ViserUrdf(self.server, self.robot, root_node_name="/root")

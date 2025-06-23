@@ -2,7 +2,6 @@ from dataclasses import dataclass
 import logging
 import os
 import time
-from typing import Callable, Any
 from io import StringIO
 
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
@@ -16,6 +15,7 @@ from lerobot.common.utils.control_utils import (
 from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.record import _init_rerun
 
+from _bot import urdf_joints_to_action
 from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT, LOG_FORMAT
 from _plan import Plan
 

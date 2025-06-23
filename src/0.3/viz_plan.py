@@ -5,13 +5,9 @@ import time
 
 import cv2
 import numpy as np
-import PIL
-import viser
-from viser.extras import ViserUrdf
-import yourdfpy
 
 from _log import get_logger, COLORS, print_config, setup_log_with_config
-from _path import PathBatch, Stroke
+from _path import PathBatch
 from _plan import Plan
 from _viz import BaseViz, BaseVizConfig
 

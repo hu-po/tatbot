@@ -173,15 +173,6 @@ sudo reboot
 
 sudo apt-get install build-essential python3-dev cmake
 
-cd ~
-git clone https://github.com/lzfse/lzfse.git
-cd lzfse
-mkdir build && cd build
-cmake ..
-make
-sudo make install
-sudo ldconfig
-
 sudo apt install chromium-browser -y
 DISPLAY=:0 chromium-browser --kiosk http://localhost:8080
 ```
