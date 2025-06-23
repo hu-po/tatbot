@@ -138,8 +138,12 @@ def configure_arm(filepath: str, ip: str, test_pose: list[float], test_tolerance
     )
     assert driver is not None, f"❌🦾 failed to connect to arm {ip}"
     print_configurations(driver)
-    driver.save_configs_to_file(filepath)
+    # driver.save_configs_to_file(filepath)
     log.info(f"✅🎛️📄 saved config to {filepath}")
+    log.info(f"🎛️🦾 factory reset flag: {driver.get_factory_reset_flag()}")
+    driver.set_factory_reset_flag(True)
+    # Reboot the controller to apply the default EEPROM settings
+    driver.cleanup(True)
     driver.load_configs_from_file(filepath)
     log.info(f"✅🎛️📄 loaded config from {filepath}")
     print_configurations(driver)
