@@ -1,24 +1,3 @@
-"""
-visualization that normally runs on rpi1, but can also be run on oop
-
-```bash
-sudo apt install --reinstall raspberrypi-ui-mods lxsession lightdm
-sudo raspi-config # System Options > Boot / Auto Login > Desktop Autologin
-sudo systemctl set-default graphical.target
-
-sudo apt install chromium-browser -y
-
-sudo nano /etc/lightdm/lightdm.conf
-> [Seat:*]
-> autologin-user=rpi1
-> autologin-session=LXDE
-sudo reboot
-
-
-```
-
-"""
-
 from dataclasses import dataclass
 import logging
 import os
@@ -34,26 +13,18 @@ import yourdfpy
 from _log import get_logger, COLORS, print_config, setup_log_with_config
 from _path import PathBatch, Stroke
 from _plan import Plan
+from _viz import BaseViz, BaseVizConfig
 
-log = get_logger('run_viz')
+log = get_logger('viz_plan')
 
 @dataclass
-class VizConfig:
+class VizPlanConfig(BaseVizConfig):
     debug: bool = False
     """Enable debug logging."""
 
     plan_dir: str = os.path.expanduser("~/tatbot/output/plans/bench")
     """Directory containing plan."""
 
-    urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
-    """Local path to the URDF file for the robot."""
-
-    env_map_hdri: str = "forest"
-    """HDRI for the environment map."""
-    view_camera_position: tuple[float, float, float] = (0.5, 0.5, 0.5)
-    """Initial camera position in the Viser scene."""
-    view_camera_look_at: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    """Initial camera look_at in the Viser scene."""
     point_size: float = 0.001
     """Size of points in the point cloud visualization (meters)."""
     point_shape: str = "rounded"
@@ -67,18 +38,9 @@ class VizConfig:
     speed: float = 1.0
     """Speed multipler for visualization."""
 
-class Viz:
-    def __init__(self, config: VizConfig):
-        self.config = config
-
-        log.info("🖥️ Starting viser server...")
-        self.server: viser.ViserServer = viser.ViserServer()
-        self.server.scene.set_environment_map(hdri=config.env_map_hdri, background=True)
-
-        @self.server.on_client_connect
-        def _(client: viser.ClientHandle) -> None:
-            client.camera.position = config.view_camera_position
-            client.camera.look_at = config.view_camera_look_at
+class VizPlan(BaseViz):
+    def __init__(self, config: VizPlanConfig):
+        super().__init__(config)
 
         self.path_idx = 0
         self.pose_idx = 0
@@ -157,9 +119,6 @@ class Viz:
             _update_time_label()
 
         _update_time_label()
-
-        log.debug(f"🖥️🤖 Adding URDF to viser from {config.urdf_path}...")
-        self.urdf = ViserUrdf(self.server, yourdfpy.URDF.load(config.urdf_path), root_node_name="/root")
 
         log.debug(f"️🖥️🖼️ Adding GUI images from {config.plan_dir}...")
         self.image_np = self.plan.load_image_np()
@@ -309,9 +268,9 @@ def make_pathviz_image(plan: Plan) -> np.ndarray:
     return image
 
 if __name__ == "__main__":
-    args = setup_log_with_config(VizConfig)
+    args = setup_log_with_config(VizPlanConfig)
     print_config(args)
     if args.debug:
         log.setLevel(logging.DEBUG)
-    viz = Viz(args)
+    viz = VizPlan(args)
     viz.run()

@@ -154,6 +154,38 @@ tatbot uses two [D405 Intel Realsense cameras](https://www.intelrealsense.com/de
 
 TODO: these will somewhat randomly fail, need to create robust exception handling
 
+## Viser Visualization
+
+tatbot uses [viser](https://github.com/nerfstudio-project/viser) for visualization.
+
+setup the `rpi1` to run viser:
+
+```bash
+sudo apt install --reinstall raspberrypi-ui-mods lxsession lightdm
+sudo raspi-config # System Options > Boot / Auto Login > Desktop Autologin
+sudo systemctl set-default graphical.target
+
+sudo nano /etc/lightdm/lightdm.conf
+> [Seat:*]
+> autologin-user=rpi1
+> autologin-session=LXDE
+sudo reboot
+
+sudo apt-get install build-essential python3-dev cmake
+
+cd ~
+git clone https://github.com/lzfse/lzfse.git
+cd lzfse
+mkdir build && cd build
+cmake ..
+make
+sudo make install
+sudo ldconfig
+
+sudo apt install chromium-browser -y
+DISPLAY=:0 chromium-browser --kiosk http://localhost:8080
+```
+
 ## VLAs
 
 Vision Language Action models are used to perform robot behaviors.

@@ -63,44 +63,6 @@ class PerformConfig:
     resume: bool = False
     """If true, resumes recording from the last episode, dataset name must match."""
 
-
-def safe_loop(loop: Callable, config: Any) -> None:
-    try:
-        loop(config)
-    except Exception as e:
-        log.error(f"Error: {e}")
-    except KeyboardInterrupt:
-        log.info("🤖🛑⌨️ Keyboard interrupt detected. Disconnecting robot...")
-    finally:
-        log.info("🤖🛑 Disconnecting robot...")
-        robot = make_robot_from_config(TatbotConfig())
-        robot._connect_l(clear_error=False)
-        log.error(robot._get_error_str_l())
-        robot._connect_r(clear_error=False)
-        log.error(robot._get_error_str_r())
-        robot.disconnect()
-
-
-def urdf_joints_to_action(urdf_joints: list[float]) -> dict[str, float]:
-    _action = {
-        "left.joint_0.pos": urdf_joints[0],
-        "left.joint_1.pos": urdf_joints[1],
-        "left.joint_2.pos": urdf_joints[2],
-        "left.joint_3.pos": urdf_joints[3],
-        "left.joint_4.pos": urdf_joints[4],
-        "left.joint_5.pos": urdf_joints[5],
-        "left.gripper.pos": urdf_joints[6],
-        "right.joint_0.pos": urdf_joints[8],
-        "right.joint_1.pos": urdf_joints[9],
-        "right.joint_2.pos": urdf_joints[10],
-        "right.joint_3.pos": urdf_joints[11],
-        "right.joint_4.pos": urdf_joints[12],
-        "right.joint_5.pos": urdf_joints[13],
-        "right.gripper.pos": urdf_joints[14],
-    }
-    log.debug(f"🤖 Action: {_action}")
-    return _action
-
 def perform(config: PerformConfig):
     plan = Plan.from_yaml(config.plan_dir)
     pathbatch = plan.load_pathbatch()

@@ -13,23 +13,11 @@ from jaxtyping import Array, Float, Int
 import pyroki as pk
 import yourdfpy
 
+from _bot import BotConfig, load_robot
 from _log import get_logger
 
 log = get_logger('_ik')
 log.info(f"🧠 JAX devices: {jax.devices()}")
-
-@dataclass
-class IKRobotConfig:
-    urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
-    """Local path to the URDF file for the robot."""
-    target_link_names: tuple[str, str] = ("left/tattoo_needle", "right/tattoo_needle")
-    """Names of the ee links in the URDF for left and right ik solving."""
-    rest_pose: list[float] = field(default_factory=lambda: [
-        # left arm
-        -0.8, 0.6, 0.5, -1.0, 0.0, 0.0, 0.0, 0.0,
-        # right arm
-        0.8, 0.6, 0.5, -1.0, 0.0, 0.0, 0.0, 0.0])
-    """Rest pose for the robot."""
 
 @jdc.pytree_dataclass
 class IKConfig:
@@ -92,31 +80,18 @@ def ik(
     log.debug(f"🧮 ik time: {time.time() - start_time:.2f}s")
     return _solution
 
-@functools.lru_cache(maxsize=2)
-def load_robot(urdf_path: str, target_links_name: tuple[str, str]) -> tuple[pk.Robot, Int[Array, "2"]]:
-    log.debug(f"🧮🤖 Loading PyRoKi robot from URDF at {urdf_path}...")
-    start_time = time.time()
-    urdf = yourdfpy.URDF.load(urdf_path)
-    robot = pk.Robot.from_urdf(urdf)
-    target_link_indices = jnp.array([
-        robot.links.names.index(target_links_name[0]),
-        robot.links.names.index(target_links_name[1]),
-    ])
-    log.debug(f"🧮 load robot time: {time.time() - start_time:.4f}s")
-    return robot, target_link_indices
-
 def batch_ik(
     target_wxyz: Float[Array, "b n 4"],
     target_pos: Float[Array, "b n 3"],
     ik_config: IKConfig = IKConfig(),
-    robot_config: IKRobotConfig = IKRobotConfig(),
+    bot_config: BotConfig = BotConfig(),
 ) -> Float[Array, "b 16"]:
-    robot, target_link_indices = load_robot(robot_config.urdf_path, robot_config.target_link_names)
-    rest_pose = jnp.array(robot_config.rest_pose)
+    robot, ee_link_indices = load_robot(bot_config.urdf_path, bot_config.target_link_names)
+    rest_pose = jnp.array(bot_config.rest_pose)
     log.debug(f"🧮 performing batch ik on batch of size {target_pos.shape[0]}")
     start_time = time.time()
     _ik_vmap = jax.vmap(
-        lambda wxyz, pos, rest: ik(robot, ik_config, target_link_indices, wxyz, pos, rest),
+        lambda wxyz, pos, rest: ik(robot, ik_config, ee_link_indices, wxyz, pos, rest),
         in_axes=(0, 0, None),
     )
     solutions = _ik_vmap(target_wxyz, target_pos, rest_pose)
@@ -125,16 +100,16 @@ def batch_ik(
 
 def fk(
     joint_positions: Float[Array, "16"] | None = None,
-    robot_config: IKRobotConfig = IKRobotConfig(),
+    bot_config: BotConfig = BotConfig(),
 ) -> tuple[Float[Array, "1 3"], Float[Array, "1 3"], Float[Array, "1 4"], Float[Array, "1 4"]]:
-    robot, target_link_indices = load_robot(robot_config.urdf_path, robot_config.target_link_names)
+    robot, ee_link_indices = load_robot(bot_config.urdf_path, bot_config.target_link_names)
     if joint_positions is None:
-        joint_positions = jnp.array(robot_config.rest_pose)
+        joint_positions = jnp.array(bot_config.rest_pose)
     log.debug("🧮 performing fk...")
     start_time = time.time()
     all_link_poses = robot.forward_kinematics(joint_positions)
-    pos = all_link_poses[target_link_indices, :3]
-    wxyz = all_link_poses[target_link_indices, 3:]
+    pos = all_link_poses[ee_link_indices, :3]
+    wxyz = all_link_poses[ee_link_indices, 3:]
     rest_pos_l = pos[0, :]
     rest_pos_r = pos[1, :]
     rest_wxyz_l = wxyz[0, :]
