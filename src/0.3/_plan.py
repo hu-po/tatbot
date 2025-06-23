@@ -8,7 +8,7 @@ import yaml
 from PIL import Image
 import jax.numpy as jnp
 
-from _ik import batch_ik, fk, transform_and_offset, IKRobotConfig
+from _ik import batch_ik, fk, transform_and_offset
 from _ink import InkCap, InkPalette
 from _log import get_logger
 from _path import Path, PathBatch, Stroke

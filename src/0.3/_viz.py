@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import logging
+import time
 
 import viser
 from viser.extras import ViserUrdf
@@ -11,6 +12,9 @@ log = get_logger('_viz')
 
 @dataclass
 class BaseVizConfig:
+    debug: bool = False
+    """Enable debug logging."""
+
     env_map_hdri: str = "forest"
     """HDRI for the environment map."""
     view_camera_position: tuple[float, float, float] = (0.5, 0.5, 0.5)
@@ -32,8 +36,21 @@ class BaseViz:
             client.camera.look_at = config.view_camera_look_at
 
         log.debug(f"🖥️ Adding robot to viser from URDF at {bot_config.urdf_path}...")
-        self.robot, self.ee_link_indices = load_robot(bot_config.urdf_path, bot_config.target_link_names)
-        self.urdf = ViserUrdf(self.server, self.robot, root_node_name="/root")
+        _urdf, self.robot, self.ee_link_indices = load_robot(bot_config.urdf_path, bot_config.target_link_names)
+        self.urdf = ViserUrdf(self.server, _urdf, root_node_name="/root")
+        self.joints = bot_config.rest_pose.copy()
+
+    def step(self):
+        log.info("🖥️ Empty step function, implement in subclass...")
+        pass
+
+    def run(self):
+        while True:
+            start_time = time.time()
+            log.debug(f"🖥️ Updating viser robot...")
+            self.urdf.update_cfg(self.joints)
+            self.step()
+            log.debug(f"🖥️ step time: {time.time() - start_time:.4f}s")
 
 if __name__ == "__main__":
     args = setup_log_with_config(BaseVizConfig)
@@ -41,4 +58,5 @@ if __name__ == "__main__":
     if args.debug:
         log.setLevel(logging.DEBUG)
     viz = BaseViz(args)
-    viz.server.run()
+    while True:
+        time.sleep(0.1)

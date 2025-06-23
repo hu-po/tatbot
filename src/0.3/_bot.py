@@ -18,15 +18,14 @@ class BotConfig:
     """Local path to the URDF file for the robot."""
     target_link_names: tuple[str, str] = ("left/tattoo_needle", "right/tattoo_needle")
     """Names of the ee links in the URDF for left and right ik solving."""
-    rest_pose: list[float] = field(default_factory=lambda: [
-        # left arm
-        -0.8, 0.6, 0.5, -1.0, 0.0, 0.0, 0.0, 0.0,
-        # right arm
-        0.8, 0.6, 0.5, -1.0, 0.0, 0.0, 0.0, 0.0])
+    rest_pose: np.ndarray = field(default_factory=lambda: np.array([
+        -0.8, 0.6, 0.5, -1.0, 0.0, 0.0, 0.0, 0.0, # left arm
+        0.8, 0.6, 0.5, -1.0, 0.0, 0.0, 0.0, 0.0, # right arm
+        ], dtype=np.float32))
     """Rest pose for the robot."""
 
 @functools.lru_cache(maxsize=2)
-def load_robot(urdf_path: str, target_links_name: tuple[str, str]) -> tuple[pk.Robot, np.ndarray]:
+def load_robot(urdf_path: str, target_links_name: tuple[str, str]) -> tuple[yourdfpy.URDF, pk.Robot, np.ndarray]:
     log.debug(f"🤖 Loading PyRoKi robot from URDF at {urdf_path}...")
     start_time = time.time()
     urdf = yourdfpy.URDF.load(urdf_path)
@@ -36,7 +35,7 @@ def load_robot(urdf_path: str, target_links_name: tuple[str, str]) -> tuple[pk.R
         robot.links.names.index(target_links_name[1]), # right arm
     ], dtype=np.int32)
     log.debug(f"🤖 load robot time: {time.time() - start_time:.4f}s")
-    return robot, ee_link_indices
+    return urdf, robot, ee_link_indices
 
 def urdf_joints_to_action(urdf_joints: list[float]) -> dict[str, float]:
     _action = {

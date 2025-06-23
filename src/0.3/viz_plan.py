@@ -180,72 +180,68 @@ class VizPlan(BaseViz):
                 visible=True,
             )
 
-    def run(self):
-        while True:
-            if self.pose_idx >= self.plan.path_length:
-                self.path_idx += 1
-                log.debug(f"🖥️ Moving to next path {self.path_idx}")
-                self.pose_idx = 0
-            if self.path_idx >= self.num_paths:
-                log.debug(f"🖥️ Looping back to path 0")
-                self.path_idx = 0
-                self.pose_idx = 0
-            self.path_idx_slider.value = self.path_idx
-            self.pose_idx_slider.value = self.pose_idx
-            self.pose_idx_slider.max = self.plan.path_length - 1
-            if self.pose_idx_slider.value > self.pose_idx_slider.max:
-                self.pose_idx_slider.value = self.pose_idx_slider.max
-            log.debug(f"🖥️🤖 Visualizing path {self.path_idx} pose {self.pose_idx}")
+    def step(self):
+        if self.pose_idx >= self.plan.path_length:
+            self.path_idx += 1
+            log.debug(f"🖥️ Moving to next path {self.path_idx}")
+            self.pose_idx = 0
+        if self.path_idx >= self.num_paths:
+            log.debug(f"🖥️ Looping back to path 0")
+            self.path_idx = 0
+            self.pose_idx = 0
+        self.path_idx_slider.value = self.path_idx
+        self.pose_idx_slider.value = self.pose_idx
+        self.pose_idx_slider.max = self.plan.path_length - 1
+        if self.pose_idx_slider.value > self.pose_idx_slider.max:
+            self.pose_idx_slider.value = self.pose_idx_slider.max
+        self.joints = np.asarray(self.pathbatch.joints[self.path_idx, self.pose_idx], dtype=np.float64).flatten()
+        log.debug(f"🖥️🤖 Visualizing path {self.path_idx} pose {self.pose_idx}")
 
-            log.debug(f"🖥️🖼️ Updating Viser image...")
-            image_np = self.image_np.copy()
-            # Draw the entire path in red (all drawing pixels, not hover)
-            for stroke_idx, stroke in enumerate(self.plan.path_idx_to_strokes[self.path_idx]):
-                if stroke.pixel_coords is not None:
-                    for pw, ph in stroke.pixel_coords:
-                        cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["red"], -1)
-                    # Highlight path up until current pose in green
-                    pix_idx = self.pose_idx + 2 # skip over rest and hover poses
-                    if pix_idx is not None and pix_idx > 0:
-                        for pw, ph in stroke.pixel_coords[:pix_idx]:
-                            cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["green"], -1)
-                    # Highlight current pose in magenta
-                    if pix_idx is not None and 0 <= pix_idx < len(stroke.pixel_coords):
-                        px, py = stroke.pixel_coords[pix_idx]
-                        cv2.circle(image_np, (int(px), int(py)), self.config.pose_highlight_radius, COLORS["magenta"], -1)
-                        # Add L or R text
-                        text = "L" if stroke_idx == 0 else "R"
-                        text_pos = (int(px) - 5, int(py) - self.config.pose_highlight_radius - 5)
-                        cv2.putText(image_np, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS["black"], 2)
-            self.image.image = image_np
+        log.debug(f"🖥️🖼️ Updating Viser image...")
+        image_np = self.image_np.copy()
+        # Draw the entire path in red (all drawing pixels, not hover)
+        for stroke_idx, stroke in enumerate(self.plan.path_idx_to_strokes[self.path_idx]):
+            if stroke.pixel_coords is not None:
+                for pw, ph in stroke.pixel_coords:
+                    cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["red"], -1)
+                # Highlight path up until current pose in green
+                pix_idx = self.pose_idx + 2 # skip over rest and hover poses
+                if pix_idx is not None and pix_idx > 0:
+                    for pw, ph in stroke.pixel_coords[:pix_idx]:
+                        cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["green"], -1)
+                # Highlight current pose in magenta
+                if pix_idx is not None and 0 <= pix_idx < len(stroke.pixel_coords):
+                    px, py = stroke.pixel_coords[pix_idx]
+                    cv2.circle(image_np, (int(px), int(py)), self.config.pose_highlight_radius, COLORS["magenta"], -1)
+                    # Add L or R text
+                    text = "L" if stroke_idx == 0 else "R"
+                    text_pos = (int(px) - 5, int(py) - self.config.pose_highlight_radius - 5)
+                    cv2.putText(image_np, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS["black"], 2)
+        self.image.image = image_np
 
-            log.debug(f"🖥️🤖 Updating Viser robot...")
-            joints_np = np.asarray(self.pathbatch.joints[self.path_idx, self.pose_idx], dtype=np.float64).flatten()
-            self.urdf.update_cfg(joints_np)
+        log.debug(f"🖥️🤖 Updating Viser pointclouds...")
+        # Highlight entire path in red, path up until current pose in green, current pose in magenta
+        path_start, path_end = self.path_point_ranges[self.path_idx]
+        new_colors = np.tile(np.array(COLORS["black"], dtype=np.uint8), (self.pointcloud_path.points.shape[0], 1))
+        # Highlight current path in red
+        new_colors[path_start:path_end] = np.array(COLORS["red"], dtype=np.uint8)
+        # Compute pixel index for current pose
+        pix_idx = self.pose_idx + 2 # skip over rest and hover poses
+        # Highlight up to current pose in green (excluding endpoints)
+        if pix_idx is not None and pix_idx > 0:
+            new_colors[path_start:path_start + pix_idx] = np.array(COLORS["green"], dtype=np.uint8)
+        # Highlight current pose in magenta (if not endpoint)
+        if pix_idx is not None and 0 <= pix_idx < (path_end - path_start):
+            new_colors[path_start + pix_idx] = np.array(COLORS["magenta"], dtype=np.uint8)
+        self.pointcloud_path.colors = new_colors
 
-            log.debug(f"🖥️🤖 Updating Viser pointclouds...")
-            # Highlight entire path in red, path up until current pose in green, current pose in magenta
-            path_start, path_end = self.path_point_ranges[self.path_idx]
-            new_colors = np.tile(np.array(COLORS["black"], dtype=np.uint8), (self.pointcloud_path.points.shape[0], 1))
-            # Highlight current path in red
-            new_colors[path_start:path_end] = np.array(COLORS["red"], dtype=np.uint8)
-            # Compute pixel index for current pose
-            pix_idx = self.pose_idx + 2 # skip over rest and hover poses
-            # Highlight up to current pose in green (excluding endpoints)
-            if pix_idx is not None and pix_idx > 0:
-                new_colors[path_start:path_start + pix_idx] = np.array(COLORS["green"], dtype=np.uint8)
-            # Highlight current pose in magenta (if not endpoint)
-            if pix_idx is not None and 0 <= pix_idx < (path_end - path_start):
-                new_colors[path_start + pix_idx] = np.array(COLORS["magenta"], dtype=np.uint8)
-            self.pointcloud_path.colors = new_colors
-
-            dt_val = self.pathbatch.dt[self.path_idx, self.pose_idx]
-            if hasattr(dt_val, "item"):
-                dt_val = dt_val.item()
-            else:
-                dt_val = float(dt_val)
-            time.sleep(dt_val / self.speed_slider.value)
-            self.pose_idx += 1
+        dt_val = self.pathbatch.dt[self.path_idx, self.pose_idx]
+        if hasattr(dt_val, "item"):
+            dt_val = dt_val.item()
+        else:
+            dt_val = float(dt_val)
+        time.sleep(dt_val / self.speed_slider.value)
+        self.pose_idx += 1
 
 def make_pathviz_image(plan: Plan) -> np.ndarray:
     """Creates an image with overlayed paths from a plan."""

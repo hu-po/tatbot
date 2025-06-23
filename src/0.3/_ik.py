@@ -86,7 +86,7 @@ def batch_ik(
     ik_config: IKConfig = IKConfig(),
     bot_config: BotConfig = BotConfig(),
 ) -> Float[Array, "b 16"]:
-    robot, ee_link_indices = load_robot(bot_config.urdf_path, bot_config.target_link_names)
+    _, robot, ee_link_indices = load_robot(bot_config.urdf_path, bot_config.target_link_names)
     rest_pose = jnp.array(bot_config.rest_pose)
     log.debug(f"🧮 performing batch ik on batch of size {target_pos.shape[0]}")
     start_time = time.time()
@@ -102,7 +102,7 @@ def fk(
     joint_positions: Float[Array, "16"] | None = None,
     bot_config: BotConfig = BotConfig(),
 ) -> tuple[Float[Array, "1 3"], Float[Array, "1 3"], Float[Array, "1 4"], Float[Array, "1 4"]]:
-    robot, ee_link_indices = load_robot(bot_config.urdf_path, bot_config.target_link_names)
+    _, robot, ee_link_indices = load_robot(bot_config.urdf_path, bot_config.target_link_names)
     if joint_positions is None:
         joint_positions = jnp.array(bot_config.rest_pose)
     log.debug("🧮 performing fk...")
