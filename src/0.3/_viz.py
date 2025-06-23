@@ -25,6 +25,7 @@ class BaseVizConfig:
 class BaseViz:
     def __init__(self, config: BaseVizConfig, bot_config: BotConfig = BotConfig()):
         self.config = config
+        self.bot_config = bot_config
 
         log.info("🖥️ Starting viser server...")
         self.server: viser.ViserServer = viser.ViserServer()
@@ -35,10 +36,10 @@ class BaseViz:
             client.camera.position = config.view_camera_position
             client.camera.look_at = config.view_camera_look_at
 
-        log.debug(f"🖥️ Adding robot to viser from URDF at {bot_config.urdf_path}...")
-        _urdf, self.robot, self.ee_link_indices = load_robot(bot_config.urdf_path, bot_config.target_link_names)
+        log.debug(f"🖥️ Adding robot to viser from URDF at {self.bot_config.urdf_path}...")
+        _urdf, self.robot, self.ee_link_indices = load_robot(self.bot_config.urdf_path, self.bot_config.target_link_names)
         self.urdf = ViserUrdf(self.server, _urdf, root_node_name="/root")
-        self.joints = bot_config.rest_pose.copy()
+        self.joints = self.bot_config.rest_pose.copy()
 
     def step(self):
         log.info("🖥️ Empty step function, implement in subclass...")
@@ -58,5 +59,4 @@ if __name__ == "__main__":
     if args.debug:
         log.setLevel(logging.DEBUG)
     viz = BaseViz(args)
-    while True:
-        time.sleep(0.1)
+    viz.run()
