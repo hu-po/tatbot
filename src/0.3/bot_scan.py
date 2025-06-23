@@ -26,7 +26,7 @@ class BotScanConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    hf_username: str = os.environ.get("HF_USER", "hu-po")
+    hf_username: str = os.environ.get("HF_USER", "tatbot")
     """Hugging Face username."""
     dataset_name: str | None = None
     """Dataset will be saved to Hugging Face Hub repository ID, e.g. 'hf_username/dataset_name'."""
@@ -80,6 +80,22 @@ def record_scan(config: BotScanConfig):
         image_writer_processes=config.num_image_writer_processes,
         image_writer_threads=config.num_image_writer_threads_per_camera * len(robot.cameras),
     )
+    if config.display_data:
+        _init_rerun(session_name="recording")
+
+    logs_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/logs")
+    log.info(f"🤖🗃️ Creating logs directory at {logs_dir}...")
+    os.makedirs(logs_dir, exist_ok=True)
+    episode_log_buffer = StringIO()
+
+    class EpisodeLogHandler(logging.Handler):
+        def emit(self, record):
+            msg = self.format(record)
+            episode_log_buffer.write(msg + "\n")
+
+    episode_handler = EpisodeLogHandler()
+    episode_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=TIME_FORMAT))
+    logging.getLogger().addHandler(episode_handler)
 
     log.info(f"🤖 performing scan...")
     for step in range(config.num_steps):
@@ -98,7 +114,14 @@ def record_scan(config: BotScanConfig):
         dt_s = time.perf_counter() - start_loop_t
         busy_wait(max(0, dt_s))
 
+    log_path = os.path.join(logs_dir, f"episode_{0:06d}.txt")
+    log.info(f"🤖🗃️ Writing episode log to {log_path}")
+    with open(log_path, "w") as f:
+        f.write(episode_log_buffer.getvalue())
+
     dataset.save_episode()
+
+    logging.getLogger().removeHandler(episode_handler)
 
     log.info("🤖✅ End")
     robot.disconnect()
