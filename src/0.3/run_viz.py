@@ -1,3 +1,24 @@
+"""
+visualization that normally runs on rpi1, but can also be run on oop
+
+```bash
+sudo apt install --reinstall raspberrypi-ui-mods lxsession lightdm
+sudo raspi-config # System Options > Boot / Auto Login > Desktop Autologin
+sudo systemctl set-default graphical.target
+
+sudo apt install chromium-browser -y
+
+sudo nano /etc/lightdm/lightdm.conf
+> [Seat:*]
+> autologin-user=rpi1
+> autologin-session=LXDE
+sudo reboot
+
+
+```
+
+"""
+
 from dataclasses import dataclass
 import logging
 import os
