@@ -38,14 +38,10 @@ class TrossenConfig:
     """Enable debug logging."""
     arm_l_ip: str = "192.168.1.3"
     """IP address of the left arm."""
-    arm_l_ee: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_base 
-    """End effector type for the left arm."""
     arm_l_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen_arm_l.yaml")
     """YAML file containing left arm config."""
     arm_r_ip: str = "192.168.1.2"
     """IP address of the right arm."""
-    arm_r_ee: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_follower
-    """End effector type for the right arm."""
     arm_r_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen_arm_r.yaml")
     """YAML file containing right arm config."""
 
@@ -127,7 +123,12 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
 def configure_arm(filepath: str, ip: str, ee: trossen_arm.StandardEndEffector):
     driver = trossen_arm.TrossenArmDriver(config=filepath)
     assert os.path.exists(filepath), f"❌📄 yaml file does not exist: {filepath}"
-    driver.configure(trossen_arm.Model.wxai_v0, ee, ip, False)
+    driver.configure(
+        trossen_arm.Model.wxai_v0, # model
+        trossen_arm.StandardEndEffector.wxai_v0_base, # end_effector
+        ip, # serv_ip
+        False # clear_error
+    )
     assert driver is not None, f"❌🦾 failed to connect to arm {ip}"
     print_configurations(driver)
     driver.save_configs_to_file(filepath)
