@@ -55,58 +55,56 @@ class TrossenConfig:
     """Tolerance for the test pose."""
 
 def print_configurations(driver: trossen_arm.TrossenArmDriver):
-    log.debug("EEPROM factory reset flag:", driver.get_factory_reset_flag())
-    log.debug("EEPROM IP method:", driver.get_ip_method())
-    log.debug("EEPROM manual IP:", driver.get_manual_ip())
-    log.debug("EEPROM DNS:", driver.get_dns())
-    log.debug("EEPROM gateway:", driver.get_gateway())
-    log.debug("EEPROM subnet:", driver.get_subnet())
-    log.debug("EEPROM effort corrections:", driver.get_effort_corrections())
+    log.debug(f"EEPROM factory reset flag: {driver.get_factory_reset_flag()}")
+    log.debug(f"EEPROM IP method: {driver.get_ip_method()}")
+    log.debug(f"EEPROM manual IP: {driver.get_manual_ip()}")
+    log.debug(f"EEPROM DNS: {driver.get_dns()}")
+    log.debug(f"EEPROM gateway: {driver.get_gateway()}")
+    log.debug(f"EEPROM subnet: {driver.get_subnet()}")
+    log.debug(f"EEPROM effort corrections: {driver.get_effort_corrections()}")
     log.debug(
-        "EEPROM friction transition velocities:",
-        driver.get_friction_transition_velocities()
+        f"EEPROM friction transition velocities: {driver.get_friction_transition_velocities()}"
     )
     log.debug(
-        "EEPROM friction constant terms:",
-        driver.get_friction_constant_terms()
+        f"EEPROM friction constant terms: {driver.get_friction_constant_terms()}"
     )
-    log.debug("EEPROM friction coulomb coefs:", driver.get_friction_coulomb_coefs())
-    log.debug("EEPROM friction viscous coefs:", driver.get_friction_viscous_coefs())
-    log.debug("Modes:", [mode.value for mode in driver.get_modes()])
+    log.debug(f"EEPROM friction coulomb coefs: {driver.get_friction_coulomb_coefs()}")
+    log.debug(f"EEPROM friction viscous coefs: {driver.get_friction_viscous_coefs()}")
+    log.debug(f"Modes: {[mode.value for mode in driver.get_modes()]}")
 
     end_effector = driver.get_end_effector()
     log.debug("End effector:")
-    log.debug("  palm:")
-    log.debug("    mass:", end_effector.palm.mass)
-    log.debug("    inertia:", end_effector.palm.inertia)
-    log.debug("    origin xyz:", end_effector.palm.origin_xyz)
-    log.debug("    origin rpy:", end_effector.palm.origin_rpy)
-    log.debug("  finger left:")
-    log.debug("    mass:", end_effector.finger_left.mass)
-    log.debug("    inertia:", end_effector.finger_left.inertia)
-    log.debug("    origin xyz:", end_effector.finger_left.origin_xyz)
-    log.debug("    origin rpy:", end_effector.finger_left.origin_rpy)
-    log.debug("  finger right:")
-    log.debug("    mass:", end_effector.finger_right.mass)
-    log.debug("    inertia:", end_effector.finger_right.inertia)
-    log.debug("    origin xyz:", end_effector.finger_right.origin_xyz)
-    log.debug("    origin rpy:", end_effector.finger_right.origin_rpy)
-    log.debug("  offset finger left:", end_effector.offset_finger_left)
-    log.debug("  offset finger right:", end_effector.offset_finger_right)
-    log.debug("  pitch circle radius:", end_effector.pitch_circle_radius)
-    log.debug("  t flange tool:", end_effector.t_flange_tool)
+    log.debug(f"  palm:")
+    log.debug(f"    mass: {end_effector.palm.mass}")
+    log.debug(f"    inertia: {end_effector.palm.inertia}")
+    log.debug(f"    origin xyz: {end_effector.palm.origin_xyz}")
+    log.debug(f"    origin rpy: {end_effector.palm.origin_rpy}")
+    log.debug(f"  finger left:")
+    log.debug(f"    mass: {end_effector.finger_left.mass}")
+    log.debug(f"    inertia: {end_effector.finger_left.inertia}")
+    log.debug(f"    origin xyz: {end_effector.finger_left.origin_xyz}")
+    log.debug(f"    origin rpy: {end_effector.finger_left.origin_rpy}")
+    log.debug(f"  finger right:")
+    log.debug(f"    mass: {end_effector.finger_right.mass}")
+    log.debug(f"    inertia: {end_effector.finger_right.inertia}")
+    log.debug(f"    origin xyz: {end_effector.finger_right.origin_xyz}")
+    log.debug(f"    origin rpy: {end_effector.finger_right.origin_rpy}")
+    log.debug(f"  offset finger left: {end_effector.offset_finger_left}")
+    log.debug(f"  offset finger right: {end_effector.offset_finger_right}")
+    log.debug(f"  pitch circle radius: {end_effector.pitch_circle_radius}")
+    log.debug(f"  t flange tool: {end_effector.t_flange_tool}")
 
     joint_limits = driver.get_joint_limits()
     log.debug("Joint limits:")
     for i, joint_limit in enumerate(joint_limits):
         log.debug(f"  Joint {i}:")
-        log.debug("    position min:", joint_limit.position_min)
-        log.debug("    position max:", joint_limit.position_max)
-        log.debug("    position tolerance:", joint_limit.position_tolerance)
-        log.debug("    velocity max:", joint_limit.velocity_max)
-        log.debug("    velocity tolerance:", joint_limit.velocity_tolerance)
-        log.debug("    effort max:", joint_limit.effort_max)
-        log.debug("    effort tolerance:", joint_limit.effort_tolerance)
+        log.debug(f"    position min: {joint_limit.position_min}")
+        log.debug(f"    position max: {joint_limit.position_max}")
+        log.debug(f"    position tolerance: {joint_limit.position_tolerance}")
+        log.debug(f"    velocity max: {joint_limit.velocity_max}")
+        log.debug(f"    velocity tolerance: {joint_limit.velocity_tolerance}")
+        log.debug(f"    effort max: {joint_limit.effort_max}")
+        log.debug(f"    effort tolerance: {joint_limit.effort_tolerance}")
 
     motor_parameters = driver.get_motor_parameters()
     log.debug("Motor parameters:")
@@ -114,12 +112,12 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
         log.debug(f"  Joint {i}:")
         for mode, param in motor_param.items():
             log.debug(f"    Mode {mode.value}:")
-            log.debug("      Position loop:")
+            log.debug(f"      Position loop:")
             log.debug(
                 f"        kp: {param.position.kp}, ki: {param.position.ki}, "
                 f"kd: {param.position.kd}, imax: {param.position.imax}"
             )
-            log.debug("      Velocity loop:")
+            log.debug(f"      Velocity loop:")
             log.debug(
                 f"        kp: {param.velocity.kp}, ki: {param.velocity.ki}, "
                 f"kd: {param.velocity.kd}, imax: {param.velocity.imax}"
@@ -127,7 +125,7 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
 
     algorithm_parameter = driver.get_algorithm_parameter()
     log.debug("Algorithm parameter:")
-    log.debug("  singularity threshold:", algorithm_parameter.singularity_threshold)
+    log.debug(f"  singularity threshold: {algorithm_parameter.singularity_threshold}")
 
 def configure_arm(filepath: str, ip: str, test_pose: list[float], test_tolerance: float):
     assert os.path.exists(filepath), f"❌📄 yaml file does not exist: {filepath}"
