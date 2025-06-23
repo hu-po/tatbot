@@ -26,7 +26,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
 dependencies = [
-    "jax",
     "jaxtyping>=0.2.25,<1.0.0",
     "jaxlie>=1.3.4,<2.0.0",
     "opencv-python==4.11.0.86",
