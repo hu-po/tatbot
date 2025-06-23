@@ -37,6 +37,7 @@ dependencies = [
     "paramiko==3.5.1",
     "mcp[cli]==1.9.4",
     "psutil==7.0.0",
+    "pyroki @ git+https://github.com/chungmin99/pyroki.git@main#egg=pyroki",
 ]
 
 [project.optional-dependencies]
@@ -50,7 +51,6 @@ gen = [
     "networkx==3.5",
     "replicate==1.0.7",
     "scikit-image==0.25.2",
-    "pyroki @ git+https://github.com/chungmin99/pyroki.git@main#egg=pyroki",
 ]
 tag = [
     "ffmpeg-python==0.2.0",
