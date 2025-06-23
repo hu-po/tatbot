@@ -125,56 +125,46 @@ class Plan:
 
         log.info(f"⚙️ Adding {len(strokes)} raw paths to plan...")
         for idx, stroke in enumerate(strokes):
+            if stroke.pixel_coords is not None:
+                stroke.pixel_coords = np.array(stroke.pixel_coords, dtype=int)
             stroke_length = len(stroke.pixel_coords)
             desired_length = self.path_length - 4 # -4 for rest/hover positions
             if stroke_length != desired_length:
                 log.warning(f"⚙️⚠️ stroke {idx} has len {stroke_length}, resampling to {desired_length}...")
                 if stroke_length > 1:
-                    pixel_coords_np = np.array(stroke.pixel_coords)
-                    
                     # Calculate the cumulative distance along the path
-                    distances = np.sqrt(np.sum(np.diff(pixel_coords_np, axis=0)**2, axis=1))
+                    distances = np.sqrt(np.sum(np.diff(stroke.pixel_coords, axis=0)**2, axis=1))
                     cumulative_distances = np.insert(np.cumsum(distances), 0, 0)
                     
                     # Create a new set of evenly spaced distances
                     new_distances = np.linspace(0, cumulative_distances[-1], desired_length)
                     
                     # Interpolate the x and y coordinates
-                    x_coords_resampled = np.interp(new_distances, cumulative_distances, pixel_coords_np[:, 0])
-                    y_coords_resampled = np.interp(new_distances, cumulative_distances, pixel_coords_np[:, 1])
+                    x_coords_resampled = np.interp(new_distances, cumulative_distances, stroke.pixel_coords[:, 0])
+                    y_coords_resampled = np.interp(new_distances, cumulative_distances, stroke.pixel_coords[:, 1])
                     
-                    stroke.pixel_coords = np.round(np.stack((x_coords_resampled, y_coords_resampled), axis=-1)).astype(int).tolist()
+                    stroke.pixel_coords = np.round(np.stack((x_coords_resampled, y_coords_resampled), axis=-1)).astype(int)
                 elif stroke_length == 1:
-                    stroke.pixel_coords = stroke.pixel_coords * desired_length
+                    stroke.pixel_coords = np.tile(stroke.pixel_coords, (desired_length, 1))
                 else: # stroke_length == 0
-                    stroke.pixel_coords = [[0,0]] * desired_length
+                    stroke.pixel_coords = np.zeros((desired_length, 2), dtype=int)
                 stroke_length = desired_length
                 
             # add normalized coordinates: top left is 0, 0
-            stroke.norm_coords = [
-                [pw / self.image_width_px, ph / self.image_height_px]
-                for pw, ph in stroke.pixel_coords
-            ]
+            stroke.norm_coords = stroke.pixel_coords / np.array([self.image_width_px, self.image_height_px], dtype=np.float32)
             # calculate center of mass of stroke
-            stroke.norm_center = (
-                sum(pw for pw, _ in stroke.norm_coords) / stroke_length,
-                sum(ph for _, ph in stroke.norm_coords) / stroke_length,
-            )
+            stroke.norm_center = np.mean(stroke.norm_coords, axis=0)
             # calculate meters coordinates: center is 0, 0
-            stroke.meter_coords = [
-                [
-                    pw * scale_x - self.image_width_m / 2,
-                    ph * scale_y - self.image_height_m / 2,
-                    0.0,
-                ]
-                for pw, ph in stroke.pixel_coords
-            ]
-            # calculate center of mass of stroke
-            stroke.meters_center = (
-                sum(pw for pw, _, _ in stroke.meter_coords) / stroke_length,
-                sum(ph for _, ph, _ in stroke.meter_coords) / stroke_length,
-                sum(z for _, _, z in stroke.meter_coords) / stroke_length,
+            meter_coords_2d = (
+                stroke.pixel_coords * np.array([scale_x, scale_y], dtype=np.float32)
+                - np.array([self.image_width_m / 2, self.image_height_m / 2], dtype=np.float32)
             )
+            stroke.meter_coords = np.hstack([
+                meter_coords_2d,
+                np.zeros((stroke_length, 1), dtype=np.float32)
+            ])
+            # calculate center of mass of stroke
+            stroke.meters_center = np.mean(stroke.meter_coords, axis=0)
             self.strokes[f'stroke_{idx:03d}'] = stroke
 
         self.calculate_pathbatch()
@@ -272,20 +262,20 @@ class Plan:
                 # left arm pointer hits a stroke with an inkcap
                 # transform to design frame, add needle offset
                 path.ee_pos_l[2:-2, :] = transform_and_offset(
-                    np.array(self.strokes[stroke_name_l].meter_coords, dtype=np.float32),
+                    self.strokes[stroke_name_l].meter_coords,
                     self.design_pos,
                     self.design_wxyz,
                     self.needle_offset_l,
                 )
                 # add hover positions to start+1 and end-1
                 path.ee_pos_l[1, :] = transform_and_offset(
-                    np.expand_dims(np.array(self.strokes[stroke_name_l].meter_coords[0], dtype=np.float32), axis=0),
+                    np.expand_dims(self.strokes[stroke_name_l].meter_coords[0], axis=0),
                     self.design_pos,
                     self.design_wxyz,
                     self.hover_offset,
                 )
                 path.ee_pos_l[-2, :] = transform_and_offset(
-                    np.expand_dims(np.array(self.strokes[stroke_name_l].meter_coords[-1], dtype=np.float32), axis=0),
+                    np.expand_dims(self.strokes[stroke_name_l].meter_coords[-1], axis=0),
                     self.design_pos,
                     self.design_wxyz,
                     self.hover_offset,
@@ -309,20 +299,20 @@ class Plan:
                 # right arm pointer hits a stroke with an inkcap
                 # transform to design frame, add needle offset
                 path.ee_pos_r[2:-2, :] = transform_and_offset(
-                    np.array(self.strokes[stroke_name_r].meter_coords, dtype=np.float32),
+                    self.strokes[stroke_name_r].meter_coords,
                     self.design_pos,
                     self.design_wxyz,
                     self.needle_offset_r,
                 )
                 # add hover positions to start+1 and end-1
                 path.ee_pos_r[1, :] = transform_and_offset(
-                    np.expand_dims(np.array(self.strokes[stroke_name_r].meter_coords[0], dtype=np.float32), axis=0),
+                    np.expand_dims(self.strokes[stroke_name_r].meter_coords[0], axis=0),
                     self.design_pos,
                     self.design_wxyz,
                     self.hover_offset,
                 )
                 path.ee_pos_r[-2, :] = transform_and_offset(
-                    np.expand_dims(np.array(self.strokes[stroke_name_r].meter_coords[-1], dtype=np.float32), axis=0),
+                    np.expand_dims(self.strokes[stroke_name_r].meter_coords[-1], axis=0),
                     self.design_pos,
                     self.design_wxyz,
                     self.hover_offset,

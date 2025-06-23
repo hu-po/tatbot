@@ -3,7 +3,7 @@ from dataclasses import dataclass, asdict
 import dacite
 import jax.numpy as jnp
 import jax_dataclasses as jdc
-from jaxtyping import Array, Float, Int
+from jaxtyping import Array, Float
 import numpy as np
 from safetensors.flax import load_file, save_file
 import yaml
@@ -85,17 +85,17 @@ class Stroke:
     color: str | None = None
     """Natural language description of the color of the path."""
 
-    pixel_coords: list[list[int]] | None = None
-    """List of pixel coordinates for each pose in path <x (0-width), y (0-height)>."""
+    pixel_coords: np.ndarray | None = None
+    """Numpy array of pixel coordinates for each pose in path <x (0-width), y (0-height)>."""
 
-    meter_coords: list[list[float]] | None = None
-    """List of coordinates for each pose in path in meters <x, y, z>."""
-    meters_center: list[float] | None = None
+    meter_coords: np.ndarray | None = None
+    """Numpy array of coordinates for each pose in path in meters <x, y, z>."""
+    meters_center: np.ndarray | None = None
     """Center of Mass of the path in meters."""
 
-    norm_coords: list[list[float]] | None = None
-    """List of coordinates for each pose in path in normalized image coordinates <x (0-1), y (0-1)>."""
-    norm_center: list[float] | None = None
+    norm_coords: np.ndarray | None = None
+    """Numpy array of coordinates for each pose in path in normalized image coordinates <x (0-1), y (0-1)>."""
+    norm_center: np.ndarray | None = None
     """Center of Mass of the path in normalized image coordinates."""
 
     is_inkdip: bool = False
@@ -109,6 +109,8 @@ class Stroke:
     """Time taken to complete the path in seconds."""
 
     def __len__(self) -> int:
+        if self.pixel_coords is None:
+            return 0
         return len(self.pixel_coords)
 
     @classmethod

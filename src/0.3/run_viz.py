@@ -156,7 +156,6 @@ class Viz:
             render_height=self.plan.image_height_m,
         )
 
-
         log.debug(f"🖥️🖼️ Adding pointclouds...")
         points_hover = []
         points_path = []
@@ -226,7 +225,7 @@ class Viz:
             image_np = self.image_np.copy()
             # Draw the entire path in red (all drawing pixels, not hover)
             for stroke_idx, stroke in enumerate(self.plan.path_idx_to_strokes[self.path_idx]):
-                if stroke.pixel_coords:
+                if stroke.pixel_coords is not None:
                     for pw, ph in stroke.pixel_coords:
                         cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["red"], -1)
                     # Highlight path up until current pose in green
@@ -276,13 +275,14 @@ def make_pathviz_image(plan: Plan) -> np.ndarray:
     """Creates an image with overlayed paths from a plan."""
     image = plan.load_image_np()
     for stroke in plan.strokes.values():
-        path_indices = np.linspace(0, 255, len(stroke.pixel_coords), dtype=np.uint8)
-        colormap = cv2.applyColorMap(path_indices.reshape(-1, 1), cv2.COLORMAP_JET)
-        for path_idx in range(len(stroke.pixel_coords) - 1):
-            p1 = tuple(map(int, stroke.pixel_coords[path_idx]))
-            p2 = tuple(map(int, stroke.pixel_coords[path_idx + 1]))
-            color = colormap[path_idx][0].tolist()
-            cv2.line(image, p1, p2, color, 2)
+        if stroke.pixel_coords is not None:
+            path_indices = np.linspace(0, 255, len(stroke.pixel_coords), dtype=np.uint8)
+            colormap = cv2.applyColorMap(path_indices.reshape(-1, 1), cv2.COLORMAP_JET)
+            for path_idx in range(len(stroke.pixel_coords) - 1):
+                p1 = tuple(map(int, stroke.pixel_coords[path_idx]))
+                p2 = tuple(map(int, stroke.pixel_coords[path_idx + 1]))
+                color = colormap[path_idx][0].tolist()
+                cv2.line(image, p1, p2, color, 2)
     out_path = os.path.join(plan.dirpath, "pathviz.png")
     cv2.imwrite(out_path, image)
     return image
