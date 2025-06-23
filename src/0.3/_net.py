@@ -446,6 +446,5 @@ if __name__ == "__main__":
     print_config(args)
     if args.debug:
         log.setLevel(logging.DEBUG)
-
     manager = NetworkManager(args)
     manager.setup_network()

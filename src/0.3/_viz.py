@@ -1,10 +1,12 @@
 from dataclasses import dataclass
+import logging
 
 import viser
 from viser.extras import ViserUrdf
 
 from _bot import BotConfig, load_robot
-from _log import get_logger
+from _log import get_logger, setup_log_with_config, print_config
+
 log = get_logger('_viz')
 
 @dataclass
@@ -32,3 +34,11 @@ class BaseViz:
         log.debug(f"🖥️ Adding robot to viser from URDF at {bot_config.urdf_path}...")
         self.robot, self.ee_link_indices = load_robot(bot_config.urdf_path, bot_config.target_link_names)
         self.urdf = ViserUrdf(self.server, self.robot, root_node_name="/root")
+
+if __name__ == "__main__":
+    args = setup_log_with_config(BaseVizConfig)
+    print_config(args)
+    if args.debug:
+        log.setLevel(logging.DEBUG)
+    viz = BaseViz(args)
+    viz.server.run()
