@@ -55,8 +55,8 @@ class BaseViz:
 
 if __name__ == "__main__":
     args = setup_log_with_config(BaseVizConfig)
-    print_config(args)
     if args.debug:
         log.setLevel(logging.DEBUG)
+    print_config(args)
     viz = BaseViz(args)
     viz.run()

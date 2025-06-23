@@ -23,6 +23,7 @@ TODO: Create trossen_arm.StandardEndEffector.wxai_v0_tatbot_l and trossen_arm.St
 """
 
 from dataclasses import dataclass
+import logging
 import os
 
 import trossen_arm
@@ -33,6 +34,8 @@ log = get_logger('bot_config')
 
 @dataclass
 class TrossenConfig:
+    debug: bool = False
+    """Enable debug logging."""
     arm_l_ip: str = "192.168.1.3"
     """IP address of the left arm."""
     arm_l_ee: trossen_arm.StandardEndEffector = trossen_arm.StandardEndEffector.wxai_v0_base 
@@ -137,6 +140,9 @@ def configure_arm(filepath: str, ip: str, ee: trossen_arm.StandardEndEffector):
 
 if __name__=='__main__':
     args = setup_log_with_config(TrossenConfig)
+    if args.debug:
+        log.setLevel(logging.DEBUG)
+    print_config(args)
     log.debug("🎛️🦾 Configuring left arm")
     configure_arm(args.arm_l_config_filepath, args.arm_l_ip, args.arm_l_ee)
     log.debug("🎛️🦾 Configuring right arm")
