@@ -146,8 +146,7 @@ def configure_arm(filepath: str, ip: str, test_pose: list[float], test_tolerance
     print_configurations(driver)
     log.info(f"✅🎛️🦾 arm {ip} configured successfully")
     driver.set_all_modes(trossen_arm.Mode.position)
-    sleep_pose = driver.get_all_positions()
-    print(f"shape of sleep pose: {sleep_pose.shape}")
+    sleep_pose = driver.get_all_positions()[:7]
     log.info(f"🎛️🦾 sleep pose: {sleep_pose}")
     log.info(f"🎛️🦾 Testing arm {ip} with pose {test_pose}")
     driver.set_all_positions(
@@ -155,14 +154,14 @@ def configure_arm(filepath: str, ip: str, test_pose: list[float], test_tolerance
             goal_time=3.0,
             blocking=True,
         )
-    current_pose = driver.get_all_positions()
+    current_pose = driver.get_all_positions()[:7]
     assert np.allclose(current_pose, test_pose, atol=test_tolerance), f"❌🦾 current pose {current_pose} does not match test pose {test_pose}"
     driver.set_all_positions(
             trossen_arm.VectorDouble(sleep_pose),
             goal_time=3.0,
             blocking=True,
         )
-    current_pose = driver.get_all_positions()
+    current_pose = driver.get_all_positions()[:7]
     assert np.allclose(current_pose, sleep_pose, atol=test_tolerance), f"❌🦾 current pose {current_pose} does not match sleep pose {sleep_pose}"
     driver.set_all_modes(trossen_arm.Mode.idle)
 
