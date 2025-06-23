@@ -49,7 +49,7 @@ class TrossenConfig:
     """IP address of the right arm."""
     arm_r_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen_arm_r.yaml")
     """YAML file containing right arm config."""
-    test_pose_r: list[float] = field(default_factory=lambda: BotConfig().rest_pose[:7].tolist()) #8:-1].tolist())
+    test_pose_r: list[float] = field(default_factory=lambda: BotConfig().rest_pose[8:-1].tolist())
     """Test pose for the right arm."""
     test_tolerance: float = 0.1
     """Tolerance for the test pose."""
@@ -136,7 +136,7 @@ def configure_arm(filepath: str, ip: str, test_pose: list[float], test_tolerance
         trossen_arm.Model.wxai_v0, # model
         trossen_arm.StandardEndEffector.wxai_v0_base, # end_effector
         ip, # serv_ip
-        False # clear_error
+        True # clear_error
     )
     assert driver is not None, f"❌🦾 failed to connect to arm {ip}"
     print_configurations(driver)
