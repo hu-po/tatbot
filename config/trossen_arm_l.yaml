@@ -5,41 +5,41 @@ dns: 8.8.8.8
 gateway: 192.168.1.1
 subnet: 255.255.255.0
 joint_characteristics:
-  - effort_correction: 1.4806543588638306
-    friction_transition_velocity: 0
-    friction_constant_term: 0.019999999552965164
-    friction_coulomb_coef: 0.2683880925178528
-    friction_viscous_coef: 0.30923911929130554
-  - effort_correction: 1.2873475551605225
-    friction_transition_velocity: 0
+  - effort_correction: 1.100000023841858
+    friction_transition_velocity: 0.03999999910593033
     friction_constant_term: 0.23999999463558197
-    friction_coulomb_coef: 0.15188711881637573
-    friction_viscous_coef: 0.05997909605503082
-  - effort_correction: 1.3086028099060059
-    friction_transition_velocity: 0
-    friction_constant_term: 0.3100000023841858
-    friction_coulomb_coef: 0.11961762607097626
-    friction_viscous_coef: -0.1878223419189453
-  - effort_correction: 1.285477638244629
-    friction_transition_velocity: 0
-    friction_constant_term: -0.03999999910593033
-    friction_coulomb_coef: 0.017903614789247513
-    friction_viscous_coef: 0.021309087052941322
-  - effort_correction: 1.1643311977386475
-    friction_transition_velocity: 0
-    friction_constant_term: 0
-    friction_coulomb_coef: 0.052614640444517136
-    friction_viscous_coef: 0.030950793996453285
-  - effort_correction: 1.2000000476837158
-    friction_transition_velocity: 0
-    friction_constant_term: 0.019999999552965164
     friction_coulomb_coef: 0
-    friction_viscous_coef: 0.02139633521437645
-  - effort_correction: 1.2000000476837158
-    friction_transition_velocity: 0
-    friction_constant_term: 7.329999923706055
+    friction_viscous_coef: 0
+  - effort_correction: 1.100000023841858
+    friction_transition_velocity: 0.03999999910593033
+    friction_constant_term: 0.07999999821186066
+    friction_coulomb_coef: 0.10000000149011612
+    friction_viscous_coef: 0
+  - effort_correction: 1.100000023841858
+    friction_transition_velocity: 0.03999999910593033
+    friction_constant_term: 0.1599999964237213
+    friction_coulomb_coef: 0.11999999731779099
+    friction_viscous_coef: 0
+  - effort_correction: 1.25
+    friction_transition_velocity: 0.009999999776482582
+    friction_constant_term: -0.009999999776482582
+    friction_coulomb_coef: 0.019999999552965164
+    friction_viscous_coef: 0
+  - effort_correction: 1.149999976158142
+    friction_transition_velocity: 0.009999999776482582
+    friction_constant_term: 0.03999999910593033
+    friction_coulomb_coef: 0.019999999552965164
+    friction_viscous_coef: 0
+  - effort_correction: 1.149999976158142
+    friction_transition_velocity: 0.009999999776482582
+    friction_constant_term: 0.05999999865889549
     friction_coulomb_coef: 0
-    friction_viscous_coef: 118.87408447265625
+    friction_viscous_coef: 0
+  - effort_correction: 1.149999976158142
+    friction_transition_velocity: 9.999999747378752e-05
+    friction_constant_term: 7
+    friction_coulomb_coef: 0
+    friction_viscous_coef: 0
 modes:
   - idle
   - idle
@@ -50,67 +50,67 @@ modes:
   - idle
 end_effector:
   palm:
-    mass: 0.5378000140190125
+    mass: 0.5957000255584717
     inertia:
-      - 0.0007991900201886892
-      - -4.899999908047903e-07
-      - 1.0000000116860974e-07
-      - -4.899999908047903e-07
-      - 0.0004727400082629174
-      - 3.999999975690116e-08
-      - 1.0000000116860974e-07
-      - 3.999999975690116e-08
-      - 0.0010529300197958946
+      - 0.0011765300296247005
+      - -4.0000000467443897e-07
+      - -5.492000127560459e-05
+      - -4.0000000467443897e-07
+      - 0.0008569600176997483
+      - 7.400000185953104e-07
+      - -5.492000127560459e-05
+      - 7.400000185953104e-07
+      - 0.0010768499923869967
     origin_xyz:
-      - 0.0457276813685894
-      - -7.260000074893469e-06
-      - 1.401999998051906e-05
+      - 0.044543880969285965
+      - 5.060000148660038e-06
+      - -0.006941500119864941
     origin_rpy:
       - 0
       - 0
       - 0
   finger_left:
-    mass: 0.059450000524520874
+    mass: 0.06379999965429306
     inertia:
-      - 1.8750000890577212e-05
-      - 3.0900000638212077e-06
-      - -1.4900000451234519e-06
-      - 3.0900000638212077e-06
-      - 2.6140000045415945e-05
-      - -1.2399999604895129e-06
-      - -1.4900000451234519e-06
-      - -1.2399999604895129e-06
-      - 2.995000068040099e-05
+      - 3.555999865056947e-05
+      - -2.4900000425986946e-06
+      - 1.6699999605407356e-06
+      - -2.4900000425986946e-06
+      - 2.700000004551839e-05
+      - 2.170000016121776e-06
+      - 1.6699999605407356e-06
+      - 2.170000016121776e-06
+      - 1.725999936752487e-05
     origin_xyz:
-      - 0.0016901600174605846
-      - -0.00592795992270112
-      - -0.003657009918242693
+      - -0.004235799890011549
+      - -0.0016754099633544683
+      - -0.0105080995708704
     origin_rpy:
       - 0
       - 0
       - 0
   finger_right:
-    mass: 0.059450000524520874
+    mass: 0.06379999965429306
     inertia:
-      - 1.9299999621580355e-05
-      - -3.0900000638212077e-06
-      - 3.5900000057154102e-06
-      - -3.0900000638212077e-06
-      - 2.6699999580159783e-05
-      - -6.399999961104186e-07
-      - 3.5900000057154102e-06
-      - -6.399999961104186e-07
-      - 2.995000068040099e-05
+      - 4.133000038564205e-05
+      - 2.499999936844688e-06
+      - 5.169999894860666e-06
+      - 2.499999936844688e-06
+      - 3.276999996160157e-05
+      - -5.920000148762483e-06
+      - 5.169999894860666e-06
+      - -5.920000148762483e-06
+      - 1.7270000171265565e-05
     origin_xyz:
-      - 0.0016901500057429075
-      - 0.005927930120378733
-      - 0.002018179977312684
+      - -0.004233090206980705
+      - 0.0016737299738451838
+      - -0.004510870203375816
     origin_rpy:
       - 0
       - 0
       - 0
-  offset_finger_left: 0.022700000554323196
-  offset_finger_right: -0.022700000554323196
+  offset_finger_left: 0.017899999395012856
+  offset_finger_right: -0.017899999395012856
   pitch_circle_radius: 0.008750000037252903
   t_flange_tool:
     - 0.156062
