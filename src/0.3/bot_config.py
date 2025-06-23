@@ -11,8 +11,9 @@ Download latest firmware:
 
 https://docs.trossenrobotics.com/trossen_arm/main/downloads.html
 
-> unzip firmware-wxai_v0.zip
-> teensy_loader_cli --mcu=TEENSY41 -s firmware-wxai_v0.hex
+> cd ~/Downloads && wget <get link from above>
+> unzip firmware-wxai_v0- <version>.zip
+> teensy_loader_cli --mcu=TEENSY41 -s firmware-wxai_v0- <version>.hex
 
 TODO: Set the velocity_tolerance to 0.2 times the velocity max
 https://docs.trossenrobotics.com/trossen_arm/main/getting_started/configuration.html#joint-limits
@@ -48,7 +49,7 @@ class TrossenConfig:
     """IP address of the right arm."""
     arm_r_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen_arm_r.yaml")
     """YAML file containing right arm config."""
-    test_pose_r: list[float] = field(default_factory=lambda: BotConfig().rest_pose[8:-1].tolist())
+    test_pose_r: list[float] = field(default_factory=lambda: BotConfig().rest_pose[:7].tolist()) #8:-1].tolist())
     """Test pose for the right arm."""
     test_tolerance: float = 0.1
     """Tolerance for the test pose."""
