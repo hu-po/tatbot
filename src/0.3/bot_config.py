@@ -121,8 +121,8 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
     log.debug("  singularity threshold:", algorithm_parameter.singularity_threshold)
 
 def configure_arm(filepath: str, ip: str):
-    driver = trossen_arm.TrossenArmDriver(config=filepath)
     assert os.path.exists(filepath), f"❌📄 yaml file does not exist: {filepath}"
+    driver = trossen_arm.TrossenArmDriver()
     driver.configure(
         trossen_arm.Model.wxai_v0, # model
         trossen_arm.StandardEndEffector.wxai_v0_base, # end_effector
