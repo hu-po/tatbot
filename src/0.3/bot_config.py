@@ -48,7 +48,7 @@ class TrossenConfig:
     """IP address of the right arm."""
     arm_r_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen_arm_r.yaml")
     """YAML file containing right arm config."""
-    test_pose_r: list[float] = field(default_factory=lambda: BotConfig().rest_pose[8:].tolist())
+    test_pose_r: list[float] = field(default_factory=lambda: BotConfig().rest_pose[8:-1].tolist())
     """Test pose for the right arm."""
     test_tolerance: float = 0.1
     """Tolerance for the test pose."""
