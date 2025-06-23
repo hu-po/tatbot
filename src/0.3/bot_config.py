@@ -120,7 +120,7 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
     log.debug("Algorithm parameter:")
     log.debug("  singularity threshold:", algorithm_parameter.singularity_threshold)
 
-def configure_arm(filepath: str, ip: str, ee: trossen_arm.StandardEndEffector):
+def configure_arm(filepath: str, ip: str):
     driver = trossen_arm.TrossenArmDriver(config=filepath)
     assert os.path.exists(filepath), f"❌📄 yaml file does not exist: {filepath}"
     driver.configure(
@@ -145,6 +145,6 @@ if __name__=='__main__':
         log.setLevel(logging.DEBUG)
     print_config(args)
     log.debug("🎛️🦾 Configuring left arm")
-    configure_arm(args.arm_l_config_filepath, args.arm_l_ip, args.arm_l_ee)
+    configure_arm(args.arm_l_config_filepath, args.arm_l_ip)
     log.debug("🎛️🦾 Configuring right arm")
-    configure_arm(args.arm_r_config_filepath, args.arm_r_ip, args.arm_r_ee)
+    configure_arm(args.arm_r_config_filepath, args.arm_r_ip)
