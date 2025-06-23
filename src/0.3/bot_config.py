@@ -132,19 +132,21 @@ def configure_arm(filepath: str, ip: str):
     assert driver is not None, f"❌🦾 failed to connect to arm {ip}"
     print_configurations(driver)
     driver.save_configs_to_file(filepath)
-    log.debug(f"✅🎛️📄 saved config to {filepath}")
+    log.info(f"✅🎛️📄 saved config to {filepath}")
     driver.load_configs_from_file(filepath)
-    log.debug(f"✅🎛️📄 loaded config from {filepath}")
+    log.info(f"✅🎛️📄 loaded config from {filepath}")
     print_configurations(driver)
-    log.debug(f"✅🎛️🦾 arm {ip} configured successfully")
+    log.info(f"✅🎛️🦾 arm {ip} configured successfully")
 
 
 if __name__=='__main__':
     args = setup_log_with_config(TrossenConfig)
+    # TODO: waiting on https://github.com/TrossenRobotics/trossen_arm/issues/86#issue-3144375498
+    logging.getLogger('trossen_arm').setLevel(logging.ERROR)
     if args.debug:
         log.setLevel(logging.DEBUG)
     print_config(args)
-    log.debug("🎛️🦾 Configuring left arm")
+    log.info("🎛️🦾 Configuring left arm")
     configure_arm(args.arm_l_config_filepath, args.arm_l_ip)
-    log.debug("🎛️🦾 Configuring right arm")
+    log.info("🎛️🦾 Configuring right arm")
     configure_arm(args.arm_r_config_filepath, args.arm_r_ip)

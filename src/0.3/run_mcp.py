@@ -228,9 +228,9 @@ def poweroff_nodes(nodes: Optional[List[str]] = None) -> str:
     
     return "\n".join(sorted(report))
 
-@mcp.tool(description="Test remote logging of whoami and env on rpi1.")
+@mcp.tool(description="Test launching Chromium for viz on rpi1, with full logging for debugging.")
 def turn_on_viz() -> str:
-    log.info(f"🔌 Testing remote logging of whoami and env on rpi1 node")
+    log.info(f"🔌 Testing Chromium launch for viz on rpi1 node, with full logging")
 
     rpi1_node = next((n for n in net.nodes if n.name == "rpi1"), None)
     if not rpi1_node:
@@ -246,17 +246,22 @@ def turn_on_viz() -> str:
             "echo whoami: > ~/chromium-viz.log && "
             "whoami >> ~/chromium-viz.log && "
             "echo env: >> ~/chromium-viz.log && "
-            "env >> ~/chromium-viz.log "
+            "env >> ~/chromium-viz.log && "
+            "echo exporting display... >> ~/chromium-viz.log && "
+            "export DISPLAY=:0 && "
+            "export XAUTHORITY=/home/rpi1/.Xauthority && "
+            "echo launching chromium... >> ~/chromium-viz.log && "
+            "setsid chromium-browser --kiosk http://localhost:8080 >> ~/chromium-viz.log 2>&1 & "
             "'"
         )
         exit_code, out, err = net._run_remote_command(client, command, timeout=30)
         client.close()
         if exit_code == 0:
-            return f"✅ rpi1: Logging command executed.\n{out}"
+            return f"✅ rpi1: Chromium launch command executed.\n{out}"
         else:
-            return f"❌ rpi1: Logging command failed.\n{err}"
+            return f"❌ rpi1: Chromium launch command failed.\n{err}"
     except Exception as e:
-        log.error(f"Failed to run logging command on rpi1: {e}")
+        log.error(f"Failed to run Chromium launch command on rpi1: {e}")
         return f"❌ rpi1: Exception occurred: {str(e)}"
 
 def run_mcp(config: MCPConfig):
