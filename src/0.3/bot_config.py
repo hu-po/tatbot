@@ -22,7 +22,7 @@ https://docs.trossenrobotics.com/trossen_arm/main/api/structtrossen__arm_1_1EndE
 TODO: Create trossen_arm.StandardEndEffector.wxai_v0_tatbot_l and trossen_arm.StandardEndEffector.wxai_v0_tatbot_r
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import os
 
@@ -42,13 +42,13 @@ class TrossenConfig:
     """IP address of the left arm."""
     arm_l_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen_arm_l.yaml")
     """YAML file containing left arm config."""
-    test_pose_l: np.ndarray = BotConfig().rest_pose[:7]
+    test_pose_l: np.ndarray = field(default_factory=lambda: BotConfig().rest_pose[:7])
     """Test pose for the left arm."""
     arm_r_ip: str = "192.168.1.2"
     """IP address of the right arm."""
     arm_r_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen_arm_r.yaml")
     """YAML file containing right arm config."""
-    test_pose_r: np.ndarray = BotConfig().rest_pose[8:]
+    test_pose_r: np.ndarray = field(default_factory=lambda: BotConfig().rest_pose[8:])
     """Test pose for the right arm."""
 
 def print_configurations(driver: trossen_arm.TrossenArmDriver):
