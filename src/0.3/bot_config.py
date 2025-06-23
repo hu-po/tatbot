@@ -26,8 +26,10 @@ from dataclasses import dataclass
 import logging
 import os
 
+import numpy as np
 import trossen_arm
 
+from _bot import BotConfig
 from _log import setup_log_with_config, get_logger, print_config
 
 log = get_logger('bot_config')
@@ -40,10 +42,14 @@ class TrossenConfig:
     """IP address of the left arm."""
     arm_l_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen_arm_l.yaml")
     """YAML file containing left arm config."""
+    test_pose_l: np.ndarray = BotConfig().rest_pose[:7]
+    """Test pose for the left arm."""
     arm_r_ip: str = "192.168.1.2"
     """IP address of the right arm."""
     arm_r_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen_arm_r.yaml")
     """YAML file containing right arm config."""
+    test_pose_r: np.ndarray = BotConfig().rest_pose[8:]
+    """Test pose for the right arm."""
 
 def print_configurations(driver: trossen_arm.TrossenArmDriver):
     log.debug("EEPROM factory reset flag:", driver.get_factory_reset_flag())
@@ -120,7 +126,7 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
     log.debug("Algorithm parameter:")
     log.debug("  singularity threshold:", algorithm_parameter.singularity_threshold)
 
-def configure_arm(filepath: str, ip: str):
+def configure_arm(filepath: str, ip: str, test_pose: list[float]):
     assert os.path.exists(filepath), f"❌📄 yaml file does not exist: {filepath}"
     driver = trossen_arm.TrossenArmDriver()
     driver.configure(
@@ -137,7 +143,23 @@ def configure_arm(filepath: str, ip: str):
     log.info(f"✅🎛️📄 loaded config from {filepath}")
     print_configurations(driver)
     log.info(f"✅🎛️🦾 arm {ip} configured successfully")
-
+    driver.set_all_modes(trossen_arm.Mode.position)
+    sleep_pose = driver.get_all_positions()
+    log.info(f"🎛️🦾 sleep pose: {sleep_pose}")
+    log.info(f"🎛️🦾 Testing arm {ip} with pose {test_pose}")
+    driver.set_all_positions(
+            trossen_arm.VectorDouble(test_pose),
+            goal_time=3.0,
+            blocking=True,
+        )
+    assert np.allclose(driver.get_all_positions(), test_pose), f"❌🦾 new pose {new_pose} does not match test pose {test_pose}"
+    driver.set_all_positions(
+            trossen_arm.VectorDouble(sleep_pose),
+            goal_time=3.0,
+            blocking=True,
+        )
+    assert np.allclose(driver.get_all_positions(), sleep_pose), f"❌🦾 sleep pose {sleep_pose} does not match current pose {driver.get_all_positions()}"
+    driver.set_all_modes(trossen_arm.Mode.idle)
 
 if __name__=='__main__':
     args = setup_log_with_config(TrossenConfig)
@@ -147,6 +169,6 @@ if __name__=='__main__':
         log.setLevel(logging.DEBUG)
     print_config(args)
     log.info("🎛️🦾 Configuring left arm")
-    configure_arm(args.arm_l_config_filepath, args.arm_l_ip)
+    configure_arm(args.arm_l_config_filepath, args.arm_l_ip, args.test_pose_l)
     log.info("🎛️🦾 Configuring right arm")
-    configure_arm(args.arm_r_config_filepath, args.arm_r_ip)
+    configure_arm(args.arm_r_config_filepath, args.arm_r_ip, args.test_pose_r)

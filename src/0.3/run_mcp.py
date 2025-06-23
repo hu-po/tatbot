@@ -38,7 +38,10 @@ import concurrent.futures
 from dataclasses import dataclass
 import json
 import logging
+import os
+import re
 from typing import List, Optional
+import time
 
 from mcp.server.fastmcp import FastMCP
 
@@ -294,6 +297,120 @@ def turn_on_viz() -> str:
     except Exception as e:
         log.error(f"Failed to run viz script on rpi1: {e}")
         return f"❌ rpi1: Exception occurred: {str(e)}"
+
+@mcp.tool(description="Runs a scan on trossen-ai using bot_scan.py, then copies the resulting output directory to the local node, rpi1, and ook.")
+def run_robot_scan() -> str:
+    """
+    1. Updates the tatbot repo and uv venv on trossen-ai.
+    2. Runs `uv run bot_scan.py` on trossen-ai.
+    3. Finds the new scan output directory (scan-<timestamp>).
+    4. Copies the directory from trossen-ai to the local node.
+    5. Distributes the directory to rpi1 and ook using transfer_files_to_nodes.
+    """
+    # Step 1: Prepare trossen-ai node
+    trossen_node = next((n for n in net.nodes if n.name == "trossen-ai"), None)
+    if not trossen_node:
+        return "❌ trossen-ai node not found in configuration."
+    if net.is_local_node(trossen_node):
+        return "❌ trossen-ai is the local node; this function is intended for remote execution."
+
+    remote_output_dir = "~/tatbot/output/record"
+    scan_dir_pattern = r"scan-\d{4}y-\d{2}m-\d{2}d-\d{2}h-\d{2}m-\d{2}s"
+
+    try:
+        client = net.get_ssh_client(trossen_node.ip, trossen_node.user)
+        # --- Update repo and venv ---
+        update_cmd = (
+            "export PATH=\"$HOME/.local/bin:$PATH\" && "
+            "git -C ~/tatbot pull && "
+            "cd ~/tatbot/src/0.3 && "
+            "deactivate >/dev/null 2>&1 || true && "
+            "rm -rf .venv && "
+            "rm -f uv.lock && "
+            "uv venv && "
+            f"uv pip install '{trossen_node.deps}'"
+        )
+        exit_code, out, err = net._run_remote_command(client, update_cmd, timeout=300)
+        if exit_code != 0:
+            client.close()
+            return f"❌ Update failed on trossen-ai.\n{err or out}"
+
+        # List scan directories before
+        pre_cmd = f"ls -1 {remote_output_dir}"
+        _, pre_out, _ = net._run_remote_command(client, pre_cmd)
+        pre_dirs = set(re.findall(scan_dir_pattern, pre_out))
+
+        # --- Run the scan ---
+        scan_cmd = (
+            f"export PATH=\"$HOME/.local/bin:$PATH\" && "
+            f"cd ~/tatbot/src/0.3 && "
+            f"[ -f .env ] && set -a && . .env && set +a; "
+            f"uv run bot_scan.py"
+        )
+        exit_code, scan_out, scan_err = net._run_remote_command(client, scan_cmd, timeout=600)
+        if exit_code != 0:
+            client.close()
+            return f"❌ Scan failed on trossen-ai.\n{scan_err or scan_out}"
+
+        # List scan directories after
+        _, post_out, _ = net._run_remote_command(client, pre_cmd)
+        post_dirs = set(re.findall(scan_dir_pattern, post_out))
+        client.close()
+
+        new_dirs = post_dirs - pre_dirs
+        if not new_dirs:
+            return "❌ Could not find new scan output directory after running scan."
+        # If multiple, pick the most recent (sorted by name, which is time-based)
+        scan_dir = sorted(new_dirs)[-1]
+        remote_scan_path = f"/home/{trossen_node.user}/tatbot/output/record/{scan_dir}"
+        local_scan_path = os.path.expanduser(f"~/tatbot/output/record/{scan_dir}")
+
+        # Step 2: Copy directory from trossen-ai to local node
+        def sftp_get_dir(client, remote_dir, local_dir):
+            import stat
+            sftp = client.open_sftp()
+            os.makedirs(local_dir, exist_ok=True)
+            for entry in sftp.listdir_attr(remote_dir):
+                rpath = remote_dir + "/" + entry.filename
+                lpath = os.path.join(local_dir, entry.filename)
+                if stat.S_ISDIR(entry.st_mode):
+                    sftp_get_dir(client, rpath, lpath)
+                else:
+                    sftp.get(rpath, lpath)
+            sftp.close()
+
+        client = net.get_ssh_client(trossen_node.ip, trossen_node.user)
+        try:
+            sftp_get_dir(client, remote_scan_path, local_scan_path)
+        except Exception as e:
+            client.close()
+            return f"❌ Failed to copy scan directory from trossen-ai: {e}"
+        client.close()
+
+        # Step 3: Distribute to rpi1 and ook
+        import tarfile
+        tar_path = local_scan_path + ".tar.gz"
+        with tarfile.open(tar_path, "w:gz") as tar:
+            tar.add(local_scan_path, arcname=scan_dir)
+        net.transfer_files_to_nodes(
+            local_path=tar_path,
+            remote_path=f"~/tatbot/output/record/{scan_dir}.tar.gz",
+            node_names=["rpi1", "ook"],
+            direction="put",
+        )
+        untar_cmd = f"mkdir -p ~/tatbot/output/record && tar -xzf ~/tatbot/output/record/{scan_dir}.tar.gz -C ~/tatbot/output/record"
+        net.run_command_on_nodes(untar_cmd, node_names=["rpi1", "ook"])
+        cleanup_cmd = f"rm -f ~/tatbot/output/record/{scan_dir}.tar.gz"
+        net.run_command_on_nodes(cleanup_cmd, node_names=["rpi1", "ook"])
+        try:
+            os.remove(tar_path)
+        except Exception:
+            pass
+
+        return f"✅ Scan complete. Output directory: {scan_dir}\nUpdated, scanned, and copied to local, rpi1, and ook."
+    except Exception as e:
+        log.error(f"scan_and_distribute failed: {e}")
+        return f"❌ scan_and_distribute failed: {e}"
 
 def run_mcp(config: MCPConfig):
     log.info("🔌 Starting MCP server")

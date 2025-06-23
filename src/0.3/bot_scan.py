@@ -34,7 +34,7 @@ class BotScanConfig:
     """Display data on screen using Rerun."""
     output_dir: str = os.path.expanduser("~/tatbot/output/record")
     """Directory to save the dataset."""
-    push_to_hub: bool = True
+    push_to_hub: bool = False
     """Push the dataset to the Hugging Face Hub."""
     tags: tuple[str, ...] = ("tatbot", "wxai", "trossen")
     """Tags to add to the dataset on Hugging Face."""
@@ -55,7 +55,7 @@ class BotScanConfig:
     """Whether to push the dataset to a private repository."""
     fps: int = 5
     """Frames per second."""
-    num_steps: int = 3
+    num_steps: int = 2
     """Number of steps to perform in one scan."""
 
 def record_scan(config: BotScanConfig):
