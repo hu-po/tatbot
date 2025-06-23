@@ -28,7 +28,7 @@ import os
 
 import trossen_arm
 
-from _log import setup_log_with_config, get_logger
+from _log import setup_log_with_config, get_logger, print_config
 
 log = get_logger('bot_config')
 
