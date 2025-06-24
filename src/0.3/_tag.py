@@ -3,8 +3,8 @@ from typing import List
 import time
 
 import cv2
+import jax.numpy as jnp
 import jaxlie
-import jaxlie.numpy as jnp
 import numpy as np
 import pupil_apriltags as apriltag
 

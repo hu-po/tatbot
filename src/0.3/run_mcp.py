@@ -87,7 +87,8 @@ def update_nodes(nodes: Optional[List[str]] = None, timeout: float = 300.0) -> s
                 "rm -rf .venv && "
                 "rm -f uv.lock && "
                 "uv venv && "
-                f"uv pip install '{node.deps}'"
+                "uv pip install . && "
+                f"uv pip install {node.deps}"
             )
             exit_code, out, err = net._run_remote_command(client, command, timeout=timeout)
             client.close()
