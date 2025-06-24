@@ -43,9 +43,6 @@ class Plan:
     image_height_px: int | None = None
     """Height of the image in pixels."""
 
-    bot_config: BotConfig = field(default_factory=BotConfig)
-    """Bot configuration."""
-
     ik_batch_size: int = 256
     """Batch size for IK computation."""
     path_length: int = 64
@@ -361,7 +358,7 @@ class Plan:
                 paths[p_idx].joints[pose_idx] = np.asarray(joints, dtype=np.float32)
 
         # HACK: the right arm of the very first path should be at rest while left arm is ink dipping
-        paths[0].joints[:, 8:] = np.tile(self.bot_config.rest_pose[8:], (self.path_length, 1))
+        paths[0].joints[:, 8:] = np.tile(BotConfig().rest_pose[8:], (self.path_length, 1))
 
         pathbatch = PathBatch.from_paths(paths)
         self.save_pathbatch(pathbatch)

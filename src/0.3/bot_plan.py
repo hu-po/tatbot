@@ -15,7 +15,7 @@ from lerobot.common.utils.control_utils import (
 from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.record import _init_rerun
 
-from _bot import urdf_joints_to_action, safe_loop
+from _bot import urdf_joints_to_action, safe_loop, BotConfig
 from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT, LOG_FORMAT
 from _plan import Plan
 
@@ -136,6 +136,10 @@ def record_plan(config: BotPlanConfig):
         if path_idx >= config.max_episodes:
             log.info(f"🤖⚠️ max episodes {config.max_episodes} exceeded, breaking...")
             break
+
+        # start with rest pose
+        log.debug(f"🤖 sending arms to rest pose")
+        robot.send_action(urdf_joints_to_action(BotConfig().rest_pose), goal_time=plan.path_dt_slow, block="left")
 
         log.info(f"🤖 recording path {path_idx} of {num_paths}")
         path_len = path_lengths[path_idx]

@@ -22,6 +22,9 @@ class BaseVizConfig:
     view_camera_look_at: tuple[float, float, float] = (0.0, 0.0, 0.0)
     """Initial camera look_at in the Viser scene."""
 
+    speed: float = 1.0
+    """Speed multipler for visualization."""
+
 class BaseViz:
     def __init__(self, config: BaseVizConfig, bot_config: BotConfig = BotConfig()):
         self.config = config
@@ -42,6 +45,15 @@ class BaseViz:
         self.joints = self.bot_config.rest_pose.copy()
         self.robot_at_rest: bool = True
 
+        self.step_sleep = 1.0 / 30.0 # 30 fps
+        self.speed_slider = self.server.gui.add_slider(
+            "speed",
+            min=0.1,
+            max=100.0,
+            step=0.1,
+            initial_value=self.config.speed,
+        )
+
     def step(self):
         log.info("🖥️ Empty step function, implement in subclass...")
         pass
@@ -53,6 +65,7 @@ class BaseViz:
             self.urdf.update_cfg(self.joints)
             self.step()
             log.debug(f"🖥️ step time: {time.time() - start_time:.4f}s")
+            time.sleep(self.step_sleep / self.speed_slider.value)
 
 if __name__ == "__main__":
     args = setup_log_with_config(BaseVizConfig)

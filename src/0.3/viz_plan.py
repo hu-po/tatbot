@@ -15,9 +15,6 @@ log = get_logger('viz_plan')
 
 @dataclass
 class VizPlanConfig(BaseVizConfig):
-    debug: bool = False
-    """Enable debug logging."""
-
     plan_dir: str = os.path.expanduser("~/tatbot/output/plans/bench")
     """Directory containing plan."""
 
@@ -30,9 +27,6 @@ class VizPlanConfig(BaseVizConfig):
     """Radius of the path highlight in pixels."""
     pose_highlight_radius: int = 6
     """Radius of the pose highlight in pixels."""
-
-    speed: float = 1.0
-    """Speed multipler for visualization."""
 
 class VizPlan(BaseViz):
     def __init__(self, config: VizPlanConfig):
@@ -89,13 +83,6 @@ class VizPlan(BaseViz):
                 max=self.plan.path_length - 1,
                 step=1,
                 initial_value=0,
-            )
-            self.speed_slider = self.server.gui.add_slider(
-                "speed",
-                min=0.1,
-                max=100.0,
-                step=0.1,
-                initial_value=self.config.speed,
             )
         
 
@@ -238,13 +225,12 @@ class VizPlan(BaseViz):
             log.debug(f"🖥️ Sending robot to rest pose")
             self.joints = self.bot_config.rest_pose.copy()
             self.robot_at_rest = True
-            _step_time = self.plan.path_dt_slow
+            self.step_sleep = self.plan.path_dt_slow
         else:
             self.joints = np.asarray(self.pathbatch.joints[self.path_idx, self.pose_idx], dtype=np.float64).flatten()
             self.robot_at_rest = False
             self.pose_idx += 1
-            _step_time = float(self.pathbatch.dt[self.path_idx, self.pose_idx].item())
-        time.sleep(_step_time / self.speed_slider.value)
+            self.step_sleep = float(self.pathbatch.dt[self.path_idx, self.pose_idx].item())
 
 
 def make_pathviz_image(plan: Plan) -> np.ndarray:
