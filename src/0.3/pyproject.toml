@@ -45,16 +45,13 @@ bot = [
     "lerobot[tatbot,intelrealsense,smolvla] @ git+https://github.com/hu-po/lerobot.git@main",
     "pyrealsense2==2.55.1.6486",
     "trossen-arm==1.8.3",
+    "pupil-apriltags==1.0.4.post11",
 ]
 gen = [
     "jax[cuda12]>=0.4.0,<0.5.0",
     "networkx==3.5",
     "replicate==1.0.7",
     "scikit-image==0.25.2",
-]
-tag = [
-    "ffmpeg-python==0.2.0",
-    "pupil-apriltags==1.0.4.post11",
 ]
 viz = [
     "viser==0.2.23",
