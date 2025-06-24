@@ -41,7 +41,7 @@ class Scan:
     camera4_urdf_link_name: str = ""
     camera5_urdf_link_name: str = ""
 
-    intrinsics: dict[str, CameraIntrinsics] = field(default_factory={
+    intrinsics: dict[str, CameraIntrinsics] = field(default_factory=lambda: {
         "realsense1": CameraIntrinsics(),
         "realsense2": CameraIntrinsics(),
         "camera1": CameraIntrinsics(),
