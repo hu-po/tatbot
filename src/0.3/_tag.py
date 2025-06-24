@@ -2,8 +2,9 @@ from dataclasses import dataclass
 import logging
 
 import pupil_apriltags as apriltag
+import pyrealsense2 as rs
 
-from _log import get_logger, setup_log_with_config, print_config
+from _log import get_logger
 
 log = get_logger('_tag')
 
@@ -14,8 +15,8 @@ class TagConfig:
     apriltag_size_m: float = 0.041
     """Size of AprilTags: distance between detection corners (meters)."""
     apriltags: dict[int, str] = {
-        9: "workspace",
-        10: "palette",
+        9: "palette",
+        10: "origin",
         11: "skin",
     }
     """ AprilTag ID : Name mapping """
@@ -73,10 +74,3 @@ def track_tags(config: TagConfig):
                 frame.wxyz = np.array(wxyz)
         apriltags_elapsed_time = time.time() - apriltags_start_time
         apriltag_duration_ms.value = apriltags_elapsed_time * 1000
-
-if __name__ == "__main__":
-    args = setup_log_with_config(TagConfig)
-    if args.debug:
-        log.setLevel(logging.DEBUG)
-    print_config(args)
-    track_tags(args)

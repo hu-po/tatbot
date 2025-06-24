@@ -120,9 +120,9 @@ class Stroke:
         return [dacite.from_dict(cls, p) for p in data]
 
     @staticmethod
-    def to_yaml(pathmetas: list["Stroke"], filepath: str):
+    def to_yaml(strokes: list["Stroke"], filepath: str):
         with open(filepath, "w") as f:
-            yaml.safe_dump([asdict(p) for p in pathmetas], f)
+            yaml.safe_dump([asdict(p) for p in strokes], f)
 
 def _represent_numpy(dumper: yaml.SafeDumper, data: np.ndarray) -> yaml.nodes.Node:
     return dumper.represent_list(data.tolist())

@@ -92,7 +92,7 @@ class Plan:
 
     @classmethod
     def from_yaml(cls, dirpath: str) -> "Plan":
-        log.info(f"⚙️ Loading plan from {dirpath}...")
+        log.info(f"⚙️💾 Loading plan from {dirpath}...")
         filepath = os.path.join(dirpath, METADATA_FILENAME)
         with open(filepath, "r") as f:
             data = yaml.safe_load(f)
