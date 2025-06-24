@@ -330,6 +330,24 @@ class Plan:
             self.path_idx_to_strokes.append([stroke_l, stroke_r])
             paths.append(path)
 
+        # HACK: add one path at the beginning where left arm is centered over design and right arm is centered over black inkcap
+        # twice the hover offset
+        path = Path.empty(self.path_length)
+        path.ee_pos_l = transform_and_offset(
+            np.zeros((self.path_length, 3)),
+            self.design_pos,
+            self.design_wxyz,
+            self.hover_offset,
+        )
+        path.ee_pos_r = transform_and_offset(
+            np.zeros((self.path_length, 3)),
+            self.design_pos,
+            self.design_wxyz,
+            self.hover_offset,
+        )
+        paths.insert(0, path)
+
+
         # Perform IK in batches (batch size will be hardware specific)
         flat_target_pos   : list[list[np.ndarray]] = []
         flat_target_wxyz  : list[list[np.ndarray]] = []
