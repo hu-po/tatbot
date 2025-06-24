@@ -8,7 +8,7 @@ import yaml
 from _bot import BotConfig
 from _ink import InkConfig
 from _log import get_logger
-from _tag import TagConfig, TagTracker
+from _tag import TagConfig
 
 log = get_logger('_scan')
 
@@ -87,7 +87,3 @@ class Scan:
         scan.tag_config = TagConfig.from_yaml(os.path.join(dirpath, TAG_CONFIG_FILENAME))
         scan.dirpath = dirpath
         return scan
-    
-    def ingest_scan_dataset(self, dataset_dir: str):
-        log.info(f"📡💾 Ingesting scan dataset from {dataset_dir}...")
-        tag_tracker = TagTracker(self.tag_config)
