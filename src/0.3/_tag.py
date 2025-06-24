@@ -5,10 +5,10 @@ import pupil_apriltags as apriltag
 
 from _log import get_logger, setup_log_with_config, print_config
 
-log = get_logger('run_tag')
+log = get_logger('_tag')
 
 @dataclass
-class RunTagConfig:
+class TagConfig:
     apriltag_family: str = "tag16h5"
     """Family of AprilTags to use."""
     apriltag_size_m: float = 0.041
@@ -22,7 +22,7 @@ class RunTagConfig:
     apriltag_decision_margin: float = 20.0
     """Minimum decision margin for AprilTag detection filtering."""
 
-def track_tags(config: RunTagConfig):
+def track_tags(config: TagConfig):
     log.info("🏷️ Adding AprilTags...")
     detector = apriltag.Detector(
         # TODO: tune the apriltag params
@@ -75,7 +75,7 @@ def track_tags(config: RunTagConfig):
         apriltag_duration_ms.value = apriltags_elapsed_time * 1000
 
 if __name__ == "__main__":
-    args = setup_log_with_config(RunTagConfig)
+    args = setup_log_with_config(TagConfig)
     if args.debug:
         log.setLevel(logging.DEBUG)
     print_config(args)

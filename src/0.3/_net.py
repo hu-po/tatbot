@@ -480,23 +480,23 @@ class NetworkManager:
         """
         sftp = client.open_sftp()
         os.makedirs(local_dir, exist_ok=True)
-        self.log.info(f"🌐 [SFTP] Listing {remote_dir} for transfer to {local_dir}")
+        log.info(f"\u1F310 [SFTP] Listing {remote_dir} for transfer to {local_dir}")
         try:
             for entry in sftp.listdir_attr(remote_dir):
                 rpath = remote_dir + "/" + entry.filename
                 lpath = os.path.join(local_dir, entry.filename)
                 if stat.S_ISDIR(entry.st_mode):
-                    self.log.info(f"🌐 [SFTP] Entering directory: {rpath}")
+                    log.info(f"\u1F310 [SFTP] Entering directory: {rpath}")
                     self.sftp_get_dir(client, rpath, lpath)
                 else:
-                    self.log.info(f"🌐 [SFTP] Downloading file: {rpath} -> {lpath}")
+                    log.info(f"\u1F310 [SFTP] Downloading file: {rpath} -> {lpath}")
                     try:
                         sftp.get(rpath, lpath)
                     except Exception as e:
-                        self.log.error(f"🌐 [SFTP] Failed to download {rpath} to {lpath}: {e}\n{traceback.format_exc()}")
+                        log.error(f"\u1F310 [SFTP] Failed to download {rpath} to {lpath}: {e}\n{traceback.format_exc()}")
                         raise
         except Exception as e:
-            self.log.error(f"🌐 [SFTP] Exception while listing {remote_dir}: {e}\n{traceback.format_exc()}")
+            log.error(f"\u1F310 [SFTP] Exception while listing {remote_dir}: {e}\n{traceback.format_exc()}")
             raise
         finally:
             sftp.close()
@@ -511,24 +511,24 @@ class NetworkManager:
         Returns:
             Status message (success or error)
         """
-        self.log.info(f"🌐 [TRANSFER] Starting transfer from {node_name}:{remote_dir} to local {local_dir}")
+        log.info(f"\u1F310 [TRANSFER] Starting transfer from {node_name}:{remote_dir} to local {local_dir}")
         target_nodes, err = self.get_target_nodes([node_name])
         if err or not target_nodes:
-            self.log.error(f"🌐 [TRANSFER] Node lookup failed: {err}")
-            return f"❌ Node '{node_name}' not found: {err}"
+            log.error(f"\u1F310 [TRANSFER] Node lookup failed: {err}")
+            return f"\u274C Node '{node_name}' not found: {err}"
         node = target_nodes[0]
         if self.is_local_node(node):
-            self.log.error(f"🌐 [TRANSFER] Node '{node_name}' is local; skipping remote transfer.")
-            return f"❌ Node '{node_name}' is the local node; directory transfer is intended for remote nodes."
+            log.error(f"\u1F310 [TRANSFER] Node '{node_name}' is local; skipping remote transfer.")
+            return f"\u274C Node '{node_name}' is the local node; directory transfer is intended for remote nodes."
         try:
             client = self.get_ssh_client(node.ip, node.user)
             self.sftp_get_dir(client, remote_dir, local_dir)
             client.close()
-            self.log.info(f"🌐 [TRANSFER] Directory {remote_dir} copied from {node_name} to {local_dir}")
-            return f"✅ Directory {remote_dir} copied from {node_name} to {local_dir}"
+            log.info(f"\u1F310 [TRANSFER] Directory {remote_dir} copied from {node_name} to {local_dir}")
+            return f"\u2705 Directory {remote_dir} copied from {node_name} to {local_dir}"
         except Exception as e:
-            self.log.error(f"🌐 [TRANSFER] Failed to copy directory from {node_name}: {e}")
-            return f"❌ Failed to copy directory from {node_name}: {e}"
+            log.error(f"\u1F310 [TRANSFER] Failed to copy directory from {node_name}: {e}")
+            return f"\u274C Failed to copy directory from {node_name}: {e}"
 
 
 if __name__ == "__main__":
