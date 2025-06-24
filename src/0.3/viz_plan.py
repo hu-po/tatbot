@@ -155,15 +155,15 @@ class VizPlan(BaseViz):
             name="/points_hover",
             points=points_hover,
             colors=point_colors_hover,
-            point_size=self.config.point_size,
-            point_shape=self.config.point_shape,
+            point_size=self.config.design_pointcloud_point_size,
+            point_shape=self.config.design_pointcloud_point_shape,
         )
         self.pointcloud_path = self.server.scene.add_point_cloud(
             name="/points_path",
             points=points_path,
             colors=point_colors_path,
-            point_size=self.config.point_size,
-            point_shape=self.config.point_shape,
+            point_size=self.config.design_pointcloud_point_size,
+            point_shape=self.config.design_pointcloud_point_shape,
         )
 
         log.debug(f"🖥️🖼️ Adding inkcaps...")
@@ -194,15 +194,6 @@ class VizPlan(BaseViz):
         self.path_idx_slider.value = self.path_idx
         self.pose_idx_slider.value = self.pose_idx
         log.debug(f"🖥️🤖 Visualizing path {self.path_idx} pose {self.pose_idx}")
-
-        # before every path, send the robot to rest pose
-        if not self.robot_at_rest:
-            log.debug(f"🖥️ Sending robot to rest pose")
-            self.joints = self.bot_config.rest_pose.copy()
-            self.robot_at_rest = True
-        else:
-            self.joints = np.asarray(self.pathbatch.joints[self.path_idx, self.pose_idx], dtype=np.float64).flatten()
-            self.robot_at_rest = False
 
         log.debug(f"🖥️🖼️ Updating Viser image...")
         image_np = self.image_np.copy()
@@ -242,12 +233,19 @@ class VizPlan(BaseViz):
             new_colors[path_start + pix_idx] = np.array(COLORS["magenta"], dtype=np.uint8)
         self.pointcloud_path.colors = new_colors
 
-        dt_val = self.pathbatch.dt[self.path_idx, self.pose_idx]
-        if hasattr(dt_val, "item"):
-            dt_val = dt_val.item()
+        # before every path, send the robot to rest pose
+        if self.pose_idx == 0 and not self.robot_at_rest:
+            log.debug(f"🖥️ Sending robot to rest pose")
+            self.joints = self.bot_config.rest_pose.copy()
+            self.robot_at_rest = True
+            _step_time = self.plan.path_dt_slow
         else:
-            dt_val = float(dt_val)
-        time.sleep(dt_val / self.speed_slider.value)
+            self.joints = np.asarray(self.pathbatch.joints[self.path_idx, self.pose_idx], dtype=np.float64).flatten()
+            self.robot_at_rest = False
+            self.pose_idx += 1
+            _step_time = float(self.pathbatch.dt[self.path_idx, self.pose_idx].item())
+        time.sleep(_step_time / self.speed_slider.value)
+
 
 def make_pathviz_image(plan: Plan) -> np.ndarray:
     """Creates an image with overlayed paths from a plan."""

@@ -12,6 +12,11 @@ from _log import get_logger
 
 log = get_logger('_path')
 
+def _represent_numpy(dumper: yaml.SafeDumper, data: np.ndarray) -> yaml.nodes.Node:
+    """Converts numpy arrays to lists for YAML serialization."""
+    return dumper.represent_list(data.tolist())
+yaml.add_representer(np.ndarray, _represent_numpy, Dumper=yaml.SafeDumper)
+
 @dataclass
 class Path:
     ee_pos_l: Float[Array, "l 3"]

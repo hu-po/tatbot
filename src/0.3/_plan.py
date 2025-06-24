@@ -8,7 +8,8 @@ import yaml
 from PIL import Image
 import jax.numpy as jnp
 
-from _ik import batch_ik, fk, transform_and_offset
+from _bot import BotConfig
+from _ik import batch_ik, transform_and_offset
 from _ink import InkCap, InkPalette
 from _log import get_logger
 from _path import Path, PathBatch, Stroke
@@ -41,6 +42,9 @@ class Plan:
     """Width of the image in pixels."""
     image_height_px: int | None = None
     """Height of the image in pixels."""
+
+    bot_config: BotConfig = field(default_factory=BotConfig)
+    """Bot configuration."""
 
     ik_batch_size: int = 256
     """Batch size for IK computation."""
@@ -172,7 +176,8 @@ class Plan:
 
     def make_inkdip_pos(self, inkcap_name: str) -> np.ndarray:
         assert inkcap_name in self.inkpalette.inkcaps, f"⚙️❌ Inkcap {inkcap_name} not found in palette"
-        inkcap_pos = np.array(self.inkpalette.inkcaps[inkcap_name].palette_pos, dtype=np.float32)
+        inkcap: InkCap = self.inkpalette.inkcaps[inkcap_name]
+        inkcap_pos = np.array(inkcap.palette_pos, dtype=np.float32)
         # initialize the inkdip path to the inkcap position
         inkdip_pos = np.tile(inkcap_pos, (self.path_length, 1))
         # hover over the inkcap
@@ -185,16 +190,27 @@ class Plan:
         # set start and end to hover position
         inkdip_pos[0, :] = inkcap_hover_pos
         inkdip_pos[-1, :] = inkcap_hover_pos
-        # middle of inkdip is a series of points traveling down to the depth of inkcap
+        # middle of inkdip is a series of points: down, wait, up
         num_dip_points = self.path_length - 2
+        # Split: 1/3 down, 1/3 wait, 1/3 up (adjust as needed)
+        num_down = num_dip_points // 3
+        num_wait = num_dip_points // 3
+        num_up = num_dip_points - num_down - num_wait
+        # Down: from 0 to depth
+        down_z = np.linspace(0, inkcap.depth_m, num_down, endpoint=False)
+        # Wait: at depth
+        wait_z = np.full(num_wait, inkcap.depth_m)
+        # Up: from depth to 0
+        up_z = np.linspace(inkcap.depth_m, 0, num_up, endpoint=True)
+        # Concatenate all z
+        z_offsets = -np.concatenate([down_z, wait_z, up_z]).reshape(-1, 1)
+        xy_offsets = np.zeros((num_dip_points, 2))
+        offsets = np.concatenate([xy_offsets, z_offsets], axis=1)
         inkdip_pos[1:-1, :] = transform_and_offset(
             np.tile(inkcap_pos, (num_dip_points, 1)),
             self.inkpalette_pos,
             self.inkpalette_wxyz,
-            np.concatenate([
-                np.zeros((num_dip_points, 2)), # stay at the same x and y position
-                np.linspace(0, self.inkpalette.inkcaps[inkcap_name].depth_m, num_dip_points).reshape(-1, 1),
-            ], axis=1),
+            offsets,
         )
         return inkdip_pos
 
@@ -228,6 +244,9 @@ class Plan:
             # slow movement to and from hover positions
             path.dt[0] = self.path_dt_slow
             path.dt[-1] = self.path_dt_slow
+            # TODO: for now orientation is just design orientation (for inkdips as well)
+            path.ee_wxyz_l[:, :] = np.tile(self.ee_design_wxyz_l, (self.path_length, 1))
+            path.ee_wxyz_r[:, :] = np.tile(self.ee_design_wxyz_r, (self.path_length, 1))
 
             # left arm pointer hits a stroke with no inkcap
             if self.strokes[stroke_name_l].inkcap is None:
@@ -273,8 +292,6 @@ class Plan:
                     self.design_wxyz,
                     self.hover_offset,
                 )
-                # TODO: for now orientation is just design orientation
-                path.ee_wxyz_l[:, :] = np.tile(self.ee_design_wxyz_l, (self.path_length, 1))
                 left_arm_pointer += 1
 
             if self.strokes[stroke_name_r].inkcap is None:
@@ -310,8 +327,6 @@ class Plan:
                     self.design_wxyz,
                     self.hover_offset,
                 )
-                # TODO: for now orientation is just design orientation
-                path.ee_wxyz_r[:, :] = np.tile(self.ee_design_wxyz_r, (self.path_length, 1))
                 right_arm_pointer += 1
 
             self.path_idx_to_strokes.append([stroke_l, stroke_r])
@@ -345,11 +360,9 @@ class Plan:
                 p_idx, pose_idx = index_map[start + local_idx]
                 paths[p_idx].joints[pose_idx] = np.asarray(joints, dtype=np.float32)
 
+        # HACK: the right arm of the very first path should be at rest while left arm is ink dipping
+        paths[0].joints[:, 8:] = np.tile(self.bot_config.rest_pose[8:], (self.path_length, 1))
+
         pathbatch = PathBatch.from_paths(paths)
         self.save_pathbatch(pathbatch)
         self.save() # update metadata
-
-def _represent_numpy(dumper: yaml.SafeDumper, data: np.ndarray) -> yaml.nodes.Node:
-    """Converts numpy arrays to lists for YAML serialization."""
-    return dumper.represent_list(data.tolist())
-yaml.add_representer(np.ndarray, _represent_numpy, Dumper=yaml.SafeDumper)
