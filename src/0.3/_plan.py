@@ -228,13 +228,13 @@ class Plan:
         else:
             _strokes = self.strokes
 
-        # sort strokes along the Y axis in normalized coords
-        sorted_strokes = sorted(_strokes.items(), key=lambda x: x[1].norm_center[1])
+        # sort strokes along the -Y axis in normalized coords
+        sorted_strokes = sorted(_strokes.items(), key=lambda x: x[1].norm_center[1], reverse=True)
         left_arm_pointer = 0 # left arm starts with leftmost stroke, moves rightwards
         half_length = len(sorted_strokes) // 2
         right_arm_pointer = half_length # right arm starts from middle moves rightwards
         total_strokes = len(sorted_strokes)
-        while left_arm_pointer < half_length and right_arm_pointer <= total_strokes:
+        while left_arm_pointer <= half_length and right_arm_pointer < total_strokes:
             stroke_name_l, stroke_l = sorted_strokes[left_arm_pointer]
             assert stroke_name_l in self.strokes, f"⚙️❌ Stroke {stroke_name_l} not found in plan"
             stroke_name_r, stroke_r = sorted_strokes[right_arm_pointer]
@@ -332,6 +332,7 @@ class Plan:
 
             stroke_l.arm = "left"
             stroke_r.arm = "right"
+            log.debug(f"⚙️ Adding path from strokes\n left: {stroke_l.description}\n right: {stroke_r.description}...")
             self.path_idx_to_strokes.append([stroke_l, stroke_r])
             paths.append(path)
 
