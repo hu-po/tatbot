@@ -228,12 +228,13 @@ class Plan:
         else:
             _strokes = self.strokes
 
-        # sort strokes along the X axis (width) in normalized coords
-        sorted_strokes = sorted(_strokes.items(), key=lambda x: x[1].norm_center[0])
+        # sort strokes along the Y axis in normalized coords
+        sorted_strokes = sorted(_strokes.items(), key=lambda x: x[1].norm_center[1])
         left_arm_pointer = 0 # left arm starts with leftmost stroke, moves rightwards
         half_length = len(sorted_strokes) // 2
         right_arm_pointer = half_length # right arm starts from middle moves rightwards
-        while left_arm_pointer < half_length and right_arm_pointer < len(sorted_strokes):
+        total_strokes = len(sorted_strokes)
+        while left_arm_pointer < half_length and right_arm_pointer <= total_strokes:
             stroke_name_l, stroke_l = sorted_strokes[left_arm_pointer]
             assert stroke_name_l in self.strokes, f"⚙️❌ Stroke {stroke_name_l} not found in plan"
             stroke_name_r, stroke_r = sorted_strokes[right_arm_pointer]
@@ -269,7 +270,7 @@ class Plan:
                     self.path_idx_to_strokes.append([stroke_l, stroke_r])
                     paths.append(path)
                     continue
-            else:
+            elif left_arm_pointer < half_length: # still haven't hit the last left-arm stroke
                 # left arm pointer hits a stroke with an inkcap
                 # transform to design frame, add needle offset
                 path.ee_pos_l[1:-1, :] = transform_and_offset(
@@ -292,6 +293,8 @@ class Plan:
                     self.hover_offset,
                 )
                 left_arm_pointer += 1
+            else:
+                stroke_l = Stroke(description="left arm rest")
 
             if self.strokes[stroke_name_r].inkcap is None:
                 inkcap_name = self.ink_config.find_best_inkcap(self.strokes[stroke_name_r].color)
@@ -362,6 +365,8 @@ class Plan:
 
         # HACK: the right arm of the very first path should be at rest while left arm is ink dipping
         paths[0].joints[:, 8:] = np.tile(BotConfig().rest_pose[8:], (self.path_length, 1))
+        # HACK: the left arm of the final path should be at rest since last stroke is right-only
+        paths[-1].joints[:, :8] = np.tile(BotConfig().rest_pose[:8], (self.path_length, 1))
 
         pathbatch = PathBatch.from_paths(paths)
         self.save_pathbatch(pathbatch)
