@@ -1,11 +1,12 @@
 from dataclasses import dataclass
 import logging
 import os
-import time
 
 import cv2
 import numpy as np
 
+from _bot import BotConfig
+from _ink import InkConfig
 from _log import get_logger, COLORS, print_config, setup_log_with_config
 from _path import PathBatch
 from _plan import Plan
@@ -31,11 +32,13 @@ class VizPlanConfig(BaseVizConfig):
 class VizPlan(BaseViz):
     def __init__(self, config: VizPlanConfig):
         super().__init__(config)
+        self.plan: Plan = Plan.from_yaml(config.plan_dir)
+        self.bot_config: BotConfig = self.plan.bot_config
+        self.ink_config: InkConfig = self.plan.ink_config
 
+        self.pathbatch: PathBatch = self.plan.load_pathbatch()
         self.path_idx = 0
         self.pose_idx = 0
-        self.plan = Plan.from_yaml(config.plan_dir)
-        self.pathbatch: PathBatch = self.plan.load_pathbatch()
         self.num_paths = self.pathbatch.ee_pos_l.shape[0]
 
         with self.server.gui.add_folder("Plan"):
@@ -152,20 +155,6 @@ class VizPlan(BaseViz):
             point_size=self.config.design_pointcloud_point_size,
             point_shape=self.config.design_pointcloud_point_shape,
         )
-
-        log.debug(f"🖥️🖼️ Adding inkcaps...")
-        for cap_name, cap in self.plan.inkpalette.inkcaps.items():
-            pos = tuple(np.array(self.plan.inkpalette_pos) + np.array(cap.palette_pos))
-            radius = cap.diameter_m / 2
-            color = COLORS.get(cap.color.lower(), (0, 0, 0))
-            self.server.scene.add_icosphere(
-                name=f"/inkcaps/{cap_name}",
-                radius=radius,
-                color=color,
-                position=pos,
-                subdivisions=4,
-                visible=True,
-            )
 
     def step(self):
         if self.pose_idx >= self.plan.path_length:

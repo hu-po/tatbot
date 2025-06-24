@@ -2,11 +2,13 @@ from dataclasses import dataclass
 import logging
 import time
 
+import numpy as np
 import viser
 from viser.extras import ViserUrdf
 
 from _bot import BotConfig, load_robot
-from _log import get_logger, setup_log_with_config, print_config
+from _ink import InkConfig
+from _log import COLORS, get_logger, setup_log_with_config, print_config
 
 log = get_logger('_viz')
 
@@ -26,9 +28,10 @@ class BaseVizConfig:
     """Speed multipler for visualization."""
 
 class BaseViz:
-    def __init__(self, config: BaseVizConfig, bot_config: BotConfig = BotConfig()):
+    def __init__(self, config: BaseVizConfig):
         self.config = config
-        self.bot_config = bot_config
+        self.bot_config = BotConfig()
+        self.ink_config = InkConfig()
 
         log.info("🖥️ Starting viser server...")
         self.server: viser.ViserServer = viser.ViserServer()
@@ -39,12 +42,6 @@ class BaseViz:
             client.camera.position = config.view_camera_position
             client.camera.look_at = config.view_camera_look_at
 
-        log.debug(f"🖥️ Adding robot to viser from URDF at {self.bot_config.urdf_path}...")
-        _urdf, self.robot, self.ee_link_indices = load_robot(self.bot_config.urdf_path, self.bot_config.target_link_names)
-        self.urdf = ViserUrdf(self.server, _urdf, root_node_name="/root")
-        self.joints = self.bot_config.rest_pose.copy()
-        self.robot_at_rest: bool = True
-
         self.step_sleep = 1.0 / 30.0 # 30 fps
         self.speed_slider = self.server.gui.add_slider(
             "speed",
@@ -54,15 +51,40 @@ class BaseViz:
             initial_value=self.config.speed,
         )
 
+    def add_robot(self, config: BotConfig):
+        log.debug(f"🖥️ Adding robot to viser from URDF at {config.urdf_path}...")
+        _urdf, self.robot, self.ee_link_indices = load_robot(config.urdf_path, config.target_link_names)
+        self.urdf = ViserUrdf(self.server, _urdf, root_node_name="/root")
+        self.joints = config.rest_pose.copy()
+        self.robot_at_rest: bool = True
+    
+    def add_inkpalette(self, config: InkConfig):
+        log.debug(f"🖥️ Adding inkpalette to viser...")
+        for cap_name, cap in config.inkcaps.items():
+            pos = tuple(np.array(config.inkpalette_pos) + np.array(cap.palette_pos))
+            radius = cap.diameter_m / 2
+            color = COLORS.get(cap.color.lower(), (0, 0, 0))
+            self.server.scene.add_icosphere(
+                name=f"/inkcaps/{cap_name}",
+                radius=radius,
+                color=color,
+                position=pos,
+                subdivisions=4,
+                visible=True,
+            )
+
     def step(self):
         log.info("🖥️ Empty step function, implement in subclass...")
         pass
 
     def run(self):
+        self.add_robot(self.bot_config)
+        self.add_inkpalette(self.ink_config)
         while True:
             start_time = time.time()
-            log.debug(f"🖥️ Updating viser robot...")
-            self.urdf.update_cfg(self.joints)
+            if self.urdf is not None:
+                log.debug(f"🖥️ Updating viser robot...")
+                self.urdf.update_cfg(self.joints)
             self.step()
             log.debug(f"🖥️ step time: {time.time() - start_time:.4f}s")
             time.sleep(self.step_sleep / self.speed_slider.value)

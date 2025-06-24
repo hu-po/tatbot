@@ -10,7 +10,7 @@ import jax.numpy as jnp
 
 from _bot import BotConfig
 from _ik import batch_ik, transform_and_offset
-from _ink import InkCap, InkPalette
+from _ink import InkCap, InkConfig
 from _log import get_logger
 from _path import Path, PathBatch, Stroke
 
@@ -18,6 +18,8 @@ log = get_logger('_plan')
 
 # plan objects stored inside folder, these are the filenames
 METADATA_FILENAME: str = "meta.yaml"
+BOT_CONFIG_FILENAME: str = "bot_config.yaml"
+INKPALETTE_FILENAME: str = "ink_config.yaml"
 IMAGE_FILENAME: str = "image.png"
 PATHBATCH_FILENAME: str = "pathbatch.safetensors"
 
@@ -28,6 +30,11 @@ class Plan:
 
     dirpath: str = ""
     """Path to the directory containing the plan files."""
+
+    ink_config: InkConfig = field(default_factory=InkConfig)
+    """Config containig InkCaps and palette position."""
+    bot_config: BotConfig = field(default_factory=BotConfig)
+    """Bot configuration to use for the plan."""
 
     strokes: dict[str, Stroke] = field(default_factory=dict)
     """Dictionary of path metadata objects."""
@@ -70,30 +77,28 @@ class Plan:
     needle_offset_r: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, -0.0065], dtype=np.float32))
     """position offset to ensure needle touches skin, relative to current ee frame."""
 
-    inkpalette: InkPalette = field(default_factory=InkPalette)
-    """Ink palette to use for the plan."""
-    inkpalette_pos: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.04], dtype=np.float32))
-    """position of the inkpalette ee transform."""
-    inkpalette_wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
-    """orientation quaternion (wxyz) of the inkpalette ee transform."""
-    inkdip_hover_offset: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.03], dtype=np.float32))
-    """position offset when hovering over inkcap, relative to current ee frame."""
-
     def save(self):
         log.info(f"⚙️💾 Saving plan to {self.dirpath}")
         os.makedirs(self.dirpath, exist_ok=True)
         meta_path = os.path.join(self.dirpath, METADATA_FILENAME)
         log.info(f"⚙️💾 Saving metadata to {meta_path}")
+        self.bot_config.save_yaml(os.path.join(self.dirpath, BOT_CONFIG_FILENAME))
+        self.ink_config.save_yaml(os.path.join(self.dirpath, INKPALETTE_FILENAME))
+        meta_dict = asdict(self).copy()
+        meta_dict.pop('bot_config', None)
+        meta_dict.pop('ink_config', None)
         with open(meta_path, "w") as f:
-            yaml.safe_dump(asdict(self), f)
+            yaml.safe_dump(meta_dict, f)
 
     @classmethod
     def from_yaml(cls, dirpath: str) -> "Plan":
         log.info(f"⚙️ Loading plan from {dirpath}...")
         filepath = os.path.join(dirpath, METADATA_FILENAME)
+        bot_config = BotConfig.from_yaml(os.path.join(dirpath, BOT_CONFIG_FILENAME))
+        ink_config = InkConfig.from_yaml(os.path.join(dirpath, INKPALETTE_FILENAME))
         with open(filepath, "r") as f:
             data = yaml.safe_load(f)
-        return dacite.from_dict(cls, data, config=dacite.Config(type_hooks={np.ndarray: np.array}))
+        return dacite.from_dict(cls, data, config=dacite.Config(type_hooks={np.ndarray: np.array}), bot_config=bot_config, ink_config=ink_config)
 
     def load_image_np(self) -> np.ndarray:
         filepath = os.path.join(self.dirpath, IMAGE_FILENAME)
@@ -172,17 +177,17 @@ class Plan:
         self.calculate_pathbatch()
 
     def make_inkdip_pos(self, inkcap_name: str) -> np.ndarray:
-        assert inkcap_name in self.inkpalette.inkcaps, f"⚙️❌ Inkcap {inkcap_name} not found in palette"
-        inkcap: InkCap = self.inkpalette.inkcaps[inkcap_name]
+        assert inkcap_name in self.ink_config.inkcaps, f"⚙️❌ Inkcap {inkcap_name} not found in palette"
+        inkcap: InkCap = self.ink_config.inkcaps[inkcap_name]
         inkcap_pos = np.array(inkcap.palette_pos, dtype=np.float32)
         # initialize the inkdip path to the inkcap position
         inkdip_pos = np.tile(inkcap_pos, (self.path_length, 1))
         # hover over the inkcap
         inkcap_hover_pos = transform_and_offset(
             np.expand_dims(inkcap_pos, axis=0),
-            self.inkpalette_pos,
-            self.inkpalette_wxyz,
-            self.inkdip_hover_offset,
+            self.ink_config.inkpalette_pos,
+            self.ink_config.inkpalette_wxyz,
+            self.ink_config.inkdip_hover_offset,
         )
         # set start and end to hover position
         inkdip_pos[0, :] = inkcap_hover_pos
@@ -205,8 +210,8 @@ class Plan:
         offsets = np.concatenate([xy_offsets, z_offsets], axis=1)
         inkdip_pos[1:-1, :] = transform_and_offset(
             np.tile(inkcap_pos, (num_dip_points, 1)),
-            self.inkpalette_pos,
-            self.inkpalette_wxyz,
+            self.ink_config.inkpalette_pos,
+            self.ink_config.inkpalette_wxyz,
             offsets,
         )
         return inkdip_pos
@@ -248,7 +253,7 @@ class Plan:
             # left arm pointer hits a stroke with no inkcap
             if self.strokes[stroke_name_l].inkcap is None:
                 # get ink color from stroke, left arm will dip for this path
-                inkcap_name = self.inkpalette.find_best_inkcap(self.strokes[stroke_name_l].color)
+                inkcap_name = self.ink_config.find_best_inkcap(self.strokes[stroke_name_l].color)
                 self.strokes[stroke_name_l].inkcap = inkcap_name
                 path.ee_pos_l = self.make_inkdip_pos(inkcap_name)
                 # make a new stroke object for the inkdip path
@@ -292,7 +297,7 @@ class Plan:
                 left_arm_pointer += 1
 
             if self.strokes[stroke_name_r].inkcap is None:
-                inkcap_name = self.inkpalette.find_best_inkcap(self.strokes[stroke_name_r].color)
+                inkcap_name = self.ink_config.find_best_inkcap(self.strokes[stroke_name_r].color)
                 self.strokes[stroke_name_r].inkcap = inkcap_name
                 path.ee_pos_r = self.make_inkdip_pos(inkcap_name)
                 # make a new stroke object for the inkdip path

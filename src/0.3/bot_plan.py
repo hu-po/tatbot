@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import logging
 import os
+import shutil
 import time
 from io import StringIO
 
@@ -106,6 +107,11 @@ def record_plan(config: BotPlanConfig):
         )
     if config.display_data:
         _init_rerun(session_name="recording")
+
+    plan_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/plan")
+    log.info(f"🤖🗃️ Creating plan directory at {plan_dir}...")
+    os.makedirs(plan_dir, exist_ok=True)
+    shutil.copy(config.plan_dir, plan_dir)
 
     logs_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/logs")
     log.info(f"🤖🗃️ Creating logs directory at {logs_dir}...")

@@ -1,11 +1,13 @@
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 import functools
 import os
 from typing import Callable, Any
 import time
 
+import dacite
 import numpy as np
 import pyroki as pk
+import yaml
 import yourdfpy
 
 from _log import get_logger
@@ -23,6 +25,21 @@ class BotConfig:
         0.8, 0.6, 0.5, -1.0, 0.0, 0.0, 0.0, 0.0, # right arm
         ], dtype=np.float32))
     """Rest pose for the robot."""
+
+    @classmethod
+    def from_yaml(cls, filepath: str) -> "BotConfig":
+        with open(filepath, "r") as f:
+            data = yaml.safe_load(f)
+        return dacite.from_dict(
+            cls,
+            data,
+            config=dacite.Config(type_hooks={tuple: tuple})
+        )
+
+    def save_yaml(self, filepath: str):
+        with open(filepath, "w") as f:
+            yaml.safe_dump(asdict(self), f)
+
 
 @functools.lru_cache(maxsize=2)
 def load_robot(urdf_path: str, target_links_name: tuple[str, str]) -> tuple[yourdfpy.URDF, pk.Robot, np.ndarray]:

@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field, asdict
 
 import dacite
+import numpy as np
 import yaml
 
 from _log import get_logger
@@ -20,7 +21,7 @@ class InkCap:
     """Natural language description of the color of the ink inside the inkcap."""
 
 @dataclass
-class InkPalette:
+class InkConfig:
     inkcaps: dict[str, InkCap] = field(default_factory=lambda: {
         # outer row
         # "small_0": InkCap(
@@ -63,8 +64,15 @@ class InkPalette:
         ),
     })
 
+    inkpalette_pos: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.04], dtype=np.float32))
+    """position (xyz, meters) of the inkpalette in global frame."""
+    inkpalette_wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
+    """orientation quaternion (wxyz) of the inkpalette in global frame."""
+    inkdip_hover_offset: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.03], dtype=np.float32))
+    """position offset (xyz, meters) when hovering over inkcap, relative to ee frame."""
+
     @classmethod
-    def from_yaml(cls, filepath: str) -> "InkPalette":
+    def from_yaml(cls, filepath: str) -> "InkConfig":
         with open(filepath, "r") as f:
             data = yaml.safe_load(f)
         return dacite.from_dict(cls, data)
@@ -80,5 +88,6 @@ class InkPalette:
             if inkcap.color == color:
                 log.debug(f"🎨 found inkcap {name} for color {color}")
                 return name
-        log.warning(f"🎨❌ No inkcap found for color {color}, using large_0")
-        return "large_0"
+        _msg = f"🎨❌ No inkcap found for color {color}"
+        log.error(_msg)
+        raise ValueError(_msg)
