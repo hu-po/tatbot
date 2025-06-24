@@ -241,8 +241,8 @@ class Plan:
             # set the default time between poses to fast movement
             path.dt[:] = self.path_dt_fast
             # slow movement to and from hover positions
-            path.dt[0] = self.path_dt_slow
-            path.dt[-1] = self.path_dt_slow
+            path.dt[:2] = self.path_dt_slow
+            path.dt[-2:] = self.path_dt_slow
             # TODO: for now orientation is just design orientation (for inkdips as well)
             path.ee_wxyz_l[:, :] = np.tile(self.ee_design_wxyz_l, (self.path_length, 1))
             path.ee_wxyz_r[:, :] = np.tile(self.ee_design_wxyz_r, (self.path_length, 1))
