@@ -48,9 +48,6 @@ class BotScanConfig:
     """Number of steps to perform in one scan."""
 
 def record_scan(config: BotScanConfig):
-    # scan = Scan()
-    # tracker = TagTracker(scan.tag_config)
-
     log.info("🤖🤗 Adding LeRobot robot...")
     robot = make_robot_from_config(TatbotScanConfig)
     robot.connect()
@@ -78,7 +75,6 @@ def record_scan(config: BotScanConfig):
     scan_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/scan")
     log.info(f"🤖🗃️ Creating scan directory at {scan_dir}...")
     os.makedirs(scan_dir, exist_ok=True)
-    # scan.save(scan_dir)
 
     logs_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/logs")
     log.info(f"🤖🗃️ Creating logs directory at {logs_dir}...")
@@ -116,6 +112,7 @@ def record_scan(config: BotScanConfig):
     with open(log_path, "w") as f:
         f.write(episode_log_buffer.getvalue())
 
+    # images get auto-deleted by lerobot, so copy them to local scan directory
     images_dir = dataset.root / "images"
     if images_dir.is_dir():
         log.info(f"🤖🖼️  Copying images from {images_dir} to {scan_dir}...")
@@ -127,6 +124,16 @@ def record_scan(config: BotScanConfig):
 
     log.info("🤖✅ End")
     robot.disconnect()
+
+    scan = Scan()
+    tracker = TagTracker(scan.tag_config)
+
+    # TODO: track tags in each of the images
+    # save images with detection results
+    # perform ik to get camera extrinsics
+    # save camera extrinsics to URDF
+
+    scan.save(scan_dir)
 
     if config.push_to_hub:
         log.info("🤖📦🤗 Pushing dataset to Hugging Face Hub...")
