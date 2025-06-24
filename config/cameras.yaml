@@ -5,40 +5,40 @@ cameras:
     password: "${CAMERA_1_PASSWORD}"  # Will be loaded from environment variable
     rtsp_port: 554
     stream_path: "/cam/realmonitor?channel=1&subtype=0"  # Main stream
-    resolution: [2592, 1944]  # 5MP
-    fps: 1
+    resolution: [2960, 1668]  # 5MP
+    fps: 5
   camera2:
     ip: "192.168.1.92"
     username: "admin"
     password: "${CAMERA_2_PASSWORD}"
     rtsp_port: 554
     stream_path: "/cam/realmonitor?channel=1&subtype=0"
-    resolution: [2592, 1944]
-    fps: 1
+    resolution: [2960, 1668]
+    fps: 5
   camera3:
     ip: "192.168.1.93"
     username: "admin"
     password: "${CAMERA_3_PASSWORD}"
     rtsp_port: 554
     stream_path: "/cam/realmonitor?channel=1&subtype=0"
-    resolution: [2592, 1944]
-    fps: 1
+    resolution: [2960, 1668]
+    fps: 5
   camera4:
     ip: "192.168.1.94"
     username: "admin"
     password: "${CAMERA_4_PASSWORD}"
     rtsp_port: 554
     stream_path: "/cam/realmonitor?channel=1&subtype=0"
-    resolution: [2592, 1944]
-    fps: 1
+    resolution: [2960, 1668]
+    fps: 5
   camera5:
     ip: "192.168.1.95"
     username: "admin"
     password: "${CAMERA_5_PASSWORD}"
     rtsp_port: 554
     stream_path: "/cam/realmonitor?channel=1&subtype=0"
-    resolution: [2592, 1944]
-    fps: 1
+    resolution: [2960, 1668]
+    fps: 5
 
 output_dir: "output/cameras"  # Directory to save captured images
 image_format: "jpg"  # Output image format

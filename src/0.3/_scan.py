@@ -42,13 +42,62 @@ class Scan:
     camera5_urdf_link_name: str = ""
 
     intrinsics: dict[str, CameraIntrinsics] = field(default_factory=lambda: {
-        "realsense1": CameraIntrinsics(),
-        "realsense2": CameraIntrinsics(),
-        "camera1": CameraIntrinsics(),
-        "camera2": CameraIntrinsics(),
-        "camera3": CameraIntrinsics(),
-        "camera4": CameraIntrinsics(),
-        "camera5": CameraIntrinsics(),
+        "realsense1": CameraIntrinsics(
+            fov=1.0,
+            aspect=1.0,
+            fx=1.0,
+            fy=1.0,
+            ppx=1.0,
+            ppy=1.0,
+        ),
+        "realsense2": CameraIntrinsics(
+            fov=1.0,
+            aspect=1.0,
+            fx=1.0,
+            fy=1.0,
+            ppx=1.0,
+            ppy=1.0,
+        ),
+        "camera1": CameraIntrinsics(
+            fov=1.0,
+            aspect=1.0,
+            fx=1.0,
+            fy=1.0,
+            ppx=1.0,
+            ppy=1.0,
+        ),
+        "camera2": CameraIntrinsics(
+            fov=1.0,
+            aspect=1.0,
+            fx=1.0,
+            fy=1.0,
+            ppx=1.0,
+            ppy=1.0,
+        ),
+        "camera3": CameraIntrinsics(
+            fov=1.0,
+            aspect=1.0,
+            fx=1.0,
+            fy=1.0,
+            ppx=1.0,
+            ppy=1.0,
+        ),
+        "camera4": CameraIntrinsics(
+            fov=1.0,
+            aspect=1.0,
+            fx=1.0,
+            fy=1.0,
+            ppx=1.0,
+            ppy=1.0,
+        ),
+        "camera5": CameraIntrinsics(
+            fov=1.0,
+            aspect=1.0,
+            fx=1.0,
+            fy=1.0,
+            ppx=1.0,
+            ppy=1.0,
+        ),
     })
     """Intrinsics for each camera."""
 

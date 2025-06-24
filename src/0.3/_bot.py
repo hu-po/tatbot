@@ -85,7 +85,7 @@ def safe_loop(loop: Callable, config: Any) -> None:
     try:
         loop(config)
     except Exception as e:
-        log.error(f"Error: {e}")
+        log.error(f"❌Error:\n{e}\n")
     except KeyboardInterrupt:
         log.info("🤖🛑⌨️ Keyboard interrupt detected. Disconnecting robot...")
     finally:
