@@ -19,7 +19,7 @@ from lerobot.record import _init_rerun
 from _bot import urdf_joints_to_action, safe_loop, BotConfig
 from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT, LOG_FORMAT
 from _scan import Scan
-from _tag import TagConfig, TagTracker
+from _tag import TagTracker
 
 log = get_logger('bot_scan')
 

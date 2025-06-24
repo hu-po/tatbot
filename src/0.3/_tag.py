@@ -8,8 +8,8 @@ import jaxlie
 import numpy as np
 import pupil_apriltags as apriltag
 
+from _cam import CameraIntrinsics
 from _log import get_logger
-from _scan import CameraIntrinsics
 
 log = get_logger('_tag')
 

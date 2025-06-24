@@ -6,6 +6,7 @@ import numpy as np
 import yaml
 
 from _bot import BotConfig
+from _cam import CameraIntrinsics
 from _ink import InkConfig
 from _log import get_logger
 from _tag import TagConfig
@@ -16,15 +17,6 @@ METADATA_FILENAME: str = "metadata.yaml"
 BOT_CONFIG_FILENAME: str = "bot_config.yaml"
 INK_CONFIG_FILENAME: str = "ink_config.yaml"
 TAG_CONFIG_FILENAME: str = "tag_config.yaml"
-
-@dataclass
-class CameraIntrinsics:
-    fov: float = 0.0
-    aspect: float = 0.0
-    fx: float = 0.0
-    fy: float = 0.0
-    ppx: float = 0.0
-    ppy: float = 0.0
 
 @dataclass
 class Scan:
