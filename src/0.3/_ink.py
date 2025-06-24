@@ -23,53 +23,42 @@ class InkCap:
 @dataclass
 class InkConfig:
     inkcaps: dict[str, InkCap] = field(default_factory=lambda: {
-        # outer row
-        # "small_0": InkCap(
-        #     palette_pos=(0.0, 0.0, 0.0),
-        #     color=""
-        # ),
-        # "small_1": InkCap(
-        #     palette_pos=(0.0, 0.0, 0.0),
-        #     color=""
-        # ),
-        "large_0": InkCap(
-            palette_pos=[0.0, 0.0, 0.0], # center of palette is center of big inkcap
+        "small_1": InkCap(
+            palette_pos=[0.06, -0.01, -0.01],
+            color="pink"
+        ),
+        "large": InkCap(
+            palette_pos=[0.06, 0.0, -0.01],
             diameter_m=0.014,
             depth_m=0.014,
             color="black"
         ),
-        # "small_2": InkCap(
-        #     palette_pos=(0.0, 0.0, 0.0),
-        #     color=""
-        # ),
-        # "small_3": InkCap(
-        #     palette_pos=(0.0, 0.0, 0.0),
-        #     color=""
-        # ),
-        # inner row
-        "medium_0": InkCap(
-            palette_pos=[0.018, -0.025, 0.0],
+        "small_2": InkCap(
+            palette_pos=[0.06, 0.01, -0.01],
+            color="blue"
+        ),
+        "small_3": InkCap(
+            palette_pos=[0.06, 0.0, -0.01],
+            color="white"
+        ),
+        "medium_1": InkCap(
+            palette_pos=[0.04, 0.0, -0.01],
             diameter_m=0.012,
             color="red"
         ),
-        "medium_1": InkCap(
-            palette_pos=[0.0, -0.02, 0.0],
+        "medium_2": InkCap(
+            palette_pos=[0.04, 0.015, -0.01],
             diameter_m=0.012,
             color="green"
         ),
-        "medium_2": InkCap(
-            palette_pos=[-0.018, -0.025, 0.0],
-            diameter_m=0.012,
-            color="blue"
-        ),
     })
 
-    inkpalette_pos: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.04], dtype=np.float32))
+    inkpalette_pos: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.01], dtype=np.float32))
     """position (xyz, meters) of the inkpalette in global frame."""
     inkpalette_wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
     """orientation quaternion (wxyz) of the inkpalette in global frame."""
 
-    inkdip_hover_offset: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.02], dtype=np.float32))
+    inkdip_hover_offset: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.01], dtype=np.float32))
     """position offset (xyz, meters) when hovering over inkcap, relative to ee frame."""
 
     @classmethod
