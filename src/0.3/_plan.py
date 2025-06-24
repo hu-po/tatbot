@@ -339,12 +339,16 @@ class Plan:
             self.design_wxyz,
             self.hover_offset,
         )
+        path.ee_wxyz_l = np.tile(self.ee_design_wxyz_l, (self.path_length, 1))
         path.ee_pos_r = transform_and_offset(
             np.zeros((self.path_length, 3)),
             self.design_pos,
             self.design_wxyz,
             self.hover_offset,
         )
+        path.ee_wxyz_r = np.tile(self.ee_design_wxyz_r, (self.path_length, 1))
+        path.dt[:2] = self.path_dt_slow
+        path.dt[-2:] = self.path_dt_slow
         paths.insert(0, path)
 
 

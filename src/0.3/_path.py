@@ -36,7 +36,7 @@ class Path:
             ee_wxyz_l=np.tile(np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32), (length, 1)),
             ee_wxyz_r=np.tile(np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32), (length, 1)),
             joints=np.zeros((length, 16), dtype=np.float32),
-            dt=np.zeros((length,), dtype=np.float32),
+            dt=np.full((length,), 0.01, dtype=np.float32), # seconds
         )
 
 @jdc.pytree_dataclass
