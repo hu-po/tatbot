@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 import time
 
@@ -19,11 +19,11 @@ class TagConfig:
     """Family of AprilTags to use."""
     apriltag_size_m: float = 0.041
     """Size of AprilTags: distance between detection corners (meters)."""
-    apriltags: dict[int, str] = {
+    apriltags: dict[int, str] = field(default_factory=lambda: {
         9: "palette",
         10: "origin",
         11: "skin",
-    }
+    })
     """ AprilTag ID : Name mapping """
     apriltag_decision_margin: float = 20.0
     """Minimum decision margin for AprilTag detection filtering."""
