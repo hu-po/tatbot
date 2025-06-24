@@ -94,11 +94,12 @@ class Plan:
     def from_yaml(cls, dirpath: str) -> "Plan":
         log.info(f"⚙️ Loading plan from {dirpath}...")
         filepath = os.path.join(dirpath, METADATA_FILENAME)
-        bot_config = BotConfig.from_yaml(os.path.join(dirpath, BOT_CONFIG_FILENAME))
-        ink_config = InkConfig.from_yaml(os.path.join(dirpath, INKPALETTE_FILENAME))
         with open(filepath, "r") as f:
             data = yaml.safe_load(f)
-        return dacite.from_dict(cls, data, config=dacite.Config(type_hooks={np.ndarray: np.array}), bot_config=bot_config, ink_config=ink_config)
+        plan = dacite.from_dict(cls, data, config=dacite.Config(type_hooks={np.ndarray: np.array}))
+        plan.bot_config = BotConfig.from_yaml(os.path.join(dirpath, BOT_CONFIG_FILENAME))
+        plan.ink_config = InkConfig.from_yaml(os.path.join(dirpath, INKPALETTE_FILENAME))
+        return plan
 
     def load_image_np(self) -> np.ndarray:
         filepath = os.path.join(self.dirpath, IMAGE_FILENAME)

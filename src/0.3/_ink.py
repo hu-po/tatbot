@@ -75,7 +75,11 @@ class InkConfig:
     def from_yaml(cls, filepath: str) -> "InkConfig":
         with open(filepath, "r") as f:
             data = yaml.safe_load(f)
-        return dacite.from_dict(cls, data)
+        return dacite.from_dict(
+            cls,
+            data,
+            config=dacite.Config(type_hooks={np.ndarray: np.array})
+        )
 
     def save_yaml(self, filepath: str):
         with open(filepath, "w") as f:

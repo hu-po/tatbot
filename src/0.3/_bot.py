@@ -30,10 +30,14 @@ class BotConfig:
     def from_yaml(cls, filepath: str) -> "BotConfig":
         with open(filepath, "r") as f:
             data = yaml.safe_load(f)
+        if "target_link_names" in data and isinstance(data["target_link_names"], list):
+            data["target_link_names"] = tuple(data["target_link_names"])
+        if "rest_pose" in data and isinstance(data["rest_pose"], list):
+            data["rest_pose"] = np.array(data["rest_pose"], dtype=np.float32)
         return dacite.from_dict(
             cls,
             data,
-            config=dacite.Config(type_hooks={tuple: tuple})
+            config=dacite.Config(type_hooks={tuple: tuple, np.ndarray: np.array})
         )
 
     def save_yaml(self, filepath: str):
