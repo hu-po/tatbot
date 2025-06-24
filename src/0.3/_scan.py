@@ -8,12 +8,23 @@ import yaml
 from _bot import BotConfig
 from _ink import InkConfig
 from _log import get_logger
+from _tag import TagConfig, TagTracker
 
 log = get_logger('_scan')
 
-METADATA_FILENAME = "metadata.yaml"
+METADATA_FILENAME: str = "metadata.yaml"
 BOT_CONFIG_FILENAME: str = "bot_config.yaml"
-INKPALETTE_FILENAME: str = "ink_config.yaml"
+INK_CONFIG_FILENAME: str = "ink_config.yaml"
+TAG_CONFIG_FILENAME: str = "tag_config.yaml"
+
+@dataclass
+class CameraIntrinsics:
+    fov: float = 0.0
+    aspect: float = 0.0
+    fx: float = 0.0
+    fy: float = 0.0
+    ppx: float = 0.0
+    ppy: float = 0.0
 
 @dataclass
 class Scan:
@@ -27,6 +38,8 @@ class Scan:
     """Bot configuration to use for the scan."""
     ink_config: InkConfig = field(default_factory=InkConfig)
     """Config containig InkCaps and palette position."""
+    tag_config: TagConfig = field(default_factory=TagConfig)
+    """Config containing AprilTag parameters."""
     
     realsense1_urdf_link_name: str = ""
     realsense2_urdf_link_name: str = ""
@@ -36,20 +49,16 @@ class Scan:
     camera4_urdf_link_name: str = ""
     camera5_urdf_link_name: str = ""
 
-    realsense1_fov: float = 0.0
-    realsense1_aspect: float = 0.0
-    realsense2_fov: float = 0.0
-    realsense2_aspect: float = 0.0
-    camera1_fov: float = 0.0
-    camera1_aspect: float = 0.0
-    camera2_fov: float = 0.0
-    camera2_aspect: float = 0.0
-    camera3_fov: float = 0.0
-    camera3_aspect: float = 0.0
-    camera4_fov: float = 0.0
-    camera4_aspect: float = 0.0
-    camera5_fov: float = 0.0
-    camera5_aspect: float = 0.0
+    intrinsics: dict[str, CameraIntrinsics] = field(default_factory={
+        "realsense1": CameraIntrinsics(),
+        "realsense2": CameraIntrinsics(),
+        "camera1": CameraIntrinsics(),
+        "camera2": CameraIntrinsics(),
+        "camera3": CameraIntrinsics(),
+        "camera4": CameraIntrinsics(),
+        "camera5": CameraIntrinsics(),
+    })
+    """Intrinsics for each camera."""
 
     def save(self):
         log.info(f"📡💾 Saving scan to {self.dirpath}")
@@ -57,10 +66,12 @@ class Scan:
         meta_path = os.path.join(self.dirpath, METADATA_FILENAME)
         log.info(f"📡💾 Saving metadata to {meta_path}")
         self.bot_config.save_yaml(os.path.join(self.dirpath, BOT_CONFIG_FILENAME))
-        self.ink_config.save_yaml(os.path.join(self.dirpath, INKPALETTE_FILENAME))
+        self.ink_config.save_yaml(os.path.join(self.dirpath, INK_CONFIG_FILENAME))
+        self.tag_config.save_yaml(os.path.join(self.dirpath, TAG_CONFIG_FILENAME))
         meta_dict = asdict(self).copy()
         meta_dict.pop('bot_config', None)
         meta_dict.pop('ink_config', None)
+        meta_dict.pop('tag_config', None)
         with open(meta_path, "w") as f:
             yaml.safe_dump(meta_dict, f)
 
@@ -72,6 +83,11 @@ class Scan:
             data = yaml.safe_load(f)
         scan = dacite.from_dict(cls, data, config=dacite.Config(type_hooks={np.ndarray: np.array}))
         scan.bot_config = BotConfig.from_yaml(os.path.join(dirpath, BOT_CONFIG_FILENAME))
-        scan.ink_config = InkConfig.from_yaml(os.path.join(dirpath, INKPALETTE_FILENAME))
+        scan.ink_config = InkConfig.from_yaml(os.path.join(dirpath, INK_CONFIG_FILENAME))
+        scan.tag_config = TagConfig.from_yaml(os.path.join(dirpath, TAG_CONFIG_FILENAME))
         scan.dirpath = dirpath
         return scan
+    
+    def ingest_scan_dataset(self, dataset_dir: str):
+        log.info(f"📡💾 Ingesting scan dataset from {dataset_dir}...")
+        tag_tracker = TagTracker(self.tag_config)

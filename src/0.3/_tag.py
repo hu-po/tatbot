@@ -1,10 +1,15 @@
 from dataclasses import dataclass
-import logging
+from typing import List
+import time
 
+import cv2
+import jaxlie
+import jaxlie.numpy as jnp
+import numpy as np
 import pupil_apriltags as apriltag
-import pyrealsense2 as rs
 
 from _log import get_logger
+from _scan import CameraIntrinsics
 
 log = get_logger('_tag')
 
@@ -23,31 +28,27 @@ class TagConfig:
     apriltag_decision_margin: float = 20.0
     """Minimum decision margin for AprilTag detection filtering."""
 
-def track_tags(config: TagConfig):
-    log.info("🏷️ Adding AprilTags...")
-    detector = apriltag.Detector(
-        # TODO: tune the apriltag params
-        families=config.apriltag_family,
-    )
-    apriltag_frames_by_id: Dict[int, viser.Frame] = {}
-    for _config in config.apriltags:
-        apriltag_frames_by_id[_config.tag_id] = tracked_frames[_config.frame_name]
-    apriltag_debug_image: Optional[viser.GuiImageHandle] = None
+class TagTracker:
+    def __init__(self, config: TagConfig):
+        self.config = config
+        self.detector = apriltag.Detector(
+            families=config.apriltag_family,
+        )
 
-    while True:
+    def track_tags(self, rgb_b: np.ndarray, intrinsics: CameraIntrinsics):
         log.debug("🏷️ Updating Realsense AprilTags...")
         apriltags_start_time = time.time()
         gray_b = cv2.cvtColor(rgb_b, cv2.COLOR_RGB2GRAY)
-        detections: List[apriltag.Detection] = detector.detect(
+        detections: List[apriltag.Detection] = self.detector.detect(
             gray_b,
             # TODO: tune these params
             estimate_tag_pose=True,
-            camera_params=(realsense_b.intrinsics.fx, realsense_b.intrinsics.fy, realsense_b.intrinsics.ppx, realsense_b.intrinsics.ppy),
-            tag_size=config.apriltag_size_m,
+            camera_params=(intrinsics.fx, intrinsics.fy, intrinsics.ppx, intrinsics.ppy),
+            tag_size=self.config.apriltag_size_m,
         )
         log.debug(f"🏷️ AprilTags detections: {detections}")
         log.debug(f"🏷️ AprilTags detections before filtering: {len(detections)}")
-        detections = [d for d in detections if d.decision_margin >= config.apriltag_decision_margin]
+        detections = [d for d in detections if d.decision_margin >= self.config.apriltag_decision_margin]
         log.info(f"🏷️ AprilTags detections after filtering: {len(detections)}")
         gray_b_bgr = cv2.cvtColor(gray_b, cv2.COLOR_GRAY2BGR)
         for d in detections:
@@ -56,10 +57,6 @@ def track_tags(config: TagConfig):
             center = tuple(np.int32(d.center))
             cv2.circle(gray_b_bgr, center, 4, (0, 0, 255), -1)
             cv2.putText(gray_b_bgr, str(d.tag_id), (center[0] + 5, center[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-        if apriltag_debug_image is None:
-            apriltag_debug_image = server.gui.add_image(gray_b_bgr, "AprilTags")
-        else:
-            apriltag_debug_image.image = gray_b_bgr
         for d in detections:
             if d.tag_id in apriltag_frames_by_id:
                 tag_in_cam = jnp.eye(4)

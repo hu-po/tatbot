@@ -7,7 +7,6 @@ from _ik import fk
 from _ink import InkConfig
 from _log import get_logger, print_config, setup_log_with_config
 from _scan import Scan
-from _tag import TagConfig
 from _viz import BaseViz, BaseVizConfig
 
 log = get_logger('viz_scan')
@@ -38,15 +37,15 @@ class VizScan(BaseViz):
         log.info(f"🖥️ Adding realsense camera frustrums ...")
         self.realsense1_frustrum = self.server.scene.add_camera_frustum(
             f"/realsense1",
-            fov=self.scan.realsense1_fov,
-            aspect=self.scan.realsense1_aspect,
+            fov=self.scan.intrinsics["realsense1"].fov,
+            aspect=self.scan.intrinsics["realsense1"].aspect,
             scale=config.realsense_frustrum_scale,
             color=config.realsense_frustrum_color,
         )
         self.realsense2_frustrum = self.server.scene.add_camera_frustum(
             f"/realsense2",
-            fov=self.scan.realsense2_fov,
-            aspect=self.scan.realsense2_aspect,
+            fov=self.scan.intrinsics["realsense2"].fov,
+            aspect=self.scan.intrinsics["realsense2"].aspect,
             scale=config.realsense_frustrum_scale,
             color=config.realsense_frustrum_color,
         )
@@ -54,36 +53,36 @@ class VizScan(BaseViz):
         log.info(f"🖥️ Adding ip camera frustrums ...")
         self.camera1_frustrum = self.server.scene.add_camera_frustum(
             f"/camera1",
-            fov=self.scan.camera1_fov,
-            aspect=self.scan.camera1_aspect,
+            fov=self.scan.intrinsics["camera1"].fov,
+            aspect=self.scan.intrinsics["camera1"].aspect,
             scale=config.camera_frustrum_scale,
             color=config.camera_frustrum_color,
         )
         self.camera2_frustrum = self.server.scene.add_camera_frustum(
             f"/camera2",
-            fov=self.scan.camera2_fov,
-            aspect=self.scan.camera2_aspect,
+            fov=self.scan.intrinsics["camera2"].fov,
+            aspect=self.scan.intrinsics["camera2"].aspect,
             scale=config.camera_frustrum_scale,
             color=config.camera_frustrum_color,
         )
         self.camera3_frustrum = self.server.scene.add_camera_frustum(
             f"/camera3",
-            fov=self.scan.camera3_fov,
-            aspect=self.scan.camera3_aspect,
+            fov=self.scan.intrinsics["camera3"].fov,
+            aspect=self.scan.intrinsics["camera3"].aspect,
             scale=config.camera_frustrum_scale,
             color=config.camera_frustrum_color,
         )
         self.camera4_frustrum = self.server.scene.add_camera_frustum(
             f"/camera4",
-            fov=self.scan.camera4_fov,
-            aspect=self.scan.camera4_aspect,
+            fov=self.scan.intrinsics["camera4"].fov,
+            aspect=self.scan.intrinsics["camera4"].aspect,
             scale=config.camera_frustrum_scale,
             color=config.camera_frustrum_color,
         )
         self.camera5_frustrum = self.server.scene.add_camera_frustum(
             f"/camera5",
-            fov=self.scan.camera5_fov,
-            aspect=self.scan.camera5_aspect,
+            fov=self.scan.intrinsics["camera5"].fov,
+            aspect=self.scan.intrinsics["camera5"].aspect,
             scale=config.camera_frustrum_scale,
             color=config.camera_frustrum_color,
         )

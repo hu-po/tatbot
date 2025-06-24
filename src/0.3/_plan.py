@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field, asdict
 import os
-import math
 
 import dacite
 import numpy as np
@@ -16,12 +15,12 @@ from _path import Path, PathBatch, Stroke
 
 log = get_logger('_plan')
 
-# plan objects stored inside folder, these are the filenames
+# plan objects stored inside a directory, these are the filenames
 METADATA_FILENAME: str = "meta.yaml"
 BOT_CONFIG_FILENAME: str = "bot_config.yaml"
-INKPALETTE_FILENAME: str = "ink_config.yaml"
-IMAGE_FILENAME: str = "image.png"
+INK_CONFIG_FILENAME: str = "ink_config.yaml"
 PATHBATCH_FILENAME: str = "pathbatch.safetensors"
+IMAGE_FILENAME: str = "image.png"
 
 @dataclass
 class Plan:
@@ -83,7 +82,7 @@ class Plan:
         meta_path = os.path.join(self.dirpath, METADATA_FILENAME)
         log.info(f"⚙️💾 Saving metadata to {meta_path}")
         self.bot_config.save_yaml(os.path.join(self.dirpath, BOT_CONFIG_FILENAME))
-        self.ink_config.save_yaml(os.path.join(self.dirpath, INKPALETTE_FILENAME))
+        self.ink_config.save_yaml(os.path.join(self.dirpath, INK_CONFIG_FILENAME))
         meta_dict = asdict(self).copy()
         meta_dict.pop('bot_config', None)
         meta_dict.pop('ink_config', None)
@@ -98,7 +97,7 @@ class Plan:
             data = yaml.safe_load(f)
         plan = dacite.from_dict(cls, data, config=dacite.Config(type_hooks={np.ndarray: np.array}))
         plan.bot_config = BotConfig.from_yaml(os.path.join(dirpath, BOT_CONFIG_FILENAME))
-        plan.ink_config = InkConfig.from_yaml(os.path.join(dirpath, INKPALETTE_FILENAME))
+        plan.ink_config = InkConfig.from_yaml(os.path.join(dirpath, INK_CONFIG_FILENAME))
         plan.dirpath = dirpath
         return plan
 
