@@ -61,8 +61,8 @@ class BotScanConfig:
     """Number of steps to perform in one scan."""
 
 def record_scan(config: BotScanConfig):
-    scan = Scan()
-    tracker = TagTracker(scan.tag_config)
+    # scan = Scan()
+    # tracker = TagTracker(scan.tag_config)
 
     log.info("🤖🤗 Adding LeRobot robot...")
     robot = make_robot_from_config(TatbotScanConfig)
@@ -81,8 +81,7 @@ def record_scan(config: BotScanConfig):
         root=f"{config.output_dir}/{dataset_name}",
         robot_type=robot.name,
         features=dataset_features,
-        # use_videos=False, # we want images, not videos
-        use_videos=True,
+        use_videos=False, # we want images, not videos
         image_writer_processes=config.num_image_writer_processes,
         image_writer_threads=config.num_image_writer_threads_per_camera * len(robot.cameras),
     )
@@ -92,7 +91,7 @@ def record_scan(config: BotScanConfig):
     scan_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/scan")
     log.info(f"🤖🗃️ Creating scan directory at {scan_dir}...")
     os.makedirs(scan_dir, exist_ok=True)
-    scan.save(scan_dir)
+    # scan.save(scan_dir)
 
     logs_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/logs")
     log.info(f"🤖🗃️ Creating logs directory at {logs_dir}...")
