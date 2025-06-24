@@ -40,8 +40,8 @@ import json
 import logging
 import os
 import re
+import tarfile
 from typing import List, Optional
-import time
 
 from mcp.server.fastmcp import FastMCP
 
@@ -366,26 +366,9 @@ def run_robot_scan() -> str:
         local_scan_path = os.path.expanduser(f"~/tatbot/output/record/{scan_dir}")
 
         # Step 2: Copy directory from trossen-ai to local node
-        def sftp_get_dir(client, remote_dir, local_dir):
-            import stat
-            sftp = client.open_sftp()
-            os.makedirs(local_dir, exist_ok=True)
-            for entry in sftp.listdir_attr(remote_dir):
-                rpath = remote_dir + "/" + entry.filename
-                lpath = os.path.join(local_dir, entry.filename)
-                if stat.S_ISDIR(entry.st_mode):
-                    sftp_get_dir(client, rpath, lpath)
-                else:
-                    sftp.get(rpath, lpath)
-            sftp.close()
-
-        client = net.get_ssh_client(trossen_node.ip, trossen_node.user)
-        try:
-            sftp_get_dir(client, remote_scan_path, local_scan_path)
-        except Exception as e:
-            client.close()
-            return f"❌ Failed to copy scan directory from trossen-ai: {e}"
-        client.close()
+        status = net.transfer_directory_from_node("trossen-ai", remote_scan_path, local_scan_path)
+        if not status.startswith("✅"):
+            return status
 
         # Step 3: Distribute to rpi1 and ook
         import tarfile
@@ -411,6 +394,124 @@ def run_robot_scan() -> str:
     except Exception as e:
         log.error(f"scan_and_distribute failed: {e}")
         return f"❌ scan_and_distribute failed: {e}"
+
+@mcp.tool(description="Performs a plan on trossen-ai using bot_plan.py, first copies the plan to trossen-ai, then runs the plan, then copies the resulting output directory to the local node and rpi1.")
+def run_robot_plan(plan_name: str = "bench") -> str:
+    """
+    1. Finds the plan in output/plans/<plan_name>
+    2. Copies the plan directory to trossen-ai
+    3. Updates the tatbot repo and uv venv on trossen-ai.
+    4. Runs `uv run bot_plan.py --plan_dir ~/tatbot/output/plans/<plan_name>` on trossen-ai.
+    5. Finds the new plan recording output directory (plan-<plan_name>-<timestamp>).
+    6. Copies the plan recording output directory from trossen-ai to the local node and rpi1.
+    """
+    trossen_node = next((n for n in net.nodes if n.name == "trossen-ai"), None)
+    if not trossen_node:
+        return "❌ trossen-ai node not found in configuration."
+    if net.is_local_node(trossen_node):
+        return "❌ trossen-ai is the local node; this function is intended for remote execution."
+
+    local_plan_dir = os.path.expanduser(f"~/tatbot/output/plans/{plan_name}")
+    remote_output_dir = "~/tatbot/output/record"
+    plan_dir_pattern = rf"plan-{plan_name}-\\d{{4}}y-\\d{{2}}m-\\d{{2}}d-\\d{{2}}h-\\d{{2}}m-\\d{{2}}s"
+
+    # Step 1: Copy the plan directory to trossen-ai (tar for transfer)
+    tar_path = local_plan_dir + ".tar.gz"
+    if not os.path.exists(local_plan_dir):
+        return f"❌ Local plan directory not found: {local_plan_dir}"
+    with tarfile.open(tar_path, "w:gz") as tar:
+        tar.add(local_plan_dir, arcname=plan_name)
+    net.transfer_files_to_nodes(
+        local_path=tar_path,
+        remote_path=f"~/tatbot/output/plans/{plan_name}.tar.gz",
+        node_names=["trossen-ai"],
+        direction="put",
+    )
+    # Untar on trossen-ai
+    untar_cmd = f"mkdir -p ~/tatbot/output/plans && tar -xzf ~/tatbot/output/plans/{plan_name}.tar.gz -C ~/tatbot/output/plans"
+    net.run_command_on_nodes(untar_cmd, node_names=["trossen-ai"])
+    cleanup_cmd = f"rm -f ~/tatbot/output/plans/{plan_name}.tar.gz"
+    net.run_command_on_nodes(cleanup_cmd, node_names=["trossen-ai"])
+    try:
+        os.remove(tar_path)
+    except Exception:
+        pass
+
+    try:
+        client = net.get_ssh_client(trossen_node.ip, trossen_node.user)
+        # --- Update repo and venv ---
+        update_cmd = (
+            "export PATH=\"$HOME/.local/bin:$PATH\" && "
+            "git -C ~/tatbot pull && "
+            "cd ~/tatbot/src/0.3 && "
+            "deactivate >/dev/null 2>&1 || true && "
+            "rm -rf .venv && "
+            "rm -f uv.lock && "
+            "uv venv && "
+            f"uv pip install '{trossen_node.deps}'"
+        )
+        exit_code, out, err = net._run_remote_command(client, update_cmd, timeout=300)
+        if exit_code != 0:
+            client.close()
+            return f"❌ Update failed on trossen-ai.\n{err or out}"
+
+        # List plan output directories before
+        pre_cmd = f"ls -1 {remote_output_dir}"
+        _, pre_out, _ = net._run_remote_command(client, pre_cmd)
+        pre_dirs = set(re.findall(plan_dir_pattern, pre_out))
+
+        # --- Run the plan ---
+        plan_cmd = (
+            f"export PATH=\"$HOME/.local/bin:$PATH\" && "
+            f"cd ~/tatbot/src/0.3 && "
+            f"[ -f .env ] && set -a && . .env && set +a; "
+            f"uv run bot_plan.py --plan_dir ~/tatbot/output/plans/{plan_name}"
+        )
+        exit_code, plan_out, plan_err = net._run_remote_command(client, plan_cmd, timeout=1200)
+        if exit_code != 0:
+            client.close()
+            return f"❌ Plan execution failed on trossen-ai.\n{plan_err or plan_out}"
+
+        # List plan output directories after
+        _, post_out, _ = net._run_remote_command(client, pre_cmd)
+        post_dirs = set(re.findall(plan_dir_pattern, post_out))
+        client.close()
+
+        new_dirs = post_dirs - pre_dirs
+        if not new_dirs:
+            return "❌ Could not find new plan output directory after running plan."
+        plan_output_dir = sorted(new_dirs)[-1]
+        remote_plan_output_path = f"/home/{trossen_node.user}/tatbot/output/record/{plan_output_dir}"
+        local_plan_output_path = os.path.expanduser(f"~/tatbot/output/record/{plan_output_dir}")
+
+        # Step 2: Copy directory from trossen-ai to local node
+        status = net.transfer_directory_from_node("trossen-ai", remote_plan_output_path, local_plan_output_path)
+        if not status.startswith("✅"):
+            return status
+
+        # Step 3: Distribute to rpi1
+        tar_path = local_plan_output_path + ".tar.gz"
+        with tarfile.open(tar_path, "w:gz") as tar:
+            tar.add(local_plan_output_path, arcname=plan_output_dir)
+        net.transfer_files_to_nodes(
+            local_path=tar_path,
+            remote_path=f"~/tatbot/output/record/{plan_output_dir}.tar.gz",
+            node_names=["rpi1"],
+            direction="put",
+        )
+        untar_cmd = f"mkdir -p ~/tatbot/output/record && tar -xzf ~/tatbot/output/record/{plan_output_dir}.tar.gz -C ~/tatbot/output/record"
+        net.run_command_on_nodes(untar_cmd, node_names=["rpi1"])
+        cleanup_cmd = f"rm -f ~/tatbot/output/record/{plan_output_dir}.tar.gz"
+        net.run_command_on_nodes(cleanup_cmd, node_names=["rpi1"])
+        try:
+            os.remove(tar_path)
+        except Exception:
+            pass
+
+        return f"✅ Plan complete. Output directory: {plan_output_dir}\nUpdated, ran plan, and copied to local and rpi1."
+    except Exception as e:
+        log.error(f"run_robot_plan failed: {e}")
+        return f"❌ run_robot_plan failed: {e}"
 
 def run_mcp(config: MCPConfig):
     log.info("🔌 Starting MCP server")

@@ -4,6 +4,7 @@ import getpass
 import logging
 import os
 import socket
+import stat
 import subprocess
 from typing import Optional, Tuple, List
 
@@ -439,6 +440,51 @@ class NetworkManager:
             return node.name, True, f"✅ {node.emoji} {node.name} ({node.ip}): SSH connection successful."
         except Exception as e:
             return node.name, False, f"❌ {node.emoji} {node.name} ({node.ip}): SSH connection failed - {e}"
+
+    def sftp_get_dir(self, client, remote_dir, local_dir):
+        """
+        Recursively copy a directory from remote_dir on the SSH client to local_dir on the local machine.
+        Args:
+            client: Connected paramiko SSHClient
+            remote_dir: Path to the remote directory
+            local_dir: Path to the local directory
+        """
+        sftp = client.open_sftp()
+        os.makedirs(local_dir, exist_ok=True)
+        for entry in sftp.listdir_attr(remote_dir):
+            rpath = remote_dir + "/" + entry.filename
+            lpath = os.path.join(local_dir, entry.filename)
+            if stat.S_ISDIR(entry.st_mode):
+                self.sftp_get_dir(client, rpath, lpath)
+            else:
+                self.log.info(f"🌐 📥 Downloading {rpath} to {lpath}")
+                sftp.get(rpath, lpath)
+        sftp.close()
+
+    def transfer_directory_from_node(self, node_name: str, remote_dir: str, local_dir: str) -> str:
+        """
+        Transfers a directory from a remote node to the local machine using SFTP.
+        Args:
+            node_name: Name of the remote node (must be in config)
+            remote_dir: Path to the remote directory
+            local_dir: Path to the local directory
+        Returns:
+            Status message (success or error)
+        """
+        target_nodes, err = self.get_target_nodes([node_name])
+        if err or not target_nodes:
+            return f"❌ Node '{node_name}' not found: {err}"
+        node = target_nodes[0]
+        if self.is_local_node(node):
+            return f"❌ Node '{node_name}' is the local node; directory transfer is intended for remote nodes."
+        try:
+            client = self.get_ssh_client(node.ip, node.user)
+            self.sftp_get_dir(client, remote_dir, local_dir)
+            client.close()
+            return f"✅ Directory {remote_dir} copied from {node_name} to {local_dir}"
+        except Exception as e:
+            self.log.error(f"Failed to copy directory from {node_name}: {e}")
+            return f"❌ Failed to copy directory from {node_name}: {e}"
 
 
 if __name__ == "__main__":
