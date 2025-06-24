@@ -91,7 +91,7 @@ def record_scan(config: BotScanConfig):
     scan_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/scan")
     log.info(f"🤖🗃️ Creating scan directory at {scan_dir}...")
     os.makedirs(scan_dir, exist_ok=True)
-    shutil.copytree(config.scan_dir, scan_dir, dirs_exist_ok=True)
+    scan.save(scan_dir)
 
     logs_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/logs")
     log.info(f"🤖🗃️ Creating logs directory at {logs_dir}...")
