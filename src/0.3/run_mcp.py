@@ -232,7 +232,10 @@ def poweroff_nodes(nodes: Optional[List[str]] = None) -> str:
     return "\n".join(sorted(report))
 
 @mcp.tool(description="Turns on the visualization on the rpi1 node: pulls latest code, updates environment, kills existing Chromium and python3, launches viz process, waits for server, then launches Chromium. Logs all steps.")
-def turn_on_viz() -> str:
+def run_viz(
+    viz_type: str,  # 'test', 'plan', or 'scan'
+    name: str,       # plan name or scan name
+) -> str:
     log.info(f"🔌 Turning on viz for rpi1: git pull, update uv env, kill old Chromium and python3, launch viz, wait for server, launch Chromium, with full logging.")
 
     rpi1_node = next((n for n in net.nodes if n.name == "rpi1"), None)
@@ -241,6 +244,20 @@ def turn_on_viz() -> str:
 
     if net.is_local_node(rpi1_node):
         return "❌ rpi1 is the local node; this function is intended for remote execution."
+
+    # Use update_nodes for environment update
+    update_status = update_nodes(["rpi1"])
+    if not update_status or "Failed" in update_status or "Exception" in update_status:
+        return f"❌ Failed to update environment on rpi1.\n{update_status}"
+    
+    if viz_type == "test":
+        viz_command = "_viz.py"
+    elif viz_type == "plan":
+        viz_command = f"uv run viz_plan.py --plan_dir ~/tatbot/output/plans/{name}"
+    elif viz_type == "scan":
+        viz_command = f"uv run viz_scan.py --scan_dir ~/tatbot/output/record/{name}"
+    else:
+        return f"❌ Invalid viz_type: {viz_type}"
 
     try:
         client = net.get_ssh_client(rpi1_node.ip, rpi1_node.user)
@@ -254,21 +271,13 @@ def turn_on_viz() -> str:
             "pkill -f chromium-browser >> ~/chromium-viz.log 2>&1\n"
             "echo killing existing python3... >> ~/chromium-viz.log\n"
             "pkill -f python3 >> ~/chromium-viz.log 2>&1\n"
-            "echo git pulling... >> ~/chromium-viz.log\n"
-            "git -C ~/tatbot pull >> ~/chromium-viz.log 2>&1\n"
-            "echo updating uv environment... >> ~/chromium-viz.log\n"
-            "cd ~/tatbot/src/0.3\n"
-            "deactivate >/dev/null 2>&1 || true\n"
-            "rm -rf .venv\n"
-            "rm -f uv.lock\n"
-            "uv venv >> ~/chromium-viz.log 2>&1\n"
-            "uv pip install '.[tag]' >> ~/chromium-viz.log 2>&1\n"
             "echo exporting display... >> ~/chromium-viz.log\n"
             "export DISPLAY=:0\n"
             "export XAUTHORITY=/home/rpi1/.Xauthority\n"
             "echo launching viz process... >> ~/chromium-viz.log\n"
+            "cd ~/tatbot/src/0.3\n"
             "source .venv/bin/activate\n"
-            "setsid uv run _viz.py >> ~/chromium-viz.log 2>&1 &\n"
+            f"setsid uv run {viz_command} >> ~/chromium-viz.log 2>&1 &\n"
             "echo waiting for viser server on port 8080... >> ~/chromium-viz.log\n"
             "for i in {1..20}; do\n"
             "    if nc -z localhost 8080; then\n"
@@ -316,24 +325,13 @@ def run_robot_scan() -> str:
     remote_output_dir = "~/tatbot/output/record"
     scan_dir_pattern = r"scan-\d{4}y-\d{2}m-\d{2}d-\d{2}h-\d{2}m-\d{2}s"
 
+    # Use update_nodes for environment update
+    update_status = update_nodes(["trossen-ai"])
+    if not update_status or "Failed" in update_status or "Exception" in update_status:
+        return f"❌ Failed to update environment on trossen-ai.\n{update_status}"
+
     try:
         client = net.get_ssh_client(trossen_node.ip, trossen_node.user)
-        # --- Update repo and venv ---
-        update_cmd = (
-            "export PATH=\"$HOME/.local/bin:$PATH\" && "
-            "git -C ~/tatbot pull && "
-            "cd ~/tatbot/src/0.3 && "
-            "deactivate >/dev/null 2>&1 || true && "
-            "rm -rf .venv && "
-            "rm -f uv.lock && "
-            "uv venv && "
-            f"uv pip install '{trossen_node.deps}'"
-        )
-        exit_code, out, err = net._run_remote_command(client, update_cmd, timeout=300)
-        if exit_code != 0:
-            client.close()
-            return f"❌ Update failed on trossen-ai.\n{err or out}"
-
         # List scan directories before
         pre_cmd = f"ls -1 {remote_output_dir}"
         _, pre_out, _ = net._run_remote_command(client, pre_cmd)
@@ -369,24 +367,15 @@ def run_robot_scan() -> str:
         if not status.startswith("✅"):
             return status
 
-        # Step 3: Distribute to rpi1
-        tar_path = local_scan_path + ".tar.gz"
-        with tarfile.open(tar_path, "w:gz") as tar:
-            tar.add(local_scan_path, arcname=scan_dir)
-        net.transfer_files_to_nodes(
-            local_path=tar_path,
-            remote_path=f"~/tatbot/output/record/{scan_dir}.tar.gz",
-            node_names=["rpi1"],
-            direction="put",
+        # Step 3: Distribute to rpi1 using the new tool
+        dist_status = copy_data_between_nodes(
+            data_type="recording",
+            name=scan_dir,
+            source_node="trossen-ai",
+            destination_nodes=["rpi1"],
         )
-        untar_cmd = f"mkdir -p ~/tatbot/output/record && tar -xzf ~/tatbot/output/record/{scan_dir}.tar.gz -C ~/tatbot/output/record"
-        net.run_command_on_nodes(untar_cmd, node_names=["rpi1"])
-        cleanup_cmd = f"rm -f ~/tatbot/output/record/{scan_dir}.tar.gz"
-        net.run_command_on_nodes(cleanup_cmd, node_names=["rpi1"])
-        try:
-            os.remove(tar_path)
-        except Exception:
-            pass
+        if not dist_status.startswith("✅"):
+            return dist_status
 
         return f"✅ Scan complete. Output directory: {scan_dir}\nUpdated, scanned, and copied to local and rpi1."
     except Exception as e:
@@ -445,24 +434,13 @@ def run_robot_plan(plan_name: str = "bench") -> str:
     except Exception:
         pass
 
+    # Use update_nodes for environment update
+    update_status = update_nodes(["trossen-ai"])
+    if not update_status or "Failed" in update_status or "Exception" in update_status:
+        return f"❌ Failed to update environment on trossen-ai.\n{update_status}"
+
     try:
         client = net.get_ssh_client(trossen_node.ip, trossen_node.user)
-        # --- Update repo and venv ---
-        update_cmd = (
-            "export PATH=\"$HOME/.local/bin:$PATH\" && "
-            "git -C ~/tatbot pull && "
-            "cd ~/tatbot/src/0.3 && "
-            "deactivate >/dev/null 2>&1 || true && "
-            "rm -rf .venv && "
-            "rm -f uv.lock && "
-            "uv venv && "
-            f"uv pip install '{trossen_node.deps}'"
-        )
-        exit_code, out, err = net._run_remote_command(client, update_cmd, timeout=300)
-        if exit_code != 0:
-            client.close()
-            return f"❌ Update failed on trossen-ai.\n{err or out}"
-
         # List plan output directories before
         pre_cmd = f"ls -1 {remote_output_dir}"
         _, pre_out, _ = net._run_remote_command(client, pre_cmd)
@@ -494,32 +472,91 @@ def run_robot_plan(plan_name: str = "bench") -> str:
 
         # Step 2: Copy directory from trossen-ai to local node
         status = net.transfer_directory_from_node("trossen-ai", remote_plan_output_path, local_plan_output_path)
+        log.info(f"[MCP] transfer_directory_from_node status: {status}")
         if not status.startswith("✅"):
             return status
 
-        # Step 3: Distribute to rpi1
-        tar_path = local_plan_output_path + ".tar.gz"
-        with tarfile.open(tar_path, "w:gz") as tar:
-            tar.add(local_plan_output_path, arcname=plan_output_dir)
-        net.transfer_files_to_nodes(
-            local_path=tar_path,
-            remote_path=f"~/tatbot/output/record/{plan_output_dir}.tar.gz",
-            node_names=["rpi1"],
-            direction="put",
+        # Step 3: Distribute to rpi1 using the new tool
+        dist_status = copy_data_between_nodes(
+            data_type="recording",
+            name=plan_output_dir,
+            source_node="trossen-ai",
+            destination_nodes=["rpi1"],
         )
-        untar_cmd = f"mkdir -p ~/tatbot/output/record && tar -xzf ~/tatbot/output/record/{plan_output_dir}.tar.gz -C ~/tatbot/output/record"
-        net.run_command_on_nodes(untar_cmd, node_names=["rpi1"])
-        cleanup_cmd = f"rm -f ~/tatbot/output/record/{plan_output_dir}.tar.gz"
-        net.run_command_on_nodes(cleanup_cmd, node_names=["rpi1"])
-        try:
-            os.remove(tar_path)
-        except Exception:
-            pass
+        if not dist_status.startswith("✅"):
+            return dist_status
 
         return f"✅ Plan complete. Output directory: {plan_output_dir}\nUpdated, ran plan, and copied to local and rpi1."
     except Exception as e:
         log.error(f"run_robot_plan failed: {e}")
         return f"❌ run_robot_plan failed: {e}"
+
+@mcp.tool(description="Copies a plan or recording directory from a source node to one or more destination nodes. Handles tarring/untarring and works for both plans and recordings.")
+def copy_data_between_nodes(
+    data_type: str,  # 'plan' or 'recording'
+    name: str,       # plan name or recording dir
+    source_node: str,
+    destination_nodes: List[str],
+) -> str:
+    """
+    Copies a plan or recording directory from source_node to destination_nodes.
+    - data_type: 'plan' or 'recording'
+    - name: plan name (for plans) or directory name (for recordings)
+    - source_node: node to copy from
+    - destination_nodes: list of nodes to copy to
+    """
+    if data_type not in ("plan", "recording"):
+        return "❌ data_type must be 'plan' or 'recording'"
+    if not destination_nodes:
+        return "❌ No destination nodes specified."
+
+    # Determine remote and local paths
+    if data_type == "plan":
+        remote_dir = f"~/tatbot/output/plans/{name}"
+        local_dir = os.path.expanduser(f"~/tatbot/output/plans/{name}")
+        remote_tar = f"~/tatbot/output/plans/{name}.tar.gz"
+        local_tar = local_dir + ".tar.gz"
+        remote_untar_dir = "~/tatbot/output/plans"
+    else:
+        remote_dir = f"~/tatbot/output/record/{name}"
+        local_dir = os.path.expanduser(f"~/tatbot/output/record/{name}")
+        remote_tar = f"~/tatbot/output/record/{name}.tar.gz"
+        local_tar = local_dir + ".tar.gz"
+        remote_untar_dir = "~/tatbot/output/record"
+
+    # Step 1: Copy directory from source_node to local
+    status = net.transfer_directory_from_node(source_node, remote_dir, local_dir)
+    if not status.startswith("✅"):
+        return status
+
+    # Step 2: Tar the directory locally
+    try:
+        with tarfile.open(local_tar, "w:gz") as tar:
+            tar.add(local_dir, arcname=name)
+    except Exception as e:
+        return f"❌ Failed to create tarball: {e}"
+
+    # Step 3: Transfer tarball to destination nodes
+    net.transfer_files_to_nodes(
+        local_path=local_tar,
+        remote_path=remote_tar,
+        node_names=destination_nodes,
+        direction="put",
+    )
+
+    # Step 4: Untar on each destination node
+    untar_cmd = f"mkdir -p {remote_untar_dir} && tar -xzf {remote_tar} -C {remote_untar_dir}"
+    net.run_command_on_nodes(untar_cmd, node_names=destination_nodes)
+    cleanup_cmd = f"rm -f {remote_tar}"
+    net.run_command_on_nodes(cleanup_cmd, node_names=destination_nodes)
+
+    # Step 5: Clean up local tarball
+    try:
+        os.remove(local_tar)
+    except Exception:
+        pass
+
+    return f"✅ {data_type.capitalize()} '{name}' copied from {source_node} to {', '.join(destination_nodes)}."
 
 def run_mcp(config: MCPConfig):
     log.info("🔌 Starting MCP server")
