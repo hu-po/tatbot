@@ -128,7 +128,7 @@ class Plan:
             if stroke.pixel_coords is not None:
                 stroke.pixel_coords = np.array(stroke.pixel_coords, dtype=int)
             stroke_length = len(stroke.pixel_coords)
-            desired_length = self.path_length - 4 # -4 for rest/hover positions
+            desired_length = self.path_length - 2 # -2 for hover positions
             if stroke_length != desired_length:
                 log.warning(f"⚙️⚠️ stroke {idx} has len {stroke_length}, resampling to {desired_length}...")
                 if stroke_length > 1:
@@ -167,42 +167,40 @@ class Plan:
             stroke.meters_center = np.mean(stroke.meter_coords, axis=0)
             self.strokes[f'stroke_{idx:03d}'] = stroke
 
+        self.save() # update metadata
         self.calculate_pathbatch()
 
-    def make_inkdip_pos(self, inkcap_name: str, rest_pos: np.ndarray) -> np.ndarray:
+    def make_inkdip_pos(self, inkcap_name: str) -> np.ndarray:
         assert inkcap_name in self.inkpalette.inkcaps, f"⚙️❌ Inkcap {inkcap_name} not found in palette"
-        # default to rest positions and palette wxyz
-        inkdip_pos = np.tile(rest_pos, (self.path_length, 1))
-        # hover over the inkcap
         inkcap_pos = np.array(self.inkpalette.inkcaps[inkcap_name].palette_pos, dtype=np.float32)
+        # initialize the inkdip path to the inkcap position
+        inkdip_pos = np.tile(inkcap_pos, (self.path_length, 1))
+        # hover over the inkcap
         inkcap_hover_pos = transform_and_offset(
             np.expand_dims(inkcap_pos, axis=0),
             self.inkpalette_pos,
             self.inkpalette_wxyz,
             self.inkdip_hover_offset,
         )
-        # start+1 and end-1 are hover positions
-        inkdip_pos[1, :] = inkcap_hover_pos
-        inkdip_pos[-2, :] = inkcap_hover_pos
-        # middle of inkdip is a series of points traveling to depth of inkcap
-        num_dip_points = self.path_length - 4
-        inkdip_pos[2:-2, :] = transform_and_offset(
+        # set start and end to hover position
+        inkdip_pos[0, :] = inkcap_hover_pos
+        inkdip_pos[-1, :] = inkcap_hover_pos
+        # middle of inkdip is a series of points traveling down to the depth of inkcap
+        num_dip_points = self.path_length - 2
+        inkdip_pos[1:-1, :] = transform_and_offset(
             np.tile(inkcap_pos, (num_dip_points, 1)),
             self.inkpalette_pos,
             self.inkpalette_wxyz,
             np.concatenate([
-                np.zeros((num_dip_points, 2)),
+                np.zeros((num_dip_points, 2)), # stay at the same x and y position
                 np.linspace(0, self.inkpalette.inkcaps[inkcap_name].depth_m, num_dip_points).reshape(-1, 1),
             ], axis=1),
         )
         return inkdip_pos
 
     def calculate_pathbatch(self, filter_completed: bool = False) -> None:
-        # paths will be concatenated into a pathbatch object
+        # paths will be accumulated then concatenated into a pathbatch object
         paths: list[Path] = []
-
-        # get rest positions for both arms using forward kinematics
-        rest_pos_l, rest_pos_r, rest_wxyz_l, rest_wxyz_r = fk()
 
         if filter_completed:
             # if pathbatch is re-calculated halfway through the session
@@ -223,25 +221,20 @@ class Plan:
             assert stroke_name_r in self.strokes, f"⚙️❌ Stroke {stroke_name_r} not found in plan"
             log.debug(f"⚙️ Building path from strokes left: {stroke_name_l} and right: {stroke_name_r}...")
             
-            # create a new path for this stroke to add to the pathbatch
+            # create a new empty path for this stroke
             path = Path.empty(self.path_length)
-            # set default to rest positions
-            path.ee_pos_l[:] = np.tile(np.asarray(rest_pos_l), (self.path_length, 1))
-            path.ee_pos_r[:] = np.tile(np.asarray(rest_pos_r), (self.path_length, 1))
-            path.ee_wxyz_l[:] = np.tile(np.asarray(rest_wxyz_l), (self.path_length, 1))
-            path.ee_wxyz_r[:] = np.tile(np.asarray(rest_wxyz_r), (self.path_length, 1))
             # set the default time between poses to fast movement
             path.dt[:] = self.path_dt_fast
-            # slow movement to and from rest and hover positions
-            path.dt[:2] = self.path_dt_slow
-            path.dt[-2:] = self.path_dt_slow
+            # slow movement to and from hover positions
+            path.dt[0] = self.path_dt_slow
+            path.dt[-1] = self.path_dt_slow
 
             # left arm pointer hits a stroke with no inkcap
             if self.strokes[stroke_name_l].inkcap is None:
                 # get ink color from stroke, left arm will dip for this path
                 inkcap_name = self.inkpalette.find_best_inkcap(self.strokes[stroke_name_l].color)
                 self.strokes[stroke_name_l].inkcap = inkcap_name
-                path.ee_pos_l = self.make_inkdip_pos(inkcap_name, rest_pos_l)
+                path.ee_pos_l = self.make_inkdip_pos(inkcap_name)
                 # make a new stroke object for the inkdip path
                 stroke_l = Stroke(
                     description=f"left arm inkdip into {inkcap_name}",
@@ -261,33 +254,33 @@ class Plan:
             else:
                 # left arm pointer hits a stroke with an inkcap
                 # transform to design frame, add needle offset
-                path.ee_pos_l[2:-2, :] = transform_and_offset(
+                path.ee_pos_l[1:-1, :] = transform_and_offset(
                     self.strokes[stroke_name_l].meter_coords,
                     self.design_pos,
                     self.design_wxyz,
                     self.needle_offset_l,
                 )
-                # add hover positions to start+1 and end-1
-                path.ee_pos_l[1, :] = transform_and_offset(
+                # add hover positions to start and end
+                path.ee_pos_l[0, :] = transform_and_offset(
                     np.expand_dims(self.strokes[stroke_name_l].meter_coords[0], axis=0),
                     self.design_pos,
                     self.design_wxyz,
                     self.hover_offset,
                 )
-                path.ee_pos_l[-2, :] = transform_and_offset(
+                path.ee_pos_l[-1, :] = transform_and_offset(
                     np.expand_dims(self.strokes[stroke_name_l].meter_coords[-1], axis=0),
                     self.design_pos,
                     self.design_wxyz,
                     self.hover_offset,
                 )
-                # orientation is always in design frame
-                path.ee_wxyz_l[:, :] = self.ee_design_wxyz_l
+                # TODO: for now orientation is just design orientation
+                path.ee_wxyz_l[:, :] = np.tile(self.ee_design_wxyz_l, (self.path_length, 1))
                 left_arm_pointer += 1
 
             if self.strokes[stroke_name_r].inkcap is None:
                 inkcap_name = self.inkpalette.find_best_inkcap(self.strokes[stroke_name_r].color)
                 self.strokes[stroke_name_r].inkcap = inkcap_name
-                path.ee_pos_r = self.make_inkdip_pos(inkcap_name, rest_pos_r)
+                path.ee_pos_r = self.make_inkdip_pos(inkcap_name)
                 # make a new stroke object for the inkdip path
                 stroke_r = Stroke(
                     description=f"right arm inkdip into {inkcap_name}",
@@ -298,33 +291,33 @@ class Plan:
             else:
                 # right arm pointer hits a stroke with an inkcap
                 # transform to design frame, add needle offset
-                path.ee_pos_r[2:-2, :] = transform_and_offset(
+                path.ee_pos_r[1:-1, :] = transform_and_offset(
                     self.strokes[stroke_name_r].meter_coords,
                     self.design_pos,
                     self.design_wxyz,
                     self.needle_offset_r,
                 )
-                # add hover positions to start+1 and end-1
-                path.ee_pos_r[1, :] = transform_and_offset(
+                # add hover positions to start and end
+                path.ee_pos_r[0, :] = transform_and_offset(
                     np.expand_dims(self.strokes[stroke_name_r].meter_coords[0], axis=0),
                     self.design_pos,
                     self.design_wxyz,
                     self.hover_offset,
                 )
-                path.ee_pos_r[-2, :] = transform_and_offset(
+                path.ee_pos_r[-1, :] = transform_and_offset(
                     np.expand_dims(self.strokes[stroke_name_r].meter_coords[-1], axis=0),
                     self.design_pos,
                     self.design_wxyz,
                     self.hover_offset,
                 )
-                # orientation is always in design frame
-                path.ee_wxyz_r[:, :] = self.ee_design_wxyz_r
+                # TODO: for now orientation is just design orientation
+                path.ee_wxyz_r[:, :] = np.tile(self.ee_design_wxyz_r, (self.path_length, 1))
                 right_arm_pointer += 1
 
             self.path_idx_to_strokes.append([stroke_l, stroke_r])
             paths.append(path)
 
-        # ---- Batch IK ----
+        # Perform IK in batches (batch size will be hardware specific)
         flat_target_pos   : list[list[np.ndarray]] = []
         flat_target_wxyz  : list[list[np.ndarray]] = []
         index_map: list[tuple[int, int]] = [] # (path_idx, pose_idx)

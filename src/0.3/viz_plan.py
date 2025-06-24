@@ -21,9 +21,9 @@ class VizPlanConfig(BaseVizConfig):
     plan_dir: str = os.path.expanduser("~/tatbot/output/plans/bench")
     """Directory containing plan."""
 
-    point_size: float = 0.001
+    design_pointcloud_point_size: float = 0.001
     """Size of points in the point cloud visualization (meters)."""
-    point_shape: str = "rounded"
+    design_pointcloud_point_shape: str = "rounded"
     """Shape of points in the point cloud visualization."""
 
     path_highlight_radius: int = 3
@@ -183,19 +183,26 @@ class VizPlan(BaseViz):
     def step(self):
         if self.pose_idx >= self.plan.path_length:
             self.path_idx += 1
-            log.debug(f"🖥️ Moving to next path {self.path_idx}")
             self.pose_idx = 0
+            self.robot_at_rest = False
+            log.debug(f"🖥️ Moving to next path {self.path_idx}")
         if self.path_idx >= self.num_paths:
             log.debug(f"🖥️ Looping back to path 0")
             self.path_idx = 0
             self.pose_idx = 0
+            self.robot_at_rest = False
         self.path_idx_slider.value = self.path_idx
         self.pose_idx_slider.value = self.pose_idx
-        self.pose_idx_slider.max = self.plan.path_length - 1
-        if self.pose_idx_slider.value > self.pose_idx_slider.max:
-            self.pose_idx_slider.value = self.pose_idx_slider.max
-        self.joints = np.asarray(self.pathbatch.joints[self.path_idx, self.pose_idx], dtype=np.float64).flatten()
         log.debug(f"🖥️🤖 Visualizing path {self.path_idx} pose {self.pose_idx}")
+
+        # before every path, send the robot to rest pose
+        if not self.robot_at_rest:
+            log.debug(f"🖥️ Sending robot to rest pose")
+            self.joints = self.bot_config.rest_pose.copy()
+            self.robot_at_rest = True
+        else:
+            self.joints = np.asarray(self.pathbatch.joints[self.path_idx, self.pose_idx], dtype=np.float64).flatten()
+            self.robot_at_rest = False
 
         log.debug(f"🖥️🖼️ Updating Viser image...")
         image_np = self.image_np.copy()
@@ -205,7 +212,7 @@ class VizPlan(BaseViz):
                 for pw, ph in stroke.pixel_coords:
                     cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["red"], -1)
                 # Highlight path up until current pose in green
-                pix_idx = self.pose_idx + 2 # skip over rest and hover poses
+                pix_idx = self.pose_idx + 1 # skip over hover poses
                 if pix_idx is not None and pix_idx > 0:
                     for pw, ph in stroke.pixel_coords[:pix_idx]:
                         cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["green"], -1)
@@ -226,7 +233,7 @@ class VizPlan(BaseViz):
         # Highlight current path in red
         new_colors[path_start:path_end] = np.array(COLORS["red"], dtype=np.uint8)
         # Compute pixel index for current pose
-        pix_idx = self.pose_idx + 2 # skip over rest and hover poses
+        pix_idx = self.pose_idx + 1 # skip over hover poses
         # Highlight up to current pose in green (excluding endpoints)
         if pix_idx is not None and pix_idx > 0:
             new_colors[path_start:path_start + pix_idx] = np.array(COLORS["green"], dtype=np.uint8)
@@ -241,7 +248,6 @@ class VizPlan(BaseViz):
         else:
             dt_val = float(dt_val)
         time.sleep(dt_val / self.speed_slider.value)
-        self.pose_idx += 1
 
 def make_pathviz_image(plan: Plan) -> np.ndarray:
     """Creates an image with overlayed paths from a plan."""

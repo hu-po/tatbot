@@ -40,6 +40,7 @@ class BaseViz:
         _urdf, self.robot, self.ee_link_indices = load_robot(self.bot_config.urdf_path, self.bot_config.target_link_names)
         self.urdf = ViserUrdf(self.server, _urdf, root_node_name="/root")
         self.joints = self.bot_config.rest_pose.copy()
+        self.robot_at_rest: bool = True
 
     def step(self):
         log.info("🖥️ Empty step function, implement in subclass...")
