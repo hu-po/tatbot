@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import json
 import logging
 import os
+import psutil
 import re
 import tarfile
 from typing import List, Optional
@@ -28,7 +29,7 @@ net = NetworkManager()
 def get_nodes() -> str:
     return "\n".join(f"{node.emoji} {node.name}" for node in net.nodes)
 
-@mcp.tool(description="Tests connectivity to configured nodes and returns a status summary. If `nodes` is provided, only pings the specified nodes. Otherwise, pings all nodes.")
+@mcp.tool(description="Ping nodes and report connectivity status.")
 def ping_nodes(nodes: Optional[List[str]] = None) -> str:
     log.info(f"🔌 Pinging nodes: {nodes or 'all'}")
     target_nodes, error = net.get_target_nodes(nodes)
@@ -56,7 +57,7 @@ def ping_nodes(nodes: Optional[List[str]] = None) -> str:
 
     return f"{header}:\n" + "\n".join(f"- {msg}" for msg in sorted(messages))
 
-@mcp.tool(description="Runs 'git pull' on the tatbot repository on all configured nodes, then reinstalls the Python dependencies using uv. If `nodes` is provided, only updates the specified nodes.")
+@mcp.tool(description="Update tatbot repo and Python env on nodes via git pull and uv.")
 def update_nodes(nodes: Optional[List[str]] = None, timeout: float = 300.0) -> str:
     log.info(f"🔌 Updating nodes: {nodes or 'all'}")
     target_nodes, error = net.get_target_nodes(nodes)
@@ -101,11 +102,9 @@ def update_nodes(nodes: Optional[List[str]] = None, timeout: float = 300.0) -> s
 
     return "\n\n".join(results)
 
-@mcp.tool(description="For every node in config/nodes.yaml, report basic CPU/RAM usage. Falls back to 'unreachable' if SSH fails. If `nodes` is provided, only reports usage for the specified nodes.")
+@mcp.tool(description="Report CPU and RAM usage for nodes.")
 def node_cpu_ram_usage(nodes: Optional[List[str]] = None) -> dict[str, dict]:
-    import psutil
-
-    log.info(f"Getting usage for nodes: {nodes or 'all'}")
+    log.info(f"🔌 Getting CPU/RAM usage for nodes: {nodes or 'all'}")
     target_nodes, error = net.get_target_nodes(nodes)
     if error:
         return {"error": error}
@@ -152,7 +151,7 @@ def node_cpu_ram_usage(nodes: Optional[List[str]] = None) -> dict[str, dict]:
 
     return report
 
-@mcp.tool(description="Powers off the specified nodes. Requires passwordless sudo for the 'poweroff' command.")
+@mcp.tool(description="Power off remote nodes (requires passwordless sudo). Skips local node.")
 def poweroff_nodes(nodes: Optional[List[str]] = None) -> str:
     log.info(f"🔌 Powering off nodes: {nodes or 'all'}")
     target_nodes, error = net.get_target_nodes(nodes)
@@ -195,12 +194,12 @@ def poweroff_nodes(nodes: Optional[List[str]] = None) -> str:
     
     return "\n".join(sorted(report))
 
-@mcp.tool(description="Turns on the visualization on the rpi1 node: pulls latest code, updates environment, kills existing Chromium and python3, launches viz process, waits for server, then launches Chromium. Logs all steps.")
+@mcp.tool(description="Start visualization on rpi1: update, kill old procs, launch viz, open Chromium.")
 def run_viz(
     viz_type: str,  # 'test', 'plan', or 'scan'
     name: str,       # plan name or scan name
 ) -> str:
-    log.info(f"🔌 Turning on viz for rpi1: git pull, update uv env, kill old Chromium and python3, launch viz, wait for server, launch Chromium, with full logging.")
+    log.info(f"🔌 Running {viz_type} visualization on rpi1")
 
     rpi1_node = next((n for n in net.nodes if n.name == "rpi1"), None)
     if not rpi1_node:
@@ -271,15 +270,10 @@ def run_viz(
         log.error(f"Failed to run viz script on rpi1: {e}")
         return f"❌ rpi1: Exception occurred: {str(e)}"
 
-@mcp.tool(description="Runs a scan on trossen-ai using bot_scan.py, then copies the resulting output directory to the local node and rpi1.")
+@mcp.tool(description="Run scan on trossen-ai, copy output to local and rpi1.")
 def run_robot_scan() -> str:
-    """
-    1. Updates the tatbot repo and uv venv on trossen-ai.
-    2. Runs `uv run bot_scan.py` on trossen-ai.
-    3. Finds the new scan output directory (scan-<timestamp>).
-    4. Copies the directory from trossen-ai to the local node and rpi1.
-    """
-    # Step 1: Prepare trossen-ai node
+    log.info(f"🔌 Running scan on trossen-ai")
+
     trossen_node = next((n for n in net.nodes if n.name == "trossen-ai"), None)
     if not trossen_node:
         return "❌ trossen-ai node not found in configuration."
@@ -346,16 +340,10 @@ def run_robot_scan() -> str:
         log.error(f"scan_and_distribute failed: {e}")
         return f"❌ scan_and_distribute failed: {e}"
 
-@mcp.tool(description="Performs a plan on trossen-ai using bot_plan.py, first copies the plan to trossen-ai, then runs the plan, then copies the resulting output directory to the local node and rpi1.")
+@mcp.tool(description="Run plan on trossen-ai, copy output to local and rpi1.")
 def run_robot_plan(plan_name: str = "bench") -> str:
-    """
-    1. Finds the plan in output/plans/<plan_name>
-    2. Copies the plan directory to trossen-ai
-    3. Updates the tatbot repo and uv venv on trossen-ai.
-    4. Runs `uv run bot_plan.py --plan_dir ~/tatbot/output/plans/<plan_name>` on trossen-ai.
-    5. Finds the new plan recording output directory (plan-<plan_name>-<timestamp>).
-    6. Copies the plan recording output directory from trossen-ai to the local node and rpi1.
-    """
+    log.info(f"🔌 Running plan on trossen-ai")
+
     trossen_node = next((n for n in net.nodes if n.name == "trossen-ai"), None)
     if not trossen_node:
         return "❌ trossen-ai node not found in configuration."
@@ -455,20 +443,15 @@ def run_robot_plan(plan_name: str = "bench") -> str:
         log.error(f"run_robot_plan failed: {e}")
         return f"❌ run_robot_plan failed: {e}"
 
-@mcp.tool(description="Copies a plan or recording directory from a source node to one or more destination nodes. Handles tarring/untarring and works for both plans and recordings.")
+@mcp.tool(description="Copy plan or recording dir from one node to others (tar/untar).")
 def copy_data_between_nodes(
     data_type: str,  # 'plan' or 'recording'
     name: str,       # plan name or recording dir
     source_node: str,
     destination_nodes: List[str],
 ) -> str:
-    """
-    Copies a plan or recording directory from source_node to destination_nodes.
-    - data_type: 'plan' or 'recording'
-    - name: plan name (for plans) or directory name (for recordings)
-    - source_node: node to copy from
-    - destination_nodes: list of nodes to copy to
-    """
+    log.info(f"🔌 Copying {data_type} from {source_node} to {destination_nodes}")
+    
     if data_type not in ("plan", "recording"):
         return "❌ data_type must be 'plan' or 'recording'"
     if not destination_nodes:
