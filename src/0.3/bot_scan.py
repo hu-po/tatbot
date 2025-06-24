@@ -28,9 +28,6 @@ class BotScanConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    scan_dir: str = os.path.expanduser("~/tatbot/output/record/scan-test")
-    """Directory containing scan."""
-
     hf_username: str = "tatbot"
     """Hugging Face username."""
     dataset_name: str | None = None
@@ -64,7 +61,7 @@ class BotScanConfig:
     """Number of steps to perform in one scan."""
 
 def record_scan(config: BotScanConfig):
-    scan = Scan.from_yaml(config.scan_dir)
+    scan = Scan()
     tracker = TagTracker(scan.tag_config)
 
     log.info("🤖🤗 Adding LeRobot robot...")
