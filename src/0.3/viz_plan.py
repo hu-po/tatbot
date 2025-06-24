@@ -122,104 +122,94 @@ class VizPlan(BaseViz):
             render_height=self.plan.image_height_m,
         )
 
-        log.debug(f"🖥️🖼️ Adding pointclouds...")
-        points_hover = []
-        points_path = []
-        self.path_point_ranges = []  # List of (start_idx, end_idx) for each path in points_path
-        path_point_idx = 0
+        log.debug(f"🖥️ Adding pointclouds...")
+        points_l = [] # pointcloud for paths of left arm
+        points_r = [] # pointcloud for paths of right arm
         for i in range(self.pathbatch.ee_pos_l.shape[0]):
-            path_start = path_point_idx
             for j in range(self.pathbatch.ee_pos_l.shape[1]):
-                if j < 2 or j > self.plan.path_length - 3:
-                    points_hover.append(self.pathbatch.ee_pos_l[i, j])
-                else:
-                    points_path.append(self.pathbatch.ee_pos_l[i, j])
-                    path_point_idx += 1
-            path_end = path_point_idx
-            self.path_point_ranges.append((path_start, path_end))
-        points_hover = np.stack(points_hover, axis=0)
-        points_path = np.stack(points_path, axis=0)
-        point_colors_hover = np.tile(np.array(COLORS["orange"], dtype=np.uint8), (points_hover.shape[0], 1))
-        point_colors_path = np.tile(np.array(COLORS["black"], dtype=np.uint8), (points_path.shape[0], 1))
-        self.pointcloud_hover = self.server.scene.add_point_cloud(
-            name="/points_hover",
-            points=points_hover,
-            colors=point_colors_hover,
+                points_l.append(self.pathbatch.ee_pos_l[i, j])
+                points_r.append(self.pathbatch.ee_pos_r[i, j])
+        points_l = np.stack(points_l, axis=0)
+        points_r = np.stack(points_r, axis=0)
+        self.point_colors_path_l = np.tile(np.array(COLORS["blue"], dtype=np.uint8), (points_l.shape[0], 1))
+        self.point_colors_path_r = np.tile(np.array(COLORS["purple"], dtype=np.uint8), (points_r.shape[0], 1))
+
+        self.pointcloud_path_l = self.server.scene.add_point_cloud(
+            name="/points_path_l",
+            points=points_l,
+            colors=self.point_colors_path_l,
             point_size=self.config.design_pointcloud_point_size,
             point_shape=self.config.design_pointcloud_point_shape,
         )
-        self.pointcloud_path = self.server.scene.add_point_cloud(
-            name="/points_path",
-            points=points_path,
-            colors=point_colors_path,
+        self.pointcloud_path_r = self.server.scene.add_point_cloud(
+            name="/points_path_r",
+            points=points_r,
+            colors=self.point_colors_path_r,
             point_size=self.config.design_pointcloud_point_size,
             point_shape=self.config.design_pointcloud_point_shape,
         )
 
     def step(self):
+        if self.robot_at_rest:
+            log.debug(f"🖥️ Robot at rest, skipping step...")
+            self.robot_at_rest = False
+            return
         if self.pose_idx >= self.plan.path_length:
             self.path_idx += 1
             self.pose_idx = 0
-            self.robot_at_rest = False
             log.debug(f"🖥️ Moving to next path {self.path_idx}")
         if self.path_idx >= self.num_paths:
             log.debug(f"🖥️ Looping back to path 0")
             self.path_idx = 0
             self.pose_idx = 0
-            self.robot_at_rest = False
         self.path_idx_slider.value = self.path_idx
         self.pose_idx_slider.value = self.pose_idx
-        log.debug(f"🖥️🤖 Visualizing path {self.path_idx} pose {self.pose_idx}")
+        log.debug(f"🖥️ Visualizing path {self.path_idx} pose {self.pose_idx}")
 
-        log.debug(f"🖥️🖼️ Updating Viser image...")
+        log.debug(f"🖥️ Updating Image and Pointclouds...")
         image_np = self.image_np.copy()
-        # Draw the entire path in red (all drawing pixels, not hover)
-        for stroke_idx, stroke in enumerate(self.plan.path_idx_to_strokes[self.path_idx]):
-            if stroke.pixel_coords is not None:
+        for stroke in self.plan.path_idx_to_strokes[self.path_idx]:
+            if stroke.arm == "left":
+                points_color_l = self.point_colors_path_l.copy()
+                points_color_l[self.path_idx * self.plan.path_length:self.path_idx * self.plan.path_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
+                points_color_l[self.path_idx * self.plan.path_length + self.pose_idx] = np.array(COLORS["blue"], dtype=np.uint8)
+                self.pointcloud_path_l.colors = points_color_l
+            else:
+                points_color_r = self.point_colors_path_r.copy()
+                points_color_r[self.path_idx * self.plan.path_length:self.path_idx * self.plan.path_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
+                points_color_r[self.path_idx * self.plan.path_length + self.pose_idx] = np.array(COLORS["purple"], dtype=np.uint8)
+                self.pointcloud_path_r.colors = points_color_r
+            if stroke.pixel_coords is not None and not stroke.is_inkdip:
+                # Highlight entire path in red
                 for pw, ph in stroke.pixel_coords:
                     cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["red"], -1)
-                # Highlight path up until current pose in green
-                pix_idx = self.pose_idx + 1 # skip over hover poses
-                if pix_idx is not None and pix_idx > 0:
-                    for pw, ph in stroke.pixel_coords[:pix_idx]:
-                        cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["green"], -1)
-                # Highlight current pose in magenta
-                if pix_idx is not None and 0 <= pix_idx < len(stroke.pixel_coords):
-                    px, py = stroke.pixel_coords[pix_idx]
-                    cv2.circle(image_np, (int(px), int(py)), self.config.pose_highlight_radius, COLORS["magenta"], -1)
-                    # Add L or R text
-                    text = "L" if stroke_idx == 0 else "R"
-                    text_pos = (int(px) - 5, int(py) - self.config.pose_highlight_radius - 5)
-                    cv2.putText(image_np, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS["black"], 2)
+                # Highlight path up until current pose in orange
+                for pw, ph in stroke.pixel_coords[:self.pose_idx]:
+                    cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["orange"], -1)
+                color = COLORS["blue"] if stroke.arm == "left" else COLORS["purple"]
+                # Highlight current pose
+                px, py = stroke.pixel_coords[self.pose_idx - 2] # -2 because of hover poses at start and end
+                cv2.circle(image_np, (int(px), int(py)), self.config.pose_highlight_radius, color, -1)
+                # Add L or R text
+                text = "L" if stroke.arm == "left" else "R"
+                text_pos = (int(px) - 5, int(py) - self.config.pose_highlight_radius - 5)
+                cv2.putText(image_np, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            if stroke.is_inkdip:
+                # Text indicating arm that is inkdipping
+                text = f"{stroke.arm} inkdip {stroke.inkcap}"
+                text_pos = (10, 10)
+                cv2.putText(image_np, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.2, COLORS["black"], 1)
         self.image.image = image_np
 
-        log.debug(f"🖥️🤖 Updating Viser pointclouds...")
-        # Highlight entire path in red, path up until current pose in green, current pose in magenta
-        path_start, path_end = self.path_point_ranges[self.path_idx]
-        new_colors = np.tile(np.array(COLORS["black"], dtype=np.uint8), (self.pointcloud_path.points.shape[0], 1))
-        # Highlight current path in red
-        new_colors[path_start:path_end] = np.array(COLORS["red"], dtype=np.uint8)
-        # Compute pixel index for current pose
-        pix_idx = self.pose_idx + 1 # skip over hover poses
-        # Highlight up to current pose in green (excluding endpoints)
-        if pix_idx is not None and pix_idx > 0:
-            new_colors[path_start:path_start + pix_idx] = np.array(COLORS["green"], dtype=np.uint8)
-        # Highlight current pose in magenta (if not endpoint)
-        if pix_idx is not None and 0 <= pix_idx < (path_end - path_start):
-            new_colors[path_start + pix_idx] = np.array(COLORS["magenta"], dtype=np.uint8)
-        self.pointcloud_path.colors = new_colors
-
-        # before every path, send the robot to rest pose
-        if self.pose_idx == 0 and not self.robot_at_rest:
+        if self.pose_idx == 0:
             log.debug(f"🖥️ Sending robot to rest pose")
-            self.joints = self.bot_config.rest_pose.copy()
             self.robot_at_rest = True
+            self.joints = self.bot_config.rest_pose.copy()
             self.step_sleep = self.plan.path_dt_slow
         else:
             self.joints = np.asarray(self.pathbatch.joints[self.path_idx, self.pose_idx], dtype=np.float64).flatten()
-            self.robot_at_rest = False
-            self.pose_idx += 1
             self.step_sleep = float(self.pathbatch.dt[self.path_idx, self.pose_idx].item())
+        self.pose_idx += 1
 
 
 def make_pathviz_image(plan: Plan) -> np.ndarray:

@@ -260,16 +260,12 @@ class Plan:
                 # make a new stroke object for the inkdip path
                 stroke_l = Stroke(
                     description=f"left arm inkdip into {inkcap_name}",
-                    arm="left",
                     is_inkdip=True,
                     inkcap=inkcap_name,
                 )
                 if left_arm_pointer == 0:
                     # this is the first stroke of the session, keep right arm at rest for this path
-                    stroke_r = Stroke(
-                        description="right arm rest",
-                        arm="right",
-                    )
+                    stroke_r = Stroke(description="right arm rest")
                     self.path_idx_to_strokes.append([stroke_l, stroke_r])
                     paths.append(path)
                     continue
@@ -304,7 +300,6 @@ class Plan:
                 # make a new stroke object for the inkdip path
                 stroke_r = Stroke(
                     description=f"right arm inkdip into {inkcap_name}",
-                    arm="right",
                     is_inkdip=True,
                     inkcap=inkcap_name,
                 )
@@ -332,6 +327,8 @@ class Plan:
                 )
                 right_arm_pointer += 1
 
+            stroke_l.arm = "left"
+            stroke_r.arm = "right"
             self.path_idx_to_strokes.append([stroke_l, stroke_r])
             paths.append(path)
 
