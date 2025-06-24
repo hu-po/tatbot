@@ -81,7 +81,8 @@ def record_scan(config: BotScanConfig):
         root=f"{config.output_dir}/{dataset_name}",
         robot_type=robot.name,
         features=dataset_features,
-        use_videos=False, # we want images, not videos
+        # use_videos=False, # we want images, not videos
+        use_videos=True,
         image_writer_processes=config.num_image_writer_processes,
         image_writer_threads=config.num_image_writer_threads_per_camera * len(robot.cameras),
     )
