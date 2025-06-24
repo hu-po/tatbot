@@ -40,19 +40,6 @@ class BotScanConfig:
     """Push the dataset to the Hugging Face Hub."""
     tags: tuple[str, ...] = ("tatbot", "wxai", "trossen")
     """Tags to add to the dataset on Hugging Face."""
-    num_image_writer_processes: int = 0
-    """
-    Number of subprocesses handling the saving of frames as PNG. Set to 0 to use threads only;
-    set to ≥1 to use subprocesses, each using threads to write images. The best number of processes
-    and threads depends on your system. We recommend 4 threads per camera with 0 processes.
-    If fps is unstable, adjust the thread count. If still unstable, try using 1 or more subprocesses.
-    """
-    num_image_writer_threads_per_camera: int = 1
-    """
-    Number of threads writing the frames as png images on disk, per camera.
-    Too many threads might cause unstable teleoperation fps due to main thread being blocked.
-    Not enough threads might cause low camera fps.
-    """
     private: bool = False
     """Whether to push the dataset to a private repository."""
     fps: int = 5
@@ -81,10 +68,9 @@ def record_scan(config: BotScanConfig):
         root=f"{config.output_dir}/{dataset_name}",
         robot_type=robot.name,
         features=dataset_features,
-        # use_videos=False, # we want images, not videos
         use_videos=True,
-        image_writer_processes=config.num_image_writer_processes,
-        image_writer_threads=config.num_image_writer_threads_per_camera * len(robot.cameras),
+        image_writer_processes=0,
+        image_writer_threads=4 * len(robot.cameras),
     )
     if config.display_data:
         _init_rerun(session_name="recording")
@@ -129,6 +115,11 @@ def record_scan(config: BotScanConfig):
     log.info(f"🤖🗃️ Writing episode log to {log_path}")
     with open(log_path, "w") as f:
         f.write(episode_log_buffer.getvalue())
+
+    images_dir = dataset.root / "images"
+    if images_dir.is_dir():
+        log.info(f"🤖🖼️  Copying images from {images_dir} to {scan_dir}...")
+        shutil.copytree(images_dir, scan_dir, dirs_exist_ok=True)
 
     dataset.save_episode()
 
