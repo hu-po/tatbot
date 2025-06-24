@@ -68,7 +68,6 @@ def record_plan(config: BotPlanConfig):
     plan = Plan.from_yaml(config.plan_dir)
     pathbatch = plan.load_pathbatch()
     num_paths = pathbatch.joints.shape[0]
-    path_lengths = [int(sum(pathbatch.mask[i])) for i in range(num_paths)]
 
     log.info("🤖🤗 Adding LeRobot robot...")
     robot = make_robot_from_config(TatbotConfig())
@@ -148,9 +147,8 @@ def record_plan(config: BotPlanConfig):
         robot.send_action(urdf_joints_to_action(BotConfig().rest_pose), goal_time=plan.path_dt_slow, block="left")
 
         log.info(f"🤖 recording path {path_idx} of {num_paths}")
-        path_len = path_lengths[path_idx]
-        for pose_idx in range(path_len):
-            log.debug(f"pose_idx: {pose_idx}/{path_len}")
+        for pose_idx in range(plan.path_length):
+            log.debug(f"pose_idx: {pose_idx}/{plan.path_length}")
             start_loop_t = time.perf_counter()
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
