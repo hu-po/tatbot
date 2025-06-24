@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import logging
 import os
+import shutil
 import time
 from io import StringIO
 
@@ -25,6 +26,9 @@ log = get_logger('bot_scan')
 class BotScanConfig:
     debug: bool = False
     """Enable debug logging."""
+
+    scan_dir: str = os.path.expanduser("~/tatbot/output/record/scan-test")
+    """Directory containing scan."""
 
     hf_username: str = "tatbot"
     """Hugging Face username."""
@@ -76,12 +80,17 @@ def record_scan(config: BotScanConfig):
         root=f"{config.output_dir}/{dataset_name}",
         robot_type=robot.name,
         features=dataset_features,
-        use_videos=True,
+        use_videos=False, # we want images, not videos
         image_writer_processes=config.num_image_writer_processes,
         image_writer_threads=config.num_image_writer_threads_per_camera * len(robot.cameras),
     )
     if config.display_data:
         _init_rerun(session_name="recording")
+
+    scan_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/scan")
+    log.info(f"🤖🗃️ Creating scan directory at {scan_dir}...")
+    os.makedirs(scan_dir, exist_ok=True)
+    shutil.copytree(config.scan_dir, scan_dir, dirs_exist_ok=True)
 
     logs_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/logs")
     log.info(f"🤖🗃️ Creating logs directory at {logs_dir}...")
