@@ -182,36 +182,30 @@ class Plan:
         assert inkcap_name in self.ink_config.inkcaps, f"⚙️❌ Inkcap {inkcap_name} not found in palette"
         inkcap: InkCap = self.ink_config.inkcaps[inkcap_name]
         inkcap_pos = np.array(inkcap.palette_pos, dtype=np.float32)
-        # initialize the inkdip path to the inkcap position
-        inkdip_pos = np.tile(inkcap_pos, (self.path_length, 1))
         # hover over the inkcap
-        inkcap_hover_pos = transform_and_offset(
-            np.expand_dims(inkcap_pos, axis=0),
+        inkdip_pos = transform_and_offset(
+            np.tile(inkcap_pos, (self.path_length, 1)),
             self.ink_config.inkpalette_pos,
             self.ink_config.inkpalette_wxyz,
             self.ink_config.inkdip_hover_offset,
         )
-        # set start and end to hover position
-        inkdip_pos[0, :] = inkcap_hover_pos
-        inkdip_pos[-1, :] = inkcap_hover_pos
-        # middle of inkdip is a series of points: down, wait, up
-        num_dip_points = self.path_length - 2
         # Split: 1/3 down, 1/3 wait, 1/3 up (adjust as needed)
-        num_down = num_dip_points // 3
-        num_wait = num_dip_points // 3
-        num_up = num_dip_points - num_down - num_wait
-        # Down: from 0 to depth
+        num_down = self.path_length // 3
+        num_up = self.path_length // 3
+        num_wait = self.path_length - num_down - num_up
+        # dip down to inkcap depth
         down_z = np.linspace(0, inkcap.depth_m, num_down, endpoint=False)
-        # Wait: at depth
+        # wait at depth
         wait_z = np.full(num_wait, inkcap.depth_m)
-        # Up: from depth to 0
+        # retract back up
         up_z = np.linspace(inkcap.depth_m, 0, num_up, endpoint=True)
-        # Concatenate all z
-        z_offsets = -np.concatenate([down_z, wait_z, up_z]).reshape(-1, 1)
-        xy_offsets = np.zeros((num_dip_points, 2))
-        offsets = np.concatenate([xy_offsets, z_offsets], axis=1)
-        inkdip_pos[1:-1, :] = transform_and_offset(
-            np.tile(inkcap_pos, (num_dip_points, 1)),
+        # concatenate into offset array
+        offsets = np.hstack([
+            np.zeros((self.path_length, 2)),
+            -np.concatenate([down_z, wait_z, up_z]).reshape(-1, 1),
+        ])
+        inkdip_pos = transform_and_offset(
+            inkdip_pos,
             self.ink_config.inkpalette_pos,
             self.ink_config.inkpalette_wxyz,
             offsets,

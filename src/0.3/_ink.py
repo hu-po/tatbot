@@ -68,6 +68,7 @@ class InkConfig:
     """position (xyz, meters) of the inkpalette in global frame."""
     inkpalette_wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
     """orientation quaternion (wxyz) of the inkpalette in global frame."""
+
     inkdip_hover_offset: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.03], dtype=np.float32))
     """position offset (xyz, meters) when hovering over inkcap, relative to ee frame."""
 
