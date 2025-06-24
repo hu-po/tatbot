@@ -288,10 +288,29 @@ class NetworkManager:
         try:
             sftp: SFTPClient = client.open_sftp()
 
+            # Expand ~ in remote_path to remote user's home directory
+            if remote_path.startswith("~"):
+                # Get remote home directory
+                stdin, stdout, stderr = client.exec_command("echo $HOME")
+                remote_home = stdout.read().decode().strip()
+                remote_path = remote_path.replace("~", remote_home, 1)
+
             if direction == "put":
                 if not os.path.exists(local_path):
+                    log.error(f"🌐 ❌ Local file not found: {local_path}")
                     raise FileNotFoundError(f"Local file not found: {local_path}")
+                if os.path.getsize(local_path) == 0:
+                    log.error(f"🌐 ❌ Local file is empty: {local_path}")
+                    raise FileNotFoundError(f"Local file is empty: {local_path}")
                 log.info(f"🌐 📤 Uploading {local_path} to {remote_path}")
+                # Ensure remote directory exists
+                remote_dir = os.path.dirname(remote_path)
+                try:
+                    sftp.stat(remote_dir)
+                except FileNotFoundError:
+                    log.info(f"🌐 📁 Creating remote directory: {remote_dir}")
+                    stdin, stdout, stderr = client.exec_command(f"mkdir -p '{remote_dir}'")
+                    stdout.channel.recv_exit_status()
                 sftp.put(local_path, remote_path)
 
             else:  # get
@@ -370,7 +389,16 @@ class NetworkManager:
             log.error(err)
             return
 
+        if direction == "put":
+            if not os.path.exists(local_path):
+                log.error(f"🌐 ❌ Local file not found: {local_path}")
+                return
+            if os.path.getsize(local_path) == 0:
+                log.error(f"🌐 ❌ Local file is empty: {local_path}")
+                return
+
         log.info(f"🌐 🔄 Transferring files to {len(target_nodes)} nodes...")
+        log.info(f"🌐 Local path: {local_path}, Remote path: {remote_path}, Direction: {direction}")
 
         def _transfer(node: Node):
             if self.is_local_node(node):

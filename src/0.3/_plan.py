@@ -99,6 +99,7 @@ class Plan:
         plan = dacite.from_dict(cls, data, config=dacite.Config(type_hooks={np.ndarray: np.array}))
         plan.bot_config = BotConfig.from_yaml(os.path.join(dirpath, BOT_CONFIG_FILENAME))
         plan.ink_config = InkConfig.from_yaml(os.path.join(dirpath, INKPALETTE_FILENAME))
+        plan.dirpath = dirpath
         return plan
 
     def load_image_np(self) -> np.ndarray:

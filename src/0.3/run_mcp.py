@@ -298,14 +298,13 @@ def turn_on_viz() -> str:
         log.error(f"Failed to run viz script on rpi1: {e}")
         return f"❌ rpi1: Exception occurred: {str(e)}"
 
-@mcp.tool(description="Runs a scan on trossen-ai using bot_scan.py, then copies the resulting output directory to the local node, rpi1, and ook.")
+@mcp.tool(description="Runs a scan on trossen-ai using bot_scan.py, then copies the resulting output directory to the local node and rpi1.")
 def run_robot_scan() -> str:
     """
     1. Updates the tatbot repo and uv venv on trossen-ai.
     2. Runs `uv run bot_scan.py` on trossen-ai.
     3. Finds the new scan output directory (scan-<timestamp>).
-    4. Copies the directory from trossen-ai to the local node.
-    5. Distributes the directory to rpi1 and ook using transfer_files_to_nodes.
+    4. Copies the directory from trossen-ai to the local node and rpi1.
     """
     # Step 1: Prepare trossen-ai node
     trossen_node = next((n for n in net.nodes if n.name == "trossen-ai"), None)
@@ -370,27 +369,26 @@ def run_robot_scan() -> str:
         if not status.startswith("✅"):
             return status
 
-        # Step 3: Distribute to rpi1 and ook
-        import tarfile
+        # Step 3: Distribute to rpi1
         tar_path = local_scan_path + ".tar.gz"
         with tarfile.open(tar_path, "w:gz") as tar:
             tar.add(local_scan_path, arcname=scan_dir)
         net.transfer_files_to_nodes(
             local_path=tar_path,
             remote_path=f"~/tatbot/output/record/{scan_dir}.tar.gz",
-            node_names=["rpi1", "ook"],
+            node_names=["rpi1"],
             direction="put",
         )
         untar_cmd = f"mkdir -p ~/tatbot/output/record && tar -xzf ~/tatbot/output/record/{scan_dir}.tar.gz -C ~/tatbot/output/record"
-        net.run_command_on_nodes(untar_cmd, node_names=["rpi1", "ook"])
+        net.run_command_on_nodes(untar_cmd, node_names=["rpi1"])
         cleanup_cmd = f"rm -f ~/tatbot/output/record/{scan_dir}.tar.gz"
-        net.run_command_on_nodes(cleanup_cmd, node_names=["rpi1", "ook"])
+        net.run_command_on_nodes(cleanup_cmd, node_names=["rpi1"])
         try:
             os.remove(tar_path)
         except Exception:
             pass
 
-        return f"✅ Scan complete. Output directory: {scan_dir}\nUpdated, scanned, and copied to local, rpi1, and ook."
+        return f"✅ Scan complete. Output directory: {scan_dir}\nUpdated, scanned, and copied to local and rpi1."
     except Exception as e:
         log.error(f"scan_and_distribute failed: {e}")
         return f"❌ scan_and_distribute failed: {e}"
@@ -417,13 +415,23 @@ def run_robot_plan(plan_name: str = "bench") -> str:
 
     # Step 1: Copy the plan directory to trossen-ai (tar for transfer)
     tar_path = local_plan_dir + ".tar.gz"
+    log.info(f"[MCP] Local plan dir: {local_plan_dir}")
+    log.info(f"[MCP] Tarball path: {tar_path}")
     if not os.path.exists(local_plan_dir):
+        log.error(f"[MCP] Local plan directory does not exist: {local_plan_dir}")
         return f"❌ Local plan directory not found: {local_plan_dir}"
     with tarfile.open(tar_path, "w:gz") as tar:
         tar.add(local_plan_dir, arcname=plan_name)
+    if not os.path.exists(tar_path):
+        log.error(f"[MCP] Tarball was not created: {tar_path}")
+        return f"❌ Tarball was not created: {tar_path}"
+    tar_size = os.path.getsize(tar_path)
+    log.info(f"[MCP] Tarball exists: {tar_path}, size: {tar_size} bytes")
+    remote_tar_path = f"~/tatbot/output/plans/{plan_name}.tar.gz"
+    log.info(f"[MCP] Remote tar path: {remote_tar_path}")
     net.transfer_files_to_nodes(
         local_path=tar_path,
-        remote_path=f"~/tatbot/output/plans/{plan_name}.tar.gz",
+        remote_path=remote_tar_path,
         node_names=["trossen-ai"],
         direction="put",
     )
