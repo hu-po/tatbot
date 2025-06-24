@@ -59,7 +59,7 @@ class Plan:
     path_dt_slow: float = 2.0
     """Time between poses in seconds for slow movement."""
 
-    design_pos: np.ndarray = field(default_factory=lambda: np.array([0.2, 0.0, -0.04], dtype=np.float32))
+    design_pos: np.ndarray = field(default_factory=lambda: np.array([0.2, 0.0, 0.0], dtype=np.float32))
     """position in meters (xyz) of origin of design frame."""
     design_wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
     """orientation quaternion (wxyz) of the design frame."""
