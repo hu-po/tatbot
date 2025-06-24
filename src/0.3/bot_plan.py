@@ -110,7 +110,7 @@ def record_plan(config: BotPlanConfig):
     plan_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/plan")
     log.info(f"🤖🗃️ Creating plan directory at {plan_dir}...")
     os.makedirs(plan_dir, exist_ok=True)
-    shutil.copy(config.plan_dir, plan_dir)
+    shutil.copytree(config.plan_dir, plan_dir, dirs_exist_ok=True)
 
     logs_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/logs")
     log.info(f"🤖🗃️ Creating logs directory at {logs_dir}...")
