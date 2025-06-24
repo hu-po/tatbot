@@ -129,7 +129,7 @@ def record_plan(config: BotPlanConfig):
     log.info(f"Recording {num_paths} paths...")
     # one episode is a single path
     # when resuming, start from the idx of the next episode
-    for path_idx in range(num_paths, start=dataset.num_episodes):
+    for path_idx in range(dataset.num_episodes, num_paths):
         # reset in-memory log buffer for the new episode
         episode_log_buffer.seek(0)
         episode_log_buffer.truncate(0)
