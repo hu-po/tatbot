@@ -24,36 +24,36 @@ class InkCap:
 class InkConfig:
     inkcaps: dict[str, InkCap] = field(default_factory=lambda: {
         "small_1": InkCap(
-            palette_pos=[0.06, -0.01, -0.01],
+            palette_pos=[0.06, -0.01, 0.0],
             color="pink"
         ),
         "large": InkCap(
-            palette_pos=[0.06, 0.0, -0.01],
+            palette_pos=[0.0, 0.0, 0.0],
             diameter_m=0.014,
             depth_m=0.014,
             color="black"
         ),
         "small_2": InkCap(
-            palette_pos=[0.06, 0.01, -0.01],
+            palette_pos=[0.06, 0.01, 0.0],
             color="blue"
         ),
         "small_3": InkCap(
-            palette_pos=[0.06, 0.0, -0.01],
+            palette_pos=[0.06, 0.0, 0.0],
             color="white"
         ),
         "medium_1": InkCap(
-            palette_pos=[0.04, 0.0, -0.01],
+            palette_pos=[0.04, 0.0, 0.0],
             diameter_m=0.012,
             color="red"
         ),
         "medium_2": InkCap(
-            palette_pos=[0.04, 0.015, -0.01],
+            palette_pos=[0.04, 0.015, 0.0],
             diameter_m=0.012,
             color="green"
         ),
     })
 
-    inkpalette_pos: np.ndarray = field(default_factory=lambda: np.array([0.01, 0.01, 0.01], dtype=np.float32))
+    inkpalette_pos: np.ndarray = field(default_factory=lambda: np.array([-0.06, 0.0, 0.0], dtype=np.float32))
     """position (xyz, meters) of the inkpalette in global frame."""
     inkpalette_wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
     """orientation quaternion (wxyz) of the inkpalette in global frame."""
