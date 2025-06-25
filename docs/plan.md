@@ -17,3 +17,4 @@
 - (✅ **06/25/2025**) [software 0.3.0](https://x.com/tatbots/status/1937928658720559385)
 - (🚧 **Q3 2025**) software 0.4
 - (🚧 **Q3 2025**) hardware 0.4
+- (🚧 **Q4 2025**) paper
