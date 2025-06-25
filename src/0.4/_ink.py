@@ -12,8 +12,8 @@ log = get_logger('_ink')
 @dataclass
 class InkCap:
     """Individual cylindrical inkcap."""
-    palette_pos: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
-    """Relative position (meters) of the inkcap in the palette frame (x, y, z)."""
+    urdf_link_name: str = "inkcap_large"
+    """URDF link name of the inkcap."""
     diameter_m: float = 0.008
     """Diameter of the inkcap (meters)."""
     depth_m: float = 0.01
@@ -23,37 +23,40 @@ class InkCap:
 
 @dataclass
 class InkConfig:
+    urdf_link_name: str = "inkpalette"
+    """URDF link name of the inkpalette."""
     inkcaps: dict[str, InkCap] = field(default_factory=lambda: {
         "small_1": InkCap(
-            palette_pos=[0.06, -0.01, 0.0],
+            urdf_link_name="inkcap_small_1",
             color="pink"
         ),
         "large": InkCap(
-            palette_pos=[0.0, 0.0, 0.0],
+            urdf_link_name="inkcap_large",
             diameter_m=0.014,
             depth_m=0.014,
             color="black"
         ),
         "small_2": InkCap(
-            palette_pos=[0.06, 0.01, 0.0],
+            urdf_link_name="inkcap_small_2",
             color="blue"
         ),
         "small_3": InkCap(
-            palette_pos=[0.06, 0.0, 0.0],
+            urdf_link_name="inkcap_small_3",
             color="white"
         ),
         "medium_1": InkCap(
-            palette_pos=[0.04, 0.0, 0.0],
+            urdf_link_name="inkcap_medium_1",
             diameter_m=0.012,
             color="red"
         ),
         "medium_2": InkCap(
-            palette_pos=[0.04, 0.015, 0.0],
+            urdf_link_name="inkcap_medium_2",
             diameter_m=0.012,
             color="green"
         ),
     })
 
+    # TODO: these can be removed once we use URDF for pose tracking
     inkpalette_pos: np.ndarray = field(default_factory=lambda: np.array([-0.03, 0.0, -0.0055], dtype=np.float32))
     """position (xyz, meters) of the inkpalette in global frame."""
     inkpalette_wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
