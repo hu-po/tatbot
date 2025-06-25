@@ -58,7 +58,7 @@ class Plan:
     path_dt_slow: float = 2.0
     """Time between poses in seconds for slow movement."""
 
-    design_pos: np.ndarray = field(default_factory=lambda: np.array([0.2, 0.0, 0.0], dtype=np.float32))
+    design_pos: np.ndarray = field(default_factory=lambda: np.array([0.18, 0.0, 0.0], dtype=np.float32))
     """position in meters (xyz) of origin of design frame."""
     design_wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
     """orientation quaternion (wxyz) of the design frame."""
@@ -341,8 +341,8 @@ class Plan:
         )
         path.ee_wxyz_l = np.tile(self.ee_design_wxyz_l, (self.path_length, 1))
         path.ee_pos_r = transform_and_offset(
-            np.zeros((self.path_length, 3)),
-            np.array(self.ink_config.inkcaps["large"].palette_pos),
+            np.tile(self.ink_config.inkcaps["large"].palette_pos, (self.path_length, 1)),
+            self.ink_config.inkpalette_pos,
             self.ink_config.inkpalette_wxyz,
             self.ink_config.inkdip_hover_offset * 2,
         )
@@ -357,8 +357,8 @@ class Plan:
         # HACK: second hack path
         path = Path.empty(self.path_length)
         path.ee_pos_l = transform_and_offset(
-            np.zeros((self.path_length, 3)),
-            np.array(self.ink_config.inkcaps["large"].palette_pos),
+            np.tile(self.ink_config.inkcaps["large"].palette_pos, (self.path_length, 1)),
+            self.ink_config.inkpalette_pos,
             self.ink_config.inkpalette_wxyz,
             self.ink_config.inkdip_hover_offset * 2,
         )

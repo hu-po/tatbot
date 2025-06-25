@@ -53,7 +53,7 @@ class InkConfig:
         ),
     })
 
-    inkpalette_pos: np.ndarray = field(default_factory=lambda: np.array([-0.06, 0.0, 0.0], dtype=np.float32))
+    inkpalette_pos: np.ndarray = field(default_factory=lambda: np.array([-0.03, 0.0, 0.0], dtype=np.float32))
     """position (xyz, meters) of the inkpalette in global frame."""
     inkpalette_wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
     """orientation quaternion (wxyz) of the inkpalette in global frame."""

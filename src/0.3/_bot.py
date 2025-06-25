@@ -21,8 +21,8 @@ class BotConfig:
     target_link_names: tuple[str, str] = ("left/tattoo_needle", "right/tattoo_needle")
     """Names of the ee links in the URDF for left and right ik solving."""
     rest_pose: np.ndarray = field(default_factory=lambda: np.array([
-        -1.0, 0.28, 0.26, -0.6, 0.0, 0.0, 0.0, 0.0, # left arm
-        1.0, 0.28, 0.26, -0.6, 0.0, 0.0, 0.0, 0.0, # right arm
+        -1.0, 0.1, 0.5, -1.2, 0.0, 0.0, 0.0, 0.0, # left arm
+        1.0, 0.1, 0.5, -1.2, 0.0, 0.0, 0.0, 0.0, # right arm
         ], dtype=np.float32))
     """Rest pose for the robot."""
 
