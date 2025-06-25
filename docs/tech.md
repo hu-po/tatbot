@@ -132,7 +132,7 @@ git clone --depth=1 https://github.com/hu-po/tatbot.git && \
 cd ~/tatbot && \
 git pull
 # Choose a release
-cd src/0.3
+cd src/0.4
 # Optional: Clean old uv environment
 deactivate && \
 rm -rf .venv && \
