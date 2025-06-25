@@ -5,6 +5,7 @@ import shutil
 import time
 from io import StringIO
 
+import cv2
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.common.datasets.utils import build_dataset_frame, hw_to_dataset_features
 from lerobot.common.robots import make_robot_from_config
@@ -128,10 +129,24 @@ def record_scan(config: BotScanConfig):
     scan = Scan()
     tracker = TagTracker(scan.tag_config)
 
-    # TODO: track tags in each of the images
-    # save images with detection results
-    # perform ik to get camera extrinsics
-    # save camera extrinsics to URDF
+    # track tags in each of the images
+    for image_path in scan_dir.glob("*.png"):
+        camera_name = image_path.stem # TODO: get camera name from image path
+        # TODO: get camera_pos and camera_wxyz from URDF? initialize as identity?
+        detections, image_np = tracker.track_tags(
+            cv2.imread(str(image_path)),
+            scan.intrinsics[camera_name],
+            camera_pos,
+            camera_wxyz,
+        )
+        # save images with detection results
+        cv2.imwrite(str(image_path), image_np)
+
+    # use origin tag to get camera extrinsics of realsense1, realsense2, camera2, camera3, camera4
+    # use arm_l and arm_r tags to get extrinsics of camera1, camera5
+    # use camera extrinsics to get palette and skin tags
+
+    # update URDF file? save to scan metadata?
 
     scan.save(scan_dir)
 

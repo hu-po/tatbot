@@ -39,6 +39,12 @@
   </joint>
 
   <!-- inkpalette -->
+  <link name="inkpalette" />
+  <joint name="tag_to_inkpalette_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="tag9"/>
+    <child link="inkpalette"/>
+  </joint>
   <link name="inkpalette_mesh">
     <visual>
       <origin rpy="0 0 -0.65" xyz="-0.016 0.052 -0.004"/>
@@ -49,7 +55,7 @@
   </link>
   <joint name="inkpalette_mesh_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0"/>
-    <parent link="tag9"/>
+    <parent link="inkpalette"/>
     <child link="inkpalette_mesh"/>
   </joint>
 
@@ -57,37 +63,37 @@
   <link name="inkcap_large" />
   <joint name="inkcap_large_joint" type="fixed">
     <origin rpy="0 0 0" xyz="-0.002 0.059 0"/>
-    <parent link="tag9"/>
+    <parent link="inkpalette"/>
     <child link="inkcap_large"/>
   </joint>
   <link name="inkcap_small_1" />
   <joint name="inkcap_small_1_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0.007 0.045 0"/>
-    <parent link="tag9"/>
+    <parent link="inkpalette"/>
     <child link="inkcap_small_1"/>
   </joint>
   <link name="inkcap_small_2" />
   <joint name="inkcap_small_2_joint" type="fixed">
     <origin rpy="0 0 0" xyz="-0.012 0.074 0"/>
-    <parent link="tag9"/>
+    <parent link="inkpalette"/>
     <child link="inkcap_small_2"/>
   </joint>
   <link name="inkcap_small_3" />
   <joint name="inkcap_small_3_joint" type="fixed">
     <origin rpy="0 0 0" xyz="-0.025 0.082 0"/>
-    <parent link="tag9"/>
+    <parent link="inkpalette"/>
     <child link="inkcap_small_3"/>
   </joint>
   <link name="inkcap_medium_1" />
   <joint name="inkcap_medium_1_joint" type="fixed">
     <origin rpy="0 0 0" xyz="-0.02 0.048 0"/>
-    <parent link="tag9"/>
+    <parent link="inkpalette"/>
     <child link="inkcap_medium_1"/>
   </joint>
   <link name="inkcap_medium_2" />
   <joint name="inkcap_medium_2_joint" type="fixed">
     <origin rpy="0 0 0" xyz="-0.032 0.06 0"/>
-    <parent link="tag9"/>
+    <parent link="inkpalette"/>
     <child link="inkcap_medium_2"/>
   </joint>
 
