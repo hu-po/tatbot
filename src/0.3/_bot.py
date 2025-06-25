@@ -49,6 +49,7 @@ class BotConfig:
 def load_robot(urdf_path: str, target_links_name: tuple[str, str]) -> tuple[yourdfpy.URDF, pk.Robot, np.ndarray]:
     log.debug(f"🤖 Loading PyRoKi robot from URDF at {urdf_path}...")
     start_time = time.time()
+    urdf_path = os.path.expanduser(urdf_path)
     urdf = yourdfpy.URDF.load(urdf_path)
     robot = pk.Robot.from_urdf(urdf)
     ee_link_indices = np.array([
