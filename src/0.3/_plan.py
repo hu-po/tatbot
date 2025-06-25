@@ -71,9 +71,9 @@ class Plan:
 
     hover_offset: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.006], dtype=np.float32))
     """position offset when hovering over point, relative to current ee frame."""
-    needle_offset_l: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, -0.0065], dtype=np.float32))
+    needle_offset_l: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, -0.006], dtype=np.float32))
     """position offset to ensure needle touches skin, relative to current ee frame."""
-    needle_offset_r: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, -0.0065], dtype=np.float32))
+    needle_offset_r: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, -0.0066], dtype=np.float32))
     """position offset to ensure needle touches skin, relative to current ee frame."""
 
     def save(self):
