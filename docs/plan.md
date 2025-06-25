@@ -13,8 +13,7 @@
 - (✅ **06/04/2025**) [hardware 0.2](https://x.com/tatbots/status/1930308303222890931) ([✨view in 3D](https://poly.cam/capture/548778f3-e243-41bd-87b8-6ed2d5dfff5a))
 - (✅ **06/11/2025**) [software 0.2.0](https://x.com/tatbots/status/1932805814563348842)
 - (✅ **06/16/2025**) [software 0.2.1](https://x.com/tatbots/status/1934685760650658130)
-- (🚧 **Q2 2025**) software 0.3
-- (🚧 **Q3 2025**) first real skin self tattoo
-- (🚧 **Q3 2025**) hardware 0.3
-- (🚧 **Q4 2025**) first real skin customer tattoo
-- (🚧 **Q4 2025**) first color fake skin tattoo
+- (✅ **06/25/2025**) [hardware 0.3](https://x.com/tatbots/status/1937928922005442873) ([✨view in 3D](https://poly.cam/capture/ad7d9477-f7a3-4a36-8da3-59dc0354f149))
+- (✅ **06/25/2025**) [software 0.3.0](https://x.com/tatbots/status/1937928658720559385)
+- (🚧 **Q3 2025**) software 0.4
+- (🚧 **Q3 2025**) hardware 0.4

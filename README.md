@@ -17,7 +17,7 @@
   <a href="https://www.instagram.com/tatbots/">
     <img src="https://img.shields.io/badge/Instagram-%40tatbot-E4405F.svg?logo=instagram&logoColor=white&style=flat" alt="Instagram">
   </a>
-  <a href="https://poly.cam/capture/548778f3-e243-41bd-87b8-6ed2d5dfff5a/embed" target="_blank" rel="noopener noreferrer">
+  <a href="https://poly.cam/capture/ad7d9477-f7a3-4a36-8da3-59dc0354f149" target="_blank" rel="noopener noreferrer">
     <img src="https://img.shields.io/badge/Polycam-3D-734F96.svg?style=flat" alt="View on Polycam">
   </a>
 </div>
