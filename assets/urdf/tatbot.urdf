@@ -30,9 +30,6 @@
     <child link="inkpalette"/>
   </joint>
   <link name="inkpalette">
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-    </visual>
   </link>
   <joint name="inkpalette_mesh_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0"/>
