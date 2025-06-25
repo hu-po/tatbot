@@ -12,9 +12,9 @@
 - (✅ **06/03/2025**) [software 0.1.4](https://x.com/hupobuboo/status/1929983263667331232)
 - (✅ **06/04/2025**) [hardware 0.2](https://x.com/tatbots/status/1930308303222890931) ([✨view in 3D](https://poly.cam/capture/548778f3-e243-41bd-87b8-6ed2d5dfff5a))
 - (✅ **06/11/2025**) [software 0.2.0](https://x.com/tatbots/status/1932805814563348842)
-- (✅ **06/16/2025**) [software 0.2.1](https://x.com/tatbots/status/1934685760650658130)
+- (✅ **06/16/2025**) [software 0.2.1](https://x.com/tatbots/status/1934685760650658130) ([📦🤗 view on HF](https://huggingface.co/datasets/tatbot/tatbot-calib-test))
 - (✅ **06/25/2025**) [hardware 0.3](https://x.com/tatbots/status/1937928922005442873) ([✨view in 3D](https://poly.cam/capture/ad7d9477-f7a3-4a36-8da3-59dc0354f149))
-- (✅ **06/25/2025**) [software 0.3.0](https://x.com/tatbots/status/1937928658720559385)
+- (✅ **06/25/2025**) [software 0.3.2](https://x.com/tatbots/status/1937928658720559385) ([📦🤗 view on HF](https://huggingface.co/datasets/tatbot/plan-bench-2025y-06m-25d-12h-13m-57s))
 - (🚧 **Q3 2025**) software 0.4
 - (🚧 **Q3 2025**) hardware 0.4
 - (🚧 **Q4 2025**) paper
