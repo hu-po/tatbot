@@ -24,7 +24,7 @@ class InkCap:
 class InkConfig:
     inkcaps: dict[str, InkCap] = field(default_factory=lambda: {
         "small_1": InkCap(
-            palette_pos=[0.06, -0.01, 0.01],
+            palette_pos=[0.06, -0.01, -0.01],
             color="pink"
         ),
         "large": InkCap(

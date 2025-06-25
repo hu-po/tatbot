@@ -330,27 +330,52 @@ class Plan:
             self.path_idx_to_strokes.append([stroke_l, stroke_r])
             paths.append(path)
 
-        # HACK: add one path at the beginning where left arm is centered over design and right arm is centered over black inkcap
-        # twice the hover offset
+        # HACK: add two paths at the beginning where left arm is centered over design and right arm is centered over black inkcap
+        # use twice the hover offset to ensure enough space for adjustments
         path = Path.empty(self.path_length)
         path.ee_pos_l = transform_and_offset(
             np.zeros((self.path_length, 3)),
             self.design_pos,
             self.design_wxyz,
-            self.hover_offset,
+            self.hover_offset * 2,
+        )
+        path.ee_wxyz_l = np.tile(self.ee_design_wxyz_l, (self.path_length, 1))
+        path.ee_pos_r = transform_and_offset(
+            np.zeros((self.path_length, 3)),
+            np.array(self.ink_config.inkcaps["large"].palette_pos),
+            self.ink_config.inkpalette_wxyz,
+            self.ink_config.inkdip_hover_offset * 2,
+        )
+        path.ee_wxyz_r = np.tile(self.ee_design_wxyz_r, (self.path_length, 1))
+        path.dt[:2] = self.path_dt_slow
+        path.dt[-2:] = self.path_dt_slow
+        paths.insert(0, path)
+        stroke_l = Stroke(description="left over design with twice the hover offset")
+        stroke_r = Stroke(description="right over large black inkcap with twice the hover offset")
+        self.path_idx_to_strokes.insert(0, [stroke_l, stroke_r])
+
+        # HACK: second hack path
+        path = Path.empty(self.path_length)
+        path.ee_pos_l = transform_and_offset(
+            np.zeros((self.path_length, 3)),
+            np.array(self.ink_config.inkcaps["large"].palette_pos),
+            self.ink_config.inkpalette_wxyz,
+            self.ink_config.inkdip_hover_offset * 2,
         )
         path.ee_wxyz_l = np.tile(self.ee_design_wxyz_l, (self.path_length, 1))
         path.ee_pos_r = transform_and_offset(
             np.zeros((self.path_length, 3)),
             self.design_pos,
             self.design_wxyz,
-            self.hover_offset,
+            self.hover_offset * 2,
         )
         path.ee_wxyz_r = np.tile(self.ee_design_wxyz_r, (self.path_length, 1))
         path.dt[:2] = self.path_dt_slow
         path.dt[-2:] = self.path_dt_slow
         paths.insert(0, path)
-
+        stroke_l = Stroke(description="left over large black inkcap with twice the hover offset")
+        stroke_r = Stroke(description="right over design with twice the hover offset")
+        self.path_idx_to_strokes.insert(0, [stroke_l, stroke_r])
 
         # Perform IK in batches (batch size will be hardware specific)
         flat_target_pos   : list[list[np.ndarray]] = []
@@ -380,8 +405,8 @@ class Plan:
                 p_idx, pose_idx = index_map[start + local_idx]
                 paths[p_idx].joints[pose_idx] = np.asarray(joints, dtype=np.float32)
 
-        # HACK: the right arm of the very first path should be at rest while left arm is ink dipping
-        paths[0].joints[:, 8:] = np.tile(BotConfig().rest_pose[8:], (self.path_length, 1))
+        # HACK: the right arm of the first (not counting hack paths) path should be at rest while left arm is ink dipping
+        paths[2].joints[:, 8:] = np.tile(BotConfig().rest_pose[8:], (self.path_length, 1))
         # HACK: the left arm of the final path should be at rest since last stroke is right-only
         paths[-1].joints[:, :8] = np.tile(BotConfig().rest_pose[:8], (self.path_length, 1))
 
