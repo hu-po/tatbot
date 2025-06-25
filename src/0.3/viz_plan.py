@@ -16,7 +16,7 @@ log = get_logger('viz_plan')
 
 @dataclass
 class VizPlanConfig(BaseVizConfig):
-    plan_dir: str = os.path.expanduser("~/tatbot/output/plans/bench")
+    plan_dir: str = "~/tatbot/output/plans/bench"
     """Directory containing plan."""
 
     design_pointcloud_point_size: float = 0.001
@@ -32,6 +32,7 @@ class VizPlanConfig(BaseVizConfig):
 class VizPlan(BaseViz):
     def __init__(self, config: VizPlanConfig):
         super().__init__(config)
+        config.plan_dir = os.path.expanduser(config.plan_dir)
         self.plan: Plan = Plan.from_yaml(config.plan_dir)
         self.bot_config: BotConfig = self.plan.bot_config
         self.ink_config: InkConfig = self.plan.ink_config

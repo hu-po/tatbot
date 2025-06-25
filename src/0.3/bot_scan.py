@@ -34,7 +34,7 @@ class BotScanConfig:
     """Dataset will be saved to Hugging Face Hub repository ID, e.g. 'hf_username/dataset_name'."""
     display_data: bool = False
     """Display data on screen using Rerun."""
-    output_dir: str = os.path.expanduser("~/tatbot/output/record")
+    output_dir: str = "~/tatbot/output/record"
     """Directory to save the dataset."""
     push_to_hub: bool = False
     """Push the dataset to the Hugging Face Hub."""
