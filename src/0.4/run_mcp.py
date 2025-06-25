@@ -15,6 +15,8 @@ from _net import NetworkManager
 
 log = get_logger('run_mcp')
 
+TATBOT_VERSION: str = "0.4"
+
 @dataclass
 class MCPConfig:
     debug: bool = False
@@ -82,7 +84,7 @@ def update_nodes(nodes: Optional[List[str]] = None, timeout: float = 300.0) -> s
             command = (
                 "export PATH=\"$HOME/.local/bin:$PATH\" && "
                 "git -C ~/tatbot pull && "
-                "cd ~/tatbot/src/0.3 && "
+                f"cd ~/tatbot/src/{TATBOT_VERSION} && "
                 "deactivate >/dev/null 2>&1 || true && "
                 "rm -rf .venv && "
                 "rm -f uv.lock && "
@@ -129,7 +131,7 @@ def node_cpu_ram_usage(nodes: Optional[List[str]] = None) -> dict[str, dict]:
     if remote_node_names:
         command = (
             "export PATH=\"$HOME/.local/bin:$PATH\" && "
-            "cd ~/tatbot/src/0.3 && "
+            f"cd ~/tatbot/src/{TATBOT_VERSION} && "
             "uv run python - << 'EOF'\n"
             "import psutil, json, sys;"
             "print(json.dumps({'cpu_percent': psutil.cpu_percent(),"
@@ -239,7 +241,7 @@ def run_viz(
             "export DISPLAY=:0\n"
             "export XAUTHORITY=/home/rpi1/.Xauthority\n"
             "echo launching viz process... >> ~/chromium-viz.log\n"
-            "cd ~/tatbot/src/0.3\n"
+            f"cd ~/tatbot/src/{TATBOT_VERSION}\n"
             "source .venv/bin/activate\n"
             f"setsid uv run {viz_command} >> ~/chromium-viz.log 2>&1 &\n"
             "echo waiting for viser server on port 8080... >> ~/chromium-viz.log\n"
@@ -299,7 +301,7 @@ def run_robot_scan() -> str:
         # --- Run the scan ---
         scan_cmd = (
             f"export PATH=\"$HOME/.local/bin:$PATH\" && "
-            f"cd ~/tatbot/src/0.3 && "
+            f"cd ~/tatbot/src/{TATBOT_VERSION} && "
             f"[ -f .env ] && set -a && . .env && set +a; "
             f"uv run bot_scan.py"
         )
@@ -402,7 +404,7 @@ def run_robot_plan(plan_name: str = "bench") -> str:
         # --- Run the plan ---
         plan_cmd = (
             f"export PATH=\"$HOME/.local/bin:$PATH\" && "
-            f"cd ~/tatbot/src/0.3 && "
+            f"cd ~/tatbot/src/{TATBOT_VERSION} && "
             f"[ -f .env ] && set -a && . .env && set +a; "
             f"uv run bot_plan.py --plan_dir ~/tatbot/output/plans/{plan_name}"
         )
