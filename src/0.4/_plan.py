@@ -51,7 +51,7 @@ class Plan:
 
     ik_batch_size: int = 256
     """Batch size for IK computation."""
-    path_length: int = 64
+    path_length: int = 108
     """All paths will be resampled to this length."""
     path_dt_fast: float = 0.1
     """Time between poses in seconds for fast movement."""
@@ -64,9 +64,9 @@ class Plan:
     """orientation quaternion (wxyz) of the design frame."""
 
     # TODO: these will have to be updated to be relative to the design frame
-    ee_design_wxyz_l: np.ndarray = field(default_factory=lambda: np.array([0.5, 0.5, 0.5, -0.5], dtype=np.float32))
+    ee_wxyz_l: np.ndarray = field(default_factory=lambda: np.array([0.5, 0.5, 0.5, -0.5], dtype=np.float32))
     """orientation quaternion (wxyz) of left arm end effector when performing a path."""
-    ee_design_wxyz_r: np.ndarray = field(default_factory=lambda: np.array([0.5, -0.5, 0.5, 0.5], dtype=np.float32))
+    ee_wxyz_r: np.ndarray = field(default_factory=lambda: np.array([0.5, -0.5, 0.5, 0.5], dtype=np.float32))
     """orientation quaternion (wxyz) of right arm end effector when performing a path."""
 
     hover_offset: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.006], dtype=np.float32))
@@ -250,8 +250,8 @@ class Plan:
             path.dt[:2] = self.path_dt_slow
             path.dt[-2:] = self.path_dt_slow
             # TODO: for now orientation is just design orientation (for inkdips as well)
-            path.ee_wxyz_l[:, :] = np.tile(self.ee_design_wxyz_l, (self.path_length, 1))
-            path.ee_wxyz_r[:, :] = np.tile(self.ee_design_wxyz_r, (self.path_length, 1))
+            path.ee_wxyz_l[:, :] = np.tile(self.ee_wxyz_l, (self.path_length, 1))
+            path.ee_wxyz_r[:, :] = np.tile(self.ee_wxyz_r, (self.path_length, 1))
 
             # left arm pointer hits a stroke with no inkcap
             if self.strokes[stroke_name_l].inkcap is None:
@@ -346,14 +346,14 @@ class Plan:
             self.design_wxyz,
             self.hover_offset * 2,
         )
-        path.ee_wxyz_l = np.tile(self.ee_design_wxyz_l, (self.path_length, 1))
+        path.ee_wxyz_l = np.tile(self.ee_wxyz_l, (self.path_length, 1))
         path.ee_pos_r = transform_and_offset(
             np.tile(self.ink_config.inkcaps["large"].palette_pos, (self.path_length, 1)),
             self.ink_config.inkpalette_pos,
             self.ink_config.inkpalette_wxyz,
             self.ink_config.inkdip_hover_offset * 2,
         )
-        path.ee_wxyz_r = np.tile(self.ee_design_wxyz_r, (self.path_length, 1))
+        path.ee_wxyz_r = np.tile(self.ee_wxyz_r, (self.path_length, 1))
         path.dt[:2] = self.path_dt_slow
         path.dt[-2:] = self.path_dt_slow
         paths.insert(0, path)
@@ -369,14 +369,14 @@ class Plan:
             self.ink_config.inkpalette_wxyz,
             self.ink_config.inkdip_hover_offset * 2,
         )
-        path.ee_wxyz_l = np.tile(self.ee_design_wxyz_l, (self.path_length, 1))
+        path.ee_wxyz_l = np.tile(self.ee_wxyz_l, (self.path_length, 1))
         path.ee_pos_r = transform_and_offset(
             np.zeros((self.path_length, 3)),
             self.design_pos,
             self.design_wxyz,
             self.hover_offset * 2,
         )
-        path.ee_wxyz_r = np.tile(self.ee_design_wxyz_r, (self.path_length, 1))
+        path.ee_wxyz_r = np.tile(self.ee_wxyz_r, (self.path_length, 1))
         path.dt[:2] = self.path_dt_slow
         path.dt[-2:] = self.path_dt_slow
         paths.insert(0, path)

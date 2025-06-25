@@ -15,24 +15,34 @@ log = get_logger('_tag')
 
 @dataclass
 class TagConfig:
-    apriltag_family: str = "tag16h5"
+    family: str = "tag16h5"
     """Family of AprilTags to use."""
-    apriltag_size_m: float = 0.041
+    size_m: float = 0.041
     """Size of AprilTags: distance between detection corners (meters)."""
-    apriltags: dict[int, str] = field(default_factory=lambda: {
+    descriptions: dict[int, str] = field(default_factory=lambda: {
+        6: "arm_l",
+        7: "arm_r",
         9: "palette",
         10: "origin",
         11: "skin",
     })
-    """ AprilTag ID : Name mapping """
-    apriltag_decision_margin: float = 20.0
+    """ Dictionary of AprilTag IDs to descriptions."""
+    urdf_link_names: dict[int, str] = field(default_factory=lambda: {
+        6: "tag6",
+        7: "tag7",
+        9: "tag9",
+        10: "tag10",
+        11: "tag11",
+    })
+    """ Dictionary of AprilTag IDs to URDF link names."""
+    decision_margin: float = 20.0
     """Minimum decision margin for AprilTag detection filtering."""
 
 class TagTracker:
     def __init__(self, config: TagConfig):
         self.config = config
         self.detector = apriltag.Detector(
-            families=config.apriltag_family,
+            families=config.family,
         )
 
     def track_tags(self, rgb_b: np.ndarray, intrinsics: CameraIntrinsics):
@@ -44,11 +54,11 @@ class TagTracker:
             # TODO: tune these params
             estimate_tag_pose=True,
             camera_params=(intrinsics.fx, intrinsics.fy, intrinsics.ppx, intrinsics.ppy),
-            tag_size=self.config.apriltag_size_m,
+            tag_size=self.config.size_m,
         )
         log.debug(f"🏷️ AprilTags detections: {detections}")
         log.debug(f"🏷️ AprilTags detections before filtering: {len(detections)}")
-        detections = [d for d in detections if d.decision_margin >= self.config.apriltag_decision_margin]
+        detections = [d for d in detections if d.decision_margin >= self.config.decision_margin]
         log.info(f"🏷️ AprilTags detections after filtering: {len(detections)}")
         gray_b_bgr = cv2.cvtColor(gray_b, cv2.COLOR_GRAY2BGR)
         for d in detections:

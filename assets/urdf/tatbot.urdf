@@ -8,6 +8,46 @@
       <origin rpy="0 0 0" xyz="0 0 0"/>
   </link>
 
+  <!-- tag 6 -->
+  <joint name="tag6_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="root"/>
+    <child link="tag6"/>
+  </joint>
+  <link name="tag6">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/tags/16h5_006/tag.obj" scale="1 1 1"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <!-- inkpalette -->
+  <joint name="inkpalette_joint" type="fixed">
+    <origin rpy="0 0 1.57" xyz="-0.08 0 0"/>
+    <parent link="root"/>
+    <child link="inkpalette"/>
+  </joint>
+  <link name="inkpalette">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+    </visual>
+  </link>
+  <joint name="inkpalette_mesh_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="inkpalette"/>
+    <child link="inkpalette_mesh"/>
+  </joint>
+    <link name="inkpalette_mesh">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/inkpalette/inkpalette.obj" scale="1 1 1"/>
+      </geometry>
+    </visual>
+  </link>
+
   <!-- camera1 -->
   <joint name="camera1_mount_joint" type="fixed">
     <origin rpy="0 1.5707963267948966 0" xyz="0.0378 0.258125 -0.08"/>
