@@ -1,4 +1,5 @@
 from dataclasses import dataclass, asdict
+import os
 
 import dacite
 import jax.numpy as jnp
@@ -115,13 +116,13 @@ class Stroke:
 
     @classmethod
     def from_yaml(cls, filepath: str) -> list["Stroke"]:
-        with open(filepath, "r") as f:
+        with open(os.path.expanduser(filepath), "r") as f:
             data = yaml.safe_load(f)
         return [dacite.from_dict(cls, p) for p in data]
 
     @staticmethod
     def to_yaml(strokes: list["Stroke"], filepath: str):
-        with open(filepath, "w") as f:
+        with open(os.path.expanduser(filepath), "w") as f:
             yaml.safe_dump([asdict(p) for p in strokes], f)
 
 def _represent_numpy(dumper: yaml.SafeDumper, data: np.ndarray) -> yaml.nodes.Node:

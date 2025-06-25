@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field, asdict
+import os
 
 import dacite
 import numpy as np
@@ -63,7 +64,7 @@ class InkConfig:
 
     @classmethod
     def from_yaml(cls, filepath: str) -> "InkConfig":
-        with open(filepath, "r") as f:
+        with open(os.path.expanduser(filepath), "r") as f:
             data = yaml.safe_load(f)
         return dacite.from_dict(
             cls,
@@ -72,7 +73,7 @@ class InkConfig:
         )
 
     def save_yaml(self, filepath: str):
-        with open(filepath, "w") as f:
+        with open(os.path.expanduser(filepath), "w") as f:
             yaml.safe_dump(asdict(self), f)
 
     def find_best_inkcap(self, color: str) -> str:

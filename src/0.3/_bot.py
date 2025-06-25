@@ -16,7 +16,7 @@ log = get_logger('_bot')
 
 @dataclass
 class BotConfig:
-    urdf_path: str = os.path.expanduser("~/tatbot/assets/urdf/tatbot.urdf")
+    urdf_path: str = "~/tatbot/assets/urdf/tatbot.urdf"
     """Local path to the URDF file for the robot."""
     target_link_names: tuple[str, str] = ("left/tattoo_needle", "right/tattoo_needle")
     """Names of the ee links in the URDF for left and right ik solving."""
@@ -28,7 +28,7 @@ class BotConfig:
 
     @classmethod
     def from_yaml(cls, filepath: str) -> "BotConfig":
-        with open(filepath, "r") as f:
+        with open(os.path.expanduser(filepath), "r") as f:
             data = yaml.safe_load(f)
         if "target_link_names" in data and isinstance(data["target_link_names"], list):
             data["target_link_names"] = tuple(data["target_link_names"])
@@ -41,7 +41,7 @@ class BotConfig:
         )
 
     def save_yaml(self, filepath: str):
-        with open(filepath, "w") as f:
+        with open(os.path.expanduser(filepath), "w") as f:
             yaml.safe_dump(asdict(self), f)
 
 

@@ -80,6 +80,7 @@ class Plan:
         log.info(f"⚙️💾 Saving plan to {self.dirpath}")
         os.makedirs(self.dirpath, exist_ok=True)
         meta_path = os.path.join(self.dirpath, METADATA_FILENAME)
+        meta_path = os.path.expanduser(meta_path)
         log.info(f"⚙️💾 Saving metadata to {meta_path}")
         self.bot_config.save_yaml(os.path.join(self.dirpath, BOT_CONFIG_FILENAME))
         self.ink_config.save_yaml(os.path.join(self.dirpath, INK_CONFIG_FILENAME))
@@ -93,6 +94,7 @@ class Plan:
     def from_yaml(cls, dirpath: str) -> "Plan":
         log.info(f"⚙️💾 Loading plan from {dirpath}...")
         filepath = os.path.join(dirpath, METADATA_FILENAME)
+        filepath = os.path.expanduser(filepath)
         with open(filepath, "r") as f:
             data = yaml.safe_load(f)
         plan = dacite.from_dict(cls, data, config=dacite.Config(type_hooks={np.ndarray: np.array}))
@@ -103,23 +105,28 @@ class Plan:
 
     def load_image_np(self) -> np.ndarray:
         filepath = os.path.join(self.dirpath, IMAGE_FILENAME)
-        log.debug(f"⚙️💾 Loading plan image from {filepath}")
+        filepath = os.path.expanduser(filepath)
+        log.info(f"⚙️💾 Loading plan image from {filepath}")
         return np.array(Image.open(filepath).convert("RGB"))
     
     def save_image_np(self, image: np.ndarray | Image.Image) -> None:
         filepath = os.path.join(self.dirpath, IMAGE_FILENAME)
-        log.debug(f"⚙️💾 Saving plan image to {filepath}")
+        filepath = os.path.expanduser(filepath)
+        log.info(f"⚙️💾 Saving plan image to {filepath}")
         if isinstance(image, np.ndarray):
             image = Image.fromarray(image)
         image.save(filepath)
     
     def load_pathbatch(self) -> 'PathBatch':
         filepath = os.path.join(self.dirpath, PATHBATCH_FILENAME)
+        filepath = os.path.expanduser(filepath)
+        log.info(f"⚙️💾 Loading pathbatch from {filepath}")
         return PathBatch.load(filepath)
     
     def save_pathbatch(self, pathbatch: PathBatch) -> None:
         filepath = os.path.join(self.dirpath, PATHBATCH_FILENAME)
-        log.debug(f"⚙️💾 Saving pathbatch to {filepath}")
+        filepath = os.path.expanduser(filepath)
+        log.info(f"⚙️💾 Saving pathbatch to {filepath}")
         pathbatch.save(filepath)
 
     def add_strokes(self, strokes: list[Stroke], image: Image):
