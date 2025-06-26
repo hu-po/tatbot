@@ -3,6 +3,8 @@ import logging
 import os
 import glob
 
+import numpy as np
+
 from _bot import get_link_poses
 from _log import get_logger, setup_log_with_config, print_config
 from _scan import Scan
@@ -22,7 +24,7 @@ class RunScanConfig:
     output_dir: str = "~/tatbot/output/scans"
     """Directory to save the scan."""
 
-def tags_from_bot_scan(config: RunScanConfig) -> None:
+def run_scan(config: RunScanConfig) -> None:
     bot_scan_dir = os.path.expanduser(config.bot_scan_dir)
     frames_dir = os.path.join(bot_scan_dir, "frames")
     assert os.path.exists(frames_dir), f"Frames directory {frames_dir} does not exist"
@@ -38,8 +40,8 @@ def tags_from_bot_scan(config: RunScanConfig) -> None:
     link_names = scan.optical_frame_urdf_link_names.values()
     link_poses = get_link_poses(link_names, bot_config=scan.bot_config)
     for camera_name, link_name in scan.optical_frame_urdf_link_names.items():
-        scan.extrinsics[camera_name].pos = link_poses[link_name][0]
-        scan.extrinsics[camera_name].wxyz = link_poses[link_name][1]
+        scan.extrinsics[camera_name].pos = np.array(link_poses[link_name][0])
+        scan.extrinsics[camera_name].wxyz = np.array(link_poses[link_name][1])
         log.info(f"🔎🗃️ Camera {camera_name} extrinsics: {scan.extrinsics[camera_name]}")
 
     log.info("📡 Tracking tags in images...")
@@ -71,4 +73,4 @@ if __name__ == "__main__":
     if args.debug:
         log.setLevel(logging.DEBUG)
     print_config(args)
-    tags_from_bot_scan(args)
+    run_scan(args)

@@ -1,12 +1,15 @@
-from dataclasses import dataclass, field
-from typing import List
+from dataclasses import asdict, dataclass, field
+import os
 import time
+from typing import List
 
 import cv2
+import dacite
 import jax.numpy as jnp
 import jaxlie
 import numpy as np
 import pupil_apriltags as apriltag
+import yaml
 
 from _cam import CameraIntrinsics
 from _log import COLORS, get_logger
@@ -37,6 +40,16 @@ class TagConfig:
     """ Dictionary of AprilTag IDs to URDF link names."""
     decision_margin: float = 20.0
     """Minimum decision margin for AprilTag detection filtering."""
+
+    @classmethod
+    def from_yaml(cls, filepath: str) -> "TagConfig":
+        with open(os.path.expanduser(filepath), "r") as f:
+            data = yaml.safe_load(f)
+        return dacite.from_dict(cls, data)
+    
+    def save_yaml(self, filepath: str) -> None:
+        with open(os.path.expanduser(filepath), "w") as f:
+            yaml.safe_dump(asdict(self), f)
 
 @dataclass
 class TagPose:
@@ -79,35 +92,35 @@ class TagTracker:
         detections = [d for d in detections if d.decision_margin >= self.config.decision_margin]
         log.debug(f"🏷️ Filtered down to {len(detections)} detections using decision margin {self.config.decision_margin}")
 
-        camera_so3 = jaxlie.SO3.from_wxyz(jnp.array(camera_wxyz))
-        camera_transform_b = jaxlie.SE3(
-            rotation=camera_so3,
+        camera_transform_b = jaxlie.SE3.from_rotation_and_translation(
+            rotation=jaxlie.SO3(camera_wxyz),
             translation=jnp.array(camera_pos)
         )
 
         detected_tags: dict[int, TagPose] = {}
         for d in detections:
             if d.tag_id in self.config.enabled_tags:
-                tag_in_cam = jnp.eye(4)
-                tag_in_cam = tag_in_cam.at[:3, :3].set(jnp.array(d.pose_R))
-                tag_in_cam = tag_in_cam.at[:3, 3].set(jnp.array(d.pose_t).flatten())
-                tag_in_world = jnp.matmul(camera_transform_b.as_matrix(), tag_in_cam)
-                pos = jnp.array(tag_in_world[:3, 3])
-                wxyz = jaxlie.SO3.from_matrix(tag_in_world[:3, :3]).wxyz
+                tag_rotation = jaxlie.SO3.from_matrix(jnp.array(d.pose_R))
+                tag_translation = jnp.array(d.pose_t).flatten()
+                tag_transform_cam = jaxlie.SE3.from_rotation_and_translation(tag_rotation, tag_translation)
+
+                tag_in_world = camera_transform_b @ tag_transform_cam
+                pos = tag_in_world.translation()
+                wxyz = tag_in_world.rotation().wxyz
                 detected_tags[d.tag_id] = TagPose(pos=pos, wxyz=wxyz)
                 log.debug(f"🏷️ AprilTag {d.tag_id} - {self.config.enabled_tags[d.tag_id]} - pos: {pos}, wxyz: {wxyz}")
 
                 if output_path is not None:
                     # draw detections on image
                     corners = np.int32(d.corners)
-                    cv2.polylines(image_np, [corners], isClosed=True, color=COLORS["red"], thickness=5)
+                    cv2.polylines(gray_image_np, [corners], isClosed=True, color=COLORS["red"], thickness=5)
                     center = tuple(np.int32(d.center))
-                    cv2.circle(image_np, center, 5, COLORS["red"], -1)
-                    cv2.putText(image_np, str(d.tag_id), (center[0] + 5, center[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLORS["red"], 2)
+                    cv2.circle(gray_image_np, center, 5, COLORS["red"], -1)
+                    cv2.putText(gray_image_np, str(d.tag_id), (center[0] + 5, center[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLORS["red"], 2)
 
         apriltags_elapsed_time = time.time() - apriltags_start_time
         log.debug(f"🏷️ AprilTag detection took {apriltags_elapsed_time * 1000:.2f}ms")
         if output_path is not None:
             log.debug(f"🏷️ Saving image with detections to {output_path}")
-            cv2.imwrite(str(output_path), image_np)
+            cv2.imwrite(str(output_path), gray_image_np)
         return detected_tags

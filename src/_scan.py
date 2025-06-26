@@ -146,3 +146,6 @@ class Scan:
         scan.tag_config = TagConfig.from_yaml(os.path.join(dirpath, TAG_CONFIG_FILENAME))
         return scan
     
+def _represent_numpy(dumper: yaml.SafeDumper, data: np.ndarray) -> yaml.nodes.Node:
+    return dumper.represent_list(data.tolist())
+yaml.add_representer(np.ndarray, _represent_numpy, Dumper=yaml.SafeDumper)
