@@ -53,14 +53,20 @@ class TagTracker:
         )
 
     def track_tags(
-        self, 
-        image_np: np.ndarray, 
-        intrinsics: CameraIntrinsics, 
-        camera_pos: np.ndarray, 
-        camera_wxyz: np.ndarray
-    ) -> tuple[dict[int, TagPose], np.ndarray]:
+        self,
+        image_path: str,
+        intrinsics: CameraIntrinsics,
+        camera_pos: np.ndarray,
+        camera_wxyz: np.ndarray,
+        output_path: str | None = None
+    ) -> dict[int, TagPose]:
+        """
+        Detect AprilTags in the image at image_path, draw detections, and optionally save to output_path.
+        Returns a dictionary of detected tag poses.
+        """
         log.debug("🏷️ Detecting AprilTags in image...")
         apriltags_start_time = time.time()
+        image_np = cv2.imread(str(image_path))
         gray_image_np = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
         detections: List[apriltag.Detection] = self.detector.detect(
             gray_image_np,
@@ -91,13 +97,16 @@ class TagTracker:
                 detected_tags[d.tag_id] = TagPose(pos=pos, wxyz=wxyz)
                 log.debug(f"🏷️ AprilTag {d.tag_id} - {self.config.enabled_tags[d.tag_id]} - pos: {pos}, wxyz: {wxyz}")
 
-                # draw detections on image
-                corners = np.int32(d.corners)
-                cv2.polylines(image_np, [corners], isClosed=True, color=COLORS["red"], thickness=5)
-                center = tuple(np.int32(d.center))
-                cv2.circle(image_np, center, 5, COLORS["red"], -1)
-                cv2.putText(image_np, str(d.tag_id), (center[0] + 5, center[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLORS["red"], 2)
+                if output_path is not None:
+                    # draw detections on image
+                    corners = np.int32(d.corners)
+                    cv2.polylines(image_np, [corners], isClosed=True, color=COLORS["red"], thickness=5)
+                    center = tuple(np.int32(d.center))
+                    cv2.circle(image_np, center, 5, COLORS["red"], -1)
+                    cv2.putText(image_np, str(d.tag_id), (center[0] + 5, center[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLORS["red"], 2)
 
         apriltags_elapsed_time = time.time() - apriltags_start_time
         log.debug(f"🏷️ AprilTag detection took {apriltags_elapsed_time * 1000:.2f}ms")
-        return detected_tags, image_np
+        if output_path is not None:
+            cv2.imwrite(str(output_path), image_np)
+        return detected_tags

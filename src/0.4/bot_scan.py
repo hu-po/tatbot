@@ -1,18 +1,18 @@
 from dataclasses import dataclass
+import glob
 import logging
 import os
 import shutil
 import time
 from io import StringIO
 
-import cv2
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.common.datasets.utils import build_dataset_frame, hw_to_dataset_features
 from lerobot.common.robots import make_robot_from_config
 from lerobot.common.robots.tatbot.config_tatbot import TatbotScanConfig
 from lerobot.common.utils.control_utils import sanity_check_dataset_name
-from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.record import _init_rerun
+import numpy as np
 
 from _bot import urdf_joints_to_action, safe_loop, BotConfig, get_link_indices, get_link_poses
 from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT, LOG_FORMAT
@@ -42,8 +42,6 @@ class BotScanConfig:
     """Whether to push the dataset to a private repository."""
     fps: int = 5
     """Frames per second."""
-    num_steps: int = 2
-    """Number of steps to perform in one scan."""
 
 def record_scan(config: BotScanConfig):
     log.info("🤖🤗 Adding LeRobot robot...")
@@ -89,32 +87,34 @@ def record_scan(config: BotScanConfig):
     logging.getLogger().addHandler(episode_handler)
 
     log.info(f"🤖 performing scan...")
-    for step in range(config.num_steps):
-        log.debug(f"step: {step}/{config.num_steps}")
-        start_loop_t = time.perf_counter()
-        observation = robot.get_observation()
-        observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
+    action = urdf_joints_to_action(BotConfig().rest_pose)
+    sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, block="both")
+    action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
+    observation = robot.get_observation()
+    observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
+    frame = {**observation_frame, **action_frame}
+    dataset.add_frame(frame, task="scan with all cameras, arms at rest")
 
-        action = urdf_joints_to_action(BotConfig().rest_pose)
-        sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, block="both")
-
-        action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
-        frame = {**observation_frame, **action_frame}
-        dataset.add_frame(frame, task=f"scan, step {step} of {config.num_steps}")
-
-        dt_s = time.perf_counter() - start_loop_t
-        busy_wait(max(0, dt_s))
-
-    log_path = os.path.join(logs_dir, f"episode_{0:06d}.txt")
+    log_path = os.path.join(logs_dir, f"logs.txt")
     log.info(f"🤖🗃️ Writing episode log to {log_path}")
     with open(log_path, "w") as f:
         f.write(episode_log_buffer.getvalue())
 
-    # images get auto-deleted by lerobot, so copy them to local scan directory
+    # images get auto-deleted by lerobot, so copy them to local scan directory and un-nest them
     images_dir = dataset.root / "images"
-    if images_dir.is_dir():
-        log.info(f"🤖🖼️  Copying images from {images_dir} to {scan_dir}...")
-        shutil.copytree(images_dir, scan_dir, dirs_exist_ok=True)
+    assert images_dir.is_dir(), f"Images directory {images_dir} does not exist"
+    shutil.copytree(images_dir, scan_dir, dirs_exist_ok=True)
+    # Un-nest images from subdirectories and rename them to <camera_name>_<frame_idx>.png
+    for subdir in glob.glob(os.path.join(scan_dir, 'observation.images.*')):
+        if not os.path.isdir(subdir):
+            continue
+        camera_name = os.path.basename(subdir).replace('observation.images.', '')
+        images = sorted(glob.glob(os.path.join(subdir, '**', '*.png'), recursive=True))
+        for frame_idx, img_path in enumerate(images):
+            new_name = f"{camera_name}_{frame_idx:03d}.png"
+            new_path = os.path.join(scan_dir, new_name)
+            shutil.copy2(img_path, new_path)
+            log.debug(f"🤖🖼️  Un-nesting image {img_path} to {new_path}")
 
     dataset.save_episode()
 
@@ -123,21 +123,19 @@ def record_scan(config: BotScanConfig):
     log.info("🤖✅ End")
     robot.disconnect()
 
+    # track tags in each of the images
     scan = Scan()
-    # tracker = TagTracker(scan.tag_config)
-
-    # # track tags in each of the images
-    # for image_path in scan_dir.glob("*.png"):
-    #     camera_name = image_path.stem # TODO: get camera name from image path
-    #     # TODO: get camera_pos and camera_wxyz from URDF? initialize as identity?
-    #     detections, image_np = tracker.track_tags(
-    #         cv2.imread(str(image_path)),
-    #         scan.intrinsics[camera_name],
-    #         np.array(scan.extrinsics[camera_name].pos),
-    #         np.array(scan.extrinsics[camera_name].wxyz),
-    #     )
-    #     # save images with detection results
-    #     cv2.imwrite(str(image_path), image_np)
+    tracker = TagTracker(scan.tag_config)
+    for image_path in glob.glob(os.path.join(scan_dir, '*.png')):
+        camera_name = os.path.splitext(os.path.basename(image_path))[0].split('_')[0]  # e.g., 'camera1'
+        # TODO: get camera_pos and camera_wxyz from URDF? initialize as identity?
+        tracker.track_tags(
+            image_path,
+            scan.intrinsics[camera_name],
+            np.array(scan.extrinsics[camera_name].pos),
+            np.array(scan.extrinsics[camera_name].wxyz),
+            output_path=image_path
+        )
 
     # use origin tag to get camera extrinsics of realsense1, realsense2, camera2, camera3, camera4
     # use arm_l and arm_r tags to get extrinsics of camera1, camera5
