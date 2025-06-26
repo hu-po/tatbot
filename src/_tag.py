@@ -113,14 +113,14 @@ class TagTracker:
                 if output_path is not None:
                     # draw detections on image
                     corners = np.int32(d.corners)
-                    cv2.polylines(gray_image_np, [corners], isClosed=True, color=COLORS["red"], thickness=5)
+                    cv2.polylines(image_np, [corners], isClosed=True, color=COLORS["red"], thickness=8)
                     center = tuple(np.int32(d.center))
-                    cv2.circle(gray_image_np, center, 5, COLORS["red"], -1)
-                    cv2.putText(gray_image_np, str(d.tag_id), (center[0] + 5, center[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLORS["red"], 2)
+                    cv2.circle(image_np, center, 8, COLORS["red"], -1)
+                    cv2.putText(image_np, str(d.tag_id), (center[0] + 5, center[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 1.0, COLORS["red"], 2)
 
         apriltags_elapsed_time = time.time() - apriltags_start_time
         log.debug(f"🏷️ AprilTag detection took {apriltags_elapsed_time * 1000:.2f}ms")
         if output_path is not None:
             log.debug(f"🏷️ Saving image with detections to {output_path}")
-            cv2.imwrite(str(output_path), gray_image_np)
+            cv2.imwrite(str(output_path), image_np)
         return detected_tags
