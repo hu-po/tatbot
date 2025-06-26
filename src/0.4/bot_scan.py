@@ -10,10 +10,7 @@ from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.common.datasets.utils import build_dataset_frame, hw_to_dataset_features
 from lerobot.common.robots import make_robot_from_config
 from lerobot.common.robots.tatbot.config_tatbot import TatbotScanConfig
-from lerobot.common.utils.control_utils import (
-    sanity_check_dataset_name,
-    sanity_check_dataset_robot_compatibility,
-)
+from lerobot.common.utils.control_utils import sanity_check_dataset_name
 from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.record import _init_rerun
 
@@ -127,20 +124,20 @@ def record_scan(config: BotScanConfig):
     robot.disconnect()
 
     scan = Scan()
-    tracker = TagTracker(scan.tag_config)
+    # tracker = TagTracker(scan.tag_config)
 
-    # track tags in each of the images
-    for image_path in scan_dir.glob("*.png"):
-        camera_name = image_path.stem # TODO: get camera name from image path
-        # TODO: get camera_pos and camera_wxyz from URDF? initialize as identity?
-        detections, image_np = tracker.track_tags(
-            cv2.imread(str(image_path)),
-            scan.intrinsics[camera_name],
-            camera_pos,
-            camera_wxyz,
-        )
-        # save images with detection results
-        cv2.imwrite(str(image_path), image_np)
+    # # track tags in each of the images
+    # for image_path in scan_dir.glob("*.png"):
+    #     camera_name = image_path.stem # TODO: get camera name from image path
+    #     # TODO: get camera_pos and camera_wxyz from URDF? initialize as identity?
+    #     detections, image_np = tracker.track_tags(
+    #         cv2.imread(str(image_path)),
+    #         scan.intrinsics[camera_name],
+    #         np.array(scan.extrinsics[camera_name].pos),
+    #         np.array(scan.extrinsics[camera_name].wxyz),
+    #     )
+    #     # save images with detection results
+    #     cv2.imwrite(str(image_path), image_np)
 
     # use origin tag to get camera extrinsics of realsense1, realsense2, camera2, camera3, camera4
     # use arm_l and arm_r tags to get extrinsics of camera1, camera5
