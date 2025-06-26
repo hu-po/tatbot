@@ -43,6 +43,8 @@ class BotScanConfig:
     """Whether to push the dataset to a private repository."""
     fps: int = 5
     """Frames per second."""
+    num_images_per_camera: int = 3
+    """Number of images to capture per camera."""
 
 def record_scan(config: BotScanConfig):
     log.info("🤖🤗 Adding LeRobot robot...")
@@ -95,14 +97,17 @@ def record_scan(config: BotScanConfig):
     episode_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=TIME_FORMAT))
     logging.getLogger().addHandler(episode_handler)
 
-    log.info(f"🤖 performing scan...")
+    log.info("🤖 Sending robot to rest pose...")
     action = urdf_joints_to_action(BotConfig().rest_pose)
     sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, block="both")
     action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
-    observation = robot.get_observation()
-    observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
-    frame = {**observation_frame, **action_frame}
-    dataset.add_frame(frame, task="scan with all cameras, arms at rest")
+
+    for i in range(config.num_images_per_camera):
+        log.info(f"🤖 Getting observation {i + 1} of {config.num_images_per_camera}...")
+        observation = robot.get_observation()
+        observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
+        frame = {**observation_frame, **action_frame}
+        dataset.add_frame(frame, task=f"scan with all cameras, arms at rest, image {i + 1} of {config.num_images_per_camera}")
 
     log_path = os.path.join(logs_dir, "logs.txt")
     log.info(f"🤖🗃️ Writing episode log to {log_path}")
