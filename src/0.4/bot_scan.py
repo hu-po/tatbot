@@ -52,19 +52,19 @@ def record_scan(config: BotScanConfig):
     robot.connect()
 
     output_dir = os.path.expanduser(config.output_dir)
-    log.info(f"🤖🗃️ Creating output directory at {output_dir}...")
+    log.info(f"🤖🗃️ Creating output directory at {output_dir}")
     os.makedirs(output_dir, exist_ok=True)
 
     dataset_name = config.dataset_name or f"scan-{time.strftime(TIME_FORMAT, time.localtime())}"
-    dataset_dir = f"{output_dir}/{dataset_name}"
-    log.info(f"🤖🗃️ Creating dataset directory at {dataset_dir}...")
+    dataset_dir = os.path.join(output_dir, dataset_name)
+    log.info(f"🤖🗃️ Creating dataset directory at {dataset_dir}")
     os.makedirs(dataset_dir, exist_ok=True)
 
     action_features = hw_to_dataset_features(robot.action_features, "action", True)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
     dataset_features = {**action_features, **obs_features}
     repo_id = f"{config.hf_username}/{dataset_name}"
-    log.info(f"🤖📦🤗 Creating new LeRobot dataset at {repo_id}...")
+    log.info(f"🤖📦🤗 Creating new LeRobot dataset at {repo_id}")
     sanity_check_dataset_name(repo_id, None)
     dataset = LeRobotDataset.create(
         repo_id,
@@ -80,11 +80,11 @@ def record_scan(config: BotScanConfig):
         _init_rerun(session_name="recording")
 
     scan_dir = os.path.join(dataset_dir, "scan")
-    log.info(f"🤖🗃️ Creating scan directory at {scan_dir}...")
+    log.info(f"🤖🗃️ Creating scan directory at {scan_dir}")
     os.makedirs(scan_dir, exist_ok=True)
 
     logs_dir = os.path.join(dataset_dir, "logs")
-    log.info(f"🤖🗃️ Creating logs directory at {logs_dir}...")
+    log.info(f"🤖🗃️ Creating logs directory at {logs_dir}")
     os.makedirs(logs_dir, exist_ok=True)
     episode_log_buffer = StringIO()
 
@@ -97,29 +97,29 @@ def record_scan(config: BotScanConfig):
     episode_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=TIME_FORMAT))
     logging.getLogger().addHandler(episode_handler)
 
-    log.info("🤖 Sending robot to rest pose...")
+    log.info("🤖 Sending robot to rest pose")
     action = urdf_joints_to_action(BotConfig().rest_pose)
     sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, block="both")
     action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
 
     for i in range(config.num_images_per_camera):
-        log.info(f"🤖 Getting observation {i + 1} of {config.num_images_per_camera}...")
+        log.info(f"🤖 Getting observation {i + 1} of {config.num_images_per_camera}")
         observation = robot.get_observation()
         observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
         frame = {**observation_frame, **action_frame}
         dataset.add_frame(frame, task=f"scan with all cameras, arms at rest, image {i + 1} of {config.num_images_per_camera}")
 
     log_path = os.path.join(logs_dir, "logs.txt")
-    log.info(f"🤖🗃️ Writing episode log to {log_path}")
+    log.info(f"🤖🗃️ Writing log to {log_path}")
     with open(log_path, "w") as f:
         f.write(episode_log_buffer.getvalue())
 
     # images get auto-deleted by lerobot, so copy them to local scan directory and un-nest them
     images_dir = os.path.join(dataset_dir, "images")
     assert os.path.isdir(images_dir), f"LeRobot images directory {images_dir} does not exist"
-    log.debug(f"🤖🖼️ Copying images from {images_dir} to {scan_dir}...")
+    log.debug(f"🤖🖼️ Copying images from {images_dir} to {scan_dir}")
     for subdir in glob.glob(os.path.join(images_dir, 'observation.images.*')):
-        log.debug(f"🤖🖼️ Un-nesting images from {subdir}...")
+        log.debug(f"🤖🖼️ Un-nesting images from {subdir}")
         if not os.path.isdir(subdir):
             continue
         camera_name = os.path.basename(subdir).replace('observation.images.', '')
