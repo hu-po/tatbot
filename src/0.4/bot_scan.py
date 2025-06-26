@@ -12,12 +12,9 @@ from lerobot.common.robots import make_robot_from_config
 from lerobot.common.robots.tatbot.config_tatbot import TatbotScanConfig
 from lerobot.common.utils.control_utils import sanity_check_dataset_name
 from lerobot.record import _init_rerun
-import numpy as np
 
-from _bot import urdf_joints_to_action, safe_loop, BotConfig, get_link_indices, get_link_poses
+from _bot import urdf_joints_to_action, safe_loop, BotConfig
 from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT, LOG_FORMAT
-from _scan import Scan
-from _tag import TagTracker
 
 log = get_logger('bot_scan')
 
@@ -79,9 +76,9 @@ def record_scan(config: BotScanConfig):
     if config.display_data:
         _init_rerun(session_name="recording")
 
-    scan_dir = os.path.join(dataset_dir, "scan")
-    log.info(f"🤖🗃️ Creating scan directory at {scan_dir}")
-    os.makedirs(scan_dir, exist_ok=True)
+    frames_dir = os.path.join(dataset_dir, "frames")
+    log.info(f"🤖🗃️ Creating frames directory at {frames_dir}")
+    os.makedirs(frames_dir, exist_ok=True)
 
     logs_dir = os.path.join(dataset_dir, "logs")
     log.info(f"🤖🗃️ Creating logs directory at {logs_dir}")
@@ -114,10 +111,10 @@ def record_scan(config: BotScanConfig):
     with open(log_path, "w") as f:
         f.write(episode_log_buffer.getvalue())
 
-    # images get auto-deleted by lerobot, so copy them to local scan directory and un-nest the images
+    # images get auto-deleted by lerobot, so copy them to local frames directory and un-nest the images
     images_dir = os.path.join(dataset_dir, "images")
     assert os.path.isdir(images_dir), f"LeRobot images directory {images_dir} does not exist"
-    log.debug(f"🤖🖼️ Copying images from {images_dir} to {scan_dir}")
+    log.debug(f"🤖🖼️ Copying images from {images_dir} to {frames_dir}")
     time.sleep(3) # wait for images to be written to disk
     for subdir in glob.glob(os.path.join(images_dir, 'observation.images.*')):
         log.debug(f"🤖🖼️ Un-nesting images from {subdir}")
@@ -127,36 +124,16 @@ def record_scan(config: BotScanConfig):
         for i in range(config.num_images_per_camera):
             image_path = os.path.join(subdir, f"episode_000000", f"frame_{i:06d}.png")
             new_name = f"{camera_name}_{i:03d}.png"
-            new_path = os.path.join(scan_dir, new_name)
+            new_path = os.path.join(frames_dir, new_name)
             shutil.copy2(image_path, new_path)
             log.debug(f"🤖🖼️ Copied {image_path} to {new_path}")
 
     dataset.save_episode()
+
     logging.getLogger().removeHandler(episode_handler)
     log.info("🤖✅ End")
+    
     robot.disconnect()
-
-    log.info("🤖 Tracking tags in images...")
-    scan = Scan()
-    tracker = TagTracker(scan.tag_config)
-    for image_path in glob.glob(os.path.join(scan_dir, '*.png')):
-        camera_name = os.path.splitext(os.path.basename(image_path))[0].split('_')[0]
-        # TODO: get camera_pos and camera_wxyz from URDF? initialize as identity?
-        tracker.track_tags(
-            image_path,
-            scan.intrinsics[camera_name],
-            np.array(scan.extrinsics[camera_name].pos),
-            np.array(scan.extrinsics[camera_name].wxyz),
-            output_path=image_path.replace('.png', '_tagged.png')
-        )
-
-    # use origin tag to get camera extrinsics of realsense1, realsense2, camera2, camera3, camera4
-    # use arm_l and arm_r tags to get extrinsics of camera1, camera5
-    # use camera extrinsics to get palette and skin tags
-
-    # update URDF file? save to scan metadata?
-
-    scan.save(scan_dir)
 
     if config.push_to_hub:
         log.info("🤖📦🤗 Pushing dataset to Hugging Face Hub...")

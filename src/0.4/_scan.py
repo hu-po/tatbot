@@ -1,5 +1,7 @@
 from dataclasses import asdict, dataclass, field
+import logging
 import os
+import glob
 
 import dacite
 import numpy as np
@@ -8,8 +10,8 @@ import yaml
 from _bot import BotConfig
 from _cam import CameraExtrinsics, CameraIntrinsics
 from _ink import InkConfig
-from _log import get_logger
-from _tag import TagConfig, TagPose
+from _log import get_logger, setup_log_with_config, print_config
+from _tag import TagConfig, TagPose, TagTracker
 
 log = get_logger('_scan')
 
@@ -135,3 +137,53 @@ class Scan:
         scan.ink_config = InkConfig.from_yaml(os.path.join(dirpath, INK_CONFIG_FILENAME))
         scan.tag_config = TagConfig.from_yaml(os.path.join(dirpath, TAG_CONFIG_FILENAME))
         return scan
+    
+    @classmethod
+    def from_bot_scan(cls, dirpath: str) -> "Scan":
+        dirpath = os.path.expanduser(dirpath)
+        log.info(f"📡🗃️ Ingesting scan from bot scan at {dirpath}")
+        scan = Scan()
+
+
+        log.info("📡 Tracking tags in images...")
+        tracker = TagTracker(scan.tag_config)
+        frames_dir = os.path.join(dirpath, "frames")
+        for image_path in glob.glob(os.path.join(frames_dir, '*.png')):
+            camera_name = os.path.splitext(os.path.basename(image_path))[0].split('_')[0]
+            # TODO: get camera_pos and camera_wxyz from URDF? initialize as identity?
+            tracker.track_tags(
+                image_path,
+                scan.intrinsics[camera_name],
+                np.array(scan.extrinsics[camera_name].pos),
+                np.array(scan.extrinsics[camera_name].wxyz),
+                output_path=image_path.replace('.png', '_tagged.png')
+            )
+
+        # use origin tag to get camera extrinsics of realsense1, realsense2, camera2, camera3, camera4
+        # use arm_l and arm_r tags to get extrinsics of camera1, camera5
+        # use camera extrinsics to get palette and skin tags
+
+        # update URDF file? save to scan metadata?
+
+        return scan
+
+
+@dataclass
+class ScanFromBotScanConfig:
+    debug: bool = False
+    """Enable debug logging."""
+
+    bot_scan_dir: str = ""
+    """Path to the bot scan directory."""
+
+    output_dir: str = "~/tatbot/output/scan"
+    """Directory to save the scan."""
+
+if __name__ == "__main__":
+    args = setup_log_with_config(ScanFromBotScanConfig)
+    if args.debug:
+        log.setLevel(logging.DEBUG)
+    print_config(args)
+    scan = Scan.from_bot_scan(args.bot_scan_dir)
+    scan.save(args.output_dir)
+    log.info("📡✅ Done")
