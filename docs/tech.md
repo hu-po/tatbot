@@ -64,11 +64,11 @@ uv pip install .[vla] && \
 # TODO
 ```
 
-`rpi1` 🍓 runs apriltag tracking:
+`rpi1` 🍓 runs apriltag tracking and camera calibration:
 
 ```bash
 uv pip install .[tag] && \
-uv run run_tag.py
+uv run _scan.py
 ```
 
 `rpi2` 🍇 runs visualization:
@@ -124,15 +124,14 @@ dependencies are seperated into optional groups:
 
 ## Setup
 
-Various software versions of tatbot with different dependencies and designs are available under `tatbot/src`.
+tatbot code is all python files stored in a flat hierarchy in the `src` directory.
 
 ```bash
 # Basic install
 git clone --depth=1 https://github.com/hu-po/tatbot.git && \
 cd ~/tatbot && \
-git pull
-# Choose a release
-cd src/0.4
+git pull && \
+cd src && \
 # Optional: Clean old uv environment
 deactivate && \
 rm -rf .venv && \

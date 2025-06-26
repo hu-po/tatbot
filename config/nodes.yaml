@@ -8,7 +8,7 @@ nodes:
     ip: 192.168.1.97
     user: trossen-ai
     emoji: "🦾"
-    deps: ".[bot,tag]"
+    deps: ".[bot]"
   - name: ook
     ip: 192.168.1.90
     user: ook
@@ -18,7 +18,7 @@ nodes:
     ip: 192.168.1.98
     user: rpi1
     emoji: "🍓"
-    deps: ".[tag]"
+    deps: ".[scan]"
   - name: rpi2
     ip: 192.168.1.99
     user: rpi2

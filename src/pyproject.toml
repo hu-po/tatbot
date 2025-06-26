@@ -5,7 +5,7 @@ discord = "https://discord.gg/pPAFwndTJd"
 
 [project]
 name = "tatbot"
-version = "0.4.0"
+version = "0.4.1"
 description="tattoo robot"
 authors = [
     { name = "Hugo Ponte", email = "hu.po.xyz@gmail.com" },
