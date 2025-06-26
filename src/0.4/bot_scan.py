@@ -104,7 +104,7 @@ def record_scan(config: BotScanConfig):
     frame = {**observation_frame, **action_frame}
     dataset.add_frame(frame, task="scan with all cameras, arms at rest")
 
-    log_path = os.path.join(logs_dir, f"logs.txt")
+    log_path = os.path.join(logs_dir, "logs.txt")
     log.info(f"🤖🗃️ Writing episode log to {log_path}")
     with open(log_path, "w") as f:
         f.write(episode_log_buffer.getvalue())
@@ -113,18 +113,16 @@ def record_scan(config: BotScanConfig):
     images_dir = os.path.join(dataset_dir, "images")
     assert os.path.isdir(images_dir), f"LeRobot images directory {images_dir} does not exist"
     log.debug(f"🤖🖼️ Copying images from {images_dir} to {scan_dir}...")
-    shutil.copytree(images_dir, scan_dir, dirs_exist_ok=True)
-    # Un-nest images from subdirectories and rename them to <camera_name>_<frame_idx>.png
-    for subdir in glob.glob(os.path.join(scan_dir, 'observation.images.*')):
+    for subdir in glob.glob(os.path.join(images_dir, 'observation.images.*')):
+        log.debug(f"🤖🖼️ Un-nesting images from {subdir}...")
         if not os.path.isdir(subdir):
             continue
         camera_name = os.path.basename(subdir).replace('observation.images.', '')
-        images = sorted(glob.glob(os.path.join(subdir, '**', '*.png'), recursive=True))
-        for frame_idx, img_path in enumerate(images):
-            new_name = f"{camera_name}_{frame_idx:03d}.png"
-            new_path = os.path.join(scan_dir, new_name)
-            shutil.copy2(img_path, new_path)
-            log.debug(f"🤖🖼️  Un-nesting image {img_path} to {new_path}")
+        image_path = os.path.join(subdir, "episode_000000", "frame_000000.png")
+        new_name = f"{camera_name}.png"
+        new_path = os.path.join(scan_dir, new_name)
+        shutil.copy2(image_path, new_path)
+        log.debug(f"🤖🖼️  Un-nesting image from {image_path} to {new_path}")
 
     dataset.save_episode()
 
@@ -153,7 +151,7 @@ def record_scan(config: BotScanConfig):
 
     # update URDF file? save to scan metadata?
 
-    scan.save()
+    scan.save(scan_dir)
 
     if config.push_to_hub:
         log.info("🤖📦🤗 Pushing dataset to Hugging Face Hub...")

@@ -108,5 +108,6 @@ class TagTracker:
         apriltags_elapsed_time = time.time() - apriltags_start_time
         log.debug(f"🏷️ AprilTag detection took {apriltags_elapsed_time * 1000:.2f}ms")
         if output_path is not None:
+            log.debug(f"🏷️ Saving image with detections to {output_path}")
             cv2.imwrite(str(output_path), image_np)
         return detected_tags

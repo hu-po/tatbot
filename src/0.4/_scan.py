@@ -23,9 +23,6 @@ class Scan:
     name: str = "scan"
     """Name of the scan."""
 
-    dirpath: str = ""
-    """Path to the directory containing the scan files."""
-
     bot_config: BotConfig = field(default_factory=BotConfig)
     """Bot configuration to use for the scan."""
     ink_config: InkConfig = field(default_factory=InkConfig)
@@ -110,14 +107,15 @@ class Scan:
     })
     """Intrinsics for each camera."""
 
-    def save(self):
-        log.info(f"📡💾 Saving scan to {self.dirpath}")
-        os.makedirs(self.dirpath, exist_ok=True)
-        meta_path = os.path.join(self.dirpath, METADATA_FILENAME)
+    def save(self, dirpath: str):
+        dirpath = os.path.expanduser(dirpath)
+        log.info(f"📡💾 Saving scan to {dirpath}")
+        os.makedirs(dirpath, exist_ok=True)
+        meta_path = os.path.join(dirpath, METADATA_FILENAME)
         log.info(f"📡💾 Saving metadata to {meta_path}")
-        self.bot_config.save_yaml(os.path.join(self.dirpath, BOT_CONFIG_FILENAME))
-        self.ink_config.save_yaml(os.path.join(self.dirpath, INK_CONFIG_FILENAME))
-        self.tag_config.save_yaml(os.path.join(self.dirpath, TAG_CONFIG_FILENAME))
+        self.bot_config.save_yaml(os.path.join(dirpath, BOT_CONFIG_FILENAME))
+        self.ink_config.save_yaml(os.path.join(dirpath, INK_CONFIG_FILENAME))
+        self.tag_config.save_yaml(os.path.join(dirpath, TAG_CONFIG_FILENAME))
         meta_dict = asdict(self).copy()
         meta_dict.pop('bot_config', None)
         meta_dict.pop('ink_config', None)
@@ -127,6 +125,7 @@ class Scan:
 
     @classmethod
     def from_yaml(cls, dirpath: str) -> "Scan":
+        dirpath = os.path.expanduser(dirpath)
         log.info(f"📡💾 Loading scan from {dirpath}...")
         filepath = os.path.join(dirpath, METADATA_FILENAME)
         with open(filepath, "r") as f:
@@ -135,5 +134,4 @@ class Scan:
         scan.bot_config = BotConfig.from_yaml(os.path.join(dirpath, BOT_CONFIG_FILENAME))
         scan.ink_config = InkConfig.from_yaml(os.path.join(dirpath, INK_CONFIG_FILENAME))
         scan.tag_config = TagConfig.from_yaml(os.path.join(dirpath, TAG_CONFIG_FILENAME))
-        scan.dirpath = dirpath
         return scan
