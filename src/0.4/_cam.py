@@ -1,6 +1,6 @@
 """Camera module for handling PoE IP cameras using ffmpeg."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 import logging
 import os
@@ -31,6 +31,11 @@ class CameraIntrinsics:
     """Principal point in x-direction."""
     ppy: float = 0.0
     """Principal point in y-direction."""
+
+@dataclass
+class CameraExtrinsics:
+    pos: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.0]))
+    wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0]))
     
 @dataclass
 class CameraConfig:

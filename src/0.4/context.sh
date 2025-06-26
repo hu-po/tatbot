@@ -1,5 +1,5 @@
 #!/bin/bash
-VERSION="0.3"
+VERSION="0.4"
 CODEBASE_NAME="tatbot-v$VERSION"
 TATBOT_ROOT="$HOME/tatbot"
 SRC_DIR="$TATBOT_ROOT/src/$VERSION"

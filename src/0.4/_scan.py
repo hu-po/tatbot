@@ -6,10 +6,10 @@ import numpy as np
 import yaml
 
 from _bot import BotConfig
-from _cam import CameraIntrinsics
+from _cam import CameraExtrinsics, CameraIntrinsics
 from _ink import InkConfig
 from _log import get_logger
-from _tag import TagConfig
+from _tag import TagConfig, TagPose
 
 log = get_logger('_scan')
 
@@ -32,14 +32,23 @@ class Scan:
     """Config containig InkCaps and palette position."""
     tag_config: TagConfig = field(default_factory=TagConfig)
     """Config containing AprilTag parameters."""
-    
-    realsense1_urdf_link_name: str = ""
-    realsense2_urdf_link_name: str = ""
-    camera1_urdf_link_name: str = ""
-    camera2_urdf_link_name: str = ""
-    camera3_urdf_link_name: str = ""
-    camera4_urdf_link_name: str = ""
-    camera5_urdf_link_name: str = ""
+
+    optical_frame_urdf_link_names: dict[str, str] = field(default_factory=lambda: {
+        "realsense1": "realsense1_color_optical_frame",
+        "realsense2": "realsense2_color_optical_frame",
+        "camera1": "camera1_optical_frame",
+        "camera2": "camera2_optical_frame",
+        "camera3": "camera3_optical_frame",
+        "camera4": "camera4_optical_frame",
+        "camera5": "camera5_optical_frame",
+    })
+    """URDF link names for each camera's optical frame."""
+
+    tag_poses: dict[str, dict[int, TagPose]] = field(default_factory=dict)
+    """Tag poses for each tag."""
+
+    extrinsics: dict[str, CameraExtrinsics] = field(default_factory=dict)
+    """Extrinsics for each camera."""
 
     intrinsics: dict[str, CameraIntrinsics] = field(default_factory=lambda: {
         "realsense1": CameraIntrinsics(

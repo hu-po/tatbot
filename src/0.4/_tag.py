@@ -38,6 +38,13 @@ class TagConfig:
     decision_margin: float = 20.0
     """Minimum decision margin for AprilTag detection filtering."""
 
+@dataclass
+class TagPose:
+    pos: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.0]))
+    """Position of the tag in the world frame."""
+    wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0]))
+    """Orientation of the tag in the world frame."""
+
 class TagTracker:
     def __init__(self, config: TagConfig):
         self.config = config
@@ -51,7 +58,7 @@ class TagTracker:
         intrinsics: CameraIntrinsics, 
         camera_pos: np.ndarray, 
         camera_wxyz: np.ndarray
-    ) -> tuple[dict[int, tuple[np.ndarray, np.ndarray]], np.ndarray]:
+    ) -> tuple[dict[int, TagPose], np.ndarray]:
         log.debug("🏷️ Detecting AprilTags in image...")
         apriltags_start_time = time.time()
         gray_image_np = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
@@ -72,7 +79,7 @@ class TagTracker:
             translation=jnp.array(camera_pos)
         )
 
-        detected_tags: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+        detected_tags: dict[int, TagPose] = {}
         for d in detections:
             if d.tag_id in self.config.enabled_tags:
                 tag_in_cam = jnp.eye(4)
@@ -81,7 +88,7 @@ class TagTracker:
                 tag_in_world = jnp.matmul(camera_transform_b.as_matrix(), tag_in_cam)
                 pos = jnp.array(tag_in_world[:3, 3])
                 wxyz = jaxlie.SO3.from_matrix(tag_in_world[:3, :3]).wxyz
-                detected_tags[d.tag_id] = (pos, wxyz)
+                detected_tags[d.tag_id] = TagPose(pos=pos, wxyz=wxyz)
                 log.debug(f"🏷️ AprilTag {d.tag_id} - {self.config.enabled_tags[d.tag_id]} - pos: {pos}, wxyz: {wxyz}")
 
                 # draw detections on image
