@@ -1,8 +1,8 @@
 from dataclasses import asdict, dataclass, field
 import functools
 import os
-from typing import Callable, Any
 import time
+from typing import Any, Callable
 
 import dacite
 import numpy as np
