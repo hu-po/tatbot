@@ -56,22 +56,17 @@ def load_robot(urdf_path: str) -> tuple[yourdfpy.URDF, pk.Robot]:
     return urdf, robot
 
 @functools.lru_cache(maxsize=4)
-def get_link_indices(
-    link_names: tuple[str, ...],
-    bot_config: BotConfig = BotConfig(),
-) -> np.ndarray:
-    _, robot, _ = load_robot(bot_config.urdf_path)
-    return np.array([
-        robot.links.names.index(link_name) for link_name in link_names
-    ], dtype=np.int32)
+def get_link_indices(link_names: tuple[str, ...], urdf_path: str) -> np.ndarray:
+    _, robot = load_robot(urdf_path)
+    return np.array([robot.links.names.index(link_name) for link_name in link_names], dtype=np.int32)
 
 def get_link_poses(
     link_names: list[str],
     joint_positions: np.ndarray | None = None,
     bot_config: BotConfig = BotConfig(),
-) -> tuple[np.ndarray, np.ndarray]:
+) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     _, robot = load_robot(bot_config.urdf_path)
-    link_indices = get_link_indices(tuple(link_names), bot_config)
+    link_indices = get_link_indices(tuple(link_names), bot_config.urdf_path)
     if joint_positions is None:
         joint_positions = bot_config.rest_pose
     log.debug("🤖 performing forward kinematics...")
@@ -80,7 +75,7 @@ def get_link_poses(
     pos = all_link_poses[link_indices, :3]
     wxyz = all_link_poses[link_indices, 3:]
     log.debug(f"🤖 forward kinematics time: {time.time() - start_time:.4f}s")
-    return pos, wxyz
+    return {link_name: (pos, wxyz) for link_name in link_names}
 
 def urdf_joints_to_action(urdf_joints: list[float]) -> dict[str, float]:
     _action = {

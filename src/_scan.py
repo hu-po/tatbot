@@ -46,7 +46,15 @@ class Scan:
     tag_poses: dict[str, dict[int, TagPose]] = field(default_factory=dict)
     """Tag poses for each tag."""
 
-    extrinsics: dict[str, CameraExtrinsics] = field(default_factory=dict)
+    extrinsics: dict[str, CameraExtrinsics] = field(default_factory=lambda: {
+        "realsense1": CameraExtrinsics(),
+        "realsense2": CameraExtrinsics(),
+        "camera1": CameraExtrinsics(),
+        "camera2": CameraExtrinsics(),
+        "camera3": CameraExtrinsics(),
+        "camera4": CameraExtrinsics(),
+        "camera5": CameraExtrinsics(),
+    })
     """Extrinsics for each camera."""
 
     intrinsics: dict[str, CameraIntrinsics] = field(default_factory=lambda: {
@@ -138,52 +146,3 @@ class Scan:
         scan.tag_config = TagConfig.from_yaml(os.path.join(dirpath, TAG_CONFIG_FILENAME))
         return scan
     
-    @classmethod
-    def from_bot_scan(cls, dirpath: str) -> "Scan":
-        dirpath = os.path.expanduser(dirpath)
-        log.info(f"📡🗃️ Ingesting scan from bot scan at {dirpath}")
-        scan = Scan()
-
-
-        log.info("📡 Tracking tags in images...")
-        tracker = TagTracker(scan.tag_config)
-        frames_dir = os.path.join(dirpath, "frames")
-        for image_path in glob.glob(os.path.join(frames_dir, '*.png')):
-            camera_name = os.path.splitext(os.path.basename(image_path))[0].split('_')[0]
-            # TODO: get camera_pos and camera_wxyz from URDF? initialize as identity?
-            tracker.track_tags(
-                image_path,
-                scan.intrinsics[camera_name],
-                np.array(scan.extrinsics[camera_name].pos),
-                np.array(scan.extrinsics[camera_name].wxyz),
-                output_path=image_path.replace('.png', '_tagged.png')
-            )
-
-        # use origin tag to get camera extrinsics of realsense1, realsense2, camera2, camera3, camera4
-        # use arm_l and arm_r tags to get extrinsics of camera1, camera5
-        # use camera extrinsics to get palette and skin tags
-
-        # update URDF file? save to scan metadata?
-
-        return scan
-
-
-@dataclass
-class ScanFromBotScanConfig:
-    debug: bool = False
-    """Enable debug logging."""
-
-    bot_scan_dir: str = ""
-    """Path to the bot scan directory."""
-
-    output_dir: str = "~/tatbot/output/scan"
-    """Directory to save the scan."""
-
-if __name__ == "__main__":
-    args = setup_log_with_config(ScanFromBotScanConfig)
-    if args.debug:
-        log.setLevel(logging.DEBUG)
-    print_config(args)
-    scan = Scan.from_bot_scan(args.bot_scan_dir)
-    scan.save(args.output_dir)
-    log.info("📡✅ Done")

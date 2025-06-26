@@ -86,8 +86,7 @@ def update_nodes(nodes: Optional[List[str]] = None, timeout: float = 300.0) -> s
                 "deactivate >/dev/null 2>&1 || true && "
                 "rm -rf .venv && "
                 "rm -f uv.lock && "
-                "uv venv && "
-                "uv pip install . && "
+                "uv venv --prompt=\"tatbot\" && "
                 f"uv pip install {node.deps}"
             )
             exit_code, out, err = net._run_remote_command(client, command, timeout=timeout)

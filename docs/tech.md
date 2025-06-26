@@ -68,7 +68,7 @@ uv pip install .[vla] && \
 
 ```bash
 uv pip install .[tag] && \
-uv run _scan.py
+uv run run_scan.py --debug
 ```
 
 `rpi2` 🍇 runs visualization:
@@ -137,7 +137,7 @@ deactivate && \
 rm -rf .venv && \
 rm uv.lock && \
 # Setup new uv environment
-uv venv --name tatbot && \
+uv venv --prompt="tatbot" && \
 source .venv/bin/activate && \
 uv pip install .
 # source env variables (i.e. keys, tokens, camera passwords)

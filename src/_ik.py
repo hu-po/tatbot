@@ -87,7 +87,7 @@ def batch_ik(
     bot_config: BotConfig = BotConfig(),
 ) -> Float[Array, "b 16"]:
     _, robot = load_robot(bot_config.urdf_path)
-    ee_link_indices = get_link_indices(bot_config.target_link_names, bot_config)
+    ee_link_indices = get_link_indices(bot_config.target_link_names, bot_config.urdf_path)
     rest_pose = jnp.array(bot_config.rest_pose)
     log.debug(f"🧮 performing batch ik on batch of size {target_pos.shape[0]}")
     start_time = time.time()
