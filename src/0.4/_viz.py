@@ -6,7 +6,7 @@ import numpy as np
 import viser
 from viser.extras import ViserUrdf
 
-from _bot import BotConfig, load_robot
+from _bot import BotConfig, load_robot, get_link_indices
 from _ink import InkConfig
 from _log import COLORS, get_logger, setup_log_with_config, print_config
 
@@ -53,7 +53,8 @@ class BaseViz:
 
     def add_robot(self, config: BotConfig):
         log.debug(f"🖥️ Adding robot to viser from URDF at {config.urdf_path}...")
-        _urdf, self.robot, self.ee_link_indices = load_robot(config.urdf_path, config.target_link_names)
+        _urdf, self.robot = load_robot(config.urdf_path)
+        self.ee_link_indices = get_link_indices(config.target_link_names, config)
         self.urdf = ViserUrdf(self.server, _urdf, root_node_name="/root")
         self.joints = config.rest_pose.copy()
         self.robot_at_rest: bool = True

@@ -13,7 +13,7 @@ from jaxtyping import Array, Float, Int
 import pyroki as pk
 import yourdfpy
 
-from _bot import BotConfig, load_robot
+from _bot import BotConfig, load_robot, get_link_indices
 from _log import get_logger
 
 log = get_logger('_ik')
@@ -86,7 +86,8 @@ def batch_ik(
     ik_config: IKConfig = IKConfig(),
     bot_config: BotConfig = BotConfig(),
 ) -> Float[Array, "b 16"]:
-    _, robot, ee_link_indices = load_robot(bot_config.urdf_path, bot_config.target_link_names)
+    _, robot = load_robot(bot_config.urdf_path)
+    ee_link_indices = get_link_indices(bot_config.target_link_names, bot_config)
     rest_pose = jnp.array(bot_config.rest_pose)
     log.debug(f"🧮 performing batch ik on batch of size {target_pos.shape[0]}")
     start_time = time.time()
@@ -97,25 +98,6 @@ def batch_ik(
     solutions = _ik_vmap(target_wxyz, target_pos, rest_pose)
     log.debug(f"🧮 batch ik time: {time.time() - start_time:.4f}s")
     return solutions
-
-def fk(
-    joint_positions: Float[Array, "16"] | None = None,
-    bot_config: BotConfig = BotConfig(),
-) -> tuple[Float[Array, "1 3"], Float[Array, "1 3"], Float[Array, "1 4"], Float[Array, "1 4"]]:
-    _, robot, ee_link_indices = load_robot(bot_config.urdf_path, bot_config.target_link_names)
-    if joint_positions is None:
-        joint_positions = jnp.array(bot_config.rest_pose)
-    log.debug("🧮 performing fk...")
-    start_time = time.time()
-    all_link_poses = robot.forward_kinematics(joint_positions)
-    pos = all_link_poses[ee_link_indices, :3]
-    wxyz = all_link_poses[ee_link_indices, 3:]
-    rest_pos_l = pos[0, :]
-    rest_pos_r = pos[1, :]
-    rest_wxyz_l = wxyz[0, :]
-    rest_wxyz_r = wxyz[1, :]
-    log.debug(f"🧮 fk time: {time.time() - start_time:.4f}s")
-    return rest_pos_l, rest_pos_r, rest_wxyz_l, rest_wxyz_r
 
 @jdc.jit
 def transform_and_offset(

@@ -46,18 +46,41 @@ class BotConfig:
 
 
 @functools.lru_cache(maxsize=2)
-def load_robot(urdf_path: str, target_links_name: tuple[str, str]) -> tuple[yourdfpy.URDF, pk.Robot, np.ndarray]:
+def load_robot(urdf_path: str) -> tuple[yourdfpy.URDF, pk.Robot]:
     log.debug(f"🤖 Loading PyRoKi robot from URDF at {urdf_path}...")
     start_time = time.time()
     urdf_path = os.path.expanduser(urdf_path)
     urdf = yourdfpy.URDF.load(urdf_path)
     robot = pk.Robot.from_urdf(urdf)
-    ee_link_indices = np.array([
-        robot.links.names.index(target_links_name[0]), # left arm
-        robot.links.names.index(target_links_name[1]), # right arm
-    ], dtype=np.int32)
     log.debug(f"🤖 load robot time: {time.time() - start_time:.4f}s")
-    return urdf, robot, ee_link_indices
+    return urdf, robot
+
+@functools.lru_cache(maxsize=4)
+def get_link_indices(
+    link_names: tuple[str, ...],
+    bot_config: BotConfig = BotConfig(),
+) -> np.ndarray:
+    _, robot, _ = load_robot(bot_config.urdf_path)
+    return np.array([
+        robot.links.names.index(link_name) for link_name in link_names
+    ], dtype=np.int32)
+
+def get_link_poses(
+    link_names: list[str],
+    joint_positions: np.ndarray | None = None,
+    bot_config: BotConfig = BotConfig(),
+) -> tuple[np.ndarray, np.ndarray]:
+    _, robot = load_robot(bot_config.urdf_path)
+    link_indices = get_link_indices(tuple(link_names), bot_config)
+    if joint_positions is None:
+        joint_positions = bot_config.rest_pose
+    log.debug("🤖 performing forward kinematics...")
+    start_time = time.time()
+    all_link_poses = robot.forward_kinematics(joint_positions)
+    pos = all_link_poses[link_indices, :3]
+    wxyz = all_link_poses[link_indices, 3:]
+    log.debug(f"🤖 forward kinematics time: {time.time() - start_time:.4f}s")
+    return pos, wxyz
 
 def urdf_joints_to_action(urdf_joints: list[float]) -> dict[str, float]:
     _action = {
