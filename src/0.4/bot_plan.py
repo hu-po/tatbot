@@ -60,6 +60,10 @@ def record_plan(config: BotPlanConfig):
     robot = make_robot_from_config(TatbotConfig())
     robot.connect()
 
+    output_dir = os.path.expanduser(config.output_dir)
+    log.info(f"🤖🗃️ Creating output directory at {output_dir}...")
+    os.makedirs(output_dir, exist_ok=True)
+
     dataset_name = config.dataset_name or f"plan-{plan.name}-{time.strftime(TIME_FORMAT, time.localtime())}"
     action_features = hw_to_dataset_features(robot.action_features, "action", True)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
@@ -69,7 +73,7 @@ def record_plan(config: BotPlanConfig):
         log.info(f"🤖📦🤗 Resuming LeRobot dataset at {repo_id}...")
         dataset = LeRobotDataset(
             repo_id,
-            root=f"{config.output_dir}/{dataset_name}",
+            root=f"{output_dir}/{dataset_name}",
         )
 
         if hasattr(robot, "cameras") and len(robot.cameras) > 0:
@@ -84,7 +88,7 @@ def record_plan(config: BotPlanConfig):
         dataset = LeRobotDataset.create(
             repo_id,
             config.fps,
-            root=f"{config.output_dir}/{dataset_name}",
+            root=f"{output_dir}/{dataset_name}",
             robot_type=robot.name,
             features=dataset_features,
             use_videos=True,
@@ -94,12 +98,12 @@ def record_plan(config: BotPlanConfig):
     if config.display_data:
         _init_rerun(session_name="recording")
 
-    plan_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/plan")
+    plan_dir = f"{output_dir}/{dataset_name}/plan"
     log.info(f"🤖🗃️ Creating plan directory at {plan_dir}...")
     os.makedirs(plan_dir, exist_ok=True)
     shutil.copytree(config.plan_dir, plan_dir, dirs_exist_ok=True)
 
-    logs_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/logs")
+    logs_dir = f"{output_dir}/{dataset_name}/logs"
     log.info(f"🤖🗃️ Creating logs directory at {logs_dir}...")
     os.makedirs(logs_dir, exist_ok=True)
     episode_log_buffer = StringIO()

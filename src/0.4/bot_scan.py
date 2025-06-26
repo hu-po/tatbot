@@ -48,6 +48,10 @@ def record_scan(config: BotScanConfig):
     robot = make_robot_from_config(TatbotScanConfig)
     robot.connect()
 
+    output_dir = os.path.expanduser(config.output_dir)
+    log.info(f"🤖🗃️ Creating output directory at {output_dir}...")
+    os.makedirs(output_dir, exist_ok=True)
+
     dataset_name = config.dataset_name or f"scan-{time.strftime(TIME_FORMAT, time.localtime())}"
     action_features = hw_to_dataset_features(robot.action_features, "action", True)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
@@ -58,7 +62,7 @@ def record_scan(config: BotScanConfig):
     dataset = LeRobotDataset.create(
         repo_id,
         config.fps,
-        root=f"{config.output_dir}/{dataset_name}",
+        root=f"{output_dir}/{dataset_name}",
         robot_type=robot.name,
         features=dataset_features,
         use_videos=True,
@@ -68,11 +72,11 @@ def record_scan(config: BotScanConfig):
     if config.display_data:
         _init_rerun(session_name="recording")
 
-    scan_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/scan")
+    scan_dir = f"{output_dir}/{dataset_name}/scan"
     log.info(f"🤖🗃️ Creating scan directory at {scan_dir}...")
     os.makedirs(scan_dir, exist_ok=True)
 
-    logs_dir = os.path.expanduser(f"{config.output_dir}/{dataset_name}/logs")
+    logs_dir = f"{output_dir}/{dataset_name}/logs"
     log.info(f"🤖🗃️ Creating logs directory at {logs_dir}...")
     os.makedirs(logs_dir, exist_ok=True)
     episode_log_buffer = StringIO()
