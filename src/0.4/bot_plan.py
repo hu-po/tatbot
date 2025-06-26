@@ -30,14 +30,15 @@ class BotPlanConfig:
     plan_dir: str = os.path.expanduser("~/tatbot/output/plans/bench")
     """Directory containing plan."""
 
+    output_dir: str = "~/tatbot/output/record"
+    """Directory to save the dataset."""
+
     hf_username: str = "tatbot"
     """Hugging Face username."""
     dataset_name: str | None = None
     """Dataset will be saved to Hugging Face Hub repository ID, e.g. 'hf_username/dataset_name'."""
     display_data: bool = False
     """Display data on screen using Rerun."""
-    output_dir: str = os.path.expanduser("~/tatbot/output/record")
-    """Directory to save the dataset."""
     push_to_hub: bool = False
     """Push the dataset to the Hugging Face Hub."""
     tags: tuple[str, ...] = ("tatbot", "wxai", "trossen")
@@ -65,6 +66,10 @@ def record_plan(config: BotPlanConfig):
     os.makedirs(output_dir, exist_ok=True)
 
     dataset_name = config.dataset_name or f"plan-{plan.name}-{time.strftime(TIME_FORMAT, time.localtime())}"
+    dataset_dir = f"{output_dir}/{dataset_name}"
+    log.info(f"🤖🗃️ Creating dataset directory at {dataset_dir}...")
+    os.makedirs(dataset_dir, exist_ok=True)
+
     action_features = hw_to_dataset_features(robot.action_features, "action", True)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
     dataset_features = {**action_features, **obs_features}
@@ -73,7 +78,7 @@ def record_plan(config: BotPlanConfig):
         log.info(f"🤖📦🤗 Resuming LeRobot dataset at {repo_id}...")
         dataset = LeRobotDataset(
             repo_id,
-            root=f"{output_dir}/{dataset_name}",
+            root=dataset_dir,
         )
 
         if hasattr(robot, "cameras") and len(robot.cameras) > 0:
@@ -88,7 +93,7 @@ def record_plan(config: BotPlanConfig):
         dataset = LeRobotDataset.create(
             repo_id,
             config.fps,
-            root=f"{output_dir}/{dataset_name}",
+            root=dataset_dir,
             robot_type=robot.name,
             features=dataset_features,
             use_videos=True,
@@ -98,12 +103,12 @@ def record_plan(config: BotPlanConfig):
     if config.display_data:
         _init_rerun(session_name="recording")
 
-    plan_dir = f"{output_dir}/{dataset_name}/plan"
+    plan_dir = os.path.join(dataset_dir, "plan")
     log.info(f"🤖🗃️ Creating plan directory at {plan_dir}...")
     os.makedirs(plan_dir, exist_ok=True)
     shutil.copytree(config.plan_dir, plan_dir, dirs_exist_ok=True)
 
-    logs_dir = f"{output_dir}/{dataset_name}/logs"
+    logs_dir = os.path.join(dataset_dir, "logs")
     log.info(f"🤖🗃️ Creating logs directory at {logs_dir}...")
     os.makedirs(logs_dir, exist_ok=True)
     episode_log_buffer = StringIO()

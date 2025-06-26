@@ -26,14 +26,15 @@ class BotScanConfig:
     debug: bool = False
     """Enable debug logging."""
 
+    output_dir: str = "~/tatbot/output/record"
+    """Directory to save the dataset."""
+
     hf_username: str = "tatbot"
     """Hugging Face username."""
     dataset_name: str | None = None
     """Dataset will be saved to Hugging Face Hub repository ID, e.g. 'hf_username/dataset_name'."""
     display_data: bool = False
     """Display data on screen using Rerun."""
-    output_dir: str = "~/tatbot/output/record"
-    """Directory to save the dataset."""
     push_to_hub: bool = False
     """Push the dataset to the Hugging Face Hub."""
     tags: tuple[str, ...] = ("tatbot", "wxai", "trossen")
@@ -53,6 +54,10 @@ def record_scan(config: BotScanConfig):
     os.makedirs(output_dir, exist_ok=True)
 
     dataset_name = config.dataset_name or f"scan-{time.strftime(TIME_FORMAT, time.localtime())}"
+    dataset_dir = f"{output_dir}/{dataset_name}"
+    log.info(f"🤖🗃️ Creating dataset directory at {dataset_dir}...")
+    os.makedirs(dataset_dir, exist_ok=True)
+
     action_features = hw_to_dataset_features(robot.action_features, "action", True)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
     dataset_features = {**action_features, **obs_features}
@@ -62,7 +67,7 @@ def record_scan(config: BotScanConfig):
     dataset = LeRobotDataset.create(
         repo_id,
         config.fps,
-        root=f"{output_dir}/{dataset_name}",
+        root=dataset_dir,
         robot_type=robot.name,
         features=dataset_features,
         use_videos=True,
@@ -72,11 +77,11 @@ def record_scan(config: BotScanConfig):
     if config.display_data:
         _init_rerun(session_name="recording")
 
-    scan_dir = f"{output_dir}/{dataset_name}/scan"
+    scan_dir = os.path.join(dataset_dir, "scan")
     log.info(f"🤖🗃️ Creating scan directory at {scan_dir}...")
     os.makedirs(scan_dir, exist_ok=True)
 
-    logs_dir = f"{output_dir}/{dataset_name}/logs"
+    logs_dir = os.path.join(dataset_dir, "logs")
     log.info(f"🤖🗃️ Creating logs directory at {logs_dir}...")
     os.makedirs(logs_dir, exist_ok=True)
     episode_log_buffer = StringIO()
@@ -105,8 +110,8 @@ def record_scan(config: BotScanConfig):
         f.write(episode_log_buffer.getvalue())
 
     # images get auto-deleted by lerobot, so copy them to local scan directory and un-nest them
-    images_dir = os.path.expanduser(dataset.root / "images")
-    assert os.path.isdir(images_dir), f"Images directory {images_dir} does not exist"
+    images_dir = os.path.join(dataset_dir, "images")
+    assert os.path.isdir(images_dir), f"LeRobot images directory {images_dir} does not exist"
     shutil.copytree(images_dir, scan_dir, dirs_exist_ok=True)
     # Un-nest images from subdirectories and rename them to <camera_name>_<frame_idx>.png
     for subdir in glob.glob(os.path.join(scan_dir, 'observation.images.*')):
@@ -160,5 +165,5 @@ if __name__ == "__main__":
     logging.getLogger('trossen_arm').setLevel(logging.ERROR)
     if args.debug:
         log.setLevel(logging.DEBUG)
-        logging.getLogger('lerobot').setLevel(logging.DEBUG)
+        # logging.getLogger('lerobot').setLevel(logging.DEBUG)
     safe_loop(record_scan, args)
