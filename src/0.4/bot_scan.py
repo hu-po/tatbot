@@ -112,6 +112,7 @@ def record_scan(config: BotScanConfig):
     # images get auto-deleted by lerobot, so copy them to local scan directory and un-nest them
     images_dir = os.path.join(dataset_dir, "images")
     assert os.path.isdir(images_dir), f"LeRobot images directory {images_dir} does not exist"
+    log.debug(f"🤖🖼️ Copying images from {images_dir} to {scan_dir}...")
     shutil.copytree(images_dir, scan_dir, dirs_exist_ok=True)
     # Un-nest images from subdirectories and rename them to <camera_name>_<frame_idx>.png
     for subdir in glob.glob(os.path.join(scan_dir, 'observation.images.*')):
