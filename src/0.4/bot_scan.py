@@ -123,31 +123,30 @@ def record_scan(config: BotScanConfig):
         if not os.path.isdir(subdir):
             continue
         camera_name = os.path.basename(subdir).replace('observation.images.', '')
-        image_path = os.path.join(subdir, "episode_000000", "frame_000000.png")
-        new_name = f"{camera_name}.png"
-        new_path = os.path.join(scan_dir, new_name)
-        shutil.copy2(image_path, new_path)
-        log.debug(f"🤖🖼️  Un-nesting image from {image_path} to {new_path}")
+        for i in range(config.num_images_per_camera):
+            image_path = os.path.join(subdir, f"episode_000000", f"frame_{i:06d}.png")
+            new_name = f"{camera_name}_{i:03d}.png"
+            new_path = os.path.join(scan_dir, new_name)
+            shutil.copy2(image_path, new_path)
+            log.debug(f"🤖🖼️ Copied {image_path} to {new_path}")
 
     dataset.save_episode()
-
     logging.getLogger().removeHandler(episode_handler)
-
     log.info("🤖✅ End")
     robot.disconnect()
 
-    # track tags in each of the images
+    log.info("🤖 Tracking tags in images...")
     scan = Scan()
     tracker = TagTracker(scan.tag_config)
     for image_path in glob.glob(os.path.join(scan_dir, '*.png')):
-        camera_name = os.path.splitext(os.path.basename(image_path))[0].split('_')[0]  # e.g., 'camera1'
+        camera_name = os.path.splitext(os.path.basename(image_path))[0].split('_')[0]
         # TODO: get camera_pos and camera_wxyz from URDF? initialize as identity?
         tracker.track_tags(
             image_path,
             scan.intrinsics[camera_name],
             np.array(scan.extrinsics[camera_name].pos),
             np.array(scan.extrinsics[camera_name].wxyz),
-            output_path=image_path
+            output_path=image_path.replace('.png', '_tagged.png')
         )
 
     # use origin tag to get camera extrinsics of realsense1, realsense2, camera2, camera3, camera4
