@@ -105,8 +105,8 @@ def record_scan(config: BotScanConfig):
         f.write(episode_log_buffer.getvalue())
 
     # images get auto-deleted by lerobot, so copy them to local scan directory and un-nest them
-    images_dir = dataset.root / "images"
-    assert images_dir.is_dir(), f"Images directory {images_dir} does not exist"
+    images_dir = os.path.expanduser(dataset.root / "images")
+    assert os.path.isdir(images_dir), f"Images directory {images_dir} does not exist"
     shutil.copytree(images_dir, scan_dir, dirs_exist_ok=True)
     # Un-nest images from subdirectories and rename them to <camera_name>_<frame_idx>.png
     for subdir in glob.glob(os.path.join(scan_dir, 'observation.images.*')):
@@ -147,7 +147,7 @@ def record_scan(config: BotScanConfig):
 
     # update URDF file? save to scan metadata?
 
-    scan.save(scan_dir)
+    scan.save()
 
     if config.push_to_hub:
         log.info("🤖📦🤗 Pushing dataset to Hugging Face Hub...")
