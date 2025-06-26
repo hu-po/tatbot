@@ -1,12 +1,13 @@
 from dataclasses import dataclass
+import glob
 import logging
 import os
-import glob
+import time
 
 import numpy as np
 
 from _bot import get_link_poses
-from _log import get_logger, setup_log_with_config, print_config
+from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT
 from _scan import Scan
 from _tag import TagTracker
 
@@ -30,11 +31,13 @@ def run_scan(config: RunScanConfig) -> None:
     assert os.path.exists(frames_dir), f"Frames directory {frames_dir} does not exist"
     log.info(f"🔎🗃️ Ingesting bot scan at {bot_scan_dir} with frames")
 
+    scan_name = f"{time.strftime(TIME_FORMAT, time.localtime())}"
+    scan = Scan(name=scan_name)
+
     output_dir = os.path.expanduser(config.output_dir)
+    output_dir = os.path.join(output_dir, scan_name)
     log.info(f"🔎🗃️ Creating output directory at {output_dir}")
     os.makedirs(output_dir, exist_ok=True)
-
-    scan = Scan()
 
     log.info("🔎🗃️ Populating camera extrinsics from URDF...")
     link_names = scan.optical_frame_urdf_link_names.values()
