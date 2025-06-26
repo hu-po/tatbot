@@ -30,7 +30,7 @@ class BotPlanConfig:
     plan_dir: str = os.path.expanduser("~/tatbot/output/plans/bench")
     """Directory containing plan."""
 
-    output_dir: str = "~/tatbot/output/record"
+    output_dir: str = "~/tatbot/output/bot"
     """Directory to save the dataset."""
 
     hf_username: str = "tatbot"
