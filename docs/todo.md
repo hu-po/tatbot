@@ -2,6 +2,7 @@
 
 Roughly sorted by priority
 
+- svg to path object
 - calibrate camera extrinsics using scan dataset
 - floating joint for apriltags in urdf
 - floating joint for cameras in urdf
