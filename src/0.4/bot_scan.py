@@ -114,10 +114,11 @@ def record_scan(config: BotScanConfig):
     with open(log_path, "w") as f:
         f.write(episode_log_buffer.getvalue())
 
-    # images get auto-deleted by lerobot, so copy them to local scan directory and un-nest them
+    # images get auto-deleted by lerobot, so copy them to local scan directory and un-nest the images
     images_dir = os.path.join(dataset_dir, "images")
     assert os.path.isdir(images_dir), f"LeRobot images directory {images_dir} does not exist"
     log.debug(f"🤖🖼️ Copying images from {images_dir} to {scan_dir}")
+    time.sleep(3) # wait for images to be written to disk
     for subdir in glob.glob(os.path.join(images_dir, 'observation.images.*')):
         log.debug(f"🤖🖼️ Un-nesting images from {subdir}")
         if not os.path.isdir(subdir):
