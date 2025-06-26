@@ -137,7 +137,7 @@ deactivate && \
 rm -rf .venv && \
 rm uv.lock && \
 # Setup new uv environment
-uv venv && \
+uv venv --name tatbot && \
 source .venv/bin/activate && \
 uv pip install .
 # source env variables (i.e. keys, tokens, camera passwords)
