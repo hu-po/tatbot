@@ -62,7 +62,7 @@ class BaseViz:
     def add_inkpalette(self, config: InkConfig):
         log.debug(f"🖥️ Adding inkpalette to viser...")
         for cap_name, cap in config.inkcaps.items():
-            pos = tuple(np.array(config.inkpalette_pos) + np.array(cap.palette_pos))
+            pos = tuple(np.array(config.inkpalette_pos))
             radius = cap.diameter_m / 2
             color = COLORS.get(cap.color.lower(), (0, 0, 0))
             self.server.scene.add_icosphere(

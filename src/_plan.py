@@ -187,7 +187,7 @@ class Plan:
     def make_inkdip_pos(self, inkcap_name: str) -> np.ndarray:
         assert inkcap_name in self.ink_config.inkcaps, f"⚙️❌ Inkcap {inkcap_name} not found in palette"
         inkcap: InkCap = self.ink_config.inkcaps[inkcap_name]
-        inkcap_pos = np.array(inkcap.palette_pos, dtype=np.float32)
+        inkcap_pos = np.array([0, 0, 0], dtype=np.float32)
         # hover over the inkcap
         inkdip_pos = transform_and_offset(
             np.tile(inkcap_pos, (self.path_length, 1)),
@@ -348,7 +348,7 @@ class Plan:
         )
         path.ee_wxyz_l = np.tile(self.ee_wxyz_l, (self.path_length, 1))
         path.ee_pos_r = transform_and_offset(
-            np.tile(self.ink_config.inkcaps["large"].palette_pos, (self.path_length, 1)),
+            np.tile([0, 0, 0], (self.path_length, 1)),
             self.ink_config.inkpalette_pos,
             self.ink_config.inkpalette_wxyz,
             self.ink_config.inkdip_hover_offset * 2,
@@ -364,7 +364,7 @@ class Plan:
         # HACK: second hack path
         path = Path.empty(self.path_length)
         path.ee_pos_l = transform_and_offset(
-            np.tile(self.ink_config.inkcaps["large"].palette_pos, (self.path_length, 1)),
+            np.tile([0, 0, 0], (self.path_length, 1)),
             self.ink_config.inkpalette_pos,
             self.ink_config.inkpalette_wxyz,
             self.ink_config.inkdip_hover_offset * 2,

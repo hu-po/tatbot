@@ -16,7 +16,7 @@ log = get_logger('viz_plan')
 
 @dataclass
 class VizPlanConfig(BaseVizConfig):
-    plan_dir: str = "~/tatbot/output/plans/bench"
+    plan_dir: str = "~/tatbot/output/plans/svg"
     """Directory containing plan."""
 
     design_pointcloud_point_size: float = 0.001

@@ -51,6 +51,8 @@ gen = [
     "networkx==3.5",
     "replicate==1.0.7",
     "scikit-image==0.25.2",
+    "svgpathtools==1.7.1",
+    "cairosvg==2.8.2",
 ]
 tag = [
     "ffmpeg-python==0.2.0",
