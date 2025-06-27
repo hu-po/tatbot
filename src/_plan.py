@@ -40,9 +40,9 @@ class Plan:
     path_idx_to_strokes: list[list[Stroke]] = field(default_factory=list)
     """Map from pathbatch idx to list of strokes that make up that path."""
 
-    image_width_m: float = 0.04
+    image_width_m: float = 0.074 # A7 size
     """Width of the image in meters."""
-    image_height_m: float = 0.04
+    image_height_m: float = 0.105 # A7 size
     """Height of the image in meters."""
     image_width_px: int | None = None
     """Width of the image in pixels."""

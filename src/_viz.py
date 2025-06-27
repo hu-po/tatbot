@@ -19,7 +19,7 @@ class BaseVizConfig:
 
     env_map_hdri: str = "forest"
     """HDRI for the environment map."""
-    view_camera_position: tuple[float, float, float] = (0.5, 0.5, 0.5)
+    view_camera_position: tuple[float, float, float] = (0.3, 0.3, 0.3)
     """Initial camera position in the Viser scene."""
     view_camera_look_at: tuple[float, float, float] = (0.0, 0.0, 0.0)
     """Initial camera look_at in the Viser scene."""

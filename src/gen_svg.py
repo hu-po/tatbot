@@ -4,8 +4,6 @@ import os
 import svgpathtools
 import numpy as np
 from PIL import Image
-import cairosvg
-import xml.etree.ElementTree as ET
 
 from _log import get_logger, setup_log_with_config
 from _plan import Plan
@@ -18,11 +16,17 @@ class SVGPlanConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    output_dir: str = os.path.expanduser("~/tatbot/output/plans/svg")
+    svg_name: str = "roaring_cat"
+    """Name of the SVG file."""
+
+    output_dir: str = os.path.expanduser(f"~/tatbot/output/plans/svg/{svg_name}")
     """Directory to save the plan."""
 
-    svg_path: str = "~/tatbot/assets/designs/roaring_cat.svg"
+    svg_path: str = f"~/tatbot/assets/designs/{svg_name}.svg"
     """Path to the SVG file."""
+
+    png_path: str | None = f"~/tatbot/assets/designs/{svg_name}.png"
+    """Path to the PNG file."""
 
     points_per_path: int = 108
     """Number of points to sample per SVG path."""
@@ -31,51 +35,6 @@ class SVGPlanConfig:
     """ Width of the design image (pixels)."""
     image_height_px: int = 640
     """ Height of the design image (pixels)."""
-
-def ensure_svg_size(svg_path, width, height, viewbox):
-    tree = ET.parse(svg_path)
-    root = tree.getroot()
-    changed = False
-
-    if 'width' not in root.attrib:
-        root.set('width', str(width))
-        changed = True
-    if 'height' not in root.attrib:
-        root.set('height', str(height))
-        changed = True
-    if 'viewBox' not in root.attrib:
-        root.set('viewBox', viewbox)
-        changed = True
-
-    # Add white background rectangle if not present
-    # Check if a <rect> with fill="white" exists
-    has_white_bg = False
-    for child in root:
-        if child.tag.endswith('rect') and child.attrib.get('fill', '').lower() == 'white':
-            has_white_bg = True
-            break
-    if not has_white_bg:
-        # Insert white rect as first child
-        vb = root.attrib.get('viewBox', viewbox).split()
-        if len(vb) == 4:
-            x, y, w, h = vb
-        else:
-            x, y, w, h = 0, 0, width, height
-        rect = ET.Element('rect', {
-            'x': str(x),
-            'y': str(y),
-            'width': str(w),
-            'height': str(h),
-            'fill': 'white',
-        })
-        root.insert(0, rect)
-        changed = True
-
-    if changed:
-        temp_svg_path = svg_path + ".temp"
-        tree.write(temp_svg_path)
-        return temp_svg_path
-    return svg_path
 
 def plan_from_svg(config: SVGPlanConfig):
     plan = Plan(
@@ -105,18 +64,10 @@ def plan_from_svg(config: SVGPlanConfig):
 
     log.info(f"🖋️ Generated {len(strokes)} strokes.")
 
-    # Render PNG from SVG if no image context is already available
-    raster_path = os.path.join(config.output_dir, "image.png")
-    svg_path_with_size = ensure_svg_size(
-        svg_path,
-        config.image_width_px,
-        config.image_height_px,
-        f"0 0 {config.image_width_px} {config.image_height_px}"
-    )
-    cairosvg.svg2png(url=svg_path_with_size, write_to=raster_path)
-    if svg_path_with_size != svg_path:
-        os.remove(svg_path_with_size)
-    image = Image.open(raster_path)
+    if config.png_path is not None:
+        image = Image.open(os.path.expanduser(config.png_path))
+        plan.image_width_px = image.width
+        plan.image_height_px = image.height
 
     plan.add_strokes(strokes, image)
 
