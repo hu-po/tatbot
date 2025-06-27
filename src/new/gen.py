@@ -28,7 +28,7 @@ class PathBatch:
             dt=jnp.full((1, length,), 0.01, dtype=jnp.float32), # seconds
         )
     
- def add_strokes(self, strokes: list[Stroke], image: Image):
+    def add_strokes(self, strokes: list[Stroke], image: Image):
         log.debug(f"⚙️ Input image shape: {image.size}")
         self.save_image_np(image)
         self.image_width_px = image.size[0]
@@ -319,3 +319,38 @@ class PathBatch:
         pathbatch = PathBatch.from_paths(paths)
         self.save_pathbatch(pathbatch)
         self.save() # update metadata
+
+def plan_from_svg(config: SVGPlanConfig):
+    plan = Plan(
+        name="svg",
+        dirpath=config.output_dir,
+    )
+
+    log.info(f"🖋️📂 Loading SVG file from {config.svg_path}")
+    svg_path = os.path.expanduser(config.svg_path)
+    paths, attributes, svg_attr = svgpathtools.svg2paths2(svg_path)
+
+    strokes: list[Stroke] = []
+    for i, path in enumerate(paths):
+        if path.length() == 0:
+            continue
+
+        ts = np.linspace(0, 1, config.points_per_path)
+        points = np.array([path.point(t) for t in ts])
+        pixel_coords = np.round(np.column_stack((points.real, points.imag))).astype(int)
+
+        stroke = Stroke(
+            pixel_coords=pixel_coords,
+            description=f"svg_path_{i}",
+            color="black"
+        )
+        strokes.append(stroke)
+
+    log.info(f"🖋️ Generated {len(strokes)} strokes.")
+
+    if config.png_path is not None:
+        image = Image.open(os.path.expanduser(config.png_path))
+        plan.image_width_px = image.width
+        plan.image_height_px = image.height
+
+    plan.add_strokes(strokes, image)
