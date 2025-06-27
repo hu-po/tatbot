@@ -3,13 +3,23 @@
 from dataclasses import dataclass, field
 
 @dataclass
-class BotConfig:
-    urdf_path: str = "~/tatbot/assets/urdf/tatbot.urdf"
-    """Local path to the URDF file for the robot."""
-
+class URDF:
+    path: str = "~/tatbot/assets/urdf/tatbot.urdf"
+    """Path to the URDF file for the robot."""
     ee_link_names: tuple[str, str] = ("left/tattoo_needle", "right/tattoo_needle")
-    """Names of the ee links in the URDF for left and right ik solving."""
-
+    """Names of the ee (end effector) links in the URDF."""
+    tag_link_names: tuple[str, ...] = ("tag6", "tag7", "tag9", "tag10", "tag11")
+    """Names of the tag (apriltag) links in the URDF."""
+    cam_link_names: tuple[str, ...] = ("realsense1", "realsense2", "camera1", "camera2", "camera3", "camera4", "camera5")
+    """Names of the camera links in the URDF."""
+    ink_link_names: tuple[str, ...] = ("inkcap_large", "inkcap_small_1", "inkcap_small_2", "inkcap_small_3", "inkcap_medium_1", "inkcap_medium_2")
+    """Names of the inkcap links in the URDF."""
+    palette_link_name: str = "inkpalette"
+    """Name of the inkpalette link in the URDF."""
+    origin_link_name: str = "origin"
+    """Name of the origin link in the URDF."""
+    skin_link_name: str = "skin"
+    """Name of the skin link in the URDF."""
     rest_pose: tuple[float, ...] = (
         -1.0, 0.1, 0.5, -1.2, 0.0, 0.0, 0.0, 0.0, # left arm
         1.0, 0.1, 0.5, -1.2, 0.0, 0.0, 0.0, 0.0, # right arm
@@ -41,40 +51,8 @@ class InkCap:
     color: str = "black"
     """Natural language description of the color of the ink inside the inkcap."""
 
-@dataclass
-class InkPalette:
-    urdf_link_name: str = "inkpalette"
-    """URDF link name of the inkpalette."""
-    inkcaps: dict[str, InkCap] = field(default_factory=lambda: {
-        "small_1": InkCap(
-            urdf_link_name="inkcap_small_1",
-            color="pink"
-        ),
-        "large": InkCap(
-            urdf_link_name="inkcap_large",
-            diameter_m=0.014,
-            depth_m=0.014,
-            color="black"
-        ),
-        "small_2": InkCap(
-            urdf_link_name="inkcap_small_2",
-            color="blue"
-        ),
-        "small_3": InkCap(
-            urdf_link_name="inkcap_small_3",
-            color="white"
-        ),
-        "medium_1": InkCap(
-            urdf_link_name="inkcap_medium_1",
-            diameter_m=0.012,
-            color="red"
-        ),
-        "medium_2": InkCap(
-            urdf_link_name="inkcap_medium_2",
-            diameter_m=0.012,
-            color="green"
-        ),
-    })
+
+
 
 @dataclass
 class TagConfig:
@@ -117,21 +95,69 @@ class CameraIntrinsics:
     """Principal point in y-direction."""
 
 @dataclass
-class CameraExtrinsics:
+class Pose:
     pos: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    """Position in meters (xyz)."""
     wxyz: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
+    """Orientation quaternion (wxyz)."""
 
 @dataclass
-class Scan:
-    name: str = "scan"
-    """Name of the scan."""
+class Scene:
+    name: str = "scene"
+    """Name of the scene."""
+    
+    design_pos: np.ndarray = field(default_factory=lambda: np.array([0.14, 0.02, 0.03], dtype=np.float32))
+    """position in meters (xyz) of origin of design frame."""
+    design_wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
+    """orientation quaternion (wxyz) of the design frame."""
 
-    bot_config: BotConfig = field(default_factory=BotConfig)
-    """Bot configuration to use for the scan."""
-    ink_config: InkConfig = field(default_factory=InkConfig)
-    """Config containig InkCaps and palette position."""
-    tag_config: TagConfig = field(default_factory=TagConfig)
-    """Config containing AprilTag parameters."""
+    # TODO: these will have to be updated to be relative to the design frame
+    ee_wxyz_l: np.ndarray = field(default_factory=lambda: np.array([0.5, 0.5, 0.5, -0.5], dtype=np.float32))
+    """orientation quaternion (wxyz) of left arm end effector when performing a path."""
+    ee_wxyz_r: np.ndarray = field(default_factory=lambda: np.array([0.5, -0.5, 0.5, 0.5], dtype=np.float32))
+    """orientation quaternion (wxyz) of right arm end effector when performing a path."""
+
+    hover_offset: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.006], dtype=np.float32))
+    """position offset when hovering over point, relative to current ee frame."""
+    needle_offset_l: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, -0.0056], dtype=np.float32))
+    """position offset to ensure needle touches skin, relative to current ee frame."""
+    needle_offset_r: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, -0.0062], dtype=np.float32))
+    """position offset to ensure needle touches skin, relative to current ee frame."""
+
+    inkpalette_pos: np.ndarray = field(default_factory=lambda: np.array([-0.03, 0.0, -0.0055], dtype=np.float32))
+    """position (xyz, meters) of the inkpalette in global frame."""
+    inkpalette_wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
+    """orientation quaternion (wxyz) of the inkpalette in global frame."""
+    inkcaps: dict[str, InkCap] = field(default_factory=lambda: {
+        "small_1": InkCap(
+            urdf_link_name="inkcap_small_1",
+            color="pink"
+        ),
+        "large": InkCap(
+            urdf_link_name="inkcap_large",
+            diameter_m=0.014,
+            depth_m=0.014,
+            color="black"
+        ),
+        "small_2": InkCap(
+            urdf_link_name="inkcap_small_2",
+            color="blue"
+        ),
+        "small_3": InkCap(
+            urdf_link_name="inkcap_small_3",
+            color="white"
+        ),
+        "medium_1": InkCap(
+            urdf_link_name="inkcap_medium_1",
+            diameter_m=0.012,
+            color="red"
+        ),
+        "medium_2": InkCap(
+            urdf_link_name="inkcap_medium_2",
+            diameter_m=0.012,
+            color="green"
+        ),
+    })
 
     optical_frame_urdf_link_names: dict[str, str] = field(default_factory=lambda: {
         "realsense1": "realsense1_color_optical_frame",
@@ -217,3 +243,87 @@ class Scan:
         ),
     })
     """Intrinsics for each camera."""
+
+@dataclass
+class Plan:
+    name: str = "plan"
+    """Name of the plan."""
+
+    dirpath: str = ""
+    """Path to the directory containing the plan files."""
+
+    ink_config: InkConfig = field(default_factory=InkConfig)
+    """Config containig InkCaps and palette position."""
+    bot_config: BotConfig = field(default_factory=BotConfig)
+    """Bot configuration to use for the plan."""
+
+    strokes: dict[str, Stroke] = field(default_factory=dict)
+    """Dictionary of path metadata objects."""
+    path_idx_to_strokes: list[list[Stroke]] = field(default_factory=list)
+    """Map from pathbatch idx to list of strokes that make up that path."""
+
+    image_width_m: float = 0.074 # A7 size
+    """Width of the image in meters."""
+    image_height_m: float = 0.105 # A7 size
+    """Height of the image in meters."""
+    image_width_px: int | None = None
+    """Width of the image in pixels."""
+    image_height_px: int | None = None
+    """Height of the image in pixels."""
+
+    ik_batch_size: int = 1024
+    """Batch size for IK computation."""
+    path_length: int = 108
+    """All paths will be resampled to this length."""
+    path_dt_fast: float = 0.1
+    """Time between poses in seconds for fast movement."""
+    path_dt_slow: float = 2.0
+    """Time between poses in seconds for slow movement."""
+
+
+
+@dataclass
+class Stroke:
+    description: str | None = None
+    """Natural language description of the path."""
+    arm: str | None = None
+    """Arm that will execute the path, either left or right."""
+    color: str | None = None
+    """Natural language description of the color of the path."""
+
+    pixel_coords: np.ndarray | None = None
+    """Numpy array of pixel coordinates for each pose in path <x (0-width), y (0-height)>."""
+
+    meter_coords: np.ndarray | None = None
+    """Numpy array of coordinates for each pose in path in meters <x, y, z>."""
+    meters_center: np.ndarray | None = None
+    """Center of Mass of the path in meters."""
+
+    norm_coords: np.ndarray | None = None
+    """Numpy array of coordinates for each pose in path in normalized image coordinates <x (0-1), y (0-1)>."""
+    norm_center: np.ndarray | None = None
+    """Center of Mass of the path in normalized image coordinates."""
+
+    is_inkdip: bool = False
+    """Whether the path is an inkdip."""
+    inkcap: str | None = None
+    """Name of the inkcap which provided the ink for the stroke."""
+
+    is_completed: bool = False
+    """Whether the path is completed."""
+    completion_time: float | None = None
+    """Time taken to complete the path in seconds."""
+
+
+@dataclass
+class FullConfig:
+    urdf: URDF = field(default_factory=URDF)
+    """URDF configuration for the robot."""
+    bot: BotConfig = field(default_factory=BotConfig)
+    """Bot configuration to use for the plan."""
+    ink: InkConfig = field(default_factory=InkConfig)
+    """Config containig InkCaps and palette position."""
+    tag: TagConfig = field(default_factory=TagConfig)
+    """Config containing AprilTag parameters."""
+    scan: Scan = field(default_factory=Scan)
+    """Scan configuration to use for the plan."""
