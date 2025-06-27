@@ -47,6 +47,30 @@ def ensure_svg_size(svg_path, width, height, viewbox):
         root.set('viewBox', viewbox)
         changed = True
 
+    # Add white background rectangle if not present
+    # Check if a <rect> with fill="white" exists
+    has_white_bg = False
+    for child in root:
+        if child.tag.endswith('rect') and child.attrib.get('fill', '').lower() == 'white':
+            has_white_bg = True
+            break
+    if not has_white_bg:
+        # Insert white rect as first child
+        vb = root.attrib.get('viewBox', viewbox).split()
+        if len(vb) == 4:
+            x, y, w, h = vb
+        else:
+            x, y, w, h = 0, 0, width, height
+        rect = ET.Element('rect', {
+            'x': str(x),
+            'y': str(y),
+            'width': str(w),
+            'height': str(h),
+            'fill': 'white',
+        })
+        root.insert(0, rect)
+        changed = True
+
     if changed:
         temp_svg_path = svg_path + ".temp"
         tree.write(temp_svg_path)
