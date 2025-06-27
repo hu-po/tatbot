@@ -49,7 +49,7 @@ class Plan:
     image_height_px: int | None = None
     """Height of the image in pixels."""
 
-    ik_batch_size: int = 256
+    ik_batch_size: int = 1024
     """Batch size for IK computation."""
     path_length: int = 108
     """All paths will be resampled to this length."""
@@ -58,7 +58,7 @@ class Plan:
     path_dt_slow: float = 2.0
     """Time between poses in seconds for slow movement."""
 
-    design_pos: np.ndarray = field(default_factory=lambda: np.array([0.18, 0.0, 0.0], dtype=np.float32))
+    design_pos: np.ndarray = field(default_factory=lambda: np.array([0.14, 0.02, 0.03], dtype=np.float32))
     """position in meters (xyz) of origin of design frame."""
     design_wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
     """orientation quaternion (wxyz) of the design frame."""

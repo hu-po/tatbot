@@ -21,7 +21,7 @@ class SVGPlanConfig:
     output_dir: str = os.path.expanduser("~/tatbot/output/plans/svg")
     """Directory to save the plan."""
 
-    svg_path: str = "~/tatbot/assets/designs/zorya.svg"
+    svg_path: str = "~/tatbot/assets/designs/roaring_cat.svg"
     """Path to the SVG file."""
 
     points_per_path: int = 108
