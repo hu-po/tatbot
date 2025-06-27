@@ -3,6 +3,7 @@
 Roughly sorted by priority
 
 - svg to path object
+- colors from images of tattoo ink
 - calibrate camera extrinsics using scan dataset
 - floating joint for apriltags in urdf
 - floating joint for cameras in urdf

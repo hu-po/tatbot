@@ -1,0 +1,1 @@
+# combination of camera, tag, scanny part of scan
