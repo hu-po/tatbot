@@ -5,7 +5,7 @@ from lerobot.common.robots.tatbot.config_tatbot import TatbotBotOnlyConfig
 
 from tatbot.utils.log import get_logger
 
-log = get_logger('bot.lerobot')
+log = get_logger('bot.lerobot', '🤖')
 
 def safe_loop(loop: Callable, config: Any) -> None:
     try:
@@ -13,7 +13,7 @@ def safe_loop(loop: Callable, config: Any) -> None:
     except Exception as e:
         log.error(f"❌Error:\n{e}\n")
     except KeyboardInterrupt:
-        log.info("🤖🛑⌨️ Keyboard interrupt detected. Disconnecting robot...")
+        log.info("🛑⌨️ Keyboard interrupt detected. Disconnecting robot...")
     finally:
         log.info("🤖🛑 Disconnecting robot...")
         robot = make_robot_from_config(TatbotBotOnlyConfig)

@@ -30,9 +30,9 @@ import numpy as np
 import trossen_arm
 
 from _bot import BotConfig
-from _log import setup_log_with_config, get_logger, print_config
+from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
-log = get_logger('bot_config')
+log = get_logger('bot.trossen', '🎛️')
 
 @dataclass
 class TrossenConfig:
@@ -138,15 +138,15 @@ def configure_arm(filepath: str, ip: str, test_pose: list[float], test_tolerance
     assert driver is not None, f"❌🦾 failed to connect to arm {ip}"
     # print_configurations(driver)
     # driver.save_configs_to_file(filepath)
-    # log.info(f"✅🎛️📄 saved config to {filepath}")
+    # log.info(f"✅📄 saved config to {filepath}")
     driver.load_configs_from_file(filepath)
-    log.info(f"✅🎛️📄 loaded config from {filepath}")
+    log.info(f"✅📄 loaded config from {filepath}")
     print_configurations(driver)
-    log.info(f"✅🎛️🦾 arm {ip} configured successfully")
+    log.info(f"✅🦾 arm {ip} configured successfully")
     driver.set_all_modes(trossen_arm.Mode.position)
     sleep_pose = driver.get_all_positions()[:7]
-    log.info(f"🎛️🦾 sleep pose: {sleep_pose}")
-    log.info(f"🎛️🦾 Testing arm {ip} with pose {test_pose}")
+    log.info(f"🦾 sleep pose: {sleep_pose}")
+    log.info(f"🦾 Testing arm {ip} with pose {test_pose}")
     driver.set_all_positions(trossen_arm.VectorDouble(test_pose), blocking=True)
     current_pose = driver.get_all_positions()[:7]
     assert np.allclose(current_pose, test_pose, atol=test_tolerance), f"❌🦾 current pose {current_pose} does not match test pose {test_pose}"
@@ -162,7 +162,7 @@ if __name__=='__main__':
     if args.debug:
         log.setLevel(logging.DEBUG)
     print_config(args)
-    log.info("🎛️🦾 Configuring left arm")
+    log.info("🦾 Configuring left arm")
     configure_arm(args.arm_l_config_filepath, args.arm_l_ip, args.test_pose_l, args.test_tolerance)
-    log.info("🎛️🦾 Configuring right arm")
+    log.info("🦾 Configuring right arm")
     configure_arm(args.arm_r_config_filepath, args.arm_r_ip, args.test_pose_r, args.test_tolerance)

@@ -20,7 +20,7 @@ from _bot import urdf_joints_to_action, safe_loop, BotConfig
 from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT, LOG_FORMAT
 from _plan import Plan
 
-log = get_logger('bot_plan')
+log = get_logger('bot.plan', '🤖')
 
 @dataclass
 class BotPlanConfig:
@@ -57,17 +57,17 @@ def record_plan(config: BotPlanConfig):
     pathbatch = plan.load_pathbatch()
     num_paths = pathbatch.joints.shape[0]
 
-    log.info("🤖🤗 Adding LeRobot robot...")
+    log.info("🤗 Adding LeRobot robot...")
     robot = make_robot_from_config(TatbotConfig())
     robot.connect()
 
     output_dir = os.path.expanduser(config.output_dir)
-    log.info(f"🤖🗃️ Creating output directory at {output_dir}...")
+    log.info(f"🗃️ Creating output directory at {output_dir}...")
     os.makedirs(output_dir, exist_ok=True)
 
     dataset_name = config.dataset_name or f"plan-{plan.name}-{time.strftime(TIME_FORMAT, time.localtime())}"
     dataset_dir = f"{output_dir}/{dataset_name}"
-    log.info(f"🤖🗃️ Creating dataset directory at {dataset_dir}...")
+    log.info(f"🗃️ Creating dataset directory at {dataset_dir}...")
     os.makedirs(dataset_dir, exist_ok=True)
 
     action_features = hw_to_dataset_features(robot.action_features, "action", True)
@@ -75,7 +75,7 @@ def record_plan(config: BotPlanConfig):
     dataset_features = {**action_features, **obs_features}
     repo_id = f"{config.hf_username}/{dataset_name}"
     if config.resume:
-        log.info(f"🤖📦🤗 Resuming LeRobot dataset at {repo_id}...")
+        log.info(f"📦🤗 Resuming LeRobot dataset at {repo_id}...")
         dataset = LeRobotDataset(
             repo_id,
             root=dataset_dir,
@@ -88,7 +88,7 @@ def record_plan(config: BotPlanConfig):
             )
         sanity_check_dataset_robot_compatibility(dataset, robot, config.fps, dataset_features)
     else:
-        log.info(f"🤖📦🤗 Creating new LeRobot dataset at {repo_id}...")
+        log.info(f"📦🤗 Creating new LeRobot dataset at {repo_id}...")
         sanity_check_dataset_name(repo_id, None)
         dataset = LeRobotDataset.create(
             repo_id,
@@ -104,12 +104,12 @@ def record_plan(config: BotPlanConfig):
         _init_rerun(session_name="recording")
 
     plan_dir = os.path.join(dataset_dir, "plan")
-    log.info(f"🤖🗃️ Creating plan directory at {plan_dir}...")
+    log.info(f"🗃️ Creating plan directory at {plan_dir}...")
     os.makedirs(plan_dir, exist_ok=True)
     shutil.copytree(config.plan_dir, plan_dir, dirs_exist_ok=True)
 
     logs_dir = os.path.join(dataset_dir, "logs")
-    log.info(f"🤖🗃️ Creating logs directory at {logs_dir}...")
+    log.info(f"🗃️ Creating logs directory at {logs_dir}...")
     os.makedirs(logs_dir, exist_ok=True)
     episode_log_buffer = StringIO()
 
@@ -173,7 +173,7 @@ def record_plan(config: BotPlanConfig):
             busy_wait(max(0, goal_time - dt_s))
 
         log_path = os.path.join(logs_dir, f"episode_{path_idx:06d}.txt")
-        log.info(f"🤖🗃️ Writing episode log to {log_path}")
+        log.info(f"🗃️ Writing episode log to {log_path}")
         with open(log_path, "w") as f:
             f.write(episode_log_buffer.getvalue())
 
@@ -185,7 +185,7 @@ def record_plan(config: BotPlanConfig):
     robot.disconnect()
 
     if config.push_to_hub:
-        log.info("🤖📦🤗 Pushing dataset to Hugging Face Hub...")
+        log.info("📦🤗 Pushing dataset to Hugging Face Hub...")
         dataset.push_to_hub(tags=list(config.tags), private=config.private)
 
 if __name__ == "__main__":

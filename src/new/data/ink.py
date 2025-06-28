@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from . import Yaml
 
 INK_CONFIG_DIR = "~/tatbot/config/inks"
 
@@ -21,6 +22,6 @@ class InkCap:
     """Color of the ink inside the inkcap."""
 
 @dataclass
-class InkPalette:
+class InkPalette(Yaml):
     inkcaps: tuple[InkCap, ...]
     """Ordered list of inkcaps in the palette."""

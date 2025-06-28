@@ -16,7 +16,7 @@ from lerobot.record import _init_rerun
 from _bot import urdf_joints_to_action, safe_loop, BotConfig
 from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT, LOG_FORMAT
 
-log = get_logger('bot_scan')
+log = get_logger('bot.scan', '🤖')
 
 @dataclass
 class BotScanConfig:
@@ -44,24 +44,24 @@ class BotScanConfig:
     """Number of images to capture per camera."""
 
 def record_scan(config: BotScanConfig):
-    log.info("🤖🤗 Adding LeRobot robot...")
+    log.info("🤗 Adding LeRobot robot...")
     robot = make_robot_from_config(TatbotScanConfig)
     robot.connect()
 
     output_dir = os.path.expanduser(config.output_dir)
-    log.info(f"🤖🗃️ Creating output directory at {output_dir}")
+    log.info(f"🗃️ Creating output directory at {output_dir}")
     os.makedirs(output_dir, exist_ok=True)
 
     dataset_name = config.dataset_name or f"scan-{time.strftime(TIME_FORMAT, time.localtime())}"
     dataset_dir = os.path.join(output_dir, dataset_name)
-    log.info(f"🤖🗃️ Creating dataset directory at {dataset_dir}")
+    log.info(f"🗃️ Creating dataset directory at {dataset_dir}")
     os.makedirs(dataset_dir, exist_ok=True)
 
     action_features = hw_to_dataset_features(robot.action_features, "action", True)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
     dataset_features = {**action_features, **obs_features}
     repo_id = f"{config.hf_username}/{dataset_name}"
-    log.info(f"🤖📦🤗 Creating new LeRobot dataset at {repo_id}")
+    log.info(f"📦🤗 Creating new LeRobot dataset at {repo_id}")
     sanity_check_dataset_name(repo_id, None)
     dataset = LeRobotDataset.create(
         repo_id,
@@ -77,11 +77,11 @@ def record_scan(config: BotScanConfig):
         _init_rerun(session_name="recording")
 
     frames_dir = os.path.join(dataset_dir, "frames")
-    log.info(f"🤖🗃️ Creating frames directory at {frames_dir}")
+    log.info(f"🗃️ Creating frames directory at {frames_dir}")
     os.makedirs(frames_dir, exist_ok=True)
 
     logs_dir = os.path.join(dataset_dir, "logs")
-    log.info(f"🤖🗃️ Creating logs directory at {logs_dir}")
+    log.info(f"🗃️ Creating logs directory at {logs_dir}")
     os.makedirs(logs_dir, exist_ok=True)
     episode_log_buffer = StringIO()
 
@@ -107,17 +107,17 @@ def record_scan(config: BotScanConfig):
         dataset.add_frame(frame, task=f"scan with all cameras, arms at rest, image {i + 1} of {config.num_images_per_camera}")
 
     log_path = os.path.join(logs_dir, "logs.txt")
-    log.info(f"🤖🗃️ Writing log to {log_path}")
+    log.info(f"🗃️ Writing log to {log_path}")
     with open(log_path, "w") as f:
         f.write(episode_log_buffer.getvalue())
 
     # images get auto-deleted by lerobot, so copy them to local frames directory and un-nest the images
     images_dir = os.path.join(dataset_dir, "images")
     assert os.path.isdir(images_dir), f"LeRobot images directory {images_dir} does not exist"
-    log.debug(f"🤖🖼️ Copying images from {images_dir} to {frames_dir}")
+    log.debug(f"🖼️ Copying images from {images_dir} to {frames_dir}")
     time.sleep(3) # wait for images to be written to disk
     for subdir in glob.glob(os.path.join(images_dir, 'observation.images.*')):
-        log.debug(f"🤖🖼️ Un-nesting images from {subdir}")
+        log.debug(f"🖼️ Un-nesting images from {subdir}")
         if not os.path.isdir(subdir):
             continue
         camera_name = os.path.basename(subdir).replace('observation.images.', '')
@@ -126,7 +126,7 @@ def record_scan(config: BotScanConfig):
             new_name = f"{camera_name}_{i:03d}.png"
             new_path = os.path.join(frames_dir, new_name)
             shutil.copy2(image_path, new_path)
-            log.debug(f"🤖🖼️ Copied {image_path} to {new_path}")
+            log.debug(f"🖼️ Copied {image_path} to {new_path}")
 
     dataset.save_episode()
 
@@ -136,7 +136,7 @@ def record_scan(config: BotScanConfig):
     robot.disconnect()
 
     if config.push_to_hub:
-        log.info("🤖📦🤗 Pushing dataset to Hugging Face Hub...")
+        log.info("📦🤗 Pushing dataset to Hugging Face Hub...")
         dataset.push_to_hub(tags=list(config.tags), private=config.private)
 
 if __name__ == "__main__":
