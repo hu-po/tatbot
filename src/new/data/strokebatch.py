@@ -5,7 +5,7 @@ from safetensors.flax import load_file, save_file
 
 from tatbot.utils.log import get_logger
 
-log = get_logger('path')
+log = get_logger('strokebatch', '🔳')
 
 @jdc.pytree_dataclass
 class StrokeBatch:
@@ -24,7 +24,7 @@ class StrokeBatch:
 
     @classmethod
     def empty(cls, length: int) -> "StrokeBatch":
-        log.debug(f"🔳 Creating empty pathbatch of length {length}...")
+        log.debug(f"Creating empty StrokeBatch of length {length}...")
         return cls(
             ee_pos_l=jnp.zeros((1, length, 3), dtype=jnp.float32),
             ee_pos_r=jnp.zeros((1, length, 3), dtype=jnp.float32),
@@ -35,11 +35,11 @@ class StrokeBatch:
         )
     
     def save(self, filepath: str) -> None:
-        log.debug(f"🔳💾 Saving PathBatch to {filepath}")
+        log.debug(f"💾 Saving StrokeBatch to {filepath}")
         save_file({k: getattr(self, k) for k in self.__dataclass_fields__}, filepath)
 
     @classmethod
     def load(cls, filepath: str) -> "StrokeBatch":
-        log.debug(f"🔳💾 Loading PathBatch from {filepath}")
+        log.debug(f"💾 Loading PathBatch from {filepath}")
         data = load_file(filepath)
         return cls(**data)

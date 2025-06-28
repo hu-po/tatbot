@@ -10,11 +10,16 @@ TIME_FORMAT: str = "%Yy-%mm-%dd-%Hh-%Mm-%Ss"
 LOG_FORMAT: str = "%(asctime)s %(levelname)s: %(message)s"
 SUBMODULES: list[str] = ['_bot', '_ik', '_ink', '_log', '_map', '_net', '_path', '_plan', '_scan', '_tag', '_viz']
 
-def get_logger(name: str) -> logging.Logger:
+def get_logger(name: str, emoji: str = "❓") -> logging.Logger:
     """Get a logger with a specific name."""
-    return logging.getLogger(f"tatbot.{name}")
+    _log = logging.getLogger(f"tatbot.{name}")
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(f"{emoji}{LOG_FORMAT}"))
+    if not _log.hasHandlers():
+        _log.addHandler(handler)
+    return _log
 
-log = get_logger('_log')
+log = get_logger('utils.log')
 
 def print_config(args: Any):
     log.info(f"🛠️ Full Config of type {type(args)}:")
