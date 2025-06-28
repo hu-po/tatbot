@@ -1,0 +1,118 @@
+{
+  "presetType": "drawing_set",
+  "version": "2.0",
+  "presetSubType": "tatbot",
+  "presetName": "fullcolor",
+  "enabled": true,
+  "userCreated": false,
+  "data": {
+    "type": "tatbot",
+    "name": "fullcolor",
+    "pens": [
+      {
+        "type": "tatbot",
+        "name": "true_black",
+        "argb": -16777216,
+        "distributionWeight": 100,
+        "strokeSize": 1.0,
+        "isEnabled": true
+      },
+      {
+        "type": "tatbot",
+        "name": "snow_white",
+        "argb": -1,
+        "distributionWeight": 100,
+        "strokeSize": 1.0,
+        "isEnabled": true
+      },
+      {
+        "type": "tatbot",
+        "name": "true_blue",
+        "argb": -16744449,
+        "distributionWeight": 100,
+        "strokeSize": 1.0,
+        "isEnabled": true
+      },
+      {
+        "type": "tatbot",
+        "name": "bright_red",
+        "argb": -65536,
+        "distributionWeight": 100,
+        "strokeSize": 1.0,
+        "isEnabled": true
+      },
+      {
+        "type": "tatbot",
+        "name": "bright_orange",
+        "argb": -29696,
+        "distributionWeight": 100,
+        "strokeSize": 1.0,
+        "isEnabled": true
+      },
+      {
+        "type": "tatbot",
+        "name": "golden_yellow",
+        "argb": -10496,
+        "distributionWeight": 100,
+        "strokeSize": 1.0,
+        "isEnabled": true
+      },
+      {
+        "type": "tatbot",
+        "name": "lemon_yellow",
+        "argb": -33251,
+        "distributionWeight": 100,
+        "strokeSize": 1.0,
+        "isEnabled": true
+      },
+      {
+        "type": "tatbot",
+        "name": "lime_green",
+        "argb": -13087362,
+        "distributionWeight": 100,
+        "strokeSize": 1.0,
+        "isEnabled": true
+      },
+      {
+        "type": "tatbot",
+        "name": "light_purple",
+        "argb": -4567797,
+        "distributionWeight": 100,
+        "strokeSize": 1.0,
+        "isEnabled": true
+      },
+      {
+        "type": "tatbot",
+        "name": "rose_pink",
+        "argb": -16724738,
+        "distributionWeight": 100,
+        "strokeSize": 1.0,
+        "isEnabled": true
+      },
+      {
+        "type": "tatbot",
+        "name": "silver",
+        "argb": -4144960,
+        "distributionWeight": 100,
+        "strokeSize": 1.0,
+        "isEnabled": true
+      },
+      {
+        "type": "tatbot",
+        "name": "brown",
+        "argb": -9414325,
+        "distributionWeight": 100,
+        "strokeSize": 1.0,
+        "isEnabled": true
+      },
+      {
+        "type": "tatbot",
+        "name": "fuchsia",
+        "argb": -65281,
+        "distributionWeight": 100,
+        "strokeSize": 1.0,
+        "isEnabled": true
+      }
+    ]
+  }
+}

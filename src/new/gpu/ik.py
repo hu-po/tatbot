@@ -16,7 +16,7 @@ import yourdfpy
 from _bot import BotConfig, load_robot, get_link_indices
 from _log import get_logger
 
-log = get_logger('_ik')
+log = get_logger('ik')
 log.info(f"🧠 JAX devices: {jax.devices()}")
 
 @jdc.pytree_dataclass

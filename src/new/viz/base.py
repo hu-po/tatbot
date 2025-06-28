@@ -10,7 +10,7 @@ from _bot import BotConfig, load_robot, get_link_indices
 from _ink import InkConfig
 from _log import COLORS, get_logger, setup_log_with_config, print_config
 
-log = get_logger('viz')
+log = get_logger('_viz')
 
 @dataclass
 class BaseVizConfig:

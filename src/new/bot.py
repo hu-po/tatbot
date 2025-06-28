@@ -1,1 +1,0 @@
-# combination of bot, ink, botty part of tag, 
