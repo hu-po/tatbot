@@ -20,16 +20,23 @@ class URDF:
     """Name of the origin link in the URDF."""
     skin_link_name: str = "skin"
     """Name of the skin link in the URDF."""
+
+@dataclass
+class Scene:
+    """Main configuration for the scene."""
     rest_pose: tuple[float, ...] = (
         -1.0, 0.1, 0.5, -1.2, 0.0, 0.0, 0.0, 0.0, # left arm
         1.0, 0.1, 0.5, -1.2, 0.0, 0.0, 0.0, 0.0, # right arm
     )
     """Rest pose for the robot."""
+    urdf: URDFConfig
+    """URDF configuration for the robot."""
 
 @dataclass
 class Node:
+    """Node in the tatbot network."""
     name: str
-    """Name of the node (a computer within the tatbot network)."""
+    """Name of the node."""
     ip: str
     """IP address of the node, used for SSH connection."""
     user: str
