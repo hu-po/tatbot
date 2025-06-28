@@ -13,47 +13,17 @@ import numpy as np
 import yaml
 from dacite import from_dict
 
-from _log import get_logger, TIME_FORMAT
+from tatbot.utils.log import get_logger, TIME_FORMAT, setup_log_with_config, print_config
 
-log = get_logger('_cam')
-
-@dataclass
-class CameraIntrinsics:
-    fov: float = 0.0
-    """Field of view in radians."""
-    aspect: float = 0.0
-    """Aspect ratio."""
-    fx: float = 0.0
-    """Focal length in x-direction."""
-    fy: float = 0.0
-    """Focal length in y-direction."""
-    ppx: float = 0.0
-    """Principal point in x-direction."""
-    ppy: float = 0.0
-    """Principal point in y-direction."""
-
-@dataclass
-class CameraExtrinsics:
-    pos: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.0]))
-    wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0]))
-    
-@dataclass
-class CameraConfig:
-    """Configuration for a single camera."""
-    ip: str
-    username: str
-    password: str
-    rtsp_port: int
-    stream_path: str
-    resolution: List[int]
-    fps: int
+log = get_logger('tag.cam', '📸')
 
 @dataclass
 class CameraManagerConfig:
-    """Configuration for all cameras."""
-    cameras: Dict[str, CameraConfig]
+    """Configuration for the camera manager."""
+    cameras: dict[str, CameraConfig]
     output_dir: str
     image_format: str
+    image_quality: int
 
 class CameraManager:
     """Manages multiple PoE IP cameras using ffmpeg."""

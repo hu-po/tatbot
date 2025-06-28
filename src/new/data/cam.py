@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import os
 
 from .pose import Pose
 from . import Yaml
@@ -19,7 +20,7 @@ class CameraIntrinsics:
     """Principal point in y-direction."""
     
 @dataclass
-class CameraConfig:
+class CameraConfig(Yaml):
     """Configuration for a single camera."""
     ip: str
     username: str
@@ -30,11 +31,4 @@ class CameraConfig:
     intrinsics: CameraIntrinsics
     extrinsics: Pose
     fps: int
-
-@dataclass
-class CameraManagerConfig(Yaml):
-    """Configuration for all cameras."""
-    cameras: dict[str, CameraConfig]
-    output_dir: str
-    image_format: str
-    image_quality: int
+    yaml_dir: str = os.path.expanduser("~/tatbot/config/cameras")

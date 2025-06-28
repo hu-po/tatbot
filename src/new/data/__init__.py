@@ -1,6 +1,7 @@
 import yaml
 from dataclasses import asdict, is_dataclass
 from typing import Type, TypeVar, Any
+import os
 
 from tatbot.utils.log import get_logger
 
@@ -13,6 +14,25 @@ class Yaml:
     Shared dataclass mixin for YAML (de)serialization.
     Inherit this in your @dataclass for load/save methods.
     """
+    yaml_dir: str = os.path.expanduser("~/tatbot/config")
+    default: str = os.path.join(yaml_dir, "default.yaml")
+
+    @classmethod
+    def get_yaml_dir(cls) -> str:
+        """
+        Returns the directory where YAML files for this class are stored.
+        Subclasses can override yaml_dir or this method for custom logic.
+        """
+        return cls.yaml_dir
+
+    @classmethod
+    def from_name(cls: Type[T], name: str) -> T:
+        """
+        Loads an instance from a YAML file in the class's yaml_dir, given the base name (without .yaml).
+        """
+        filepath = os.path.join(cls.get_yaml_dir(), f"{name}.yaml")
+        return cls.from_yaml(filepath)
+
     @classmethod
     def from_yaml(cls: Type[T], filepath: str) -> T:
         log.debug(f"Loading {cls.__name__} from {filepath}...")

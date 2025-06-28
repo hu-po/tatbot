@@ -6,6 +6,18 @@ cameras:
     rtsp_port: 554
     stream_path: "/cam/realmonitor?channel=1&subtype=0"  # Main stream
     resolution: [2960, 1668]  # 5MP
+    intrinsics:
+      fov: 1.57  # example: 90 degrees in radians
+      aspect: 1.77
+      fx: 1000.0
+      fy: 1000.0
+      ppx: 1480.0
+      ppy: 834.0
+    extrinsics:
+      pos:
+        xyz: [0.0, 0.0, 0.0]
+      rot:
+        wxyz: [1.0, 0.0, 0.0, 0.0]
     fps: 5
   camera2:
     ip: "192.168.1.92"
@@ -14,6 +26,18 @@ cameras:
     rtsp_port: 554
     stream_path: "/cam/realmonitor?channel=1&subtype=0"
     resolution: [2960, 1668]
+    intrinsics:
+      fov: 1.57
+      aspect: 1.77
+      fx: 1000.0
+      fy: 1000.0
+      ppx: 1480.0
+      ppy: 834.0
+    extrinsics:
+      pos:
+        xyz: [0.0, 0.0, 0.0]
+      rot:
+        wxyz: [1.0, 0.0, 0.0, 0.0]
     fps: 5
   camera3:
     ip: "192.168.1.93"
@@ -22,6 +46,18 @@ cameras:
     rtsp_port: 554
     stream_path: "/cam/realmonitor?channel=1&subtype=0"
     resolution: [2960, 1668]
+    intrinsics:
+      fov: 1.57
+      aspect: 1.77
+      fx: 1000.0
+      fy: 1000.0
+      ppx: 1480.0
+      ppy: 834.0
+    extrinsics:
+      pos:
+        xyz: [0.0, 0.0, 0.0]
+      rot:
+        wxyz: [1.0, 0.0, 0.0, 0.0]
     fps: 5
   camera4:
     ip: "192.168.1.94"
@@ -30,6 +66,18 @@ cameras:
     rtsp_port: 554
     stream_path: "/cam/realmonitor?channel=1&subtype=0"
     resolution: [2960, 1668]
+    intrinsics:
+      fov: 1.57
+      aspect: 1.77
+      fx: 1000.0
+      fy: 1000.0
+      ppx: 1480.0
+      ppy: 834.0
+    extrinsics:
+      pos:
+        xyz: [0.0, 0.0, 0.0]
+      rot:
+        wxyz: [1.0, 0.0, 0.0, 0.0]
     fps: 5
   camera5:
     ip: "192.168.1.95"
@@ -38,6 +86,18 @@ cameras:
     rtsp_port: 554
     stream_path: "/cam/realmonitor?channel=1&subtype=0"
     resolution: [2960, 1668]
+    intrinsics:
+      fov: 1.57
+      aspect: 1.77
+      fx: 1000.0
+      fy: 1000.0
+      ppx: 1480.0
+      ppy: 834.0
+    extrinsics:
+      pos:
+        xyz: [0.0, 0.0, 0.0]
+      rot:
+        wxyz: [1.0, 0.0, 0.0, 0.0]
     fps: 5
 
 output_dir: "output/cameras"  # Directory to save captured images
