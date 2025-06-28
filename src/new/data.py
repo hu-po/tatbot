@@ -40,6 +40,13 @@ class Node:
     """Dependencies to install on the node, see pyproject.toml."""
 
 @dataclass
+class InkColor:
+    name: str = "black"
+    """Natural language description of the color of the ink inside the inkcap."""
+    rgb: tuple[int, int, int] = (0, 0, 0)
+    """RGB values of the color of the ink inside the inkcap."""
+
+@dataclass
 class InkCap:
     """Individual cylindrical inkcap."""
     urdf_link_name: str = "inkcap_large"
@@ -48,11 +55,8 @@ class InkCap:
     """Diameter of the inkcap (meters)."""
     depth_m: float = 0.01
     """Depth of the inkcap (meters)."""
-    color: str = "black"
-    """Natural language description of the color of the ink inside the inkcap."""
-
-
-
+    color: InkColor = InkColor(name="black", rgb=(0, 0, 0))
+    """Color of the ink inside the inkcap."""
 
 @dataclass
 class TagConfig:

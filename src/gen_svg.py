@@ -16,7 +16,7 @@ class SVGPlanConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    svg_name: str = "roaring_cat"
+    svg_name: str = "yawning_cat"
     """Name of the SVG file."""
 
     output_dir: str = os.path.expanduser(f"~/tatbot/output/plans/svg/{svg_name}")
