@@ -29,7 +29,7 @@ class Scene:
         1.0, 0.1, 0.5, -1.2, 0.0, 0.0, 0.0, 0.0, # right arm
     )
     """Rest pose for the robot."""
-    urdf: URDFConfig
+    urdf: URDF
     """URDF configuration for the robot."""
 
 @dataclass
