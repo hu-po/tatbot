@@ -1,9 +1,8 @@
 #!/bin/bash
 CODEBASE_NAME="tatbot"
 TATBOT_ROOT="$HOME/tatbot"
-SRC_DIR="$TATBOT_ROOT/src"
-echo "Populating context for $CODEBASE_NAME"
 OUTPUT_FILE="$TATBOT_ROOT/output/context.txt"
+echo "Populating context for $CODEBASE_NAME"
 echo "Output file: $OUTPUT_FILE"
 if [ -f "$OUTPUT_FILE" ]; then
   echo "Removing existing context file"
@@ -34,15 +33,15 @@ declare -A IGNORE_DIRS=(
   ["$TATBOT_ROOT/config"]=""
   ["$TATBOT_ROOT/docs/paper"]=""
   ["$TATBOT_ROOT/output"]=""
-  ["$TATBOT_ROOT/src/__pycache__"]=""
-  ["$TATBOT_ROOT/src/.venv"]=""
-  ["$TATBOT_ROOT/src/build"]=""
-  ["$TATBOT_ROOT/src/tatbot.egg-info"]=""
+  ["$TATBOT_ROOT/__pycache__"]=""
+  ["$TATBOT_ROOT/.venv"]=""
+  ["$TATBOT_ROOT/build"]=""
+  ["$TATBOT_ROOT/tatbot.egg-info"]=""
 )
 
 declare -A DIRECTORIES=(
   # ----------------------------- ADD DIRECTORIES HERE
-  ["$TATBOT_ROOT/src"]=""
+  ["$TATBOT_ROOT"]=""
 )
 
 declare -A FILES=(
