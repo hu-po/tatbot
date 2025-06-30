@@ -8,7 +8,7 @@ from viser.extras import ViserUrdf
 
 from tatbot.bot.urdf import get_link_poses, load_robot
 from tatbot.data.ink import InkPalette
-from tatbot.data.pose import ArmPose
+from tatbot.data.pose import ArmPose, make_bimanual_joints
 from tatbot.data.skin import Skin
 from tatbot.data.urdf import URDF
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
@@ -47,7 +47,7 @@ class BaseViz:
         self.urdf: URDF = URDF.from_name(config.urdf_name)
         self.left_arm_pose: ArmPose = ArmPose.from_name(config.left_arm_pose_name)
         self.right_arm_pose: ArmPose = ArmPose.from_name(config.right_arm_pose_name)
-        self.rest_pose: np.ndarray = np.concatenate([self.left_arm_pose.joints, self.right_arm_pose.joints])
+        self.rest_pose: np.ndarray = make_bimanual_joints(self.left_arm_pose, self.right_arm_pose)
         self.ink_palette: InkPalette = InkPalette.from_name(config.ink_palette_name)
         self.skin: Skin = Skin.from_name(config.skin_name)
 

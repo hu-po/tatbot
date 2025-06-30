@@ -32,7 +32,7 @@ class VizPlanConfig(BaseVizConfig):
 class VizPlan(BaseViz):
     def __init__(self, config: VizPlanConfig):
         super().__init__(config)
-        plan_dir = os.path.expanduser(config.plan_dir)  # Expand ~ to home directory
+        plan_dir = os.path.expanduser(config.plan_dir)
         self.plan: Plan = Plan.from_yaml(os.path.join(plan_dir, "plan.yaml"))
         self.strokebatch: StrokeBatch = StrokeBatch.load(os.path.join(plan_dir, "strokebatch.safetensors"))
         self.strokes: StrokeList = StrokeList.from_yaml(os.path.join(plan_dir, "strokes.yaml"))

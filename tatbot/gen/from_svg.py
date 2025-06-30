@@ -13,9 +13,9 @@ from lxml import etree
 from PIL import Image
 
 from tatbot.bot.urdf import get_link_poses
-from tatbot.data.ink import InkCap, InkPalette
+from tatbot.data.ink import InkPalette
 from tatbot.data.plan import Plan
-from tatbot.data.pose import ArmPose, Pose
+from tatbot.data.pose import ArmPose, Pose, make_bimanual_joints
 from tatbot.data.skin import Skin
 from tatbot.data.stroke import Stroke, StrokeList
 from tatbot.data.strokebatch import StrokeBatch
@@ -69,7 +69,7 @@ def gen_from_svg(config: FromSVGConfig):
     urdf: URDF = URDF.from_name(config.urdf_name)
     left_arm_pose: ArmPose = ArmPose.from_name(config.left_arm_pose_name)
     right_arm_pose: ArmPose = ArmPose.from_name(config.right_arm_pose_name)
-    rest_pose: np.ndarray = np.concatenate([left_arm_pose.joints, right_arm_pose.joints])
+    rest_pose: np.ndarray = make_bimanual_joints(left_arm_pose, right_arm_pose)
     skin: Skin = Skin.from_name(config.skin_name)
 
     svg_files = []

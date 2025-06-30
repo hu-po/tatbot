@@ -6,20 +6,16 @@ import time
 from dataclasses import dataclass
 from io import StringIO
 
-from _bot import BotConfig, safe_loop, urdf_joints_to_action
-from _log import (
-    LOG_FORMAT,
-    TIME_FORMAT,
-    get_logger,
-    print_config,
-    setup_log_with_config,
-)
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.common.datasets.utils import build_dataset_frame, hw_to_dataset_features
 from lerobot.common.robots import make_robot_from_config
 from lerobot.common.robots.tatbot.config_tatbot import TatbotScanConfig
 from lerobot.common.utils.control_utils import sanity_check_dataset_name
 from lerobot.record import _init_rerun
+
+from tatbot.data.pose import ArmPose, make_bimanual_joints
+from tatbot.bot.lerobot import safe_loop, urdf_joints_to_action
+from tatbot.utils.log import LOG_FORMAT, TIME_FORMAT, get_logger, print_config, setup_log_with_config
 
 log = get_logger('bot.scan', '🤖')
 
@@ -48,7 +44,16 @@ class BotScanConfig:
     num_images_per_camera: int = 3
     """Number of images to capture per camera."""
 
+    left_arm_pose_name: str = "left/rest"
+    """Name of the left arm pose (ArmPose)."""
+    right_arm_pose_name: str = "right/rest"
+    """Name of the right arm pose (ArmPose)."""
+
 def record_scan(config: BotScanConfig):
+    left_arm_pose: ArmPose = ArmPose.from_name(config.left_arm_pose_name)
+    right_arm_pose: ArmPose = ArmPose.from_name(config.right_arm_pose_name)
+    rest_pose = make_bimanual_joints(left_arm_pose, right_arm_pose)
+
     log.info("🤗 Adding LeRobot robot...")
     robot = make_robot_from_config(TatbotScanConfig)
     robot.connect()
@@ -100,7 +105,7 @@ def record_scan(config: BotScanConfig):
     logging.getLogger().addHandler(episode_handler)
 
     log.info("🤖 Sending robot to rest pose")
-    action = urdf_joints_to_action(BotConfig().rest_pose)
+    action = urdf_joints_to_action(rest_pose)
     sent_action = robot.send_action(action, goal_time=robot.config.goal_time_slow, block="both")
     action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
 
