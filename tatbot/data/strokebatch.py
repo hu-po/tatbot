@@ -1,4 +1,3 @@
-import jax.numpy as jnp
 import jax_dataclasses as jdc
 from jaxtyping import Array, Float
 from safetensors.flax import load_file, save_file
@@ -21,18 +20,6 @@ class StrokeBatch:
     """Joint positions in radians (URDF convention)."""
     dt: Float[Array, "b l"]
     """Travel time from pose N to pose N+1 in seconds."""
-
-    @classmethod
-    def empty(cls, length: int, batch_size: int = 1) -> "StrokeBatch":
-        log.debug(f"Creating empty StrokeBatch of shape ({batch_size}, {length})...")
-        return cls(
-            ee_pos_l=jnp.zeros((batch_size, length, 3), dtype=jnp.float32),
-            ee_pos_r=jnp.zeros((batch_size, length, 3), dtype=jnp.float32),
-            ee_wxyz_l=jnp.tile(jnp.array([1.0, 0.0, 0.0, 0.0], dtype=jnp.float32), (batch_size, length, 1)),
-            ee_wxyz_r=jnp.tile(jnp.array([1.0, 0.0, 0.0, 0.0], dtype=jnp.float32), (batch_size, length, 1)),
-            joints=jnp.zeros((batch_size, length, 16), dtype=jnp.float32),
-            dt=jnp.full((batch_size, length,), 0.01, dtype=jnp.float32), # seconds
-        )
     
     def save(self, filepath: str) -> None:
         log.debug(f"💾 Saving StrokeBatch to {filepath}")
