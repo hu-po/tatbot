@@ -29,11 +29,10 @@ class FromSVGConfig:
     output_dir: str = os.path.expanduser(f"~/tatbot/output/plans/{name}")
     """Directory to save the plan."""
 
-    pens_config_path: str = "~/tatbot/config/pens.json"
+    pens_config_path: str = "~/tatbot/config/pens/fullcolor.json"
     """Path to the pens config file."""
-
-    points_per_path: int = 108
-    """Number of points to sample per SVG path."""
+    plan_config_path: str = "~/tatbot/config/plans/default.yaml"
+    """Path to the plans config file."""
 
 # def make_inkdip_pos(self, inkcap_name: str) -> np.ndarray:
 #     assert inkcap_name in self.ink_config.inkcaps, f"⚙️❌ Inkcap {inkcap_name} not found in palette"
@@ -70,49 +69,60 @@ class FromSVGConfig:
 #     return inkdip_pos
 
 def gen_from_svg(config: FromSVGConfig):
-    log.info(f"🖋️ Generating {config.name} ...")
+    log.info(f"Generating {config.name} ...")
     
     design_dir = os.path.expanduser(config.design_dir)
-    import pdb; pdb.set_trace()
-    assert os.path.exists(design_dir), f"🖋️❌ Design directory {design_dir} does not exist"
-    log.debug(f"🖋️📂 Design directory: {design_dir}")
+    assert os.path.exists(design_dir), f"❌ Design directory {design_dir} does not exist"
+    log.debug(f"📂 Design directory: {design_dir}")
 
     output_dir = os.path.expanduser(config.output_dir)
-    log.info(f"🖋️📂 Output directory: {output_dir}")
+    log.info(f"📂 Output directory: {output_dir}")
     os.makedirs(output_dir, exist_ok=True)
 
     svg_files = []
     pens: list[tuple[int, str]] = []
-    image_path: str = None
     for file in os.listdir(design_dir):
         if file.endswith('.svg'):
             svg_files.append(os.path.join(design_dir, file))
-            pen_name = os.path.splitext(file)[0]
-            pen_idx = int(pen_name.split('_pen')[-1])
+            # Extract pen_idx and pen_name using regex
+            match = re.match(r".*_pen(\d+)_(.+)\.svg$", file)
+            if not match:
+                raise ValueError(f"❌ Could not extract pen index and name from filename: {file}")
+            pen_idx = int(match.group(1))
+            pen_name = match.group(2)
             pens.append((pen_idx, pen_name))
-        elif file.endswith('.png'):
-            if image_path is not None:
-                log.warning(f"🖋️⚠️ Multiple image files found in {design_dir}")
-            image_path = os.path.join(design_dir, file)
-    assert image_path is not None, f"🖋️❌ No image file found in {design_dir}"
-    log.info(f"🖋️📂 Found image file: {image_path}")
-    log.info(f"🖋️✅ Found {len(pens)} pens in {design_dir}")
+    log.info(f"✅ Found {len(pens)} pens in {design_dir}")
+    log.debug(f"Pens in design: {pens}")
 
-    with open(os.path.expanduser(config.pens_config_path), 'r') as f:
+    pens_config_path = os.path.expanduser(config.pens_config_path)
+    assert os.path.exists(pens_config_path), f"❌ Pens config file {pens_config_path} does not exist"
+    log.info(f"📂 Loading pens from config file: {pens_config_path}")
+    with open(pens_config_path, 'r') as f:
         pens_config = json.load(f)
+    config_pens = {pen["name"]: pen for pen in pens_config["data"]["pens"]}
+    log.info(f"✅ Found {len(config_pens)} pens in {config.pens_config_path}")
+    log.debug(f"Pens in config: {config_pens}")
     for pen_idx, pen_name in pens:
-        assert pens_config['data']['pens'][pen_idx]['name'] == pen_name, f"🖋️❌ Pen {pen_name} not found in pens config"
-    log.info(f"🖋️✅ All pens correspond to pens in pen config: {config.pens_config_path}")
+        assert config_pens[pen_name]["name"] == pen_name, f"❌ Pen {pen_name} not found in pens config"
+    log.info(f"✅ All pens correspond to pens in pen config: {config.pens_config_path}")
 
+    image_path: str = None
+    for file in os.listdir(design_dir):
+        if file.endswith('.png'):
+            if image_path is not None:
+                log.warning(f"⚠️ Multiple image files found in {design_dir}")
+            image_path = os.path.join(design_dir, file)
+    assert image_path is not None, f"❌ No image file found in {design_dir}"
+    log.info(f"📂 Found image file: {image_path}")
     image = Image.open(image_path)
     image_width_px = image.width
     image_height_px = image.height
-    log.info(f"🖋️ Loaded image: {image_path} with size {image_width_px}x{image_height_px}")
+    log.info(f"Loaded image: {image_path} with size {image_width_px}x{image_height_px}")
 
     for i, svg_file in enumerate(svg_files):
-        log.info(f"🖋️ Processing SVG file: {svg_file}")
+        log.info(f"Processing SVG file: {svg_file}")
         paths, attributes, svg_attr = svgpathtools.svg2paths2(svg_file)
-        log.info(f"🖋️ Found {len(paths)} paths in {os.path.basename(svg_file)}")
+        log.info(f"Found {len(paths)} paths in {os.path.basename(svg_file)}")
 
 #     log.debug(f"⚙️ Input image shape: {image.size}")
 #     self.save_image_np(image)
