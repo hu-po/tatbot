@@ -7,8 +7,8 @@ import viser
 from viser.extras import ViserUrdf
 
 from tatbot.bot.urdf import get_link_poses, load_robot
-from tatbot.data.ink import InkCap, InkPalette
-from tatbot.data.pose import ArmPose, Pose
+from tatbot.data.ink import InkPalette
+from tatbot.data.pose import ArmPose
 from tatbot.data.urdf import URDF
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
@@ -51,7 +51,7 @@ class BaseViz:
         self.right_arm_pose: ArmPose = ArmPose.from_name(config.right_arm_pose_name)
         log.info("✅ Loaded right arm pose")
         log.debug(f"Right arm pose: {self.right_arm_pose}")
-        self.rest_pose: np.ndarray = np.concatenate([self.right_arm_pose.joints, self.left_arm_pose.joints])
+        self.rest_pose: np.ndarray = np.concatenate([self.left_arm_pose.joints, self.right_arm_pose.joints])
         self.ink_palette: InkPalette = InkPalette.from_name(config.ink_palette_name)
         log.info(f"✅ Loaded ink palette: {self.ink_palette}")
         log.debug(f"Ink palette: {self.ink_palette}")
@@ -76,7 +76,7 @@ class BaseViz:
 
         log.debug("Adding robot to viser from URDF")
         _urdf, self.robot = load_robot(self.urdf.path)
-        self.urdf = ViserUrdf(self.server, _urdf, root_node_name="/root")
+        self.viser_urdf = ViserUrdf(self.server, _urdf, root_node_name="/root")
         self.joints = self.rest_pose.copy()
         self.robot_at_rest: bool = True
     
@@ -99,9 +99,9 @@ class BaseViz:
     def run(self):
         while True:
             start_time = time.time()
-            if self.urdf is not None:
+            if self.viser_urdf is not None:
                 log.debug("Updating viser robot")
-                self.urdf.update_cfg(self.joints)
+                self.viser_urdf.update_cfg(self.joints)
             self.step()
             log.debug(f"Step time: {time.time() - start_time:.4f}s")
             time.sleep(self.step_sleep / self.speed_slider.value)

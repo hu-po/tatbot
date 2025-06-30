@@ -4,6 +4,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+import shutil
 
 import numpy as np
 import svgpathtools
@@ -16,7 +17,7 @@ from tatbot.data.ink import InkCap, InkPalette
 from tatbot.data.plan import Plan
 from tatbot.data.pose import ArmPose, Pose
 from tatbot.data.skin import Skin
-from tatbot.data.stroke import Stroke
+from tatbot.data.stroke import Stroke, StrokeList
 from tatbot.data.strokebatch import StrokeBatch
 from tatbot.data.urdf import URDF
 from tatbot.gen.strokebatch import strokebatch_from_strokes
@@ -76,7 +77,7 @@ def gen_from_svg(config: FromSVGConfig):
     right_arm_pose: ArmPose = ArmPose.from_name(config.right_arm_pose_name)
     log.info("✅ Loaded right arm pose")
     log.debug(f"Right arm pose: {right_arm_pose}")
-    rest_pose: np.ndarray = np.concatenate([right_arm_pose.joints, left_arm_pose.joints])
+    rest_pose: np.ndarray = np.concatenate([left_arm_pose.joints, right_arm_pose.joints])
     skin: Skin = Skin.from_name(config.skin_name)
     log.info(f"✅ Loaded skin: {skin}")
     log.debug(f"Skin: {skin}")
@@ -207,7 +208,7 @@ def gen_from_svg(config: FromSVGConfig):
         return inkdip_pos
     
     # left arm and right arm strokes in order of execution on robot
-    strokes: list[tuple[Stroke, Stroke]] = []
+    strokes: StrokeList = StrokeList(strokes=[])
 
     # default time between poses is fast movement
     dt = np.full((plan.path_length, 1), plan.path_dt_fast)
@@ -428,12 +429,7 @@ def gen_from_svg(config: FromSVGConfig):
 
     strokes_path = os.path.join(output_dir, "strokes.yaml")
     log.info(f"💾 Saving strokes to {strokes_path}")
-
-    def filter_arrays(d):
-        return {k: v for k, v in d.items() if not (isinstance(v, (np.ndarray, list, tuple)) or "Array" in type(v).__name__)}
-
-    with open(strokes_path, "w") as f:
-        yaml.safe_dump([tuple(filter_arrays(s.to_dict()) for s in pair) for pair in strokes], f)
+    strokes.save(strokes_path)
 
     strokebatch: StrokeBatch = strokebatch_from_strokes(
         strokes=strokes,
@@ -447,6 +443,11 @@ def gen_from_svg(config: FromSVGConfig):
     strokebatch_path = os.path.join(output_dir, f"strokebatch.safetensors")
     log.info(f"💾 Saving strokebatch to {strokebatch_path}")
     strokebatch.save(strokebatch_path)
+
+    # copy the plan yaml to the output directory
+    plan_path = os.path.join(output_dir, "plan.yaml")
+    log.info(f"💾 Copying plan to {plan_path}")
+    shutil.copy(plan.path, plan_path)
 
 if __name__ == "__main__":
     args = setup_log_with_config(FromSVGConfig)

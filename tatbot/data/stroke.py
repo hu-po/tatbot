@@ -25,3 +25,8 @@ class Stroke(Yaml):
     """Whether the path is an inkdip."""
     is_alignment: bool = False
     """Whether the path is an alignment stroke."""
+
+@dataclass
+class StrokeList(Yaml):
+    strokes: list[tuple[Stroke, Stroke]]
+    """List of stroke pairs."""

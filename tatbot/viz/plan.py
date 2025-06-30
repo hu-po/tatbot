@@ -4,14 +4,14 @@ from dataclasses import dataclass
 
 import cv2
 import numpy as np
-from _bot import BotConfig
-from _ink import InkConfig
-from _log import COLORS, get_logger, print_config, setup_log_with_config
-from _path import PathBatch
-from _plan import Plan
-from _viz import BaseViz, BaseVizConfig
 
-log = get_logger('viz_plan')
+from tatbot.data.plan import Plan
+from tatbot.data.stroke import Stroke
+from tatbot.data.strokebatch import StrokeBatch
+from tatbot.viz.base import BaseViz, BaseVizConfig
+from tatbot.utils.log import get_logger, print_config, setup_log_with_config
+
+log = get_logger('viz.plan', '🖥️')
 
 @dataclass
 class VizPlanConfig(BaseVizConfig):
@@ -32,13 +32,21 @@ class VizPlan(BaseViz):
     def __init__(self, config: VizPlanConfig):
         super().__init__(config)
         self.plan: Plan = Plan.from_yaml(config.plan_dir)
-        self.bot_config: BotConfig = self.plan.bot_config
-        self.ink_config: InkConfig = self.plan.ink_config
 
-        self.pathbatch: PathBatch = self.plan.load_pathbatch()
+        strokebatch_path = os.path.join(self.plan.dirpath, "strokebatch.safetensors")
+        assert os.path.exists(strokebatch_path), f"❌ Strokebatch file {strokebatch_path} does not exist"
+        log.info(f"Loading strokebatch from {strokebatch_path}")
+        self.strokebatch: StrokeBatch = StrokeBatch.from_safetensors(strokebatch_path)
+
+        strokes_path = os.path.join(self.plan.dirpath, "strokes.yaml")
+        assert os.path.exists(strokes_path), f"❌ Strokes file {strokes_path} does not exist"
+        log.info(f"Loading strokes from {strokes_path}")
+        with open(strokes_path, "r") as f:
+            self.strokes: list[tuple[Stroke, Stroke]] = yaml.safe_load(f)
+
         self.path_idx = 0
         self.pose_idx = 0
-        self.num_paths = self.pathbatch.ee_pos_l.shape[0]
+        self.num_strokes = self.strokebatch.ee_pos_l.shape[0]
 
         with self.server.gui.add_folder("Plan"):
             def _format_seconds(secs):
@@ -63,9 +71,9 @@ class VizPlan(BaseViz):
                 self.time_label.value = f"{_format_seconds(current_time)} / {_format_seconds(total_time)}"
 
             self.path_idx_slider = self.server.gui.add_slider(
-                "path",
+                "stroke",
                 min=0,
-                max=self.num_paths - 1,
+                max=self.num_strokes - 1,
                 step=1,
                 initial_value=0,
             )
@@ -157,7 +165,7 @@ class VizPlan(BaseViz):
             self.path_idx += 1
             self.pose_idx = 0
             log.debug(f"🖥️ Moving to next path {self.path_idx}")
-        if self.path_idx >= self.num_paths:
+        if self.path_idx >= self.num_strokes:
             log.debug(f"🖥️ Looping back to path 0")
             self.path_idx = 0
             self.pose_idx = 0

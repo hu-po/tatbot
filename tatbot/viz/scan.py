@@ -2,14 +2,11 @@ import logging
 import os
 from dataclasses import dataclass
 
-from _bot import BotConfig
-from _ik import fk
-from _ink import InkConfig
-from _log import get_logger, print_config, setup_log_with_config
-from _scan import Scan
-from _viz import BaseViz, BaseVizConfig
+from tatbot.data.scan import Scan
+from tatbot.viz.base import BaseViz, BaseVizConfig
+from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
-log = get_logger('viz_scan')
+log = get_logger('viz.plan', '🖥️')
 
 @dataclass
 class VizScanConfig(BaseVizConfig):
