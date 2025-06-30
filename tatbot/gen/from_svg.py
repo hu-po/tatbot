@@ -38,8 +38,8 @@ class FromSVGConfig:
     output_dir: str = os.path.expanduser(f"~/tatbot/output/plans/{name}")
     """Directory to save the plan."""
 
-    pens_config_path: str = "~/tatbot/config/pens/fullcolor.json"
-    """Path to the pens config file."""
+    pens_config_path: str = "~/tatbot/config/drawingbotv3/pens/fullcolor.json"
+    """Path to the DrawingBotV3 Pens config file."""
     
     plan_name: str = "default"
     """Name of the plan (Plan)."""
@@ -155,24 +155,12 @@ def gen_from_svg(config: FromSVGConfig):
             pixel_coords * np.array([plan.image_width_m / image_width_px, plan.image_height_m / image_height_px], dtype=np.float32)
             - np.array([plan.image_width_m / 2, plan.image_height_m / 2], dtype=np.float32) # center the meter coordinates in the image
         ), np.zeros((plan.path_length, 1), dtype=np.float32)]) # z axis is 0
-        # Debug prints
-        print(f"[DEBUG] pixel_coords type: {type(pixel_coords)}, shape: {pixel_coords.shape}")
-        print(f"[DEBUG] meter_coords type: {type(meter_coords)}, shape: {meter_coords.shape}")
-        print(f"[DEBUG] pixel_coords (first 3): {pixel_coords[:3]}")
-        print(f"[DEBUG] meter_coords (first 3): {meter_coords[:3]}")
         return pixel_coords, meter_coords
     
     @functools.lru_cache(maxsize=len(ink_palette.inkcaps))
     def make_inkdip_pos(color: str, num_points: int = plan.path_length) -> np.ndarray:
         """Get <x, y, z> coordinates for an inkdip into a specific inkcap."""
         inkcap_pose: Pose = inkpalette_color_to_pose[color]
-        # hover over the inkcap
-        inkdip_pos = transform_and_offset(
-            np.zeros((num_points, 3)), # <x, y, z>
-            inkcap_pose.pos.xyz,
-            inkcap_pose.rot.wxyz,
-            plan.inkdip_hover_offset.xyz,
-        )
         # Split: 1/3 down, 1/3 wait, 1/3 up (adjust as needed)
         num_down = num_points // 3
         num_up = num_points // 3
@@ -188,8 +176,9 @@ def gen_from_svg(config: FromSVGConfig):
             np.zeros((num_points, 2)), # x and y are 0
             -np.concatenate([down_z, wait_z, up_z]).reshape(-1, 1),
         ])
+        offsets = offsets + plan.inkdip_hover_offset.xyz
         inkdip_pos = transform_and_offset(
-            inkdip_pos,
+            np.zeros((num_points, 3)), # <x, y, z>
             inkcap_pose.pos.xyz,
             inkcap_pose.rot.wxyz,
             offsets,
@@ -242,7 +231,6 @@ def gen_from_svg(config: FromSVGConfig):
             ),
         )
     )
-    print(f"[DEBUG] After alignment 1: left ee_pos shape: {strokelist.strokes[-1][0].ee_pos.shape if hasattr(strokelist.strokes[-1][0].ee_pos, 'shape') else 'N/A'}, type: {type(strokelist.strokes[-1][0].ee_pos)}; right ee_pos shape: {strokelist.strokes[-1][1].ee_pos.shape if hasattr(strokelist.strokes[-1][1].ee_pos, 'shape') else 'N/A'}, type: {type(strokelist.strokes[-1][1].ee_pos)}")
     # same but switch the arms
     strokelist.strokes.append(
         (
@@ -274,7 +262,6 @@ def gen_from_svg(config: FromSVGConfig):
             ),
         )
     )
-    print(f"[DEBUG] After alignment 2: left ee_pos shape: {strokelist.strokes[-1][0].ee_pos.shape if hasattr(strokelist.strokes[-1][0].ee_pos, 'shape') else 'N/A'}, type: {type(strokelist.strokes[-1][0].ee_pos)}; right ee_pos shape: {strokelist.strokes[-1][1].ee_pos.shape if hasattr(strokelist.strokes[-1][1].ee_pos, 'shape') else 'N/A'}, type: {type(strokelist.strokes[-1][1].ee_pos)}")
     # next lets add inkdip on left arm, right arm will be at rest
     first_color_left_arm = next(iter(left_arm_paths.keys()))
     left_arm_inkcap_name = inkpalette_color_to_name[first_color_left_arm]
@@ -298,7 +285,6 @@ def gen_from_svg(config: FromSVGConfig):
             ),
         )
     )
-    print(f"[DEBUG] After left inkdip: left ee_pos shape: {strokelist.strokes[-1][0].ee_pos.shape if hasattr(strokelist.strokes[-1][0].ee_pos, 'shape') else 'N/A'}, type: {type(strokelist.strokes[-1][0].ee_pos)}; right ee_pos shape: {strokelist.strokes[-1][1].ee_pos.shape if hasattr(strokelist.strokes[-1][1].ee_pos, 'shape') else 'N/A'}, type: {type(strokelist.strokes[-1][1].ee_pos)}")
     right_arm_inkcap_name = None # these will be used to determine when to inkdip
     left_arm_ptr: int = 0
     right_arm_ptr: int = 0
@@ -306,9 +292,6 @@ def gen_from_svg(config: FromSVGConfig):
     flat_right_paths = [(pen, path) for pen, paths in right_arm_paths.items() for path in paths]
     max_paths = max(len(flat_left_paths), len(flat_right_paths))
     for i in range(max_paths):
-        print(f"[DEBUG] Loop index: {i}")
-        print(f"[DEBUG] flat_left_paths: {len(flat_left_paths)} entries")
-        print(f"[DEBUG] flat_right_paths: {len(flat_right_paths)} entries")
         left_arm_path = flat_left_paths[i][1] if i < len(flat_left_paths) else None
         right_arm_path = flat_right_paths[i][1] if i < len(flat_right_paths) else None
         color_left_arm = flat_left_paths[i][0] if i < len(flat_left_paths) else None
@@ -317,8 +300,6 @@ def gen_from_svg(config: FromSVGConfig):
         # Look ahead to see if a stroke will follow an inkdip for each arm
         next_left_arm_path = flat_left_paths[i+1][1] if (i+1) < len(flat_left_paths) else None
         next_right_arm_path = flat_right_paths[i+1][1] if (i+1) < len(flat_right_paths) else None
-        next_color_left_arm = flat_left_paths[i+1][0] if (i+1) < len(flat_left_paths) else None
-        next_color_right_arm = flat_right_paths[i+1][0] if (i+1) < len(flat_right_paths) else None
 
         # LEFT ARM LOGIC
         if left_arm_path is None:
@@ -330,9 +311,7 @@ def gen_from_svg(config: FromSVGConfig):
                 arm="left",
             )
         elif left_arm_inkcap_name is not None:
-            print(f"[DEBUG] Calling coords_from_path for left_arm_path")
             pixel_coords, meter_coords = coords_from_path(left_arm_path)
-            print(f"[DEBUG] left meter_coords shape: {meter_coords.shape}")
             left_arm_stroke = Stroke(
                 description=f"left arm stroke using left arm",
                 arm="left",
@@ -377,9 +356,7 @@ def gen_from_svg(config: FromSVGConfig):
                 arm="right",
             )
         elif right_arm_inkcap_name is not None:
-            print(f"[DEBUG] Calling coords_from_path for right_arm_path")
             pixel_coords, meter_coords = coords_from_path(right_arm_path)
-            print(f"[DEBUG] right meter_coords shape: {meter_coords.shape}")
             right_arm_stroke = Stroke(
                 description=f"right arm stroke using right arm",
                 arm="right",
@@ -413,7 +390,6 @@ def gen_from_svg(config: FromSVGConfig):
                     dt=dt,
                     arm="right",
                 )
-        print(f"[DEBUG] About to append strokes: left ee_pos shape: {left_arm_stroke.ee_pos.shape if hasattr(left_arm_stroke.ee_pos, 'shape') else 'N/A'}, right ee_pos shape: {right_arm_stroke.ee_pos.shape if hasattr(right_arm_stroke.ee_pos, 'shape') else 'N/A'}")
         strokelist.strokes.append((left_arm_stroke, right_arm_stroke))
 
     strokes_path = os.path.join(output_dir, "strokes.yaml")

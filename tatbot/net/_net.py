@@ -11,11 +11,12 @@ from typing import List, Optional, Tuple
 
 import paramiko
 import yaml
-from _log import get_logger, print_config, setup_log_with_config
 from paramiko.client import SSHClient
 from paramiko.sftp_client import SFTPClient
 
-log = get_logger('_net')
+from tatbot.utils.log import get_logger, print_config, setup_log_with_config
+
+log = get_logger('net', '🌐')
 
 @dataclass
 class Node:
@@ -70,12 +71,12 @@ class NetworkManager:
 
     def _load_nodes(self) -> List[Node]:
         """Loads node definitions from the YAML file specified in the config."""
-        log.info(f"🌐 Loading nodes from {self.config.yaml_file}")
+        log.info(f"Loading nodes from {self.config.yaml_file}")
         try:
             with open(self.config.yaml_file, "r") as f:
                 nodes_data = yaml.safe_load(f)["nodes"]
             nodes = [Node(**n) for n in nodes_data]
-            log.debug(f"🌐 Loaded {len(nodes)} nodes: {[n.name for n in nodes]}")
+            log.debug(f"Loaded {len(nodes)} nodes: {[n.name for n in nodes]}")
             return nodes
         except FileNotFoundError:
             log.error(f"Node configuration file not found at {self.config.yaml_file}")

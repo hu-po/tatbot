@@ -36,8 +36,8 @@ def get_link_poses(
     _, robot = load_robot(urdf_path)
     link_indices = get_link_indices(urdf_path, link_names)
     all_link_poses = robot.forward_kinematics(joint_positions)
-    pos = all_link_poses[link_indices, :3]
-    wxyz = all_link_poses[link_indices, 3:]
+    wxyz = all_link_poses[link_indices, :4]
+    pos = all_link_poses[link_indices, 4:]
     link_poses = {
         link_name: Pose(pos=Pos(xyz=pos[i]), rot=Rot(wxyz=wxyz[i]))
         for i, link_name in enumerate(link_names)
