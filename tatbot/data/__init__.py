@@ -51,15 +51,19 @@ class Yaml:
 
     @classmethod
     def from_yaml(cls: Type[T], filepath: str) -> T:
-        log.debug(f"Loading {cls.__name__} from {filepath}...")
+        filepath = os.path.expanduser(filepath)
+        assert os.path.exists(filepath), f"❌ File {filepath} does not exist"
+        log.debug(f"💾 Loading {cls.__name__} from {filepath}...")
         with open(filepath, 'r') as f:
             data = yaml.safe_load(f)
-        return cls._fromdict(data)
+        _output = cls._fromdict(data)
+        log.debug(f"✅ Loaded {cls.__name__}: {_output}")
+        return _output
 
     def to_yaml(self, filepath: str) -> None:
         if not is_dataclass(self):
             raise TypeError(f"{self.__class__.__name__} must be a dataclass to use to_yaml.")
-        log.debug(f"Saving {self.__class__.__name__} to {filepath}...")
+        log.debug(f"💾 Saving {self.__class__.__name__} to {filepath}...")
         with open(filepath, 'w') as f:
             yaml.safe_dump(dataclass_to_dict(self), f)
 

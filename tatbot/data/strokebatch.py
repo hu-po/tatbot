@@ -1,3 +1,5 @@
+import os
+
 import jax_dataclasses as jdc
 from jaxtyping import Array, Float
 from safetensors.flax import load_file, save_file
@@ -27,6 +29,8 @@ class StrokeBatch:
 
     @classmethod
     def load(cls, filepath: str) -> "StrokeBatch":
-        log.debug(f"💾 Loading PathBatch from {filepath}")
+        filepath = os.path.expanduser(filepath)
+        assert os.path.exists(filepath), f"❌ File {filepath} does not exist"
+        log.debug(f"💾 Loading StrokeBatch from {filepath}")
         data = load_file(filepath)
         return cls(**data)

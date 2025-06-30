@@ -41,20 +41,11 @@ class BaseVizConfig:
 class BaseViz:
     def __init__(self, config: BaseVizConfig):
         self.config = config
-
         self.urdf: URDF = URDF.from_name(config.urdf_name)
-        log.info(f"✅ Loaded URDF: {self.urdf}")
-        log.debug(f"URDF: {self.urdf}")
         self.left_arm_pose: ArmPose = ArmPose.from_name(config.left_arm_pose_name)
-        log.info("✅ Loaded left arm pose")
-        log.debug(f"Left arm pose: {self.left_arm_pose}")
         self.right_arm_pose: ArmPose = ArmPose.from_name(config.right_arm_pose_name)
-        log.info("✅ Loaded right arm pose")
-        log.debug(f"Right arm pose: {self.right_arm_pose}")
         self.rest_pose: np.ndarray = np.concatenate([self.left_arm_pose.joints, self.right_arm_pose.joints])
         self.ink_palette: InkPalette = InkPalette.from_name(config.ink_palette_name)
-        log.info(f"✅ Loaded ink palette: {self.ink_palette}")
-        log.debug(f"Ink palette: {self.ink_palette}")
 
         log.info("Starting viser server")
         self.server: viser.ViserServer = viser.ViserServer()

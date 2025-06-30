@@ -66,21 +66,11 @@ def gen_from_svg(config: FromSVGConfig):
     os.makedirs(output_dir, exist_ok=True)
 
     plan: Plan = Plan.from_name(config.plan_name)
-    log.info(f"✅ Loaded plan: {plan}")
-    log.debug(f"Plan: {plan}")
     urdf: URDF = URDF.from_name(config.urdf_name)
-    log.info(f"✅ Loaded URDF: {urdf}")
-    log.debug(f"URDF: {urdf}")
     left_arm_pose: ArmPose = ArmPose.from_name(config.left_arm_pose_name)
-    log.info("✅ Loaded left arm pose")
-    log.debug(f"Left arm pose: {left_arm_pose}")
     right_arm_pose: ArmPose = ArmPose.from_name(config.right_arm_pose_name)
-    log.info("✅ Loaded right arm pose")
-    log.debug(f"Right arm pose: {right_arm_pose}")
     rest_pose: np.ndarray = np.concatenate([left_arm_pose.joints, right_arm_pose.joints])
     skin: Skin = Skin.from_name(config.skin_name)
-    log.info(f"✅ Loaded skin: {skin}")
-    log.debug(f"Skin: {skin}")
 
     svg_files = []
     pens: dict[str, str] = {}

@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 
 from tatbot.data.plan import Plan
-from tatbot.data.stroke import Stroke
+from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
 from tatbot.viz.base import BaseViz, BaseVizConfig
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
@@ -32,17 +32,8 @@ class VizPlan(BaseViz):
     def __init__(self, config: VizPlanConfig):
         super().__init__(config)
         self.plan: Plan = Plan.from_yaml(config.plan_dir)
-
-        strokebatch_path = os.path.join(self.plan.dirpath, "strokebatch.safetensors")
-        assert os.path.exists(strokebatch_path), f"❌ Strokebatch file {strokebatch_path} does not exist"
-        log.info(f"Loading strokebatch from {strokebatch_path}")
-        self.strokebatch: StrokeBatch = StrokeBatch.from_safetensors(strokebatch_path)
-
-        strokes_path = os.path.join(self.plan.dirpath, "strokes.yaml")
-        assert os.path.exists(strokes_path), f"❌ Strokes file {strokes_path} does not exist"
-        log.info(f"Loading strokes from {strokes_path}")
-        with open(strokes_path, "r") as f:
-            self.strokes: list[tuple[Stroke, Stroke]] = yaml.safe_load(f)
+        self.strokebatch: StrokeBatch = StrokeBatch.load(os.path.join(self.plan.dirpath, "strokebatch.safetensors"))
+        self.strokes: StrokeList = StrokeList.from_yaml(os.path.join(self.plan.dirpath, "strokes.yaml"))
 
         self.path_idx = 0
         self.pose_idx = 0
