@@ -24,12 +24,12 @@ TODO: Create trossen_arm.StandardEndEffector.wxai_v0_tatbot_l and trossen_arm.St
 
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 import trossen_arm
-from _bot import BotConfig
 
+from tatbot.data.pose import ArmPose
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger('bot.trossen', '🎛️')
@@ -40,16 +40,16 @@ class TrossenConfig:
     """Enable debug logging."""
     arm_l_ip: str = "192.168.1.3"
     """IP address of the left arm."""
-    arm_l_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen_arm_l.yaml")
+    arm_l_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen/arm_l.yaml")
     """YAML file containing left arm config."""
-    test_pose_l: list[float] = field(default_factory=lambda: BotConfig().rest_pose[:7].tolist())
-    """Test pose for the left arm."""
+    test_pose_name_l: str = "left/rest"
+    """Test pose for the left arm (ArmPose)."""
     arm_r_ip: str = "192.168.1.2"
     """IP address of the right arm."""
-    arm_r_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen_arm_r.yaml")
+    arm_r_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen/arm_r.yaml")
     """YAML file containing right arm config."""
-    test_pose_r: list[float] = field(default_factory=lambda: BotConfig().rest_pose[8:-1].tolist())
-    """Test pose for the right arm."""
+    test_pose_name_r: str = "right/rest"
+    """Test pose for the right arm (ArmPose)."""
     test_tolerance: float = 0.1
     """Tolerance for the test pose."""
 
@@ -126,7 +126,7 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
     log.debug("Algorithm parameter:")
     log.debug(f"  singularity threshold: {algorithm_parameter.singularity_threshold}")
 
-def configure_arm(filepath: str, ip: str, test_pose: list[float], test_tolerance: float):
+def configure_arm(filepath: str, ip: str, test_pose_name: str, test_tolerance: float):
     assert os.path.exists(filepath), f"❌📄 yaml file does not exist: {filepath}"
     driver = trossen_arm.TrossenArmDriver()
     driver.configure(
@@ -146,6 +146,7 @@ def configure_arm(filepath: str, ip: str, test_pose: list[float], test_tolerance
     driver.set_all_modes(trossen_arm.Mode.position)
     sleep_pose = driver.get_all_positions()[:7]
     log.info(f"🦾 sleep pose: {sleep_pose}")
+    test_pose = ArmPose.from_name(test_pose_name).tolist()
     log.info(f"🦾 Testing arm {ip} with pose {test_pose}")
     driver.set_all_positions(trossen_arm.VectorDouble(test_pose), blocking=True)
     current_pose = driver.get_all_positions()[:7]
@@ -163,6 +164,6 @@ if __name__=='__main__':
         log.setLevel(logging.DEBUG)
     print_config(args)
     log.info("🦾 Configuring left arm")
-    configure_arm(args.arm_l_config_filepath, args.arm_l_ip, args.test_pose_l, args.test_tolerance)
+    configure_arm(args.arm_l_config_filepath, args.arm_l_ip, args.test_pose_name_l, args.test_tolerance)
     log.info("🦾 Configuring right arm")
-    configure_arm(args.arm_r_config_filepath, args.arm_r_ip, args.test_pose_r, args.test_tolerance)
+    configure_arm(args.arm_r_config_filepath, args.arm_r_ip, args.test_pose_name_r, args.test_tolerance)

@@ -30,21 +30,13 @@ description of tatbot (tattoo robot) technical stack
 
 tatbot is designed as a multi-node system, with the following roles:
 
-`oop` 🦊 runs the primary mcp server
+`oop` 🦊 and `ook` 🦧 are the main nodes, they generate images and create plans (using gpu) and run the mcp server to interact with tatbot
 
 ```bash
-uv pip install . && \
-uv run run_mcp.py
-```
-
-`ook` 🦧 creates plans heuristically or from generated images, using the local gpu for batch ik of paths
-
-```bash
+# optionally install dev dependencies
+uv pip install .[dev,viz] && \
 uv pip install .[gen] && \
-# generate a benchmark plan (~12 paths of different types)
-uv run gen_bench.py --debug
-# use a generated image to create a plan
-uv run gen_image.py --prompt "cat"
+uv run -m tatbot.gen.from_svg --name "yawning_cat" --debug
 ```
 
 `trossen-ai` 🦾 sends commands to robot arms, receives realsense camera images, and records lerobot datasets:
@@ -52,9 +44,9 @@ uv run gen_image.py --prompt "cat"
 ```bash
 uv pip install .[bot] && \
 # configure trossen arms
-uv run bot_config.py --debug
+uv run -m tatbot.bot.trossen --debug
 # run lerobot dataset recording from plan
-uv run bot_record.py
+uv run -m tatbot.bot.plan --debug
 ```
 
 `ojo` 🦎 runs the policy servers for the VLA model and for the 3d reconstruction model
@@ -124,14 +116,11 @@ dependencies are seperated into optional groups:
 
 ## Setup
 
-tatbot code is all python files stored in a flat hierarchy in the `src` directory.
-
 ```bash
 # Basic install
 git clone --depth=1 https://github.com/hu-po/tatbot.git && \
 cd ~/tatbot && \
 git pull && \
-cd src && \
 # Optional: Clean old uv environment
 deactivate && \
 rm -rf .venv && \
@@ -155,26 +144,26 @@ Turn on the robot
 
 tatbot consists of several computers, cameras, and robotos connected via ethernet:
 
-- `ojo`: NVIDIA Jetson AGX Orin (ARM Cortex-A78AE, 12-core @ 2.2 GHz) (32GB Unified RAM) (200 TOPS)
-- `trossen-ai`: System76 Meerkat PC (Intel i5-1340P, 16-core @ 4.6 GHz) (15GB RAM)
-- `ook`: Acer Nitro V 15 w/ NVIDIA RTX 4050 (Intel i7-13620H, 16-core @ 3.6 GHz) (16GB RAM) (6GB VRAM) (194 TOPS)
-- `rpi1`: Raspberry Pi 5 (ARM Cortex-A76, 4-core @ 2.4 GHz) (8GB RAM)
-- `rpi2`: Raspberry Pi 5 (ARM Cortex-A76, 4-core @ 2.4 GHz) (8GB RAM)
-- `camera1`: Amcrest PoE cameras (5MP)
-- `camera2`: Amcrest PoE cameras (5MP)
-- `camera3`: Amcrest PoE cameras (5MP)
-- `camera4`: Amcrest PoE cameras (5MP)
-- `camera5`: Amcrest PoE cameras (5MP)
-- `realsense1`: Intel Realsense D405 (1280x720 RGBD, 90fps)
-- `realsense2`: Intel Realsense D405 (1280x720 RGBD, 90fps)
+- `ojo` 🦎: NVIDIA Jetson AGX Orin (ARM Cortex-A78AE, 12-core @ 2.2 GHz) (32GB Unified RAM) (200 TOPS)
+- `trossen-ai` 🦾: System76 Meerkat PC (Intel i5-1340P, 16-core @ 4.6 GHz) (15GB RAM)
+- `ook` 🦧: Acer Nitro V 15 w/ NVIDIA RTX 4050 (Intel i7-13620H, 16-core @ 3.6 GHz) (16GB RAM) (6GB VRAM) (194 TOPS)
+- `rpi1` 🍓: Raspberry Pi 5 (ARM Cortex-A76, 4-core @ 2.4 GHz) (8GB RAM)
+- `rpi2` 🍇: Raspberry Pi 5 (ARM Cortex-A76, 4-core @ 2.4 GHz) (8GB RAM)
+- `camera1` 📷: Amcrest PoE cameras (5MP)
+- `camera2` 📷: Amcrest PoE cameras (5MP)
+- `camera3` 📷: Amcrest PoE cameras (5MP)
+- `camera4` 📷: Amcrest PoE cameras (5MP)
+- `camera5` 📷: Amcrest PoE cameras (5MP)
+- `realsense1` 📷: Intel Realsense D405 (1280x720 RGBD, 90fps)
+- `realsense2` 📷: Intel Realsense D405 (1280x720 RGBD, 90fps)
 - `switch-lan`: 8-port gigabit ethernet switch
 - `switch-poe`: 8-port gigabit PoE switch
-- `arm-l`: Trossen Arm Controller box (back) connected to WidowXAI arm
-- `arm-r`: Trossen Arm Controller box (front) connected to WidowXAI arm
+- `arm-l` 🦾: Trossen Arm Controller box (back) connected to WidowXAI arm
+- `arm-r` 🦾: Trossen Arm Controller box (front) connected to WidowXAI arm
 
 during development *dev mode*, the following pc is also available:
 
-- `oop`: Ubuntu PC w/ NVIDIA RTX 3090 (AMD Ryzen 9 5900X, 24-core @ 4.95 GHz) (66GB RAM) (24GB VRAM) (TOPS)
+- `oop` 🦊: Ubuntu PC w/ NVIDIA RTX 3090 (AMD Ryzen 9 5900X, 24-core @ 4.95 GHz) (66GB RAM) (24GB VRAM) (TOPS)
 
 ## Networking
 
@@ -214,7 +203,7 @@ tatbot uses two [Trossen WidowXAI arms](https://docs.trossenrobotics.com/trossen
 - [Driver API Documentation](https://docs.trossenrobotics.com/trossen_arm/main/api/library_root.html#)
 - [official URDF](https://github.com/TrossenRobotics/trossen_arm_description)
 
-each arm has a config file in `config/trossen_arm_{l|r}.yaml`, update configs using `bot_config.py`
+each arm has a config file in `config/trossen/arm_{l|r}.yaml`, update configs using `tatbot.bot.trossen`
 
 ## URDF
 

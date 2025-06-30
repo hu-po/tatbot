@@ -15,7 +15,7 @@ def safe_loop(loop: Callable, config: Any) -> None:
     except KeyboardInterrupt:
         log.info("🛑⌨️ Keyboard interrupt detected. Disconnecting robot...")
     finally:
-        log.info("🤖🛑 Disconnecting robot...")
+        log.info("🛑 Disconnecting robot...")
         robot = make_robot_from_config(TatbotBotOnlyConfig)
         robot._connect_l(clear_error=False)
         log.error(robot._get_error_str_l())
