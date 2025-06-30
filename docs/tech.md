@@ -28,6 +28,13 @@ description of tatbot (tattoo robot) technical stack
 
 ## Run
 
+setup environment, optionally clean output directory
+
+```bash
+source scripts/env.sh
+./scripts/clean.sh
+```
+
 tatbot is designed as a multi-node system, with the following roles:
 
 `oop` 🦊 and `ook` 🦧 are the main nodes, they generate images and create plans (using gpu) and run the mcp server to interact with tatbot
@@ -60,14 +67,14 @@ uv pip install .[vla] && \
 
 ```bash
 uv pip install .[tag] && \
-uv run run_scan.py --debug
+uv run tatbot.tag.scan --bot_scan_dir ~/tatbot/outputs/ --debug
 ```
 
 `rpi2` 🍇 runs visualization:
 
 ```bash
 uv pip install .[viz] && \
-uv run run_viz.py
+uv run -m tatbot.viz.plan --plan_dir ~/tatbot/outputs/plans/yawning_cat
 ```
 
 ## MCP
@@ -75,16 +82,11 @@ uv run run_viz.py
 tatbot uses the [MCP](https://github.com/modelcontextprotocol/python-sdk) protocol to communicate between nodes.
 
 ```bash
-uv run run_mcp.py --debug
+uv pip install .[mcp]
+uv run tatbot.net.mcp_server
 ```
 
-use the [mcp inspector](https://modelcontextprotocol.io/docs/tools/inspector#python) to inspect the mcp server.
-
-```bash
-# use inspector
-uv run mcp dev run_mcp.py
-# click on the "Open inspector with token pre-filled" link
-```
+go to Cursor Settings > Tools and toggle the tatbot mcp server
 
 ## Dependencies
 
