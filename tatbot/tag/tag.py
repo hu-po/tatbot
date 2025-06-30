@@ -12,6 +12,7 @@ import pupil_apriltags as apriltag
 import yaml
 
 from tatbot.data.cam import CameraIntrinsics
+from tatbot.data.pose import Pose
 from tatbot.utils.colors import COLORS
 from tatbot.utils.log import get_logger
 
@@ -52,13 +53,6 @@ class TagConfig:
         with open(os.path.expanduser(filepath), "w") as f:
             yaml.safe_dump(asdict(self), f)
 
-@dataclass
-class TagPose:
-    pos: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.0]))
-    """Position of the tag in the world frame."""
-    wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0]))
-    """Orientation of the tag in the world frame."""
-
 class TagTracker:
     def __init__(self, config: TagConfig):
         self.config = config
@@ -73,7 +67,7 @@ class TagTracker:
         camera_pos: np.ndarray,
         camera_wxyz: np.ndarray,
         output_path: str | None = None
-    ) -> dict[int, TagPose]:
+    ) -> dict[int, Pose]:
         """
         Detect AprilTags in the image at image_path, draw detections, and optionally save to output_path.
         Returns a dictionary of detected tag poses.
@@ -98,7 +92,7 @@ class TagTracker:
             translation=jnp.array(camera_pos)
         )
 
-        detected_tags: dict[int, TagPose] = {}
+        detected_tags: dict[int, Pose] = {}
         for d in detections:
             if d.tag_id in self.config.enabled_tags:
                 tag_rotation = jaxlie.SO3.from_matrix(jnp.array(d.pose_R))
@@ -108,7 +102,7 @@ class TagTracker:
                 tag_in_world = camera_transform_b @ tag_transform_cam
                 pos = tag_in_world.translation()
                 wxyz = tag_in_world.rotation().wxyz
-                detected_tags[d.tag_id] = TagPose(pos=pos, wxyz=wxyz)
+                detected_tags[d.tag_id] = Pose(pos=pos, wxyz=wxyz)
                 log.debug(f"🏷️ AprilTag {d.tag_id} - {self.config.enabled_tags[d.tag_id]} - pos: {pos}, wxyz: {wxyz}")
 
                 if output_path is not None:
