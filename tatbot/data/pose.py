@@ -1,7 +1,7 @@
 import os
 from dataclasses import dataclass
 
-from . import Yaml
+from tatbot.data import Yaml
 
 
 @dataclass

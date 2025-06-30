@@ -13,8 +13,12 @@ import numpy as np
 import yaml
 from dacite import from_dict
 
-from tatbot.utils.log import (TIME_FORMAT, get_logger, print_config,
-                              setup_log_with_config)
+from tatbot.utils.log import (
+    TIME_FORMAT,
+    get_logger,
+    print_config,
+    setup_log_with_config,
+)
 
 log = get_logger('tag.cam', '📸')
 

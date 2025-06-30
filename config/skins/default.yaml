@@ -1,0 +1,4 @@
+description: "92mm x 122mm x 40mm fake skin (5mm thickness)"
+design_pose:
+  pos: [0.14, 0.02, 0.03]
+  rot: [1.0, 0.0, 0.0, 0.0]
