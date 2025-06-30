@@ -1,9 +1,9 @@
 """Camera module for handling PoE IP cameras using ffmpeg."""
 
-from dataclasses import dataclass, field
-from datetime import datetime
 import logging
 import os
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -13,7 +13,8 @@ import numpy as np
 import yaml
 from dacite import from_dict
 
-from tatbot.utils.log import get_logger, TIME_FORMAT, setup_log_with_config, print_config
+from tatbot.utils.log import (TIME_FORMAT, get_logger, print_config,
+                              setup_log_with_config)
 
 log = get_logger('tag.cam', '📸')
 

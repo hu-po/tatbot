@@ -1,8 +1,9 @@
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
-from .pose import Pose
 from . import Yaml
+from .pose import Pose
+
 
 @dataclass
 class CameraIntrinsics:

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+
 from . import Yaml
 
 INK_CONFIG_DIR = "~/tatbot/config/inks"

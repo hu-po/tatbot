@@ -1,4 +1,6 @@
 from dataclasses import dataclass, field
+
+
 @dataclass
 class Plan:
     name: str = "plan"

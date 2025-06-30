@@ -1,37 +1,31 @@
-from dataclasses import dataclass
+import json
 import logging
 import os
-import json
 import re
+from dataclasses import dataclass
 
+import numpy as np
 import svgpathtools
-import numpy as np
-from PIL import Image
-import jax.numpy as jnp
-import jax_dataclasses as jdc
-from jaxtyping import Array, Float
-import numpy as np
-
 import yaml
 from lxml import etree
+from PIL import Image
 
-from tatbot.data.strokebatch import StrokeBatch
 from tatbot.data.plan import Plan
+from tatbot.data.strokebatch import StrokeBatch
 from tatbot.gpu.ik import batch_ik, transform_and_offset
-from tatbot.utils.log import get_logger, setup_log_with_config, print_config
+from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
-log = get_logger('gen')
+log = get_logger('gen.from_svg', '🖋️')
 
 @dataclass
-class GenConfig:
+class FromSVGConfig:
     debug: bool = False
     """Enable debug logging."""
 
     name: str = "yawning_cat"
     """Name of the SVG file"""
-    design_dir: str = "~/tatbot/assets/designs/{name}"
+    design_dir: str = f"~/tatbot/assets/designs/{name}"
     """Directory containing the design svg (per pen) and png file."""
-
     output_dir: str = os.path.expanduser(f"~/tatbot/output/plans/{name}")
     """Directory to save the plan."""
 
@@ -41,44 +35,45 @@ class GenConfig:
     points_per_path: int = 108
     """Number of points to sample per SVG path."""
 
-def make_inkdip_pos(self, inkcap_name: str) -> np.ndarray:
-    assert inkcap_name in self.ink_config.inkcaps, f"⚙️❌ Inkcap {inkcap_name} not found in palette"
-    inkcap: InkCap = self.ink_config.inkcaps[inkcap_name]
-    inkcap_pos = np.array([0, 0, 0], dtype=np.float32)
-    # hover over the inkcap
-    inkdip_pos = transform_and_offset(
-        np.tile(inkcap_pos, (self.path_length, 1)),
-        self.ink_config.inkpalette_pos,
-        self.ink_config.inkpalette_wxyz,
-        self.ink_config.inkdip_hover_offset,
-    )
-    # Split: 1/3 down, 1/3 wait, 1/3 up (adjust as needed)
-    num_down = self.path_length // 3
-    num_up = self.path_length // 3
-    num_wait = self.path_length - num_down - num_up
-    # dip down to inkcap depth
-    down_z = np.linspace(0, inkcap.depth_m, num_down, endpoint=False)
-    # wait at depth
-    wait_z = np.full(num_wait, inkcap.depth_m)
-    # retract back up
-    up_z = np.linspace(inkcap.depth_m, 0, num_up, endpoint=True)
-    # concatenate into offset array
-    offsets = np.hstack([
-        np.zeros((self.path_length, 2)),
-        -np.concatenate([down_z, wait_z, up_z]).reshape(-1, 1),
-    ])
-    inkdip_pos = transform_and_offset(
-        inkdip_pos,
-        self.ink_config.inkpalette_pos,
-        self.ink_config.inkpalette_wxyz,
-        offsets,
-    )
-    return inkdip_pos
+# def make_inkdip_pos(self, inkcap_name: str) -> np.ndarray:
+#     assert inkcap_name in self.ink_config.inkcaps, f"⚙️❌ Inkcap {inkcap_name} not found in palette"
+#     inkcap: InkCap = self.ink_config.inkcaps[inkcap_name]
+#     inkcap_pos = np.array([0, 0, 0], dtype=np.float32)
+#     # hover over the inkcap
+#     inkdip_pos = transform_and_offset(
+#         np.tile(inkcap_pos, (self.path_length, 1)),
+#         self.ink_config.inkpalette_pos,
+#         self.ink_config.inkpalette_wxyz,
+#         self.ink_config.inkdip_hover_offset,
+#     )
+#     # Split: 1/3 down, 1/3 wait, 1/3 up (adjust as needed)
+#     num_down = self.path_length // 3
+#     num_up = self.path_length // 3
+#     num_wait = self.path_length - num_down - num_up
+#     # dip down to inkcap depth
+#     down_z = np.linspace(0, inkcap.depth_m, num_down, endpoint=False)
+#     # wait at depth
+#     wait_z = np.full(num_wait, inkcap.depth_m)
+#     # retract back up
+#     up_z = np.linspace(inkcap.depth_m, 0, num_up, endpoint=True)
+#     # concatenate into offset array
+#     offsets = np.hstack([
+#         np.zeros((self.path_length, 2)),
+#         -np.concatenate([down_z, wait_z, up_z]).reshape(-1, 1),
+#     ])
+#     inkdip_pos = transform_and_offset(
+#         inkdip_pos,
+#         self.ink_config.inkpalette_pos,
+#         self.ink_config.inkpalette_wxyz,
+#         offsets,
+#     )
+#     return inkdip_pos
 
-def gen_from_svg(config: GenConfig):
+def gen_from_svg(config: FromSVGConfig):
     log.info(f"🖋️ Generating {config.name} ...")
     
     design_dir = os.path.expanduser(config.design_dir)
+    import pdb; pdb.set_trace()
     assert os.path.exists(design_dir), f"🖋️❌ Design directory {design_dir} does not exist"
     log.debug(f"🖋️📂 Design directory: {design_dir}")
 
@@ -377,7 +372,7 @@ def gen_from_svg(config: GenConfig):
 
 
 if __name__ == "__main__":
-    args = setup_log_with_config(GenConfig)
+    args = setup_log_with_config(FromSVGConfig)
     print_config(args)
     if args.debug:
         log.setLevel(logging.DEBUG)

@@ -1,14 +1,13 @@
-from dataclasses import dataclass
 import logging
 import time
+from dataclasses import dataclass
 
 import numpy as np
 import viser
-from viser.extras import ViserUrdf
-
-from _bot import BotConfig, load_robot, get_link_indices
+from _bot import BotConfig, get_link_indices, load_robot
 from _ink import InkConfig
-from _log import COLORS, get_logger, setup_log_with_config, print_config
+from _log import COLORS, get_logger, print_config, setup_log_with_config
+from viser.extras import ViserUrdf
 
 log = get_logger('_viz')
 

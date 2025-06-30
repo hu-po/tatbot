@@ -1,17 +1,16 @@
 import concurrent.futures
-from dataclasses import dataclass
 import json
 import logging
 import os
-import psutil
 import re
 import tarfile
+from dataclasses import dataclass
 from typing import List, Optional
 
-from mcp.server.fastmcp import FastMCP
-
-from _log import get_logger, setup_log_with_config, print_config
+import psutil
+from _log import get_logger, print_config, setup_log_with_config
 from _net import NetworkManager
+from mcp.server.fastmcp import FastMCP
 
 log = get_logger('run_mcp')
 

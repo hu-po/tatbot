@@ -1,6 +1,6 @@
-from dataclasses import asdict, dataclass, field
 import os
 import time
+from dataclasses import asdict, dataclass, field
 from typing import List
 
 import cv2
@@ -10,7 +10,6 @@ import jaxlie
 import numpy as np
 import pupil_apriltags as apriltag
 import yaml
-
 from _cam import CameraIntrinsics
 from _log import COLORS, get_logger
 

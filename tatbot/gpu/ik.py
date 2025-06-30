@@ -1,15 +1,15 @@
-from typing import Optional
 import time
+from typing import Optional
 
 import jax
 import jax.numpy as jnp
 import jax_dataclasses as jdc
 import jaxlie
 import jaxls
-from jaxtyping import Array, Float, Int
 import pyroki as pk
+from jaxtyping import Array, Float, Int
 
-from tatbot.bot.urdf import load_robot, get_link_indices
+from tatbot.bot.urdf import get_link_indices, load_robot
 from tatbot.utils.log import get_logger
 
 log = get_logger('gpu.ik', '🧮')

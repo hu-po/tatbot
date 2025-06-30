@@ -22,14 +22,14 @@ https://docs.trossenrobotics.com/trossen_arm/main/api/structtrossen__arm_1_1EndE
 TODO: Create trossen_arm.StandardEndEffector.wxai_v0_tatbot_l and trossen_arm.StandardEndEffector.wxai_v0_tatbot_r
 """
 
-from dataclasses import dataclass, field
 import logging
 import os
+from dataclasses import dataclass, field
 
 import numpy as np
 import trossen_arm
-
 from _bot import BotConfig
+
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger('bot.trossen', '🎛️')

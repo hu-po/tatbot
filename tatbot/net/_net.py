@@ -1,5 +1,4 @@
 import concurrent.futures
-from dataclasses import dataclass
 import getpass
 import logging
 import os
@@ -7,14 +6,14 @@ import socket
 import stat
 import subprocess
 import traceback
-from typing import Optional, Tuple, List
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
 import paramiko
+import yaml
+from _log import get_logger, print_config, setup_log_with_config
 from paramiko.client import SSHClient
 from paramiko.sftp_client import SFTPClient
-import yaml
-
-from _log import get_logger, setup_log_with_config, print_config
 
 log = get_logger('_net')
 

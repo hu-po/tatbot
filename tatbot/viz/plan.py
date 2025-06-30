@@ -1,13 +1,12 @@
-from dataclasses import dataclass
 import logging
 import os
+from dataclasses import dataclass
 
 import cv2
 import numpy as np
-
 from _bot import BotConfig
 from _ink import InkConfig
-from _log import get_logger, COLORS, print_config, setup_log_with_config
+from _log import COLORS, get_logger, print_config, setup_log_with_config
 from _path import PathBatch
 from _plan import Plan
 from _viz import BaseViz, BaseVizConfig

@@ -63,6 +63,10 @@ viz = [
 vla = [
     "lerobot[tatbot,smolvla] @ git+https://github.com/hu-po/lerobot.git@main",
 ]
+dev = [
+    "isort",
+    "ruff",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -71,3 +75,17 @@ include = ["bot", "viz", "tag", "gen", "gpu", "net", "data"]
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.ruff]
+line-length = 120
+# Read more here https://beta.ruff.rs/docs/rules/
+# By default, Ruff enables Flake8's E and F rules
+# Pyflakes - F, pycodestyle - E, W
+# flake8-builtins - A
+# Pylint - PLC, PLE, PLW
+# isort - I
+select = ['E', 'F', 'W', 'A', 'PLC', 'PLE', 'PLW', 'I']

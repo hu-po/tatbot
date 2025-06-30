@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass
 class Node:
     """Node in the tatbot network."""

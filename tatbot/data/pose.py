@@ -1,5 +1,7 @@
 from dataclasses import dataclass
+
 from . import Yaml
+
 
 @dataclass
 class Pos:

@@ -1,6 +1,6 @@
-from dataclasses import dataclass
 import logging
 import os
+from dataclasses import dataclass
 
 from _bot import BotConfig
 from _ik import fk

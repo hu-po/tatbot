@@ -1,5 +1,5 @@
-import jax_dataclasses as jdc
 import jax.numpy as jnp
+import jax_dataclasses as jdc
 from jaxtyping import Array, Float
 from safetensors.flax import load_file, save_file
 

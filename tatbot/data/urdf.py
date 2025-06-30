@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass
 class URDF:
     path: str = "~/tatbot/assets/urdf/tatbot.urdf"

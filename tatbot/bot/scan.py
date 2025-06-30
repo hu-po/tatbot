@@ -1,20 +1,21 @@
-from dataclasses import dataclass
 import glob
 import logging
 import os
 import shutil
 import time
+from dataclasses import dataclass
 from io import StringIO
 
+from _bot import BotConfig, safe_loop, urdf_joints_to_action
+from _log import (LOG_FORMAT, TIME_FORMAT, get_logger, print_config,
+                  setup_log_with_config)
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.common.datasets.utils import build_dataset_frame, hw_to_dataset_features
+from lerobot.common.datasets.utils import (build_dataset_frame,
+                                           hw_to_dataset_features)
 from lerobot.common.robots import make_robot_from_config
 from lerobot.common.robots.tatbot.config_tatbot import TatbotScanConfig
 from lerobot.common.utils.control_utils import sanity_check_dataset_name
 from lerobot.record import _init_rerun
-
-from _bot import urdf_joints_to_action, safe_loop, BotConfig
-from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT, LOG_FORMAT
 
 log = get_logger('bot.scan', '🤖')
 

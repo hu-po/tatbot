@@ -1,13 +1,12 @@
-from dataclasses import dataclass
 import glob
 import logging
 import os
 import time
+from dataclasses import dataclass
 
 import numpy as np
-
 from _bot import get_link_poses
-from _log import get_logger, setup_log_with_config, print_config, TIME_FORMAT
+from _log import TIME_FORMAT, get_logger, print_config, setup_log_with_config
 from _scan import Scan
 from _tag import TagTracker
 
