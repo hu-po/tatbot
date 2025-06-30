@@ -1,0 +1,37 @@
+inkcaps:
+  # - ink:
+  #     name: pink
+  #     rgb: [255, 192, 203]
+  #   name: inkcap_small_1
+  #   diameter_m: 0.008
+  #   depth_m: 0.01
+  - ink:
+      name: true_black
+      rgb: [0, 0, 0]
+    name: inkcap_large
+    diameter_m: 0.014
+    depth_m: 0.014
+  # - ink:
+  #     name: true_blue
+  #     rgb: [0, 0, 255]
+  #   name: inkcap_small_2
+  #   diameter_m: 0.008
+  #   depth_m: 0.01
+  # - ink:
+  #     name: white
+  #     rgb: [255, 255, 255]
+  #   name: inkcap_small_3
+  #   diameter_m: 0.008
+  #   depth_m: 0.01
+  - ink:
+      name: bright_red
+      rgb: [255, 0, 0]
+    name: inkcap_medium_1
+    diameter_m: 0.012
+    depth_m: 0.01
+  # - ink:
+  #     name: green
+  #     rgb: [0, 128, 0]
+  #   name: inkcap_medium_2
+  #   diameter_m: 0.012
+  #   depth_m: 0.01 

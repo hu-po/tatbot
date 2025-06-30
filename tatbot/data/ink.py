@@ -1,8 +1,7 @@
+import os
 from dataclasses import dataclass
 
 from . import Yaml
-
-INK_CONFIG_DIR = "~/tatbot/config/inks"
 
 @dataclass
 class Ink:
@@ -13,16 +12,17 @@ class Ink:
 
 @dataclass
 class InkCap:
+    ink: Ink
+    """Ink inside the inkcap."""
     name: str
     """Name of the inkcap."""
     diameter_m: float
     """Diameter of the inkcap (meters)."""
     depth_m: float
     """Depth of the inkcap (meters)."""
-    color: Ink
-    """Color of the ink inside the inkcap."""
 
 @dataclass
 class InkPalette(Yaml):
     inkcaps: tuple[InkCap, ...]
     """Ordered list of inkcaps in the palette."""
+    yaml_dir: str = os.path.expanduser("~/tatbot/config/inks")

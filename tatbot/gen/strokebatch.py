@@ -1,11 +1,9 @@
-import os
 
 import jax.numpy as jnp
 
-from tatbot.data.plan import Plan
 from tatbot.data.stroke import Stroke
 from tatbot.data.strokebatch import StrokeBatch
-from tatbot.gpu.ik import batch_ik, transform_and_offset
+from tatbot.gpu.ik import batch_ik
 from tatbot.utils.log import get_logger
 
 log = get_logger('gen.strokebatch', '💠')

@@ -3,6 +3,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+import functools
 
 import numpy as np
 import svgpathtools
@@ -10,11 +11,15 @@ import yaml
 from lxml import etree
 from PIL import Image
 
+from tatbot.bot.urdf import get_link_poses
+from tatbot.data.ink import InkPalette, InkCap
 from tatbot.data.plan import Plan
 from tatbot.data.stroke import Stroke
-from tatbot.data.pose import ArmPose
+from tatbot.data.pose import ArmPose, Pose
 from tatbot.data.urdf import URDF
 from tatbot.data.strokebatch import StrokeBatch
+from tatbot.gen.strokebatch import strokebatch_from_strokes
+from tatbot.gpu.ik import transform_and_offset
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger('gen.from_svg', '🖋️')
@@ -38,45 +43,12 @@ class FromSVGConfig:
     """Name of the plan (Plan)."""
     urdf_name: str = "default"
     """Name of the urdf (URDF)."""
-
+    ink_palette_name: str = "default"
+    """Name of the ink palette (InkPalette)."""
     left_arm_pose_name: str = "left/rest"
     """Name of the left arm pose (ArmPose)."""
     righ_arm_pose_name: str = "right/rest"
     """Name of the right arm pose (ArmPose)."""
-
-# def make_inkdip_pos(self, inkcap_name: str) -> np.ndarray:
-#     assert inkcap_name in self.ink_config.inkcaps, f"⚙️❌ Inkcap {inkcap_name} not found in palette"
-#     inkcap: InkCap = self.ink_config.inkcaps[inkcap_name]
-#     inkcap_pos = np.array([0, 0, 0], dtype=np.float32)
-#     # hover over the inkcap
-#     inkdip_pos = transform_and_offset(
-#         np.tile(inkcap_pos, (self.path_length, 1)),
-#         self.ink_config.inkpalette_pos,
-#         self.ink_config.inkpalette_wxyz,
-#         self.ink_config.inkdip_hover_offset,
-#     )
-#     # Split: 1/3 down, 1/3 wait, 1/3 up (adjust as needed)
-#     num_down = self.path_length // 3
-#     num_up = self.path_length // 3
-#     num_wait = self.path_length - num_down - num_up
-#     # dip down to inkcap depth
-#     down_z = np.linspace(0, inkcap.depth_m, num_down, endpoint=False)
-#     # wait at depth
-#     wait_z = np.full(num_wait, inkcap.depth_m)
-#     # retract back up
-#     up_z = np.linspace(inkcap.depth_m, 0, num_up, endpoint=True)
-#     # concatenate into offset array
-#     offsets = np.hstack([
-#         np.zeros((self.path_length, 2)),
-#         -np.concatenate([down_z, wait_z, up_z]).reshape(-1, 1),
-#     ])
-#     inkdip_pos = transform_and_offset(
-#         inkdip_pos,
-#         self.ink_config.inkpalette_pos,
-#         self.ink_config.inkpalette_wxyz,
-#         offsets,
-#     )
-#     return inkdip_pos
 
 def gen_from_svg(config: FromSVGConfig):
     log.info(f"Generating {config.name} ...")
@@ -101,6 +73,7 @@ def gen_from_svg(config: FromSVGConfig):
     right_arm_pose: ArmPose = ArmPose.from_name(config.righ_arm_pose_name)
     log.info("✅ Loaded right arm pose")
     log.debug(f"Right arm pose: {right_arm_pose}")
+    rest_pose: np.ndarray = np.concatenate([right_arm_pose.joints, left_arm_pose.joints])
 
     svg_files = []
     pens: dict[str, str] = {}
@@ -125,20 +98,20 @@ def gen_from_svg(config: FromSVGConfig):
     log.info(f"✅ Found {len(config_pens)} pens in {config.pens_config_path}")
     log.debug(f"Pens in config: {config_pens.keys()}")
 
-    left_arm_svg_paths: list[str] = []
-    right_arm_svg_paths: list[str] = []
-    for pen_name, svg_path in pens.items():
-        assert pen_name in config_pens, f"❌ Pen {pen_name} not found in pens config"
-        assert config_pens[pen_name]["name"] == pen_name, f"❌ Pen {pen_name} not found in pens config"
-        if pen_name in plan.left_arm_pen_names:
-            left_arm_svg_paths.append(svg_path)
-        elif pen_name in plan.right_arm_pen_names:
-            right_arm_svg_paths.append(svg_path)
-        else:
-            log.warning(f"⚠️ Pen {pen_name} not found in plan config")
-    log.info(f"✅ Found {len(left_arm_svg_paths)} pens for left arm and {len(right_arm_svg_paths)} pens for right arm")
-    log.debug(f"Left arm pens: {left_arm_svg_paths}")
-    log.debug(f"Right arm pens: {right_arm_svg_paths}")
+    ink_palette: InkPalette = InkPalette.from_name(config.ink_palette_name)
+    log.info(f"✅ Loaded ink palette: {ink_palette}")
+    log.debug(f"Ink palette: {ink_palette}")
+    inkpalette_color_to_name: dict[str, str] = {}
+    inkpalette_color_to_pose: dict[str, Pose] = {}
+    for inkcap in ink_palette.inkcaps:
+        assert inkcap.name in urdf.ink_link_names, f"❌ Inkcap {inkcap.name} not found in URDF"
+        inkpalette_color_to_name[inkcap.ink.name] = inkcap.name
+        link_poses = get_link_poses(urdf.path, urdf.ink_link_names, rest_pose)
+        inkpalette_color_to_pose[inkcap.ink.name] = link_poses[inkcap.name]
+
+    inkpalette_colors = {inkcap.ink.name: inkcap.name for inkcap in ink_palette.inkcaps}
+    log.info(f"✅ Found {len(inkpalette_colors)} colors in ink palette")
+    log.debug(f"Ink palette colors: {inkpalette_colors}")
 
     image_path: str = None
     for file in os.listdir(design_dir):
@@ -157,67 +130,85 @@ def gen_from_svg(config: FromSVGConfig):
     height_scale_m = plan.image_height_m / image_height_px
     log.info(f"Loaded image: {image_path} with size {image_width_px}x{image_height_px}")
 
-    left_arm_strokes: list[Stroke] = []
-    for svg_file in left_arm_svg_paths:
-        log.info(f"Processing left arm SVG file: {svg_file}")
-        paths, _, _ = svgpathtools.svg2paths2(svg_file)
+    def resample_path(path: svgpathtools.Path, num_points: int = plan.path_length) -> np.ndarray:
+        """Resample path to num_points evenly along the path."""
+        total_length = path.length()
+        distances = np.linspace(0, total_length, num_points)
+        points = [path.point(path.ilength(d)) for d in distances]
+        coords = np.array([[p.real, p.imag] for p in points])
+        return coords
+    
+    @functools.lru_cache(maxsize=len(ink_palette.inkcaps))
+    def inkdip_xyz(color: str, num_points: int = plan.path_length) -> np.ndarray:
+        """Get <x, y, z> coordinates for an inkdip into a specific inkcap."""
+        inkcap_pose: Pose = inkpalette_color_to_pose[color]
+        # hover over the inkcap
+        inkdip_pos = transform_and_offset(
+            np.zeros((num_points, 3)), # <x, y, z>
+            inkcap_pose.pos,
+            inkcap_pose.wxyz,
+            plan.inkdip_hover_offset,
+        )
+        # Split: 1/3 down, 1/3 wait, 1/3 up (adjust as needed)
+        num_down = num_points // 3
+        num_up = num_points // 3
+        num_wait = num_points - num_down - num_up
+        # dip down to inkcap depth
+        down_z = np.linspace(0, inkcap.depth_m, num_down, endpoint=False)
+        # wait at depth
+        wait_z = np.full(num_wait, inkcap.depth_m)
+        # retract back up
+        up_z = np.linspace(inkcap.depth_m, 0, num_up, endpoint=True)
+        # concatenate into offset array
+        offsets = np.hstack([
+            np.zeros((num_points, 2)), # x and y are 0
+            -np.concatenate([down_z, wait_z, up_z]).reshape(-1, 1),
+        ])
+        inkdip_pos = transform_and_offset(
+            inkdip_pos,
+            inkcap_pose.pos,
+            inkcap_pose.wxyz,
+            offsets,
+        )
+        return inkdip_pos
+    
+    strokes: list[Stroke] = []
+
+    for pen_name, svg_path in pens.items():
+        assert pen_name in config_pens, f"❌ Pen {pen_name} not found in pens config"
+        assert config_pens[pen_name]["name"] == pen_name, f"❌ Pen {pen_name} not found in pens config"
+        if pen_name in plan.left_arm_pen_names:
+            arm = "left"
+        elif pen_name in plan.right_arm_pen_names:
+            arm = "right"
+        else:
+            raise ValueError(f"❌ Pen {pen_name} not found in plan config")
+        log.info(f"Processing svg file at: {svg_path}")
+        paths, _, _ = svgpathtools.svg2paths2(svg_path)
         log.info(f"Found {len(paths)} paths")
         for path in paths:
-            import pdb; pdb.set_trace()
-            pass
-
-#     log.debug(f"⚙️ Input image shape: {image.size}")
-#     self.save_image_np(image)
-#     self.image_width_px = image.size[0]
-#     self.image_height_px = image.size[1]
-#     scale_x = self.image_width_m / self.image_width_px
-#     scale_y = self.image_height_m / self.image_height_px
-
-#     log.info(f"⚙️ Adding {len(strokes)} raw paths to plan...")
-#     for idx, stroke in enumerate(strokes):
-#         if stroke.pixel_coords is not None:
-#             stroke.pixel_coords = np.array(stroke.pixel_coords, dtype=int)
-#         stroke_length = len(stroke.pixel_coords)
-#         desired_length = self.path_length - 2 # -2 for hover positions
-#         if stroke_length != desired_length:
-#             log.warning(f"⚙️⚠️ stroke {idx} has len {stroke_length}, resampling to {desired_length}...")
-#             if stroke_length > 1:
-#                 # Calculate the cumulative distance along the path
-#                 distances = np.sqrt(np.sum(np.diff(stroke.pixel_coords, axis=0)**2, axis=1))
-#                 cumulative_distances = np.insert(np.cumsum(distances), 0, 0)
-                
-#                 # Create a new set of evenly spaced distances
-#                 new_distances = np.linspace(0, cumulative_distances[-1], desired_length)
-                
-#                 # Interpolate the x and y coordinates
-#                 x_coords_resampled = np.interp(new_distances, cumulative_distances, stroke.pixel_coords[:, 0])
-#                 y_coords_resampled = np.interp(new_distances, cumulative_distances, stroke.pixel_coords[:, 1])
-                
-#                 stroke.pixel_coords = np.round(np.stack((x_coords_resampled, y_coords_resampled), axis=-1)).astype(int)
-#             elif stroke_length == 1:
-#                 stroke.pixel_coords = np.tile(stroke.pixel_coords, (desired_length, 1))
-#             else: # stroke_length == 0
-#                 stroke.pixel_coords = np.zeros((desired_length, 2), dtype=int)
-#             stroke_length = desired_length
-            
-#         # add normalized coordinates: top left is 0, 0
-#         stroke.norm_coords = stroke.pixel_coords / np.array([self.image_width_px, self.image_height_px], dtype=np.float32)
-#         # calculate center of mass of stroke
-#         stroke.norm_center = np.mean(stroke.norm_coords, axis=0)
-#         # calculate meters coordinates: center is 0, 0
-#         meter_coords_2d = (
-#             stroke.pixel_coords * np.array([scale_x, scale_y], dtype=np.float32)
-#             - np.array([self.image_width_m / 2, self.image_height_m / 2], dtype=np.float32)
-#         )
-#         stroke.meter_coords = np.hstack([
-#             meter_coords_2d,
-#             np.zeros((stroke_length, 1), dtype=np.float32)
-#         ])
-#         # calculate center of mass of stroke
-#         stroke.meters_center = np.mean(stroke.meter_coords, axis=0)
-#         self.strokes[f'stroke_{idx:03d}'] = stroke
-
-#     paths: list[Path] = []
+            pixel_coords = resample_path(path)
+            norm_coords = pixel_coords / np.array([image_width_px, image_height_px], dtype=np.float32)
+            norm_center = np.mean(norm_coords, axis=0)
+            meter_coords_2d = (
+                pixel_coords * np.array([width_scale_m, height_scale_m], dtype=np.float32)
+                - np.array([plan.image_width_m / 2, plan.image_height_m / 2], dtype=np.float32)
+            )
+            meter_coords = np.hstack([meter_coords_2d, np.zeros((pixel_coords.shape[0], 1), dtype=np.float32)])
+            meters_center = np.mean(meter_coords, axis=0)
+            stroke = Stroke(
+                description=f"{pen_name} stroke using {arm} arm",
+                arm=arm,
+                color=config_pens[pen_name]["color"],
+                pixel_coords=pixel_coords,
+                meter_coords=meter_coords,
+                meters_center=meters_center,
+                norm_coords=norm_coords,
+                norm_center=norm_center,
+                inkcap=None,
+                is_inkdip=False,
+            )
+            strokes.append(stroke)
 
 #     # sort strokes along the -Y axis in normalized coords
 #     sorted_strokes = sorted(_strokes.items(), key=lambda x: x[1].norm_center[1], reverse=True)
@@ -374,10 +365,13 @@ def gen_from_svg(config: FromSVGConfig):
 #     stroke_r = Stroke(description="right over design with twice the hover offset")
 #     self.path_idx_to_strokes.insert(0, [stroke_l, stroke_r])
 
-    strokebatch = strokebatch_from_strokes(
-        strokes=left_arm_strokes,
+    strokebatch: StrokeBatch = strokebatch_from_strokes(
+        strokes=strokes,
         path_length=plan.path_length,
         batch_size=plan.ik_batch_size,
+        joints=urdf.joints,
+        urdf_path=urdf.path,
+        link_names=urdf.ee_link_names,
     )
     strokebatch_path = os.path.join(output_dir, f"strokebatch.safetensors")
     log.info(f"💾 Saving strokebatch to {strokebatch_path}")

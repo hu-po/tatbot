@@ -28,5 +28,8 @@ class Plan(Yaml):
     path_dt_slow: float
     """Time between poses in seconds for slow movement."""
 
+    inkdip_hover_offset: tuple[float, float, float]
+    """<x, y, z> offset for inkdip hover in meters."""
+
     yaml_dir: str = os.path.expanduser("~/tatbot/config/plans")
     """Directory containing the plan configs."""
