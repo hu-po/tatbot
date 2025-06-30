@@ -1,0 +1,12 @@
+left_arm_pen_names:
+  - true_black
+right_arm_pen_names:
+  - bright_red
+image_width_m: 0.074 # A7 size
+image_height_m: 0.105 # A7 size
+image_width_px: 590
+image_height_px: 590
+ik_batch_size: 1024
+path_length: 108
+path_dt_fast: 0.1
+path_dt_slow: 2.0

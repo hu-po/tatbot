@@ -14,7 +14,7 @@ def get_logger(name: str, emoji: str = "❓") -> logging.Logger:
     """Get a logger with a specific name."""
     _log = logging.getLogger(f"tatbot.{name}")
     handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter(f"{emoji}{LOG_FORMAT}"))
+    handler.setFormatter(logging.Formatter(f"{LOG_FORMAT} {emoji}"))
     if not _log.hasHandlers():
         _log.addHandler(handler)
     return _log

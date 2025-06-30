@@ -13,7 +13,7 @@ nodes:
     ip: 192.168.1.90
     user: ook
     emoji: "🦧"
-    deps: ".[gen]"
+    deps: ".[gen,dev]"
   - name: rpi1
     ip: 192.168.1.98
     user: rpi1
@@ -28,4 +28,4 @@ nodes:
     ip: 192.168.1.51
     user: oop
     emoji: "🦊"
-    deps: "."
+    deps: ".[gen,dev]"

@@ -79,20 +79,26 @@ def gen_from_svg(config: FromSVGConfig):
     log.info(f"📂 Output directory: {output_dir}")
     os.makedirs(output_dir, exist_ok=True)
 
+    plan_config_path = os.path.expanduser(config.plan_config_path)
+    assert os.path.exists(plan_config_path), f"❌ Plan config file {plan_config_path} does not exist"
+    log.info(f"📂 Loading plan from config file: {plan_config_path}")
+    plan: Plan = Plan.from_yaml(plan_config_path)
+    log.info(f"✅ Loaded plan from config file: {plan_config_path}")
+    log.debug(f"Plan config: {plan}")
+
     svg_files = []
-    pens: list[tuple[int, str]] = []
+    pens: dict[str, str] = {}
     for file in os.listdir(design_dir):
         if file.endswith('.svg'):
-            svg_files.append(os.path.join(design_dir, file))
-            # Extract pen_idx and pen_name using regex
-            match = re.match(r".*_pen(\d+)_(.+)\.svg$", file)
+            svg_path = os.path.join(design_dir, file)
+            svg_files.append(svg_path)
+            match = re.match(r".*_pen\d+_(\w+)\.svg$", file)
             if not match:
-                raise ValueError(f"❌ Could not extract pen index and name from filename: {file}")
-            pen_idx = int(match.group(1))
-            pen_name = match.group(2)
-            pens.append((pen_idx, pen_name))
+                raise ValueError(f"❌ Could not extract pen name from filename: {file}")
+            pen_name = match.group(1)
+            pens[pen_name] = svg_path
     log.info(f"✅ Found {len(pens)} pens in {design_dir}")
-    log.debug(f"Pens in design: {pens}")
+    log.debug(f"Pens in design: {pens.keys()}")
 
     pens_config_path = os.path.expanduser(config.pens_config_path)
     assert os.path.exists(pens_config_path), f"❌ Pens config file {pens_config_path} does not exist"
@@ -101,10 +107,22 @@ def gen_from_svg(config: FromSVGConfig):
         pens_config = json.load(f)
     config_pens = {pen["name"]: pen for pen in pens_config["data"]["pens"]}
     log.info(f"✅ Found {len(config_pens)} pens in {config.pens_config_path}")
-    log.debug(f"Pens in config: {config_pens}")
-    for pen_idx, pen_name in pens:
+    log.debug(f"Pens in config: {config_pens.keys()}")
+
+    left_arm_svg_paths: list[str] = []
+    right_arm_svg_paths: list[str] = []
+    for pen_name, svg_path in pens.items():
+        assert pen_name in config_pens, f"❌ Pen {pen_name} not found in pens config"
         assert config_pens[pen_name]["name"] == pen_name, f"❌ Pen {pen_name} not found in pens config"
-    log.info(f"✅ All pens correspond to pens in pen config: {config.pens_config_path}")
+        if pen_name in plan.left_arm_pen_names:
+            left_arm_svg_paths.append(svg_path)
+        elif pen_name in plan.right_arm_pen_names:
+            right_arm_svg_paths.append(svg_path)
+        else:
+            log.warning(f"⚠️ Pen {pen_name} not found in plan config")
+    log.info(f"✅ Found {len(left_arm_svg_paths)} pens for left arm and {len(right_arm_svg_paths)} pens for right arm")
+    log.debug(f"Left arm pens: {left_arm_svg_paths}")
+    log.debug(f"Right arm pens: {right_arm_svg_paths}")
 
     image_path: str = None
     for file in os.listdir(design_dir):

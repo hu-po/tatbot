@@ -70,3 +70,6 @@ class Yaml:
                 if k in fieldtypes:
                     data[k] = convert(fieldtypes[k], v)
         return cls(**data)
+
+    def __str__(self) -> str:
+        return yaml.safe_dump(asdict(self), sort_keys=False, allow_unicode=True)
