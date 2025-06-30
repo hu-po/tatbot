@@ -1,6 +1,3 @@
-from dataclasses import dataclass, field
-import functools
-import os
 from typing import Optional
 import time
 
@@ -11,12 +8,11 @@ import jaxlie
 import jaxls
 from jaxtyping import Array, Float, Int
 import pyroki as pk
-import yourdfpy
 
-from _bot import BotConfig, load_robot, get_link_indices
-from _log import get_logger
+from tatbot.bot.urdf import load_robot, get_link_indices
+from tatbot.utils.log import get_logger
 
-log = get_logger('ik')
+log = get_logger('gpu.ik', '🧮')
 log.info(f"🧠 JAX devices: {jax.devices()}")
 
 @jdc.pytree_dataclass
@@ -41,7 +37,7 @@ def ik(
     target_position: Float[Array, "n 3"],
     rest_pose: Float[Array, "16"],
 ) -> Float[Array, "16"]:
-    log.debug(f"🧮 performing ik on batch of size {target_wxyz.shape[0]}")
+    log.debug(f"performing ik on batch of size {target_wxyz.shape[0]}")
     start_time = time.time()
     joint_var = robot.joint_var_cls(0)
     factors = [
@@ -76,27 +72,28 @@ def ik(
         )
     )
     _solution = sol[joint_var]
-    log.debug(f"🧮 ik solution: {_solution}")
-    log.debug(f"🧮 ik time: {time.time() - start_time:.2f}s")
+    log.debug(f"ik solution: {_solution}")
+    log.debug(f"ik time: {time.time() - start_time:.2f}s")
     return _solution
 
 def batch_ik(
     target_wxyz: Float[Array, "b n 4"],
     target_pos: Float[Array, "b n 3"],
+    joints: Float[Array, "16"],
+    urdf_path: str,
+    link_names: tuple[str, ...],
     ik_config: IKConfig = IKConfig(),
-    bot_config: BotConfig = BotConfig(),
 ) -> Float[Array, "b 16"]:
-    _, robot = load_robot(bot_config.urdf_path)
-    ee_link_indices = get_link_indices(bot_config.target_link_names, bot_config.urdf_path)
-    rest_pose = jnp.array(bot_config.rest_pose)
-    log.debug(f"🧮 performing batch ik on batch of size {target_pos.shape[0]}")
+    _, robot = load_robot(urdf_path)
+    link_indices = get_link_indices(link_names, urdf_path)
+    log.debug(f"performing batch ik on batch of size {target_pos.shape[0]}")
     start_time = time.time()
     _ik_vmap = jax.vmap(
-        lambda wxyz, pos, rest: ik(robot, ik_config, ee_link_indices, wxyz, pos, rest),
+        lambda wxyz, pos, joints: ik(robot, ik_config, link_indices, wxyz, pos, joints),
         in_axes=(0, 0, None),
     )
-    solutions = _ik_vmap(target_wxyz, target_pos, rest_pose)
-    log.debug(f"🧮 batch ik time: {time.time() - start_time:.4f}s")
+    solutions = _ik_vmap(target_wxyz, target_pos, joints)
+    log.debug(f"batch ik time: {time.time() - start_time:.4f}s")
     return solutions
 
 @jdc.jit
@@ -106,7 +103,7 @@ def transform_and_offset(
     frame_wxyz: Float[Array, "4"],
     offsets: Optional[Float[Array, "b 3"]] = None,
 ) -> Float[Array, "b 3"]:
-    log.debug(f"🧮 transforming and offsetting {target_pos.shape[0]} points")
+    log.debug(f"transforming and offsetting {target_pos.shape[0]} points")
     start_time = time.time()
     if offsets is None:
         offsets = jnp.zeros_like(target_pos)
@@ -114,5 +111,5 @@ def transform_and_offset(
         offsets = jnp.tile(offsets, (target_pos.shape[0], 1))
     frame_transform = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(frame_wxyz), frame_pos)
     result = jax.vmap(lambda pos, offset: frame_transform @ pos + offset)(target_pos, offsets)
-    log.debug(f"🧮 transform and offset time: {time.time() - start_time:.4f}s")
+    log.debug(f"transform and offset time: {time.time() - start_time:.4f}s")
     return result
