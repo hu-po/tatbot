@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 
 from . import Yaml
@@ -24,3 +25,4 @@ class Pose(Yaml):
 class ArmPose(Yaml):
     joints: tuple[float, ...]
     """Joint positions in radians."""
+    yaml_dir: str = os.path.expanduser("~/tatbot/config/poses")

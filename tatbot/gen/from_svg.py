@@ -11,8 +11,10 @@ from lxml import etree
 from PIL import Image
 
 from tatbot.data.plan import Plan
+from tatbot.data.stroke import Stroke
+from tatbot.data.pose import ArmPose
+from tatbot.data.urdf import URDF
 from tatbot.data.strokebatch import StrokeBatch
-from tatbot.gpu.ik import batch_ik, transform_and_offset
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger('gen.from_svg', '🖋️')
@@ -31,8 +33,16 @@ class FromSVGConfig:
 
     pens_config_path: str = "~/tatbot/config/pens/fullcolor.json"
     """Path to the pens config file."""
-    plan_config_path: str = "~/tatbot/config/plans/default.yaml"
-    """Path to the plans config file."""
+    
+    plan_name: str = "default"
+    """Name of the plan (Plan)."""
+    urdf_name: str = "default"
+    """Name of the urdf (URDF)."""
+
+    left_arm_pose_name: str = "left/rest"
+    """Name of the left arm pose (ArmPose)."""
+    righ_arm_pose_name: str = "right/rest"
+    """Name of the right arm pose (ArmPose)."""
 
 # def make_inkdip_pos(self, inkcap_name: str) -> np.ndarray:
 #     assert inkcap_name in self.ink_config.inkcaps, f"⚙️❌ Inkcap {inkcap_name} not found in palette"
@@ -79,12 +89,18 @@ def gen_from_svg(config: FromSVGConfig):
     log.info(f"📂 Output directory: {output_dir}")
     os.makedirs(output_dir, exist_ok=True)
 
-    plan_config_path = os.path.expanduser(config.plan_config_path)
-    assert os.path.exists(plan_config_path), f"❌ Plan config file {plan_config_path} does not exist"
-    log.info(f"📂 Loading plan from config file: {plan_config_path}")
-    plan: Plan = Plan.from_yaml(plan_config_path)
-    log.info(f"✅ Loaded plan from config file: {plan_config_path}")
-    log.debug(f"Plan config: {plan}")
+    plan: Plan = Plan.from_name(config.plan_name)
+    log.info(f"✅ Loaded plan: {plan}")
+    log.debug(f"Plan: {plan}")
+    urdf: URDF = URDF.from_name(config.urdf_name)
+    log.info(f"✅ Loaded URDF: {urdf}")
+    log.debug(f"URDF: {urdf}")
+    left_arm_pose: ArmPose = ArmPose.from_name(config.left_arm_pose_name)
+    log.info("✅ Loaded left arm pose")
+    log.debug(f"Left arm pose: {left_arm_pose}")
+    right_arm_pose: ArmPose = ArmPose.from_name(config.righ_arm_pose_name)
+    log.info("✅ Loaded right arm pose")
+    log.debug(f"Right arm pose: {right_arm_pose}")
 
     svg_files = []
     pens: dict[str, str] = {}
@@ -135,12 +151,20 @@ def gen_from_svg(config: FromSVGConfig):
     image = Image.open(image_path)
     image_width_px = image.width
     image_height_px = image.height
+    assert image_width_px == plan.image_width_px, f"❌ Image width {image_width_px} does not match plan width {plan.image_width_px}"
+    assert image_height_px == plan.image_height_px, f"❌ Image height {image_height_px} does not match plan height {plan.image_height_px}"
+    width_scale_m = plan.image_width_m / image_width_px
+    height_scale_m = plan.image_height_m / image_height_px
     log.info(f"Loaded image: {image_path} with size {image_width_px}x{image_height_px}")
 
-    for i, svg_file in enumerate(svg_files):
-        log.info(f"Processing SVG file: {svg_file}")
-        paths, attributes, svg_attr = svgpathtools.svg2paths2(svg_file)
-        log.info(f"Found {len(paths)} paths in {os.path.basename(svg_file)}")
+    left_arm_strokes: list[Stroke] = []
+    for svg_file in left_arm_svg_paths:
+        log.info(f"Processing left arm SVG file: {svg_file}")
+        paths, _, _ = svgpathtools.svg2paths2(svg_file)
+        log.info(f"Found {len(paths)} paths")
+        for path in paths:
+            import pdb; pdb.set_trace()
+            pass
 
 #     log.debug(f"⚙️ Input image shape: {image.size}")
 #     self.save_image_np(image)
@@ -350,45 +374,14 @@ def gen_from_svg(config: FromSVGConfig):
 #     stroke_r = Stroke(description="right over design with twice the hover offset")
 #     self.path_idx_to_strokes.insert(0, [stroke_l, stroke_r])
 
-#     # Perform IK in batches (batch size will be hardware specific)
-#     flat_target_pos   : list[list[np.ndarray]] = []
-#     flat_target_wxyz  : list[list[np.ndarray]] = []
-#     index_map: list[tuple[int, int]] = [] # (path_idx, pose_idx)
-#     for p_idx, path in enumerate(paths):
-#         for pose_idx in range(path.ee_pos_l.shape[0]):
-#             index_map.append((p_idx, pose_idx))
-#             flat_target_pos.append(
-#                 [path.ee_pos_l[pose_idx], path.ee_pos_r[pose_idx]]
-#             )
-#             flat_target_wxyz.append(
-#                 [path.ee_wxyz_l[pose_idx], path.ee_wxyz_r[pose_idx]]
-#             )
-#     target_pos   = jnp.array(flat_target_pos)    # (B, 2, 3)
-#     target_wxyz  = jnp.array(flat_target_wxyz)   # (B, 2, 4)
-#     for start in range(0, target_pos.shape[0], self.ik_batch_size):
-#         end = start + self.ik_batch_size
-#         batch_pos   = target_pos[start:end]       # (b, 2, 3)
-#         batch_wxyz  = target_wxyz[start:end]      # (b, 2, 4)
-#         batch_joints = batch_ik(
-#             target_wxyz=batch_wxyz,
-#             target_pos=batch_pos,
-#         )                                         # (b, 16)
-#         # write results back into the corresponding path / pose slots
-#         for local_idx, joints in enumerate(batch_joints):
-#             p_idx, pose_idx = index_map[start + local_idx]
-#             paths[p_idx].joints[pose_idx] = np.asarray(joints, dtype=np.float32)
-
-#     # HACK: the right arm of the first (not counting hack paths) path should be at rest while left arm is ink dipping
-#     paths[2].joints[:, 8:] = np.tile(BotConfig().rest_pose[8:], (self.path_length, 1))
-#     # HACK: the left arm of the final path should be at rest since last stroke is right-only
-#     paths[-1].joints[:, :8] = np.tile(BotConfig().rest_pose[:8], (self.path_length, 1))
-
-#     pathbatch = PathBatch.from_paths(paths)
-    pathbatch = PathBatch.empty(config.points_per_path)
-
-    pathbatch_path = os.path.join(output_dir, f"pathbatch.safetensors")
-    log.info(f"🖋️ Saving pathbatch to {pathbatch_path}")
-    pathbatch.save(pathbatch_path)
+    strokebatch = strokebatch_from_strokes(
+        strokes=left_arm_strokes,
+        path_length=plan.path_length,
+        batch_size=plan.ik_batch_size,
+    )
+    strokebatch_path = os.path.join(output_dir, f"strokebatch.safetensors")
+    log.info(f"💾 Saving strokebatch to {strokebatch_path}")
+    strokebatch.save(strokebatch_path)
 
     # TODO: save image
     # TODO: save svg

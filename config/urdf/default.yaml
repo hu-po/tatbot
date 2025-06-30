@@ -1,0 +1,28 @@
+path: "~/tatbot/assets/urdf/tatbot.urdf"
+ee_link_names:
+  - "left/tattoo_needle"
+  - "right/tattoo_needle"
+tag_link_names:
+  - "tag6"
+  - "tag7"
+  - "tag9"
+  - "tag10"
+  - "tag11"
+cam_link_names:
+  - "realsense1"
+  - "realsense2"
+  - "camera1"
+  - "camera2"
+  - "camera3"
+  - "camera4"
+  - "camera5"
+ink_link_names:
+  - "inkcap_large"
+  - "inkcap_small_1"
+  - "inkcap_small_2"
+  - "inkcap_small_3"
+  - "inkcap_medium_1"
+  - "inkcap_medium_2"
+palette_link_name: "inkpalette"
+origin_link_name: "origin"
+skin_link_name: "skin"

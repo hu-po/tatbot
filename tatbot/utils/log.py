@@ -17,6 +17,7 @@ def get_logger(name: str, emoji: str = "❓") -> logging.Logger:
     handler.setFormatter(logging.Formatter(f"{LOG_FORMAT} {emoji}"))
     if not _log.hasHandlers():
         _log.addHandler(handler)
+    _log.propagate = False
     return _log
 
 log = get_logger('utils.log')
