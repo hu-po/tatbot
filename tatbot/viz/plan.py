@@ -32,9 +32,10 @@ class VizPlanConfig(BaseVizConfig):
 class VizPlan(BaseViz):
     def __init__(self, config: VizPlanConfig):
         super().__init__(config)
-        self.plan: Plan = Plan.from_yaml(os.path.join(config.plan_dir, "plan.yaml"))
-        self.strokebatch: StrokeBatch = StrokeBatch.load(os.path.join(config.plan_dir, "strokebatch.safetensors"))
-        self.strokes: StrokeList = StrokeList.from_yaml(os.path.join(config.plan_dir, "strokes.yaml"))
+        plan_dir = os.path.expanduser(config.plan_dir)  # Expand ~ to home directory
+        self.plan: Plan = Plan.from_yaml(os.path.join(plan_dir, "plan.yaml"))
+        self.strokebatch: StrokeBatch = StrokeBatch.load(os.path.join(plan_dir, "strokebatch.safetensors"))
+        self.strokes: StrokeList = StrokeList.from_yaml(os.path.join(plan_dir, "strokes.yaml"))
 
         self.num_strokes = len(self.strokes.strokes)
         self.stroke_idx = 0
@@ -106,7 +107,7 @@ class VizPlan(BaseViz):
         _update_time_label()
 
         log.debug(f"️🖼️ Adding GUI image: design.png")
-        self.image_np = cv2.imread(os.path.join(config.plan_dir, "design.png"))
+        self.image_np = cv2.imread(os.path.join(plan_dir, "design.png"))
         self.image = self.server.gui.add_image(image=self.image_np, format="png")
 
         log.debug(f"🖼️ Adding GUI image: pathviz.png")
@@ -122,7 +123,7 @@ class VizPlan(BaseViz):
                         color = colormap[path_idx][0].tolist()
                         cv2.line(image, p1, p2, color, 2)
         self.pathviz_np = image
-        out_path = os.path.join(config.plan_dir, "pathviz.png")
+        out_path = os.path.join(plan_dir, "pathviz.png")
         cv2.imwrite(out_path, image)
         self.pathviz = self.server.gui.add_image(image=self.pathviz_np, format="png")
 
@@ -182,7 +183,7 @@ class VizPlan(BaseViz):
 
         log.debug("Updating Image and Pointclouds")
         image_np = self.image_np.copy()
-        for stroke in self.plan.path_idx_to_strokes[self.stroke_idx]:
+        for stroke in self.strokes.strokes[self.stroke_idx]:
             if stroke.arm == "left":
                 points_color_l = self.point_colors_stroke_l.copy()
                 points_color_l[self.stroke_idx * self.plan.path_length:self.stroke_idx * self.plan.path_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
@@ -218,7 +219,7 @@ class VizPlan(BaseViz):
         if self.pose_idx == 0:
             log.debug("Sending robot to rest pose")
             self.robot_at_rest = True
-            self.joints = self.bot_config.rest_pose.copy()
+            self.joints = self.rest_pose.copy()
             self.step_sleep = self.plan.path_dt_slow
         else:
             self.joints = np.asarray(self.strokebatch.joints[self.stroke_idx, self.pose_idx], dtype=np.float64).flatten()
