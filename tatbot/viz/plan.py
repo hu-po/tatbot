@@ -9,13 +9,14 @@ from tatbot.data.plan import Plan
 from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
 from tatbot.viz.base import BaseViz, BaseVizConfig
+from tatbot.utils.ui_colors import COLORS
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger('viz.plan', '🖥️')
 
 @dataclass
 class VizPlanConfig(BaseVizConfig):
-    plan_dir: str = "~/tatbot/output/plans/svg"
+    plan_dir: str = "~/tatbot/output/plans/yawning_cat"
     """Directory containing plan."""
 
     design_pointcloud_point_size: float = 0.001
@@ -31,13 +32,13 @@ class VizPlanConfig(BaseVizConfig):
 class VizPlan(BaseViz):
     def __init__(self, config: VizPlanConfig):
         super().__init__(config)
-        self.plan: Plan = Plan.from_yaml(config.plan_dir)
-        self.strokebatch: StrokeBatch = StrokeBatch.load(os.path.join(self.plan.dirpath, "strokebatch.safetensors"))
-        self.strokes: StrokeList = StrokeList.from_yaml(os.path.join(self.plan.dirpath, "strokes.yaml"))
+        self.plan: Plan = Plan.from_yaml(os.path.join(config.plan_dir, "plan.yaml"))
+        self.strokebatch: StrokeBatch = StrokeBatch.load(os.path.join(config.plan_dir, "strokebatch.safetensors"))
+        self.strokes: StrokeList = StrokeList.from_yaml(os.path.join(config.plan_dir, "strokes.yaml"))
 
-        self.path_idx = 0
+        self.num_strokes = len(self.strokes.strokes)
+        self.stroke_idx = 0
         self.pose_idx = 0
-        self.num_strokes = self.strokebatch.ee_pos_l.shape[0]
 
         with self.server.gui.add_folder("Plan"):
             def _format_seconds(secs):
@@ -55,10 +56,10 @@ class VizPlan(BaseViz):
 
             def _update_time_label():
                 current_time = 0.0
-                for i in range(self.path_idx):
-                    current_time += self.pathbatch.dt[i, :].sum().item()
-                current_time += self.pathbatch.dt[self.path_idx, :self.pose_idx+1].sum().item()
-                total_time = self.pathbatch.dt.sum().item()
+                for i in range(self.stroke_idx):
+                    current_time += self.strokebatch.dt[i, :].sum().item()
+                current_time += self.strokebatch.dt[self.stroke_idx, :self.pose_idx+1].sum().item()
+                total_time = self.strokebatch.dt.sum().item()
                 self.time_label.value = f"{_format_seconds(current_time)} / {_format_seconds(total_time)}"
 
             self.path_idx_slider = self.server.gui.add_slider(
@@ -70,12 +71,12 @@ class VizPlan(BaseViz):
             )
             self.path_desc_label_l = self.server.gui.add_text(
                 label="left arm description",
-                initial_value=self.plan.path_idx_to_strokes[0][0].description,
+                initial_value=self.strokes.strokes[0][0].description,
                 disabled=True,
             )
             self.path_desc_label_r = self.server.gui.add_text(
                 label="right arm description",
-                initial_value=self.plan.path_idx_to_strokes[0][1].description,
+                initial_value=self.strokes.strokes[0][1].description,
                 disabled=True,
             )
             self.pose_idx_slider = self.server.gui.add_slider(
@@ -89,13 +90,13 @@ class VizPlan(BaseViz):
 
         @self.path_idx_slider.on_update
         def _(_):
-            self.path_idx = self.path_idx_slider.value
+            self.stroke_idx = self.path_idx_slider.value
             self.pose_idx_slider.max = self.plan.path_length - 1
             if self.pose_idx_slider.value > self.pose_idx_slider.max:
                 self.pose_idx_slider.value = self.pose_idx_slider.max
             _update_time_label()
-            self.path_desc_label_l.value = self.plan.path_idx_to_strokes[self.path_idx][0].description
-            self.path_desc_label_r.value = self.plan.path_idx_to_strokes[self.path_idx][1].description
+            self.path_desc_label_l.value = self.strokes.strokes[self.stroke_idx][0].description
+            self.path_desc_label_r.value = self.strokes.strokes[self.stroke_idx][1].description
 
         @self.pose_idx_slider.on_update
         def _(_):
@@ -104,78 +105,93 @@ class VizPlan(BaseViz):
 
         _update_time_label()
 
-        log.debug(f"️🖥️🖼️ Adding GUI images from {config.plan_dir}...")
-        self.image_np = self.plan.load_image_np()
+        log.debug(f"️🖼️ Adding GUI image: design.png")
+        self.image_np = cv2.imread(os.path.join(config.plan_dir, "design.png"))
         self.image = self.server.gui.add_image(image=self.image_np, format="png")
-        self.pathviz_np = make_pathviz_image(self.plan)
+
+        log.debug(f"🖼️ Adding GUI image: pathviz.png")
+        image = self.image_np.copy()
+        for strokes in self.strokes.strokes:
+            for stroke in strokes:
+                if stroke.pixel_coords is not None:
+                    path_indices = np.linspace(0, 255, len(stroke.pixel_coords), dtype=np.uint8)
+                    colormap = cv2.applyColorMap(path_indices.reshape(-1, 1), cv2.COLORMAP_JET)
+                    for path_idx in range(len(stroke.pixel_coords) - 1):
+                        p1 = tuple(map(int, stroke.pixel_coords[path_idx]))
+                        p2 = tuple(map(int, stroke.pixel_coords[path_idx + 1]))
+                        color = colormap[path_idx][0].tolist()
+                        cv2.line(image, p1, p2, color, 2)
+        self.pathviz_np = image
+        out_path = os.path.join(config.plan_dir, "pathviz.png")
+        cv2.imwrite(out_path, image)
         self.pathviz = self.server.gui.add_image(image=self.pathviz_np, format="png")
 
-        log.debug(f"🖥️🖼️ Adding 2D image (design frame)...")
+        log.debug(f"🖼️ Adding 2D image (design frame)...")
         self.server.scene.add_image(
             name="/design",
             image=self.image_np,
-            wxyz=self.plan.design_wxyz,
-            position=self.plan.design_pos,
+            wxyz=self.skin.design_pose.rot.wxyz,
+            position=self.skin.design_pose.pos.xyz,
             render_width=self.plan.image_width_m,
             render_height=self.plan.image_height_m,
         )
 
-        log.debug(f"🖥️ Adding pointclouds...")
-        points_l = [] # pointcloud for paths of left arm
-        points_r = [] # pointcloud for paths of right arm
-        for i in range(self.pathbatch.ee_pos_l.shape[0]):
-            for j in range(self.pathbatch.ee_pos_l.shape[1]):
-                points_l.append(self.pathbatch.ee_pos_l[i, j])
-                points_r.append(self.pathbatch.ee_pos_r[i, j])
+        log.debug("Adding pointcloud")
+        points_l = [] # pointcloud for left arm stroke
+        points_r = [] # pointcloud for right arm stroke
+        for i in range(self.strokebatch.ee_pos_l.shape[0]):
+            for j in range(self.strokebatch.ee_pos_l.shape[1]):
+                points_l.append(self.strokebatch.ee_pos_l[i, j])
+                points_r.append(self.strokebatch.ee_pos_r[i, j])
         points_l = np.stack(points_l, axis=0)
         points_r = np.stack(points_r, axis=0)
-        self.point_colors_path_l = np.tile(np.array(COLORS["blue"], dtype=np.uint8), (points_l.shape[0], 1))
-        self.point_colors_path_r = np.tile(np.array(COLORS["purple"], dtype=np.uint8), (points_r.shape[0], 1))
+        self.point_colors_stroke_l = np.tile(np.array(COLORS["blue"], dtype=np.uint8), (points_l.shape[0], 1))
+        self.point_colors_stroke_r = np.tile(np.array(COLORS["purple"], dtype=np.uint8), (points_r.shape[0], 1))
 
         self.pointcloud_path_l = self.server.scene.add_point_cloud(
-            name="/points_path_l",
+            name="/points_stroke_l",
             points=points_l,
-            colors=self.point_colors_path_l,
+            colors=self.point_colors_stroke_l,
             point_size=self.config.design_pointcloud_point_size,
             point_shape=self.config.design_pointcloud_point_shape,
         )
         self.pointcloud_path_r = self.server.scene.add_point_cloud(
-            name="/points_path_r",
+            name="/points_stroke_r",
             points=points_r,
-            colors=self.point_colors_path_r,
+            colors=self.point_colors_stroke_r,
             point_size=self.config.design_pointcloud_point_size,
             point_shape=self.config.design_pointcloud_point_shape,
         )
 
     def step(self):
         if self.robot_at_rest:
-            log.debug(f"🖥️ Robot at rest, skipping step...")
+            log.debug("Robot at rest, skipping step...")
             self.robot_at_rest = False
             return
         if self.pose_idx >= self.plan.path_length:
-            self.path_idx += 1
+            self.stroke_idx += 1
             self.pose_idx = 0
-            log.debug(f"🖥️ Moving to next path {self.path_idx}")
-        if self.path_idx >= self.num_strokes:
-            log.debug(f"🖥️ Looping back to path 0")
-            self.path_idx = 0
+            log.debug(f"Moving to next stroke {self.stroke_idx}")
+        if self.stroke_idx >= self.num_strokes:
+            log.debug(f"Looping back to stroke 0")
+            self.stroke_idx = 0
             self.pose_idx = 0
-        self.path_idx_slider.value = self.path_idx
+        self.path_idx_slider.value = self.stroke_idx
         self.pose_idx_slider.value = self.pose_idx
-        log.debug(f"🖥️ Visualizing path {self.path_idx} pose {self.pose_idx}")
+        log.debug(f"Visualizing stroke {self.stroke_idx} pose {self.pose_idx}")
 
-        log.debug(f"🖥️ Updating Image and Pointclouds...")
+        log.debug("Updating Image and Pointclouds")
         image_np = self.image_np.copy()
-        for stroke in self.plan.path_idx_to_strokes[self.path_idx]:
+        for stroke in self.plan.path_idx_to_strokes[self.stroke_idx]:
             if stroke.arm == "left":
-                points_color_l = self.point_colors_path_l.copy()
-                points_color_l[self.path_idx * self.plan.path_length:self.path_idx * self.plan.path_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
-                points_color_l[self.path_idx * self.plan.path_length + self.pose_idx] = np.array(COLORS["blue"], dtype=np.uint8)
+                points_color_l = self.point_colors_stroke_l.copy()
+                points_color_l[self.stroke_idx * self.plan.path_length:self.stroke_idx * self.plan.path_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
+                points_color_l[self.stroke_idx * self.plan.path_length + self.pose_idx] = np.array(COLORS["blue"], dtype=np.uint8)
                 self.pointcloud_path_l.colors = points_color_l
             else:
-                points_color_r = self.point_colors_path_r.copy()
-                points_color_r[self.path_idx * self.plan.path_length:self.path_idx * self.plan.path_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
-                points_color_r[self.path_idx * self.plan.path_length + self.pose_idx] = np.array(COLORS["purple"], dtype=np.uint8)
+                points_color_r = self.point_colors_stroke_r.copy()
+                points_color_r[self.stroke_idx * self.plan.path_length:self.stroke_idx * self.plan.path_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
+                points_color_r[self.stroke_idx * self.plan.path_length + self.pose_idx] = np.array(COLORS["purple"], dtype=np.uint8)
                 self.pointcloud_path_r.colors = points_color_r
             if stroke.pixel_coords is not None and not stroke.is_inkdip:
                 # Highlight entire path in red
@@ -200,31 +216,14 @@ class VizPlan(BaseViz):
         self.image.image = image_np
 
         if self.pose_idx == 0:
-            log.debug(f"🖥️ Sending robot to rest pose")
+            log.debug("Sending robot to rest pose")
             self.robot_at_rest = True
             self.joints = self.bot_config.rest_pose.copy()
             self.step_sleep = self.plan.path_dt_slow
         else:
-            self.joints = np.asarray(self.pathbatch.joints[self.path_idx, self.pose_idx], dtype=np.float64).flatten()
-            self.step_sleep = float(self.pathbatch.dt[self.path_idx, self.pose_idx].item())
+            self.joints = np.asarray(self.strokebatch.joints[self.stroke_idx, self.pose_idx], dtype=np.float64).flatten()
+            self.step_sleep = float(self.strokebatch.dt[self.stroke_idx, self.pose_idx].item())
         self.pose_idx += 1
-
-
-def make_pathviz_image(plan: Plan) -> np.ndarray:
-    """Creates an image with overlayed paths from a plan."""
-    image = plan.load_image_np()
-    for stroke in plan.strokes.values():
-        if stroke.pixel_coords is not None:
-            path_indices = np.linspace(0, 255, len(stroke.pixel_coords), dtype=np.uint8)
-            colormap = cv2.applyColorMap(path_indices.reshape(-1, 1), cv2.COLORMAP_JET)
-            for path_idx in range(len(stroke.pixel_coords) - 1):
-                p1 = tuple(map(int, stroke.pixel_coords[path_idx]))
-                p2 = tuple(map(int, stroke.pixel_coords[path_idx + 1]))
-                color = colormap[path_idx][0].tolist()
-                cv2.line(image, p1, p2, color, 2)
-    out_path = os.path.join(plan.dirpath, "pathviz.png")
-    cv2.imwrite(out_path, image)
-    return image
 
 if __name__ == "__main__":
     args = setup_log_with_config(VizPlanConfig)

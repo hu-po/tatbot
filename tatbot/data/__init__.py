@@ -15,9 +15,29 @@ FLOAT_TYPE = np.float32
 log.debug(f"using {FLOAT_TYPE} for numpy arrays")
 
 def dataclass_to_dict(obj):
-    """Recursively convert dataclass to dict, converting np.ndarray to list."""
+    """Recursively convert dataclass to dict, converting np.ndarray and jax arrays to list."""
+    # Handle numpy arrays
     if isinstance(obj, np.ndarray):
         return obj.tolist()
+    # Handle JAX arrays (if JAX is installed)
+    jax_array_types = ()
+    try:
+        import jax
+        import jax.numpy as jnp
+        jax_array_types = (jnp.ndarray,)
+        # For newer JAX, also check for jax.Array
+        if hasattr(jax, "Array"):
+            jax_array_types += (jax.Array,)
+        # For older JAX, check for jaxlib.xla_extension.ArrayImpl
+        try:
+            import jaxlib.xla_extension as xla_ext
+            jax_array_types += (xla_ext.ArrayImpl,)
+        except ImportError:
+            pass
+    except ImportError:
+        pass
+    if jax_array_types and isinstance(obj, jax_array_types):
+        return np.array(obj).tolist()
     elif isinstance(obj, (list, tuple)):
         return [dataclass_to_dict(v) for v in obj]
     elif hasattr(obj, '__dataclass_fields__'):
@@ -40,32 +60,40 @@ class Yaml:
         Subclasses can override yaml_dir or this method for custom logic.
         """
         return cls.yaml_dir
+    
+    @classmethod
+    def yaml_path_from_name(cls: Type[T], name: str) -> str:
+        """
+        Returns the path to the YAML file for the given name.
+        """
+        return os.path.join(cls.get_yaml_dir(), f"{name}.yaml")
 
     @classmethod
     def from_name(cls: Type[T], name: str) -> T:
         """
         Loads an instance from a YAML file in the class's yaml_dir, given the base name (without .yaml).
         """
-        filepath = os.path.join(cls.get_yaml_dir(), f"{name}.yaml")
+        filepath = cls.yaml_path_from_name(name)
         return cls.from_yaml(filepath)
 
     @classmethod
     def from_yaml(cls: Type[T], filepath: str) -> T:
         filepath = os.path.expanduser(filepath)
         assert os.path.exists(filepath), f"❌ File {filepath} does not exist"
-        log.debug(f"💾 Loading {cls.__name__} from {filepath}...")
+        log.info(f"💾 Loading {cls.__name__} from {filepath}")
         with open(filepath, 'r') as f:
             data = yaml.safe_load(f)
         _output = cls._fromdict(data)
-        log.debug(f"✅ Loaded {cls.__name__}: {_output}")
+        log.debug(f"💾✅ Loaded {cls.__name__}: {_output}")
         return _output
 
     def to_yaml(self, filepath: str) -> None:
         if not is_dataclass(self):
-            raise TypeError(f"{self.__class__.__name__} must be a dataclass to use to_yaml.")
-        log.debug(f"💾 Saving {self.__class__.__name__} to {filepath}...")
+            raise TypeError(f"❌ {self.__class__.__name__} must be a dataclass to use to_yaml.")
+        log.info(f"💾 Saving {self.__class__.__name__} to {filepath}")
         with open(filepath, 'w') as f:
             yaml.safe_dump(dataclass_to_dict(self), f)
+        log.info(f"💾✅ Saved")
 
     @classmethod
     def _fromdict(cls: Type[T], data: Any) -> T:
@@ -98,4 +126,4 @@ class Yaml:
         return yaml.safe_dump(dataclass_to_dict(self), sort_keys=False, allow_unicode=True)
 
     def to_dict(self):
-        return dataclass_to_dict(self)
+        return dataclass_to_dict(self) 

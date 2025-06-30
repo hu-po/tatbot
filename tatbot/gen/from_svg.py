@@ -96,8 +96,6 @@ def gen_from_svg(config: FromSVGConfig):
     log.debug(f"Pens in config: {config_pens.keys()}")
 
     ink_palette: InkPalette = InkPalette.from_name(config.ink_palette_name)
-    log.info(f"✅ Loaded ink palette: {ink_palette}")
-    log.debug(f"Ink palette: {ink_palette}")
     inkpalette_color_to_name: dict[str, str] = {}
     inkpalette_color_to_pose: dict[str, Pose] = {}
     link_poses = get_link_poses(urdf.path, urdf.ink_link_names, rest_pose)
@@ -118,6 +116,7 @@ def gen_from_svg(config: FromSVGConfig):
             image_path = os.path.join(design_dir, file)
     assert image_path is not None, f"❌ No image file found in {design_dir}"
     log.info(f"📂 Found image file: {image_path}")
+    shutil.copy(image_path, os.path.join(output_dir, "design.png"))
     image = Image.open(image_path)
     image_width_px = image.width
     image_height_px = image.height
@@ -198,7 +197,7 @@ def gen_from_svg(config: FromSVGConfig):
         return inkdip_pos
     
     # left arm and right arm strokes in order of execution on robot
-    strokes: StrokeList = StrokeList(strokes=[])
+    strokelist: StrokeList = StrokeList(strokes=[])
 
     # default time between poses is fast movement
     dt = np.full((plan.path_length, 1), plan.path_dt_fast)
@@ -213,7 +212,7 @@ def gen_from_svg(config: FromSVGConfig):
     # start with "alignment" strokes
     alignment_inkcap = ink_palette.inkcaps[0]
     alignment_inkcap_pose: Pose = inkpalette_color_to_pose[alignment_inkcap.ink.name]
-    strokes.append(
+    strokelist.strokes.append(
         (
             Stroke(
                 description="left arm over design",
@@ -243,9 +242,9 @@ def gen_from_svg(config: FromSVGConfig):
             ),
         )
     )
-    print(f"[DEBUG] After alignment 1: left ee_pos shape: {strokes[-1][0].ee_pos.shape if hasattr(strokes[-1][0].ee_pos, 'shape') else 'N/A'}, type: {type(strokes[-1][0].ee_pos)}; right ee_pos shape: {strokes[-1][1].ee_pos.shape if hasattr(strokes[-1][1].ee_pos, 'shape') else 'N/A'}, type: {type(strokes[-1][1].ee_pos)}")
+    print(f"[DEBUG] After alignment 1: left ee_pos shape: {strokelist.strokes[-1][0].ee_pos.shape if hasattr(strokelist.strokes[-1][0].ee_pos, 'shape') else 'N/A'}, type: {type(strokelist.strokes[-1][0].ee_pos)}; right ee_pos shape: {strokelist.strokes[-1][1].ee_pos.shape if hasattr(strokelist.strokes[-1][1].ee_pos, 'shape') else 'N/A'}, type: {type(strokelist.strokes[-1][1].ee_pos)}")
     # same but switch the arms
-    strokes.append(
+    strokelist.strokes.append(
         (
             Stroke(
                 description=f"left arm over {alignment_inkcap.ink.name} inkcap",
@@ -275,11 +274,11 @@ def gen_from_svg(config: FromSVGConfig):
             ),
         )
     )
-    print(f"[DEBUG] After alignment 2: left ee_pos shape: {strokes[-1][0].ee_pos.shape if hasattr(strokes[-1][0].ee_pos, 'shape') else 'N/A'}, type: {type(strokes[-1][0].ee_pos)}; right ee_pos shape: {strokes[-1][1].ee_pos.shape if hasattr(strokes[-1][1].ee_pos, 'shape') else 'N/A'}, type: {type(strokes[-1][1].ee_pos)}")
+    print(f"[DEBUG] After alignment 2: left ee_pos shape: {strokelist.strokes[-1][0].ee_pos.shape if hasattr(strokelist.strokes[-1][0].ee_pos, 'shape') else 'N/A'}, type: {type(strokelist.strokes[-1][0].ee_pos)}; right ee_pos shape: {strokelist.strokes[-1][1].ee_pos.shape if hasattr(strokelist.strokes[-1][1].ee_pos, 'shape') else 'N/A'}, type: {type(strokelist.strokes[-1][1].ee_pos)}")
     # next lets add inkdip on left arm, right arm will be at rest
     first_color_left_arm = next(iter(left_arm_paths.keys()))
     left_arm_inkcap_name = inkpalette_color_to_name[first_color_left_arm]
-    strokes.append(
+    strokelist.strokes.append(
         (
             Stroke(
                 description=f"left arm inkdip into {left_arm_inkcap_name}",
@@ -299,7 +298,7 @@ def gen_from_svg(config: FromSVGConfig):
             ),
         )
     )
-    print(f"[DEBUG] After left inkdip: left ee_pos shape: {strokes[-1][0].ee_pos.shape if hasattr(strokes[-1][0].ee_pos, 'shape') else 'N/A'}, type: {type(strokes[-1][0].ee_pos)}; right ee_pos shape: {strokes[-1][1].ee_pos.shape if hasattr(strokes[-1][1].ee_pos, 'shape') else 'N/A'}, type: {type(strokes[-1][1].ee_pos)}")
+    print(f"[DEBUG] After left inkdip: left ee_pos shape: {strokelist.strokes[-1][0].ee_pos.shape if hasattr(strokelist.strokes[-1][0].ee_pos, 'shape') else 'N/A'}, type: {type(strokelist.strokes[-1][0].ee_pos)}; right ee_pos shape: {strokelist.strokes[-1][1].ee_pos.shape if hasattr(strokelist.strokes[-1][1].ee_pos, 'shape') else 'N/A'}, type: {type(strokelist.strokes[-1][1].ee_pos)}")
     right_arm_inkcap_name = None # these will be used to determine when to inkdip
     left_arm_ptr: int = 0
     right_arm_ptr: int = 0
@@ -415,14 +414,14 @@ def gen_from_svg(config: FromSVGConfig):
                     arm="right",
                 )
         print(f"[DEBUG] About to append strokes: left ee_pos shape: {left_arm_stroke.ee_pos.shape if hasattr(left_arm_stroke.ee_pos, 'shape') else 'N/A'}, right ee_pos shape: {right_arm_stroke.ee_pos.shape if hasattr(right_arm_stroke.ee_pos, 'shape') else 'N/A'}")
-        strokes.append((left_arm_stroke, right_arm_stroke))
+        strokelist.strokes.append((left_arm_stroke, right_arm_stroke))
 
     strokes_path = os.path.join(output_dir, "strokes.yaml")
     log.info(f"💾 Saving strokes to {strokes_path}")
-    strokes.save(strokes_path)
+    strokelist.to_yaml(strokes_path)
 
     strokebatch: StrokeBatch = strokebatch_from_strokes(
-        strokes=strokes,
+        strokelist=strokelist,
         path_length=plan.path_length,
         batch_size=plan.ik_batch_size,
         joints=rest_pose,
@@ -437,7 +436,7 @@ def gen_from_svg(config: FromSVGConfig):
     # copy the plan yaml to the output directory
     plan_path = os.path.join(output_dir, "plan.yaml")
     log.info(f"💾 Copying plan to {plan_path}")
-    shutil.copy(plan.path, plan_path)
+    shutil.copy(plan.yaml_path_from_name(config.plan_name), plan_path)
 
 if __name__ == "__main__":
     args = setup_log_with_config(FromSVGConfig)

@@ -2,7 +2,7 @@ import numpy as np
 import jax.numpy as jnp
 
 from tatbot.data.pose import Pose
-from tatbot.data.stroke import Stroke
+from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
 from tatbot.gpu.ik import batch_ik, transform_and_offset
 from tatbot.utils.log import get_logger
@@ -10,7 +10,7 @@ from tatbot.utils.log import get_logger
 log = get_logger('gen.strokebatch', '💠')
 
 def strokebatch_from_strokes(
-    strokes: list[tuple[Stroke, Stroke]],
+    strokelist: StrokeList,
     path_length: int,
     batch_size: int,
     joints: np.ndarray,
@@ -22,7 +22,7 @@ def strokebatch_from_strokes(
     Convert a list of (Stroke, Stroke) tuples into a StrokeBatch, running IK to fill in joint values.
     Each tuple is (left_stroke, right_stroke) for a single stroke step.
     """
-    b = len(strokes)
+    b = len(strokelist.strokes)
     l = path_length
     print(f"[strokebatch_from_strokes] Starting with {b} strokes, path_length={l}, batch_size={batch_size}")
     # Fill arrays from strokes
@@ -31,7 +31,7 @@ def strokebatch_from_strokes(
     ee_wxyz_l = np.zeros((b, l, 4), dtype=np.float32)
     ee_wxyz_r = np.zeros((b, l, 4), dtype=np.float32)
     dt = np.zeros((b, l), dtype=np.float32)
-    for i, (stroke_l, stroke_r) in enumerate(strokes):
+    for i, (stroke_l, stroke_r) in enumerate(strokelist.strokes):
         print(f"[strokebatch_from_strokes] i={i} stroke_l.ee_pos type: {type(stroke_l.ee_pos)}, shape: {getattr(stroke_l.ee_pos, 'shape', None)}")
         if i == 0:
             print(f"[strokebatch_from_strokes] stroke_l.ee_pos value (first): {stroke_l.ee_pos}")

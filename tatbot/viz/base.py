@@ -9,6 +9,7 @@ from viser.extras import ViserUrdf
 from tatbot.bot.urdf import get_link_poses, load_robot
 from tatbot.data.ink import InkPalette
 from tatbot.data.pose import ArmPose
+from tatbot.data.skin import Skin
 from tatbot.data.urdf import URDF
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
@@ -27,6 +28,8 @@ class BaseVizConfig:
     """Name of the left arm pose (ArmPose)."""
     right_arm_pose_name: str = "right/rest"
     """Name of the right arm pose (ArmPose)."""
+    skin_name: str = "default"
+    """Name of the skin (Skin)."""
 
     env_map_hdri: str = "forest"
     """HDRI for the environment map."""
@@ -46,6 +49,7 @@ class BaseViz:
         self.right_arm_pose: ArmPose = ArmPose.from_name(config.right_arm_pose_name)
         self.rest_pose: np.ndarray = np.concatenate([self.left_arm_pose.joints, self.right_arm_pose.joints])
         self.ink_palette: InkPalette = InkPalette.from_name(config.ink_palette_name)
+        self.skin: Skin = Skin.from_name(config.skin_name)
 
         log.info("Starting viser server")
         self.server: viser.ViserServer = viser.ViserServer()
