@@ -9,7 +9,7 @@ from tatbot.data.plan import Plan
 from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
 from tatbot.viz.base import BaseViz, BaseVizConfig
-from tatbot.utils.ui_colors import COLORS
+from tatbot.utils.colors import COLORS
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger('viz.plan', '🖥️')

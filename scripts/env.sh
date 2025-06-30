@@ -1,7 +1,4 @@
 #!/bin/bash
-set +e
-set -x
-
 echo "🚀 Go to project directory and update"
 cd ~/tatbot && git pull
 

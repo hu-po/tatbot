@@ -10,10 +10,12 @@ import jaxlie
 import numpy as np
 import pupil_apriltags as apriltag
 import yaml
-from _cam import CameraIntrinsics
-from _log import COLORS, get_logger
 
-log = get_logger('_tag')
+from tatbot.data.cam import CameraIntrinsics
+from tatbot.utils.colors import COLORS
+from tatbot.utils.log import get_logger
+
+log = get_logger('tag', '🏷️')
 
 @dataclass
 class TagConfig:
