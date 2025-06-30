@@ -15,7 +15,7 @@ import numpy as np
 import yaml
 from lxml import etree
 
-from tatbot.data.path import PathBatch
+from tatbot.data.strokebatch import StrokeBatch
 from tatbot.data.plan import Plan
 from tatbot.gpu.ik import batch_ik, transform_and_offset
 from tatbot.utils.log import get_logger, setup_log_with_config, print_config

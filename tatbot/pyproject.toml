@@ -10,14 +10,13 @@ description="tattoo robot"
 authors = [
     { name = "Hugo Ponte", email = "hu.po.xyz@gmail.com" },
 ]
-license = { text = "MIT" }
+license = "MIT"
 readme = "README.md"
 requires-python = "==3.11.10"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Operating System :: POSIX :: Linux",
@@ -65,5 +64,10 @@ vla = [
     "lerobot[tatbot,smolvla] @ git+https://github.com/hu-po/lerobot.git@main",
 ]
 
-[tool.setuptools]
-py-modules = ['bot', 'data', 'gen', 'gpu', 'net', 'tag', 'utils', 'viz']
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bot", "viz", "tag", "gen", "gpu", "net", "data"]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

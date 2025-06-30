@@ -166,3 +166,6 @@ output/
 assets/*
 !assets/logos/
 !assets/urdf/
+
+# old directory
+old/
