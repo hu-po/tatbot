@@ -109,10 +109,10 @@ def gen_from_svg(config: FromSVGConfig):
     log.debug(f"Ink palette: {ink_palette}")
     inkpalette_color_to_name: dict[str, str] = {}
     inkpalette_color_to_pose: dict[str, Pose] = {}
+    link_poses = get_link_poses(urdf.path, urdf.ink_link_names, rest_pose)
     for inkcap in ink_palette.inkcaps:
         assert inkcap.name in urdf.ink_link_names, f"❌ Inkcap {inkcap.name} not found in URDF"
         inkpalette_color_to_name[inkcap.ink.name] = inkcap.name
-        link_poses = get_link_poses(urdf.path, urdf.ink_link_names, rest_pose)
         inkpalette_color_to_pose[inkcap.ink.name] = link_poses[inkcap.name]
 
     inkpalette_colors = {inkcap.ink.name: inkcap.name for inkcap in ink_palette.inkcaps}
@@ -165,6 +165,11 @@ def gen_from_svg(config: FromSVGConfig):
             pixel_coords * np.array([plan.image_width_m / image_width_px, plan.image_height_m / image_height_px], dtype=np.float32)
             - np.array([plan.image_width_m / 2, plan.image_height_m / 2], dtype=np.float32) # center the meter coordinates in the image
         ), np.zeros((plan.path_length, 1), dtype=np.float32)]) # z axis is 0
+        # Debug prints
+        print(f"[DEBUG] pixel_coords type: {type(pixel_coords)}, shape: {pixel_coords.shape}")
+        print(f"[DEBUG] meter_coords type: {type(meter_coords)}, shape: {meter_coords.shape}")
+        print(f"[DEBUG] pixel_coords (first 3): {pixel_coords[:3]}")
+        print(f"[DEBUG] meter_coords (first 3): {meter_coords[:3]}")
         return pixel_coords, meter_coords
     
     @functools.lru_cache(maxsize=len(ink_palette.inkcaps))
@@ -174,9 +179,9 @@ def gen_from_svg(config: FromSVGConfig):
         # hover over the inkcap
         inkdip_pos = transform_and_offset(
             np.zeros((num_points, 3)), # <x, y, z>
-            inkcap_pose.pos,
-            inkcap_pose.wxyz,
-            plan.inkdip_hover_offset,
+            inkcap_pose.pos.xyz,
+            inkcap_pose.rot.wxyz,
+            plan.inkdip_hover_offset.xyz,
         )
         # Split: 1/3 down, 1/3 wait, 1/3 up (adjust as needed)
         num_down = num_points // 3
@@ -195,8 +200,8 @@ def gen_from_svg(config: FromSVGConfig):
         ])
         inkdip_pos = transform_and_offset(
             inkdip_pos,
-            inkcap_pose.pos,
-            inkcap_pose.wxyz,
+            inkcap_pose.pos.xyz,
+            inkcap_pose.rot.wxyz,
             offsets,
         )
         return inkdip_pos
@@ -211,39 +216,43 @@ def gen_from_svg(config: FromSVGConfig):
     dt[-2:] = plan.path_dt_slow
 
     # hardcoded orientations for left and right arm end effectors
-    ee_wxyz_l = np.tile(np.array(plan.ee_wxyz_l, dtype=np.float32), (plan.path_length, 1))
-    ee_wxyz_r = np.tile(np.array(plan.ee_wxyz_r, dtype=np.float32), (plan.path_length, 1))
+    ee_wxyz_l = np.tile(plan.ee_wxyz_l.wxyz, (plan.path_length, 1))
+    ee_wxyz_r = np.tile(plan.ee_wxyz_r.wxyz, (plan.path_length, 1))
 
     # start with "alignment" strokes
     alignment_inkcap = ink_palette.inkcaps[0]
+    alignment_inkcap_pose: Pose = inkpalette_color_to_pose[alignment_inkcap.ink.name]
     strokes.append(
         (
             Stroke(
                 description="left arm over design",
                 ee_pos=transform_and_offset(
                     np.zeros((plan.path_length, 3)),
-                    skin.design_pose.pos,
-                    skin.design_pose.wxyz,
-                    plan.needle_hover_offset * 2, # twice the offset to ensure enough space for adjustments
+                    skin.design_pose.pos.xyz,
+                    skin.design_pose.rot.wxyz,
+                    plan.needle_hover_offset.xyz,
                 ),
                 ee_wxyz=ee_wxyz_l,
                 dt=dt,
                 is_alignment=True,
+                arm="left",
             ),
             Stroke(
                 description=f"right arm over {alignment_inkcap.ink.name} inkcap",
                 ee_pos=transform_and_offset(
                     np.zeros((plan.path_length, 3)),
-                    alignment_inkcap.ink.pos,
-                    alignment_inkcap.ink.wxyz,
-                    plan.needle_hover_offset * 2, # twice the offset to ensure enough space for adjustments
+                    alignment_inkcap_pose.pos.xyz,
+                    alignment_inkcap_pose.rot.wxyz,
+                    plan.needle_hover_offset.xyz,
                 ),
                 ee_wxyz=ee_wxyz_r,
                 dt=dt,
                 is_alignment=True,
+                arm="right",
             ),
         )
     )
+    print(f"[DEBUG] After alignment 1: left ee_pos shape: {strokes[-1][0].ee_pos.shape if hasattr(strokes[-1][0].ee_pos, 'shape') else 'N/A'}, type: {type(strokes[-1][0].ee_pos)}; right ee_pos shape: {strokes[-1][1].ee_pos.shape if hasattr(strokes[-1][1].ee_pos, 'shape') else 'N/A'}, type: {type(strokes[-1][1].ee_pos)}")
     # same but switch the arms
     strokes.append(
         (
@@ -251,31 +260,33 @@ def gen_from_svg(config: FromSVGConfig):
                 description=f"left arm over {alignment_inkcap.ink.name} inkcap",
                 ee_pos=transform_and_offset(
                     np.zeros((plan.path_length, 3)),
-                    alignment_inkcap.ink.pos,
-                    alignment_inkcap.ink.wxyz,
-                    plan.needle_hover_offset * 2, # twice the offset to ensure enough space for adjustments
+                    alignment_inkcap_pose.pos.xyz,
+                    alignment_inkcap_pose.rot.wxyz,
+                    plan.needle_hover_offset.xyz,
                 ),
                 ee_wxyz=ee_wxyz_l,
                 dt=dt,
                 is_alignment=True,
+                arm="left",
             ),
             Stroke(
                 description="right arm over design",
                 ee_pos=transform_and_offset(
                     np.zeros((plan.path_length, 3)),
-                    skin.design_pose.pos,
-                    skin.design_pose.wxyz,
-                    plan.needle_hover_offset * 2, # twice the offset to ensure enough space for adjustments
+                    skin.design_pose.pos.xyz,
+                    skin.design_pose.rot.wxyz,
+                    plan.needle_hover_offset.xyz,
                 ),
                 ee_wxyz=ee_wxyz_r,
                 dt=dt,
                 is_alignment=True,
+                arm="right",
             ),
         )
     )
-
+    print(f"[DEBUG] After alignment 2: left ee_pos shape: {strokes[-1][0].ee_pos.shape if hasattr(strokes[-1][0].ee_pos, 'shape') else 'N/A'}, type: {type(strokes[-1][0].ee_pos)}; right ee_pos shape: {strokes[-1][1].ee_pos.shape if hasattr(strokes[-1][1].ee_pos, 'shape') else 'N/A'}, type: {type(strokes[-1][1].ee_pos)}")
     # next lets add inkdip on left arm, right arm will be at rest
-    first_color_left_arm = left_arm_paths.keys()[0]
+    first_color_left_arm = next(iter(left_arm_paths.keys()))
     left_arm_inkcap_name = inkpalette_color_to_name[first_color_left_arm]
     strokes.append(
         (
@@ -286,22 +297,34 @@ def gen_from_svg(config: FromSVGConfig):
                 ee_pos=make_inkdip_pos(first_color_left_arm),
                 ee_wxyz=ee_wxyz_l,
                 dt=dt,
+                arm="left",
             ),
             Stroke(
                 description="right arm at rest",
                 ee_pos=np.zeros((plan.path_length, 3)),
                 ee_wxyz=ee_wxyz_r,
                 dt=dt,
+                arm="right",
             ),
         )
     )
+    print(f"[DEBUG] After left inkdip: left ee_pos shape: {strokes[-1][0].ee_pos.shape if hasattr(strokes[-1][0].ee_pos, 'shape') else 'N/A'}, type: {type(strokes[-1][0].ee_pos)}; right ee_pos shape: {strokes[-1][1].ee_pos.shape if hasattr(strokes[-1][1].ee_pos, 'shape') else 'N/A'}, type: {type(strokes[-1][1].ee_pos)}")
     right_arm_inkcap_name = None # these will be used to determine when to inkdip
     left_arm_ptr: int = 0
     right_arm_ptr: int = 0
     max_paths = max(len(left_arm_paths), len(right_arm_paths))
     for i in range(max_paths):
-        left_arm_path = left_arm_paths[i] if i < len(left_arm_paths) else None
-        right_arm_path = right_arm_paths[i] if i < len(right_arm_paths) else None
+        print(f"[DEBUG] Loop index: {i}")
+        print(f"[DEBUG] left_arm_paths keys: {list(left_arm_paths.keys())}")
+        print(f"[DEBUG] right_arm_paths keys: {list(right_arm_paths.keys())}")
+        left_arm_path = left_arm_paths.get(i, None)
+        right_arm_path = right_arm_paths.get(i, None)
+        print(f"[DEBUG] left_arm_path type: {type(left_arm_path)}")
+        print(f"[DEBUG] right_arm_path type: {type(right_arm_path)}")
+        if left_arm_path is not None:
+            print(f"[DEBUG] left_arm_path: {left_arm_path}")
+        if right_arm_path is not None:
+            print(f"[DEBUG] right_arm_path: {right_arm_path}")
         
         if left_arm_path is None:
             left_arm_stroke = Stroke(
@@ -309,10 +332,13 @@ def gen_from_svg(config: FromSVGConfig):
                 ee_pos=np.zeros((plan.path_length, 3)),
                 ee_wxyz=ee_wxyz_l,
                 dt=dt,
+                arm="left",
             )
         elif left_arm_inkcap_name is not None:
             # left arm has already performed inkdip
+            print(f"[DEBUG] Calling coords_from_path for left_arm_path")
             pixel_coords, meter_coords = coords_from_path(left_arm_path)
+            print(f"[DEBUG] left meter_coords shape: {meter_coords.shape}")
             left_arm_stroke = Stroke(
                 description=f"left arm stroke using {arm} arm",
                 arm=arm,
@@ -327,7 +353,7 @@ def gen_from_svg(config: FromSVGConfig):
             left_arm_ptr += 1
         else:
             # left arm has not performed inkdip yet
-            color_left_arm = left_arm_paths.keys()[left_arm_ptr]
+            color_left_arm = list(left_arm_paths.keys())[left_arm_ptr]
             left_arm_inkcap_name = inkpalette_color_to_name[color_left_arm]
             left_arm_stroke = Stroke(
                 description=f"left arm inkdip into {left_arm_inkcap_name}",
@@ -336,6 +362,7 @@ def gen_from_svg(config: FromSVGConfig):
                 ee_pos=make_inkdip_pos(color_left_arm),
                 ee_wxyz=ee_wxyz_l,
                 dt=dt,
+                arm="left",
             )
         
         if right_arm_path is None:
@@ -344,10 +371,13 @@ def gen_from_svg(config: FromSVGConfig):
                 ee_pos=np.zeros((plan.path_length, 3)),
                 ee_wxyz=ee_wxyz_r,
                 dt=dt,
+                arm="right",
             )
         elif right_arm_inkcap_name is not None:
             # right arm has already performed inkdip
+            print(f"[DEBUG] Calling coords_from_path for right_arm_path")
             pixel_coords, meter_coords = coords_from_path(right_arm_path)
+            print(f"[DEBUG] right meter_coords shape: {meter_coords.shape}")
             right_arm_stroke = Stroke(
                 description=f"right arm stroke using {arm} arm",
                 arm=arm,
@@ -362,7 +392,7 @@ def gen_from_svg(config: FromSVGConfig):
             right_arm_ptr += 1
         else:
             # right arm has not performed inkdip yet
-            color_right_arm = right_arm_paths.keys()[right_arm_ptr]
+            color_right_arm = list(right_arm_paths.keys())[right_arm_ptr]
             right_arm_inkcap_name = inkpalette_color_to_name[color_right_arm]
             right_arm_stroke = Stroke(
                 description=f"right arm inkdip into {right_arm_inkcap_name}",
@@ -371,8 +401,9 @@ def gen_from_svg(config: FromSVGConfig):
                 ee_pos=make_inkdip_pos(color_right_arm),
                 ee_wxyz=ee_wxyz_r,
                 dt=dt,
+                arm="right",
             )
-        
+        print(f"[DEBUG] About to append strokes: left ee_pos shape: {left_arm_stroke.ee_pos.shape if hasattr(left_arm_stroke.ee_pos, 'shape') else 'N/A'}, right ee_pos shape: {right_arm_stroke.ee_pos.shape if hasattr(right_arm_stroke.ee_pos, 'shape') else 'N/A'}")
         strokes.append((left_arm_stroke, right_arm_stroke))
 
     strokes_path = os.path.join(output_dir, "strokes.yaml")
@@ -384,9 +415,10 @@ def gen_from_svg(config: FromSVGConfig):
         strokes=strokes,
         path_length=plan.path_length,
         batch_size=plan.ik_batch_size,
-        joints=urdf.joints,
+        joints=rest_pose,
         urdf_path=urdf.path,
         link_names=urdf.ee_link_names,
+        design_pose=skin.design_pose,
     )
     strokebatch_path = os.path.join(output_dir, f"strokebatch.safetensors")
     log.info(f"💾 Saving strokebatch to {strokebatch_path}")

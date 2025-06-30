@@ -1,4 +1,5 @@
 import os
+import numpy as np
 from dataclasses import asdict, is_dataclass
 from typing import Any, Type, TypeVar
 
@@ -9,6 +10,20 @@ from tatbot.utils.log import get_logger
 log = get_logger('data', '🗃️')
 
 T = TypeVar('T', bound='Yaml')
+
+FLOAT_TYPE = np.float32
+log.debug(f"using {FLOAT_TYPE} for numpy arrays")
+
+def dataclass_to_dict(obj):
+    """Recursively convert dataclass to dict, converting np.ndarray to list."""
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, (list, tuple)):
+        return [dataclass_to_dict(v) for v in obj]
+    elif hasattr(obj, '__dataclass_fields__'):
+        return {k: dataclass_to_dict(getattr(obj, k)) for k in obj.__dataclass_fields__}
+    else:
+        return obj
 
 class Yaml:
     """
@@ -46,25 +61,29 @@ class Yaml:
             raise TypeError(f"{self.__class__.__name__} must be a dataclass to use to_yaml.")
         log.debug(f"Saving {self.__class__.__name__} to {filepath}...")
         with open(filepath, 'w') as f:
-            yaml.safe_dump(asdict(self), f)
+            yaml.safe_dump(dataclass_to_dict(self), f)
 
     @classmethod
     def _fromdict(cls: Type[T], data: Any) -> T:
         def convert(fieldtype, value):
-            typ = fieldtype if isinstance(fieldtype, type) else type(fieldtype)
-            if is_dataclass(typ) and isinstance(value, dict):
-                fromdict = getattr(typ, '_fromdict', None)
+            origin = getattr(fieldtype, '__origin__', None)
+            args = getattr(fieldtype, '__args__', None)
+            if origin is tuple and args:
+                subtype = args[0]
+                return tuple(convert(subtype, v) for v in value)
+            elif origin is list and args:
+                subtype = args[0]
+                return [convert(subtype, v) for v in value]
+            if fieldtype is np.ndarray:
+                return np.array(value, dtype=FLOAT_TYPE)
+            if hasattr(fieldtype, '__dataclass_fields__') and isinstance(value, dict):
+                fromdict = getattr(fieldtype, '_fromdict', None)
                 if callable(fromdict):
                     return fromdict(value)
                 else:
-                    return typ(**value)
-            origin = getattr(typ, '__origin__', None)
-            args = getattr(typ, '__args__', None)
-            if origin in (list, tuple) and args:
-                subtype = args[0]
-                return type(value)(convert(subtype, v) for v in value)
+                    return fieldtype(**value)
             return value
-        if is_dataclass(cls):
+        if hasattr(cls, '__dataclass_fields__'):
             fieldtypes = {f.name: f.type for f in cls.__dataclass_fields__.values()}
             for k, v in data.items():
                 if k in fieldtypes:
@@ -72,4 +91,4 @@ class Yaml:
         return cls(**data)
 
     def __str__(self) -> str:
-        return yaml.safe_dump(asdict(self), sort_keys=False, allow_unicode=True)
+        return yaml.safe_dump(dataclass_to_dict(self), sort_keys=False, allow_unicode=True)

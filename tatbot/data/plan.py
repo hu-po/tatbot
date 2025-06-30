@@ -1,6 +1,7 @@
 import os
 from dataclasses import dataclass
 
+from tatbot.data.pose import Pos, Rot
 from tatbot.data import Yaml
 
 
@@ -29,19 +30,19 @@ class Plan(Yaml):
     path_dt_slow: float
     """Time between poses in seconds for slow movement."""
 
-    ee_wxyz_l: tuple[float, float, float, float]
+    ee_wxyz_l: Rot
     """<w, x, y, z> quaternion of left arm end effector when performing a stroke."""
-    ee_wxyz_r: tuple[float, float, float, float]
+    ee_wxyz_r: Rot
     """<w, x, y, z> quaternion of right arm end effector when performing a stroke."""
 
-    inkdip_hover_offset: tuple[float, float, float]
+    inkdip_hover_offset: Pos
     """<x, y, z> offset for inkdip hover in meters."""
-    needle_hover_offset: tuple[float, float, float]
+    needle_hover_offset: Pos
     """<x, y, z> offset for needle hover in meters."""
 
-    needle_offset_l: tuple[float, float, float]
+    needle_offset_l: Pos
     """<x, y, z> offset for needle stroke in meters."""
-    needle_offset_r: tuple[float, float, float]
+    needle_offset_r: Pos
     """<x, y, z> offset for needle stroke in meters."""
 
     yaml_dir: str = os.path.expanduser("~/tatbot/config/plans")

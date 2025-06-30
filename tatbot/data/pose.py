@@ -1,17 +1,19 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+import numpy as np
 
 from tatbot.data import Yaml
 
 
 @dataclass
-class Pos:
-    xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
+class Pos(Yaml):
+    xyz: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.0], dtype=np.float32))
     """Position in meters (xyz)."""
 
 @dataclass
-class Rot:
-    wxyz: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
+class Rot(Yaml):
+    wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
     """Orientation quaternion (wxyz)."""
 
 @dataclass

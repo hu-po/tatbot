@@ -23,15 +23,15 @@ class StrokeBatch:
     """Travel time from pose N to pose N+1 in seconds."""
 
     @classmethod
-    def empty(cls, length: int) -> "StrokeBatch":
-        log.debug(f"Creating empty StrokeBatch of length {length}...")
+    def empty(cls, length: int, batch_size: int = 1) -> "StrokeBatch":
+        log.debug(f"Creating empty StrokeBatch of shape ({batch_size}, {length})...")
         return cls(
-            ee_pos_l=jnp.zeros((1, length, 3), dtype=jnp.float32),
-            ee_pos_r=jnp.zeros((1, length, 3), dtype=jnp.float32),
-            ee_wxyz_l=jnp.tile(jnp.array([1.0, 0.0, 0.0, 0.0], dtype=jnp.float32), (1, length, 1)),
-            ee_wxyz_r=jnp.tile(jnp.array([1.0, 0.0, 0.0, 0.0], dtype=jnp.float32), (1, length, 1)),
-            joints=jnp.zeros((1, length, 16), dtype=jnp.float32),
-            dt=jnp.full((1, length,), 0.01, dtype=jnp.float32), # seconds
+            ee_pos_l=jnp.zeros((batch_size, length, 3), dtype=jnp.float32),
+            ee_pos_r=jnp.zeros((batch_size, length, 3), dtype=jnp.float32),
+            ee_wxyz_l=jnp.tile(jnp.array([1.0, 0.0, 0.0, 0.0], dtype=jnp.float32), (batch_size, length, 1)),
+            ee_wxyz_r=jnp.tile(jnp.array([1.0, 0.0, 0.0, 0.0], dtype=jnp.float32), (batch_size, length, 1)),
+            joints=jnp.zeros((batch_size, length, 16), dtype=jnp.float32),
+            dt=jnp.full((batch_size, length,), 0.01, dtype=jnp.float32), # seconds
         )
     
     def save(self, filepath: str) -> None:

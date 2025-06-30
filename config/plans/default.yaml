@@ -10,9 +10,15 @@ ik_batch_size: 1024
 path_length: 108
 path_dt_fast: 0.1
 path_dt_slow: 2.0
-ee_wxyz_l: [0.5, 0.5, 0.5, -0.5]
-ee_wxyz_r: [0.5, -0.5, 0.5, 0.5]
-inkdip_hover_offset: [0.0, 0.0, 0.01]
-needle_hover_offset: [0.0, 0.0, 0.006]
-needle_offset_l: [0.0, 0.0, -0.0056]
-needle_offset_r: [0.0, 0.0, -0.0062]
+ee_wxyz_l:
+  wxyz: [0.5, 0.5, 0.5, -0.5]
+ee_wxyz_r:
+  wxyz: [0.5, -0.5, 0.5, 0.5]
+inkdip_hover_offset:
+  xyz: [0.0, 0.0, 0.01]
+needle_hover_offset:
+  xyz: [0.0, 0.0, 0.006]
+needle_offset_l:
+  xyz: [0.0, 0.0, -0.0056]
+needle_offset_r:
+  xyz: [0.0, 0.0, -0.0062]

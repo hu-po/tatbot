@@ -85,7 +85,7 @@ def batch_ik(
     ik_config: IKConfig = IKConfig(),
 ) -> Float[Array, "b 16"]:
     _, robot = load_robot(urdf_path)
-    link_indices = get_link_indices(link_names, urdf_path)
+    link_indices = get_link_indices(urdf_path, link_names)
     log.debug(f"performing batch ik on batch of size {target_pos.shape[0]}")
     start_time = time.time()
     _ik_vmap = jax.vmap(
@@ -103,6 +103,10 @@ def transform_and_offset(
     frame_wxyz: Float[Array, "4"],
     offsets: Optional[Float[Array, "b 3"]] = None,
 ) -> Float[Array, "b 3"]:
+    print(f"[DEBUG] transform_and_offset: target_pos type: {type(target_pos)}, shape: {getattr(target_pos, 'shape', None)}")
+    print(f"[DEBUG] transform_and_offset: frame_pos type: {type(frame_pos)}, shape: {getattr(frame_pos, 'shape', None)}")
+    print(f"[DEBUG] transform_and_offset: frame_wxyz type: {type(frame_wxyz)}, shape: {getattr(frame_wxyz, 'shape', None)}")
+    print(f"[DEBUG] transform_and_offset: offsets type: {type(offsets)}, shape: {getattr(offsets, 'shape', None)}")
     log.debug(f"transforming and offsetting {target_pos.shape[0]} points")
     start_time = time.time()
     if offsets is None:
@@ -111,5 +115,6 @@ def transform_and_offset(
         offsets = jnp.tile(offsets, (target_pos.shape[0], 1))
     frame_transform = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(frame_wxyz), frame_pos)
     result = jax.vmap(lambda pos, offset: frame_transform @ pos + offset)(target_pos, offsets)
+    print(f"[DEBUG] transform_and_offset: result type: {type(result)}, shape: {getattr(result, 'shape', None)}")
     log.debug(f"transform and offset time: {time.time() - start_time:.4f}s")
     return result

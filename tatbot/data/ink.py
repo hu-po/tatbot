@@ -5,14 +5,14 @@ from tatbot.data import Yaml
 
 
 @dataclass
-class Ink:
+class Ink(Yaml):
     name: str
     """Name of this ink."""
     rgb: tuple[int, int, int]
     """Color of the ink in rgb (0-255)."""
 
 @dataclass
-class InkCap:
+class InkCap(Yaml):
     ink: Ink
     """Ink inside the inkcap."""
     name: str

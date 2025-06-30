@@ -5,7 +5,7 @@ import numpy as np
 import pyroki as pk
 import yourdfpy
 
-from tatbot.data.pose import Pose
+from tatbot.data.pose import Pose, Pos, Rot
 from tatbot.utils.log import get_logger
 
 log = get_logger('bot.urdf', '🧱')
@@ -38,7 +38,10 @@ def get_link_poses(
     all_link_poses = robot.forward_kinematics(joint_positions)
     pos = all_link_poses[link_indices, :3]
     wxyz = all_link_poses[link_indices, 3:]
-    link_poses = {link_name: Pose(pos=pos, wxyz=wxyz) for link_name in link_names}
+    link_poses = {
+        link_name: Pose(pos=Pos(xyz=pos[i]), rot=Rot(wxyz=wxyz[i]))
+        for i, link_name in enumerate(link_names)
+    }
     log.debug(f"link poses: {link_poses}")
     return link_poses
 
