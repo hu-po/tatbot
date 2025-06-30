@@ -2,9 +2,11 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from tatbot.data import Yaml
+
 
 @dataclass
-class Stroke:
+class Stroke(Yaml):
     description: str
     """Natural language description of the path."""
     arm: str

@@ -92,3 +92,6 @@ class Yaml:
 
     def __str__(self) -> str:
         return yaml.safe_dump(dataclass_to_dict(self), sort_keys=False, allow_unicode=True)
+
+    def to_dict(self):
+        return dataclass_to_dict(self)

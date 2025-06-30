@@ -408,8 +408,12 @@ def gen_from_svg(config: FromSVGConfig):
 
     strokes_path = os.path.join(output_dir, "strokes.yaml")
     log.info(f"💾 Saving strokes to {strokes_path}")
+
+    def filter_arrays(d):
+        return {k: v for k, v in d.items() if not (isinstance(v, (np.ndarray, list, tuple)) or "Array" in type(v).__name__)}
+
     with open(strokes_path, "w") as f:
-        yaml.dump(strokes, f)
+        yaml.safe_dump([tuple(filter_arrays(s.to_dict()) for s in pair) for pair in strokes], f)
 
     strokebatch: StrokeBatch = strokebatch_from_strokes(
         strokes=strokes,
