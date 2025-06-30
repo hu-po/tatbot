@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 @dataclass
 class TagConfig:
     family: str = "tag16h5"
@@ -22,5 +24,3 @@ class TagConfig:
     """ Dictionary of AprilTag IDs to URDF link names."""
     decision_margin: float = 20.0
     """Minimum decision margin for AprilTag detection filtering."""
-
-

@@ -134,8 +134,8 @@ def gen_from_svg(config: FromSVGConfig):
     assert image_height_px == plan.image_height_px, f"❌ Image height {image_height_px} does not match plan height {plan.image_height_px}"
     log.info(f"Loaded image: {image_path} with size {image_width_px}x{image_height_px}")
 
-    left_arm_paths: dict[str, svgpathtools.Path] = {}
-    right_arm_paths: dict[str, svgpathtools.Path] = {}
+    left_arm_paths: dict[str, list[svgpathtools.Path]] = {}
+    right_arm_paths: dict[str, list[svgpathtools.Path]] = {}
     for pen_name, svg_path in pens.items():
         assert pen_name in config_pens, f"❌ Pen {pen_name} not found in pens config"
         assert config_pens[pen_name]["name"] == pen_name, f"❌ Pen {pen_name} not found in pens config"
@@ -151,9 +151,9 @@ def gen_from_svg(config: FromSVGConfig):
         log.info(f"Found {len(paths)} paths")
         for path in paths:
             if arm == "left":
-                left_arm_paths[pen_name] = path
+                left_arm_paths.setdefault(pen_name, []).append(path)
             elif arm == "right":
-                right_arm_paths[pen_name] = path
+                right_arm_paths.setdefault(pen_name, []).append(path)
 
     def coords_from_path(path: svgpathtools.Path) -> tuple[np.ndarray, np.ndarray]:
         """Resample path evenly along the path and convert to pixel and meter coordinates."""
@@ -312,20 +312,18 @@ def gen_from_svg(config: FromSVGConfig):
     right_arm_inkcap_name = None # these will be used to determine when to inkdip
     left_arm_ptr: int = 0
     right_arm_ptr: int = 0
-    max_paths = max(len(left_arm_paths), len(right_arm_paths))
+    flat_left_paths = [(pen, path) for pen, paths in left_arm_paths.items() for path in paths]
+    flat_right_paths = [(pen, path) for pen, paths in right_arm_paths.items() for path in paths]
+    max_paths = max(len(flat_left_paths), len(flat_right_paths))
     for i in range(max_paths):
         print(f"[DEBUG] Loop index: {i}")
-        print(f"[DEBUG] left_arm_paths keys: {list(left_arm_paths.keys())}")
-        print(f"[DEBUG] right_arm_paths keys: {list(right_arm_paths.keys())}")
-        left_arm_path = left_arm_paths.get(i, None)
-        right_arm_path = right_arm_paths.get(i, None)
-        print(f"[DEBUG] left_arm_path type: {type(left_arm_path)}")
-        print(f"[DEBUG] right_arm_path type: {type(right_arm_path)}")
-        if left_arm_path is not None:
-            print(f"[DEBUG] left_arm_path: {left_arm_path}")
-        if right_arm_path is not None:
-            print(f"[DEBUG] right_arm_path: {right_arm_path}")
-        
+        print(f"[DEBUG] flat_left_paths: {len(flat_left_paths)} entries")
+        print(f"[DEBUG] flat_right_paths: {len(flat_right_paths)} entries")
+        left_arm_path = flat_left_paths[i][1] if i < len(flat_left_paths) else None
+        right_arm_path = flat_right_paths[i][1] if i < len(flat_right_paths) else None
+        # For inkcap name, use the pen name from the flat list if available
+        color_left_arm = flat_left_paths[i][0] if i < len(flat_left_paths) else None
+        color_right_arm = flat_right_paths[i][0] if i < len(flat_right_paths) else None
         if left_arm_path is None:
             left_arm_stroke = Stroke(
                 description="left arm at rest",
@@ -335,13 +333,12 @@ def gen_from_svg(config: FromSVGConfig):
                 arm="left",
             )
         elif left_arm_inkcap_name is not None:
-            # left arm has already performed inkdip
             print(f"[DEBUG] Calling coords_from_path for left_arm_path")
             pixel_coords, meter_coords = coords_from_path(left_arm_path)
             print(f"[DEBUG] left meter_coords shape: {meter_coords.shape}")
             left_arm_stroke = Stroke(
-                description=f"left arm stroke using {arm} arm",
-                arm=arm,
+                description=f"left arm stroke using left arm",
+                arm="left",
                 pixel_coords=pixel_coords,
                 ee_pos=meter_coords,
                 ee_wxyz=ee_wxyz_l,
@@ -353,7 +350,6 @@ def gen_from_svg(config: FromSVGConfig):
             left_arm_ptr += 1
         else:
             # left arm has not performed inkdip yet
-            color_left_arm = list(left_arm_paths.keys())[left_arm_ptr]
             left_arm_inkcap_name = inkpalette_color_to_name[color_left_arm]
             left_arm_stroke = Stroke(
                 description=f"left arm inkdip into {left_arm_inkcap_name}",
@@ -364,7 +360,6 @@ def gen_from_svg(config: FromSVGConfig):
                 dt=dt,
                 arm="left",
             )
-        
         if right_arm_path is None:
             right_arm_stroke = Stroke(
                 description="right arm at rest",
@@ -374,13 +369,12 @@ def gen_from_svg(config: FromSVGConfig):
                 arm="right",
             )
         elif right_arm_inkcap_name is not None:
-            # right arm has already performed inkdip
             print(f"[DEBUG] Calling coords_from_path for right_arm_path")
             pixel_coords, meter_coords = coords_from_path(right_arm_path)
             print(f"[DEBUG] right meter_coords shape: {meter_coords.shape}")
             right_arm_stroke = Stroke(
-                description=f"right arm stroke using {arm} arm",
-                arm=arm,
+                description=f"right arm stroke using right arm",
+                arm="right",
                 pixel_coords=pixel_coords,
                 ee_pos=meter_coords,
                 ee_wxyz=ee_wxyz_r,
@@ -392,7 +386,6 @@ def gen_from_svg(config: FromSVGConfig):
             right_arm_ptr += 1
         else:
             # right arm has not performed inkdip yet
-            color_right_arm = list(right_arm_paths.keys())[right_arm_ptr]
             right_arm_inkcap_name = inkpalette_color_to_name[color_right_arm]
             right_arm_stroke = Stroke(
                 description=f"right arm inkdip into {right_arm_inkcap_name}",
