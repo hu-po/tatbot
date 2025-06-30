@@ -48,7 +48,7 @@ class FromSVGConfig:
     """Name of the ink palette (InkPalette)."""
     left_arm_pose_name: str = "left/rest"
     """Name of the left arm pose (ArmPose)."""
-    righ_arm_pose_name: str = "right/rest"
+    right_arm_pose_name: str = "right/rest"
     """Name of the right arm pose (ArmPose)."""
     skin_name: str = "default"
     """Name of the skin (Skin)."""
@@ -73,7 +73,7 @@ def gen_from_svg(config: FromSVGConfig):
     left_arm_pose: ArmPose = ArmPose.from_name(config.left_arm_pose_name)
     log.info("✅ Loaded left arm pose")
     log.debug(f"Left arm pose: {left_arm_pose}")
-    right_arm_pose: ArmPose = ArmPose.from_name(config.righ_arm_pose_name)
+    right_arm_pose: ArmPose = ArmPose.from_name(config.right_arm_pose_name)
     log.info("✅ Loaded right arm pose")
     log.debug(f"Right arm pose: {right_arm_pose}")
     rest_pose: np.ndarray = np.concatenate([right_arm_pose.joints, left_arm_pose.joints])
@@ -321,9 +321,16 @@ def gen_from_svg(config: FromSVGConfig):
         print(f"[DEBUG] flat_right_paths: {len(flat_right_paths)} entries")
         left_arm_path = flat_left_paths[i][1] if i < len(flat_left_paths) else None
         right_arm_path = flat_right_paths[i][1] if i < len(flat_right_paths) else None
-        # For inkcap name, use the pen name from the flat list if available
         color_left_arm = flat_left_paths[i][0] if i < len(flat_left_paths) else None
         color_right_arm = flat_right_paths[i][0] if i < len(flat_right_paths) else None
+
+        # Look ahead to see if a stroke will follow an inkdip for each arm
+        next_left_arm_path = flat_left_paths[i+1][1] if (i+1) < len(flat_left_paths) else None
+        next_right_arm_path = flat_right_paths[i+1][1] if (i+1) < len(flat_right_paths) else None
+        next_color_left_arm = flat_left_paths[i+1][0] if (i+1) < len(flat_left_paths) else None
+        next_color_right_arm = flat_right_paths[i+1][0] if (i+1) < len(flat_right_paths) else None
+
+        # LEFT ARM LOGIC
         if left_arm_path is None:
             left_arm_stroke = Stroke(
                 description="left arm at rest",
@@ -349,17 +356,28 @@ def gen_from_svg(config: FromSVGConfig):
             left_arm_inkcap_name = None # inkdip on next stroke
             left_arm_ptr += 1
         else:
-            # left arm has not performed inkdip yet
-            left_arm_inkcap_name = inkpalette_color_to_name[color_left_arm]
-            left_arm_stroke = Stroke(
-                description=f"left arm inkdip into {left_arm_inkcap_name}",
-                is_inkdip=True,
-                inkcap=left_arm_inkcap_name,
-                ee_pos=make_inkdip_pos(color_left_arm),
-                ee_wxyz=ee_wxyz_l,
-                dt=dt,
-                arm="left",
-            )
+            # Only perform inkdip if a stroke will follow
+            if next_left_arm_path is not None:
+                left_arm_inkcap_name = inkpalette_color_to_name[color_left_arm]
+                left_arm_stroke = Stroke(
+                    description=f"left arm inkdip into {left_arm_inkcap_name}",
+                    is_inkdip=True,
+                    inkcap=left_arm_inkcap_name,
+                    ee_pos=make_inkdip_pos(color_left_arm),
+                    ee_wxyz=ee_wxyz_l,
+                    dt=dt,
+                    arm="left",
+                )
+            else:
+                left_arm_stroke = Stroke(
+                    description="left arm at rest",
+                    ee_pos=np.zeros((plan.path_length, 3)),
+                    ee_wxyz=ee_wxyz_l,
+                    dt=dt,
+                    arm="left",
+                )
+
+        # RIGHT ARM LOGIC
         if right_arm_path is None:
             right_arm_stroke = Stroke(
                 description="right arm at rest",
@@ -385,17 +403,26 @@ def gen_from_svg(config: FromSVGConfig):
             right_arm_inkcap_name = None # inkdip on next stroke
             right_arm_ptr += 1
         else:
-            # right arm has not performed inkdip yet
-            right_arm_inkcap_name = inkpalette_color_to_name[color_right_arm]
-            right_arm_stroke = Stroke(
-                description=f"right arm inkdip into {right_arm_inkcap_name}",
-                is_inkdip=True,
-                inkcap=right_arm_inkcap_name,
-                ee_pos=make_inkdip_pos(color_right_arm),
-                ee_wxyz=ee_wxyz_r,
-                dt=dt,
-                arm="right",
-            )
+            # Only perform inkdip if a stroke will follow
+            if next_right_arm_path is not None:
+                right_arm_inkcap_name = inkpalette_color_to_name[color_right_arm]
+                right_arm_stroke = Stroke(
+                    description=f"right arm inkdip into {right_arm_inkcap_name}",
+                    is_inkdip=True,
+                    inkcap=right_arm_inkcap_name,
+                    ee_pos=make_inkdip_pos(color_right_arm),
+                    ee_wxyz=ee_wxyz_r,
+                    dt=dt,
+                    arm="right",
+                )
+            else:
+                right_arm_stroke = Stroke(
+                    description="right arm at rest",
+                    ee_pos=np.zeros((plan.path_length, 3)),
+                    ee_wxyz=ee_wxyz_r,
+                    dt=dt,
+                    arm="right",
+                )
         print(f"[DEBUG] About to append strokes: left ee_pos shape: {left_arm_stroke.ee_pos.shape if hasattr(left_arm_stroke.ee_pos, 'shape') else 'N/A'}, right ee_pos shape: {right_arm_stroke.ee_pos.shape if hasattr(right_arm_stroke.ee_pos, 'shape') else 'N/A'}")
         strokes.append((left_arm_stroke, right_arm_stroke))
 

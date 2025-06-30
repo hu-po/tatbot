@@ -4,17 +4,29 @@ from dataclasses import dataclass
 
 import numpy as np
 import viser
-from _bot import BotConfig, get_link_indices, load_robot
-from _ink import InkConfig
-from _log import COLORS, get_logger, print_config, setup_log_with_config
 from viser.extras import ViserUrdf
 
-log = get_logger('_viz')
+from tatbot.bot.urdf import get_link_poses, load_robot
+from tatbot.data.ink import InkCap, InkPalette
+from tatbot.data.pose import ArmPose, Pose
+from tatbot.data.urdf import URDF
+from tatbot.utils.log import get_logger, print_config, setup_log_with_config
+
+log = get_logger('viz.base', '🖥️')
 
 @dataclass
 class BaseVizConfig:
     debug: bool = False
     """Enable debug logging."""
+
+    urdf_name: str = "default"
+    """Name of the urdf (URDF)."""
+    ink_palette_name: str = "default"
+    """Name of the ink palette (InkPalette)."""
+    left_arm_pose_name: str = "left/rest"
+    """Name of the left arm pose (ArmPose)."""
+    right_arm_pose_name: str = "right/rest"
+    """Name of the right arm pose (ArmPose)."""
 
     env_map_hdri: str = "forest"
     """HDRI for the environment map."""
@@ -29,10 +41,22 @@ class BaseVizConfig:
 class BaseViz:
     def __init__(self, config: BaseVizConfig):
         self.config = config
-        self.bot_config = BotConfig()
-        self.ink_config = InkConfig()
 
-        log.info("🖥️ Starting viser server...")
+        self.urdf: URDF = URDF.from_name(config.urdf_name)
+        log.info(f"✅ Loaded URDF: {self.urdf}")
+        log.debug(f"URDF: {self.urdf}")
+        self.left_arm_pose: ArmPose = ArmPose.from_name(config.left_arm_pose_name)
+        log.info("✅ Loaded left arm pose")
+        log.debug(f"Left arm pose: {self.left_arm_pose}")
+        self.right_arm_pose: ArmPose = ArmPose.from_name(config.right_arm_pose_name)
+        log.info("✅ Loaded right arm pose")
+        log.debug(f"Right arm pose: {self.right_arm_pose}")
+        self.rest_pose: np.ndarray = np.concatenate([self.right_arm_pose.joints, self.left_arm_pose.joints])
+        self.ink_palette: InkPalette = InkPalette.from_name(config.ink_palette_name)
+        log.info(f"✅ Loaded ink palette: {self.ink_palette}")
+        log.debug(f"Ink palette: {self.ink_palette}")
+
+        log.info("Starting viser server")
         self.server: viser.ViserServer = viser.ViserServer()
         self.server.scene.set_environment_map(hdri=config.env_map_hdri, background=True)
 
@@ -50,43 +74,36 @@ class BaseViz:
             initial_value=self.config.speed,
         )
 
-    def add_robot(self, config: BotConfig):
-        log.debug(f"🖥️ Adding robot to viser from URDF at {config.urdf_path}...")
-        _urdf, self.robot = load_robot(config.urdf_path)
-        self.ee_link_indices = get_link_indices(config.urdf_path, config.target_link_names)
+        log.debug("Adding robot to viser from URDF")
+        _urdf, self.robot = load_robot(self.urdf.path)
         self.urdf = ViserUrdf(self.server, _urdf, root_node_name="/root")
-        self.joints = config.rest_pose.copy()
+        self.joints = self.rest_pose.copy()
         self.robot_at_rest: bool = True
     
-    def add_inkpalette(self, config: InkConfig):
-        log.debug(f"🖥️ Adding inkpalette to viser...")
-        for cap_name, cap in config.inkcaps.items():
-            pos = tuple(np.array(config.inkpalette_pos))
-            radius = cap.diameter_m / 2
-            color = COLORS.get(cap.color.lower(), (0, 0, 0))
+        log.debug("Adding inkpalette to viser")
+        link_poses = get_link_poses(self.urdf.path, self.urdf.ink_link_names, self.rest_pose)
+        for inkcap in self.ink_palette.inkcaps:
             self.server.scene.add_icosphere(
-                name=f"/inkcaps/{cap_name}",
-                radius=radius,
-                color=color,
-                position=pos,
+                name=f"/inkcaps/{inkcap.name}",
+                radius=inkcap.diameter_m / 2,
+                color=inkcap.ink.rgb,
+                position=tuple(link_poses[inkcap.name].pos.xyz),
                 subdivisions=4,
                 visible=True,
             )
 
     def step(self):
-        log.info("🖥️ Empty step function, implement in subclass...")
+        log.info("Empty step function, implement in subclass")
         pass
 
     def run(self):
-        self.add_robot(self.bot_config)
-        self.add_inkpalette(self.ink_config)
         while True:
             start_time = time.time()
             if self.urdf is not None:
-                log.debug(f"🖥️ Updating viser robot...")
+                log.debug("Updating viser robot")
                 self.urdf.update_cfg(self.joints)
             self.step()
-            log.debug(f"🖥️ step time: {time.time() - start_time:.4f}s")
+            log.debug(f"Step time: {time.time() - start_time:.4f}s")
             time.sleep(self.step_sleep / self.speed_slider.value)
 
 if __name__ == "__main__":

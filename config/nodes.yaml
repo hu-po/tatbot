@@ -9,23 +9,23 @@ nodes:
     user: trossen-ai
     emoji: "🦾"
     deps: ".[bot]"
-  - name: ook
-    ip: 192.168.1.90
-    user: ook
-    emoji: "🦧"
-    deps: ".[gen,dev]"
   - name: rpi1
     ip: 192.168.1.98
     user: rpi1
     emoji: "🍓"
-    deps: ".[scan]"
+    deps: ".[tag]"
   - name: rpi2
     ip: 192.168.1.99
     user: rpi2
     emoji: "🍇"
     deps: ".[viz]"
+  - name: ook
+    ip: 192.168.1.90
+    user: ook
+    emoji: "🦧"
+    deps: ".[gen,dev,viz]"
   - name: oop
     ip: 192.168.1.51
     user: oop
     emoji: "🦊"
-    deps: ".[gen,dev]"
+    deps: ".[gen,dev,viz]"
