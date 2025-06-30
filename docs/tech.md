@@ -234,11 +234,18 @@ TODO: these will somewhat randomly fail, need to create robust exception handlin
 
 ## PoE IP Cameras
 
-tatbot uses 5 poe ip cameras to create a 3d skin reconstruction: see `_cam.py` and `config/cameras.yaml`.
+tatbot uses 5 poe ip cameras to create a 3d skin reconstruction: see `src/data/cam.py` and `config/cam/default.yaml`.
 
 ## AprilTags
 
 Objects (i.e. ink palette) in the scene are tracked using [AprilTags](https://chaitanyantr.github.io/apriltag.html).
+
+## Artwork
+
+tatbot uses image generators to generate artwork, and then vectorizes the artwork into strokes executed by the arms.
+
+- [Replicate Playground](https://replicate.com/playground)
+- [DrawingBotV3](https://docs.drawingbotv3.com/en/latest/index.html)
 
 ## Models - VLAs
 
