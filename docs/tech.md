@@ -10,21 +10,14 @@ description of tatbot (tattoo robot) technical stack
   - [Dependencies](#dependencies)
   - [Devices](#devices)
   - [Networking](#networking)
-  - [MCP](#mcp)
+  - [Models - VLAs](#models---vlas)
 - [Hardware](#hardware)
   - [Trossen Robot Arms](#trossen-robot-arms)
   - [URDF](#urdf)
   - [Realsense Cameras](#realsense-cameras)
   - [PoE IP Cameras](#poe-ip-cameras)
   - [AprilTags](#apriltags)
-- [Models - VLAs](#models---vlas)
-  - [SmolVLA](#smolvla)
-    - [Train](#train-smolvla)
-    - [Eval](#eval-smolvla)
-  - [Gr00t](#gr00t)
-    - [Train](#train-gr00t) 
-    - [Eval](#eval-gr00t)
-- [Models - VGGT](#models---vggt)
+- [Artwork](#artwork)
 
 ## Run
 
@@ -37,7 +30,10 @@ source scripts/env.sh
 
 tatbot is designed as a multi-node system, with the following roles:
 
-`oop` 🦊 and `ook` 🦧 are the main nodes, they generate images and create plans (using gpu) and run the mcp server to interact with tatbot
+`oop` 🦊 and `ook` 🦧 are the main nodes, they:
+- generate images and create plans (using gpu)
+- run the mcp server to interact with tatbot
+- run the visualization server to view plans
 
 ```bash
 # optionally install dev dependencies
@@ -70,49 +66,26 @@ uv pip install .[tag] && \
 uv run tatbot.tag.scan --bot_scan_dir ~/tatbot/outputs/ --debug
 ```
 
-`rpi2` 🍇 runs visualization:
+`rpi2` 🍇 hosts the network drive, which contains the output directory for all nodes
 
 ```bash
 uv pip install .[viz] && \
 uv run -m tatbot.viz.plan --plan_dir ~/tatbot/outputs/plans/yawning_cat
 ```
 
-## MCP
-
-tatbot uses the [MCP](https://github.com/modelcontextprotocol/python-sdk) protocol to communicate between nodes.
-
-```bash
-uv pip install .[mcp]
-uv run tatbot.net.mcp_server
-```
-
-go to Cursor Settings > Tools and toggle the tatbot mcp server
-
 ## Dependencies
 
 tatbot makes use of python dependencies managed using [`uv`](https://docs.astral.sh/uv/getting-started/installation/): see `pyproject.toml`.
-dependencies are seperated into optional groups:
 
-`.`
 - [`mcp-python`](https://github.com/modelcontextprotocol/python-sdk) - model context protocol
 - [`paramiko`](https://github.com/paramiko/paramiko) - multi-node management (ftl, ssh)
-
-`.[gen]`
 - [`jax`](https://github.com/jax-ml/jax) - gpu acceleration
 - [`pyroki`](https://github.com/chungmin99/pyroki) - inverse kinematics
-
-`.[vla]`
 - [`gr00t`](https://github.com/hu-po/Isaac-GR00T) - VLA foundation model
-
-`.[bot]`
 - [`trossen_arm`](https://github.com/TrossenRobotics/trossen_arm) - robot arms
 - [`pyrealsense2`](https://github.com/IntelRealSense/librealsense) - depth cameras
 - [`lerobot`](https://github.com/hu-po/lerobot) - dataset, finetuning
-
-`.[viz]`
 - [`viser`](https://github.com/nerfstudio-project/viser) - GUI
-
-`.[tag]`
 - [`pupil-apriltags`](https://github.com/pupil-labs/apriltags) - object tracking
 - [`ffmpeg-python`](https://github.com/kkroening/ffmpeg-python) - cameras
 
@@ -195,8 +168,20 @@ tatbot uses shared ssh keys for nodes to talk, send files, and run remote comman
 to setup the network:
 
 ```bash
-uv run _net.py --debug
+uv run tatbot.net.net
 ```
+
+NFS setup: [wiki](wiki/nfs.md)
+
+## Models - VLAs
+
+[wiki](wiki/vlas.md)
+
+Vision Language Action models are used to perform robot behaviors.
+Finetuning pretrained VLAs is done by using lerobot dataset format, see [datasets here](https://huggingface.co/tatbot).
+Use the [lerobot dataset visualizer](https://huggingface.co/spaces/lerobot/visualize_dataset).
+Experiment logs on [wandb](https://wandb.ai/hug/tatbot-calib).
+
 
 ## Trossen Robot Arms
 
@@ -237,144 +222,3 @@ tatbot uses image generators to generate artwork, and then vectorizes the artwor
 
 - [Replicate Playground](https://replicate.com/playground)
 - [DrawingBotV3](https://docs.drawingbotv3.com/en/latest/index.html)
-
-## Models - VLAs
-
-Vision Language Action models are used to perform robot behaviors.
-Finetuning pretrained VLAs is done by using lerobot dataset format, see [datasets here](https://huggingface.co/tatbot).
-Use the [lerobot dataset visualizer](https://huggingface.co/spaces/lerobot/visualize_dataset).
-Experiment logs on [wandb](https://wandb.ai/hug/tatbot-calib).
-
-### SmolVLA
-
-[blog](https://huggingface.co/blog/smolvla)
-[model](https://huggingface.co/lerobot/smolvla_base)
-
-#### Train
-
-instructions for `oop`
-
-```bash
-# basic install
-git clone --depth=1 https://github.com/hu-po/lerobot.git && \
-cd lerobot/
-# setup uv venv
-uv venv && \
-source .venv/bin/activate && \
-uv pip install -e ".[smolvla]"
-# run training
-wandb login
-uv run python ~/lerobot/lerobot/scripts/train.py \
-  --policy.path=lerobot/smolvla_base \
-  --dataset.repo_id=tatbot/tatbot-calib-test \
-  --output_dir=~/tatbot/output/train/calib-test/smolvla \
-  --batch_size=64 \
-  --wandb.enable=true \
-  --wandb.project=tatbot-calib \
-  --steps=1000
-```
-
-#### Eval
-
-instructions for `trossen-ai` performing model inference and running robot
-
-```bash
-# TODO
-```
-
-### Gr00t
-
-[blog](https://huggingface.co/blog/nvidia/gr00t-n1-5-so101-tuning)
-[model](https://huggingface.co/nvidia/GR00T-N1.5-3B)
-[repo](https://github.com/NVIDIA/Isaac-GR00T)
-
-#### Train
-
-instructions for `oop`
-
-```bash
-# basic install
-git clone --depth 1 https://github.com/hu-po/Isaac-GR00T.git && \
-cd Isaac-GR00T/
-# setup uv venv
-uv venv --python=3.11 && \
-source .venv/bin/activate && \
-uv pip install .[base]
-# download dataset locally
-export DATASET_DIR="/home/oop/tatbot/output/train/tatbot-calib-test/dataset" && \
-huggingface-cli download \
-  --repo-type dataset tatbot/tatbot-calib-test \
-  --local-dir $DATASET_DIR
-# copy modality config file
-cp /home/oop/tatbot/config/gr00t_modality.json $DATASET_DIR/meta/modality.json
-# load dataset
-python scripts/load_dataset.py \
-  --dataset-path $DATASET_DIR \
-  --embodiment-tag new_embodiment \
-  --plot-state-action \
-  --steps 64 \
-  --video-backend torchvision_av
-# train with docker
-docker build -f Dockerfile -t gr00t-train .
-docker run -it --gpus all --shm-size=8g --rm \
-  -e WANDB_RUN_ID="gr00t-test" \
-  -e WANDB_PROJECT="tatbot-calib" \
-  -v $DATASET_DIR:/dataset \
-  -v $HF_HOME:/root/.cache/huggingface \
-  -v /home/oop/tatbot/output/train/tatbot-calib-test/gr00t:/output \
-  -v /home/oop/Isaac-GR00T:/workspace \
-  gr00t-train \
-  bash -c "pip install -e . --no-deps && \
-  python scripts/gr00t_finetune.py \
-    --dataset-path /dataset \
-    --embodiment-tag new_embodiment \
-    --num-gpus 1 \
-    --output-dir /output \
-    --max-steps 10000 \
-    --data-config tatbot \
-    --batch_size 1 \
-    --video-backend torchvision_av"
-```
-
-#### Eval
-
-instructions for `ojo`, acting as the policy server
-
-```bash
-# basic install
-git clone https://github.com/hu-po/Isaac-GR00T.git && \
-cd Isaac-GR00T/
-# copy policy checkpoint into ojo
-scp oop@192.168.1.53:/home/oop/tatbot/output/train/tatbot-calib-test/gr00t /tmp/gr00t
-# policy with dockerfile
-docker build -f orin.Dockerfile -t gr00t-eval .
-docker run -it --gpus all --rm \
-  -v /tmp/gr00t:/checkpoint \
-  -v /home/ojo/Isaac-GR00T:/workspace \
-  gr00t-eval \
-  bash -c "pip3 install .[orin] && \
-  python scripts/inference_service.py --server \
-    --model_path /checkpoint \
-    --embodiment-tag new_embodiment \
-    --data-config tatbot \
-    --denoising-steps 4"
-```
-
-instructions for `trossen-ai` acting as the robot client
-
-```bash
-git clone https://github.com/hu-po/Isaac-GR00T.git && \
-cd Isaac-GR00T/
-# setup uv venv
-uv venv --python=3.11 && \
-source .venv/bin/activate && \
-uv pip install .[base]
-# run robot client
-python getting_started/examples/eval_lerobot.py \
-    --robot.type=tatbot \
-    --policy_host=192.168.1.96 \
-    --lang_instruction="move slightly upwards in z"
-```
-
-## Models - VGGT
-

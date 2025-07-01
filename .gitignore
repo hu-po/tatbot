@@ -169,3 +169,6 @@ assets/*
 
 # old directory
 old/
+
+# nfs drive
+nfs/
