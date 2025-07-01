@@ -24,7 +24,7 @@ class BotScanConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    output_dir: str = "~/tatbot/output/bot"
+    output_dir: str = "~/tatbot/nfs/bot"
     """Directory to save the dataset."""
 
     hf_username: str = "tatbot"
