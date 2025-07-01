@@ -17,6 +17,7 @@ def strokebatch_from_strokes(
     urdf_path: str,
     link_names: tuple[str, ...],
     design_pose: Pose,
+    needle_hover_offset: Pos,
 ) -> StrokeBatch:
     """
     Convert a list of (Stroke, Stroke) tuples into a StrokeBatch, running IK to fill in joint values.
@@ -31,7 +32,6 @@ def strokebatch_from_strokes(
     ee_wxyz_r = np.zeros((b, l, 4), dtype=np.float32)
     dt = np.zeros((b, l), dtype=np.float32)
     for i, (stroke_l, stroke_r) in enumerate(strokelist.strokes):
-        # Only transform if not inkdip or alignment
         if not stroke_l.is_inkdip and not stroke_l.is_alignment:
             ee_pos_l[i] = transform_and_offset(
                 stroke_l.ee_pos,
@@ -51,6 +51,11 @@ def strokebatch_from_strokes(
         ee_wxyz_l[i] = stroke_l.ee_wxyz
         ee_wxyz_r[i] = stroke_r.ee_wxyz
         dt[i] = stroke_l.dt.squeeze() if hasattr(stroke_l.dt, 'squeeze') else stroke_l.dt
+        # first and last poses in each stroke are offset by hover offset
+        ee_pos_l[i, 0] += needle_hover_offset.xyz
+        ee_pos_l[i, -1] += needle_hover_offset.xyz
+        ee_pos_r[i, 0] += needle_hover_offset.xyz
+        ee_pos_r[i, -1] += needle_hover_offset.xyz
     # Prepare IK targets: shape (b*l, 2, ...)
     target_pos = np.stack([ee_pos_l, ee_pos_r], axis=2).reshape(b * l, 2, 3)
     target_wxyz = np.stack([ee_wxyz_l, ee_wxyz_r], axis=2).reshape(b * l, 2, 4)
