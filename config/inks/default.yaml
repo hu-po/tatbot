@@ -6,7 +6,7 @@ inkcaps:
   #   diameter_m: 0.008
   #   depth_m: 0.01
   - ink:
-      name: true_black
+      name: true_blue
       rgb: [0, 0, 0]
     name: inkcap_large
     diameter_m: 0.014
