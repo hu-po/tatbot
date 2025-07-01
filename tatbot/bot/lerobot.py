@@ -1,7 +1,7 @@
 from typing import Any, Callable
 
-from lerobot.common.robots import make_robot_from_config
-from lerobot.common.robots.tatbot.config_tatbot import TatbotBotOnlyConfig
+from lerobot.robots import make_robot_from_config
+from lerobot.robots.tatbot.config_tatbot import TatbotBotOnlyConfig
 
 from tatbot.utils.log import get_logger
 
