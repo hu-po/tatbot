@@ -667,7 +667,7 @@
     <parent link="left/link_6"/>
     <child link="left/carriage_right"/>
     <axis xyz="0 -1 0"/>
-    <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
+    <limit effort="400.0" lower="0.0" upper="0.001" velocity="0.0875"/>
   </joint>
   <link name="left/carriage_left">
     <inertial>
@@ -694,7 +694,7 @@
     <parent link="left/link_6"/>
     <child link="left/carriage_left"/>
     <axis xyz="0 1 0"/>
-    <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
+    <limit effort="400.0" lower="0.0" upper="0.001" velocity="0.0875"/>
   </joint>
   <link name="left/leader_finger_left_thumb">
     <inertial>
@@ -998,7 +998,7 @@
     <parent link="right/link_6"/>
     <child link="right/carriage_right"/>
     <axis xyz="0 -1 0"/>
-    <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
+    <limit effort="400.0" lower="0.0" upper="0.001" velocity="0.0875"/>
   </joint>
   <link name="right/carriage_left">
     <inertial>
@@ -1025,7 +1025,7 @@
     <parent link="right/link_6"/>
     <child link="right/carriage_left"/>
     <axis xyz="0 1 0"/>
-    <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
+    <limit effort="400.0" lower="0.0" upper="0.001" velocity="0.0875"/>
   </joint>
   <link name="right/leader_finger_right_thumb">
     <inertial>
