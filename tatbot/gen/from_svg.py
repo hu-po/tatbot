@@ -417,8 +417,8 @@ def gen_from_svg(config: FromSVGConfig):
     # copy the plan yaml to the output directory
     plan.name = config.name # override the plan name
     plan_path = os.path.join(output_dir, "plan.yaml")
-    log.info(f"💾 Copying plan to {plan_path}")
-    shutil.copy(plan.yaml_path_from_name(config.plan_name), plan_path)
+    log.info(f"💾 Saving plan yaml to {plan_path}")
+    plan.to_yaml(plan_path)
 
 if __name__ == "__main__":
     args = setup_log_with_config(FromSVGConfig)
