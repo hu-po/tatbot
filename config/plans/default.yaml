@@ -19,10 +19,10 @@ ee_wxyz_l:
 ee_wxyz_r:
   wxyz: [0.5, -0.5, 0.5, 0.5]
 inkdip_hover_offset:
-  xyz: [0.0, 0.0, 0.01]
+  xyz: [0.0, 0.0, 0.003]
 needle_hover_offset:
   xyz: [0.0, 0.0, 0.006]
 needle_offset_l:
-  xyz: [0.0, 0.0, -0.0056]
+  xyz: [0.0, 0.0, -0.007]
 needle_offset_r:
-  xyz: [0.0, 0.0, -0.0062]
+  xyz: [0.0, 0.0, -0.007]
