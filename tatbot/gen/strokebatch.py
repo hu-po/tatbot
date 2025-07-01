@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 import numpy as np
 
-from tatbot.data.pose import Pose
+from tatbot.data.pose import Pose, Pos
 from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
 from tatbot.gpu.ik import batch_ik, transform_and_offset
