@@ -407,6 +407,8 @@ def gen_from_svg(config: FromSVGConfig):
         link_names=urdf.ee_link_names,
         design_pose=skin.design_pose,
         needle_hover_offset=plan.needle_hover_offset,
+        needle_offset_l=plan.needle_offset_l,
+        needle_offset_r=plan.needle_offset_r,
     )
     strokebatch_path = os.path.join(output_dir, f"strokebatch.safetensors")
     log.info(f"💾 Saving strokebatch to {strokebatch_path}")

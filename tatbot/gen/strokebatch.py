@@ -18,6 +18,8 @@ def strokebatch_from_strokes(
     link_names: tuple[str, ...],
     design_pose: Pose,
     needle_hover_offset: Pos,
+    needle_offset_l: Pos,
+    needle_offset_r: Pos,
 ) -> StrokeBatch:
     """
     Convert a list of (Stroke, Stroke) tuples into a StrokeBatch, running IK to fill in joint values.
@@ -36,7 +38,8 @@ def strokebatch_from_strokes(
             ee_pos_l[i] = transform_and_offset(
                 stroke_l.ee_pos,
                 design_pose.pos.xyz,
-                design_pose.rot.wxyz
+                design_pose.rot.wxyz,
+                needle_offset_l.xyz,
             )
         else:
             ee_pos_l[i] = stroke_l.ee_pos
@@ -44,7 +47,8 @@ def strokebatch_from_strokes(
             ee_pos_r[i] = transform_and_offset(
                 stroke_r.ee_pos,
                 design_pose.pos.xyz,
-                design_pose.rot.wxyz
+                design_pose.rot.wxyz,
+                needle_offset_r.xyz,
             )
         else:
             ee_pos_r[i] = stroke_r.ee_pos
