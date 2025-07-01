@@ -7,6 +7,9 @@ from tatbot.data.pose import Pos, Rot
 
 @dataclass
 class Plan(Yaml):
+    name: str
+    """Name of the plan."""
+
     left_arm_pen_names: list[str]
     """Name of pens that will be drawn using left arm."""
     right_arm_pen_names: list[str]

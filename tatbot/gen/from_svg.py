@@ -410,6 +410,7 @@ def gen_from_svg(config: FromSVGConfig):
     strokebatch.save(strokebatch_path)
 
     # copy the plan yaml to the output directory
+    plan.name = config.name # override the plan name
     plan_path = os.path.join(output_dir, "plan.yaml")
     log.info(f"💾 Copying plan to {plan_path}")
     shutil.copy(plan.yaml_path_from_name(config.plan_name), plan_path)
