@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 import psutil
-
-from tatbot.utils.log import get_logger, print_config, setup_log_with_config
-from tatbot.net.net import NetworkManager
 from mcp.server.fastmcp import FastMCP
+
+from tatbot.net.net import NetworkManager
+from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger('run_mcp', '🔌')
 

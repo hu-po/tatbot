@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass
 class TagConfig:
     family: str = "tag16h5"

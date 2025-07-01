@@ -5,7 +5,7 @@ import numpy as np
 import pyroki as pk
 import yourdfpy
 
-from tatbot.data.pose import Pose, Pos, Rot
+from tatbot.data.pose import Pos, Pose, Rot
 from tatbot.utils.log import get_logger
 
 log = get_logger('bot.urdf', '🧱')

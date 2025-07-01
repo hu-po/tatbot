@@ -16,12 +16,18 @@ from lerobot.common.utils.control_utils import (
 from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.record import _init_rerun
 
-from tatbot.data.pose import ArmPose, make_bimanual_joints
-from tatbot.data.plan import Plan
-from tatbot.data.strokebatch import StrokeBatch
-from tatbot.data.strokelist import StrokeList
 from tatbot.bot.lerobot import safe_loop, urdf_joints_to_action
-from tatbot.utils.log import LOG_FORMAT, TIME_FORMAT, get_logger, print_config, setup_log_with_config
+from tatbot.data.plan import Plan
+from tatbot.data.pose import ArmPose, make_bimanual_joints
+from tatbot.data.stroke import StrokeList
+from tatbot.data.strokebatch import StrokeBatch
+from tatbot.utils.log import (
+    LOG_FORMAT,
+    TIME_FORMAT,
+    get_logger,
+    print_config,
+    setup_log_with_config,
+)
 
 log = get_logger('bot.plan', '🤖')
 

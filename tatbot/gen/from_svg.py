@@ -3,8 +3,8 @@ import json
 import logging
 import os
 import re
-from dataclasses import dataclass
 import shutil
+from dataclasses import dataclass
 
 import numpy as np
 import svgpathtools

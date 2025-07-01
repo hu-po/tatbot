@@ -1,8 +1,8 @@
 import os
-import numpy as np
 from dataclasses import asdict, is_dataclass
 from typing import Any, Type, TypeVar
 
+import numpy as np
 import yaml
 
 from tatbot.utils.log import get_logger

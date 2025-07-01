@@ -1,8 +1,8 @@
 import os
 from dataclasses import dataclass
 
-from tatbot.data.pose import Pos, Rot
 from tatbot.data import Yaml
+from tatbot.data.pose import Pos, Rot
 
 
 @dataclass

@@ -3,8 +3,8 @@ import os
 from dataclasses import dataclass
 
 from tatbot.data.scan import Scan
-from tatbot.viz.base import BaseViz, BaseVizConfig
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
+from tatbot.viz.base import BaseViz, BaseVizConfig
 
 log = get_logger('viz.plan', '🖥️')
 

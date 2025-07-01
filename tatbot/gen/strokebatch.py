@@ -1,5 +1,5 @@
-import numpy as np
 import jax.numpy as jnp
+import numpy as np
 
 from tatbot.data.pose import Pose
 from tatbot.data.stroke import StrokeList

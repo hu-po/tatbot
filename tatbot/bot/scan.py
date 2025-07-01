@@ -13,9 +13,15 @@ from lerobot.common.robots.tatbot.config_tatbot import TatbotScanConfig
 from lerobot.common.utils.control_utils import sanity_check_dataset_name
 from lerobot.record import _init_rerun
 
-from tatbot.data.pose import ArmPose, make_bimanual_joints
 from tatbot.bot.lerobot import safe_loop, urdf_joints_to_action
-from tatbot.utils.log import LOG_FORMAT, TIME_FORMAT, get_logger, print_config, setup_log_with_config
+from tatbot.data.pose import ArmPose, make_bimanual_joints
+from tatbot.utils.log import (
+    LOG_FORMAT,
+    TIME_FORMAT,
+    get_logger,
+    print_config,
+    setup_log_with_config,
+)
 
 log = get_logger('bot.scan', '🤖')
 
