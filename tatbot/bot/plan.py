@@ -30,10 +30,10 @@ class BotPlanConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    plan_dir: str = "~/tatbot/output/plans/yawning_cat"
+    plan_dir: str = "~/tatbot/nfs/plans/yawning_cat"
     """Directory containing plan."""
 
-    output_dir: str = "~/tatbot/output/bot"
+    output_dir: str = "~/tatbot/nfs/bot"
     """Directory to save the dataset."""
 
     hf_username: str = "tatbot"

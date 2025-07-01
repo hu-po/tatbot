@@ -33,9 +33,9 @@ class FromSVGConfig:
 
     name: str = "yawning_cat"
     """Name of the SVG file"""
-    design_dir: str = f"~/tatbot/assets/designs/{name}"
+    design_dir: str = f"~/tatbot/nfs/designs/{name}"
     """Directory containing the design svg (per pen) and png file."""
-    output_dir: str = os.path.expanduser(f"~/tatbot/output/plans/{name}")
+    output_dir: str = f"~/tatbot/nfs/plans/{name}"
     """Directory to save the plan."""
 
     pens_config_path: str = "~/tatbot/config/drawingbotv3/pens/fullcolor.json"

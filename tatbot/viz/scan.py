@@ -10,7 +10,7 @@ log = get_logger('viz.plan', '🖥️')
 
 @dataclass
 class VizScanConfig(BaseVizConfig):
-    scan_dir: str = os.path.expanduser("~/tatbot/output/record/scan-test")
+    scan_dir: str = "~/tatbot/nfs/record/scan-test"
     """Directory containing scan."""
 
     realsense_frustrum_scale: float = 0.02
