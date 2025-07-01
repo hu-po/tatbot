@@ -16,7 +16,8 @@ from lerobot.common.utils.control_utils import (
 from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.record import _init_rerun
 
-from tatbot.bot.lerobot import safe_loop, urdf_joints_to_action
+from tatbot.bot.lerobot import safe_loop
+from tatbot.bot.urdf import urdf_joints_to_action
 from tatbot.data.plan import Plan
 from tatbot.data.pose import ArmPose, make_bimanual_joints
 from tatbot.data.stroke import StrokeList
