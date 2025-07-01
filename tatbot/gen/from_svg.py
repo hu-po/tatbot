@@ -33,9 +33,9 @@ class FromSVGConfig:
 
     name: str = "yawning_cat"
     """Name of the SVG file"""
-    design_dir: str = f"~/tatbot/nfs/designs/{name}"
+    design_dir: str = "~/tatbot/nfs/designs"
     """Directory containing the design svg (per pen) and png file."""
-    output_dir: str = f"~/tatbot/nfs/plans/{name}"
+    output_dir: str = "~/tatbot/nfs/plans"
     """Directory to save the plan."""
 
     pens_config_path: str = "~/tatbot/config/drawingbotv3/pens/fullcolor.json"
@@ -58,10 +58,12 @@ def gen_from_svg(config: FromSVGConfig):
     log.info(f"Generating {config.name} ...")
     
     design_dir = os.path.expanduser(config.design_dir)
+    design_dir = os.path.join(design_dir, config.name)
     assert os.path.exists(design_dir), f"❌ Design directory {design_dir} does not exist"
     log.debug(f"📂 Design directory: {design_dir}")
 
     output_dir = os.path.expanduser(config.output_dir)
+    output_dir = os.path.join(output_dir, config.name)
     log.info(f"📂 Output directory: {output_dir}")
     os.makedirs(output_dir, exist_ok=True)
 
