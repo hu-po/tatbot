@@ -37,6 +37,7 @@ declare -A IGNORE_DIRS=(
   ["$TATBOT_ROOT/.venv"]=""
   ["$TATBOT_ROOT/build"]=""
   ["$TATBOT_ROOT/tatbot.egg-info"]=""
+  ["$TATBOT_ROOT/nfs"]=""
 )
 
 declare -A DIRECTORIES=(
