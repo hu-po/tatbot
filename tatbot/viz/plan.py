@@ -16,7 +16,9 @@ log = get_logger('viz.plan', '🖥️')
 
 @dataclass
 class VizPlanConfig(BaseVizConfig):
-    plan_dir: str = "~/tatbot/nfs/plans/yawning_cat"
+    plan_name: str = "smiley"
+    """Name of the plan (Plan)."""
+    plan_dir: str = "~/tatbot/nfs/plans"
     """Directory containing plan."""
 
     design_pointcloud_point_size: float = 0.001
@@ -33,6 +35,10 @@ class VizPlan(BaseViz):
     def __init__(self, config: VizPlanConfig):
         super().__init__(config)
         plan_dir = os.path.expanduser(config.plan_dir)
+        plan_dir = os.path.join(plan_dir, config.plan_name)
+        assert os.path.exists(plan_dir), f"❌ Plan directory {plan_dir} does not exist"
+        log.debug(f"📂 Plan directory: {plan_dir}")
+
         self.plan: Plan = Plan.from_yaml(os.path.join(plan_dir, "plan.yaml"))
         self.strokebatch: StrokeBatch = StrokeBatch.load(os.path.join(plan_dir, "strokebatch.safetensors"))
         self.strokes: StrokeList = StrokeList.from_yaml(os.path.join(plan_dir, "strokes.yaml"))
