@@ -6,11 +6,11 @@ import time
 from dataclasses import dataclass
 from io import StringIO
 
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.common.datasets.utils import build_dataset_frame, hw_to_dataset_features
-from lerobot.common.robots import make_robot_from_config
-from lerobot.common.robots.tatbot.config_tatbot import TatbotScanConfig
-from lerobot.common.utils.control_utils import sanity_check_dataset_name
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
+from lerobot.robots import make_robot_from_config
+from lerobot.robots.tatbot.config_tatbot import TatbotScanConfig
+from lerobot.utils.control_utils import sanity_check_dataset_name
 from lerobot.record import _init_rerun
 
 from tatbot.bot.lerobot import safe_loop, urdf_joints_to_action
