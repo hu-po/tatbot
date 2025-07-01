@@ -124,10 +124,10 @@ def record_plan(config: BotPlanConfig):
     if config.display_data:
         _init_rerun(session_name="recording")
 
-    plan_dir = os.path.join(dataset_dir, "plan")
-    log.info(f"🗃️ Creating plan directory at {plan_dir}...")
-    os.makedirs(plan_dir, exist_ok=True)
-    shutil.copytree(config.plan_dir, plan_dir, dirs_exist_ok=True)
+    dataset_plan_dir = os.path.join(dataset_dir, "plan")
+    log.info(f"🗃️ Creating plan directory inside dataset directory at {dataset_plan_dir}...")
+    os.makedirs(dataset_plan_dir, exist_ok=True)
+    shutil.copytree(plan_dir, dataset_plan_dir, dirs_exist_ok=True)
 
     logs_dir = os.path.join(dataset_dir, "logs")
     log.info(f"🗃️ Creating logs directory at {logs_dir}...")
