@@ -33,9 +33,9 @@ class Plan(Yaml):
     path_dt_slow: float
     """Time between poses in seconds for slow movement."""
 
-    ee_wxyz_l: Rot
+    ee_rot_l: Rot
     """<w, x, y, z> quaternion of left arm end effector when performing a stroke."""
-    ee_wxyz_r: Rot
+    ee_rot_r: Rot
     """<w, x, y, z> quaternion of right arm end effector when performing a stroke."""
 
     inkdip_hover_offset: Pos

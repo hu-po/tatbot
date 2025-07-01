@@ -197,8 +197,8 @@ def gen_from_svg(config: FromSVGConfig):
     dt[-2:] = plan.path_dt_slow
 
     # hardcoded orientations for left and right arm end effectors
-    ee_wxyz_l = np.tile(plan.ee_wxyz_l.wxyz, (plan.path_length, 1))
-    ee_wxyz_r = np.tile(plan.ee_wxyz_r.wxyz, (plan.path_length, 1))
+    ee_rot_l = np.tile(plan.ee_rot_l.wxyz, (plan.path_length, 1))
+    ee_rot_r = np.tile(plan.ee_rot_r.wxyz, (plan.path_length, 1))
 
     # start with "alignment" strokes
     alignment_inkcap = ink_palette.inkcaps[0]
@@ -213,7 +213,7 @@ def gen_from_svg(config: FromSVGConfig):
                     skin.design_pose.rot.wxyz,
                     plan.needle_hover_offset.xyz,
                 ),
-                ee_wxyz=ee_wxyz_l,
+                ee_rot=ee_rot_l,
                 dt=dt,
                 is_alignment=True,
                 arm="left",
@@ -226,7 +226,7 @@ def gen_from_svg(config: FromSVGConfig):
                     alignment_inkcap_pose.rot.wxyz,
                     plan.needle_hover_offset.xyz,
                 ),
-                ee_wxyz=ee_wxyz_r,
+                ee_rot=ee_rot_r,
                 dt=dt,
                 is_alignment=True,
                 arm="right",
@@ -244,7 +244,7 @@ def gen_from_svg(config: FromSVGConfig):
                     alignment_inkcap_pose.rot.wxyz,
                     plan.needle_hover_offset.xyz,
                 ),
-                ee_wxyz=ee_wxyz_l,
+                ee_rot=ee_rot_l,
                 dt=dt,
                 is_alignment=True,
                 arm="left",
@@ -257,7 +257,7 @@ def gen_from_svg(config: FromSVGConfig):
                     skin.design_pose.rot.wxyz,
                     plan.needle_hover_offset.xyz,
                 ),
-                ee_wxyz=ee_wxyz_r,
+                ee_rot=ee_rot_r,
                 dt=dt,
                 is_alignment=True,
                 arm="right",
@@ -274,14 +274,14 @@ def gen_from_svg(config: FromSVGConfig):
                 is_inkdip=True,
                 inkcap=left_arm_inkcap_name,
                 ee_pos=make_inkdip_pos(first_color_left_arm),
-                ee_wxyz=ee_wxyz_l,
+                ee_rot=ee_rot_l,
                 dt=dt,
                 arm="left",
             ),
             Stroke(
                 description="right arm at rest",
                 ee_pos=np.zeros((plan.path_length, 3)),
-                ee_wxyz=ee_wxyz_r,
+                ee_rot=ee_rot_r,
                 dt=dt,
                 arm="right",
             ),
@@ -308,7 +308,7 @@ def gen_from_svg(config: FromSVGConfig):
             left_arm_stroke = Stroke(
                 description="left arm at rest",
                 ee_pos=np.zeros((plan.path_length, 3)),
-                ee_wxyz=ee_wxyz_l,
+                ee_rot=ee_rot_l,
                 dt=dt,
                 arm="left",
             )
@@ -319,7 +319,7 @@ def gen_from_svg(config: FromSVGConfig):
                 arm="left",
                 pixel_coords=pixel_coords,
                 ee_pos=meter_coords,
-                ee_wxyz=ee_wxyz_l,
+                ee_rot=ee_rot_l,
                 dt=dt,
                 inkcap=left_arm_inkcap_name,
                 is_inkdip=False,
@@ -335,7 +335,7 @@ def gen_from_svg(config: FromSVGConfig):
                     is_inkdip=True,
                     inkcap=left_arm_inkcap_name,
                     ee_pos=make_inkdip_pos(color_left_arm),
-                    ee_wxyz=ee_wxyz_l,
+                    ee_rot=ee_rot_l,
                     dt=dt,
                     arm="left",
                 )
@@ -343,7 +343,7 @@ def gen_from_svg(config: FromSVGConfig):
                 left_arm_stroke = Stroke(
                     description="left arm at rest",
                     ee_pos=np.zeros((plan.path_length, 3)),
-                    ee_wxyz=ee_wxyz_l,
+                    ee_rot=ee_rot_l,
                     dt=dt,
                     arm="left",
                 )
@@ -353,7 +353,7 @@ def gen_from_svg(config: FromSVGConfig):
             right_arm_stroke = Stroke(
                 description="right arm at rest",
                 ee_pos=np.zeros((plan.path_length, 3)),
-                ee_wxyz=ee_wxyz_r,
+                ee_rot=ee_rot_r,
                 dt=dt,
                 arm="right",
             )
@@ -364,7 +364,7 @@ def gen_from_svg(config: FromSVGConfig):
                 arm="right",
                 pixel_coords=pixel_coords,
                 ee_pos=meter_coords,
-                ee_wxyz=ee_wxyz_r,
+                ee_rot=ee_rot_r,
                 dt=dt,
                 inkcap=right_arm_inkcap_name,
                 is_inkdip=False,
@@ -380,7 +380,7 @@ def gen_from_svg(config: FromSVGConfig):
                     is_inkdip=True,
                     inkcap=right_arm_inkcap_name,
                     ee_pos=make_inkdip_pos(color_right_arm),
-                    ee_wxyz=ee_wxyz_r,
+                    ee_rot=ee_rot_r,
                     dt=dt,
                     arm="right",
                 )
@@ -388,7 +388,7 @@ def gen_from_svg(config: FromSVGConfig):
                 right_arm_stroke = Stroke(
                     description="right arm at rest",
                     ee_pos=np.zeros((plan.path_length, 3)),
-                    ee_wxyz=ee_wxyz_r,
+                    ee_rot=ee_rot_r,
                     dt=dt,
                     arm="right",
                 )

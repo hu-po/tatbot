@@ -14,15 +14,15 @@ ik_batch_size: 1024
 path_length: 128
 path_dt_fast: 0.08
 path_dt_slow: 2.0
-ee_wxyz_l:
+ee_rot_l:
   wxyz: [0.5, 0.5, 0.5, -0.5]
-ee_wxyz_r:
+ee_rot_r:
   wxyz: [0.5, -0.5, 0.5, 0.5]
 inkdip_hover_offset:
   xyz: [0.0, 0.0, 0.003]
 needle_hover_offset:
   xyz: [0.0, 0.0, 0.008]
 needle_offset_l:
-  xyz: [0.0, 0.0, -0.004]
+  xyz: [0.0, 0.0, -0.0044]
 needle_offset_r:
-  xyz: [0.0, 0.0, -0.004]
+  xyz: [0.0, 0.0, -0.0038]

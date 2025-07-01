@@ -14,9 +14,9 @@ class StrokeBatch:
     """End effector frame position in meters (x, y, z) for left arm."""
     ee_pos_r: Float[Array, "b l 3"]
     """End effector frame position in meters (x, y, z) for right arm."""
-    ee_wxyz_l: Float[Array, "b l 4"]
+    ee_rot_l: Float[Array, "b l 4"]
     """End effector frame orientation as quaternion (w, x, y, z) for left arm."""
-    ee_wxyz_r: Float[Array, "b l 4"]
+    ee_rot_r: Float[Array, "b l 4"]
     """End effector frame orientation as quaternion (w, x, y, z) for right arm."""
     joints: Float[Array, "b l 16"]
     """Joint positions in radians (URDF convention)."""

@@ -13,7 +13,7 @@ class Stroke(Yaml):
     """Arm that will execute the path, either left or right."""
     ee_pos: np.ndarray # (N, 3)
     """End effector position in meters <x, y, z>."""
-    ee_wxyz: np.ndarray # (N, 4)
+    ee_rot: np.ndarray # (N, 4)
     """End effector orientation in quaternion <x, y, z, w>."""
     dt: np.ndarray # (N, 1)
     """Time between poses in seconds."""
