@@ -4,7 +4,7 @@ import numpy as np
 from tatbot.data.pose import Pos, Pose
 from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
-from tatbot.gpu.ik import batch_ik, transform_and_offset
+from tatbot.gen.ik import batch_ik, transform_and_offset
 from tatbot.utils.log import get_logger
 
 log = get_logger('gen.strokebatch', '💠')

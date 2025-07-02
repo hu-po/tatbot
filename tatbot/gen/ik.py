@@ -12,7 +12,7 @@ from jaxtyping import Array, Float, Int
 from tatbot.bot.urdf import get_link_indices, load_robot
 from tatbot.utils.log import get_logger
 
-log = get_logger('gpu.ik', '🧮')
+log = get_logger('gen.ik', '🧮')
 log.info(f"🧠 JAX devices: {jax.devices()}")
 
 @jdc.pytree_dataclass
