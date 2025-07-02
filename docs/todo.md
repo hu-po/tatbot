@@ -2,23 +2,28 @@
 
 Roughly sorted by priority
 
-- svg to path object
-- colors from images of tattoo ink
-- calibrate camera extrinsics using scan dataset
+- affine heat method for design wrapping on skin mesh
+- ee calibration using square
+- use VLM call with horizontal lines to ask if tips are close or not
+- use natural rhythm of the computation, weave sequence of scan, plan, act
+- queue as a primitive for stroke execution, idle while waiting for queue
+- editable behavior trees, use same functions as mcp
+- batch ik every episode
+- camera poses in lerobot dataset 
+- pointclouds in lerobot dataset
+- better svg path to stroke conversion
+- audio text input for ook
+- replicate playground in touchscreen
+- calibrate camera extrinsics using conditioning images
 - floating joint for apriltags in urdf
 - floating joint for cameras in urdf
+- gui buttons: loop path, loop time, pause
 - vizer teleop in lerobot branch
-- buttons: loop path, loop time, pause
 - bimanual using ik collision
-- camera poses in lerobot dataset 
-- recalculate batch paths on design frame update
-- pointcloud in scan lerobot dataset
-- two color pattern (black w/ white higlights) seperated by arms
-- three color pattern (black with 3d effect using blue andred) with one needle switch
+- three color pattern with prompted needle switch
 - initialize gsplat with pointcloud
-- bimanual arm with bendy stereo realsense cameras, central light, big Ethernet, and laptop on battery is hardware v3
-- pattern wrapping over skin mesh using jax
-- workspace tag to get realsense extrinsic, realsense extrinsic and intrinsics to get palette and skin tag, Realsense extrinsic to find big tag pose, big tag pose to get IP cameras extrinsic. Big tag is visible from all cameras
+- iterative apriltag tracking to determine camera extrinsics
+- increase ip camera resolution for better skin reconstruction
 - rpi2 screen is on tatbot tower, 2 screens, put sound bar screen on top and non sound screen underneath connected to trossen.
 - apriltags on back of robot in view of cameras
 - isaacsim (https://www.youtube.com/live/z7KdHGkUTNE)
@@ -31,9 +36,7 @@ Roughly sorted by priority
 - etymology section in paper
 - tatbot website
 - host policy on replicate
-- camera pose as joint in urdf frame for extrinsic calibration
 - policy switching and composition into longer behaviors
-- apriltag on righthand wrist frame for extrinsic camera calibration
 - use ik solver for extrinsic camera calibration using apriltags
 - rust apriltag rtsp synced image and video mcp server
 - rcam runs on raspberry pis, provides synced camera images and apriltag poses. meerkat runs lerobot controlling arms and realsenses. ojo runs policy server, skin reconstruction.

@@ -182,7 +182,6 @@ Finetuning pretrained VLAs is done by using lerobot dataset format, see [dataset
 Use the [lerobot dataset visualizer](https://huggingface.co/spaces/lerobot/visualize_dataset).
 Experiment logs on [wandb](https://wandb.ai/hug/tatbot-calib).
 
-
 ## Trossen Robot Arms
 
 tatbot uses two [Trossen WidowXAI arms](https://docs.trossenrobotics.com/trossen_arm/main/specifications.html).
@@ -211,6 +210,12 @@ TODO: these will somewhat randomly fail, need to create robust exception handlin
 ## PoE IP Cameras
 
 tatbot uses 5 poe ip cameras to create a 3d skin reconstruction: see `src/data/cam.py` and `config/cam/default.yaml`.
+the cameras are currently set at:
+- resolution: 1920x1080
+- fps: 5
+- bitrate CBR max 2048
+- frameinterval: 10
+- no substream, all watermarks off
 
 ## AprilTags
 
