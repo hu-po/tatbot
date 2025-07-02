@@ -178,8 +178,12 @@ def record_plan(config: BotPlanConfig):
             dataset._save_image(obs, filepath)
             episode_cond[cam_key] = filepath
         stroke_l, stroke_r = strokes.strokes[stroke_idx]
-        episode_cond["arm_l_stroke"] = stroke_l.to_dict()
-        episode_cond["arm_r_stroke"] = stroke_r.to_dict()
+        episode_cond["stroke_l"] = stroke_l.to_dict()
+        episode_cond["stroke_r"] = stroke_r.to_dict()
+        if not stroke_l.is_inkdip:
+            shutil.copy(stroke_l.frame_path, os.path.join(episode_cond_dir, "stroke_l.png"))
+        if not stroke_r.is_inkdip:
+            shutil.copy(stroke_r.frame_path, os.path.join(episode_cond_dir, "stroke_r.png"))
 
         log.info(f"🤖 recording path {stroke_idx} of {num_strokes}")
         for pose_idx in range(plan.path_length):
