@@ -162,9 +162,10 @@ def record_plan(config: BotPlanConfig):
             log.info(f"🤖⚠️ max episodes {config.max_episodes} exceeded, breaking...")
             break
 
-        # start with rest pose
+        # start every episode by sending arms to rest pose
         log.debug(f"🤖 sending arms to rest pose")
-        robot.send_action(urdf_joints_to_action(rest_pose), goal_time=plan.path_dt_slow, block="left")
+        action = robot._urdf_joints_to_action(rest_pose)
+        robot.send_action(action, goal_time=plan.path_dt_slow, block="left")
 
         # Per-episode conditioning information is stored in seperate directory
         episode_cond = {}
