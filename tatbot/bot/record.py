@@ -5,7 +5,6 @@ import time
 from dataclasses import dataclass
 from io import StringIO
 
-import numpy as np
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
 from lerobot.robots import make_robot_from_config
@@ -173,8 +172,8 @@ def record_plan(config: BotPlanConfig):
         episode_cond_dir = os.path.join(dataset_cond_dir, f"episode_{stroke_idx:06d}")
         os.makedirs(episode_cond_dir, exist_ok=True)
         log.debug(f"🗃️ Creating episode-specific condition directory at {episode_cond_dir}...")
-        scan_obs = robot.scan()
-        for cam_key, obs in scan_obs.items():
+        cond_obs = robot.get_conditioning()
+        for cam_key, obs in cond_obs.items():
             filepath = os.path.join(episode_cond_dir, f"{cam_key}.png")
             dataset._save_image(obs, filepath)
             episode_cond[cam_key] = filepath
@@ -228,7 +227,7 @@ if __name__ == "__main__":
     try:
         record_plan(args)
     except Exception as e:
-        log.error(f"❌ Error:\n{e}\n")
+        log.error(f"❌ Robot Loop Exit with Error:\n{e}")
     except KeyboardInterrupt:
         log.info("🛑⌨️ Keyboard interrupt detected")
     finally:
