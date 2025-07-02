@@ -8,7 +8,6 @@ from io import StringIO
 import numpy as np
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
-from lerobot.record import _init_rerun, rr
 from lerobot.robots import make_robot_from_config
 from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.utils.control_utils import (
@@ -50,8 +49,6 @@ class BotPlanConfig:
     """Hugging Face username."""
     dataset_name: str | None = None
     """Dataset will be saved to Hugging Face Hub repository ID, e.g. 'hf_username/dataset_name'."""
-    display_data: bool = False
-    """Display data on screen using Rerun."""
     push_to_hub: bool = False
     """Push the dataset to the Hugging Face Hub."""
     tags: tuple[str, ...] = ("tatbot", "wxai", "trossen")
@@ -128,16 +125,18 @@ def record_plan(config: BotPlanConfig):
             image_writer_processes=0,
             image_writer_threads=4 * len(robot.cameras),
         )
-    if config.display_data:
-        _init_rerun(session_name="recording")
 
     dataset_plan_dir = os.path.join(dataset_dir, "plan")
     log.info(f"🗃️ Creating plan directory inside dataset directory at {dataset_plan_dir}...")
     os.makedirs(dataset_plan_dir, exist_ok=True)
     shutil.copytree(plan_dir, dataset_plan_dir, dirs_exist_ok=True)
 
+    dataset_cond_dir = os.path.join(dataset_dir, "cond")
+    log.info(f"🗃️ Creating condition directory inside dataset directory at {dataset_cond_dir}...")
+    os.makedirs(dataset_cond_dir, exist_ok=True)
+
     logs_dir = os.path.join(dataset_dir, "logs")
-    log.info(f"🗃️ Creating logs directory at {logs_dir}...")
+    log.info(f"🗃️ Creating logs directory inside dataset directory at {logs_dir}...")
     os.makedirs(logs_dir, exist_ok=True)
     episode_log_buffer = StringIO()
 
@@ -170,7 +169,19 @@ def record_plan(config: BotPlanConfig):
         log.debug(f"🤖 sending arms to rest pose")
         robot.send_action(urdf_joints_to_action(rest_pose), goal_time=plan.path_dt_slow, block="left")
 
+        # Per-episode conditioning information is stored in seperate directory
+        episode_cond = {}
+        episode_cond_dir = os.path.join(dataset_cond_dir, f"episode_{stroke_idx:06d}")
+        os.makedirs(episode_cond_dir, exist_ok=True)
+        log.debug(f"🗃️ Creating episode-specific condition directory at {episode_cond_dir}...")
+        scan_obs = robot.scan()
+        for cam_key, obs in scan_obs.items():
+            filepath = os.path.join(episode_cond_dir, f"{cam_key}.png")
+            dataset._save_image(obs, filepath)
+            episode_cond[cam_key] = filepath
         stroke_l, stroke_r = strokes.strokes[stroke_idx]
+        episode_cond["arm_l_stroke"] = stroke_l.to_dict()
+        episode_cond["arm_r_stroke"] = stroke_r.to_dict()
 
         log.info(f"🤖 recording path {stroke_idx} of {num_strokes}")
         for pose_idx in range(plan.path_length):
@@ -186,18 +197,7 @@ def record_plan(config: BotPlanConfig):
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
-            _task = f"left arm: {stroke_l.color}, right arm: {stroke_r.color}, pose {pose_idx}"
-            dataset.add_frame(frame, task=_task)
-
-            if config.display_data:
-                for obs, val in observation.items():
-                    if isinstance(val, float):
-                        rr.log(f"observation.{obs}", rr.Scalar(val))
-                    elif isinstance(val, np.ndarray):
-                        rr.log(f"observation.{obs}", rr.Image(val), static=True)
-                for act, val in action.items():
-                    if isinstance(val, float):
-                        rr.log(f"action.{act}", rr.Scalar(val))
+            dataset.add_frame(frame)
 
             dt_s = time.perf_counter() - start_loop_t
             busy_wait(max(0, goal_time - dt_s))
@@ -207,7 +207,7 @@ def record_plan(config: BotPlanConfig):
         with open(log_path, "w") as f:
             f.write(episode_log_buffer.getvalue())
 
-        dataset.save_episode()
+        dataset.save_episode(episode_cond=episode_cond)
 
     logging.getLogger().removeHandler(episode_handler)
 
