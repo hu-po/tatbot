@@ -180,9 +180,9 @@ def record_plan(config: BotPlanConfig):
         stroke_l, stroke_r = strokes.strokes[stroke_idx]
         episode_cond["stroke_l"] = stroke_l.to_dict()
         episode_cond["stroke_r"] = stroke_r.to_dict()
-        if not stroke_l.is_inkdip:
+        if stroke_l.frame_path is not None:
             shutil.copy(stroke_l.frame_path, os.path.join(episode_cond_dir, "stroke_l.png"))
-        if not stroke_r.is_inkdip:
+        if stroke_r.frame_path is not None:
             shutil.copy(stroke_r.frame_path, os.path.join(episode_cond_dir, "stroke_r.png"))
 
         log.info(f"🤖 recording path {stroke_idx} of {num_strokes}")
