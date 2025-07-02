@@ -196,7 +196,7 @@ def record_plan(config: BotPlanConfig):
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
-            dataset.add_frame(frame)
+            dataset.add_frame(frame, task=f"left: {stroke_l.description}, right: {stroke_r.description}")
 
             dt_s = time.perf_counter() - start_loop_t
             busy_wait(max(0, goal_time - dt_s))
