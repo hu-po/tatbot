@@ -15,7 +15,6 @@ from lerobot.utils.control_utils import (
 )
 from lerobot.utils.robot_utils import busy_wait
 
-from tatbot.bot.urdf import urdf_joints_to_action
 from tatbot.data.plan import Plan
 from tatbot.data.pose import ArmPose, make_bimanual_joints
 from tatbot.data.stroke import StrokeList
@@ -189,8 +188,8 @@ def record_plan(config: BotPlanConfig):
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 
             joints = strokebatch.joints[stroke_idx, pose_idx]
+            action = robot._urdf_joints_to_action(joints)
             goal_time = strokebatch.dt[stroke_idx, pose_idx]
-            action = urdf_joints_to_action(joints)
             sent_action = robot.send_action(action, goal_time=goal_time, block="left")
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
