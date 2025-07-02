@@ -25,6 +25,10 @@ class Stroke(Yaml):
     """Whether the path is an inkdip."""
     is_alignment: bool = False
     """Whether the path is an alignment stroke."""
+    color: str | None = None
+    """Color of the stroke."""
+    frame_path: str | None = None
+    """Relative path to the frame image for this stroke, or None if not applicable.""" 
 
 @dataclass
 class StrokeList(Yaml):

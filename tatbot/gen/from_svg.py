@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 from dataclasses import dataclass
+import collections
 
 import numpy as np
 import svgpathtools
@@ -110,24 +111,46 @@ def gen_from_svg(config: FromSVGConfig):
     log.info(f"✅ Found {len(inkpalette_colors)} colors in ink palette")
     log.debug(f"Ink palette colors: {inkpalette_colors}")
 
-    image_path: str = None
-    for file in os.listdir(design_dir):
-        if file.endswith('.png'):
-            if image_path is not None:
-                log.warning(f"⚠️ Multiple image files found in {design_dir}")
-            image_path = os.path.join(design_dir, file)
-    assert image_path is not None, f"❌ No image file found in {design_dir}"
-    log.info(f"📂 Found image file: {image_path}")
-    shutil.copy(image_path, os.path.join(output_dir, "design.png"))
-    image = Image.open(image_path)
-    image_width_px = image.width
-    image_height_px = image.height
-    assert image_width_px == plan.image_width_px, f"❌ Image width {image_width_px} does not match plan width {plan.image_width_px}"
-    assert image_height_px == plan.image_height_px, f"❌ Image height {image_height_px} does not match plan height {plan.image_height_px}"
-    log.info(f"Loaded image: {image_path} with size {image_width_px}x{image_height_px}")
+    # create directory for image files
+    frames_dir = os.path.join(output_dir, "frames")
+    log.info(f"🗃️ Creating frames directory at {frames_dir}")
+    os.makedirs(frames_dir, exist_ok=True)
 
-    left_arm_paths: dict[str, list[svgpathtools.Path]] = {}
-    right_arm_paths: dict[str, list[svgpathtools.Path]] = {}
+    # Copy the final design image to frames/full.png
+    final_design_img = None
+    for file in os.listdir(design_dir):
+        if file.endswith('.png') and '_pen' not in file and '_F' not in file:
+            final_design_img = file
+            break
+    if final_design_img is not None:
+        shutil.copy(os.path.join(design_dir, final_design_img), os.path.join(frames_dir, 'full.png'))
+        log.info(f"Copied final design image {final_design_img} to frames/full.png")
+    else:
+        log.warning(f"No final design image found in {design_dir}")
+    final_design_img = Image.open(os.path.join(design_dir, final_design_img))
+    plan.image_width_px = final_design_img.width
+    plan.image_height_px = final_design_img.height
+    log.info(f"Design image is {plan.image_width_px}x{plan.image_height_px}")
+
+    # --- Build mapping from (arm, pen, stroke index) to original PNG filename ---
+    # Example filename: a6f9q4thkhrm80cqrv9rebavmc_plotted_1_set1_pen3_true_blue_F000001.png
+    stroke_img_map = collections.defaultdict(list)  # (pen_name) -> list of (frame_num, filename)
+    for file in os.listdir(design_dir):
+        m = re.match(r".*_pen\d+_([a-zA-Z0-9_]+)_F(\d+)\\.png$", file)
+        if m:
+            pen_name = m.group(1)
+            frame_num = int(m.group(2))
+            stroke_img_map[pen_name].append((frame_num, file))
+    # Sort by frame number for each pen
+    for pen in stroke_img_map:
+        stroke_img_map[pen].sort()
+
+    # --- Track stroke indices for each arm/pen ---
+    stroke_idx = {('left', pen): 0 for pen in plan.left_arm_pen_names}
+    stroke_idx.update({('right', pen): 0 for pen in plan.right_arm_pen_names})
+
+    pen_paths_l: list[tuple[str, svgpathtools.Path]] = []
+    pen_pahts_r: list[tuple[str, svgpathtools.Path]] = []
     for pen_name, svg_path in pens.items():
         assert pen_name in config_pens, f"❌ Pen {pen_name} not found in pens config"
         assert config_pens[pen_name]["name"] == pen_name, f"❌ Pen {pen_name} not found in pens config"
@@ -143,9 +166,9 @@ def gen_from_svg(config: FromSVGConfig):
         log.info(f"Found {len(paths)} paths")
         for path in paths:
             if arm == "left":
-                left_arm_paths.setdefault(pen_name, []).append(path)
+                pen_paths_l.append((pen_name, path))
             elif arm == "right":
-                right_arm_paths.setdefault(pen_name, []).append(path)
+                pen_pahts_r.append((pen_name, path))
 
     def coords_from_path(path: svgpathtools.Path) -> tuple[np.ndarray, np.ndarray]:
         """Resample path evenly along the path and convert to pixel and meter coordinates."""
@@ -154,8 +177,14 @@ def gen_from_svg(config: FromSVGConfig):
         points = [path.point(path.ilength(d)) for d in distances]
         pixel_coords = np.array([[p.real, p.imag] for p in points])
         meter_coords = np.hstack([(
-            pixel_coords * np.array([plan.image_width_m / image_width_px, plan.image_height_m / image_height_px], dtype=np.float32)
-            - np.array([plan.image_width_m / 2, plan.image_height_m / 2], dtype=np.float32) # center the meter coordinates in the image
+            pixel_coords * np.array([ # convert pixel coordinates to meter coordinates
+                plan.image_width_m / plan.image_width_px,
+                plan.image_height_m / plan.image_height_px,
+            ], dtype=np.float32)
+            - np.array([ # center the meter coordinates in the image
+                plan.image_width_m / 2,
+                plan.image_height_m / 2,
+            ], dtype=np.float32)
         ), np.zeros((plan.path_length, 1), dtype=np.float32)]) # z axis is 0
         return pixel_coords, meter_coords
     
@@ -265,15 +294,15 @@ def gen_from_svg(config: FromSVGConfig):
         )
     )
     # next lets add inkdip on left arm, right arm will be at rest
-    first_color_left_arm = next(iter(left_arm_paths.keys()))
-    left_arm_inkcap_name = inkpalette_color_to_name[first_color_left_arm]
+    first_color_l = pen_paths_l[0][0]
+    first_inkcap_l = inkpalette_color_to_name[first_color_l]
     strokelist.strokes.append(
         (
             Stroke(
-                description=f"left arm inkdip into {left_arm_inkcap_name}",
+                description=f"left arm inkdip into {first_inkcap_l}",
                 is_inkdip=True,
-                inkcap=left_arm_inkcap_name,
-                ee_pos=make_inkdip_pos(first_color_left_arm),
+                inkcap=first_inkcap_l,
+                ee_pos=make_inkdip_pos(first_color_l),
                 ee_rot=ee_rot_l,
                 dt=dt,
                 arm="left",
@@ -290,76 +319,98 @@ def gen_from_svg(config: FromSVGConfig):
     right_arm_inkcap_name = None # these will be used to determine when to inkdip
     left_arm_ptr: int = 0
     right_arm_ptr: int = 0
-    flat_left_paths = [(pen, path) for pen, paths in left_arm_paths.items() for path in paths]
-    flat_right_paths = [(pen, path) for pen, paths in right_arm_paths.items() for path in paths]
-    max_paths = max(len(flat_left_paths), len(flat_right_paths))
+    max_paths = max(len(pen_paths_l), len(pen_pahts_r))
     for i in range(max_paths):
-        left_arm_path = flat_left_paths[i][1] if i < len(flat_left_paths) else None
-        right_arm_path = flat_right_paths[i][1] if i < len(flat_right_paths) else None
-        color_left_arm = flat_left_paths[i][0] if i < len(flat_left_paths) else None
-        color_right_arm = flat_right_paths[i][0] if i < len(flat_right_paths) else None
+        path_l = pen_paths_l[i][1] if i < len(pen_paths_l) else None
+        path_r = pen_pahts_r[i][1] if i < len(pen_pahts_r) else None
+        color_l = pen_paths_l[i][0] if i < len(pen_paths_l) else None
+        color_r = pen_pahts_r[i][0] if i < len(pen_pahts_r) else None
 
         # Look ahead to see if a stroke will follow an inkdip for each arm
-        next_left_arm_path = flat_left_paths[i+1][1] if (i+1) < len(flat_left_paths) else None
-        next_right_arm_path = flat_right_paths[i+1][1] if (i+1) < len(flat_right_paths) else None
+        next_path_l = pen_paths_l[i+1][1] if (i+1) < len(pen_paths_l) else None
+        next_path_r = pen_pahts_r[i+1][1] if (i+1) < len(pen_pahts_r) else None
 
         # LEFT ARM LOGIC
-        if left_arm_path is None:
-            left_arm_stroke = Stroke(
+        if path_l is None:
+            stroke_l = Stroke(
                 description="left arm at rest",
                 ee_pos=np.zeros((plan.path_length, 3)),
                 ee_rot=ee_rot_l,
                 dt=dt,
                 arm="left",
+                frame_path=None,
             )
-        elif left_arm_inkcap_name is not None:
-            pixel_coords, meter_coords = coords_from_path(left_arm_path)
-            left_arm_stroke = Stroke(
+        elif first_inkcap_l is not None:
+            pixel_coords, meter_coords = coords_from_path(path_l)
+            # Assign frame_path and copy image
+            idx = stroke_idx[("left", color_l)]
+            frame_path = None
+            if color_l in stroke_img_map and idx < len(stroke_img_map[color_l]):
+                orig_file = stroke_img_map[color_l][idx][1]
+                new_fname = f"arm_l_pen_{color_l}_stroke_{idx+1:04d}.png"
+                frame_path = os.path.join("frames", new_fname)
+                shutil.copy(os.path.join(design_dir, orig_file), os.path.join(frames_dir, new_fname))
+                log.debug(f"Copied {orig_file} to {new_fname}")
+            stroke_l = Stroke(
                 description=f"left arm stroke using left arm",
                 arm="left",
                 pixel_coords=pixel_coords,
                 ee_pos=meter_coords,
                 ee_rot=ee_rot_l,
                 dt=dt,
-                inkcap=left_arm_inkcap_name,
+                inkcap=first_inkcap_l,
                 is_inkdip=False,
+                frame_path=frame_path,
+                color=color_l,
             )
-            left_arm_inkcap_name = None # inkdip on next stroke
+            first_inkcap_l = None # inkdip on next stroke
+            stroke_idx[("left", color_l)] += 1
             left_arm_ptr += 1
         else:
             # Only perform inkdip if a stroke will follow
-            if next_left_arm_path is not None:
-                left_arm_inkcap_name = inkpalette_color_to_name[color_left_arm]
-                left_arm_stroke = Stroke(
-                    description=f"left arm inkdip into {left_arm_inkcap_name}",
+            if next_path_l is not None:
+                first_inkcap_l = inkpalette_color_to_name[color_l]
+                stroke_l = Stroke(
+                    description=f"left arm inkdip into {first_inkcap_l}",
                     is_inkdip=True,
-                    inkcap=left_arm_inkcap_name,
-                    ee_pos=make_inkdip_pos(color_left_arm),
+                    inkcap=first_inkcap_l,
+                    ee_pos=make_inkdip_pos(color_l),
                     ee_rot=ee_rot_l,
                     dt=dt,
                     arm="left",
+                    frame_path=None,
                 )
             else:
-                left_arm_stroke = Stroke(
+                stroke_l = Stroke(
                     description="left arm at rest",
                     ee_pos=np.zeros((plan.path_length, 3)),
                     ee_rot=ee_rot_l,
                     dt=dt,
                     arm="left",
+                    frame_path=None,
                 )
 
         # RIGHT ARM LOGIC
-        if right_arm_path is None:
-            right_arm_stroke = Stroke(
+        if path_r is None:
+            stroke_r = Stroke(
                 description="right arm at rest",
                 ee_pos=np.zeros((plan.path_length, 3)),
                 ee_rot=ee_rot_r,
                 dt=dt,
                 arm="right",
+                frame_path=None,
             )
         elif right_arm_inkcap_name is not None:
-            pixel_coords, meter_coords = coords_from_path(right_arm_path)
-            right_arm_stroke = Stroke(
+            pixel_coords, meter_coords = coords_from_path(path_r)
+            idx = stroke_idx[("right", color_r)]
+            frame_path = None
+            if color_r in stroke_img_map and idx < len(stroke_img_map[color_r]):
+                orig_file = stroke_img_map[color_r][idx][1]
+                new_fname = f"arm_r_pen_{color_r}_stroke_{idx+1:04d}.png"
+                frame_path = os.path.join("frames", new_fname)
+                shutil.copy(os.path.join(design_dir, orig_file), os.path.join(frames_dir, new_fname))
+                log.debug(f"Copied {orig_file} to {new_fname}")
+            stroke_r = Stroke(
                 description=f"right arm stroke using right arm",
                 arm="right",
                 pixel_coords=pixel_coords,
@@ -368,31 +419,36 @@ def gen_from_svg(config: FromSVGConfig):
                 dt=dt,
                 inkcap=right_arm_inkcap_name,
                 is_inkdip=False,
+                frame_path=frame_path,
+                color=color_r,
             )
             right_arm_inkcap_name = None # inkdip on next stroke
+            stroke_idx[("right", color_r)] += 1
             right_arm_ptr += 1
         else:
             # Only perform inkdip if a stroke will follow
-            if next_right_arm_path is not None:
-                right_arm_inkcap_name = inkpalette_color_to_name[color_right_arm]
-                right_arm_stroke = Stroke(
+            if next_path_r is not None:
+                right_arm_inkcap_name = inkpalette_color_to_name[color_r]
+                stroke_r = Stroke(
                     description=f"right arm inkdip into {right_arm_inkcap_name}",
                     is_inkdip=True,
                     inkcap=right_arm_inkcap_name,
-                    ee_pos=make_inkdip_pos(color_right_arm),
+                    ee_pos=make_inkdip_pos(color_r),
                     ee_rot=ee_rot_r,
                     dt=dt,
                     arm="right",
+                    frame_path=None,
                 )
             else:
-                right_arm_stroke = Stroke(
+                stroke_r = Stroke(
                     description="right arm at rest",
                     ee_pos=np.zeros((plan.path_length, 3)),
                     ee_rot=ee_rot_r,
                     dt=dt,
                     arm="right",
+                    frame_path=None,
                 )
-        strokelist.strokes.append((left_arm_stroke, right_arm_stroke))
+        strokelist.strokes.append((stroke_l, stroke_r))
 
     strokes_path = os.path.join(output_dir, "strokes.yaml")
     log.info(f"💾 Saving strokes to {strokes_path}")
