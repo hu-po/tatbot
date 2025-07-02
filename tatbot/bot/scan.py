@@ -13,7 +13,8 @@ from lerobot.robots.tatbot.config_tatbot import TatbotScanConfig
 from lerobot.utils.control_utils import sanity_check_dataset_name
 from lerobot.record import _init_rerun
 
-from tatbot.bot.lerobot import safe_loop, urdf_joints_to_action
+from tatbot.bot.lerobot import safe_loop
+from tatbot.bot.urdf import urdf_joints_to_action
 from tatbot.data.pose import ArmPose, make_bimanual_joints
 from tatbot.utils.log import (
     LOG_FORMAT,
