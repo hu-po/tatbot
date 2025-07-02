@@ -146,7 +146,7 @@ def gen_from_svg(config: FromSVGConfig):
         stroke_img_map[pen].sort()
 
     pen_paths_l: list[tuple[str, svgpathtools.Path]] = []
-    pen_pahts_r: list[tuple[str, svgpathtools.Path]] = []
+    pen_paths_r: list[tuple[str, svgpathtools.Path]] = []
     for pen_name, svg_path in pens.items():
         assert pen_name in config_pens, f"❌ Pen {pen_name} not found in pens config"
         assert config_pens[pen_name]["name"] == pen_name, f"❌ Pen {pen_name} not found in pens config"
@@ -164,7 +164,7 @@ def gen_from_svg(config: FromSVGConfig):
             if arm == "left":
                 pen_paths_l.append((pen_name, path))
             elif arm == "right":
-                pen_pahts_r.append((pen_name, path))
+                pen_paths_r.append((pen_name, path))
 
     def coords_from_path(path: svgpathtools.Path) -> tuple[np.ndarray, np.ndarray]:
         """Resample path evenly along the path and convert to pixel and meter coordinates."""
@@ -226,8 +226,10 @@ def gen_from_svg(config: FromSVGConfig):
     ee_rot_r = np.tile(plan.ee_rot_r.wxyz, (plan.path_length, 1))
 
     # start with "alignment" strokes
-    alignment_inkcap = ink_palette.inkcaps[0]
-    alignment_inkcap_pose: Pose = inkpalette_color_to_pose[alignment_inkcap.ink.name]
+    alignment_inkcap_color_r = pen_paths_r[0][0]
+    alignment_inkcap_color_l = pen_paths_l[0][0]
+    alignment_inkcap_pose_r: Pose = inkpalette_color_to_pose[alignment_inkcap_color_r]
+    alignment_inkcap_pose_l: Pose = inkpalette_color_to_pose[alignment_inkcap_color_l]
     strokelist.strokes.append(
         (
             Stroke(
@@ -244,11 +246,11 @@ def gen_from_svg(config: FromSVGConfig):
                 arm="left",
             ),
             Stroke(
-                description=f"right arm over {alignment_inkcap.ink.name} inkcap",
+                description=f"right arm over {alignment_inkcap_color_r} inkcap",
                 ee_pos=transform_and_offset(
                     np.zeros((plan.path_length, 3)),
-                    alignment_inkcap_pose.pos.xyz,
-                    alignment_inkcap_pose.rot.wxyz,
+                    alignment_inkcap_pose_r.pos.xyz,
+                    alignment_inkcap_pose_r.rot.wxyz,
                     plan.needle_hover_offset.xyz,
                 ),
                 ee_rot=ee_rot_r,
@@ -262,11 +264,11 @@ def gen_from_svg(config: FromSVGConfig):
     strokelist.strokes.append(
         (
             Stroke(
-                description=f"left arm over {alignment_inkcap.ink.name} inkcap",
+                description=f"left arm over {alignment_inkcap_color_l} inkcap",
                 ee_pos=transform_and_offset(
                     np.zeros((plan.path_length, 3)),
-                    alignment_inkcap_pose.pos.xyz,
-                    alignment_inkcap_pose.rot.wxyz,
+                    alignment_inkcap_pose_l.pos.xyz,
+                    alignment_inkcap_pose_l.rot.wxyz,
                     plan.needle_hover_offset.xyz,
                 ),
                 ee_rot=ee_rot_l,
@@ -316,13 +318,13 @@ def gen_from_svg(config: FromSVGConfig):
     left_arm_ptr: int = 0
     right_arm_ptr: int = 0
     stroke_idx: int = len(strokelist.strokes) # strokes list already contains strokes
-    max_paths = max(len(pen_paths_l), len(pen_pahts_r))
+    max_paths = max(len(pen_paths_l), len(pen_paths_r))
     for _ in range(max_paths):
         color_l = pen_paths_l[left_arm_ptr][0] if left_arm_ptr < len(pen_paths_l) else None
         path_l = pen_paths_l[left_arm_ptr][1] if left_arm_ptr < len(pen_paths_l) else None
 
-        color_r = pen_pahts_r[right_arm_ptr][0] if right_arm_ptr < len(pen_pahts_r) else None
-        path_r = pen_pahts_r[right_arm_ptr][1] if right_arm_ptr < len(pen_pahts_r) else None
+        color_r = pen_paths_r[right_arm_ptr][0] if right_arm_ptr < len(pen_paths_r) else None
+        path_r = pen_paths_r[right_arm_ptr][1] if right_arm_ptr < len(pen_paths_r) else None
 
         # LEFT ARM LOGIC
         if path_l is None:
