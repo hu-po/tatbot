@@ -120,7 +120,7 @@ def record_plan(config: BotPlanConfig):
             features=dataset_features,
             use_videos=True,
             image_writer_processes=0,
-            image_writer_threads=4 * len(robot.cameras),
+            image_writer_threads=4 * (len(robot.cameras) + len(robot.cond_cameras)),
         )
 
     dataset_plan_dir = os.path.join(dataset_dir, "plan")
