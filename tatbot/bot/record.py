@@ -181,9 +181,15 @@ def record_plan(config: BotPlanConfig):
         episode_cond["stroke_l"] = stroke_l.to_dict()
         episode_cond["stroke_r"] = stroke_r.to_dict()
         if stroke_l.frame_path is not None:
-            shutil.copy(stroke_l.frame_path, os.path.join(episode_cond_dir, "stroke_l.png"))
+            shutil.copy(
+                os.path.join(dataset_plan_dir, "frames", stroke_l.frame_path),
+                os.path.join(episode_cond_dir, "stroke_l.png")
+            )
         if stroke_r.frame_path is not None:
-            shutil.copy(stroke_r.frame_path, os.path.join(episode_cond_dir, "stroke_r.png"))
+            shutil.copy(
+                os.path.join(dataset_plan_dir, "frames", stroke_r.frame_path),
+                os.path.join(episode_cond_dir, "stroke_r.png")
+            )
 
         log.info(f"🤖 recording path {stroke_idx} of {num_strokes}")
         for pose_idx in range(plan.path_length):
