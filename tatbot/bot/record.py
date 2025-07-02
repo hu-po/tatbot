@@ -16,7 +16,6 @@ from lerobot.utils.control_utils import (
 )
 from lerobot.utils.robot_utils import busy_wait
 
-from tatbot.bot.lerobot import safe_loop
 from tatbot.bot.urdf import urdf_joints_to_action
 from tatbot.data.plan import Plan
 from tatbot.data.pose import ArmPose, make_bimanual_joints
@@ -226,4 +225,17 @@ if __name__ == "__main__":
     if args.debug:
         log.setLevel(logging.DEBUG)
         logging.getLogger('lerobot').setLevel(logging.DEBUG)
-    safe_loop(record_plan, args)
+    try:
+        record_plan(args)
+    except Exception as e:
+        log.error(f"❌ Error:\n{e}\n")
+    except KeyboardInterrupt:
+        log.info("🛑⌨️ Keyboard interrupt detected")
+    finally:
+        log.info("🛑 Disconnecting robot...")
+        robot = make_robot_from_config(TatbotConfig(cameras={})) # no cameras
+        robot._connect_l(clear_error=False)
+        log.error(robot._get_error_str_l())
+        robot._connect_r(clear_error=False)
+        log.error(robot._get_error_str_r())
+        robot.disconnect()
