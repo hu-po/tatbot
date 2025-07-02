@@ -1,3 +1,4 @@
+import collections
 import functools
 import json
 import logging
@@ -5,7 +6,6 @@ import os
 import re
 import shutil
 from dataclasses import dataclass
-import collections
 
 import numpy as np
 import svgpathtools

@@ -5,8 +5,10 @@ import time
 from dataclasses import dataclass
 from io import StringIO
 
+import numpy as np
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
+from lerobot.record import _init_rerun, rr
 from lerobot.robots import make_robot_from_config
 from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.utils.control_utils import (
@@ -14,7 +16,6 @@ from lerobot.utils.control_utils import (
     sanity_check_dataset_robot_compatibility,
 )
 from lerobot.utils.robot_utils import busy_wait
-from lerobot.record import _init_rerun
 
 from tatbot.bot.lerobot import safe_loop
 from tatbot.bot.urdf import urdf_joints_to_action
@@ -169,6 +170,8 @@ def record_plan(config: BotPlanConfig):
         log.debug(f"🤖 sending arms to rest pose")
         robot.send_action(urdf_joints_to_action(rest_pose), goal_time=plan.path_dt_slow, block="left")
 
+        stroke_l, stroke_r = strokes.strokes[stroke_idx]
+
         log.info(f"🤖 recording path {stroke_idx} of {num_strokes}")
         for pose_idx in range(plan.path_length):
             log.debug(f"pose_idx: {pose_idx}/{plan.path_length}")
@@ -183,7 +186,7 @@ def record_plan(config: BotPlanConfig):
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
-            _task = f"path {stroke_idx}, pose {pose_idx}"
+            _task = f"left arm: {stroke_l.color}, right arm: {stroke_r.color}, pose {pose_idx}"
             dataset.add_frame(frame, task=_task)
 
             if config.display_data:
