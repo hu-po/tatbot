@@ -22,7 +22,6 @@ class TeleopVizConfig(BaseVizConfig):
     transform_control_opacity: float = 0.2
     """Opacity of the transform control frames for visualization."""
 
-
 class TeleopViz(BaseViz):
     def __init__(self, config: TeleopVizConfig):
         super().__init__(config)

@@ -39,6 +39,9 @@ class BaseVizConfig:
     speed: float = 1.0
     """Speed multipler for visualization."""
 
+    use_real_robot: bool = False
+    """Use the real robot instead of the simulated one."""
+
 class BaseViz:
     def __init__(self, config: BaseVizConfig):
         self.config = config
@@ -66,6 +69,16 @@ class BaseViz:
         _urdf, self.robot = load_robot(self.scene.urdf.path)
         self.viser_urdf = ViserUrdf(self.server, _urdf, root_node_name="/root")
         self.joints = self.scene.home_pos_full.copy()
+
+        self.arm_l = None
+        self.arm_r = None
+        self.to_trossen_vector = None
+        if config.use_real_robot:
+            log.debug("Using real robot")
+            from tatbot.bot.trossen import drivers_from_arms_config, trossen_arm
+            
+            self.arm_l, self.arm_r = drivers_from_arms_config(self.scene.arms_config)
+            self.to_trossen_vector = lambda x: trossen_arm.VectorDouble(x)
     
         log.debug("Adding inkpalette to viser")
         link_poses = get_link_poses(self.scene.urdf.path, self.scene.urdf.ink_link_names, self.scene.home_pos_full)
@@ -118,6 +131,14 @@ class BaseViz:
             if self.viser_urdf is not None:
                 log.debug("Updating viser robot")
                 self.viser_urdf.update_cfg(self.joints)
+            if self.arm_l is not None:
+                arm_l_joints = self.joints[:7]
+                log.debug(f"Setting real left arm positions: {arm_l_joints}")
+                self.arm_l.set_all_positions(self.to_trossen_vector(arm_l_joints), blocking=True)
+            if self.arm_r is not None:
+                arm_r_joints = self.joints[8:]
+                log.debug(f"Setting real right arm positions: {arm_r_joints}")
+                self.arm_r.set_all_positions(self.to_trossen_vector(arm_r_joints), blocking=True)
             self.step()
             log.debug(f"Step time: {time.time() - start_time:.4f}s")
             time.sleep(self.step_sleep / self.speed_slider.value)
