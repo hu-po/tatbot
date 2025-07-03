@@ -21,8 +21,8 @@ from tatbot.data.skin import Skin
 from tatbot.data.stroke import Stroke, StrokeList
 from tatbot.data.strokebatch import StrokeBatch
 from tatbot.data.urdf import URDF
-from tatbot.gen.strokebatch import strokebatch_from_strokes
 from tatbot.gen.ik import transform_and_offset
+from tatbot.gen.strokebatch import strokebatch_from_strokes
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger('gen.from_svg', '🖋️')

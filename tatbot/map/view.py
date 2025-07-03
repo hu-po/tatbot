@@ -7,14 +7,14 @@ https://polyscope.run/py/
 https://geometry-central.net/surface/algorithms/vector_heat_method/#logarithmic-map
 
 """
+import logging
 import os
 from dataclasses import dataclass
-import logging
 
-import potpourri3d as pp3d
 import polyscope as ps
+import potpourri3d as pp3d
 
-from tatbot.utils.log import get_logger, setup_log_with_config, print_config
+from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger('map.view', "📐")
 
