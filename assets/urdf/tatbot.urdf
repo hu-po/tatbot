@@ -8,23 +8,8 @@
       <origin rpy="0 0 0" xyz="0 0 0"/>
   </link>
 
-  <!-- apriltag 10 - "origin" -->
-  <link name="tag10">
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/tags/16h5_010/tag.obj" scale="1 1 1"/>
-      </geometry>
-    </visual>
-  </link>
-  <joint name="tag10_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0.01"/>
-    <parent link="root"/>
-    <child link="tag10"/>
-  </joint>
-
-  <!-- apriltag 9 - "palette" -->
-  <link name="tag9">
+  <!-- apriltag 0  -->
+  <link name="tag0">
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
@@ -32,17 +17,45 @@
       </geometry>
     </visual>
   </link>
-  <joint name="tag9_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.09 0 0.0"/>
+  <joint name="tag0_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0.01"/>
     <parent link="root"/>
-    <child link="tag9"/>
+    <child link="tag0"/>
+  </joint>
+  <!-- apriltag 1  -->
+  <link name="tag1">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/tags/16h5_009/tag.obj" scale="1 1 1"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="tag1_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0.01"/>
+    <parent link="root"/>
+    <child link="tag1"/>
+  </joint>
+    <!-- apriltag 2  -->
+  <link name="tag2">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/tags/16h5_009/tag.obj" scale="1 1 1"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="tag2_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0.01"/>
+    <parent link="root"/>
+    <child link="tag2"/>
   </joint>
 
   <!-- inkpalette -->
   <link name="inkpalette" />
-  <joint name="tag_to_inkpalette_joint" type="fixed">
+  <joint name="inkpalette_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0"/>
-    <parent link="tag9"/>
+    <parent link="root"/>
     <child link="inkpalette"/>
   </joint>
   <link name="inkpalette_mesh">
@@ -95,41 +108,6 @@
     <origin rpy="0 0 0" xyz="-0.032 0.06 0"/>
     <parent link="inkpalette"/>
     <child link="inkcap_medium_2"/>
-  </joint>
-
-  <!-- apriltag 11 - "skin" -->
-  <link name="tag11">
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/tags/16h5_011/tag.obj" scale="1 1 1"/>
-      </geometry>
-    </visual>
-  </link>
-  <joint name="tag11_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.25 -0.05 -0.01"/>
-    <parent link="root"/>
-    <child link="tag11"/>
-  </joint>
-  <!-- skin -->
-  <link name="skin" />
-  <joint name="tag_to_skin_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.06 0.04 -0.02"/>
-    <parent link="tag11"/>
-    <child link="skin"/>
-  </joint>
-  <link name="skin_mesh">
-    <visual>
-      <origin rpy="0 1.57 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/skin/skin.obj" scale="1 1 1"/>
-      </geometry>
-    </visual>
-  </link>
-  <joint name="skin_mesh_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
-    <parent link="skin"/>
-    <child link="skin_mesh"/>
   </joint>
 
   <!-- camera1 -->
