@@ -31,13 +31,13 @@ class IKConfig:
 @jdc.jit
 def ik(
     robot: pk.Robot,
-    config: IKConfig,
     target_link_indices: Int[Array, "n"], # n=2 for bimanual
     target_wxyz: Float[Array, "n 4"],
     target_position: Float[Array, "n 3"],
     rest_pose: Float[Array, "16"],
+    config: IKConfig = IKConfig(),
 ) -> Float[Array, "16"]:
-    log.debug(f"performing ik on batch of size {target_wxyz.shape[0]}")
+    log.debug(f"performing ik on {target_link_indices.shape[0]} targets")
     start_time = time.time()
     joint_var = robot.joint_var_cls(0)
     factors = [
@@ -89,7 +89,7 @@ def batch_ik(
     log.debug(f"performing batch ik on batch of size {target_pos.shape[0]}")
     start_time = time.time()
     _ik_vmap = jax.vmap(
-        lambda wxyz, pos, joints: ik(robot, ik_config, link_indices, wxyz, pos, joints),
+        lambda wxyz, pos, joints: ik(robot, link_indices, wxyz, pos, joints, ik_config),
         in_axes=(0, 0, None),
     )
     solutions = _ik_vmap(target_wxyz, target_pos, joints)
