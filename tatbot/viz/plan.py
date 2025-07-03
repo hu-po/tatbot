@@ -89,7 +89,7 @@ class VizPlan(BaseViz):
             self.pose_idx_slider = self.server.gui.add_slider(
                 "pose",
                 min=0,
-                max=self.plan.path_length - 1,
+                max=self.plan.stroke_length - 1,
                 step=1,
                 initial_value=0,
             )
@@ -98,7 +98,7 @@ class VizPlan(BaseViz):
         @self.path_idx_slider.on_update
         def _(_):
             self.stroke_idx = self.path_idx_slider.value
-            self.pose_idx_slider.max = self.plan.path_length - 1
+            self.pose_idx_slider.max = self.plan.stroke_length - 1
             if self.pose_idx_slider.value > self.pose_idx_slider.max:
                 self.pose_idx_slider.value = self.pose_idx_slider.max
             _update_time_label()
@@ -175,7 +175,7 @@ class VizPlan(BaseViz):
             log.debug("Robot at rest, skipping step...")
             self.robot_at_rest = False
             return
-        if self.pose_idx >= self.plan.path_length:
+        if self.pose_idx >= self.plan.stroke_length:
             self.stroke_idx += 1
             self.pose_idx = 0
             log.debug(f"Moving to next stroke {self.stroke_idx}")
@@ -192,13 +192,13 @@ class VizPlan(BaseViz):
         for stroke in self.strokes.strokes[self.stroke_idx]:
             if stroke.arm == "left":
                 points_color_l = self.point_colors_stroke_l.copy()
-                points_color_l[self.stroke_idx * self.plan.path_length:self.stroke_idx * self.plan.path_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
-                points_color_l[self.stroke_idx * self.plan.path_length + self.pose_idx] = np.array(COLORS["blue"], dtype=np.uint8)
+                points_color_l[self.stroke_idx * self.plan.stroke_length:self.stroke_idx * self.plan.stroke_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
+                points_color_l[self.stroke_idx * self.plan.stroke_length + self.pose_idx] = np.array(COLORS["blue"], dtype=np.uint8)
                 self.pointcloud_path_l.colors = points_color_l
             else:
                 points_color_r = self.point_colors_stroke_r.copy()
-                points_color_r[self.stroke_idx * self.plan.path_length:self.stroke_idx * self.plan.path_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
-                points_color_r[self.stroke_idx * self.plan.path_length + self.pose_idx] = np.array(COLORS["purple"], dtype=np.uint8)
+                points_color_r[self.stroke_idx * self.plan.stroke_length:self.stroke_idx * self.plan.stroke_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
+                points_color_r[self.stroke_idx * self.plan.stroke_length + self.pose_idx] = np.array(COLORS["purple"], dtype=np.uint8)
                 self.pointcloud_path_r.colors = points_color_r
             if stroke.pixel_coords is not None and not stroke.is_inkdip:
                 # Highlight entire path in red

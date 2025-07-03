@@ -220,8 +220,8 @@ def record_plan(config: BotPlanConfig):
             )
 
         log.info(f"🤖 recording path {stroke_idx} of {num_strokes}")
-        for pose_idx in range(plan.path_length):
-            log.debug(f"pose_idx: {pose_idx}/{plan.path_length}")
+        for pose_idx in range(plan.stroke_length):
+            log.debug(f"pose_idx: {pose_idx}/{plan.stroke_length}")
             start_loop_t = time.perf_counter()
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")

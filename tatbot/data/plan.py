@@ -23,14 +23,10 @@ class Plan(Yaml):
     image_height_px: int
     """Height of the image in pixels."""
 
-    path_length: int
-    """All paths will be resampled to this length."""
+    stroke_length: int
+    """All strokes will be resampled to this length."""
     ik_batch_size: int
     """Batch size for IK computation."""
-    dt_fast: float
-    """Time between poses in seconds for fast movement."""
-    dt_slow: float
-    """Time between poses in seconds for slow movement."""
 
     ee_rot_l: Rot
     """<w, x, y, z> quaternion of left arm end effector when performing a stroke."""

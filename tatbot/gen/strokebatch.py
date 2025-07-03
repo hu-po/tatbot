@@ -11,7 +11,7 @@ log = get_logger('gen.strokebatch', '💠')
 
 def strokebatch_from_strokes(
     strokelist: StrokeList,
-    path_length: int,
+    stroke_length: int,
     batch_size: int,
     joints: np.ndarray,
     urdf_path: str,
@@ -26,7 +26,7 @@ def strokebatch_from_strokes(
     Each tuple is (left_stroke, right_stroke) for a single stroke step.
     """
     b = len(strokelist.strokes)
-    l = path_length
+    l = stroke_length
     # Fill arrays from strokes
     ee_pos_l = np.zeros((b, l, 3), dtype=np.float32)
     ee_pos_r = np.zeros((b, l, 3), dtype=np.float32)
@@ -80,9 +80,9 @@ def strokebatch_from_strokes(
     # Reshape to (b, l, 16)
     joints_out = joints_out.reshape(b, l, 16)
     # HACK: the right arm of the first (not counting alignments) stroke should be at rest while left arm is ink dipping
-    joints_out[2, :, 8:] = np.tile(joints[8:], (path_length, 1))
+    joints_out[2, :, 8:] = np.tile(joints[8:], (stroke_length, 1))
     # HACK: the left arm of the final path should be at rest since last stroke is right-only
-    joints_out[-1, :, :8] = np.tile(joints[:8], (path_length, 1))
+    joints_out[-1, :, :8] = np.tile(joints[:8], (stroke_length, 1))
 
     strokebatch = StrokeBatch(
         ee_pos_l=jnp.array(ee_pos_l),

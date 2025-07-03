@@ -11,9 +11,7 @@ image_height_m: 0.05
 image_width_px: 590
 image_height_px: 590
 ik_batch_size: 1024
-path_length: 128
-path_dt_fast: 0.08
-path_dt_slow: 2.0
+stroke_length: 128
 ee_rot_l:
   wxyz: [0.5, 0.5, 0.5, -0.5]
 ee_rot_r:
