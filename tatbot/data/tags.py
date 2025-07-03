@@ -3,12 +3,15 @@ from dataclasses import dataclass
 from tatbot.data import Yaml
 
 @dataclass
-class TagConfig(Yaml):
-    family: str = "tag16h5"
+class Tags(Yaml):
+    family: str
     """Family of AprilTags to use."""
-    size_m: float = 0.041
+    size_m: float
     """Size of AprilTags: distance between detection corners (meters)."""
-    enabled_tags: tuple[int, ...] = (6, 7, 9, 10, 11)
+    enabled_tags: tuple[int, ...]
     """Enabled AprilTag IDs."""
-    decision_margin: float = 20.0
+    decision_margin: float
     """Minimum decision margin for AprilTag detection filtering."""
+
+    yaml_dir: str = "~/tatbot/config/tags"
+    """Directory containing the config yaml files."""

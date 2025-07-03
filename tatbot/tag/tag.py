@@ -11,7 +11,7 @@ import numpy as np
 import pupil_apriltags as apriltag
 import yaml
 
-from tatbot.data.cam import CameraIntrinsics
+from tatbot.data.cams import Instrinsics
 from tatbot.data.pose import Pose
 from tatbot.utils.colors import COLORS
 from tatbot.utils.log import get_logger
@@ -63,7 +63,7 @@ class TagTracker:
     def track_tags(
         self,
         image_path: str,
-        intrinsics: CameraIntrinsics,
+        intrinsics: Instrinsics,
         camera_pos: np.ndarray,
         camera_wxyz: np.ndarray,
         output_path: str | None = None

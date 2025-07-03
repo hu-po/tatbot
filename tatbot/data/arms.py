@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from tatbot.data import Yaml
 
 @dataclass
-class ArmsConfig(Yaml):
+class Arms(Yaml):
     ip_address_l: str
     """IP address of the left robot arm."""
     ip_address_r: str

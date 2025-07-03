@@ -1,0 +1,4 @@
+family: "tag16h5"
+size_m: 0.041
+enabled_tags: (6, 7, 9, 10, 11)
+decision_margin: 20.0

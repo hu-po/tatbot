@@ -14,16 +14,14 @@ from lxml import etree
 from PIL import Image
 
 from tatbot.bot.urdf import get_link_poses
-from tatbot.data.ink import InkPalette
 from tatbot.data.plan import Plan
-from tatbot.data.pose import ArmPose, Pose, make_bimanual_joints
-from tatbot.data.skin import Skin
+from tatbot.data.pose import Pose
 from tatbot.data.stroke import Stroke, StrokeList
 from tatbot.data.strokebatch import StrokeBatch
-from tatbot.data.urdf import URDF
 from tatbot.gen.ik import transform_and_offset
 from tatbot.gen.strokebatch import strokebatch_from_strokes
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
+from tatbot.data.scene import Scene
 
 log = get_logger('gen.from_svg', '🖋️')
 
@@ -44,16 +42,8 @@ class FromSVGConfig:
     
     plan_name: str = "default"
     """Name of the plan (Plan)."""
-    urdf_name: str = "default"
-    """Name of the urdf (URDF)."""
-    ink_palette_name: str = "default"
-    """Name of the ink palette (InkPalette)."""
-    left_arm_pose_name: str = "left/rest"
-    """Name of the left arm pose (ArmPose)."""
-    right_arm_pose_name: str = "right/rest"
-    """Name of the right arm pose (ArmPose)."""
-    skin_name: str = "default"
-    """Name of the skin (Skin)."""
+    scene_name: str = "default"
+    """Name of the scene config (Scene)."""
 
 def gen_from_svg(config: FromSVGConfig):
     log.info(f"Generating {config.name} ...")
@@ -68,12 +58,9 @@ def gen_from_svg(config: FromSVGConfig):
     log.info(f"📂 Output directory: {output_dir}")
     os.makedirs(output_dir, exist_ok=True)
 
+    # Load the scene abstraction
+    scene: Scene = Scene.from_name(config.scene_name)
     plan: Plan = Plan.from_name(config.plan_name)
-    urdf: URDF = URDF.from_name(config.urdf_name)
-    left_arm_pose: ArmPose = ArmPose.from_name(config.left_arm_pose_name)
-    right_arm_pose: ArmPose = ArmPose.from_name(config.right_arm_pose_name)
-    rest_pose: np.ndarray = make_bimanual_joints(left_arm_pose, right_arm_pose)
-    skin: Skin = Skin.from_name(config.skin_name)
 
     svg_files = []
     pens: dict[str, str] = {}
@@ -98,18 +85,13 @@ def gen_from_svg(config: FromSVGConfig):
     log.info(f"✅ Found {len(config_pens)} pens in {config.pens_config_path}")
     log.debug(f"Pens in config: {config_pens.keys()}")
 
-    ink_palette: InkPalette = InkPalette.from_name(config.ink_palette_name)
-    inkpalette_color_to_name: dict[str, str] = {}
-    inkpalette_color_to_pose: dict[str, Pose] = {}
-    link_poses = get_link_poses(urdf.path, urdf.ink_link_names, rest_pose)
-    for inkcap in ink_palette.inkcaps:
-        assert inkcap.name in urdf.ink_link_names, f"❌ Inkcap {inkcap.name} not found in URDF"
-        inkpalette_color_to_name[inkcap.ink.name] = inkcap.name
-        inkpalette_color_to_pose[inkcap.ink.name] = link_poses[inkcap.name]
-
-    inkpalette_colors = {inkcap.ink.name: inkcap.name for inkcap in ink_palette.inkcaps}
-    log.info(f"✅ Found {len(inkpalette_colors)} colors in ink palette")
-    log.debug(f"Ink palette colors: {inkpalette_colors}")
+    inks_color_to_inkcap_name: dict[str, str] = {}
+    inks_color_to_inkcap_pose: dict[str, Pose] = {}
+    link_poses = get_link_poses(scene.urdf.path, scene.urdf.ink_link_names, scene.home_pos_full)
+    for inkcap in scene.inks.inkcaps:
+        assert inkcap.name in scene.urdf.ink_link_names, f"❌ Inkcap {inkcap.name} not found in URDF"
+        inks_color_to_inkcap_name[inkcap.ink.name] = inkcap.name
+        inks_color_to_inkcap_pose[inkcap.ink.name] = link_poses[inkcap.name]
 
     # create directory for image files
     frames_dir = os.path.join(output_dir, "frames")
@@ -150,7 +132,7 @@ def gen_from_svg(config: FromSVGConfig):
     for pen_name, svg_path in pens.items():
         assert pen_name in config_pens, f"❌ Pen {pen_name} not found in pens config"
         assert config_pens[pen_name]["name"] == pen_name, f"❌ Pen {pen_name} not found in pens config"
-        assert pen_name in inkpalette_colors, f"❌ Pen {pen_name} not found in ink palette"
+        assert pen_name in inks_color_to_inkcap_name, f"❌ Pen {pen_name} not found in ink palette"
         if pen_name in plan.left_arm_pen_names:
             arm = "left"
         elif pen_name in plan.right_arm_pen_names:
@@ -184,10 +166,11 @@ def gen_from_svg(config: FromSVGConfig):
         ), np.zeros((plan.path_length, 1), dtype=np.float32)]) # z axis is 0
         return pixel_coords, meter_coords
     
-    @functools.lru_cache(maxsize=len(ink_palette.inkcaps))
+    @functools.lru_cache(maxsize=len(scene.inks.inkcaps))
     def make_inkdip_pos(color: str, num_points: int = plan.path_length) -> np.ndarray:
         """Get <x, y, z> coordinates for an inkdip into a specific inkcap."""
-        inkcap_pose: Pose = inkpalette_color_to_pose[color]
+        inkcap_pose: Pose = inks_color_to_inkcap_pose[color]
+        inkcap = next(ic for ic in scene.inks.inkcaps if ic.ink.name == color)
         # Split: 1/3 down, 1/3 wait, 1/3 up (adjust as needed)
         num_down = num_points // 3
         num_up = num_points // 3
@@ -228,16 +211,16 @@ def gen_from_svg(config: FromSVGConfig):
     # start with "alignment" strokes
     alignment_inkcap_color_r = pen_paths_r[0][0]
     alignment_inkcap_color_l = pen_paths_l[0][0]
-    alignment_inkcap_pose_r: Pose = inkpalette_color_to_pose[alignment_inkcap_color_r]
-    alignment_inkcap_pose_l: Pose = inkpalette_color_to_pose[alignment_inkcap_color_l]
+    alignment_inkcap_pose_r: Pose = inks_color_to_inkcap_pose[alignment_inkcap_color_r]
+    alignment_inkcap_pose_l: Pose = inks_color_to_inkcap_pose[alignment_inkcap_color_l]
     strokelist.strokes.append(
         (
             Stroke(
                 description="left arm over design",
                 ee_pos=transform_and_offset(
                     np.zeros((plan.path_length, 3)),
-                    skin.design_pose.pos.xyz,
-                    skin.design_pose.rot.wxyz,
+                    scene.skin.design_pose.pos.xyz,
+                    scene.skin.design_pose.rot.wxyz,
                     plan.needle_hover_offset.xyz,
                 ),
                 ee_rot=ee_rot_l,
@@ -280,8 +263,8 @@ def gen_from_svg(config: FromSVGConfig):
                 description="right arm over design",
                 ee_pos=transform_and_offset(
                     np.zeros((plan.path_length, 3)),
-                    skin.design_pose.pos.xyz,
-                    skin.design_pose.rot.wxyz,
+                    scene.skin.design_pose.pos.xyz,
+                    scene.skin.design_pose.rot.wxyz,
                     plan.needle_hover_offset.xyz,
                 ),
                 ee_rot=ee_rot_r,
@@ -293,7 +276,7 @@ def gen_from_svg(config: FromSVGConfig):
     )
     # next lets add inkdip on left arm, right arm will be at rest
     first_color_l = pen_paths_l[0][0]
-    first_inkcap_l = inkpalette_color_to_name[first_color_l]
+    first_inkcap_l = inks_color_to_inkcap_name[first_color_l]
     strokelist.strokes.append(
         (
             Stroke(
@@ -358,7 +341,7 @@ def gen_from_svg(config: FromSVGConfig):
         else:
             # Only perform inkdip if a stroke will follow
             if path_l is not None:
-                first_inkcap_l = inkpalette_color_to_name[color_l]
+                first_inkcap_l = inks_color_to_inkcap_name[color_l]
                 stroke_l = Stroke(
                     description=f"left arm inkdip into {first_inkcap_l}",
                     is_inkdip=True,
@@ -412,7 +395,7 @@ def gen_from_svg(config: FromSVGConfig):
         else:
             # Only perform inkdip if a stroke will follow
             if path_r is not None:
-                right_arm_inkcap_name = inkpalette_color_to_name[color_r]
+                right_arm_inkcap_name = inks_color_to_inkcap_name[color_r]
                 stroke_r = Stroke(
                     description=f"right arm inkdip into {right_arm_inkcap_name}",
                     is_inkdip=True,
@@ -443,10 +426,10 @@ def gen_from_svg(config: FromSVGConfig):
         strokelist=strokelist,
         path_length=plan.path_length,
         batch_size=plan.ik_batch_size,
-        joints=rest_pose,
-        urdf_path=urdf.path,
-        link_names=urdf.ee_link_names,
-        design_pose=skin.design_pose,
+        joints=scene.home_pos_full,
+        urdf_path=scene.urdf.path,
+        link_names=scene.urdf.ee_link_names,
+        design_pose=scene.skin.design_pose,
         needle_hover_offset=plan.needle_hover_offset,
         needle_offset_l=plan.needle_offset_l,
         needle_offset_r=plan.needle_offset_r,

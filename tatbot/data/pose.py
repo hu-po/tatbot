@@ -29,5 +29,6 @@ class ArmPose(Yaml):
     yaml_dir: str = "~/tatbot/config/poses"
     """Directory containing the config yaml files."""
 
-def make_bimanual_joints(pose_l: ArmPose, pose_r: ArmPose) -> np.ndarray:
-    return np.concatenate([pose_l.joints, pose_r.joints])
+    @staticmethod
+    def make_bimanual_joints(pose_l: "ArmPose", pose_r: "ArmPose") -> np.ndarray:
+        return np.concatenate([pose_l.joints, pose_r.joints])

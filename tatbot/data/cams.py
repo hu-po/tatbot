@@ -4,7 +4,7 @@ from tatbot.data import Yaml
 from tatbot.data.pose import Pose
 
 @dataclass
-class CameraIntrinsics(Yaml):
+class Instrinsics(Yaml):
     fov: float
     """Field of view in radians."""
     aspect: float
@@ -26,12 +26,10 @@ class CameraConfig(Yaml):
     """Width of the image in pixels."""
     height: int
     """Height of the image in pixels."""
-    intrinsics: CameraIntrinsics
-    """Intrinsics of the camera."""
-    extrinsics: Pose | None = None
-    """Extrinsics of the camera (pose of the camera in the world frame)."""
     fps: int
     """Frames per second."""
+    intrinsics: Instrinsics
+    """Intrinsics of the camera."""
 
 @dataclass
 class RealSenseCameraConfig(CameraConfig):
@@ -52,10 +50,10 @@ class IPCameraConfig(CameraConfig):
     """Stream path of the camera (only for ip cameras)."""
 
 @dataclass
-class CamerasConfig(Yaml):
+class Cams(Yaml):
     realsenses: list[RealSenseCameraConfig]
     """List of camera configurations."""
     ipcameras: list[IPCameraConfig]
     """List of camera configurations."""
-    yaml_dir: str = "~/tatbot/config/cameras"
+    yaml_dir: str = "~/tatbot/config/cams"
     """Directory containing the config yaml files."""

@@ -22,8 +22,8 @@ class InkCap(Yaml):
     """Depth of the inkcap (meters)."""
 
 @dataclass
-class InkPalette(Yaml):
+class Inks(Yaml):
     inkcaps: tuple[InkCap, ...]
-    """Ordered list of inkcaps in the palette."""
+    """Ordered list of inkcaps."""
     yaml_dir: str = "~/tatbot/config/inks"
     """Directory containing the config yaml files."""

@@ -1,0 +1,13 @@
+inkcaps:
+  - ink:
+      name: true_blue
+      rgb: [0, 0, 0]
+    name: inkcap_large
+    diameter_m: 0.014
+    depth_m: 0.014
+  - ink:
+      name: bright_red
+      rgb: [255, 0, 0]
+    name: inkcap_medium_1
+    diameter_m: 0.012
+    depth_m: 0.01

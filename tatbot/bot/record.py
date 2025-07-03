@@ -18,9 +18,7 @@ from lerobot.utils.control_utils import (
 from lerobot.utils.robot_utils import busy_wait
 
 from tatbot.data.plan import Plan
-from tatbot.data.cam import CamerasConfig
-from tatbot.data.arms import ArmsConfig
-from tatbot.data.pose import ArmPose, make_bimanual_joints
+from tatbot.data.scene import Scene
 from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
 from tatbot.utils.log import (
@@ -37,6 +35,9 @@ log = get_logger('bot.plan', '🤖')
 class BotPlanConfig:
     debug: bool = False
     """Enable debug logging."""
+
+    scene_name: str = "default"
+    """Name of the scene config to use (Scene)."""
 
     plan_name: str = "smiley"
     """Name of the plan (Plan)."""
@@ -63,14 +64,6 @@ class BotPlanConfig:
     resume: bool = False
     """If true, resumes recording from the last episode, dataset name must match."""
 
-    arms_config_name: str = "bimanual"
-    """Name of the arms config (ArmsConfig)."""
-    camera_config_name: str = "all"
-    """Name of the camera config (CameraConfig)."""
-    left_arm_pose_name: str = "left/rest"
-    """Name of the left arm pose (ArmPose)."""
-    right_arm_pose_name: str = "right/rest"
-    """Name of the right arm pose (ArmPose)."""
 
 def record_plan(config: BotPlanConfig):
     plan_dir = os.path.expanduser(config.plan_dir)
@@ -83,31 +76,26 @@ def record_plan(config: BotPlanConfig):
     strokes: StrokeList = StrokeList.from_yaml(os.path.join(plan_dir, "strokes.yaml"))
     num_strokes = strokebatch.joints.shape[0]
 
-    cameras: CamerasConfig = CamerasConfig.from_name(config.camera_config_name)
-    arms: ArmsConfig = ArmsConfig.from_name(config.arms_config_name)
-    left_arm_pose: ArmPose = ArmPose.from_name(config.left_arm_pose_name)
-    right_arm_pose: ArmPose = ArmPose.from_name(config.right_arm_pose_name)
-    rest_pose = make_bimanual_joints(left_arm_pose, right_arm_pose)
-
+    scene: Scene = Scene.from_name(config.scene_name)
 
     log.info("🤗 Adding LeRobot robot...")
     robot = make_robot_from_config(TatbotConfig(
-        ip_address_l=arms.ip_address_l,
-        ip_address_r=arms.ip_address_r,
-        arm_l_config_filepath=arms.arm_l_config_filepath,
-        arm_r_config_filepath=arms.arm_r_config_filepath,
-        goal_time_fast=arms.dt,
-        goal_time_slow=arms.dt,
-        connection_timeout=arms.connection_timeout,
-        home_pos_l=left_arm_pose.joints,
-        home_pos_r=right_arm_pose.joints,
+        ip_address_l=scene.arms.ip_address_l,
+        ip_address_r=scene.arms.ip_address_r,
+        arm_l_config_filepath=scene.arms.arm_l_config_filepath,
+        arm_r_config_filepath=scene.arms.arm_r_config_filepath,
+        goal_time_fast=scene.arms.goal_time_fast,
+        goal_time_slow=scene.arms.goal_time_slow,
+        connection_timeout=scene.arms.connection_timeout,
+        home_pos_l=scene.home_pos_l.joints,
+        home_pos_r=scene.home_pos_r.joints,
         cameras={
             cam.name : RealSenseCameraConfig(
                 fps=cam.fps,
                 width=cam.width,
                 height=cam.height,
                 serial_number_or_name=cam.serial_number,
-            ) for cam in cameras.realsenses
+            ) for cam in scene.cams.realsenses
         },
         cond_cameras={
             cam.name : OpenCVCameraConfig(
@@ -118,7 +106,7 @@ def record_plan(config: BotPlanConfig):
                 username=cam.username,
                 password=os.environ.get(cam.password, None),
                 rtsp_port=cam.rtsp_port,
-            ) for cam in cameras.ipcameras
+            ) for cam in scene.cams.ipcameras
         }
     ))
     robot.connect()
@@ -204,7 +192,7 @@ def record_plan(config: BotPlanConfig):
 
         # start every episode by sending arms to rest pose
         log.debug(f"🤖 sending arms to rest pose")
-        action = robot._urdf_joints_to_action(rest_pose)
+        action = robot._urdf_joints_to_action(scene.home_pos_full)
         robot.send_action(action, goal_time=plan.dt_slow, block="left")
 
         # Per-episode conditioning information is stored in seperate directory
@@ -282,7 +270,18 @@ if __name__ == "__main__":
         log.info("🛑⌨️ Keyboard interrupt detected")
     finally:
         log.info("🛑 Disconnecting robot...")
-        robot = make_robot_from_config(TatbotConfig(cameras={})) # no cameras
+        scene: Scene = Scene.from_name(args.scene_name)
+        robot = make_robot_from_config(TatbotConfig(
+            ip_address_l=scene.arms.ip_address_l,
+            ip_address_r=scene.arms.ip_address_r,
+            arm_l_config_filepath=scene.arms.arm_l_config_filepath,
+            arm_r_config_filepath=scene.arms.arm_r_config_filepath,
+            goal_time_fast=1.0, # move very slowly
+            goal_time_slow=5.0, # move very slowly
+            connection_timeout=20.0,
+            home_pos_l=scene.home_pos_l.joints,
+            home_pos_r=scene.home_pos_r.joints,
+        )) # no cameras
         robot._connect_l(clear_error=False)
         log.error(robot._get_error_str_l())
         robot._connect_r(clear_error=False)
