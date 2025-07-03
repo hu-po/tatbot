@@ -11,6 +11,7 @@ from tatbot.data.ink import InkPalette
 from tatbot.data.pose import ArmPose, make_bimanual_joints
 from tatbot.data.skin import Skin
 from tatbot.data.urdf import URDF
+from tatbot.data.cam import CameraConfig
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger('viz.base', '🖥️')
@@ -30,6 +31,8 @@ class BaseVizConfig:
     """Name of the right arm pose (ArmPose)."""
     skin_name: str = "default"
     """Name of the skin (Skin)."""
+    camera_config_name: str = "default"
+    """Name of the camera config (CameraConfig)."""
 
     env_map_hdri: str = "forest"
     """HDRI for the environment map."""
@@ -37,6 +40,16 @@ class BaseVizConfig:
     """Initial camera position in the Viser scene."""
     view_camera_look_at: tuple[float, float, float] = (0.0, 0.0, 0.0)
     """Initial camera look_at in the Viser scene."""
+
+    realsense_frustrum_scale: float = 0.02
+    """Scale of the realsense camera frustrums used for visualization."""
+    realsense_frustrum_color: tuple[int, int, int] = (200, 200, 200)
+    """Color of the realsense camera frustrums used for visualization."""
+
+    camera_frustrum_scale: float = 0.04
+    """Scale of the ip camera frustrum used for visualization."""
+    camera_frustrum_color: tuple[int, int, int] = (200, 200, 200)
+    """Color of the ip camera frustrum used for visualization."""
 
     speed: float = 1.0
     """Speed multipler for visualization."""
@@ -50,6 +63,7 @@ class BaseViz:
         self.rest_pose: np.ndarray = make_bimanual_joints(self.left_arm_pose, self.right_arm_pose)
         self.ink_palette: InkPalette = InkPalette.from_name(config.ink_palette_name)
         self.skin: Skin = Skin.from_name(config.skin_name)
+        self.camera_config: CameraConfig = CameraConfig.from_name(config.camera_config_name)
 
         log.info("Starting viser server")
         self.server: viser.ViserServer = viser.ViserServer()
@@ -86,6 +100,83 @@ class BaseViz:
                 subdivisions=4,
                 visible=True,
             )
+
+        log.info("Adding realsense camera frustrums ...")
+        self.realsense1_frustrum = self.server.scene.add_camera_frustum(
+            f"/realsense1",
+            fov=self.camera_config.intrinsics["realsense1"].fov,
+            aspect=self.camera_config.intrinsics["realsense1"].aspect,
+            scale=config.realsense_frustrum_scale,
+            color=config.realsense_frustrum_color,
+        )
+        self.realsense2_frustrum = self.server.scene.add_camera_frustum(
+            f"/realsense2",
+            fov=self.camera_config.intrinsics["realsense2"].fov,
+            aspect=self.camera_config.intrinsics["realsense2"].aspect,
+            scale=config.realsense_frustrum_scale,
+            color=config.realsense_frustrum_color,
+        )
+
+        log.info("Adding ip camera frustrums ...")
+        self.camera1_frustrum = self.server.scene.add_camera_frustum(
+            f"/camera1",
+            fov=self.camera_config.intrinsics["camera1"].fov,
+            aspect=self.camera_config.intrinsics["camera1"].aspect,
+            scale=config.camera_frustrum_scale,
+            color=config.camera_frustrum_color,
+        )
+        self.camera2_frustrum = self.server.scene.add_camera_frustum(
+            f"/camera2",
+            fov=self.camera_config.intrinsics["camera2"].fov,
+            aspect=self.camera_config.intrinsics["camera2"].aspect,
+            scale=config.camera_frustrum_scale,
+            color=config.camera_frustrum_color,
+        )
+        self.camera3_frustrum = self.server.scene.add_camera_frustum(
+            f"/camera3",
+            fov=self.camera_config.intrinsics["camera3"].fov,
+            aspect=self.camera_config.intrinsics["camera3"].aspect,
+            scale=config.camera_frustrum_scale,
+            color=config.camera_frustrum_color,
+        )
+        self.camera4_frustrum = self.server.scene.add_camera_frustum(
+            f"/camera4",
+            fov=self.camera_config.intrinsics["camera4"].fov,
+            aspect=self.camera_config.intrinsics["camera4"].aspect,
+            scale=config.camera_frustrum_scale,
+            color=config.camera_frustrum_color,
+        )
+        self.camera5_frustrum = self.server.scene.add_camera_frustum(
+            f"/camera5",
+            fov=self.camera_config.intrinsics["camera5"].fov,
+            aspect=self.camera_config.intrinsics["camera5"].aspect,
+            scale=config.camera_frustrum_scale,
+            color=config.camera_frustrum_color,
+        )
+
+        log.info("Positioning camera frustrums based on URDF ...")
+        link_poses = get_link_poses(self.urdf.path, self.urdf.camera_link_names, self.rest_pose)
+        realsense1_pose = link_poses[self.camera_config.realsense1_urdf_link_name]
+        self.realsense1_frustrum.position = realsense1_pose[:3]
+        self.realsense1_frustrum.wxyz = realsense1_pose[3:]
+        realsense2_pose = link_poses[self.camera_config.realsense2_urdf_link_name]
+        self.realsense2_frustrum.position = realsense2_pose[:3]
+        self.realsense2_frustrum.wxyz = realsense2_pose[3:]
+        camera1_pose = link_poses[self.camera_config.camera1_urdf_link_name]
+        self.camera1_frustrum.position = camera1_pose[:3]
+        self.camera1_frustrum.wxyz = camera1_pose[3:]
+        camera2_pose = link_poses[self.camera_config.camera2_urdf_link_name]
+        self.camera2_frustrum.position = camera2_pose[:3]
+        self.camera2_frustrum.wxyz = camera2_pose[3:]
+        camera3_pose = link_poses[self.camera_config.camera3_urdf_link_name]
+        self.camera3_frustrum.position = camera3_pose[:3]
+        self.camera3_frustrum.wxyz = camera3_pose[3:]
+        camera4_pose = link_poses[self.camera_config.camera4_urdf_link_name]
+        self.camera4_frustrum.position = camera4_pose[:3]
+        self.camera4_frustrum.wxyz = camera4_pose[3:]
+        camera5_pose = link_poses[self.camera_config.camera5_urdf_link_name]
+        self.camera5_frustrum.position = camera5_pose[:3]
+        self.camera5_frustrum.wxyz = camera5_pose[3:]
 
     def step(self):
         log.info("Empty step function, implement in subclass")

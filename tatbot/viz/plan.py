@@ -226,7 +226,7 @@ class VizPlan(BaseViz):
             log.debug("Sending robot to rest pose")
             self.robot_at_rest = True
             self.joints = self.rest_pose.copy()
-            self.step_sleep = self.plan.path_dt_slow
+            self.step_sleep = self.plan.dt_slow
         else:
             self.joints = np.asarray(self.strokebatch.joints[self.stroke_idx, self.pose_idx], dtype=np.float64).flatten()
             self.step_sleep = float(self.strokebatch.dt[self.stroke_idx, self.pose_idx].item())

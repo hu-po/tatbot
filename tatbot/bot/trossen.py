@@ -29,6 +29,7 @@ from dataclasses import dataclass
 import numpy as np
 import trossen_arm
 
+from tatbot.data.arms import ArmsConfig
 from tatbot.data.pose import ArmPose
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
@@ -125,6 +126,36 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
     algorithm_parameter = driver.get_algorithm_parameter()
     log.debug("Algorithm parameter:")
     log.debug(f"  singularity threshold: {algorithm_parameter.singularity_threshold}")
+
+def drivers_from_arms_config(config: ArmsConfig) -> tuple[trossen_arm.TrossenArmDriver, trossen_arm.TrossenArmDriver]:
+    log.info(f"Setting up left arm driver...")
+    arm_l = trossen_arm.TrossenArmDriver()
+    arm_l.configure(
+        trossen_arm.Model.wxai_v0,
+        trossen_arm.StandardEndEffector.wxai_v0_base,
+        config.ip_address_l,
+        True, # clear_error
+        timeout=config.connection_timeout,
+    )
+    config_filepath = os.path.expanduser(config.arm_l_config_filepath)
+    log.debug(f"Loading left arm config from {config_filepath}")
+    arm_l.load_configs_from_file(config_filepath)
+    arm_l.set_all_modes(trossen_arm.Mode.position)
+
+    log.info(f"Setting up right arm driver...")
+    arm_r = trossen_arm.TrossenArmDriver()
+    arm_r.configure(
+        trossen_arm.Model.wxai_v0,
+        trossen_arm.StandardEndEffector.wxai_v0_base,
+        config.ip_address_r,
+        True, # clear_error
+        timeout=config.connection_timeout,
+    )
+    config_filepath = os.path.expanduser(config.arm_r_config_filepath)
+    log.debug(f"Loading right arm config from {config_filepath}")
+    arm_r.load_configs_from_file(config_filepath)
+    arm_r.set_all_modes(trossen_arm.Mode.position)
+    return arm_l, arm_r
 
 def configure_arm(filepath: str, ip: str, test_pose_name: str, test_tolerance: float):
     assert os.path.exists(filepath), f"❌📄 yaml file does not exist: {filepath}"

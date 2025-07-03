@@ -50,7 +50,7 @@ class Yaml:
     Shared dataclass mixin for YAML (de)serialization.
     Inherit this in your @dataclass for load/save methods.
     """
-    yaml_dir: str = os.path.expanduser("~/tatbot/config")
+    yaml_dir: str = "~/tatbot/config"
     default: str = os.path.join(yaml_dir, "default.yaml")
 
     @classmethod
@@ -59,7 +59,7 @@ class Yaml:
         Returns the directory where YAML files for this class are stored.
         Subclasses can override yaml_dir or this method for custom logic.
         """
-        return cls.yaml_dir
+        return os.path.expanduser(cls.yaml_dir)
     
     @classmethod
     def yaml_path_from_name(cls: Type[T], name: str) -> str:

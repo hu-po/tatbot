@@ -9,6 +9,8 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
 from lerobot.robots import make_robot_from_config
 from lerobot.robots.tatbot.config_tatbot import TatbotConfig
+from lerobot.cameras.realsense import RealSenseCameraConfig
+from lerobot.cameras.opencv import OpenCVCameraConfig
 from lerobot.utils.control_utils import (
     sanity_check_dataset_name,
     sanity_check_dataset_robot_compatibility,
@@ -16,6 +18,8 @@ from lerobot.utils.control_utils import (
 from lerobot.utils.robot_utils import busy_wait
 
 from tatbot.data.plan import Plan
+from tatbot.data.cam import CamerasConfig
+from tatbot.data.arms import ArmsConfig
 from tatbot.data.pose import ArmPose, make_bimanual_joints
 from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
@@ -59,6 +63,10 @@ class BotPlanConfig:
     resume: bool = False
     """If true, resumes recording from the last episode, dataset name must match."""
 
+    arms_config_name: str = "bimanual"
+    """Name of the arms config (ArmsConfig)."""
+    camera_config_name: str = "all"
+    """Name of the camera config (CameraConfig)."""
     left_arm_pose_name: str = "left/rest"
     """Name of the left arm pose (ArmPose)."""
     right_arm_pose_name: str = "right/rest"
@@ -75,12 +83,44 @@ def record_plan(config: BotPlanConfig):
     strokes: StrokeList = StrokeList.from_yaml(os.path.join(plan_dir, "strokes.yaml"))
     num_strokes = strokebatch.joints.shape[0]
 
+    cameras: CamerasConfig = CamerasConfig.from_name(config.camera_config_name)
+    arms: ArmsConfig = ArmsConfig.from_name(config.arms_config_name)
     left_arm_pose: ArmPose = ArmPose.from_name(config.left_arm_pose_name)
     right_arm_pose: ArmPose = ArmPose.from_name(config.right_arm_pose_name)
     rest_pose = make_bimanual_joints(left_arm_pose, right_arm_pose)
 
+
     log.info("🤗 Adding LeRobot robot...")
-    robot = make_robot_from_config(TatbotConfig())
+    robot = make_robot_from_config(TatbotConfig(
+        ip_address_l=arms.ip_address_l,
+        ip_address_r=arms.ip_address_r,
+        arm_l_config_filepath=arms.arm_l_config_filepath,
+        arm_r_config_filepath=arms.arm_r_config_filepath,
+        goal_time_fast=arms.dt,
+        goal_time_slow=arms.dt,
+        connection_timeout=arms.connection_timeout,
+        home_pos_l=left_arm_pose.joints,
+        home_pos_r=right_arm_pose.joints,
+        cameras={
+            cam.name : RealSenseCameraConfig(
+                fps=cam.fps,
+                width=cam.width,
+                height=cam.height,
+                serial_number_or_name=cam.serial_number,
+            ) for cam in cameras.realsenses
+        },
+        cond_cameras={
+            cam.name : OpenCVCameraConfig(
+                fps=cam.fps,
+                width=cam.width,
+                height=cam.height,
+                ip=cam.ip,
+                username=cam.username,
+                password=os.environ.get(cam.password, None),
+                rtsp_port=cam.rtsp_port,
+            ) for cam in cameras.ipcameras
+        }
+    ))
     robot.connect()
 
     output_dir = os.path.expanduser(config.output_dir)
@@ -165,7 +205,7 @@ def record_plan(config: BotPlanConfig):
         # start every episode by sending arms to rest pose
         log.debug(f"🤖 sending arms to rest pose")
         action = robot._urdf_joints_to_action(rest_pose)
-        robot.send_action(action, goal_time=plan.path_dt_slow, block="left")
+        robot.send_action(action, goal_time=plan.dt_slow, block="left")
 
         # Per-episode conditioning information is stored in seperate directory
         episode_cond = {}

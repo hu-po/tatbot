@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass
 
 from tatbot.data import Yaml
@@ -28,9 +27,9 @@ class Plan(Yaml):
     """All paths will be resampled to this length."""
     ik_batch_size: int
     """Batch size for IK computation."""
-    path_dt_fast: float
+    dt_fast: float
     """Time between poses in seconds for fast movement."""
-    path_dt_slow: float
+    dt_slow: float
     """Time between poses in seconds for slow movement."""
 
     ee_rot_l: Rot
@@ -48,5 +47,5 @@ class Plan(Yaml):
     needle_offset_r: Pos
     """<x, y, z> offset for needle stroke in meters."""
 
-    yaml_dir: str = os.path.expanduser("~/tatbot/config/plans")
-    """Directory containing the plan configs."""
+    yaml_dir: str = "~/tatbot/config/plans"
+    """Directory containing the config yaml files."""

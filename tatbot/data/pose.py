@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -27,7 +26,8 @@ class Pose(Yaml):
 class ArmPose(Yaml):
     joints: tuple[float, ...]
     """Joint positions in radians."""
-    yaml_dir: str = os.path.expanduser("~/tatbot/config/poses")
+    yaml_dir: str = "~/tatbot/config/poses"
+    """Directory containing the config yaml files."""
 
 def make_bimanual_joints(pose_l: ArmPose, pose_r: ArmPose) -> np.ndarray:
     return np.concatenate([pose_l.joints, pose_r.joints])

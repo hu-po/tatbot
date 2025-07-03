@@ -216,10 +216,10 @@ def gen_from_svg(config: FromSVGConfig):
     strokelist: StrokeList = StrokeList(strokes=[])
 
     # default time between poses is fast movement
-    dt = np.full((plan.path_length, 1), plan.path_dt_fast)
+    dt = np.full((plan.path_length, 1), plan.dt_fast)
     # slow movement to and from hover positions
-    dt[:2] = plan.path_dt_slow
-    dt[-2:] = plan.path_dt_slow
+    dt[:2] = plan.dt_slow
+    dt[-2:] = plan.dt_slow
 
     # hardcoded orientations for left and right arm end effectors
     ee_rot_l = np.tile(plan.ee_rot_l.wxyz, (plan.path_length, 1))

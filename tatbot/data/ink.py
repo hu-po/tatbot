@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass
 
 from tatbot.data import Yaml
@@ -26,4 +25,5 @@ class InkCap(Yaml):
 class InkPalette(Yaml):
     inkcaps: tuple[InkCap, ...]
     """Ordered list of inkcaps in the palette."""
-    yaml_dir: str = os.path.expanduser("~/tatbot/config/inks")
+    yaml_dir: str = "~/tatbot/config/inks"
+    """Directory containing the config yaml files."""

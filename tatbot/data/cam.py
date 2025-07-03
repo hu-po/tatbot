@@ -1,36 +1,61 @@
-import os
 from dataclasses import dataclass
 
 from tatbot.data import Yaml
-
-from .pose import Pose
-
+from tatbot.data.pose import Pose
 
 @dataclass
-class CameraIntrinsics:
-    fov: float = 0.0
+class CameraIntrinsics(Yaml):
+    fov: float
     """Field of view in radians."""
-    aspect: float = 0.0
+    aspect: float
     """Aspect ratio."""
-    fx: float = 0.0
+    fx: float
     """Focal length in x-direction."""
-    fy: float = 0.0
+    fy: float
     """Focal length in y-direction."""
-    ppx: float = 0.0
+    ppx: float
     """Principal point in x-direction."""
-    ppy: float = 0.0
+    ppy: float
     """Principal point in y-direction."""
     
 @dataclass
 class CameraConfig(Yaml):
-    """Configuration for a single camera."""
-    ip: str
-    username: str
-    password: str
-    rtsp_port: int
-    stream_path: str
-    resolution: tuple[int, int]
+    name: str
+    """Name of the camera."""
+    width: int
+    """Width of the image in pixels."""
+    height: int
+    """Height of the image in pixels."""
     intrinsics: CameraIntrinsics
-    extrinsics: Pose
+    """Intrinsics of the camera."""
+    extrinsics: Pose | None = None
+    """Extrinsics of the camera (pose of the camera in the world frame)."""
     fps: int
-    yaml_dir: str = os.path.expanduser("~/tatbot/config/cameras")
+    """Frames per second."""
+
+@dataclass
+class RealSenseCameraConfig(CameraConfig):
+    serial_number: str
+    """Serial number of the camera (only for realsense cameras)."""
+
+@dataclass
+class IPCameraConfig(CameraConfig):
+    ip: str
+    """IP address of the camera (only for ip cameras)."""
+    username: str
+    """Username for the camera (only for ip cameras)."""
+    password: str
+    """Password for the camera (only for ip cameras)."""
+    rtsp_port: int
+    """RTSP port of the camera (only for ip cameras)."""
+    stream_path: str
+    """Stream path of the camera (only for ip cameras)."""
+
+@dataclass
+class CamerasConfig(Yaml):
+    realsenses: list[RealSenseCameraConfig]
+    """List of camera configurations."""
+    ipcameras: list[IPCameraConfig]
+    """List of camera configurations."""
+    yaml_dir: str = "~/tatbot/config/cameras"
+    """Directory containing the config yaml files."""

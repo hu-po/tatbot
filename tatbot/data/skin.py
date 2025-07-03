@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -20,5 +19,5 @@ class Skin(Yaml):
     design_pose: Pose
     """Pose of the design in the global frame."""
 
-    yaml_dir: str = os.path.expanduser("~/tatbot/config/skins")
+    yaml_dir: str = "~/tatbot/config/skins"
     """Directory containing the skin configs."""

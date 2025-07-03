@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass
 
 from tatbot.data import Yaml
@@ -22,5 +21,5 @@ class URDF(Yaml):
     """Name of the origin link in the URDF."""
     skin_link_name: str
     """Name of the skin link in the URDF."""
-    yaml_dir: str = os.path.expanduser("~/tatbot/config/urdf")
+    yaml_dir: str = "~/tatbot/config/urdf"
     """Directory containing the urdf configs."""
