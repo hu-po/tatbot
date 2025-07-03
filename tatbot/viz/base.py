@@ -81,28 +81,32 @@ class BaseViz:
 
         log.info("Adding camera frustrums ...")
         link_poses = get_link_poses(self.scene.urdf.path, self.scene.urdf.cam_link_names, self.scene.home_pos_full)
+        _camera_counter: int = 0
         self.realsense_frustrums = {}
         for realsense in self.scene.cams.realsenses:
             self.realsense_frustrums[realsense.name] = self.server.scene.add_camera_frustum(
                 f"/realsense/{realsense.name}",
-                fov=realsense.fov,
-                aspect=realsense.aspect,
+                fov=realsense.intrinsics.fov,
+                aspect=realsense.intrinsics.aspect,
                 scale=config.realsense_frustrum_scale,
                 color=config.realsense_frustrum_color,
-                position=link_poses[realsense.urdf_link_name].pos.xyz,
-                wxyz=link_poses[realsense.urdf_link_name].rot.wxyz,
+                position=link_poses[self.scene.urdf.cam_link_names[_camera_counter]].pos.xyz,
+                wxyz=link_poses[self.scene.urdf.cam_link_names[_camera_counter]].rot.wxyz,
             )
+            _camera_counter += 1
         self.ipcameras_frustrums = {}
         for ipcamera in self.scene.cams.ipcameras:
             self.ipcameras_frustrums[ipcamera.name] = self.server.scene.add_camera_frustum(
                 f"/ipcamera/{ipcamera.name}",
-                fov=ipcamera.fov,
-                aspect=ipcamera.aspect,
+                fov=ipcamera.intrinsics.fov,
+                aspect=ipcamera.intrinsics.aspect,
                 scale=config.camera_frustrum_scale,
                 color=config.camera_frustrum_color,
-                position=link_poses[ipcamera.urdf_link_name].pos.xyz,
-                wxyz=link_poses[ipcamera.urdf_link_name].rot.wxyz,
+                position=link_poses[self.scene.urdf.cam_link_names[_camera_counter]].pos.xyz,
+                wxyz=link_poses[self.scene.urdf.cam_link_names[_camera_counter]].rot.wxyz,
             )
+            _camera_counter += 1
+        log.info(f"Added {_camera_counter} cameras")
 
     def step(self):
         log.info("Empty step function, implement in subclass")

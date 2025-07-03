@@ -1,6 +1,5 @@
 ipcameras:
-  camera1:
-    name: "camera1"
+  - name: "camera1"
     width: 1920
     height: 1080
     fps: 5
@@ -20,8 +19,7 @@ ipcameras:
         xyz: [0.0, 0.0, 0.0]
       rot:
         wxyz: [1.0, 0.0, 0.0, 0.0]
-  camera2:
-    name: "camera2"
+  - name: "camera2"
     width: 1920
     height: 1080
     fps: 5
@@ -41,8 +39,7 @@ ipcameras:
         xyz: [0.0, 0.0, 0.0]
       rot:
         wxyz: [1.0, 0.0, 0.0, 0.0]
-  camera3:
-    name: "camera3"
+  - name: "camera3"
     width: 1920
     height: 1080
     fps: 5
@@ -62,8 +59,7 @@ ipcameras:
         xyz: [0.0, 0.0, 0.0]
       rot:
         wxyz: [1.0, 0.0, 0.0, 0.0]
-  camera4:
-    name: "camera4"
+  - name: "camera4"
     width: 1920
     height: 1080
     fps: 5
@@ -83,8 +79,7 @@ ipcameras:
         xyz: [0.0, 0.0, 0.0]
       rot:
         wxyz: [1.0, 0.0, 0.0, 0.0]
-  camera5:
-    name: "camera5"
+  - name: "camera5"
     width: 1920
     height: 1080
     fps: 5
@@ -105,16 +100,11 @@ ipcameras:
       rot:
         wxyz: [1.0, 0.0, 0.0, 0.0]
 realsenses:
-  realsense1:
+  - name: "realsense1"
     width: 640
     height: 480
     fps: 30
     serial_number: "218622278376"
-    ip: null
-    username: null
-    password: null
-    rtsp_port: null
-    stream_path: null
     intrinsics:
       fov: null
       aspect: null
@@ -127,16 +117,11 @@ realsenses:
         xyz: [0.0, 0.0, 0.0]
       rot:
         wxyz: [1.0, 0.0, 0.0, 0.0]
-  realsense2:
+  - name: "realsense2"
     width: 640
     height: 480
     fps: 30
     serial_number: "230422273017"
-    ip: null
-    username: null
-    password: null
-    rtsp_port: null
-    stream_path: null
     intrinsics:
       fov: null
       aspect: null

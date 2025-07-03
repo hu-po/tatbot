@@ -30,6 +30,8 @@ class CameraConfig(Yaml):
     """Frames per second."""
     intrinsics: Instrinsics
     """Intrinsics of the camera."""
+    extrinsics: Pose
+    """Extrinsics of the camera: pose in the global frame."""
 
 @dataclass
 class RealSenseCameraConfig(CameraConfig):
@@ -46,14 +48,12 @@ class IPCameraConfig(CameraConfig):
     """Password for the camera (only for ip cameras)."""
     rtsp_port: int
     """RTSP port of the camera (only for ip cameras)."""
-    stream_path: str
-    """Stream path of the camera (only for ip cameras)."""
 
 @dataclass
 class Cams(Yaml):
-    realsenses: list[RealSenseCameraConfig]
+    realsenses: tuple[RealSenseCameraConfig, ...]
     """List of camera configurations."""
-    ipcameras: list[IPCameraConfig]
+    ipcameras: tuple[IPCameraConfig, ...]
     """List of camera configurations."""
     yaml_dir: str = "~/tatbot/config/cams"
     """Directory containing the config yaml files."""
