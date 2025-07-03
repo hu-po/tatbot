@@ -12,14 +12,14 @@ class Ink(Yaml):
 
 @dataclass
 class InkCap(Yaml):
-    ink: Ink
-    """Ink inside the inkcap."""
     name: str
     """Name of the inkcap."""
     diameter_m: float
     """Diameter of the inkcap (meters)."""
     depth_m: float
     """Depth of the inkcap (meters)."""
+    ink: Ink | None = None
+    """Ink inside the inkcap, if None the inkcap is empty."""
 
 @dataclass
 class Inks(Yaml):

@@ -1,97 +1,65 @@
 inkcaps:
   - name: left_large
-    ink:
-      name: true_blue
-      rgb: [0, 0, 255]
+    ink: null
     diameter_m: 0.014
     depth_m: 0.014
   - name: left_small_0
-    ink:
-      name: pink
-      rgb: [255, 105, 180]
+    ink: null
     diameter_m: 0.008
     depth_m: 0.01
   - name: left_small_1
-    ink:
-      name: orange
-      rgb: [255, 140, 0]
+    ink: null
     diameter_m: 0.008
     depth_m: 0.013
   - name: left_small_2
-    ink:
-      name: white
-      rgb: [255, 255, 255]
+    ink: null
     diameter_m: 0.008
     depth_m: 0.01
   - name: left_small_3
-    ink:
-      name: yellow
-      rgb: [255, 255, 0]
+    ink: null
     diameter_m: 0.008
     depth_m: 0.01
   - name: left_medium_0
-    ink:
-      name: bright_red
-      rgb: [255, 0, 0]
+    ink: null
     diameter_m: 0.012
     depth_m: 0.01
   - name: left_medium_1
-    ink:
-      name: green
-      rgb: [0, 128, 0]
+    ink: null
     diameter_m: 0.012
     depth_m: 0.01
   - name: left_medium_2
-    ink:
-      name: cyan
-      rgb: [0, 255, 255]
+    ink: null
     diameter_m: 0.012
     depth_m: 0.01
   - name: right_large
-    ink:
-      name: purple
-      rgb: [128, 0, 128]
+    ink: null
     diameter_m: 0.014
     depth_m: 0.014
   - name: right_small_0
-    ink:
-      name: magenta
-      rgb: [255, 0, 255]
+    ink: null
     diameter_m: 0.008
     depth_m: 0.01
   - name: right_small_1
-    ink:
-      name: navy
-      rgb: [0, 0, 128]
+    ink: null
     diameter_m: 0.008
     depth_m: 0.01
   - name: right_small_2
-    ink:
-      name: grey
-      rgb: [128, 128, 128]
+    ink: null
     diameter_m: 0.008
     depth_m: 0.01
   - name: right_small_3
-    ink:
-      name: gold
-      rgb: [255, 215, 0]
+    ink: null
     diameter_m: 0.008
     depth_m: 0.01
   - name: right_medium_0
-    ink:
-      name: brown
-      rgb: [139, 69, 19]
+    ink: null
     diameter_m: 0.012
     depth_m: 0.01
   - name: right_medium_1
-    ink:
-      name: teal
-      rgb: [0, 128, 128]
+    ink: null
     diameter_m: 0.012
     depth_m: 0.01
   - name: right_medium_2
-    ink:
-      name: olive
-      rgb: [128, 128, 0]
+    ink: null
     diameter_m: 0.012
     depth_m: 0.01 

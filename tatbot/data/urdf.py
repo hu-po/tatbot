@@ -18,8 +18,6 @@ class URDF(Yaml):
     """Names of the inkcap links in the URDF."""
     root_link_name: str
     """Name of the origin/root link in the URDF."""
-    skin_link_name: str
-    """Name of the skin link in the URDF."""
 
     yaml_dir: str = "~/tatbot/config/urdf"
     """Directory containing the urdf configs."""

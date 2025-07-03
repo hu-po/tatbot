@@ -193,7 +193,7 @@ each arm has a config file in `config/trossen/arm_{l|r}.yaml`, update configs us
 
 ## URDF
 
-tatbot is defined using URDF at `tatbot/assets/urdf/tatbot.urdf`.
+tatbot is defined using URDF at `tatbot/urdf/tatbot.urdf`.
 
 ## Realsense Cameras
 
