@@ -29,7 +29,7 @@ from dataclasses import dataclass
 import numpy as np
 import trossen_arm
 
-from tatbot.data.arms import ArmsConfig
+from tatbot.data.arms import Arms
 from tatbot.data.pose import ArmPose
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
@@ -127,7 +127,7 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
     log.debug("Algorithm parameter:")
     log.debug(f"  singularity threshold: {algorithm_parameter.singularity_threshold}")
 
-def drivers_from_arms_config(config: ArmsConfig) -> tuple[trossen_arm.TrossenArmDriver, trossen_arm.TrossenArmDriver]:
+def driver_from_arms(config: Arms) -> tuple[trossen_arm.TrossenArmDriver, trossen_arm.TrossenArmDriver]:
     log.info(f"Setting up left arm driver...")
     arm_l = trossen_arm.TrossenArmDriver()
     arm_l.configure(

@@ -70,14 +70,34 @@ class BaseViz:
         self.viser_urdf = ViserUrdf(self.server, _urdf, root_node_name="/root")
         self.joints = self.scene.home_pos_full.copy()
 
+        with self.server.gui.add_folder("Joints", expand_by_default=False):
+            with self.server.gui.add_folder("Left", expand_by_default=False):
+                self.left_joint_textboxes = []
+                for i in range(8):
+                    tb = self.server.gui.add_text(
+                        f"{i+1}",
+                        initial_value=str(self.joints[i]),
+                        disabled=True
+                    )
+                    self.left_joint_textboxes.append(tb)
+            with self.server.gui.add_folder("Right", expand_by_default=False):
+                self.right_joint_textboxes = []
+                for i in range(8):
+                    tb = self.server.gui.add_text(
+                        f"{i+1}",
+                        initial_value=str(self.joints[i+8]),
+                        disabled=True
+                    )
+                    self.right_joint_textboxes.append(tb)
+
         self.arm_l = None
         self.arm_r = None
         self.to_trossen_vector = None
         if config.use_real_robot:
             log.debug("Using real robot")
-            from tatbot.bot.trossen import drivers_from_arms_config, trossen_arm
+            from tatbot.bot.trossen import driver_from_arms, trossen_arm
             
-            self.arm_l, self.arm_r = drivers_from_arms_config(self.scene.arms_config)
+            self.arm_l, self.arm_r = driver_from_arms(self.scene.arms)
             self.to_trossen_vector = lambda x: trossen_arm.VectorDouble(x)
     
         log.debug("Adding inkpalette to viser")
@@ -136,10 +156,14 @@ class BaseViz:
                 log.debug(f"Setting real left arm positions: {arm_l_joints}")
                 self.arm_l.set_all_positions(self.to_trossen_vector(arm_l_joints), blocking=True)
             if self.arm_r is not None:
-                arm_r_joints = self.joints[8:]
+                arm_r_joints = self.joints[8:-1]
                 log.debug(f"Setting real right arm positions: {arm_r_joints}")
                 self.arm_r.set_all_positions(self.to_trossen_vector(arm_r_joints), blocking=True)
             self.step()
+            for i, tb in enumerate(self.left_joint_textboxes):
+                tb.value = str(self.joints[i])
+            for i, tb in enumerate(self.right_joint_textboxes):
+                tb.value = str(self.joints[i+8])
             log.debug(f"Step time: {time.time() - start_time:.4f}s")
             time.sleep(self.step_sleep / self.speed_slider.value)
 
