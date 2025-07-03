@@ -1,13 +1,13 @@
 inkcaps:
   - name: left_large
     ink:
-      name: bright_red
-      rgb: [0, 0, 255]
+      name: nighthawk_black
+      rgb: [0, 0, 0]
     diameter_m: 0.014
     depth_m: 0.014
   - name: right_large
     ink:
-      name: true_blue
-      rgb: [255, 0, 0]
+      name: nighthawk_black
+      rgb: [0, 0, 0]
     diameter_m: 0.014
     depth_m: 0.014

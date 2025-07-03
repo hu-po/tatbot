@@ -37,7 +37,7 @@ class FromSVGConfig:
     output_dir: str = "~/tatbot/nfs/plans"
     """Directory to save the plan."""
 
-    pens_config_path: str = "~/tatbot/config/drawingbotv3/pens/fullcolor.json"
+    pens_config_path: str = "~/tatbot/config/drawingbotv3/pens/full.json"
     """Path to the DrawingBotV3 Pens config file."""
     
     plan_name: str = "default"

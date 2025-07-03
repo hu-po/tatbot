@@ -11,6 +11,14 @@
     "pens": [
       {
         "type": "tatbot",
+        "name": "nighthawk_black",
+        "argb": -16777216,
+        "distributionWeight": 100,
+        "strokeSize": 1.0,
+        "isEnabled": true
+      },
+      {
+        "type": "tatbot",
         "name": "true_black",
         "argb": -16777216,
         "distributionWeight": 100,

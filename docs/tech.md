@@ -227,3 +227,4 @@ tatbot uses image generators to generate artwork, and then vectorizes the artwor
 
 - [Replicate Playground](https://replicate.com/playground)
 - [DrawingBotV3](https://docs.drawingbotv3.com/en/latest/index.html)
+- https://docs.drawingbotv3.com/en/latest/pensettings.html
