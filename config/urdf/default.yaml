@@ -1,4 +1,4 @@
-path: "~/tatbot/assets/urdf/tatbot.urdf"
+path: "~/tatbot/urdf/tatbot.urdf"
 ee_link_names:
   - "left/tattoo_needle"
   - "right/tattoo_needle"
