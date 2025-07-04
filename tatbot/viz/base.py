@@ -103,10 +103,13 @@ class BaseViz:
         log.debug("Adding inkpalette to viser")
         link_poses = get_link_poses(self.scene.urdf.path, self.scene.urdf.ink_link_names, self.scene.home_pos_full)
         for inkcap in self.scene.inks.inkcaps:
+            if inkcap.ink is None:
+                continue
+            log.debug(f"Inkcap {inkcap.name} contains ink")
             self.server.scene.add_icosphere(
                 name=f"/inkcaps/{inkcap.name}",
                 radius=inkcap.diameter_m / 2,
-                color=inkcap.ink.rgb,
+                color=inkcap.ink["rgb"],
                 position=tuple(link_poses[inkcap.name].pos.xyz),
                 subdivisions=4,
                 visible=True,

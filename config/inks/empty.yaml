@@ -1,65 +1,65 @@
 inkcaps:
-  - name: left_large
+  - name: inkcap_left_large
     ink: null
     diameter_m: 0.014
     depth_m: 0.014
-  - name: left_small_0
+  - name: inkcap_left_small_0
     ink: null
     diameter_m: 0.008
     depth_m: 0.01
-  - name: left_small_1
+  - name: inkcap_left_small_1
     ink: null
     diameter_m: 0.008
     depth_m: 0.013
-  - name: left_small_2
+  - name: inkcap_left_small_2
     ink: null
     diameter_m: 0.008
     depth_m: 0.01
-  - name: left_small_3
+  - name: inkcap_left_small_3
     ink: null
     diameter_m: 0.008
     depth_m: 0.01
-  - name: left_medium_0
+  - name: inkcap_left_medium_0
     ink: null
     diameter_m: 0.012
     depth_m: 0.01
-  - name: left_medium_1
+  - name: inkcap_left_medium_1
     ink: null
     diameter_m: 0.012
     depth_m: 0.01
-  - name: left_medium_2
+  - name: inkcap_left_medium_2
     ink: null
     diameter_m: 0.012
     depth_m: 0.01
-  - name: right_large
+  - name: inkcap_right_large
     ink: null
     diameter_m: 0.014
     depth_m: 0.014
-  - name: right_small_0
+  - name: inkcap_right_small_0
     ink: null
     diameter_m: 0.008
     depth_m: 0.01
-  - name: right_small_1
+  - name: inkcap_right_small_1
     ink: null
     diameter_m: 0.008
     depth_m: 0.01
-  - name: right_small_2
+  - name: inkcap_right_small_2
     ink: null
     diameter_m: 0.008
     depth_m: 0.01
-  - name: right_small_3
+  - name: inkcap_right_small_3
     ink: null
     diameter_m: 0.008
     depth_m: 0.01
-  - name: right_medium_0
+  - name: inkcap_right_medium_0
     ink: null
     diameter_m: 0.012
     depth_m: 0.01
-  - name: right_medium_1
+  - name: inkcap_right_medium_1
     ink: null
     diameter_m: 0.012
     depth_m: 0.01
-  - name: right_medium_2
+  - name: inkcap_right_medium_2
     ink: null
     diameter_m: 0.012
     depth_m: 0.01 

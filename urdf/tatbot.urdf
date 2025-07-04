@@ -58,7 +58,7 @@
     <parent link="root"/>
     <child link="palette"/>
   </joint>
-  <!-- <link name="palette_mesh">
+  <link name="palette_mesh">
     <visual>
       <origin rpy="0 0 3.14" xyz="-0.06 0.01 -0.16"/>
       <geometry>
@@ -70,7 +70,7 @@
     <origin rpy="0 0 0" xyz="0 0 0"/>
     <parent link="palette"/>
     <child link="palette_mesh"/>
-  </joint> -->
+  </joint>
 
   <!-- inks -->
   <link name="inkcap_left_large" />
