@@ -9,6 +9,15 @@ class Plan(Yaml):
     name: str
     """Name of the plan."""
 
+    image_width_m: float
+    """Width of the image in meters."""
+    image_height_m: float
+    """Height of the image in meters."""
+    image_width_px: int
+    """Width of the image in pixels."""
+    image_height_px: int
+    """Height of the image in pixels."""
+
     left_arm_pen_names: list[str]
     """Name of pens that will be drawn using left arm."""
     right_arm_pen_names: list[str]
@@ -36,18 +45,3 @@ class Plan(Yaml):
 
     yaml_dir: str = "~/tatbot/config/plans"
     """Directory containing the config yaml files."""
-
-@dataclass
-class CalibPlan(Plan):
-    pass
-
-@dataclass
-class SVGPlan(Plan):
-    image_width_m: float
-    """Width of the image in meters."""
-    image_height_m: float
-    """Height of the image in meters."""
-    image_width_px: int
-    """Width of the image in pixels."""
-    image_height_px: int
-    """Height of the image in pixels."""

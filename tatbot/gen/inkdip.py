@@ -10,7 +10,7 @@ from tatbot.gen.ik import transform_and_offset
 from tatbot.utils.log import get_logger
 from tatbot.data.scene import Scene
 
-log = get_logger('gen.inkdip', '🖋️')
+log = get_logger('gen.inkdip', '💧')
 
 def make_inkdip_func(scene: Scene, plan: Plan) -> Callable:
     """ Returns a function that can be used to generate inkdip positions for a given color. """
@@ -23,10 +23,12 @@ def make_inkdip_func(scene: Scene, plan: Plan) -> Callable:
         assert inkcap.name in scene.urdf.ink_link_names, f"❌ Inkcap {inkcap.name} not found in URDF"
         if inkcap.ink is not None:
             filled_inkcap_names.append(inkcap.name)
-            inks_color_to_inkcap_name[inkcap.ink.name] = inkcap.name
-            inks_color_to_inkcap_pose[inkcap.ink.name] = link_poses[inkcap.name]
+            ink_color: str = inkcap.ink["name"]
+            inks_color_to_inkcap_name[ink_color] = inkcap.name
+            inks_color_to_inkcap_pose[ink_color] = link_poses[inkcap.name]
+            log.debug(f"Inkcap {inkcap.name} is filled with {ink_color}")
         else:
-            log.info(f"Inkcap {inkcap.name} is empty")
+            log.debug(f"Inkcap {inkcap.name} is empty")
     log.info(f"✅ Found {len(filled_inkcap_names)} filled inkcaps in {scene.inks.yaml_dir}")
     log.debug(f"Filled inkcaps in scene: {filled_inkcap_names}")
     

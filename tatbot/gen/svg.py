@@ -27,7 +27,7 @@ class GenSVGPlanConfig():
     debug: bool = False
     """Enable debug logging."""
 
-    name: str = "logo2"
+    name: str = "purpocto"
     """Name of the SVG file"""
     design_dir: str = "~/tatbot/nfs/designs"
     """Directory containing the design svg (per pen) and png file."""
