@@ -1,63 +1,25 @@
-import os
 import time
-from dataclasses import asdict, dataclass, field
 from typing import List
 
 import cv2
-import dacite
 import jax.numpy as jnp
 import jaxlie
 import numpy as np
 import pupil_apriltags as apriltag
-import yaml
 
 from tatbot.data.cams import Instrinsics
 from tatbot.data.pose import Pose
+from tatbot.data.tags import Tags
 from tatbot.utils.colors import COLORS
 from tatbot.utils.log import get_logger
 
 log = get_logger('tag', '🏷️')
 
-@dataclass
-class TagConfig:
-    family: str = "tag16h5"
-    """Family of AprilTags to use."""
-    size_m: float = 0.041
-    """Size of AprilTags: distance between detection corners (meters)."""
-    enabled_tags: dict[int, str] = field(default_factory=lambda: {
-        6: "arm_l",
-        7: "arm_r",
-        9: "palette",
-        10: "origin",
-        11: "skin",
-    })
-    """ Dictionary of enabled AprilTag IDs."""
-    urdf_link_names: dict[int, str] = field(default_factory=lambda: {
-        6: "tag6",
-        7: "tag7",
-        9: "tag9",
-        10: "tag10",
-        11: "tag11",
-    })
-    """ Dictionary of AprilTag IDs to URDF link names."""
-    decision_margin: float = 20.0
-    """Minimum decision margin for AprilTag detection filtering."""
-
-    @classmethod
-    def from_yaml(cls, filepath: str) -> "TagConfig":
-        with open(os.path.expanduser(filepath), "r") as f:
-            data = yaml.safe_load(f)
-        return dacite.from_dict(cls, data)
-    
-    def save_yaml(self, filepath: str) -> None:
-        with open(os.path.expanduser(filepath), "w") as f:
-            yaml.safe_dump(asdict(self), f)
-
 class TagTracker:
-    def __init__(self, config: TagConfig):
+    def __init__(self, config: Tags):
         self.config = config
         self.detector = apriltag.Detector(
-            families=config.family,
+            families=config.tag_family,
         )
 
     def track_tags(
