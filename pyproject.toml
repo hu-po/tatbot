@@ -40,6 +40,7 @@ bot = [
     "lerobot[tatbot,intelrealsense,smolvla] @ git+https://github.com/hu-po/lerobot.git@main",
     "pyrealsense2==2.55.1.6486",
     "trossen-arm==1.8.3",
+    "evdev==1.9.2",
 ]
 gen = [
     "jax[cuda12]>=0.4.0,<0.5.0",
