@@ -111,6 +111,7 @@ class BaseViz:
                 radius=inkcap.diameter_m / 2,
                 color=inkcap.ink["rgb"],
                 position=tuple(link_poses[inkcap.name].pos.xyz),
+                opacity=0.5,
                 subdivisions=4,
                 visible=True,
             )
@@ -143,6 +144,17 @@ class BaseViz:
             )
             _camera_counter += 1
         log.info(f"Added {_camera_counter} cameras")
+
+        log.info("Adding zone to viser")
+        self.zone = self.server.scene.add_box(
+            name=f"/zone/{self.scene.zone.name}",
+            color=(0, 255, 0),
+            dimensions=(self.scene.zone.width_m, self.scene.zone.depth_m, self.scene.zone.height_m),
+            position=self.scene.zone.pose.pos.xyz,
+            wxyz=self.scene.zone.pose.rot.wxyz,
+            opacity=0.5,
+            visible=True,
+        )
 
     def step(self):
         log.info("Empty step function, implement in subclass")

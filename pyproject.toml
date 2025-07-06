@@ -64,7 +64,7 @@ tag = [
 viz = [
     "opencv-python==4.11.0.86",
     "Pillow>=9.0.0,<11.0.0",
-    "viser==0.2.23",
+    "viser==1.0.0",
     "pyliblzfse>=0.4.1",
 ]
 vla = [
