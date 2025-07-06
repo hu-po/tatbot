@@ -220,6 +220,7 @@ the cameras are currently set at:
 ## AprilTags
 
 Objects (i.e. ink palette) in the scene are tracked using [AprilTags](https://chaitanyantr.github.io/apriltag.html).
+- 
 
 ## Artwork
 
