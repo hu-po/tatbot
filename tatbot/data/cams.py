@@ -17,6 +17,10 @@ class Instrinsics(Yaml):
     """Principal point in x-direction."""
     ppy: float
     """Principal point in y-direction."""
+    fov_depth: float | None = None
+    """Field of view in radians for depth camera."""
+    aspect_depth: float | None = None
+    """Aspect ratio for depth camera."""
     
 @dataclass
 class CameraConfig(Yaml):

@@ -9,6 +9,7 @@ ipcameras:
     rtsp_port: 554
     intrinsics:
       fov: 1.57
+      fov_depth: null
       aspect: 1.77
       fx: 1000.0
       fy: 1000.0
@@ -29,6 +30,7 @@ ipcameras:
     rtsp_port: 554
     intrinsics:
       fov: 1.57
+      fov_depth: null
       aspect: 1.77
       fx: 1000.0
       fy: 1000.0
@@ -49,6 +51,7 @@ ipcameras:
     rtsp_port: 554
     intrinsics:
       fov: 1.57
+      fov_depth: null
       aspect: 1.77
       fx: 1000.0
       fy: 1000.0
@@ -69,6 +72,7 @@ ipcameras:
     rtsp_port: 554
     intrinsics:
       fov: 1.57
+      fov_depth: null
       aspect: 1.77
       fx: 1000.0
       fy: 1000.0
@@ -89,6 +93,7 @@ ipcameras:
     rtsp_port: 554
     intrinsics:
       fov: 1.57
+      fov_depth: null
       aspect: 1.77
       fx: 1000.0
       fy: 1000.0
@@ -106,12 +111,15 @@ realsenses:
     fps: 30
     serial_number: "218622278376"
     intrinsics:
-      fov: null
-      aspect: null
-      fx: null
-      fy: null
-      ppx: null
-      ppy: null
+      # Color FOV (degrees): H=69.4, V=42.5, D=77
+      # Depth FOV (degrees): H=86, V=57, D=94
+      fov: 1.211 # 69.4 deg in radians
+      fov_depth: 1.501 # 86 deg in radians
+      aspect: 1.33
+      fx: 434.0506591796875
+      fy: 433.5442810058594
+      ppx: 430.9583435058594
+      ppy: 238.70144653320312
     extrinsics:
       pos:
         xyz: [0.0, 0.0, 0.0]
@@ -123,12 +131,15 @@ realsenses:
     fps: 30
     serial_number: "230422273017"
     intrinsics:
-      fov: null
-      aspect: null
-      fx: null
-      fy: null
-      ppx: null
-      ppy: null
+      # Color FOV (degrees): H=69.4, V=42.5, D=77
+      # Depth FOV (degrees): H=86, V=57, D=94
+      fov: 1.211 # 69.4 deg in radians
+      fov_depth: 1.501 # 86 deg in radians
+      aspect: 1.33
+      fx: 434.95263671875
+      fy: 434.330078125
+      ppx: 419.0846862792969
+      ppy: 237.813232421875
     extrinsics:
       pos:
         xyz: [0.0, 0.0, 0.0]
