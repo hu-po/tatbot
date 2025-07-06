@@ -1,7 +1,7 @@
 import pyrealsense2 as rs
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 from tatbot.data.cams import Cams, RealSenseCameraConfig
@@ -15,6 +15,13 @@ class RealSenseConfig:
     serial_number: Optional[str] = None
     cams_yaml: str = "~/tatbot/config/cams/all.yaml"
     """Path to the camera config YAML file."""
+
+def get_local_realsense_serials() -> List[str]:
+    context = rs.context()
+    devices = context.query_devices()
+    serials = [dev.get_info(rs.camera_info.serial_number) for dev in devices]
+    log.info(f"Found {len(serials)} RealSense device(s) connected: {serials}")
+    return serials
 
 def print_intrinsics(serial_number: str) -> None:
     pipeline = rs.pipeline()
@@ -42,24 +49,39 @@ def print_intrinsics(serial_number: str) -> None:
         log.debug(f"Stopping pipeline for serial {serial_number}")
         pipeline.stop()
 
-def get_realsense_config(cams: Cams, config: RealSenseConfig) -> Optional[RealSenseCameraConfig]:
-    if config.camera_name:
-        for cam in cams.realsenses:
-            if cam.name == config.camera_name:
+def match_realsense_devices(cams: Cams, local_serials: List[str]) -> Dict[str, Any]:
+    config_serials = [cam.serial_number for cam in cams.realsenses]
+    serial_to_cfg = {cam.serial_number: cam for cam in cams.realsenses}
+    intersection = [serial_to_cfg[s] for s in local_serials if s in config_serials]
+    only_in_config = [cam for cam in cams.realsenses if cam.serial_number not in local_serials]
+    only_on_hardware = [s for s in local_serials if s not in config_serials]
+    return {
+        'intersection': intersection,
+        'only_in_config': only_in_config,
+        'only_on_hardware': only_on_hardware
+    }
+
+def select_realsense_config(matched: Dict[str, List[RealSenseCameraConfig]], args: RealSenseConfig) -> Optional[RealSenseCameraConfig]:
+    intersection = matched['intersection']
+    if not intersection:
+        log.error("No RealSense cameras are both connected and configured. Exiting.")
+        return None
+    if args.camera_name:
+        for cam in intersection:
+            if cam.name == args.camera_name:
                 return cam
-        log.error(f"No RealSense camera found with name '{config.camera_name}'")
-    elif config.serial_number:
-        for cam in cams.realsenses:
-            if cam.serial_number == config.serial_number:
+        log.error(f"No connected/configured RealSense camera found with name '{args.camera_name}'")
+        return None
+    if args.serial_number:
+        for cam in intersection:
+            if cam.serial_number == args.serial_number:
                 return cam
-        log.error(f"No RealSense camera found with serial '{config.serial_number}'")
-    else:
-        if len(cams.realsenses) == 1:
-            return cams.realsenses[0]
-        elif len(cams.realsenses) > 1:
-            log.error("Multiple RealSense cameras found. Please specify one with --camera_name or --serial_number.")
-        else:
-            log.error("No RealSense cameras found in config.")
+        log.error(f"No connected/configured RealSense camera found with serial '{args.serial_number}'")
+        return None
+    if len(intersection) == 1:
+        return intersection[0]
+    log.error(f"Multiple RealSense cameras are both connected and configured. Please specify one with --camera_name or --serial_number.")
+    log.info(f"Available: {[cam.name + ' (' + cam.serial_number + ')' for cam in intersection]}")
     return None
 
 if __name__ == "__main__":
@@ -71,7 +93,14 @@ if __name__ == "__main__":
     cams = Cams.from_yaml(args.cams_yaml)
     log.info(f"Loaded {len(cams.realsenses)} RealSense and {len(cams.ipcameras)} IP cameras from config.")
 
-    realsense_cfg = get_realsense_config(cams, args)
+    local_serials = get_local_realsense_serials()
+    matched = match_realsense_devices(cams, local_serials)
+
+    log.info(f"Connected & Configured: {[cam.serial_number for cam in matched['intersection']]}")
+    log.info(f"Configured but not connected: {[cam.serial_number for cam in matched['only_in_config']]}")
+    log.info(f"Connected but not configured: {matched['only_on_hardware']}")
+
+    realsense_cfg = select_realsense_config(matched, args)
     if not realsense_cfg:
         log.error("No valid RealSense camera selected. Exiting.")
     else:
