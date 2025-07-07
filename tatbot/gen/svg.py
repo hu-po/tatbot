@@ -281,9 +281,10 @@ def gen_svg_plan(config: GenSVGPlanConfig):
                 arm="left",
             )
         elif inkcap_name_l is not None:
-            old_frame_path = stroke_img_map[color_l][ptr_l][1]
-            new_frame_name = f"arm_l_color_{color_l}_stroke_{stroke_idx:04d}.png"
-            shutil.copy(os.path.join(design_dir, old_frame_path), os.path.join(frames_dir, new_frame_name))
+            os.symlink(
+                os.path.join(design_dir, stroke_img_map[color_l][ptr_l][1]),
+                os.path.join(frames_dir, f"arm_l_color_{color_l}_stroke_{stroke_idx:04d}.png"),
+            )
             pixel_coords, meter_coords = coords_from_path(path_l)
             stroke_l = Stroke(
                 description=f"left arm stroke using left arm",
@@ -336,9 +337,11 @@ def gen_svg_plan(config: GenSVGPlanConfig):
             )
         elif inkcap_name_r is not None:
             pixel_coords, meter_coords = coords_from_path(path_r)
-            old_frame_path = stroke_img_map[color_r][ptr_r][1]
             new_frame_name = f"arm_r_color_{color_r}_stroke_{stroke_idx:04d}.png"
-            shutil.copy(os.path.join(design_dir, old_frame_path), os.path.join(frames_dir, new_frame_name))
+            os.symlink(
+                os.path.join(design_dir, stroke_img_map[color_r][ptr_r][1]),
+                os.path.join(frames_dir, new_frame_name),
+            )
             stroke_r = Stroke(
                 description=f"right arm stroke using right arm",
                 arm="right",
