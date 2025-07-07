@@ -17,13 +17,13 @@ from lerobot.utils.control_utils import (
     sanity_check_dataset_robot_compatibility,
 )
 from lerobot.utils.robot_utils import busy_wait
+from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorConfig
 
 from tatbot.data.plan import Plan
 from tatbot.data.scene import Scene
 from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
 from tatbot.data.pose import ArmPose
-from tatbot.bot.joystick import start_joystick_listener_polling, get_joystick_event
 from tatbot.utils.log import (
     LOG_FORMAT,
     TIME_FORMAT,
@@ -173,7 +173,9 @@ def record_plan(config: BotPlanConfig):
     episode_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=TIME_FORMAT))
     logging.getLogger().addHandler(episode_handler)
 
-    start_joystick_listener_polling()
+    # Initialize AtariTeleoperator
+    atari_teleop = AtariTeleoperator(AtariTeleoperatorConfig())
+    atari_teleop.connect()
     needle_depth_idx: int = 0 # index of the needle depth in the strokebatch
 
     log.info(f"Recording {num_strokes} paths...")
@@ -262,23 +264,22 @@ def record_plan(config: BotPlanConfig):
             log.debug(f"pose_idx: {pose_idx}/{plan.stroke_length}")
             start_loop_t = time.perf_counter()
 
-            event = get_joystick_event()
-            if event is not None:
-                log.info(f"🎮 joystick event: {event}")
-                if event == "red_button":
-                    raise Exception("🎮 E-stop pressed, retracting arms...")
-                elif isinstance(event, dict) and "axis" in event:
-                    log.info(f"🎮 joystick axis {event['axis']} moved to {event['value']:.2f}")
-                    needle_depth_idx += event['value']
-                    log.info(f"🎮 needle depth index: {needle_depth_idx}")
+            action = atari_teleop.get_action()
+            if action.get("red_button", False):
+                raise Exception("🎮 E-stop pressed, retracting arms...")
+            # Optionally use axis values for needle depth or other control
+            if abs(action.get("x", 0.0)) > 1e-3 or abs(action.get("y", 0.0)) > 1e-3:
+                log.info(f"🎮 joystick axis x={action['x']:.2f}, y={action['y']:.2f}")
+                needle_depth_idx += action["y"]  # Example: use y axis for needle depth
+                log.info(f"🎮 needle depth index: {needle_depth_idx}")
 
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 
             joints = strokebatch.joints[stroke_idx, pose_idx]
-            action = robot._urdf_joints_to_action(joints)
+            robot_action = robot._urdf_joints_to_action(joints)
             goal_time = strokebatch.dt[stroke_idx, pose_idx]
-            sent_action = robot.send_action(action, goal_time=goal_time, block="left")
+            sent_action = robot.send_action(robot_action, goal_time=goal_time, block="left")
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
