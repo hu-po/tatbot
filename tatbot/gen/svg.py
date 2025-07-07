@@ -112,6 +112,8 @@ def gen_svg_plan(config: GenSVGPlanConfig):
             pen_name = m.group(1)
             frame_num = int(m.group(2))
             stroke_img_map[pen_name].append((frame_num, file))
+    if stroke_img_map == {}:
+        raise ValueError(f"❌ No stroke images found in {design_dir}, did you export intermediate frames?")
     # Sort by frame number for each pen
     for pen in stroke_img_map:
         stroke_img_map[pen].sort()

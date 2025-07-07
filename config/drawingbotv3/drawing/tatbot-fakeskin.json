@@ -11,12 +11,12 @@
       "drawingAreaPaddingBottom": "0.0",
       "inputUnits": "m",
       "drawingAreaGang": "false",
-      "drawingAreaHeight": "0.07",
+      "drawingAreaHeight": "70.0",
       "drawingAreaPaddingRight": "0.0",
       "rescaleMode": "High Quality",
       "drawingAreaPaddingTop": "0.0",
       "useOriginalSizing": "false",
-      "drawingAreaWidth": "0.1",
+      "drawingAreaWidth": "100.0",
       "scalingMode": "Scale to fit",
       "targetPenWidth": "0.0035"
     }
