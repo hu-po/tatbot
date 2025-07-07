@@ -208,8 +208,8 @@ def record_plan(config: BotPlanConfig):
             log.info(f"🤖 sending right arm to inkready pose")
             _joints_r = scene.inkready_pos_r
         _full_joints = ArmPose.make_bimanual_joints(_joints_l, _joints_r)
-        action = robot._urdf_joints_to_action(_full_joints)
-        robot.send_action(action, goal_time=robot.config.goal_time_slow, block="left")
+        ready_action = robot._urdf_joints_to_action(_full_joints)
+        robot.send_action(ready_action, goal_time=robot.config.goal_time_slow, block="left")
 
         # Per-episode conditioning information is stored in seperate directory
         episode_cond = {}
@@ -267,6 +267,9 @@ def record_plan(config: BotPlanConfig):
             f.write(episode_log_buffer.getvalue())
 
         dataset.save_episode(episode_cond=episode_cond)
+
+        # re-send the arms to the appropriate "ready" pose
+        robot.send_action(ready_action, goal_time=robot.config.goal_time_slow, block="left")
 
     logging.getLogger().removeHandler(episode_handler)
 
