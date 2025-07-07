@@ -85,15 +85,16 @@ def gen_from_svg(config: FromSVGConfig):
     log.info(f"✅ Found {len(config_pens)} pens in {config.pens_config_path}")
     log.debug(f"Pens in config: {config_pens.keys()}")
 
-    inks_color_to_inkcap_name: dict[str, str] = {}
-    inks_color_to_inkcap_pose: dict[str, Pose] = {}
+    ink_name_to_inkcap_name: dict[str, str] = {}
+    ink_name_to_inkcap_pose: dict[str, Pose] = {}
     link_poses = get_link_poses(scene.urdf.path, scene.urdf.ink_link_names, scene.home_pos_full)
     for inkcap in scene.inks.inkcaps:
         assert inkcap.name in scene.urdf.ink_link_names, f"❌ Inkcap {inkcap.name} not found in URDF"
-        inks_color_to_inkcap_name[inkcap.ink.name] = inkcap.name
-        inks_color_to_inkcap_pose[inkcap.ink.name] = link_poses[inkcap.name]
-    log.info(f"✅ Found {len(inks_color_to_inkcap_name)} inkcaps in {scene.inks.yaml_dir}")
-    log.debug(f"Inkcaps in scene: {inks_color_to_inkcap_name.keys()}")
+        ink_name = inkcap.ink["name"]
+        ink_name_to_inkcap_name[ink_name] = inkcap.name
+        ink_name_to_inkcap_pose[ink_name] = link_poses[inkcap.name]
+    log.info(f"✅ Found {len(ink_name_to_inkcap_name)} inkcaps in {scene.inks.yaml_dir}")
+    log.debug(f"Inkcaps in scene: {ink_name_to_inkcap_name.keys()}")
 
     # create directory for image files
     frames_dir = os.path.join(output_dir, "frames")
@@ -134,7 +135,7 @@ def gen_from_svg(config: FromSVGConfig):
     for pen_name, svg_path in pens.items():
         assert pen_name in config_pens, f"❌ Pen {pen_name} not found in pens config"
         assert config_pens[pen_name]["name"] == pen_name, f"❌ Pen {pen_name} not found in pens config"
-        assert pen_name in inks_color_to_inkcap_name, f"❌ Pen {pen_name} not found in ink palette"
+        assert pen_name in ink_name_to_inkcap_name, f"❌ Pen {pen_name} not found in ink palette"
         if pen_name in plan.left_arm_pen_names:
             arm = "left"
         elif pen_name in plan.right_arm_pen_names:
@@ -171,7 +172,7 @@ def gen_from_svg(config: FromSVGConfig):
     @functools.lru_cache(maxsize=len(scene.inks.inkcaps))
     def make_inkdip_pos(color: str, num_points: int = plan.stroke_length) -> np.ndarray:
         """Get <x, y, z> coordinates for an inkdip into a specific inkcap."""
-        inkcap_pose: Pose = inks_color_to_inkcap_pose[color]
+        inkcap_pose: Pose = ink_name_to_inkcap_pose[color]
         inkcap = next(ic for ic in scene.inks.inkcaps if ic.ink.name == color)
         # Split: 1/3 down, 1/3 wait, 1/3 up (adjust as needed)
         num_down = num_points // 3
@@ -213,8 +214,8 @@ def gen_from_svg(config: FromSVGConfig):
     # start with "alignment" strokes
     alignment_inkcap_color_r = pen_paths_r[0][0]
     alignment_inkcap_color_l = pen_paths_l[0][0]
-    alignment_inkcap_pose_r: Pose = inks_color_to_inkcap_pose[alignment_inkcap_color_r]
-    alignment_inkcap_pose_l: Pose = inks_color_to_inkcap_pose[alignment_inkcap_color_l]
+    alignment_inkcap_pose_r: Pose = ink_name_to_inkcap_pose[alignment_inkcap_color_r]
+    alignment_inkcap_pose_l: Pose = ink_name_to_inkcap_pose[alignment_inkcap_color_l]
     strokelist.strokes.append(
         (
             Stroke(
@@ -278,7 +279,7 @@ def gen_from_svg(config: FromSVGConfig):
     )
     # next lets add inkdip on left arm, right arm will be at rest
     first_color_l = pen_paths_l[0][0]
-    first_inkcap_l = inks_color_to_inkcap_name[first_color_l]
+    first_inkcap_l = ink_name_to_inkcap_name[first_color_l]
     strokelist.strokes.append(
         (
             Stroke(
@@ -343,7 +344,7 @@ def gen_from_svg(config: FromSVGConfig):
         else:
             # Only perform inkdip if a stroke will follow
             if path_l is not None:
-                first_inkcap_l = inks_color_to_inkcap_name[color_l]
+                first_inkcap_l = ink_name_to_inkcap_name[color_l]
                 stroke_l = Stroke(
                     description=f"left arm inkdip into {first_inkcap_l}",
                     is_inkdip=True,
@@ -397,7 +398,7 @@ def gen_from_svg(config: FromSVGConfig):
         else:
             # Only perform inkdip if a stroke will follow
             if path_r is not None:
-                right_arm_inkcap_name = inks_color_to_inkcap_name[color_r]
+                right_arm_inkcap_name = ink_name_to_inkcap_name[color_r]
                 stroke_r = Stroke(
                     description=f"right arm inkdip into {right_arm_inkcap_name}",
                     is_inkdip=True,

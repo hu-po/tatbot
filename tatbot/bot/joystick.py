@@ -1,63 +1,94 @@
 import logging
-import os
-import sys
-
+import asyncio
 import evdev
-from evdev import InputDevice, categorize, ecodes
-
+from evdev import InputDevice, ecodes
 from tatbot.utils.log import get_logger
+from dataclasses import dataclass
 
 log = get_logger('bot.joystick', '🎮')
 
-def find_joystick():
-    devices = [InputDevice(path) for path in evdev.list_devices()]
-    log.debug(f"Found {len(devices)} input devices:")
-    for d in devices:
-        try:
-            caps = d.capabilities(verbose=True)
-        except Exception as e:
-            caps = f"[ERROR reading capabilities: {e}]"
-        log.debug(f"  - {d.name} at {d.path} capabilities: {caps}")
-        log.info(f"Device: {d.name} at {d.path} with capabilities: {caps}")
-    # Only select the Atari joystick
-    atari_name = "Retro Games LTD  Atari CX Wireless Controller"
-    atari_device = None
-    for d in devices:
-        if d.name.strip() == atari_name:
-            atari_device = d
-            break
-    if atari_device:
-        log.debug(f"Atari joystick found: {atari_device.name} at {atari_device.path}")
-        log.info(f"Atari joystick found: {atari_device.name} at {atari_device.path}")
-        return atari_device
-    else:
-        log.error(f"Atari joystick ('{atari_name}') not found among input devices.")
+RED_BUTTON_CODE = ecodes.BTN_TRIGGER  # Replace with actual code if needed
+ATARI_NAME = "Retro Games LTD  Atari CX Wireless Controller"
+
+@dataclass
+class JoystickConfig:
+    device_name: str = ATARI_NAME
+    queue_size: int = 1
+
+class JoystickListener:
+    def __init__(self, queue: asyncio.Queue, device_name: str = ATARI_NAME):
+        self.queue = queue
+        self.device_name = device_name
+        self.device = None
+        self._task = None
+        self._stop_event = asyncio.Event()
+
+    def find_joystick(self):
+        devices = [InputDevice(path) for path in evdev.list_devices()]
+        for d in devices:
+            if d.name.strip() == self.device_name:
+                log.info(f"Joystick found: {d.name} at {d.path}")
+                return d
+        log.error(f"Joystick ('{self.device_name}') not found among input devices.")
         return None
 
-def main():
-    log.debug("Starting joystick main()")
-    dev = find_joystick()
-    if not dev:
-        log.debug("No joystick-like device detected in main(). Exiting.")
-        log.warning("No joystick-like device detected.")
-        return
+    async def run(self):
+        self.device = self.find_joystick()
+        if not self.device:
+            log.error("No joystick device found. JoystickListener exiting.")
+            return
+        try:
+            async for event in self.device.async_read_loop():
+                if self._stop_event.is_set():
+                    break
+                if event.type == ecodes.EV_KEY and event.value == 1:  # 1 = key down
+                    if event.code == RED_BUTTON_CODE:
+                        try:
+                            self.queue.put_nowait("red_button")
+                        except asyncio.QueueFull:
+                            pass  # Drop if queue is full
+        except Exception as e:
+            log.error(f"Exception in joystick event loop: {e}")
 
-    log.debug(f"Using device: {dev.name} at {dev.path}")
-    log.info(f"Using device: {dev.name} at {dev.path}")
-    log.debug("Entering event read loop...")
-    try:
-        for event in dev.read_loop():
-            log.debug(f"Event: type={event.type} code={event.code} value={event.value}")
-            if event.type == ecodes.EV_ABS:
-                absevent = categorize(event)
-                log.debug(f"ABS event: {absevent.event.code}: {absevent.event.value}")
-                log.info(f"{absevent.event.code}: {absevent.event.value}")
-            elif event.type == ecodes.EV_KEY:
-                keyevent = categorize(event)
-                log.debug(f"KEY event: {keyevent.keycode}: {keyevent.keystate}")
-                log.info(f"{keyevent.keycode}: {keyevent.keystate}")
-    except Exception as e:
-        log.error(f"Exception in event loop: {e}")
+    def start(self):
+        self._task = asyncio.create_task(self.run())
+        return self._task
 
+    def stop(self):
+        self._stop_event.set()
+        if self._task:
+            self._task.cancel()
+
+# Helper function for convenience
+
+def start_joystick_listener(queue: asyncio.Queue, device_name: str = ATARI_NAME):
+    listener = JoystickListener(queue, device_name)
+    listener.start()
+    return listener
+
+# Script entry point for testing
 if __name__ == "__main__":
-    main()
+    import sys
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Test JoystickListener for red button press.")
+    parser.add_argument('--device_name', type=str, default=ATARI_NAME, help='Joystick device name')
+    parser.add_argument('--queue_size', type=int, default=1, help='Asyncio queue size')
+    args = parser.parse_args()
+
+    config = JoystickConfig(device_name=args.device_name, queue_size=args.queue_size)
+
+    async def main():
+        queue = asyncio.Queue(maxsize=config.queue_size)
+        listener = start_joystick_listener(queue, device_name=config.device_name)
+        print(f"Listening for red button on device '{config.device_name}' (queue size {config.queue_size})...")
+        try:
+            while True:
+                msg = await queue.get()
+                if msg == "red_button":
+                    print("Red button pressed!")
+        except KeyboardInterrupt:
+            print("Exiting...")
+            listener.stop()
+
+    asyncio.run(main())
