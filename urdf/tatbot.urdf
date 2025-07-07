@@ -331,7 +331,7 @@
 
   <!-- realsense1 -->
   <joint name="realsense1_joint" type="fixed">
-    <origin rpy="0 0.7853981633974483 0" xyz="-0.22 0 0.2"/>
+    <origin rpy="0 0.7853981633974483 -2.3" xyz="0.2 0.15 0.05"/>
     <parent link="root"/>
     <child link="realsense1_bottom_screw_frame"/>
   </joint>

@@ -37,10 +37,20 @@ class Scene(Yaml):
     tags_config_name: str
     """Name of the tag config (Tags)."""
 
-    home_pos_l_name: str
-    """Name of the left arm pose (ArmPose)."""
-    home_pos_r_name: str
-    """Name of the right arm pose (ArmPose)."""
+    sleep_pos_l_name: str
+    """Name of the left arm sleep pose (ArmPose)."""
+    sleep_pos_r_name: str
+    """Name of the right arm sleep pose (ArmPose)."""
+
+    ready_pos_l_name: str
+    """Name of the left arm ready pose (ArmPose)."""
+    ready_pos_r_name: str
+    """Name of the right arm ready pose (ArmPose)."""
+
+    inkready_pos_l_name: str
+    """Name of the left arm inkready pose (ArmPose)."""
+    inkready_pos_r_name: str
+    """Name of the right arm inkready pose (ArmPose)."""
 
     yaml_dir: str = "~/tatbot/config/scenes"
     """Directory containing the scene configs."""
@@ -52,9 +62,18 @@ class Scene(Yaml):
     skin: Skin = field(init=False)
     inks: Inks = field(init=False)
     tags: Tags = field(init=False)
-    home_pos_l: ArmPose = field(init=False)
-    home_pos_r: ArmPose = field(init=False)
-    home_pos_full: np.ndarray = field(init=False)
+
+    # sleep pose is the arm folded up, resting on itself, facing forwards
+    sleep_pos_l: ArmPose = field(init=False)
+    sleep_pos_r: ArmPose = field(init=False)
+    
+    # ready pose is the arm raised up, facing towards skin, tilted down
+    ready_pos_l: ArmPose = field(init=False)
+    ready_pos_r: ArmPose = field(init=False)
+
+    # inkready pose is the arms raised up, facing towards ink palette, tilted down
+    inkready_pos_l: ArmPose = field(init=False)
+    inkready_pos_r: ArmPose = field(init=False)
 
     def __post_init__(self):
         log.info(f"📂 Loading scene config: {self.yaml_dir}/{self.name}.yaml")
@@ -65,6 +84,10 @@ class Scene(Yaml):
         self.skin = Skin.from_name(self.skin_config_name)
         self.inks = Inks.from_name(self.inks_config_name)
         self.tags = Tags.from_name(self.tags_config_name)
-        self.home_pos_l = ArmPose.from_name(self.home_pos_l_name)
-        self.home_pos_r = ArmPose.from_name(self.home_pos_r_name)
-        self.home_pos_full = ArmPose.make_bimanual_joints(self.home_pos_l, self.home_pos_r)
+        self.sleep_pos_l = ArmPose.from_name(self.sleep_pos_l_name)
+        self.sleep_pos_r = ArmPose.from_name(self.sleep_pos_r_name)
+        self.sleep_pos_full = ArmPose.make_bimanual_joints(self.sleep_pos_l, self.sleep_pos_r)
+        self.ready_pos_l = ArmPose.from_name(self.ready_pos_l_name)
+        self.ready_pos_r = ArmPose.from_name(self.ready_pos_r_name)
+        self.inkready_pos_l = ArmPose.from_name(self.inkready_pos_l_name)
+        self.inkready_pos_r = ArmPose.from_name(self.inkready_pos_r_name)
