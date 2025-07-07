@@ -4,7 +4,6 @@ import shutil
 import time
 from dataclasses import dataclass
 from io import StringIO
-import asyncio
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
@@ -22,7 +21,6 @@ from tatbot.data.plan import Plan
 from tatbot.data.scene import Scene
 from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
-from tatbot.bot.joystick import start_joystick_listener, JoystickConfig
 from tatbot.utils.log import (
     LOG_FORMAT,
     TIME_FORMAT,
@@ -176,9 +174,6 @@ def record_plan(config: BotPlanConfig):
     episode_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=TIME_FORMAT))
     logging.getLogger().addHandler(episode_handler)
 
-    joystick_queue = asyncio.Queue(maxsize=1)
-    joystick_listener = start_joystick_listener(joystick_queue)
-
     log.info(f"Recording {num_strokes} paths...")
     # one episode is a single path
     # when resuming, start from the idx of the next episode
@@ -228,15 +223,6 @@ def record_plan(config: BotPlanConfig):
         for pose_idx in range(plan.stroke_length):
             log.debug(f"pose_idx: {pose_idx}/{plan.stroke_length}")
             start_loop_t = time.perf_counter()
-
-            if not joystick_queue.empty():
-                log.info("🎮 joystick button pressed, stopping recording")
-                button = joystick_queue.get_nowait()
-                log.info(f"🎮 joystick button pressed: {button}")
-                if button == "red_button":
-                    log.info("🎮 red button pressed, stopping recording")
-                    break
-
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 

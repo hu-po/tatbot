@@ -90,6 +90,7 @@ class JoystickListener:
 # Helper function for convenience
 
 def start_joystick_listener(queue: asyncio.Queue, device_name: str = ATARI_NAME, axis_threshold: float = 0.5):
+    log.info("Starting joystick listener...")
     listener = JoystickListener(queue, device_name, axis_threshold)
     listener.start()
     return listener
