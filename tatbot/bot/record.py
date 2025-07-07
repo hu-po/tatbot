@@ -4,6 +4,7 @@ import shutil
 import time
 from dataclasses import dataclass
 from io import StringIO
+import traceback
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
@@ -31,7 +32,7 @@ from tatbot.utils.log import (
     setup_log_with_config,
 )
 
-log = get_logger('bot.plan', '🤖')
+log = get_logger('bot.record', '🤖')
 
 @dataclass
 class BotPlanConfig:
@@ -313,7 +314,7 @@ if __name__ == "__main__":
     try:
         record_plan(args)
     except Exception as e:
-        log.error(f"❌ Robot Loop Exit with Error:\n{e}")
+        log.error("❌ Robot Loop Exit with Error:\n" + traceback.format_exc())
     except KeyboardInterrupt:
         log.info("🛑⌨️ Keyboard interrupt detected")
     finally:
