@@ -9,7 +9,7 @@ from tatbot.data.pose import Pose
 from tatbot.gen.ik import transform_and_offset
 from tatbot.utils.log import get_logger
 from tatbot.data.scene import Scene
-from tatbot.data.inkcap import Inkcap
+from tatbot.data.inks import InkCap
 
 log = get_logger('gen.inkdip', '💧')
 
@@ -38,14 +38,13 @@ def make_inkdip_func(scene: Scene, plan: Plan) -> Callable:
         """Get <x, y, z> coordinates for an inkdip into a specific inkcap."""
         inkcap_pose: Pose = inks_color_to_inkcap_pose[color]
         # TODO: better selection algorithm for inkcap
-        inkcap: Inkcap = None
+        inkcap: InkCap = None
         for inkcap in scene.inks.inkcaps:
             if inkcap.ink is not None and inkcap.ink["name"] == color:
                 inkcap = inkcap
                 break
         if inkcap is None:
-            log.warning(f"❌ No inkcap found for color {color}")
-            return np.zeros((num_points, 3))
+            raise ValueError(f"❌ No inkcap found for color {color}")
         # Split: 1/3 down, 1/3 wait, 1/3 up (adjust as needed)
         num_down = num_points // 3
         num_up = num_points // 3
