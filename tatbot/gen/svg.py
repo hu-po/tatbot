@@ -289,7 +289,6 @@ def gen_svg_plan(config: GenSVGPlanConfig):
                 arm="left",
             )
         elif inkcap_name_l is not None:
-            import pdb; pdb.set_trace()
             old_frame_path = stroke_img_map[color_l][ptr_l][1]
             new_frame_name = f"arm_l_color_{color_l}_stroke_{stroke_idx:04d}.png"
             shutil.copy(os.path.join(design_dir, old_frame_path), os.path.join(frames_dir, new_frame_name))
