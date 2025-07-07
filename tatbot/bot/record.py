@@ -187,6 +187,9 @@ def record_plan(config: BotPlanConfig):
         if not robot.is_connected:
             log.warning("🤖⚠️ robot is not connected, attempting reconnect...")
             robot.connect()
+            if not robot.is_connected:
+                log.error("❌ Robot Loop Exit with Error:\n" + traceback.format_exc())
+                raise Exception("🤖⚠️ robot is not connected, cannot record")
 
         if stroke_idx >= config.max_episodes:
             log.info(f"🤖⚠️ max episodes {config.max_episodes} exceeded, breaking...")
