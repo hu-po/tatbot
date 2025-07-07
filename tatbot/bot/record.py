@@ -199,14 +199,14 @@ def record_plan(config: BotPlanConfig):
         stroke_l, stroke_r = strokes.strokes[stroke_idx]
 
         # send the arms to the appropriate "ready" pose
-        _joints_l = scene.ready_pos_l.joints
-        _joints_r = scene.ready_pos_r.joints
+        _joints_l = scene.ready_pos_l
+        _joints_r = scene.ready_pos_r
         if stroke_l.is_inkdip:
             log.info(f"🤖 sending left arm to inkready pose")
-            _joints_l = scene.inkready_pos_l.joints
+            _joints_l = scene.inkready_pos_l
         if stroke_r.is_inkdip:
             log.info(f"🤖 sending right arm to inkready pose")
-            _joints_r = scene.inkready_pos_r.joints
+            _joints_r = scene.inkready_pos_r
         _full_joints = ArmPose.make_bimanual_joints(_joints_l, _joints_r)
         action = robot._urdf_joints_to_action(_full_joints)
         robot.send_action(action, goal_time=robot.config.goal_time_slow, block="left")
