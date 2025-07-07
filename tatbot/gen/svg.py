@@ -27,7 +27,7 @@ class GenSVGPlanConfig():
     debug: bool = False
     """Enable debug logging."""
 
-    name: str = "purpocto"
+    name: str = "calib"
     """Name of the SVG file"""
     design_dir: str = "~/tatbot/nfs/designs"
     """Directory containing the design svg (per pen) and png file."""
@@ -136,6 +136,14 @@ def gen_svg_plan(config: GenSVGPlanConfig):
                 pen_paths_l.append((pen_name, path))
             elif arm == "right":
                 pen_paths_r.append((pen_name, path))
+
+    if len(pen_paths_l) == 0 or len(pen_paths_r) == 0:
+        if len(pen_paths_l) == 0:
+            log.warning("No paths found for left arm, duplicating right arm paths")
+            pen_paths_l = pen_paths_r.copy()
+        if len(pen_paths_r) == 0:
+            log.warning("No paths found for right arm, duplicating left arm paths")
+            pen_paths_r = pen_paths_l.copy()
 
     def coords_from_path(path: svgpathtools.Path) -> tuple[np.ndarray, np.ndarray]:
         """Resample path evenly along the path and convert to pixel and meter coordinates."""
