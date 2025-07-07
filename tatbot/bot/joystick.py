@@ -10,9 +10,10 @@ log = get_logger('bot.joystick', '🎮')
 def find_joystick():
     devices = [InputDevice(path) for path in evdev.list_devices()]
     for d in devices:
-        caps = d.capabilities(verbose=True)
-        # check for joystick/gamepad
-        if 'ABS_X' in d.capabilities() or 'BTN_JOYSTICK' in d.capabilities():
+        caps = d.capabilities()
+        log.info(f"Device: {d.name} at {d.path} with capabilities: {caps}")
+        # Check for joystick/gamepad by looking for ABS_X or BTN_JOYSTICK codes
+        if ecodes.ABS_X in caps or ecodes.BTN_JOYSTICK in caps:
             log.info(f"Joystick found: {d.name} at {d.path}")
             return d
     log.warning("No joystick-like device detected.")
