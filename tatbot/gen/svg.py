@@ -124,28 +124,20 @@ def gen_svg_plan(config: GenSVGPlanConfig):
         assert pen_name in config_pens, f"❌ Pen {pen_name} not found in pens config"
         assert config_pens[pen_name]["name"] == pen_name, f"❌ Pen {pen_name} not found in pens config"
         assert pen_name in inks_color_to_inkcap_name, f"❌ Pen {pen_name} not found in ink palette"
-        if pen_name in plan.left_arm_pen_names:
-            arm = "left"
-        elif pen_name in plan.right_arm_pen_names:
-            arm = "right"
-        else:
-            raise ValueError(f"❌ Pen {pen_name} not found in plan config")
         log.info(f"Processing svg file at: {svg_path}")
         paths, _, _ = svgpathtools.svg2paths2(svg_path)
         log.info(f"Found {len(paths)} paths")
         for path in paths:
-            if arm == "left":
+            if path.length() == 0:
+                log.warning(f"❌ Path {path} is empty, skipping")
+                continue
+            if pen_name in plan.left_arm_pen_names:
                 pen_paths_l.append((pen_name, path))
-            elif arm == "right":
+            if pen_name in plan.right_arm_pen_names:
                 pen_paths_r.append((pen_name, path))
 
     if len(pen_paths_l) == 0 or len(pen_paths_r) == 0:
-        if len(pen_paths_l) == 0:
-            log.warning("No paths found for left arm, duplicating right arm paths")
-            pen_paths_l = pen_paths_r.copy()
-        if len(pen_paths_r) == 0:
-            log.warning("No paths found for right arm, duplicating left arm paths")
-            pen_paths_r = pen_paths_l.copy()
+        log.error("No paths found for left or right arm")
 
     def coords_from_path(path: svgpathtools.Path) -> tuple[np.ndarray, np.ndarray]:
         """Resample path evenly along the path and convert to pixel and meter coordinates."""
@@ -165,64 +157,228 @@ def gen_svg_plan(config: GenSVGPlanConfig):
         ), np.zeros((plan.stroke_length, 1), dtype=np.float32)]) # z axis is 0
         return pixel_coords, meter_coords
 
-    # --- 1:1 mapping: Copy all frame images and create a stroke for each ---
+    # left arm and right arm strokes in order of execution on robot
     strokelist: StrokeList = StrokeList(strokes=[])
+
+    # default time between poses is fast movement
     dt = np.full((plan.stroke_length, 1), scene.arms.goal_time_fast)
+    # slow movement to and from hover positions
     dt[:2] = scene.arms.goal_time_slow
     dt[-2:] = scene.arms.goal_time_slow
+
+    # hardcoded orientations for left and right arm end effectors
     ee_rot_l = np.tile(plan.ee_rot_l.wxyz, (plan.stroke_length, 1))
     ee_rot_r = np.tile(plan.ee_rot_r.wxyz, (plan.stroke_length, 1))
 
-    # For each pen, for each frame, create a stroke and copy the frame image
-    for pen_name, frames in stroke_img_map.items():
-        # Determine arm (left/right) for this pen
-        if pen_name in plan.left_arm_pen_names:
-            arm = "l"
-            ee_rot = ee_rot_l
-        elif pen_name in plan.right_arm_pen_names:
-            arm = "r"
-            ee_rot = ee_rot_r
+    # # start with "alignment" strokes
+    # alignment_inkcap_color_r = pen_paths_r[0][0]
+    # alignment_inkcap_color_l = pen_paths_l[0][0]
+    # alignment_inkcap_pose_r: Pose = inks_color_to_inkcap_pose[alignment_inkcap_color_r]
+    # alignment_inkcap_pose_l: Pose = inks_color_to_inkcap_pose[alignment_inkcap_color_l]
+    # strokelist.strokes.append(
+    #     (
+    #         Stroke(
+    #             description="left arm over design",
+    #             ee_pos=transform_and_offset(
+    #                 np.zeros((plan.stroke_length, 3)),
+    #                 scene.skin.design_pose.pos.xyz,
+    #                 scene.skin.design_pose.rot.wxyz,
+    #                 plan.needle_hover_offset.xyz,
+    #             ),
+    #             ee_rot=ee_rot_l,
+    #             dt=dt,
+    #             is_alignment=True,
+    #             arm="left",
+    #         ),
+    #         Stroke(
+    #             description=f"right arm over {alignment_inkcap_color_r} inkcap",
+    #             ee_pos=transform_and_offset(
+    #                 np.zeros((plan.stroke_length, 3)),
+    #                 alignment_inkcap_pose_r.pos.xyz,
+    #                 alignment_inkcap_pose_r.rot.wxyz,
+    #                 plan.needle_hover_offset.xyz,
+    #             ),
+    #             ee_rot=ee_rot_r,
+    #             dt=dt,
+    #             is_alignment=True,
+    #             arm="right",
+    #         ),
+    #     )
+    # )
+    # # same but switch the arms
+    # strokelist.strokes.append(
+    #     (
+    #         Stroke(
+    #             description=f"left arm over {alignment_inkcap_color_l} inkcap",
+    #             ee_pos=transform_and_offset(
+    #                 np.zeros((plan.stroke_length, 3)),
+    #                 alignment_inkcap_pose_l.pos.xyz,
+    #                 alignment_inkcap_pose_l.rot.wxyz,
+    #                 plan.needle_hover_offset.xyz,
+    #             ),
+    #             ee_rot=ee_rot_l,
+    #             dt=dt,
+    #             is_alignment=True,
+    #             arm="left",
+    #         ),
+    #         Stroke(
+    #             description="right arm over design",
+    #             ee_pos=transform_and_offset(
+    #                 np.zeros((plan.stroke_length, 3)),
+    #                 scene.skin.design_pose.pos.xyz,
+    #                 scene.skin.design_pose.rot.wxyz,
+    #                 plan.needle_hover_offset.xyz,
+    #             ),
+    #             ee_rot=ee_rot_r,
+    #             dt=dt,
+    #             is_alignment=True,
+    #             arm="right",
+    #         ),
+    #     )
+    # )
+    # next lets add inkdip on left arm, right arm will be at rest
+    first_color_l = pen_paths_l[0][0]
+    inkcap_name_l = inks_color_to_inkcap_name[first_color_l]
+    strokelist.strokes.append(
+        (
+            Stroke(
+                description=f"left arm inkdip into {inkcap_name_l}",
+                is_inkdip=True,
+                inkcap=inkcap_name_l,
+                ee_pos=inkdip_func(first_color_l),
+                ee_rot=ee_rot_l,
+                dt=dt,
+                arm="left",
+            ),
+            Stroke(
+                description="right arm at rest",
+                ee_pos=np.zeros((plan.stroke_length, 3)),
+                ee_rot=ee_rot_r,
+                dt=dt,
+                arm="right",
+            ),
+        )
+    )
+    inkcap_name_r = None # these will be used to determine when to inkdip
+    ptr_l: int = 0
+    ptr_r: int = 0
+    stroke_idx: int = len(strokelist.strokes) # strokes list already contains strokes
+    max_paths = max(len(pen_paths_l), len(pen_paths_r))
+    for _ in range(max_paths):
+        color_l = pen_paths_l[ptr_l][0] if ptr_l < len(pen_paths_l) else None
+        path_l = pen_paths_l[ptr_l][1] if ptr_l < len(pen_paths_l) else None
+
+        color_r = pen_paths_r[ptr_r][0] if ptr_r < len(pen_paths_r) else None
+        path_r = pen_paths_r[ptr_r][1] if ptr_r < len(pen_paths_r) else None
+
+        # LEFT ARM LOGIC
+        if path_l is None:
+            stroke_l = Stroke(
+                description="left arm at rest",
+                ee_pos=np.zeros((plan.stroke_length, 3)),
+                ee_rot=ee_rot_l,
+                dt=dt,
+                arm="left",
+            )
+        elif inkcap_name_l is not None:
+            old_frame_path = stroke_img_map[color_l][ptr_l][1]
+            new_frame_name = f"arm_l_color_{color_l}_stroke_{stroke_idx:04d}.png"
+            shutil.copy(os.path.join(design_dir, old_frame_path), os.path.join(frames_dir, new_frame_name))
+            pixel_coords, meter_coords = coords_from_path(path_l)
+            stroke_l = Stroke(
+                description=f"left arm stroke using left arm",
+                arm="left",
+                pixel_coords=pixel_coords,
+                ee_pos=meter_coords,
+                ee_rot=ee_rot_l,
+                dt=dt,
+                svg_path_obj=str(path_l),
+                inkcap=inkcap_name_l,
+                is_inkdip=False,
+                frame_path=new_frame_name,
+                color=color_l,
+            )
+            inkcap_name_l = None # inkdip on next stroke
+            ptr_l += 1
         else:
-            log.warning(f"Pen {pen_name} not found in plan config, skipping.")
-            continue
-        # Get all paths for this pen (if any)
-        pen_paths = [p for p in (pen_paths_l if arm == "l" else pen_paths_r) if p[0] == pen_name]
-        for idx, (frame_num, filename) in enumerate(frames):
-            new_frame_name = f"arm_{arm}_color_{pen_name}_stroke_{idx+1:04d}.png"
-            shutil.copy(os.path.join(design_dir, filename), os.path.join(frames_dir, new_frame_name))
-            # If a path exists for this index, use it; otherwise, create a dummy stroke
-            if idx < len(pen_paths):
-                path = pen_paths[idx][1]
-                pixel_coords, meter_coords = coords_from_path(path)
-                stroke = Stroke(
-                    description=f"{arm} arm stroke for {pen_name} frame {idx+1}",
-                    arm="left" if arm == "l" else "right",
-                    pixel_coords=pixel_coords,
-                    ee_pos=meter_coords,
-                    ee_rot=ee_rot,
+            # Only perform inkdip if a stroke will follow
+            if path_l is not None:
+                inkcap_name_l = inks_color_to_inkcap_name[color_l]
+                stroke_l = Stroke(
+                    description=f"left arm inkdip into {inkcap_name_l}",
+                    is_inkdip=True,
+                    inkcap=inkcap_name_l,
+                    ee_pos=inkdip_func(color_l),
+                    ee_rot=ee_rot_l,
                     dt=dt,
-                    svg_path_obj=str(path),
-                    inkcap=inks_color_to_inkcap_name[pen_name],
-                    is_inkdip=False,
-                    frame_path=new_frame_name,
-                    color=pen_name,
+                    arm="left",
+                    frame_path=None,
                 )
             else:
-                # Dummy stroke (at rest)
-                stroke = Stroke(
-                    description=f"{arm} arm at rest (no path) for {pen_name} frame {idx+1}",
-                    arm="left" if arm == "l" else "right",
+                stroke_l = Stroke(
+                    description="left arm at rest",
                     ee_pos=np.zeros((plan.stroke_length, 3)),
-                    ee_rot=ee_rot,
+                    ee_rot=ee_rot_l,
                     dt=dt,
-                    frame_path=new_frame_name,
-                    color=pen_name,
+                    arm="left",
+                    frame_path=None,
                 )
-            # Always append as a tuple (stroke, None) or (None, stroke) for left/right arm
-            if arm == "l":
-                strokelist.strokes.append((stroke, None))
+
+        # RIGHT ARM LOGIC
+        if path_r is None:
+            stroke_r = Stroke(
+                description="right arm at rest",
+                ee_pos=np.zeros((plan.stroke_length, 3)),
+                ee_rot=ee_rot_r,
+                dt=dt,
+                arm="right",
+                frame_path=None,
+            )
+        elif inkcap_name_r is not None:
+            pixel_coords, meter_coords = coords_from_path(path_r)
+            old_frame_path = stroke_img_map[color_r][ptr_r][1]
+            new_frame_name = f"arm_r_color_{color_r}_stroke_{stroke_idx:04d}.png"
+            shutil.copy(os.path.join(design_dir, old_frame_path), os.path.join(frames_dir, new_frame_name))
+            stroke_r = Stroke(
+                description=f"right arm stroke using right arm",
+                arm="right",
+                pixel_coords=pixel_coords,
+                ee_pos=meter_coords,
+                ee_rot=ee_rot_r,
+                dt=dt,
+                svg_path_obj=str(path_r),
+                inkcap=inkcap_name_r,
+                is_inkdip=False,
+                frame_path=new_frame_name,
+                color=color_r,
+            )
+            inkcap_name_r = None # inkdip on next stroke
+            ptr_r += 1
+        else:
+            # Only perform inkdip if a stroke will follow
+            if path_r is not None:
+                inkcap_name_r = inks_color_to_inkcap_name[color_r]
+                stroke_r = Stroke(
+                    description=f"right arm inkdip into {inkcap_name_r}",
+                    is_inkdip=True,
+                    inkcap=inkcap_name_r,
+                    ee_pos=inkdip_func(color_r),
+                    ee_rot=ee_rot_r,
+                    dt=dt,
+                    arm="right",
+                    frame_path=None,
+                )
             else:
-                strokelist.strokes.append((None, stroke))
+                stroke_r = Stroke(
+                    description="right arm at rest",
+                    ee_pos=np.zeros((plan.stroke_length, 3)),
+                    ee_rot=ee_rot_r,
+                    dt=dt,
+                    arm="right",
+                    frame_path=None,
+                )
+        strokelist.strokes.append((stroke_l, stroke_r))
+        stroke_idx += 1
 
     strokes_path = os.path.join(output_dir, "strokes.yaml")
     log.info(f"💾 Saving strokes to {strokes_path}")
