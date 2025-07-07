@@ -350,8 +350,6 @@ if __name__ == "__main__":
         log.error(robot._get_error_str_r())
         robot.disconnect()
         # double tap
-        robot._connect_l(clear_error=True)
-        log.error(robot._get_error_str_l())
-        robot._connect_r(clear_error=True)
-        log.error(robot._get_error_str_r())
+        robot._connect_l()
+        robot._connect_r()
         robot.disconnect()
