@@ -39,7 +39,7 @@ class BotPlanConfig:
     scene_name: str = "default"
     """Name of the scene config to use (Scene)."""
 
-    plan_name: str = "smiley"
+    plan_name: str = "calib"
     """Name of the plan (Plan)."""
     plan_dir: str = "~/tatbot/nfs/plans"
     """Directory containing plan."""
