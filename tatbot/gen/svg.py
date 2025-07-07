@@ -244,13 +244,13 @@ def gen_svg_plan(config: GenSVGPlanConfig):
     )
     # next lets add inkdip on left arm, right arm will be at rest
     first_color_l = pen_paths_l[0][0]
-    first_inkcap_l = inks_color_to_inkcap_name[first_color_l]
+    inkcap_name_l = inks_color_to_inkcap_name[first_color_l]
     strokelist.strokes.append(
         (
             Stroke(
-                description=f"left arm inkdip into {first_inkcap_l}",
+                description=f"left arm inkdip into {inkcap_name_l}",
                 is_inkdip=True,
-                inkcap=first_inkcap_l,
+                inkcap=inkcap_name_l,
                 ee_pos=inkdip_func(first_color_l),
                 ee_rot=ee_rot_l,
                 dt=dt,
@@ -265,17 +265,17 @@ def gen_svg_plan(config: GenSVGPlanConfig):
             ),
         )
     )
-    right_arm_inkcap_name = None # these will be used to determine when to inkdip
-    left_arm_ptr: int = 0
-    right_arm_ptr: int = 0
+    inkcap_name_r = None # these will be used to determine when to inkdip
+    ptr_l: int = 0
+    ptr_r: int = 0
     stroke_idx: int = len(strokelist.strokes) # strokes list already contains strokes
     max_paths = max(len(pen_paths_l), len(pen_paths_r))
     for _ in range(max_paths):
-        color_l = pen_paths_l[left_arm_ptr][0] if left_arm_ptr < len(pen_paths_l) else None
-        path_l = pen_paths_l[left_arm_ptr][1] if left_arm_ptr < len(pen_paths_l) else None
+        color_l = pen_paths_l[ptr_l][0] if ptr_l < len(pen_paths_l) else None
+        path_l = pen_paths_l[ptr_l][1] if ptr_l < len(pen_paths_l) else None
 
-        color_r = pen_paths_r[right_arm_ptr][0] if right_arm_ptr < len(pen_paths_r) else None
-        path_r = pen_paths_r[right_arm_ptr][1] if right_arm_ptr < len(pen_paths_r) else None
+        color_r = pen_paths_r[ptr_r][0] if ptr_r < len(pen_paths_r) else None
+        path_r = pen_paths_r[ptr_r][1] if ptr_r < len(pen_paths_r) else None
 
         # LEFT ARM LOGIC
         if path_l is None:
@@ -286,8 +286,8 @@ def gen_svg_plan(config: GenSVGPlanConfig):
                 dt=dt,
                 arm="left",
             )
-        elif first_inkcap_l is not None:
-            old_frame_path = stroke_img_map[color_l][left_arm_ptr][1]
+        elif inkcap_name_l is not None:
+            old_frame_path = stroke_img_map[color_l][ptr_l][1]
             new_frame_name = f"arm_l_color_{color_l}_stroke_{stroke_idx:04d}.png"
             shutil.copy(os.path.join(design_dir, old_frame_path), os.path.join(frames_dir, new_frame_name))
             pixel_coords, meter_coords = coords_from_path(path_l)
@@ -299,21 +299,21 @@ def gen_svg_plan(config: GenSVGPlanConfig):
                 ee_rot=ee_rot_l,
                 dt=dt,
                 svg_path_obj=str(path_l),
-                inkcap=first_inkcap_l,
+                inkcap=inkcap_name_l,
                 is_inkdip=False,
                 frame_path=new_frame_name,
                 color=color_l,
             )
-            first_inkcap_l = None # inkdip on next stroke
-            left_arm_ptr += 1
+            inkcap_name_l = None # inkdip on next stroke
+            ptr_l += 1
         else:
             # Only perform inkdip if a stroke will follow
             if path_l is not None:
-                first_inkcap_l = inks_color_to_inkcap_name[color_l]
+                inkcap_name_l = inks_color_to_inkcap_name[color_l]
                 stroke_l = Stroke(
-                    description=f"left arm inkdip into {first_inkcap_l}",
+                    description=f"left arm inkdip into {inkcap_name_l}",
                     is_inkdip=True,
-                    inkcap=first_inkcap_l,
+                    inkcap=inkcap_name_l,
                     ee_pos=inkdip_func(color_l),
                     ee_rot=ee_rot_l,
                     dt=dt,
@@ -340,9 +340,9 @@ def gen_svg_plan(config: GenSVGPlanConfig):
                 arm="right",
                 frame_path=None,
             )
-        elif right_arm_inkcap_name is not None:
+        elif inkcap_name_r is not None:
             pixel_coords, meter_coords = coords_from_path(path_r)
-            old_frame_path = stroke_img_map[color_r][right_arm_ptr][1]
+            old_frame_path = stroke_img_map[color_r][ptr_r][1]
             new_frame_name = f"arm_r_color_{color_r}_stroke_{stroke_idx:04d}.png"
             shutil.copy(os.path.join(design_dir, old_frame_path), os.path.join(frames_dir, new_frame_name))
             stroke_r = Stroke(
@@ -353,21 +353,21 @@ def gen_svg_plan(config: GenSVGPlanConfig):
                 ee_rot=ee_rot_r,
                 dt=dt,
                 svg_path_obj=str(path_r),
-                inkcap=right_arm_inkcap_name,
+                inkcap=inkcap_name_r,
                 is_inkdip=False,
                 frame_path=new_frame_name,
                 color=color_r,
             )
-            right_arm_inkcap_name = None # inkdip on next stroke
-            right_arm_ptr += 1
+            inkcap_name_r = None # inkdip on next stroke
+            ptr_r += 1
         else:
             # Only perform inkdip if a stroke will follow
             if path_r is not None:
-                right_arm_inkcap_name = inks_color_to_inkcap_name[color_r]
+                inkcap_name_r = inks_color_to_inkcap_name[color_r]
                 stroke_r = Stroke(
-                    description=f"right arm inkdip into {right_arm_inkcap_name}",
+                    description=f"right arm inkdip into {inkcap_name_r}",
                     is_inkdip=True,
-                    inkcap=right_arm_inkcap_name,
+                    inkcap=inkcap_name_r,
                     ee_pos=inkdip_func(color_r),
                     ee_rot=ee_rot_r,
                     dt=dt,
