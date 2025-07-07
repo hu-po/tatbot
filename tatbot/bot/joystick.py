@@ -1,4 +1,5 @@
 import logging
+import os
 
 import evdev
 from evdev import InputDevice, categorize, ecodes
@@ -9,15 +10,40 @@ log = get_logger('bot.joystick', '🎮')
 
 def find_joystick():
     devices = [InputDevice(path) for path in evdev.list_devices()]
+    candidates = []
     for d in devices:
         caps = d.capabilities()
         log.info(f"Device: {d.name} at {d.path} with capabilities: {caps}")
-        # Check for joystick/gamepad by looking for ABS_X or BTN_JOYSTICK codes
-        if ecodes.ABS_X in caps or ecodes.BTN_JOYSTICK in caps:
-            log.info(f"Joystick found: {d.name} at {d.path}")
-            return d
-    log.warning("No joystick-like device detected.")
-    return None
+        # Broaden detection: check for common joystick/gamepad codes
+        has_joystick = any(code in caps for code in [
+            ecodes.ABS_X, ecodes.BTN_JOYSTICK, ecodes.BTN_GAMEPAD, ecodes.BTN_TRIGGER
+        ])
+        if has_joystick:
+            candidates.append(d)
+    # Special: print capabilities for /dev/input/event10 if it exists
+    event10_path = '/dev/input/event10'
+    if os.path.exists(event10_path):
+        try:
+            dev10 = InputDevice(event10_path)
+            log.info(f"[DEBUG] /dev/input/event10 name: {dev10.name}")
+            log.info(f"[DEBUG] /dev/input/event10 capabilities: {dev10.capabilities(verbose=True)}")
+        except Exception as e:
+            log.warning(f"[DEBUG] Could not open /dev/input/event10: {e}")
+    if not candidates:
+        log.warning("No joystick-like device detected.")
+        return None
+    if len(candidates) == 1:
+        d = candidates[0]
+        log.info(f"Joystick found: {d.name} at {d.path}")
+        return d
+    # Multiple candidates: let user select
+    log.info("Multiple joystick-like devices found:")
+    for idx, d in enumerate(candidates):
+        log.info(f"[{idx}] {d.name} at {d.path}")
+    # For now, just pick the first one (could add input() for selection if interactive)
+    d = candidates[0]
+    log.info(f"Using first candidate: {d.name} at {d.path}")
+    return d
 
 def main():
     dev = find_joystick()
