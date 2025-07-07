@@ -4,6 +4,8 @@ import evdev
 from evdev import InputDevice, ecodes
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 from dataclasses import dataclass
+import threading
+import queue as thread_queue
 
 log = get_logger('bot.joystick', '🎮')
 
@@ -94,6 +96,68 @@ def start_joystick_listener(queue: asyncio.Queue, device_name: str = ATARI_NAME,
     listener = JoystickListener(queue, device_name, axis_threshold)
     listener.start()
     return listener
+
+def start_joystick_listener_threaded(queue, device_name: str = ATARI_NAME, axis_threshold: float = 0.5):
+    """
+    Starts the joystick listener in a background thread with its own event loop.
+    The queue should be a thread-safe queue.Queue (not asyncio.Queue).
+    Example usage in synchronous code:
+        import queue as thread_queue
+        joystick_queue = thread_queue.Queue(maxsize=1)
+        joystick_thread = start_joystick_listener_threaded(joystick_queue)
+        # In your main loop:
+        if not joystick_queue.empty():
+            msg = joystick_queue.get_nowait()
+            # handle msg
+    """
+    def run_in_thread():
+        import asyncio
+
+        async def async_listener():
+            internal_queue = asyncio.Queue(maxsize=1)
+            listener = JoystickListener(internal_queue, device_name, axis_threshold)
+            listener.start()
+            while True:
+                msg = await internal_queue.get()
+                queue.put(msg)  # Forward to thread-safe queue
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(async_listener())
+        finally:
+            loop.close()
+
+    t = threading.Thread(target=run_in_thread, daemon=True)
+    t.start()
+    return t  # Optionally return the thread object for control
+
+# --- Module-level polling API ---
+_joystick_queue = None
+_joystick_thread = None
+
+def start_joystick_listener_polling(device_name: str = ATARI_NAME, axis_threshold: float = 0.5):
+    """
+    Starts the joystick listener in a background thread with internal queue management.
+    Call this once at the start of your program.
+    """
+    global _joystick_queue, _joystick_thread
+    if _joystick_queue is None:
+        _joystick_queue = thread_queue.Queue(maxsize=1)
+        _joystick_thread = start_joystick_listener_threaded(_joystick_queue, device_name, axis_threshold)
+
+def get_joystick_event():
+    """
+    Returns the next joystick event if available, else None.
+    Usage:
+        event = get_joystick_event()
+        if event is not None:
+            # handle event
+    """
+    global _joystick_queue
+    if _joystick_queue is not None and not _joystick_queue.empty():
+        return _joystick_queue.get_nowait()
+    return None
 
 # Script entry point for testing with project style
 if __name__ == "__main__":

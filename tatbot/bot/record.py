@@ -22,7 +22,7 @@ from tatbot.data.plan import Plan
 from tatbot.data.scene import Scene
 from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
-from tatbot.bot.joystick import start_joystick_listener, JoystickConfig
+from tatbot.bot.joystick import start_joystick_listener_polling, get_joystick_event
 from tatbot.utils.log import (
     LOG_FORMAT,
     TIME_FORMAT,
@@ -89,8 +89,8 @@ def record_plan(config: BotPlanConfig):
         goal_time_fast=scene.arms.goal_time_fast,
         goal_time_slow=scene.arms.goal_time_slow,
         connection_timeout=scene.arms.connection_timeout,
-        home_pos_l=scene.home_pos_l.joints,
-        home_pos_r=scene.home_pos_r.joints,
+        home_pos_l=scene.home_pos_l.joints[:7],
+        home_pos_r=scene.home_pos_r.joints[:7],
         cameras={
             cam.name : RealSenseCameraConfig(
                 fps=cam.fps,
@@ -176,8 +176,7 @@ def record_plan(config: BotPlanConfig):
     episode_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=TIME_FORMAT))
     logging.getLogger().addHandler(episode_handler)
 
-    joystick_queue = asyncio.Queue(maxsize=1)
-    joystick_listener = start_joystick_listener(joystick_queue)
+    start_joystick_listener_polling()
 
     log.info(f"Recording {num_strokes} paths...")
     # one episode is a single path
@@ -229,11 +228,10 @@ def record_plan(config: BotPlanConfig):
             log.debug(f"pose_idx: {pose_idx}/{plan.stroke_length}")
             start_loop_t = time.perf_counter()
 
-            if not joystick_queue.empty():
-                log.info("🎮 joystick button pressed, stopping recording")
-                button = joystick_queue.get_nowait()
-                log.info(f"🎮 joystick button pressed: {button}")
-                if button == "red_button":
+            event = get_joystick_event()
+            if event is not None:
+                log.info(f"🎮 joystick event: {event}")
+                if event == "red_button":
                     log.info("🎮 red button pressed, stopping recording")
                     break
 
@@ -293,8 +291,8 @@ if __name__ == "__main__":
             goal_time_fast=1.0, # move very slowly
             goal_time_slow=5.0, # move very slowly
             connection_timeout=20.0,
-            home_pos_l=scene.home_pos_l.joints,
-            home_pos_r=scene.home_pos_r.joints,
+            home_pos_l=scene.home_pos_l.joints[:7],
+            home_pos_r=scene.home_pos_r.joints[:7],
             # no cameras
             cameras={},
             cond_cameras={},
