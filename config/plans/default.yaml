@@ -1,11 +1,11 @@
 name: default
 left_arm_pen_names:
   # - true_blue
-  - snow_white
+  # - snow_white
   - nighthawk_black
 right_arm_pen_names:
   # - bright_red
-  - snow_white
+  # - snow_white
   - nighthawk_black
 # # A7 size
 # image_width_m: 0.074

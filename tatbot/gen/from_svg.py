@@ -151,6 +151,14 @@ def gen_from_svg(config: FromSVGConfig):
             elif arm == "right":
                 pen_paths_r.append((pen_name, path))
 
+    if len(pen_paths_l) == 0 or len(pen_paths_r) == 0:
+        if len(pen_paths_l) == 0:
+            log.warning("No paths found for left arm, duplicating right arm paths")
+            pen_paths_l = pen_paths_r.copy()
+        if len(pen_paths_r) == 0:
+            log.warning("No paths found for right arm, duplicating left arm paths")
+            pen_paths_r = pen_paths_l.copy()
+
     def coords_from_path(path: svgpathtools.Path) -> tuple[np.ndarray, np.ndarray]:
         """Resample path evenly along the path and convert to pixel and meter coordinates."""
         total_length = path.length()
