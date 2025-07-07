@@ -22,6 +22,7 @@ from tatbot.data.plan import Plan
 from tatbot.data.scene import Scene
 from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
+from tatbot.data.pose import ArmPose
 from tatbot.bot.joystick import start_joystick_listener_polling, get_joystick_event
 from tatbot.utils.log import (
     LOG_FORMAT,
@@ -89,8 +90,8 @@ def record_plan(config: BotPlanConfig):
         goal_time_fast=scene.arms.goal_time_fast,
         goal_time_slow=scene.arms.goal_time_slow,
         connection_timeout=scene.arms.connection_timeout,
-        home_pos_l=scene.home_pos_l.joints[:7],
-        home_pos_r=scene.home_pos_r.joints[:7],
+        home_pos_l=scene.sleep_pos_l.joints[:7],
+        home_pos_r=scene.sleep_pos_r.joints[:7],
         cameras={
             cam.name : RealSenseCameraConfig(
                 fps=cam.fps,
@@ -194,9 +195,20 @@ def record_plan(config: BotPlanConfig):
             log.info(f"🤖⚠️ max episodes {config.max_episodes} exceeded, breaking...")
             break
 
-        # start every episode by sending arms to rest pose
-        log.debug(f"🤖 sending arms to rest pose")
-        action = robot._urdf_joints_to_action(scene.home_pos_full)
+        # get the strokes that will be executed this episode
+        stroke_l, stroke_r = strokes.strokes[stroke_idx]
+
+        # send the arms to the appropriate "ready" pose
+        _joints_l = scene.ready_pos_l.joints
+        _joints_r = scene.ready_pos_r.joints
+        if stroke_l.is_inkdip:
+            log.info(f"🤖 sending left arm to inkready pose")
+            _joints_l = scene.inkready_pos_l.joints
+        if stroke_r.is_inkdip:
+            log.info(f"🤖 sending right arm to inkready pose")
+            _joints_r = scene.inkready_pos_r.joints
+        _full_joints = ArmPose.make_bimanual_joints(_joints_l, _joints_r)
+        action = robot._urdf_joints_to_action(_full_joints)
         robot.send_action(action, goal_time=robot.config.goal_time_slow, block="left")
 
         # Per-episode conditioning information is stored in seperate directory
@@ -209,7 +221,6 @@ def record_plan(config: BotPlanConfig):
             filepath = os.path.join(episode_cond_dir, f"{cam_key}.png")
             dataset._save_image(obs, filepath)
             episode_cond[cam_key] = filepath
-        stroke_l, stroke_r = strokes.strokes[stroke_idx]
         episode_cond["stroke_l"] = stroke_l.to_dict()
         episode_cond["stroke_r"] = stroke_r.to_dict()
         if stroke_l.frame_path is not None:
@@ -291,8 +302,8 @@ if __name__ == "__main__":
             goal_time_fast=1.0, # move very slowly
             goal_time_slow=5.0, # move very slowly
             connection_timeout=20.0,
-            home_pos_l=scene.home_pos_l.joints[:7],
-            home_pos_r=scene.home_pos_r.joints[:7],
+            home_pos_l=scene.sleep_pos_l.joints[:7],
+            home_pos_r=scene.sleep_pos_r.joints[:7],
             # no cameras
             cameras={},
             cond_cameras={},

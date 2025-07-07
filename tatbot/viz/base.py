@@ -68,7 +68,7 @@ class BaseViz:
         log.debug("Adding robot to viser from URDF")
         _urdf, self.robot = load_robot(self.scene.urdf.path)
         self.viser_urdf = ViserUrdf(self.server, _urdf, root_node_name="/root")
-        self.joints = self.scene.home_pos_full.copy()
+        self.joints = self.scene.ready_pos_full.copy()
 
         with self.server.gui.add_folder("Joints", expand_by_default=False):
             with self.server.gui.add_folder("Left", expand_by_default=False):
@@ -101,7 +101,7 @@ class BaseViz:
             self.to_trossen_vector = lambda x: trossen_arm.VectorDouble(x)
     
         log.debug("Adding inkpalette to viser")
-        link_poses = get_link_poses(self.scene.urdf.path, self.scene.urdf.ink_link_names, self.scene.home_pos_full)
+        link_poses = get_link_poses(self.scene.urdf.path, self.scene.urdf.ink_link_names, self.scene.ready_pos_full)
         for inkcap in self.scene.inks.inkcaps:
             if inkcap.ink is None:
                 continue
@@ -117,7 +117,7 @@ class BaseViz:
             )
 
         log.info("Adding camera frustrums ...")
-        link_poses = get_link_poses(self.scene.urdf.path, self.scene.urdf.cam_link_names, self.scene.home_pos_full)
+        link_poses = get_link_poses(self.scene.urdf.path, self.scene.urdf.cam_link_names, self.scene.ready_pos_full)
         _camera_counter: int = 0
         self.realsense_frustrums = {}
         for realsense in self.scene.cams.realsenses:

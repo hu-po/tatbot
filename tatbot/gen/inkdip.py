@@ -19,7 +19,7 @@ def make_inkdip_func(scene: Scene, plan: Plan) -> Callable:
     inks_color_to_inkcap_name: dict[str, str] = {}
     inks_color_to_inkcap_pose: dict[str, Pose] = {}
     filled_inkcap_names: list[str] = []
-    link_poses = get_link_poses(scene.urdf.path, scene.urdf.ink_link_names, scene.home_pos_full)
+    link_poses = get_link_poses(scene.urdf.path, scene.urdf.ink_link_names, scene.ready_pos_full)
     for inkcap in scene.inks.inkcaps:
         assert inkcap.name in scene.urdf.ink_link_names, f"❌ Inkcap {inkcap.name} not found in URDF"
         if inkcap.ink is not None:

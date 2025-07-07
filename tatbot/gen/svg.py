@@ -396,7 +396,7 @@ def gen_svg_plan(config: GenSVGPlanConfig):
         strokelist=strokelist,
         stroke_length=plan.stroke_length,
         batch_size=plan.ik_batch_size,
-        joints=scene.home_pos_full,
+        joints=scene.ready_pos_full,
         urdf_path=scene.urdf.path,
         link_names=scene.urdf.ee_link_names,
         design_pose=scene.skin.design_pose,

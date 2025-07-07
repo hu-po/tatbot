@@ -84,10 +84,14 @@ class Scene(Yaml):
         self.skin = Skin.from_name(self.skin_config_name)
         self.inks = Inks.from_name(self.inks_config_name)
         self.tags = Tags.from_name(self.tags_config_name)
+        
         self.sleep_pos_l = ArmPose.from_name(self.sleep_pos_l_name)
         self.sleep_pos_r = ArmPose.from_name(self.sleep_pos_r_name)
         self.sleep_pos_full = ArmPose.make_bimanual_joints(self.sleep_pos_l, self.sleep_pos_r)
+        
         self.ready_pos_l = ArmPose.from_name(self.ready_pos_l_name)
         self.ready_pos_r = ArmPose.from_name(self.ready_pos_r_name)
+        self.ready_pos_full = ArmPose.make_bimanual_joints(self.ready_pos_l, self.ready_pos_r)
+        
         self.inkready_pos_l = ArmPose.from_name(self.inkready_pos_l_name)
         self.inkready_pos_r = ArmPose.from_name(self.inkready_pos_r_name)
