@@ -37,7 +37,7 @@ class GenSVGPlanConfig():
     pens_config_path: str = "~/tatbot/config/drawingbotv3/pens/full.json"
     """Path to the DrawingBotV3 Pens config file."""
     
-    plan_name: str = "default"
+    plan_name: str = "calib"
     """Name of the plan (Plan)."""
     scene_name: str = "default"
     """Name of the scene config (Scene)."""
