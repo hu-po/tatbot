@@ -197,7 +197,7 @@ def record_plan(config: BotPlanConfig):
         # start every episode by sending arms to rest pose
         log.debug(f"🤖 sending arms to rest pose")
         action = robot._urdf_joints_to_action(scene.home_pos_full)
-        robot.send_action(action, goal_time=plan.dt_slow, block="left")
+        robot.send_action(action, goal_time=robot.config.goal_time_slow, block="left")
 
         # Per-episode conditioning information is stored in seperate directory
         episode_cond = {}
