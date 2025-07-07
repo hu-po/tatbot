@@ -238,8 +238,9 @@ def record_plan(config: BotPlanConfig):
             if event is not None:
                 log.info(f"🎮 joystick event: {event}")
                 if event == "red_button":
-                    log.info("🎮 red button pressed, stopping recording")
-                    break
+                    raise Exception("🎮 E-stop pressed, retracting arms...")
+                elif isinstance(event, dict) and "axis" in event:
+                    log.info(f"🎮 joystick axis {event['axis']} moved to {event['value']:.2f}")
 
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
