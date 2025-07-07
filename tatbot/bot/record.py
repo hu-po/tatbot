@@ -295,7 +295,10 @@ if __name__ == "__main__":
             connection_timeout=20.0,
             home_pos_l=scene.home_pos_l.joints,
             home_pos_r=scene.home_pos_r.joints,
-        )) # no cameras
+            # no cameras
+            cameras={},
+            cond_cameras={},
+        ))
         robot._connect_l(clear_error=False)
         log.error(robot._get_error_str_l())
         robot._connect_r(clear_error=False)
