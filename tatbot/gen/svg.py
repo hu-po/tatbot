@@ -281,9 +281,10 @@ def gen_svg_plan(config: GenSVGPlanConfig):
                 arm="left",
             )
         elif inkcap_name_l is not None:
+            frame_path = os.path.join(frames_dir, f"arm_l_color_{color_l}_stroke_{stroke_idx:04d}.png")
             os.symlink(
                 os.path.join(design_dir, stroke_img_map[color_l][ptr_l][1]),
-                os.path.join(frames_dir, f"arm_l_color_{color_l}_stroke_{stroke_idx:04d}.png"),
+                frame_path,
             )
             pixel_coords, meter_coords = coords_from_path(path_l)
             stroke_l = Stroke(
@@ -296,7 +297,7 @@ def gen_svg_plan(config: GenSVGPlanConfig):
                 svg_path_obj=str(path_l),
                 inkcap=inkcap_name_l,
                 is_inkdip=False,
-                frame_path=new_frame_name,
+                frame_path=frame_path,
                 color=color_l,
             )
             inkcap_name_l = None # inkdip on next stroke
@@ -337,10 +338,10 @@ def gen_svg_plan(config: GenSVGPlanConfig):
             )
         elif inkcap_name_r is not None:
             pixel_coords, meter_coords = coords_from_path(path_r)
-            new_frame_name = f"arm_r_color_{color_r}_stroke_{stroke_idx:04d}.png"
+            frame_path = os.path.join(frames_dir, f"arm_r_color_{color_r}_stroke_{stroke_idx:04d}.png")
             os.symlink(
                 os.path.join(design_dir, stroke_img_map[color_r][ptr_r][1]),
-                os.path.join(frames_dir, new_frame_name),
+                frame_path,
             )
             stroke_r = Stroke(
                 description=f"right arm stroke using right arm",
@@ -352,7 +353,7 @@ def gen_svg_plan(config: GenSVGPlanConfig):
                 svg_path_obj=str(path_r),
                 inkcap=inkcap_name_r,
                 is_inkdip=False,
-                frame_path=new_frame_name,
+                frame_path=frame_path,
                 color=color_r,
             )
             inkcap_name_r = None # inkdip on next stroke
