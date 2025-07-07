@@ -53,6 +53,9 @@ def gen_svg_plan(config: GenSVGPlanConfig):
     output_dir = os.path.expanduser(config.output_dir)
     output_dir = os.path.join(output_dir, config.name)
     log.info(f"📂 Output directory: {output_dir}")
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+        log.info(f"🗑️ Deleted existing output directory: {output_dir}")
     os.makedirs(output_dir, exist_ok=True)
 
     plan: Plan = Plan.from_name(config.plan_name)
