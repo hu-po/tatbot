@@ -5,6 +5,18 @@ Roughly sorted by priority
 - affine heat method for design wrapping on skin mesh
 - ee calibration using square
 - use VLM call with horizontal lines to ask if tips are close or not
+- calculate multiple points along the needle offset normal vector for every pose, this can be done in a batch before each episode. then the user has full control in realtime where they can move up and down that needle offset normal vector. the red safety button instantly sets the next pose to the most retracted point in the normal vector
+- Points in image space used to get points in mesh using affine map. Points on ply/mesh are used to sample dense points using geodesic. Geodesic is used to create evenly spaced batch of vector offset 6d ee poses, with retraction and penetration vectors calculated effectively per position.
+Viser gizmo controls design position, ply is saved per episode, mapping is done relative to a red sharpie cross drawn on
+- Needle offset as part of stroke information so it can be updated in real time with human feedback
+- Plan is the behavior tree abstraction
+- Inks in the conditioning dataset
+- StrokeQueue where you can push in StrokeLists and pause then push in a StrokeList generated from calibration, Display StrokeQueue on Vizer UI and have pause, play, delete from queue, etc. 
+- Randomly sample strokes from a StrokeList, order can be random and you can do multiple epochs over the same tattoo. Cumulative with gradient rather than something you raster and complete once. 
+- Batch ik on ojo per episode gives him a job and brings familiarity to the policy server abstraction, ik server 
+- Simplify point resampling by using meter positions in svg
+- crop the pointcloud and vgg output to the workspace of tatbot, it is quite small. this can be fed into the polyscope map workflow easier than polycam meshes.
+- Red sharpie cross of specific lengths, used to calibrate mesh/ply
 - use natural rhythm of the computation, weave sequence of scan, plan, act
 - queue as a primitive for stroke execution, idle while waiting for queue
 - editable behavior trees, use same functions as mcp
