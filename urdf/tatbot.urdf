@@ -18,37 +18,51 @@
     </visual>
   </link>
   <joint name="tag0_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.04 0 0.01"/>
+    <origin rpy="0 0 0" xyz="-0.02 0 0"/>
     <parent link="root"/>
     <child link="tag0"/>
   </joint>
   <!-- apriltag 1  -->
   <link name="tag1">
     <visual>
-      <origin rpy="0 -1.57 0" xyz="-0.01 0.04 0.03"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
         <mesh filename="meshes/tags/16h5_001_5cm/tag.obj" scale="1 1 1"/>
       </geometry>
     </visual>
   </link>
   <joint name="tag1_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0.01"/>
+    <origin rpy="0 -1.57 0" xyz="0.02 0 0.025"/>
     <parent link="root"/>
     <child link="tag1"/>
   </joint>
   <!-- apriltag 2  -->
   <link name="tag2">
     <visual>
-      <origin rpy="0 1.57 0" xyz="0.01 0.04 0.03"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
         <mesh filename="meshes/tags/16h5_002_5cm/tag.obj" scale="1 1 1"/>
       </geometry>
     </visual>
   </link>
   <joint name="tag2_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0.01"/>
+    <origin rpy="0 1.57 0" xyz="0.03 0 0.025"/>
     <parent link="root"/>
     <child link="tag2"/>
+  </joint>
+  <!-- apriltag 3  -->
+  <link name="tag3">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/tags/16h5_003_5cm/tag.obj" scale="1 1 1"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="tag3_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.06 0 0"/>
+    <parent link="root"/>
+    <child link="tag3"/>
   </joint>
 
   <!-- palette -->
@@ -58,7 +72,7 @@
     <parent link="root"/>
     <child link="palette"/>
   </joint>
-  <link name="palette_mesh">
+  <!-- <link name="palette_mesh">
     <visual>
       <origin rpy="0 0 3.14" xyz="-0.06 0.01 -0.16"/>
       <geometry>
@@ -70,7 +84,7 @@
     <origin rpy="0 0 0" xyz="0 0 0"/>
     <parent link="palette"/>
     <child link="palette_mesh"/>
-  </joint>
+  </joint> -->
 
   <!-- inks -->
   <link name="inkcap_left_large" />
