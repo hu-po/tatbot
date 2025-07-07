@@ -19,49 +19,21 @@ def find_joystick():
             caps = f"[ERROR reading capabilities: {e}]"
         print(f"  - {d.name} at {d.path} capabilities: {caps}")
         log.info(f"Device: {d.name} at {d.path} with capabilities: {caps}")
-    candidates = []
+    # Only select the Atari joystick
+    atari_name = "Retro Games LTD  Atari CX Wireless Controller"
+    atari_device = None
     for d in devices:
-        try:
-            caps = d.capabilities()
-        except Exception as e:
-            log.warning(f"Could not read capabilities for {d.path}: {e}")
-            continue
-        has_joystick = any(code in caps for code in [
-            ecodes.ABS_X, ecodes.BTN_JOYSTICK, ecodes.BTN_GAMEPAD, ecodes.BTN_TRIGGER
-        ])
-        if has_joystick:
-            candidates.append(d)
-    # Special: print capabilities for /dev/input/event10 if it exists
-    event10_path = '/dev/input/event10'
-    if os.path.exists(event10_path):
-        try:
-            dev10 = InputDevice(event10_path)
-            print(f"[DEBUG] /dev/input/event10 name: {dev10.name}")
-            print(f"[DEBUG] /dev/input/event10 capabilities: {dev10.capabilities(verbose=True)}")
-            log.info(f"[DEBUG] /dev/input/event10 name: {dev10.name}")
-            log.info(f"[DEBUG] /dev/input/event10 capabilities: {dev10.capabilities(verbose=True)}")
-        except Exception as e:
-            log.warning(f"[DEBUG] Could not open /dev/input/event10: {e}")
-    if not candidates:
-        print("[DEBUG] No joystick-like device detected.")
-        log.warning("No joystick-like device detected.")
+        if d.name.strip() == atari_name:
+            atari_device = d
+            break
+    if atari_device:
+        print(f"[DEBUG] Atari joystick found: {atari_device.name} at {atari_device.path}")
+        log.info(f"Atari joystick found: {atari_device.name} at {atari_device.path}")
+        return atari_device
+    else:
+        print(f"[ERROR] Atari joystick ('{atari_name}') not found among input devices.")
+        log.error(f"Atari joystick ('{atari_name}') not found among input devices.")
         return None
-    if len(candidates) == 1:
-        d = candidates[0]
-        print(f"[DEBUG] Joystick found: {d.name} at {d.path}")
-        log.info(f"Joystick found: {d.name} at {d.path}")
-        return d
-    # Multiple candidates: let user select
-    print("[DEBUG] Multiple joystick-like devices found:")
-    log.info("Multiple joystick-like devices found:")
-    for idx, d in enumerate(candidates):
-        print(f"  [{idx}] {d.name} at {d.path}")
-        log.info(f"[{idx}] {d.name} at {d.path}")
-    # For now, just pick the first one (could add input() for selection if interactive)
-    d = candidates[0]
-    print(f"[DEBUG] Using first candidate: {d.name} at {d.path}")
-    log.info(f"Using first candidate: {d.name} at {d.path}")
-    return d
 
 def main():
     print("[DEBUG] Starting joystick main()")
