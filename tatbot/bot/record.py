@@ -4,7 +4,6 @@ import shutil
 import time
 from dataclasses import dataclass
 from io import StringIO
-import asyncio
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
@@ -60,7 +59,7 @@ class BotPlanConfig:
     """Tags to add to the dataset on Hugging Face."""
     private: bool = False
     """Whether to push the dataset to a private repository."""
-    fps: int = 5
+    fps: int = 30
     """Frames per second."""
     max_episodes: int = 256
     """Maximum number of episodes to record."""
@@ -129,11 +128,7 @@ def record_plan(config: BotPlanConfig):
     repo_id = f"{config.hf_username}/{dataset_name}"
     if config.resume:
         log.info(f"📦🤗 Resuming LeRobot dataset at {repo_id}...")
-        dataset = LeRobotDataset(
-            repo_id,
-            root=dataset_dir,
-        )
-
+        dataset = LeRobotDataset(repo_id, root=dataset_dir)
         if hasattr(robot, "cameras") and len(robot.cameras) > 0:
             dataset.start_image_writer(
                 num_processes=0,
