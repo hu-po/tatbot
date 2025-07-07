@@ -76,7 +76,7 @@ def record_plan(config: BotPlanConfig):
     plan: Plan = Plan.from_yaml(os.path.join(plan_dir, "plan.yaml"))
     strokebatch: StrokeBatch = StrokeBatch.load(os.path.join(plan_dir, "strokebatch.safetensors"))
     strokes: StrokeList = StrokeList.from_yaml(os.path.join(plan_dir, "strokes.yaml"))
-    num_strokes = strokebatch.joints.shape[0]
+    num_strokes = len(strokes.strokes)
 
     scene: Scene = Scene.from_name(config.scene_name)
 
@@ -173,6 +173,7 @@ def record_plan(config: BotPlanConfig):
     logging.getLogger().addHandler(episode_handler)
 
     start_joystick_listener_polling()
+    needle_depth_idx: int = 0 # index of the needle depth in the strokebatch
 
     log.info(f"Recording {num_strokes} paths...")
     # one episode is a single path
@@ -205,6 +206,29 @@ def record_plan(config: BotPlanConfig):
         _full_joints = ArmPose.make_bimanual_joints(_joints_l, _joints_r)
         ready_action = robot._urdf_joints_to_action(_full_joints)
         robot.send_action(ready_action, goal_time=robot.config.goal_time_slow, block="left")
+
+        # TODO: use apriltags to calculate realsense extrinsics
+        # TODO: use extrinsics to get pointcloud
+        # TODO: use zone to crop pointcloud
+        # TODO: use design pose and pointcloud to get geodesic
+        # TODO: use geodesic to get ee pose
+
+        # TODO: re-generate strokebatch with new design pose
+        # strokebatch: StrokeBatch = strokebatch_from_strokes(
+        #     strokelist=strokelist,
+        #     stroke_length=plan.stroke_length,
+        #     batch_size=plan.ik_batch_size,
+        #     joints=scene.ready_pos_full,
+        #     urdf_path=scene.urdf.path,
+        #     link_names=scene.urdf.ee_link_names,
+        #     design_pose=scene.skin.design_pose,
+        #     needle_hover_offset=plan.needle_hover_offset,
+        #     needle_offset_l=plan.needle_offset_l,
+        #     needle_offset_r=plan.needle_offset_r,
+        # )
+        # strokebatch_path = os.path.join(output_dir, f"strokebatch.safetensors")
+        # log.info(f"💾 Saving strokebatch to {strokebatch_path}")
+        # strokebatch.save(strokebatch_path)
 
         # Per-episode conditioning information is stored in seperate directory
         episode_cond = {}
@@ -241,6 +265,8 @@ def record_plan(config: BotPlanConfig):
                     raise Exception("🎮 E-stop pressed, retracting arms...")
                 elif isinstance(event, dict) and "axis" in event:
                     log.info(f"🎮 joystick axis {event['axis']} moved to {event['value']:.2f}")
+                    needle_depth_idx += event['value']
+                    log.info(f"🎮 needle depth index: {needle_depth_idx}")
 
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")

@@ -178,72 +178,72 @@ def gen_svg_plan(config: GenSVGPlanConfig):
     ee_rot_l = np.tile(plan.ee_rot_l.wxyz, (plan.stroke_length, 1))
     ee_rot_r = np.tile(plan.ee_rot_r.wxyz, (plan.stroke_length, 1))
 
-    # start with "alignment" strokes
-    alignment_inkcap_color_r = pen_paths_r[0][0]
-    alignment_inkcap_color_l = pen_paths_l[0][0]
-    alignment_inkcap_pose_r: Pose = inks_color_to_inkcap_pose[alignment_inkcap_color_r]
-    alignment_inkcap_pose_l: Pose = inks_color_to_inkcap_pose[alignment_inkcap_color_l]
-    strokelist.strokes.append(
-        (
-            Stroke(
-                description="left arm over design",
-                ee_pos=transform_and_offset(
-                    np.zeros((plan.stroke_length, 3)),
-                    scene.skin.design_pose.pos.xyz,
-                    scene.skin.design_pose.rot.wxyz,
-                    plan.needle_hover_offset.xyz,
-                ),
-                ee_rot=ee_rot_l,
-                dt=dt,
-                is_alignment=True,
-                arm="left",
-            ),
-            Stroke(
-                description=f"right arm over {alignment_inkcap_color_r} inkcap",
-                ee_pos=transform_and_offset(
-                    np.zeros((plan.stroke_length, 3)),
-                    alignment_inkcap_pose_r.pos.xyz,
-                    alignment_inkcap_pose_r.rot.wxyz,
-                    plan.needle_hover_offset.xyz,
-                ),
-                ee_rot=ee_rot_r,
-                dt=dt,
-                is_alignment=True,
-                arm="right",
-            ),
-        )
-    )
-    # same but switch the arms
-    strokelist.strokes.append(
-        (
-            Stroke(
-                description=f"left arm over {alignment_inkcap_color_l} inkcap",
-                ee_pos=transform_and_offset(
-                    np.zeros((plan.stroke_length, 3)),
-                    alignment_inkcap_pose_l.pos.xyz,
-                    alignment_inkcap_pose_l.rot.wxyz,
-                    plan.needle_hover_offset.xyz,
-                ),
-                ee_rot=ee_rot_l,
-                dt=dt,
-                is_alignment=True,
-                arm="left",
-            ),
-            Stroke(
-                description="right arm over design",
-                ee_pos=transform_and_offset(
-                    np.zeros((plan.stroke_length, 3)),
-                    scene.skin.design_pose.pos.xyz,
-                    scene.skin.design_pose.rot.wxyz,
-                    plan.needle_hover_offset.xyz,
-                ),
-                ee_rot=ee_rot_r,
-                dt=dt,
-                is_alignment=True,
-                arm="right",
-            ),
-        )
-    )
+    # # start with "alignment" strokes
+    # alignment_inkcap_color_r = pen_paths_r[0][0]
+    # alignment_inkcap_color_l = pen_paths_l[0][0]
+    # alignment_inkcap_pose_r: Pose = inks_color_to_inkcap_pose[alignment_inkcap_color_r]
+    # alignment_inkcap_pose_l: Pose = inks_color_to_inkcap_pose[alignment_inkcap_color_l]
+    # strokelist.strokes.append(
+    #     (
+    #         Stroke(
+    #             description="left arm over design",
+    #             ee_pos=transform_and_offset(
+    #                 np.zeros((plan.stroke_length, 3)),
+    #                 scene.skin.design_pose.pos.xyz,
+    #                 scene.skin.design_pose.rot.wxyz,
+    #                 plan.needle_hover_offset.xyz,
+    #             ),
+    #             ee_rot=ee_rot_l,
+    #             dt=dt,
+    #             is_alignment=True,
+    #             arm="left",
+    #         ),
+    #         Stroke(
+    #             description=f"right arm over {alignment_inkcap_color_r} inkcap",
+    #             ee_pos=transform_and_offset(
+    #                 np.zeros((plan.stroke_length, 3)),
+    #                 alignment_inkcap_pose_r.pos.xyz,
+    #                 alignment_inkcap_pose_r.rot.wxyz,
+    #                 plan.needle_hover_offset.xyz,
+    #             ),
+    #             ee_rot=ee_rot_r,
+    #             dt=dt,
+    #             is_alignment=True,
+    #             arm="right",
+    #         ),
+    #     )
+    # )
+    # # same but switch the arms
+    # strokelist.strokes.append(
+    #     (
+    #         Stroke(
+    #             description=f"left arm over {alignment_inkcap_color_l} inkcap",
+    #             ee_pos=transform_and_offset(
+    #                 np.zeros((plan.stroke_length, 3)),
+    #                 alignment_inkcap_pose_l.pos.xyz,
+    #                 alignment_inkcap_pose_l.rot.wxyz,
+    #                 plan.needle_hover_offset.xyz,
+    #             ),
+    #             ee_rot=ee_rot_l,
+    #             dt=dt,
+    #             is_alignment=True,
+    #             arm="left",
+    #         ),
+    #         Stroke(
+    #             description="right arm over design",
+    #             ee_pos=transform_and_offset(
+    #                 np.zeros((plan.stroke_length, 3)),
+    #                 scene.skin.design_pose.pos.xyz,
+    #                 scene.skin.design_pose.rot.wxyz,
+    #                 plan.needle_hover_offset.xyz,
+    #             ),
+    #             ee_rot=ee_rot_r,
+    #             dt=dt,
+    #             is_alignment=True,
+    #             arm="right",
+    #         ),
+    #     )
+    # )
     # next lets add inkdip on left arm, right arm will be at rest
     first_color_l = pen_paths_l[0][0]
     inkcap_name_l = inks_color_to_inkcap_name[first_color_l]
@@ -392,21 +392,21 @@ def gen_svg_plan(config: GenSVGPlanConfig):
     log.info(f"💾 Saving strokes to {strokes_path}")
     strokelist.to_yaml(strokes_path)
 
-    strokebatch: StrokeBatch = strokebatch_from_strokes(
-        strokelist=strokelist,
-        stroke_length=plan.stroke_length,
-        batch_size=plan.ik_batch_size,
-        joints=scene.ready_pos_full,
-        urdf_path=scene.urdf.path,
-        link_names=scene.urdf.ee_link_names,
-        design_pose=scene.skin.design_pose,
-        needle_hover_offset=plan.needle_hover_offset,
-        needle_offset_l=plan.needle_offset_l,
-        needle_offset_r=plan.needle_offset_r,
-    )
-    strokebatch_path = os.path.join(output_dir, f"strokebatch.safetensors")
-    log.info(f"💾 Saving strokebatch to {strokebatch_path}")
-    strokebatch.save(strokebatch_path)
+    # strokebatch: StrokeBatch = strokebatch_from_strokes(
+    #     strokelist=strokelist,
+    #     stroke_length=plan.stroke_length,
+    #     batch_size=plan.ik_batch_size,
+    #     joints=scene.ready_pos_full,
+    #     urdf_path=scene.urdf.path,
+    #     link_names=scene.urdf.ee_link_names,
+    #     design_pose=scene.skin.design_pose,
+    #     needle_hover_offset=plan.needle_hover_offset,
+    #     needle_offset_l=plan.needle_offset_l,
+    #     needle_offset_r=plan.needle_offset_r,
+    # )
+    # strokebatch_path = os.path.join(output_dir, f"strokebatch.safetensors")
+    # log.info(f"💾 Saving strokebatch to {strokebatch_path}")
+    # strokebatch.save(strokebatch_path)
 
     # copy the plan yaml to the output directory
     plan.name = config.name # override the plan name
