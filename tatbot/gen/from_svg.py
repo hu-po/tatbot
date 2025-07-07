@@ -90,6 +90,9 @@ def gen_from_svg(config: FromSVGConfig):
     link_poses = get_link_poses(scene.urdf.path, scene.urdf.ink_link_names, scene.home_pos_full)
     for inkcap in scene.inks.inkcaps:
         assert inkcap.name in scene.urdf.ink_link_names, f"❌ Inkcap {inkcap.name} not found in URDF"
+        if inkcap.ink is None:
+            log.warning(f"❌ Inkcap {inkcap.name} has no ink, skipping")
+            continue
         ink_name = inkcap.ink["name"]
         ink_name_to_inkcap_name[ink_name] = inkcap.name
         ink_name_to_inkcap_pose[ink_name] = link_poses[inkcap.name]

@@ -55,12 +55,14 @@ class JoystickListener:
             async for event in self.device.async_read_loop():
                 if self._stop_event.is_set():
                     break
-                if event.type == ecodes.EV_KEY and event.value == 1:  # 1 = key down
-                    if event.code == RED_BUTTON_CODE:
-                        try:
-                            self.queue.put_nowait("red_button")
-                        except asyncio.QueueFull:
-                            pass  # Drop if queue is full
+                if event.type == ecodes.EV_KEY:
+                    log.debug(f"Key event: code={event.code}, value={event.value}")
+                    if event.value == 1:  # 1 = key down
+                        if event.code == RED_BUTTON_CODE:
+                            try:
+                                self.queue.put_nowait("red_button")
+                            except asyncio.QueueFull:
+                                pass  # Drop if queue is full
                 elif event.type == ecodes.EV_ABS:
                     for axis_name, axis_code in AXES.items():
                         if event.code == axis_code:
