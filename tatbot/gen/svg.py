@@ -90,7 +90,7 @@ def gen_svg_plan(config: GenSVGPlanConfig):
     # Copy the final design image to frames/full.png
     final_design_img = None
     for file in os.listdir(design_dir):
-        if file.endswith('.png') and '_pen' not in file and '_F' not in file:
+        if file.endswith('.png') and '_F' not in file:
             final_design_img = file
             break
     if final_design_img is not None:
