@@ -24,8 +24,8 @@ def make_align_strokes(scene: Scene) -> StrokeList:
     ee_rot_l = np.tile(scene.ee_rot_l.wxyz, (scene.stroke_length, 1))
     ee_rot_r = np.tile(scene.ee_rot_r.wxyz, (scene.stroke_length, 1))
 
-    for inkcap in scene.inkcaps_l.values():
-        _inkdip_stroke: Stroke = inkdip_func(inkcap.ink.name, "left")
+    for inkcap in scene.inkcaps_r.values():
+        _inkdip_stroke: Stroke = inkdip_func(inkcap.ink.name, "right")
         _inkdip_stroke.ee_rot = ee_rot_l
         _inkdip_stroke.dt = dt
         strokelist.strokes.append(
@@ -46,8 +46,8 @@ def make_align_strokes(scene: Scene) -> StrokeList:
             )
         )
 
-    for inkcap in scene.inkcaps_r.values():
-        _inkdip_stroke: Stroke = inkdip_func(inkcap.ink.name, "right")
+    for inkcap in scene.inkcaps_l.values():
+        _inkdip_stroke: Stroke = inkdip_func(inkcap.ink.name, "left")
         _inkdip_stroke.ee_rot = ee_rot_r
         _inkdip_stroke.dt = dt
         strokelist.strokes.append(
