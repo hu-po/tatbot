@@ -250,13 +250,11 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
     stroke_idx: int = len(strokelist.strokes) # strokes list already contains strokes
     max_paths = max(len(pen_paths_l), len(pen_paths_r))
     for _ in range(max_paths):
-        color_l = pen_paths_l[ptr_l][0] if ptr_l < len(pen_paths_l) else None
         path_l = pen_paths_l[ptr_l][1] if ptr_l < len(pen_paths_l) else None
-        gcode_text_l = pen_paths_l[ptr_l][2] if ptr_l < len(pen_paths_l) else None
-
-        color_r = pen_paths_r[ptr_r][0] if ptr_r < len(pen_paths_r) else None
         path_r = pen_paths_r[ptr_r][1] if ptr_r < len(pen_paths_r) else None
-        gcode_text_r = pen_paths_r[ptr_r][2] if ptr_r < len(pen_paths_r) else None
+
+        color_l = pen_paths_l[ptr_l][0] if ptr_l < len(pen_paths_l) else None
+        color_r = pen_paths_r[ptr_r][0] if ptr_r < len(pen_paths_r) else None
 
         # LEFT ARM LOGIC
         if path_l is None:
@@ -272,11 +270,11 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
             stroke_l = Stroke(
                 description=f"left arm stroke after inkdip in {inkcap_name_l}",
                 arm="left",
-                pixel_coords=pixel_coords,  # Use proper pixel coordinates scaled from image dimensions
+                pixel_coords=pixel_coords,
                 ee_pos=meter_coords,
                 ee_rot=ee_rot_l,
                 dt=dt,
-                svg_path_obj=gcode_text_l,  # Store the actual G-code text for this path
+                gcode_text=pen_paths_l[ptr_l][2],
                 inkcap=inkcap_name_l,
                 is_inkdip=False,
                 frame_path=os.path.join(scene.design_dir, stroke_img_map[color_l][ptr_l][1]),
@@ -290,7 +288,7 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
                 stroke_l = inkdip_func(color_l, "left")
                 stroke_l.ee_rot = ee_rot_l
                 stroke_l.dt = dt
-                stroke_l.inkcap = inkcap_name_l
+                inkcap_name_l = stroke_l.inkcap
             else:
                 stroke_l = Stroke(
                     description="left arm at rest",
@@ -316,11 +314,11 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
             stroke_r = Stroke(
                 description=f"right arm stroke after inkdip in {inkcap_name_r}",
                 arm="right",
-                pixel_coords=pixel_coords,  # Use proper pixel coordinates scaled from image dimensions
+                pixel_coords=pixel_coords,
                 ee_pos=meter_coords,
                 ee_rot=ee_rot_r,
                 dt=dt,
-                svg_path_obj=gcode_text_r,  # Store the actual G-code text for this path
+                gcode_text=pen_paths_r[ptr_r][2],
                 inkcap=inkcap_name_r,
                 is_inkdip=False,
                 frame_path=os.path.join(scene.design_dir, stroke_img_map[color_r][ptr_r][1]),
@@ -334,7 +332,7 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
                 stroke_r = inkdip_func(color_r, "right")
                 stroke_r.ee_rot = ee_rot_r
                 stroke_r.dt = dt
-                stroke_r.inkcap = inkcap_name_r
+                inkcap_name_r = stroke_r.inkcap
             else:
                 stroke_r = Stroke(
                     description="right arm at rest",

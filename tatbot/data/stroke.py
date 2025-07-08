@@ -19,8 +19,8 @@ class Stroke(Yaml):
     """Time between poses in seconds."""
     pixel_coords: np.ndarray | None = None # (N, 2)
     """Numpy array of pixel coordinates for each pose in path <x (0-width), y (0-height)>."""
-    svg_path_obj: str | None = None
-    """SVG path object in string format."""
+    gcode_text: str | None = None
+    """G-code text for the stroke."""
     inkcap: str | None = None
     """Name of the inkcap which provided the ink for the stroke."""
     is_inkdip: bool = False
