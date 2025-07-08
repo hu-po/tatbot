@@ -25,7 +25,6 @@ class Skin(Yaml):
     design_pose: Pose
     """Pose of the design in the global frame."""
 
-    
     """
     Zone is a rectangular voxel with a 6D pose.
     The zone is centered at the design pose.
