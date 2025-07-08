@@ -33,11 +33,11 @@ class VizStrokes(BaseViz):
         super().__init__(config)
 
         if self.scene.design_dir_path is not None:
-            self.strokes: StrokeList = make_svg_strokes(self.scene)
+            self.strokelist: StrokeList = make_svg_strokes(self.scene)
         else:
-            self.strokes: StrokeList = make_align_strokes(self.scene)
+            self.strokelist: StrokeList = make_align_strokes(self.scene)
         self.strokebatch: StrokeBatch = strokebatch_from_strokes(
-            strokelist=self.strokes,
+            strokelist=self.strokelist,
             stroke_length=self.scene.stroke_length,
             joints=self.scene.ready_pos_full,
             urdf_path=self.scene.urdf.path,
@@ -47,7 +47,7 @@ class VizStrokes(BaseViz):
             needle_offset_l=self.scene.needle_offset_l,
             needle_offset_r=self.scene.needle_offset_r,
         )
-        self.num_strokes = len(strokes.strokes)
+        self.num_strokes = len(self.strokelist.strokes)
         self.stroke_idx = 0
         self.pose_idx = 0
 
@@ -82,12 +82,12 @@ class VizStrokes(BaseViz):
             )
             self.path_desc_label_l = self.server.gui.add_text(
                 label="left arm description",
-                initial_value=self.strokes.strokes[0][0].description,
+                initial_value=self.strokelist.strokes[0][0].description,
                 disabled=True,
             )
             self.path_desc_label_r = self.server.gui.add_text(
                 label="right arm description",
-                initial_value=self.strokes.strokes[0][1].description,
+                initial_value=self.strokelist.strokes[0][1].description,
                 disabled=True,
             )
             self.pose_idx_slider = self.server.gui.add_slider(
@@ -106,8 +106,8 @@ class VizStrokes(BaseViz):
             if self.pose_idx_slider.value > self.pose_idx_slider.max:
                 self.pose_idx_slider.value = self.pose_idx_slider.max
             _update_time_label()
-            self.path_desc_label_l.value = self.strokes.strokes[self.stroke_idx][0].description
-            self.path_desc_label_r.value = self.strokes.strokes[self.stroke_idx][1].description
+            self.path_desc_label_l.value = self.strokelist.strokes[self.stroke_idx][0].description
+            self.path_desc_label_r.value = self.strokelist.strokes[self.stroke_idx][1].description
 
         @self.pose_idx_slider.on_update
         def _(_):
@@ -116,36 +116,19 @@ class VizStrokes(BaseViz):
 
         _update_time_label()
 
-        log.debug(f"️🖼️ Adding GUI image: design.png")
-        self.image_np = cv2.imread(os.path.join(plan_dir, "design.png"))
-        self.image = self.server.gui.add_image(image=self.image_np, format="png")
-
-        log.debug(f"🖼️ Adding GUI image: pathviz.png")
-        image = self.image_np.copy()
-        for strokes in self.strokes.strokes:
-            for stroke in strokes:
-                if stroke.pixel_coords is not None:
-                    path_indices = np.linspace(0, 255, len(stroke.pixel_coords), dtype=np.uint8)
-                    colormap = cv2.applyColorMap(path_indices.reshape(-1, 1), cv2.COLORMAP_JET)
-                    for path_idx in range(len(stroke.pixel_coords) - 1):
-                        p1 = tuple(map(int, stroke.pixel_coords[path_idx]))
-                        p2 = tuple(map(int, stroke.pixel_coords[path_idx + 1]))
-                        color = colormap[path_idx][0].tolist()
-                        cv2.line(image, p1, p2, color, 2)
-        self.pathviz_np = image
-        out_path = os.path.join(plan_dir, "pathviz.png")
-        cv2.imwrite(out_path, image)
-        self.pathviz = self.server.gui.add_image(image=self.pathviz_np, format="png")
-
-        log.debug(f"🖼️ Adding 2D image (design frame)...")
-        self.server.scene.add_image(
-            name="/design",
-            image=self.image_np,
-            wxyz=self.skin.design_pose.rot.wxyz,
-            position=self.skin.design_pose.pos.xyz,
-            render_width=self.plan.image_width_m,
-            render_height=self.plan.image_height_m,
-        )
+        if self.scene.design_img_path is not None:
+            self.design_img_np = cv2.imread(self.scene.design_img_path)
+            self.design_img_gui = self.server.gui.add_image(image=self.design_img_np, format="png")
+            self.frame_img_gui = self.server.gui.add_image(image=self.frame_img_np, format="png")
+            log.debug(f"🖼️ Adding 2D image (design frame)...")
+            self.server.scene.add_image(
+                name="/design",
+                image=self.design_img_np,
+                wxyz=self.skin.design_pose.rot.wxyz,
+                position=self.skin.design_pose.pos.xyz,
+                render_width=self.scene.skin.image_width_m,
+                render_height=self.scene.skin.image_height_m,
+            )
 
         log.debug("Adding pointcloud")
         points_l = [] # pointcloud for left arm stroke
@@ -191,9 +174,8 @@ class VizStrokes(BaseViz):
         self.pose_idx_slider.value = self.pose_idx
         log.debug(f"Visualizing stroke {self.stroke_idx} pose {self.pose_idx}")
 
-        log.debug("Updating Image and Pointclouds")
-        image_np = self.image_np.copy()
-        for stroke in self.strokes.strokes[self.stroke_idx]:
+        log.debug("Updating pointclouds")
+        for stroke in self.strokelist.strokes[self.stroke_idx]:
             if stroke.arm == "left":
                 points_color_l = self.point_colors_stroke_l.copy()
                 points_color_l[self.stroke_idx * self.plan.stroke_length:self.stroke_idx * self.plan.stroke_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
@@ -204,27 +186,31 @@ class VizStrokes(BaseViz):
                 points_color_r[self.stroke_idx * self.plan.stroke_length:self.stroke_idx * self.plan.stroke_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
                 points_color_r[self.stroke_idx * self.plan.stroke_length + self.pose_idx] = np.array(COLORS["purple"], dtype=np.uint8)
                 self.pointcloud_path_r.colors = points_color_r
-            if stroke.pixel_coords is not None and not stroke.is_inkdip:
-                # Highlight entire path in red
-                for pw, ph in stroke.pixel_coords:
-                    cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["red"], -1)
-                # Highlight path up until current pose in orange
-                for pw, ph in stroke.pixel_coords[:self.pose_idx]:
-                    cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["orange"], -1)
-                color = COLORS["blue"] if stroke.arm == "left" else COLORS["purple"]
-                # Highlight current pose
-                px, py = stroke.pixel_coords[self.pose_idx - 2] # -2 because of hover poses at start and end
-                cv2.circle(image_np, (int(px), int(py)), self.config.pose_highlight_radius, color, -1)
-                # Add L or R text
-                text = "L" if stroke.arm == "left" else "R"
-                text_pos = (int(px) - 5, int(py) - self.config.pose_highlight_radius - 5)
-                cv2.putText(image_np, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-            if stroke.is_inkdip:
-                # Text indicating arm that is inkdipping
-                text = f"{stroke.arm} inkdip {stroke.inkcap}"
-                text_pos = (10, 10)
-                cv2.putText(image_np, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.2, COLORS["black"], 1)
-        self.image.image = image_np
+        if self.scene.design_img_path is not None:
+            log.debug("Updating design image")
+            image_np = self.design_img_np.copy()
+            for stroke in self.strokelist.strokes[self.stroke_idx]:
+                if stroke.pixel_coords is not None and not stroke.is_inkdip:
+                    # Highlight entire path in red
+                    for pw, ph in stroke.pixel_coords:
+                        cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["red"], -1)
+                    # Highlight path up until current pose in orange
+                    for pw, ph in stroke.pixel_coords[:self.pose_idx]:
+                        cv2.circle(image_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["orange"], -1)
+                    color = COLORS["blue"] if stroke.arm == "left" else COLORS["purple"]
+                    # Highlight current pose
+                    px, py = stroke.pixel_coords[self.pose_idx - 2] # -2 because of hover poses at start and end
+                    cv2.circle(image_np, (int(px), int(py)), self.config.pose_highlight_radius, color, -1)
+                    # Add L or R text
+                    text = "L" if stroke.arm == "left" else "R"
+                    text_pos = (int(px) - 5, int(py) - self.config.pose_highlight_radius - 5)
+                    cv2.putText(image_np, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                if stroke.is_inkdip:
+                    # Text indicating arm that is inkdipping
+                    text = f"{stroke.arm} inkdip {stroke.inkcap}"
+                    text_pos = (10, 10)
+                    cv2.putText(image_np, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.2, COLORS["black"], 1)
+            self.design_img_gui.image = image_np
 
         if self.pose_idx == 0:
             log.debug("Sending robot to rest pose")

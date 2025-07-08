@@ -16,23 +16,18 @@ from tatbot.data.scene import Scene
 log = get_logger('gen.svg', '🖋️')
 
 def make_svg_strokes(scene: Scene) -> StrokeList:
-    assert scene.design_dir_path is not None, "❌ Design directory path is not set"
-    design_dir = os.path.expanduser(scene.design_dir_path)
-    assert os.path.exists(design_dir), f"❌ Design directory {design_dir} does not exist"
-    log.debug(f"📂 Design directory: {design_dir}")
-
     svg_files = []
     svg_pens: dict[str, str] = {}
-    for file in os.listdir(design_dir):
+    for file in os.listdir(scene.design_dir):
         if file.endswith('.svg'):
-            svg_path = os.path.join(design_dir, file)
+            svg_path = os.path.join(scene.design_dir, file)
             svg_files.append(svg_path)
             match = re.match(r".*_pen\d+_(\w+)\.svg$", file)
             if not match:
                 raise ValueError(f"❌ Could not extract pen name from filename: {file}")
             pen_name = match.group(1)
             svg_pens[pen_name] = svg_path
-    log.info(f"✅ Found {len(svg_pens)} pens in {design_dir}")
+    log.info(f"✅ Found {len(svg_pens)} pens in {scene.design_dir}")
     log.debug(f"Pens in design: {svg_pens.keys()}")
 
     pen_paths_l: list[tuple[str, svgpathtools.Path]] = []
@@ -54,31 +49,10 @@ def make_svg_strokes(scene: Scene) -> StrokeList:
     if len(pen_paths_l) == 0 or len(pen_paths_r) == 0:
         raise ValueError("No paths found for left or right arm")
 
-    # create directory for image files
-    frames_dir = os.path.join(output_dir, "frames")
-    log.info(f"🗃️ Creating frames directory at {frames_dir}")
-    os.makedirs(frames_dir, exist_ok=True)
-
-    # Copy the final design image to frames/full.png
-    final_design_img = None
-    for file in os.listdir(design_dir):
-        if file.endswith('.png') and '_F' not in file:
-            final_design_img = file
-            break
-    if final_design_img is not None:
-        shutil.copy(os.path.join(design_dir, final_design_img), os.path.join(frames_dir, 'full.png'))
-        log.info(f"Copied final design image {final_design_img} to frames/full.png")
-    else:
-        log.warning(f"No final design image found in {design_dir}")
-    final_design_img = Image.open(os.path.join(design_dir, final_design_img))
-    assert scene.skin.image_width_px == final_design_img.width, f"❌ Design image width {final_design_img.width} does not match skin image width {scene.skin.image_width_px}"
-    assert scene.skin.image_height_px == final_design_img.height, f"❌ Design image height {final_design_img.height} does not match skin image height {scene.skin.image_height_px}"
-    log.info(f"Design image is {scene.skin.image_width_px}x{scene.skin.image_height_px}")
-
     # --- Build mapping from (arm, pen, stroke index) to original PNG filename ---
     # Example filename: a6f9q4thkhrm80cqrv9rebavmc_plotted_1_set1_pen3_true_blue_F000001.png
     stroke_img_map = collections.defaultdict(list)  # (pen_name) -> list of (frame_num, filename)
-    for file in os.listdir(design_dir):
+    for file in os.listdir(scene.design_dir):
         m = re.match(r".*_pen\d+_([a-zA-Z0-9_]+)_F(\d+)\.png$", file)
         if m:
             pen_name = m.group(1)

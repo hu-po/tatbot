@@ -80,6 +80,8 @@ class Scene(Yaml):
 
     design_dir_path: str | None = None
     """Path to the design directory."""
+    design_img_path: str | None = None
+    """Path to the design image."""
 
     yaml_dir: str = "~/tatbot/config/scenes"
     """Directory containing the scene configs."""
@@ -165,3 +167,18 @@ class Scene(Yaml):
         log.info(f"✅ Found {len(self.inkcaps_l)} left inkcaps and {len(self.inkcaps_r)} right inkcaps")
         log.debug(f"Left inkcaps: {self.inkcaps_l}")
         log.debug(f"Right inkcaps: {self.inkcaps_r}")
+
+        if self.design_dir_path is not None:
+            log.info(f"📂 Loading design from {self.design_dir_path}")
+            self.design_dir = os.path.expanduser(self.design_dir_path)
+            assert os.path.exists(self.design_dir), f"❌ Design directory {self.design_dir} does not exist"
+            log.debug(f"📂 Design directory: {self.design_dir}")
+
+            # final design image 
+            design_img_filename = None
+            for file in os.listdir(self.design_dir):
+                if file.endswith('.png') and '_F' not in file:
+                    design_img_filename = file
+                    break
+            assert design_img_filename is not None, f"❌ No design image found in {self.design_dir}"
+            self.design_img_path = os.path.join(self.design_dir, design_img_filename)
