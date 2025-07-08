@@ -9,7 +9,7 @@ from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
 from tatbot.gen.align import make_align_strokes
 from tatbot.gen.svg import make_svg_strokes
-from tatbot.gen.strokebatch import strokebatch_from_strokes
+from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.utils.colors import COLORS
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 from tatbot.viz.base import BaseViz, BaseVizConfig

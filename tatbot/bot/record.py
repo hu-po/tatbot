@@ -19,7 +19,7 @@ from lerobot.utils.control_utils import (
 from lerobot.utils.robot_utils import busy_wait
 from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorConfig
 
-from tatbot.gen.strokebatch import strokebatch_from_strokes
+from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.gen.align import make_align_strokes
 from tatbot.gen.svg import make_svg_strokes
 from tatbot.data.scene import Scene
