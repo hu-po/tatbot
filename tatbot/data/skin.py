@@ -25,5 +25,15 @@ class Skin(Yaml):
     design_pose: Pose
     """Pose of the design in the global frame."""
 
+    zone_pose: Pose
+    """Zone is a rectangular voxel with a 6D pose. In the zone frame, height is z, width is x, and depth is y."""
+
+    zone_height_m: float
+    """Height of the zone in meters."""
+    zone_width_m: float
+    """Width of the zone in meters."""
+    zone_depth_m: float
+    """Depth of the zone in meters."""
+
     yaml_dir: str = "~/tatbot/config/skins"
     """Directory containing the skin configs."""

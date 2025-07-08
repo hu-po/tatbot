@@ -133,13 +133,13 @@ class BaseViz:
             _camera_counter += 1
         log.info(f"Added {_camera_counter} cameras")
 
-        log.info("Adding zone to viser")
-        self.zone = self.server.scene.add_box(
-            name=f"/zone/{self.scene.zone.name}",
+        log.info("Adding skin zone to viser")
+        self.skin_zone = self.server.scene.add_box(
+            name=f"/skin_zone/{self.scene.skin.zone_name}",
             color=(0, 255, 0),
-            dimensions=(self.scene.zone.width_m, self.scene.zone.depth_m, self.scene.zone.height_m),
-            position=self.scene.zone.pose.pos.xyz,
-            wxyz=self.scene.zone.pose.rot.wxyz,
+            dimensions=(self.scene.skin.zone_width_m, self.scene.skin.zone_depth_m, self.scene.skin.zone_height_m),
+            position=self.scene.skin.zone_pose.pos.xyz,
+            wxyz=self.scene.skin.zone_pose.rot.wxyz,
             opacity=0.5,
             visible=True,
         )

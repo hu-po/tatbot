@@ -6,7 +6,6 @@ from tatbot.data import Yaml
 from tatbot.data.arms import Arms
 from tatbot.data.pose import ArmPose, Pos, Rot
 from tatbot.data.cams import Cams
-from tatbot.data.zone import Zone
 from tatbot.data.urdf import URDF
 from tatbot.data.skin import Skin
 from tatbot.data.inks import Inks, InkCap, Ink
@@ -27,8 +26,6 @@ class Scene(Yaml):
     """Name of the arms config (Arms)."""
     cams_config_name: str
     """Name of the camera config (Cameras)."""
-    zone_config_name: str
-    """Name of the zone config (Zone)."""
     urdf_config_name: str
     """Name of the urdf config (URDF)."""
     skin_config_name: str
@@ -88,7 +85,6 @@ class Scene(Yaml):
 
     arms: Arms = field(init=False)
     cams: Cams = field(init=False)
-    zone: Zone = field(init=False)
     urdf: URDF = field(init=False)
     skin: Skin = field(init=False)
     inks: Inks = field(init=False)
@@ -110,7 +106,6 @@ class Scene(Yaml):
         log.info(f"📂 Loading scene config: {self.yaml_dir}/{self.name}.yaml")
         self.arms = Arms.from_name(self.arms_config_name)
         self.cams = Cams.from_name(self.cams_config_name)
-        self.zone = Zone.from_name(self.zone_config_name)
         self.urdf = URDF.from_name(self.urdf_config_name)
         self.skin = Skin.from_name(self.skin_config_name)
         self.tags = Tags.from_name(self.tags_config_name)

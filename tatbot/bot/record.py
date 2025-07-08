@@ -65,10 +65,6 @@ class RecordConfig:
     """If true, resumes recording from the last episode, dataset name must match."""
 
 
-class EStopException(Exception):
-    """ The joystick red button acts as the e-stop, click it to raise this exception, retract the arms, and terminate the program. """
-    pass
-
 def record(config: RecordConfig):
     scene: Scene = Scene.from_name(config.scene_name)
 
@@ -260,7 +256,7 @@ def record(config: RecordConfig):
 
             action = atari_teleop.get_action()
             if action.get("red_button", False):
-                raise EStopException()
+                raise KeyboardInterrupt()
             # Optionally use axis values for needle depth or other control
             if abs(action.get("x", 0.0)) > 1e-3 or abs(action.get("y", 0.0)) > 1e-3:
                 log.info(f"🎮 joystick axis x={action['x']:.2f}, y={action['y']:.2f}")
@@ -313,10 +309,8 @@ if __name__ == "__main__":
         record(args)
     except Exception as e:
         log.error("❌ Robot Loop Exit with Error:\n" + traceback.format_exc())
-    except EStopException:
-        log.warning("🛑🎮 E-stop pressed, retracting arms...")
     except KeyboardInterrupt:
-        log.info("🛑⌨️ Keyboard interrupt detected")
+        log.info("🛑⌨️ Keyboard/E-stop interrupt detected")
     finally:
         log.info("🛑 Disconnecting robot...")
         scene: Scene = Scene.from_name(args.scene_name)

@@ -1,9 +1,0 @@
-name: metaltray
-pose:
-  pos:
-    xyz: [0.0, 15.0, 0.0]
-  rot:
-    wxyz: [1.0, 0.0, 0.0, 0.0]
-height_m: 0.1
-width_m: 0.1
-depth_m: 0.1
