@@ -50,6 +50,6 @@ def make_inkdip_func(scene: Scene) -> Callable:
                 color=color,
                 ee_pos=inkdip_pos,
                 arm=arm,
-            ),
+            )
     
     return inkdip_func
