@@ -21,7 +21,7 @@ from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorCo
 
 from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.gen.align import make_align_strokes
-from tatbot.gen.svg import make_svg_strokes
+from tatbot.gen.gcode import make_gcode_strokes
 from tatbot.data.scene import Scene
 from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
@@ -83,7 +83,7 @@ def record(config: RecordConfig):
     scene.to_yaml(scene_path)
 
     if scene.design_dir_path is not None:
-        strokes: StrokeList = make_svg_strokes(scene)
+        strokes: StrokeList = make_gcode_strokes(scene)
     else:
         strokes: StrokeList = make_align_strokes(scene)
     num_strokes = len(strokes.strokes)

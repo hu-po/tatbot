@@ -25,9 +25,13 @@ class Skin(Yaml):
     design_pose: Pose
     """Pose of the design in the global frame."""
 
-    zone_pose: Pose
-    """Zone is a rectangular voxel with a 6D pose. In the zone frame, height is z, width is x, and depth is y."""
-
+    
+    """
+    Zone is a rectangular voxel with a 6D pose.
+    The zone is centered at the design pose.
+    The zone is used to crop pointclouds.
+    In the zone frame: height is z, width is x, and depth is y.
+    """
     zone_height_m: float
     """Height of the zone in meters."""
     zone_width_m: float

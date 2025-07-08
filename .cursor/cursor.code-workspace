@@ -14,7 +14,6 @@
       { "name": "trossen_arm", "path": "../../trossen_arm" }, // https://github.com/TrossenRobotics/trossen_arm
       { "name": "trossen_arm_description", "path": "../../trossen_arm_description" }, // https://github.com/TrossenRobotics/trossen_arm_description
       { "name": "apriltags", "path": "../../apriltags" }, // https://github.com/pupil-labs/apriltags
-      { "name": "svgpathtools", "path": "../../svgpathtools" }, // https://github.com/mathandy/svgpathtools
       { "name": "potpourri3d", "path": "../../potpourri3d" }, // https://github.com/nmwsharp/potpourri3d
       { "name": "polyscope", "path": "../../polyscope" }, // https://github.com/nmwsharp/polyscope
     ],

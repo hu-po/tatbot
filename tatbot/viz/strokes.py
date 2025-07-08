@@ -8,7 +8,7 @@ import numpy as np
 from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
 from tatbot.gen.align import make_align_strokes
-from tatbot.gen.svg import make_svg_strokes
+from tatbot.gen.gcode import make_gcode_strokes
 from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.utils.colors import COLORS
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
@@ -33,7 +33,7 @@ class VizStrokes(BaseViz):
         super().__init__(config)
 
         if self.scene.design_dir_path is not None:
-            self.strokelist: StrokeList = make_svg_strokes(self.scene)
+            self.strokelist: StrokeList = make_gcode_strokes(self.scene)
         else:
             self.strokelist: StrokeList = make_align_strokes(self.scene)
         self.strokebatch: StrokeBatch = strokebatch_from_strokes(

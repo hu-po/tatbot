@@ -1,0 +1,11 @@
+{
+  "presetType": "gcode_settings",
+  "version": "1",
+  "presetSubType": "System",
+  "presetName": "tatbot",
+  "enabled": true,
+  "userCreated": false,
+  "data": {
+    "settings": {}
+  }
+}

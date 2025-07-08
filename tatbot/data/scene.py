@@ -172,7 +172,7 @@ class Scene(Yaml):
             # final design image 
             design_img_filename = None
             for file in os.listdir(self.design_dir):
-                if file.endswith('.png') and '_F' not in file:
+                if file.endswith('.png') and '_F' not in file and 'plotted' in file:
                     design_img_filename = file
                     break
             assert design_img_filename is not None, f"❌ No design image found in {self.design_dir}"
