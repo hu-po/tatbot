@@ -1,17 +1,18 @@
 from dataclasses import dataclass, field
-
-import numpy as np
+import os
+import json
 
 from tatbot.data import Yaml
 from tatbot.data.arms import Arms
-from tatbot.data.pose import ArmPose
+from tatbot.data.pose import ArmPose, Pos, Rot
 from tatbot.data.cams import Cams
 from tatbot.data.zone import Zone
 from tatbot.data.urdf import URDF
 from tatbot.data.skin import Skin
-from tatbot.data.inks import Inks
+from tatbot.data.inks import Inks, InkCap, Ink
 from tatbot.data.tags import Tags
 from tatbot.utils.log import get_logger
+from tatbot.bot.urdf import get_link_poses
 
 log = get_logger("scene", "🌆")
 
@@ -52,6 +53,34 @@ class Scene(Yaml):
     inkready_pos_r_name: str
     """Name of the right arm inkready pose (ArmPose)."""
 
+    pen_names_l: list[str]
+    """Name of pens that will be drawn using left arm."""
+    pen_names_r: list[str]
+    """Name of pens that will be drawn using right arm."""
+    pens_config_path: str
+    """Path to the DrawingBotV3 Pens config file."""
+
+    stroke_length: int
+    """All strokes will be resampled to this length."""
+
+    ee_rot_l: Rot
+    """<w, x, y, z> quaternion of left arm end effector when performing a stroke."""
+    ee_rot_r: Rot
+    """<w, x, y, z> quaternion of right arm end effector when performing a stroke."""
+
+    inkdip_hover_offset: Pos
+    """<x, y, z> offset for inkdip hover in meters."""
+    needle_hover_offset: Pos
+    """<x, y, z> offset for needle hover in meters."""
+
+    needle_offset_l: Pos
+    """<x, y, z> offset for needle stroke in meters."""
+    needle_offset_r: Pos
+    """<x, y, z> offset for needle stroke in meters."""
+
+    design_dir_path: str | None = None
+    """Path to the design directory."""
+
     yaml_dir: str = "~/tatbot/config/scenes"
     """Directory containing the scene configs."""
 
@@ -82,8 +111,8 @@ class Scene(Yaml):
         self.zone = Zone.from_name(self.zone_config_name)
         self.urdf = URDF.from_name(self.urdf_config_name)
         self.skin = Skin.from_name(self.skin_config_name)
-        self.inks = Inks.from_name(self.inks_config_name)
         self.tags = Tags.from_name(self.tags_config_name)
+        self.inks = Inks.from_name(self.inks_config_name)
         
         self.sleep_pos_l = ArmPose.from_name(self.sleep_pos_l_name)
         self.sleep_pos_r = ArmPose.from_name(self.sleep_pos_r_name)
@@ -95,3 +124,44 @@ class Scene(Yaml):
         
         self.inkready_pos_l = ArmPose.from_name(self.inkready_pos_l_name)
         self.inkready_pos_r = ArmPose.from_name(self.inkready_pos_r_name)
+        self.inkready_pos_full = ArmPose.make_bimanual_joints(self.inkready_pos_l, self.inkready_pos_r)
+
+        # load pens from config file
+        pens_config_path = os.path.expanduser(self.pens_config_path)
+        assert os.path.exists(pens_config_path), f"❌ Pens config file {pens_config_path} does not exist"
+        log.info(f"📂 Loading pens from config file: {pens_config_path}")
+        with open(pens_config_path, 'r') as f:
+            pens_config = json.load(f)
+        self.pens_config = {pen["name"]: pen for pen in pens_config["data"]["pens"]}
+        log.info(f"✅ Found {len(self.pens_config)} pens")
+        log.debug(f"Pens in config: {self.pens_config.keys()}")
+        for pen_name in self.pen_names_l:
+            assert pen_name in self.pens_config, f"❌ Pen {pen_name} (left) not in pen config"
+        for pen_name in self.pen_names_r:
+            assert pen_name in self.pens_config, f"❌ Pen {pen_name} (right) not in pen config"
+
+        # get the link poses for the inkcaps
+        link_poses = get_link_poses(self.urdf.path, self.urdf.ink_link_names, self.inkready_pos_full)
+        self.inkcaps_l: dict[str, InkCap] = {}
+        self.inkcaps_r: dict[str, InkCap] = {}
+        for inkcap in self.inks.inkcaps:
+            assert inkcap.name in self.urdf.ink_link_names, f"❌ Inkcap {inkcap.name} not found in URDF"
+            if inkcap.ink is not None:
+                ink: Ink = Ink(**inkcap.ink)
+                _inkcap: InkCap = InkCap(
+                    name=inkcap.name,
+                    diameter_m=inkcap.diameter_m,
+                    depth_m=inkcap.depth_m,
+                    ink=ink,
+                    pose=link_poses[inkcap.name],
+                )
+                log.debug(f"Inkcap {inkcap.name} is filled with {ink.name}")
+                if "left" in inkcap.name:
+                    assert ink.name in self.pen_names_l, f"❌ Ink {ink.name} not found in left pen names"
+                    self.inkcaps_l[ink.name] = _inkcap
+                else:
+                    assert ink.name in self.pen_names_r, f"❌ Ink {ink.name} not found in right pen names"
+                    self.inkcaps_r[ink.name] = _inkcap
+        log.info(f"✅ Found {len(self.inkcaps_l)} left inkcaps and {len(self.inkcaps_r)} right inkcaps")
+        log.debug(f"Left inkcaps: {self.inkcaps_l}")
+        log.debug(f"Right inkcaps: {self.inkcaps_r}")

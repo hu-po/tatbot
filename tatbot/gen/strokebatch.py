@@ -12,7 +12,6 @@ log = get_logger('gen.strokebatch', '💠')
 def strokebatch_from_strokes(
     strokelist: StrokeList,
     stroke_length: int,
-    batch_size: int,
     joints: np.ndarray,
     urdf_path: str,
     link_names: tuple[str, ...],
@@ -20,6 +19,7 @@ def strokebatch_from_strokes(
     needle_hover_offset: Pos,
     needle_offset_l: Pos,
     needle_offset_r: Pos,
+    batch_size: int = 256,
 ) -> StrokeBatch:
     """
     Convert a list of (Stroke, Stroke) tuples into a StrokeBatch, running IK to fill in joint values.

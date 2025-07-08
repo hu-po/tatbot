@@ -19,7 +19,9 @@ from lerobot.utils.control_utils import (
 from lerobot.utils.robot_utils import busy_wait
 from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorConfig
 
-from tatbot.data.plan import Plan
+from tatbot.gen.strokebatch import strokebatch_from_strokes
+from tatbot.gen.align import make_align_strokes
+from tatbot.gen.svg import make_svg_strokes
 from tatbot.data.scene import Scene
 from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
@@ -35,19 +37,14 @@ from tatbot.utils.log import (
 log = get_logger('bot.record', '🤖')
 
 @dataclass
-class BotPlanConfig:
+class RecordConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    scene_name: str = "default"
+    scene_name: str = "align"
     """Name of the scene config to use (Scene)."""
 
-    plan_name: str = "calib"
-    """Name of the plan (Plan)."""
-    plan_dir: str = "~/tatbot/nfs/plans"
-    """Directory containing plan."""
-
-    output_dir: str = "~/tatbot/nfs/bot"
+    output_dir: str = "~/tatbot/nfs/recordings"
     """Directory to save the dataset."""
 
     hf_username: str = "tatbot"
@@ -72,18 +69,43 @@ class EStopException(Exception):
     """ The joystick red button acts as the e-stop, click it to raise this exception, retract the arms, and terminate the program. """
     pass
 
-def record_plan(config: BotPlanConfig):
-    plan_dir = os.path.expanduser(config.plan_dir)
-    plan_dir = os.path.join(plan_dir, config.plan_name)
-    assert os.path.exists(plan_dir), f"❌ Plan directory {plan_dir} does not exist"
-    log.debug(f"📂 Plan directory: {plan_dir}")
-
-    plan: Plan = Plan.from_yaml(os.path.join(plan_dir, "plan.yaml"))
-    strokebatch: StrokeBatch = StrokeBatch.load(os.path.join(plan_dir, "strokebatch.safetensors"))
-    strokes: StrokeList = StrokeList.from_yaml(os.path.join(plan_dir, "strokes.yaml"))
-    num_strokes = len(strokes.strokes)
-
+def record(config: RecordConfig):
     scene: Scene = Scene.from_name(config.scene_name)
+
+    output_dir = os.path.expanduser(config.output_dir)
+    log.info(f"🗃️ Creating output directory at {output_dir}...")
+    os.makedirs(output_dir, exist_ok=True)
+    
+    dataset_name = config.dataset_name or f"{scene.name}-{time.strftime(TIME_FORMAT, time.localtime())}"
+    dataset_dir = f"{output_dir}/{dataset_name}"
+    log.info(f"🗃️ Creating dataset directory at {dataset_dir}...")
+    os.makedirs(dataset_dir, exist_ok=True)
+
+    # copy the scene yaml to the output directory
+    scene_path = os.path.join(dataset_dir, "scene.yaml")
+    log.info(f"💾 Saving scene yaml to {scene_path}")
+    scene.to_yaml(scene_path)
+
+    if scene.design_dir_path is not None:
+        strokes: StrokeList = make_svg_strokes(scene)
+    else:
+        strokes: StrokeList = make_align_strokes(scene)
+    num_strokes = len(strokes.strokes)
+    strokebatch: StrokeBatch = strokebatch_from_strokes(
+        strokelist=strokes,
+        stroke_length=scene.stroke_length,
+        batch_size=scene.ik_batch_size,
+        joints=scene.ready_pos_full,
+        urdf_path=scene.urdf.path,
+        link_names=scene.urdf.ee_link_names,
+        design_pose=scene.skin.design_pose,
+        needle_hover_offset=scene.needle_hover_offset,
+        needle_offset_l=scene.needle_offset_l,
+        needle_offset_r=scene.needle_offset_r,
+    )
+    strokebatch_path = os.path.join(dataset_dir, f"strokebatch.safetensors")
+    log.info(f"💾 Saving strokebatch to {strokebatch_path}")
+    strokebatch.save(strokebatch_path)
 
     log.info("🤗 Adding LeRobot robot...")
     robot = make_robot_from_config(TatbotConfig(
@@ -118,15 +140,6 @@ def record_plan(config: BotPlanConfig):
     ))
     robot.connect()
 
-    output_dir = os.path.expanduser(config.output_dir)
-    log.info(f"🗃️ Creating output directory at {output_dir}...")
-    os.makedirs(output_dir, exist_ok=True)
-
-    dataset_name = config.dataset_name or f"plan-{plan.name}-{time.strftime(TIME_FORMAT, time.localtime())}"
-    dataset_dir = f"{output_dir}/{dataset_name}"
-    log.info(f"🗃️ Creating dataset directory at {dataset_dir}...")
-    os.makedirs(dataset_dir, exist_ok=True)
-
     action_features = hw_to_dataset_features(robot.action_features, "action", True)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
     dataset_features = {**action_features, **obs_features}
@@ -153,11 +166,6 @@ def record_plan(config: BotPlanConfig):
             image_writer_processes=0,
             image_writer_threads=4 * (len(robot.cameras) + len(robot.cond_cameras)),
         )
-
-    dataset_plan_dir = os.path.join(dataset_dir, "plan")
-    log.info(f"🗃️ Creating plan directory inside dataset directory at {dataset_plan_dir}...")
-    os.makedirs(dataset_plan_dir, exist_ok=True)
-    shutil.copytree(plan_dir, dataset_plan_dir, dirs_exist_ok=True)
 
     dataset_cond_dir = os.path.join(dataset_dir, "cond")
     log.info(f"🗃️ Creating condition directory inside dataset directory at {dataset_cond_dir}...")
@@ -223,23 +231,6 @@ def record_plan(config: BotPlanConfig):
         # TODO: use design pose and pointcloud to get geodesic
         # TODO: use geodesic to get ee pose
 
-        # TODO: re-generate strokebatch with new design pose
-        # strokebatch: StrokeBatch = strokebatch_from_strokes(
-        #     strokelist=strokelist,
-        #     stroke_length=plan.stroke_length,
-        #     batch_size=plan.ik_batch_size,
-        #     joints=scene.ready_pos_full,
-        #     urdf_path=scene.urdf.path,
-        #     link_names=scene.urdf.ee_link_names,
-        #     design_pose=scene.skin.design_pose,
-        #     needle_hover_offset=plan.needle_hover_offset,
-        #     needle_offset_l=plan.needle_offset_l,
-        #     needle_offset_r=plan.needle_offset_r,
-        # )
-        # strokebatch_path = os.path.join(output_dir, f"strokebatch.safetensors")
-        # log.info(f"💾 Saving strokebatch to {strokebatch_path}")
-        # strokebatch.save(strokebatch_path)
-
         # Per-episode conditioning information is stored in seperate directory
         episode_cond = {}
         episode_cond_dir = os.path.join(dataset_cond_dir, f"episode_{stroke_idx:06d}")
@@ -264,8 +255,8 @@ def record_plan(config: BotPlanConfig):
             )
 
         log.info(f"🤖 recording path {stroke_idx} of {num_strokes}")
-        for pose_idx in range(plan.stroke_length):
-            log.debug(f"pose_idx: {pose_idx}/{plan.stroke_length}")
+        for pose_idx in range(scene.stroke_length):
+            log.debug(f"pose_idx: {pose_idx}/{scene.stroke_length}")
             start_loop_t = time.perf_counter()
 
             action = atari_teleop.get_action()
@@ -312,7 +303,7 @@ def record_plan(config: BotPlanConfig):
         dataset.push_to_hub(tags=list(config.tags), private=config.private)
 
 if __name__ == "__main__":
-    args = setup_log_with_config(BotPlanConfig)
+    args = setup_log_with_config(RecordConfig)
     print_config(args)
     # TODO: waiting on https://github.com/TrossenRobotics/trossen_arm/issues/86#issue-3144375498
     logging.getLogger('trossen_arm').setLevel(logging.ERROR)
@@ -320,7 +311,7 @@ if __name__ == "__main__":
         log.setLevel(logging.DEBUG)
         logging.getLogger('lerobot').setLevel(logging.DEBUG)
     try:
-        record_plan(args)
+        record(args)
     except Exception as e:
         log.error("❌ Robot Loop Exit with Error:\n" + traceback.format_exc())
     except EStopException as e:

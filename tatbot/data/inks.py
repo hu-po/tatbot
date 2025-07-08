@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from tatbot.data.pose import Pose
 from tatbot.data import Yaml
 
 
@@ -20,6 +21,8 @@ class InkCap(Yaml):
     """Depth of the inkcap (meters)."""
     ink: Ink | None = None
     """Ink inside the inkcap, if None the inkcap is empty."""
+    pose: Pose | None = None
+    """Pose of the inkcap."""
 
 @dataclass
 class Inks(Yaml):

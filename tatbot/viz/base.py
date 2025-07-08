@@ -16,7 +16,7 @@ class BaseVizConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    scene_name: str = "default"
+    scene_name: str = "align"
     """Name of the scene (Scene)."""
 
     env_map_hdri: str = "forest"
@@ -100,17 +100,13 @@ class BaseViz:
             self.arm_l, self.arm_r = driver_from_arms(self.scene.arms)
             self.to_trossen_vector = lambda x: trossen_arm.VectorDouble(x)
     
-        log.debug("Adding inkpalette to viser")
-        link_poses = get_link_poses(self.scene.urdf.path, self.scene.urdf.ink_link_names, self.scene.ready_pos_full)
-        for inkcap in self.scene.inks.inkcaps:
-            if inkcap.ink is None:
-                continue
-            log.debug(f"Inkcap {inkcap.name} contains ink")
+        log.debug("Adding inkcaps to viser")
+        for inkcap in self.scene.inkcaps_l.values() + self.scene.inkcaps_r.values():
             self.server.scene.add_icosphere(
                 name=f"/inkcaps/{inkcap.name}",
                 radius=inkcap.diameter_m / 2,
-                color=inkcap.ink["rgb"],
-                position=tuple(link_poses[inkcap.name].pos.xyz),
+                color=inkcap.ink.rgb,
+                position=tuple(inkcap.pose.pos.xyz),
                 opacity=0.5,
                 subdivisions=4,
                 visible=True,
