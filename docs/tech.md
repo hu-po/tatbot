@@ -31,15 +31,13 @@ source scripts/env.sh
 tatbot is designed as a multi-node system, with the following roles:
 
 `oop` 🦊 and `ook` 🦧 are the main nodes, they:
-- generate images and create plans (using gpu)
 - run the mcp server to interact with tatbot
 - run the visualization server to view plans
 
 ```bash
 # optionally install dev dependencies
-uv pip install .[dev,viz] && \
-uv pip install .[gen] && \
-uv run -m tatbot.gen.from_svg --name "yawning_cat" --debug
+uv pip install .[dev,viz,mcp] && \
+uv run -m tatbot.viz.strokes --debug --scene-name "calib"
 ```
 
 `trossen-ai` 🦾 sends commands to robot arms, receives realsense camera images, and records lerobot datasets:
@@ -49,7 +47,7 @@ uv pip install .[bot] && \
 # configure trossen arms
 uv run -m tatbot.bot.trossen --debug
 # run lerobot dataset recording from plan
-uv run -m tatbot.bot.plan --debug
+uv run -m tatbot.bot.record --debug --scene-name "calib"
 ```
 
 `ojo` 🦎 runs the policy servers for the VLA model and for the 3d reconstruction model

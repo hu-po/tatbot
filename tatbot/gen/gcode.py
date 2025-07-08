@@ -124,8 +124,7 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
     if len(pen_paths_l) == 0 or len(pen_paths_r) == 0:
         raise ValueError("No paths found for left or right arm")
 
-    # --- Build mapping from (arm, pen, stroke index) to original PNG filename ---
-    # Example filename: a6f9q4thkhrm80cqrv9rebavmc_plotted_1_set1_pen3_true_blue_F000001.png
+    # Example filename: calib_plotted_1_set1_pen1_nighthawk_black_F000006.png
     stroke_img_map = collections.defaultdict(list)  # (pen_name) -> list of (frame_num, filename)
     for file in os.listdir(scene.design_dir):
         m = re.match(r".*_pen\d+_([a-zA-Z0-9_]+)_F(\d+)\.png$", file)

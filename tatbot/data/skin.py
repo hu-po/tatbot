@@ -30,14 +30,13 @@ class Skin(Yaml):
     Zone is a rectangular voxel with a 6D pose.
     The zone is centered at the design pose.
     The zone is used to crop pointclouds.
-    In the zone frame: height is z, width is x, and depth is y.
     """
-    zone_height_m: float
-    """Height of the zone in meters."""
-    zone_width_m: float
-    """Width of the zone in meters."""
     zone_depth_m: float
-    """Depth of the zone in meters."""
+    """Depth of the zone in meters. (x)"""
+    zone_width_m: float
+    """Width of the zone in meters. (y)"""
+    zone_height_m: float
+    """Height of the zone in meters. (z)"""
 
     yaml_dir: str = "~/tatbot/config/skins"
     """Directory containing the skin configs."""
