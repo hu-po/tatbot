@@ -71,6 +71,7 @@ def make_svg_strokes(scene: Scene) -> StrokeList:
         """Resample path evenly along the path and convert to pixel and meter coordinates."""
         total_length = path.length()
         distances = np.linspace(0, total_length, scene.stroke_length)
+        import pdb; pdb.set_trace()
         points = [path.point(path.ilength(d)) for d in distances]
         pixel_coords = np.array([[p.real, p.imag] for p in points])
         meter_coords = np.hstack([(
