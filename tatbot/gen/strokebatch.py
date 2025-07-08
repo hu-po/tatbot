@@ -34,7 +34,7 @@ def strokebatch_from_strokes(
     ee_rot_r = np.zeros((b, l, 4), dtype=np.float32)
     dt = np.zeros((b, l), dtype=np.float32)
     for i, (stroke_l, stroke_r) in enumerate(strokelist.strokes):
-        if not stroke_l.is_inkdip and not stroke_l.is_alignment:
+        if not stroke_l.is_inkdip:
             ee_pos_l[i] = transform_and_offset(
                 stroke_l.ee_pos,
                 design_pose.pos.xyz,
@@ -43,7 +43,7 @@ def strokebatch_from_strokes(
             )
         else:
             ee_pos_l[i] = stroke_l.ee_pos
-        if not stroke_r.is_inkdip and not stroke_r.is_alignment:
+        if not stroke_r.is_inkdip:
             ee_pos_r[i] = transform_and_offset(
                 stroke_r.ee_pos,
                 design_pose.pos.xyz,
