@@ -314,7 +314,7 @@ if __name__ == "__main__":
         record(args)
     except Exception as e:
         log.error("❌ Robot Loop Exit with Error:\n" + traceback.format_exc())
-    except EStopException as e:
+    except EStopException:
         log.warning("🛑🎮 E-stop pressed, retracting arms...")
     except KeyboardInterrupt:
         log.info("🛑⌨️ Keyboard interrupt detected")
