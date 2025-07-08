@@ -117,7 +117,8 @@ def make_svg_strokes(scene: Scene) -> StrokeList:
             ),
         )
     )
-    inkcap_name_r = None # these will be used to determine when to inkdip
+    inkcap_name_l = _inkdip_stroke.inkcap
+    inkcap_name_r = None # when None, indicates that an inkdip stroke is required
     ptr_l: int = 0
     ptr_r: int = 0
     stroke_idx: int = len(strokelist.strokes) # strokes list already contains strokes
@@ -141,7 +142,7 @@ def make_svg_strokes(scene: Scene) -> StrokeList:
         elif inkcap_name_l is not None:
             pixel_coords, meter_coords = coords_from_path(path_l)
             stroke_l = Stroke(
-                description=f"left arm stroke using left arm",
+                description=f"left arm stroke after inkdip in {inkcap_name_l}",
                 arm="left",
                 pixel_coords=pixel_coords,
                 ee_pos=meter_coords,
@@ -161,6 +162,7 @@ def make_svg_strokes(scene: Scene) -> StrokeList:
                 stroke_l = inkdip_func(color_l, "left")
                 stroke_l.ee_rot = ee_rot_l
                 stroke_l.dt = dt
+                stroke_l.inkcap = inkcap_name_l
             else:
                 stroke_l = Stroke(
                     description="left arm at rest",
@@ -184,7 +186,7 @@ def make_svg_strokes(scene: Scene) -> StrokeList:
         elif inkcap_name_r is not None:
             pixel_coords, meter_coords = coords_from_path(path_r)
             stroke_r = Stroke(
-                description=f"right arm stroke using right arm",
+                description=f"right arm stroke after inkdip in {inkcap_name_r}",
                 arm="right",
                 pixel_coords=pixel_coords,
                 ee_pos=meter_coords,
@@ -204,6 +206,7 @@ def make_svg_strokes(scene: Scene) -> StrokeList:
                 stroke_r = inkdip_func(color_r, "right")
                 stroke_r.ee_rot = ee_rot_r
                 stroke_r.dt = dt
+                stroke_r.inkcap = inkcap_name_r
             else:
                 stroke_r = Stroke(
                     description="right arm at rest",
