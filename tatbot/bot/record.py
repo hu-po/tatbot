@@ -94,7 +94,6 @@ def record(config: RecordConfig):
     strokebatch: StrokeBatch = strokebatch_from_strokes(
         strokelist=strokes,
         stroke_length=scene.stroke_length,
-        batch_size=scene.ik_batch_size,
         joints=scene.ready_pos_full,
         urdf_path=scene.urdf.path,
         link_names=scene.urdf.ee_link_names,
