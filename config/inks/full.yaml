@@ -13,38 +13,38 @@ inkcaps:
     depth_m: 0.01
   - name: inkcap_left_small_1
     ink:
-      name: snow_white
-      rgb: [255, 255, 255]
+      name: fuchsia
+      rgb: [255, 0, 255]
     diameter_m: 0.008
     depth_m: 0.013
   - name: inkcap_left_small_2
     ink:
-      name: snow_white
-      rgb: [255, 255, 255]
+      name: golden_yellow
+      rgb: [255, 215, 0]
     diameter_m: 0.008
     depth_m: 0.01
   - name: inkcap_left_small_3
     ink:
-      name: snow_white
-      rgb: [255, 255, 255]
+      name: bright_orange
+      rgb: [255, 165, 0]
     diameter_m: 0.008
     depth_m: 0.01
   - name: inkcap_left_medium_0
     ink:
-      name: snow_white
-      rgb: [255, 255, 255]
+      name: bright_red
+      rgb: [255, 0, 0]
     diameter_m: 0.012
     depth_m: 0.01
   - name: inkcap_left_medium_1
     ink:
-      name: snow_white
-      rgb: [255, 255, 255]
+      name: lime_green
+      rgb: [0, 255, 0]
     diameter_m: 0.012
     depth_m: 0.01
   - name: inkcap_left_medium_2
     ink:
-      name: snow_white
-      rgb: [255, 255, 255]
+      name: true_blue
+      rgb: [0, 0, 255]
     diameter_m: 0.012
     depth_m: 0.01
   - name: inkcap_right_large
@@ -61,37 +61,37 @@ inkcaps:
     depth_m: 0.01
   - name: inkcap_right_small_1
     ink:
-      name: snow_white
-      rgb: [255, 255, 255]
+      name: fuchsia
+      rgb: [255, 0, 255]
     diameter_m: 0.008
     depth_m: 0.01
   - name: inkcap_right_small_2
     ink:
-      name: snow_white
-      rgb: [255, 255, 255]
+      name: golden_yellow
+      rgb: [255, 215, 0]
     diameter_m: 0.008
     depth_m: 0.01
   - name: inkcap_right_small_3
     ink:
-      name: snow_white
-      rgb: [255, 255, 255]
+      name: bright_orange
+      rgb: [255, 165, 0]
     diameter_m: 0.008
     depth_m: 0.01
   - name: inkcap_right_medium_0
     ink:
-      name: snow_white
-      rgb: [255, 255, 255]
+      name: bright_red
+      rgb: [255, 0, 0]
     diameter_m: 0.012
     depth_m: 0.01
   - name: inkcap_right_medium_1
     ink:
-      name: snow_white
-      rgb: [255, 255, 255]
+      name: lime_green
+      rgb: [0, 255, 0]
     diameter_m: 0.012
     depth_m: 0.01
   - name: inkcap_right_medium_2
     ink:
-      name: snow_white
-      rgb: [255, 255, 255]
+      name: true_blue
+      rgb: [0, 0, 255]
     diameter_m: 0.012
     depth_m: 0.01 

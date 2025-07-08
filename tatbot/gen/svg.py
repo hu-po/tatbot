@@ -71,9 +71,9 @@ def make_svg_strokes(scene: Scene) -> StrokeList:
     else:
         log.warning(f"No final design image found in {design_dir}")
     final_design_img = Image.open(os.path.join(design_dir, final_design_img))
-    plan.image_width_px = final_design_img.width
-    plan.image_height_px = final_design_img.height
-    log.info(f"Design image is {plan.image_width_px}x{plan.image_height_px}")
+    assert scene.skin.image_width_px == final_design_img.width, f"❌ Design image width {final_design_img.width} does not match skin image width {scene.skin.image_width_px}"
+    assert scene.skin.image_height_px == final_design_img.height, f"❌ Design image height {final_design_img.height} does not match skin image height {scene.skin.image_height_px}"
+    log.info(f"Design image is {scene.skin.image_width_px}x{scene.skin.image_height_px}")
 
     # --- Build mapping from (arm, pen, stroke index) to original PNG filename ---
     # Example filename: a6f9q4thkhrm80cqrv9rebavmc_plotted_1_set1_pen3_true_blue_F000001.png

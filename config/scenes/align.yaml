@@ -11,13 +11,25 @@ ready_pos_l_name: "left/retracted"
 ready_pos_r_name: "right/retracted"
 inkready_pos_l_name: "left/inkready"
 inkready_pos_r_name: "right/inkready"
-inks_config_name: "blacknwhite"
+inks_config_name: "full"
 pen_names_l:
   - nighthawk_black
   - snow_white
+  - fuchsia
+  - golden_yellow
+  - bright_orange
+  - bright_red
+  - lime_green
+  - true_blue
 pen_names_r:
   - nighthawk_black
   - snow_white
+  - fuchsia
+  - golden_yellow
+  - bright_orange
+  - bright_red
+  - lime_green
+  - true_blue
 pens_config_path: "~/tatbot/config/drawingbotv3/pens/full.json"
 stroke_length: 32
 ee_rot_l:

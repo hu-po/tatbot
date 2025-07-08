@@ -1,6 +1,7 @@
 import logging
 import time
 from dataclasses import dataclass
+from itertools import chain
 
 import viser
 from viser.extras import ViserUrdf
@@ -101,7 +102,7 @@ class BaseViz:
             self.to_trossen_vector = lambda x: trossen_arm.VectorDouble(x)
     
         log.debug("Adding inkcaps to viser")
-        for inkcap in self.scene.inkcaps_l.values() + self.scene.inkcaps_r.values():
+        for inkcap in chain(self.scene.inkcaps_l.values(), self.scene.inkcaps_r.values()):
             self.server.scene.add_icosphere(
                 name=f"/inkcaps/{inkcap.name}",
                 radius=inkcap.diameter_m / 2,

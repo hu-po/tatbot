@@ -5,9 +5,11 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from tatbot.data.plan import Plan
 from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
+from tatbot.gen.align import make_align_strokes
+from tatbot.gen.svg import make_svg_strokes
+from tatbot.gen.strokebatch import strokebatch_from_strokes
 from tatbot.utils.colors import COLORS
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 from tatbot.viz.base import BaseViz, BaseVizConfig
@@ -15,12 +17,7 @@ from tatbot.viz.base import BaseViz, BaseVizConfig
 log = get_logger('viz.plan', '🖥️')
 
 @dataclass
-class VizPlanConfig(BaseVizConfig):
-    plan_name: str = "smiley"
-    """Name of the plan (Plan)."""
-    plan_dir: str = "~/tatbot/nfs/plans"
-    """Directory containing plan."""
-
+class VizStrokesConfig(BaseVizConfig):
     design_pointcloud_point_size: float = 0.001
     """Size of points in the point cloud visualization (meters)."""
     design_pointcloud_point_shape: str = "rounded"
@@ -31,23 +28,30 @@ class VizPlanConfig(BaseVizConfig):
     pose_highlight_radius: int = 6
     """Radius of the pose highlight in pixels."""
 
-class VizPlan(BaseViz):
-    def __init__(self, config: VizPlanConfig):
+class VizStrokes(BaseViz):
+    def __init__(self, config: VizStrokesConfig):
         super().__init__(config)
-        plan_dir = os.path.expanduser(config.plan_dir)
-        plan_dir = os.path.join(plan_dir, config.plan_name)
-        assert os.path.exists(plan_dir), f"❌ Plan directory {plan_dir} does not exist"
-        log.debug(f"📂 Plan directory: {plan_dir}")
 
-        self.plan: Plan = Plan.from_yaml(os.path.join(plan_dir, "plan.yaml"))
-        self.strokebatch: StrokeBatch = StrokeBatch.load(os.path.join(plan_dir, "strokebatch.safetensors"))
-        self.strokes: StrokeList = StrokeList.from_yaml(os.path.join(plan_dir, "strokes.yaml"))
-
-        self.num_strokes = len(self.strokes.strokes)
+        if self.scene.design_dir_path is not None:
+            self.strokes: StrokeList = make_svg_strokes(self.scene)
+        else:
+            self.strokes: StrokeList = make_align_strokes(self.scene)
+        self.strokebatch: StrokeBatch = strokebatch_from_strokes(
+            strokelist=self.strokes,
+            stroke_length=self.scene.stroke_length,
+            joints=self.scene.ready_pos_full,
+            urdf_path=self.scene.urdf.path,
+            link_names=self.scene.urdf.ee_link_names,
+            design_pose=self.scene.skin.design_pose,
+            needle_hover_offset=self.scene.needle_hover_offset,
+            needle_offset_l=self.scene.needle_offset_l,
+            needle_offset_r=self.scene.needle_offset_r,
+        )
+        self.num_strokes = len(strokes.strokes)
         self.stroke_idx = 0
         self.pose_idx = 0
 
-        with self.server.gui.add_folder("Plan"):
+        with self.server.gui.add_folder("Session"):
             def _format_seconds(secs):
                 secs = int(secs)
                 h = secs // 3600
@@ -89,7 +93,7 @@ class VizPlan(BaseViz):
             self.pose_idx_slider = self.server.gui.add_slider(
                 "pose",
                 min=0,
-                max=self.plan.stroke_length - 1,
+                max=self.scene.stroke_length - 1,
                 step=1,
                 initial_value=0,
             )
@@ -98,7 +102,7 @@ class VizPlan(BaseViz):
         @self.path_idx_slider.on_update
         def _(_):
             self.stroke_idx = self.path_idx_slider.value
-            self.pose_idx_slider.max = self.plan.stroke_length - 1
+            self.pose_idx_slider.max = self.scene.stroke_length - 1
             if self.pose_idx_slider.value > self.pose_idx_slider.max:
                 self.pose_idx_slider.value = self.pose_idx_slider.max
             _update_time_label()
@@ -233,9 +237,9 @@ class VizPlan(BaseViz):
         self.pose_idx += 1
 
 if __name__ == "__main__":
-    args = setup_log_with_config(VizPlanConfig)
+    args = setup_log_with_config(VizStrokesConfig)
     print_config(args)
     if args.debug:
         log.setLevel(logging.DEBUG)
-    viz = VizPlan(args)
+    viz = VizStrokes(args)
     viz.run()

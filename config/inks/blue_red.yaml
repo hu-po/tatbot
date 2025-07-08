@@ -2,7 +2,7 @@ inkcaps:
   - name: inkcap_left_large
     ink:
       name: bright_red
-      rgb: [0, 0, 255]
+      rgb: [255, 0, 0]
     diameter_m: 0.014
     depth_m: 0.014
   - name: inkcap_left_small_0
@@ -36,7 +36,7 @@ inkcaps:
   - name: inkcap_right_large
     ink:
       name: true_blue
-      rgb: [255, 0, 0]
+      rgb: [0, 0, 255]
     diameter_m: 0.014
     depth_m: 0.014
   - name: inkcap_right_small_0
