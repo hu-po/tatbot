@@ -16,6 +16,7 @@ from tatbot.data.scene import Scene
 log = get_logger('gen.svg', '🖋️')
 
 def make_svg_strokes(scene: Scene) -> StrokeList:
+    assert scene.design_dir is not None, "❌ Design directory is not set, is this a SVG scene?"
     svg_files = []
     svg_pens: dict[str, str] = {}
     for file in os.listdir(scene.design_dir):
@@ -56,10 +57,12 @@ def make_svg_strokes(scene: Scene) -> StrokeList:
         m = re.match(r".*_pen\d+_([a-zA-Z0-9_]+)_F(\d+)\.png$", file)
         if m:
             pen_name = m.group(1)
+            assert pen_name in scene.pens_config, f"❌ Pen {pen_name} not found in pens config"
+            assert pen_name in scene.pen_names_l or pen_name in scene.pen_names_r, f"❌ Pen {pen_name} not found in left or right pen names"
             frame_num = int(m.group(2))
             stroke_img_map[pen_name].append((frame_num, file))
     if stroke_img_map == {}:
-        raise ValueError(f"❌ No stroke images found in {design_dir}, did you export intermediate frames?")
+        raise ValueError(f"❌ No stroke images found in {scene.design_dir}, did you export intermediate frames?")
     # Sort by frame number for each pen
     for pen in stroke_img_map:
         stroke_img_map[pen].sort()
@@ -97,7 +100,7 @@ def make_svg_strokes(scene: Scene) -> StrokeList:
 
     inkdip_func = make_inkdip_func(scene)
 
-    # next lets add inkdip on left arm, right arm will be at rest
+    # start with inkdip on left arm, right arm will be at rest
     first_color_l = pen_paths_l[0][0]
     _inkdip_stroke = inkdip_func(first_color_l, "left")
     _inkdip_stroke.ee_rot = ee_rot_l
@@ -136,11 +139,6 @@ def make_svg_strokes(scene: Scene) -> StrokeList:
                 arm="left",
             )
         elif inkcap_name_l is not None:
-            frame_path = os.path.join(frames_dir, f"arm_l_color_{color_l}_stroke_{stroke_idx:04d}.png")
-            os.symlink(
-                os.path.join(design_dir, stroke_img_map[color_l][ptr_l][1]),
-                frame_path,
-            )
             pixel_coords, meter_coords = coords_from_path(path_l)
             stroke_l = Stroke(
                 description=f"left arm stroke using left arm",
@@ -152,7 +150,7 @@ def make_svg_strokes(scene: Scene) -> StrokeList:
                 svg_path_obj=str(path_l),
                 inkcap=inkcap_name_l,
                 is_inkdip=False,
-                frame_path=frame_path,
+                frame_path=os.path.join(scene.design_dir, stroke_img_map[color_l][ptr_l][1]),
                 color=color_l,
             )
             inkcap_name_l = None # inkdip on next stroke
@@ -185,11 +183,6 @@ def make_svg_strokes(scene: Scene) -> StrokeList:
             )
         elif inkcap_name_r is not None:
             pixel_coords, meter_coords = coords_from_path(path_r)
-            frame_path = os.path.join(frames_dir, f"arm_r_color_{color_r}_stroke_{stroke_idx:04d}.png")
-            os.symlink(
-                os.path.join(design_dir, stroke_img_map[color_r][ptr_r][1]),
-                frame_path,
-            )
             stroke_r = Stroke(
                 description=f"right arm stroke using right arm",
                 arm="right",
@@ -200,7 +193,7 @@ def make_svg_strokes(scene: Scene) -> StrokeList:
                 svg_path_obj=str(path_r),
                 inkcap=inkcap_name_r,
                 is_inkdip=False,
-                frame_path=frame_path,
+                frame_path=os.path.join(scene.design_dir, stroke_img_map[color_r][ptr_r][1]),
                 color=color_r,
             )
             inkcap_name_r = None # inkdip on next stroke

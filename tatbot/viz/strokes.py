@@ -73,19 +73,19 @@ class VizStrokes(BaseViz):
                 total_time = self.strokebatch.dt.sum().item()
                 self.time_label.value = f"{_format_seconds(current_time)} / {_format_seconds(total_time)}"
 
-            self.path_idx_slider = self.server.gui.add_slider(
+            self.stroke_idx_slider = self.server.gui.add_slider(
                 "stroke",
                 min=0,
                 max=self.num_strokes - 1,
                 step=1,
                 initial_value=0,
             )
-            self.path_desc_label_l = self.server.gui.add_text(
+            self.stroke_description_l = self.server.gui.add_text(
                 label="left arm description",
                 initial_value=self.strokelist.strokes[0][0].description,
                 disabled=True,
             )
-            self.path_desc_label_r = self.server.gui.add_text(
+            self.stroke_description_r = self.server.gui.add_text(
                 label="right arm description",
                 initial_value=self.strokelist.strokes[0][1].description,
                 disabled=True,
@@ -99,15 +99,15 @@ class VizStrokes(BaseViz):
             )
         
 
-        @self.path_idx_slider.on_update
+        @self.stroke_idx_slider.on_update
         def _(_):
-            self.stroke_idx = self.path_idx_slider.value
+            self.stroke_idx = self.stroke_idx_slider.value
             self.pose_idx_slider.max = self.scene.stroke_length - 1
             if self.pose_idx_slider.value > self.pose_idx_slider.max:
                 self.pose_idx_slider.value = self.pose_idx_slider.max
             _update_time_label()
-            self.path_desc_label_l.value = self.strokelist.strokes[self.stroke_idx][0].description
-            self.path_desc_label_r.value = self.strokelist.strokes[self.stroke_idx][1].description
+            self.stroke_description_l.value = self.strokelist.strokes[self.stroke_idx][0].description
+            self.stroke_description_r.value = self.strokelist.strokes[self.stroke_idx][1].description
 
         @self.pose_idx_slider.on_update
         def _(_):
@@ -157,12 +157,15 @@ class VizStrokes(BaseViz):
             point_shape=self.config.design_pointcloud_point_shape,
         )
 
+        # robot is reset to rest pose at start of every stroke
+        self.robot_at_rest: bool = True
+
     def step(self):
         if self.robot_at_rest:
             log.debug("Robot at rest, skipping step...")
             self.robot_at_rest = False
             return
-        if self.pose_idx >= self.plan.stroke_length:
+        if self.pose_idx >= self.scene.stroke_length:
             self.stroke_idx += 1
             self.pose_idx = 0
             log.debug(f"Moving to next stroke {self.stroke_idx}")
@@ -170,7 +173,7 @@ class VizStrokes(BaseViz):
             log.debug(f"Looping back to stroke 0")
             self.stroke_idx = 0
             self.pose_idx = 0
-        self.path_idx_slider.value = self.stroke_idx
+        self.stroke_idx_slider.value = self.stroke_idx
         self.pose_idx_slider.value = self.pose_idx
         log.debug(f"Visualizing stroke {self.stroke_idx} pose {self.pose_idx}")
 
@@ -178,13 +181,13 @@ class VizStrokes(BaseViz):
         for stroke in self.strokelist.strokes[self.stroke_idx]:
             if stroke.arm == "left":
                 points_color_l = self.point_colors_stroke_l.copy()
-                points_color_l[self.stroke_idx * self.plan.stroke_length:self.stroke_idx * self.plan.stroke_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
-                points_color_l[self.stroke_idx * self.plan.stroke_length + self.pose_idx] = np.array(COLORS["blue"], dtype=np.uint8)
+                points_color_l[self.stroke_idx * self.scene.stroke_length:self.stroke_idx * self.scene.stroke_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
+                points_color_l[self.stroke_idx * self.scene.stroke_length + self.pose_idx] = np.array(COLORS["blue"], dtype=np.uint8)
                 self.pointcloud_path_l.colors = points_color_l
             else:
                 points_color_r = self.point_colors_stroke_r.copy()
-                points_color_r[self.stroke_idx * self.plan.stroke_length:self.stroke_idx * self.plan.stroke_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
-                points_color_r[self.stroke_idx * self.plan.stroke_length + self.pose_idx] = np.array(COLORS["purple"], dtype=np.uint8)
+                points_color_r[self.stroke_idx * self.scene.stroke_length:self.stroke_idx * self.scene.stroke_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
+                points_color_r[self.stroke_idx * self.scene.stroke_length + self.pose_idx] = np.array(COLORS["purple"], dtype=np.uint8)
                 self.pointcloud_path_r.colors = points_color_r
         if self.scene.design_img_path is not None:
             log.debug("Updating design image")
@@ -215,8 +218,8 @@ class VizStrokes(BaseViz):
         if self.pose_idx == 0:
             log.debug("Sending robot to rest pose")
             self.robot_at_rest = True
-            self.joints = self.rest_pose.copy()
-            self.step_sleep = self.robot.config.goal_time_slow
+            self.joints = self.scene.ready_pos_full
+            self.step_sleep = self.scene.arms.goal_time_slow
         else:
             self.joints = np.asarray(self.strokebatch.joints[self.stroke_idx, self.pose_idx], dtype=np.float64).flatten()
             self.step_sleep = float(self.strokebatch.dt[self.stroke_idx, self.pose_idx].item())
