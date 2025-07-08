@@ -57,15 +57,6 @@ class BaseViz:
             client.camera.position = config.view_camera_position
             client.camera.look_at = config.view_camera_look_at
 
-        self.step_sleep = 1.0 / 30.0 # 30 fps
-        self.speed_slider = self.server.gui.add_slider(
-            "speed",
-            min=0.1,
-            max=100.0,
-            step=0.1,
-            initial_value=self.config.speed,
-        )
-
         log.debug("Adding robot to viser from URDF")
         _urdf, self.robot = load_robot(self.scene.urdf.path)
         self.viser_urdf = ViserUrdf(self.server, _urdf, root_node_name="/root")
@@ -177,7 +168,6 @@ class BaseViz:
             for i, tb in enumerate(self.right_joint_textboxes):
                 tb.value = str(self.joints[i+8])
             log.debug(f"Step time: {time.time() - start_time:.4f}s")
-            time.sleep(self.step_sleep / self.speed_slider.value)
 
 if __name__ == "__main__":
     args = setup_log_with_config(BaseVizConfig)

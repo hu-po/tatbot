@@ -1,6 +1,6 @@
 import logging
-import os
 from dataclasses import dataclass
+import time
 
 import cv2
 import numpy as np
@@ -52,6 +52,28 @@ class VizStrokes(BaseViz):
         self.pose_idx = 0
 
         with self.server.gui.add_folder("Session"):
+            self.step_sleep = 1.0 / 30.0 # 30 fps
+            self.speed_slider = self.server.gui.add_slider(
+                "speed",
+                min=0.1,
+                max=100.0,
+                step=0.1,
+                initial_value=self.config.speed,
+            )
+            self.step_button_group = self.server.gui.add_button_group("", ("⏸️", "▶️"))
+            self.step_button_group.value = "▶️"
+            self.pause: bool = False
+
+        @self.step_button_group.on_click
+        def _(_):
+            if self.step_button_group.value == "⏸️":
+                log.debug("⏸️ Pause")
+                self.pause = True
+            elif self.step_button_group.value == "▶️":
+                log.debug("▶️ Play")
+                self.pause = False
+
+        with self.server.gui.add_folder("Strokes"):
             def _format_seconds(secs):
                 secs = int(secs)
                 h = secs // 3600
@@ -81,13 +103,15 @@ class VizStrokes(BaseViz):
                 initial_value=0,
             )
             self.stroke_description_l = self.server.gui.add_text(
-                label="left arm description",
+                label="desc_l",
                 initial_value=self.strokelist.strokes[0][0].description,
+                multiline=True,
                 disabled=True,
             )
             self.stroke_description_r = self.server.gui.add_text(
-                label="right arm description",
+                label="desc_r",
                 initial_value=self.strokelist.strokes[0][1].description,
+                multiline=True,
                 disabled=True,
             )
             self.pose_idx_slider = self.server.gui.add_slider(
@@ -161,6 +185,9 @@ class VizStrokes(BaseViz):
         self.robot_at_rest: bool = True
 
     def step(self):
+        if self.pause:
+            return
+        time.sleep(self.step_sleep / self.speed_slider.value)
         if self.robot_at_rest:
             log.debug("Robot at rest, skipping step...")
             self.robot_at_rest = False
