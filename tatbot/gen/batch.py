@@ -1,13 +1,39 @@
+import time
+
+import jax
 import jax.numpy as jnp
+import jax_dataclasses as jdc
+import jaxlie
+from jaxtyping import Array, Float
+from typing import Optional
 import numpy as np
 
 from tatbot.data.pose import Pos, Pose
 from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
-from tatbot.gen.ik import batch_ik, transform_and_offset
+from tatbot.gen.ik import batch_ik
 from tatbot.utils.log import get_logger
 
 log = get_logger('gen.strokebatch', '💠')
+
+@jdc.jit
+def transform_and_offset(
+    target_pos: Float[Array, "b 3"],
+    frame_pos: Float[Array, "3"],
+    frame_wxyz: Float[Array, "4"],
+    offsets: Optional[Float[Array, "b 3"]] = None,
+) -> Float[Array, "b 3"]:
+    log.debug(f"transforming and offsetting {target_pos.shape[0]} points")
+    start_time = time.time()
+    if offsets is None:
+        offsets = jnp.zeros_like(target_pos)
+    if offsets.shape[0] != target_pos.shape[0]:
+        offsets = jnp.tile(offsets, (target_pos.shape[0], 1))
+    frame_transform = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(frame_wxyz), frame_pos)
+    result = jax.vmap(lambda pos, offset: frame_transform @ pos + offset)(target_pos, offsets)
+    log.debug(f"transform and offset time: {time.time() - start_time:.4f}s")
+    return result
+
 
 def strokebatch_from_strokes(
     strokelist: StrokeList,
@@ -16,9 +42,9 @@ def strokebatch_from_strokes(
     urdf_path: str,
     link_names: tuple[str, ...],
     design_pose: Pose,
-    needle_hover_offset: Pos,
-    needle_offset_l: Pos,
-    needle_offset_r: Pos,
+    hover_offset: Pos,
+    ee_offset_l: Pos,
+    ee_offset_r: Pos,
     batch_size: int = 256,
 ) -> StrokeBatch:
     """
@@ -39,7 +65,7 @@ def strokebatch_from_strokes(
                 stroke_l.ee_pos,
                 design_pose.pos.xyz,
                 design_pose.rot.wxyz,
-                needle_offset_l.xyz,
+                ee_offset_l.xyz,
             )
         else:
             ee_pos_l[i] = stroke_l.ee_pos
@@ -48,18 +74,19 @@ def strokebatch_from_strokes(
                 stroke_r.ee_pos,
                 design_pose.pos.xyz,
                 design_pose.rot.wxyz,
-                needle_offset_r.xyz,
+                ee_offset_r.xyz,
             )
         else:
             ee_pos_r[i] = stroke_r.ee_pos
+        # first and last poses in each stroke are offset by hover offset
+        ee_pos_l[i, 0] += hover_offset.xyz
+        ee_pos_l[i, -1] += hover_offset.xyz
+        ee_pos_r[i, 0] += hover_offset.xyz
+        ee_pos_r[i, -1] += hover_offset.xyz
+        # rotations are hardcoded
         ee_rot_l[i] = stroke_l.ee_rot
         ee_rot_r[i] = stroke_r.ee_rot
         dt[i] = stroke_l.dt.squeeze() if hasattr(stroke_l.dt, 'squeeze') else stroke_l.dt
-        # first and last poses in each stroke are offset by hover offset
-        ee_pos_l[i, 0] += needle_hover_offset.xyz
-        ee_pos_l[i, -1] += needle_hover_offset.xyz
-        ee_pos_r[i, 0] += needle_hover_offset.xyz
-        ee_pos_r[i, -1] += needle_hover_offset.xyz
     # Prepare IK targets: shape (b*l, 2, ...)
     target_pos = np.stack([ee_pos_l, ee_pos_r], axis=2).reshape(b * l, 2, 3)
     target_wxyz = np.stack([ee_rot_l, ee_rot_r], axis=2).reshape(b * l, 2, 4)

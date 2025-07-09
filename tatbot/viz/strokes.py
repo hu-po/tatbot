@@ -43,9 +43,9 @@ class VizStrokes(BaseViz):
             urdf_path=self.scene.urdf.path,
             link_names=self.scene.urdf.ee_link_names,
             design_pose=self.scene.skin.design_pose,
-            needle_hover_offset=self.scene.needle_hover_offset,
-            needle_offset_l=self.scene.needle_offset_l,
-            needle_offset_r=self.scene.needle_offset_r,
+            hover_offset=self.scene.hover_offset,
+            ee_offset_l=self.scene.ee_offset_l,
+            ee_offset_r=self.scene.ee_offset_r,
         )
         self.num_strokes = len(self.strokelist.strokes)
         self.stroke_idx = 0

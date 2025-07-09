@@ -94,9 +94,9 @@ def record(config: RecordConfig):
         urdf_path=scene.urdf.path,
         link_names=scene.urdf.ee_link_names,
         design_pose=scene.skin.design_pose,
-        needle_hover_offset=scene.needle_hover_offset,
-        needle_offset_l=scene.needle_offset_l,
-        needle_offset_r=scene.needle_offset_r,
+        hover_offset=scene.hover_offset,
+        ee_offset_l=scene.ee_offset_l,
+        ee_offset_r=scene.ee_offset_r,
     )
     strokebatch_path = os.path.join(dataset_dir, f"strokebatch.safetensors")
     log.info(f"💾 Saving strokebatch to {strokebatch_path}")

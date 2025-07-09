@@ -32,7 +32,7 @@ def make_align_strokes(scene: Scene) -> StrokeList:
                 Stroke(
                     description="left arm hovering over design",
                     arm="left",
-                    ee_pos=np.tile(scene.needle_hover_offset.xyz, (scene.stroke_length, 1)),
+                    ee_pos=np.tile(scene.hover_offset.xyz, (scene.stroke_length, 1)),
                     ee_rot=ee_rot_l,
                     dt=dt,
                 ),
@@ -50,7 +50,7 @@ def make_align_strokes(scene: Scene) -> StrokeList:
                 Stroke(
                     description="right arm hovering over design",
                     arm="right",
-                    ee_pos=np.tile(scene.needle_hover_offset.xyz, (scene.stroke_length, 1)),
+                    ee_pos=np.tile(scene.hover_offset.xyz, (scene.stroke_length, 1)),
                     ee_rot=ee_rot_r,
                     dt=dt,
                 ),

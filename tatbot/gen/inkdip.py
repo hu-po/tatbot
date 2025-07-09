@@ -31,7 +31,7 @@ def make_inkdip_func(scene: Scene) -> Callable:
         # retract back up
         up_z = np.linspace(inkcap.depth_m, 0, num_up, endpoint=True)
         # concatenate into final inkdip position array
-        inkdip_pos = inkcap.pose.pos.xyz + scene.inkdip_hover_offset.xyz + np.hstack([
+        inkdip_pos = inkcap.pose.pos.xyz + np.hstack([
             np.zeros((scene.stroke_length, 2)), # x and y are 0
             -np.concatenate([down_z, wait_z, up_z]).reshape(-1, 1),
         ])

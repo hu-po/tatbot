@@ -95,21 +95,3 @@ def batch_ik(
     solutions = _ik_vmap(target_wxyz, target_pos, joints)
     log.debug(f"batch ik time: {time.time() - start_time:.4f}s")
     return solutions
-
-@jdc.jit
-def transform_and_offset(
-    target_pos: Float[Array, "b 3"],
-    frame_pos: Float[Array, "3"],
-    frame_wxyz: Float[Array, "4"],
-    offsets: Optional[Float[Array, "b 3"]] = None,
-) -> Float[Array, "b 3"]:
-    log.debug(f"transforming and offsetting {target_pos.shape[0]} points")
-    start_time = time.time()
-    if offsets is None:
-        offsets = jnp.zeros_like(target_pos)
-    if offsets.shape[0] != target_pos.shape[0]:
-        offsets = jnp.tile(offsets, (target_pos.shape[0], 1))
-    frame_transform = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(frame_wxyz), frame_pos)
-    result = jax.vmap(lambda pos, offset: frame_transform @ pos + offset)(target_pos, offsets)
-    log.debug(f"transform and offset time: {time.time() - start_time:.4f}s")
-    return result

@@ -65,15 +65,13 @@ class Scene(Yaml):
     ee_rot_r: Rot
     """<w, x, y, z> quaternion of right arm end effector when performing a stroke."""
 
-    inkdip_hover_offset: Pos
-    """<x, y, z> offset for inkdip hover in meters."""
-    needle_hover_offset: Pos
-    """<x, y, z> offset for needle hover in meters."""
+    hover_offset: Pos
+    """<x, y, z> offset for hover (first and last poses in each stroke) in meters."""
 
-    needle_offset_l: Pos
-    """<x, y, z> offset for needle stroke in meters."""
-    needle_offset_r: Pos
-    """<x, y, z> offset for needle stroke in meters."""
+    ee_offset_l: Pos
+    """<x, y, z> offset for left ee (applied to full stroke) in meters."""
+    ee_offset_r: Pos
+    """<x, y, z> offset for right ee (applied to full stroke) in meters."""
 
     design_dir_path: str | None = None
     """Path to the design directory."""
