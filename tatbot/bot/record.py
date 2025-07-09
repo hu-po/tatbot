@@ -41,7 +41,7 @@ class RecordConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    scene_name: str = "align"
+    scene: str = "align"
     """Name of the scene config to use (Scene)."""
 
     output_dir: str = "~/tatbot/nfs/recordings"
@@ -66,7 +66,7 @@ class RecordConfig:
 
 
 def record(config: RecordConfig):
-    scene: Scene = Scene.from_name(config.scene_name)
+    scene: Scene = Scene.from_name(config.scene)
 
     output_dir = os.path.expanduser(config.output_dir)
     log.info(f"🗃️ Creating output directory at {output_dir}...")
@@ -313,7 +313,7 @@ if __name__ == "__main__":
         log.info("🛑⌨️ Keyboard/E-stop interrupt detected")
     finally:
         log.info("🛑 Disconnecting robot...")
-        scene: Scene = Scene.from_name(args.scene_name)
+        scene: Scene = Scene.from_name(args.scene)
         robot = make_robot_from_config(TatbotConfig(
             ip_address_l=scene.arms.ip_address_l,
             ip_address_r=scene.arms.ip_address_r,

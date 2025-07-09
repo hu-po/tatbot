@@ -17,7 +17,7 @@ class BaseVizConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    scene_name: str = "align"
+    scene: str = "align"
     """Name of the scene (Scene)."""
 
     env_map_hdri: str = "forest"
@@ -46,7 +46,7 @@ class BaseVizConfig:
 class BaseViz:
     def __init__(self, config: BaseVizConfig):
         self.config = config
-        self.scene: Scene = Scene.from_name(config.scene_name)
+        self.scene: Scene = Scene.from_name(config.scene)
 
         log.info("Starting viser server")
         self.server: viser.ViserServer = viser.ViserServer()
