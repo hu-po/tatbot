@@ -173,8 +173,7 @@ def record(config: RecordConfig):
     # Initialize AtariTeleoperator
     atari_teleop = AtariTeleoperator(AtariTeleoperatorConfig())
     atari_teleop.connect()
-    needle_depth_idx: int = 0 # index of the needle depth in the strokebatch
-
+    offset_idx: int = 0 # offset index controls needle depth
     log.info(f"Recording {num_strokes} paths...")
     # one episode is a single path
     # when resuming, start from the idx of the next episode
@@ -247,18 +246,18 @@ def record(config: RecordConfig):
             action = atari_teleop.get_action()
             if action.get("red_button", False):
                 raise KeyboardInterrupt()
-            # Optionally use axis values for needle depth or other control
-            if abs(action.get("x", 0.0)) > 1e-3 or abs(action.get("y", 0.0)) > 1e-3:
-                log.info(f"🎮 joystick axis x={action['x']:.2f}, y={action['y']:.2f}")
-                needle_depth_idx += action["y"]  # Example: use y axis for needle depth
-                log.info(f"🎮 needle depth index: {needle_depth_idx}")
+            if action.get("y", 0.0) > 0.0:
+                offset_idx += 1
+            elif action.get("y", 0.0) < 0.0:
+                offset_idx -= 1
+            log.info(f"🎮 offset index: {needle_depth_idx}")
 
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 
-            joints = strokebatch.joints[stroke_idx, pose_idx]
+            joints = strokebatch.joints[stroke_idx, pose_idx, offset_idx]
             robot_action = robot._urdf_joints_to_action(joints)
-            goal_time = strokebatch.dt[stroke_idx, pose_idx]
+            goal_time = strokebatch.dt[stroke_idx, pose_idx, offset_idx]
             sent_action = robot.send_action(robot_action, goal_time=goal_time, block="left")
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")

@@ -90,6 +90,13 @@ class VizStrokes(BaseViz):
                 step=1,
                 initial_value=0,
             )
+            self.offset_idx_slider = self.server.gui.add_slider(
+                "offset",
+                min=0,
+                max=self.scene.offset_num - 1,
+                step=1,
+                initial_value=0,
+            )
         
 
         @self.stroke_idx_slider.on_update
@@ -124,8 +131,9 @@ class VizStrokes(BaseViz):
         points_r = [] # pointcloud for right arm stroke
         for i in range(self.strokebatch.ee_pos_l.shape[0]):
             for j in range(self.strokebatch.ee_pos_l.shape[1]):
-                points_l.append(self.strokebatch.ee_pos_l[i, j])
-                points_r.append(self.strokebatch.ee_pos_r[i, j])
+                for k in range(self.scene.offset_num):
+                    points_l.append(self.strokebatch.ee_pos_l[i, j, k])
+                    points_r.append(self.strokebatch.ee_pos_r[i, j, k])
         points_l = np.stack(points_l, axis=0)
         points_r = np.stack(points_r, axis=0)
         self.point_colors_stroke_l = np.tile(np.array(COLORS["blue"], dtype=np.uint8), (points_l.shape[0], 1))
@@ -173,13 +181,17 @@ class VizStrokes(BaseViz):
         for stroke in self.strokelist.strokes[self.stroke_idx]:
             if stroke.arm == "left":
                 points_color_l = self.point_colors_stroke_l.copy()
-                points_color_l[self.stroke_idx * self.scene.stroke_length:self.stroke_idx * self.scene.stroke_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
-                points_color_l[self.stroke_idx * self.scene.stroke_length + self.pose_idx] = np.array(COLORS["blue"], dtype=np.uint8)
+                base = self.stroke_idx * self.scene.stroke_length * self.scene.offset_num
+                idx  = base + self.pose_idx * self.scene.offset_num + self.offset_idx_slider.value
+                points_color_l[base : idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
+                points_color_l[idx]            = np.array(COLORS["blue"], dtype=np.uint8)
                 self.pointcloud_path_l.colors = points_color_l
             else:
                 points_color_r = self.point_colors_stroke_r.copy()
-                points_color_r[self.stroke_idx * self.scene.stroke_length:self.stroke_idx * self.scene.stroke_length + self.pose_idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
-                points_color_r[self.stroke_idx * self.scene.stroke_length + self.pose_idx] = np.array(COLORS["purple"], dtype=np.uint8)
+                base = self.stroke_idx * self.scene.stroke_length * self.scene.offset_num
+                idx  = base + self.pose_idx * self.scene.offset_num + self.offset_idx_slider.value
+                points_color_r[base : idx + 1] = np.array(COLORS["orange"], dtype=np.uint8)
+                points_color_r[idx]            = np.array(COLORS["purple"], dtype=np.uint8)
                 self.pointcloud_path_r.colors = points_color_r
         if self.scene.design_img_path is not None:
             log.debug("Updating design image")
@@ -193,8 +205,15 @@ class VizStrokes(BaseViz):
             self.joints = self.scene.ready_pos_full
             self.step_sleep = self.scene.arms.goal_time_slow
         else:
-            self.joints = np.asarray(self.strokebatch.joints[self.stroke_idx, self.pose_idx], dtype=np.float64).flatten()
-            self.step_sleep = float(self.strokebatch.dt[self.stroke_idx, self.pose_idx].item())
+            self.joints = (
+                np.asarray(
+                    self.strokebatch.joints[self.stroke_idx, self.pose_idx, self.offset_idx_slider.value],
+                    dtype=np.float64,
+                ).flatten()
+            )
+            self.step_sleep = float(
+                self.strokebatch.dt[self.stroke_idx, self.pose_idx, self.offset_idx_slider.value].item()
+            )
         self.pose_idx += 1
 
 if __name__ == "__main__":
