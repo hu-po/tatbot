@@ -1,7 +1,7 @@
 #!/bin/bash
 CODEBASE_NAME="tatbot"
 TATBOT_ROOT="$HOME/tatbot"
-OUTPUT_FILE="$TATBOT_ROOT/output/context.txt"
+OUTPUT_FILE="$TATBOT_ROOT/nfs/context.txt"
 echo "Populating context for $CODEBASE_NAME"
 echo "Output file: $OUTPUT_FILE"
 if [ -f "$OUTPUT_FILE" ]; then

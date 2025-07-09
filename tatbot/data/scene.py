@@ -73,6 +73,11 @@ class Scene(Yaml):
     ee_offset_r: Pos
     """<x, y, z> offset for right ee (applied to full stroke) in meters."""
 
+    offset_range: tuple[float, float]
+    """Range of offset points in meters."""
+    offset_num: int
+    """Number of offset points."""
+
     design_dir_path: str | None = None
     """Path to the design directory."""
     design_img_path: str | None = None

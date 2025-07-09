@@ -10,17 +10,17 @@ log = get_logger('strokebatch', '🔳')
 
 @jdc.pytree_dataclass
 class StrokeBatch:
-    ee_pos_l: Float[Array, "b l 3"]
+    ee_pos_l: Float[Array, "b l o 3"]
     """End effector frame position in meters (x, y, z) for left arm."""
-    ee_pos_r: Float[Array, "b l 3"]
+    ee_pos_r: Float[Array, "b l o 3"]
     """End effector frame position in meters (x, y, z) for right arm."""
-    ee_rot_l: Float[Array, "b l 4"]
+    ee_rot_l: Float[Array, "b l o 4"]
     """End effector frame orientation as quaternion (w, x, y, z) for left arm."""
-    ee_rot_r: Float[Array, "b l 4"]
+    ee_rot_r: Float[Array, "b l o 4"]
     """End effector frame orientation as quaternion (w, x, y, z) for right arm."""
-    joints: Float[Array, "b l 16"]
+    joints: Float[Array, "b l o 16"]
     """Joint positions in radians (URDF convention)."""
-    dt: Float[Array, "b l"]
+    dt: Float[Array, "b l o"]
     """Travel time from pose N to pose N+1 in seconds."""
     
     def save(self, filepath: str) -> None:
