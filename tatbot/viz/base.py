@@ -133,16 +133,16 @@ class BaseViz:
             _camera_counter += 1
         log.info(f"Added {_camera_counter} cameras")
 
-        # log.info("Adding skin zone to viser")
-        # self.skin_zone = self.server.scene.add_box(
-        #     name=f"/skin/zone",
-        #     color=(0, 255, 0),
-        #     dimensions=(self.scene.skin.zone_depth_m, self.scene.skin.zone_width_m, self.scene.skin.zone_height_m),
-        #     position=self.scene.skin.design_pose.pos.xyz,
-        #     wxyz=self.scene.skin.design_pose.rot.wxyz,
-        #     opacity=0.2,
-        #     visible=True,
-        # )
+        log.info("Adding skin zone to viser")
+        self.skin_zone = self.server.scene.add_box(
+            name=f"/skin/zone",
+            color=(0, 255, 0),
+            dimensions=(self.scene.skin.zone_depth_m, self.scene.skin.zone_width_m, self.scene.skin.zone_height_m),
+            position=self.scene.skin.design_pose.pos.xyz,
+            wxyz=self.scene.skin.design_pose.rot.wxyz,
+            opacity=0.2,
+            visible=True,
+        )
 
     def step(self):
         log.info("Empty step function, implement in subclass")

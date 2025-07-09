@@ -276,8 +276,10 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
     inkcap_name_l = _inkdip_stroke.inkcap
     inkcap_name_r = None # when None, indicates that an inkdip stroke is required
     ptr_l = ptr_r = 0
-    max_paths = max(len(pen_paths_l), len(pen_paths_r))
-    for _ in range(max_paths):
+    num_paths_l = len(pen_paths_l)
+    num_paths_r = len(pen_paths_r)
+    log.info(f"Left arm has {num_paths_l} paths, right arm has {num_paths_r} paths")
+    for _ in range(num_paths_l + num_paths_r):
         path_l = pen_paths_l[ptr_l][1] if ptr_l < len(pen_paths_l) else None
         path_r = pen_paths_r[ptr_r][1] if ptr_r < len(pen_paths_r) else None
         color_l = pen_paths_l[ptr_l][0] if ptr_l < len(pen_paths_l) else None
