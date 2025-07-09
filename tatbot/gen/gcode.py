@@ -22,12 +22,14 @@ def parse_gcode_file(gcode_path: str, scene: Scene) -> list[tuple[np.ndarray, np
     G-code format:
     - G0: Rapid movement (pen up) - separator
     - G1: Linear movement (pen down) - part of path
-    - X, Y coordinates in millimeters
+    - X, Y coordinates in millimeters with (0,0) at center
     """
     # Load design image to get dimensions for pixel coordinate calculation
     if scene.design_img_path and os.path.exists(scene.design_img_path):
         with Image.open(scene.design_img_path) as img:
             img_width, img_height = img.size
+    else:
+        raise ValueError(f"Design image not found at {scene.design_img_path}")
     
     paths = []
     current_path_points = []
@@ -56,23 +58,16 @@ def parse_gcode_file(gcode_path: str, scene: Scene) -> list[tuple[np.ndarray, np
                         # Convert mm to meters for robot coordinates
                         meter_coords = np.hstack([gcode_coords_mm / 1000.0, np.zeros((len(gcode_coords_mm), 1), dtype=np.float32)])
                         
-                        # Convert to pixel coordinates
+                        # Convert to pixel coordinates directly
                         gcode_coords_m = gcode_coords_mm / 1000.0  # mm to meters
-                        skin_coords = np.zeros_like(gcode_coords_m)
-                        
-                        # For landscape mode G-code: swap X and Y coordinates
-                        # G-code X (width) maps to skin Y dimension (zone_width_m)
-                        # G-code Y (height) maps to skin Z dimension (zone_height_m)
-                        skin_coords[:, 0] = gcode_coords_m[:, 1] + scene.skin.zone_height_m / 2.0  # G-code Y → skin X
-                        skin_coords[:, 1] = gcode_coords_m[:, 0] + scene.skin.zone_width_m / 2.0   # G-code X → skin Y
-                        
-                        pixel_coords = np.zeros_like(skin_coords)
-                        pixel_coords[:, 0] = (skin_coords[:, 0] / scene.skin.zone_height_m) * scene.skin.image_height_px
-                        pixel_coords[:, 1] = (skin_coords[:, 1] / scene.skin.zone_width_m) * scene.skin.image_width_px
+                        pixel_coords = np.zeros_like(gcode_coords_m)
+                        # Map G-code X to pixel width, G-code Y to pixel height (inverted)
+                        pixel_coords[:, 1] = ((gcode_coords_m[:, 0] + scene.skin.image_width_m / 2) / scene.skin.image_width_m) * img_width   # pixel X (width)
+                        pixel_coords[:, 0] = ((-gcode_coords_m[:, 1] + scene.skin.image_height_m / 2) / scene.skin.image_height_m) * img_height  # pixel Y (height)
                         
                         # Clamp to image bounds
-                        pixel_coords[:, 0] = np.clip(pixel_coords[:, 0], 0, img_width - 1)
-                        pixel_coords[:, 1] = np.clip(pixel_coords[:, 1], 0, img_height - 1)
+                        pixel_coords[:, 0] = np.clip(pixel_coords[:, 0], 0, img_height - 1)
+                        pixel_coords[:, 1] = np.clip(pixel_coords[:, 1], 0, img_width - 1)
                         
                         paths.append((meter_coords, pixel_coords, gcode_text))
                     current_path_points = []
@@ -141,28 +136,20 @@ def parse_gcode_file(gcode_path: str, scene: Scene) -> list[tuple[np.ndarray, np
         # Convert mm to meters for robot coordinates
         meter_coords = np.hstack([gcode_coords_mm / 1000.0, np.zeros((len(gcode_coords_mm), 1), dtype=np.float32)])
         
-        # Convert to pixel coordinates
+        # Convert to pixel coordinates directly
         gcode_coords_m = gcode_coords_mm / 1000.0  # mm to meters
-        skin_coords = np.zeros_like(gcode_coords_m)
-        
-        # For landscape mode G-code: swap X and Y coordinates
-        # G-code X (width) maps to skin Y dimension (zone_width_m)
-        # G-code Y (height) maps to skin Z dimension (zone_height_m)
-        skin_coords[:, 0] = gcode_coords_m[:, 1] + scene.skin.zone_height_m / 2.0  # G-code Y → skin X
-        skin_coords[:, 1] = gcode_coords_m[:, 0] + scene.skin.zone_width_m / 2.0   # G-code X → skin Y
-        
-        pixel_coords = np.zeros_like(skin_coords)
-        pixel_coords[:, 0] = (skin_coords[:, 0] / scene.skin.zone_height_m) * scene.skin.image_height_px
-        pixel_coords[:, 1] = (skin_coords[:, 1] / scene.skin.zone_width_m) * scene.skin.image_width_px
+        pixel_coords = np.zeros_like(gcode_coords_m)
+        # Map G-code X to pixel width, G-code Y to pixel height (inverted)
+        pixel_coords[:, 1] = ((gcode_coords_m[:, 0] + scene.skin.image_width_m / 2) / scene.skin.image_width_m) * img_width   # pixel X (width)
+        pixel_coords[:, 0] = ((-gcode_coords_m[:, 1] + scene.skin.image_height_m / 2) / scene.skin.image_height_m) * img_height  # pixel Y (height)
         
         # Clamp to image bounds
-        pixel_coords[:, 0] = np.clip(pixel_coords[:, 0], 0, img_width - 1)
-        pixel_coords[:, 1] = np.clip(pixel_coords[:, 1], 0, img_height - 1)
+        pixel_coords[:, 0] = np.clip(pixel_coords[:, 0], 0, img_height - 1)
+        pixel_coords[:, 1] = np.clip(pixel_coords[:, 1], 0, img_width - 1)
         
         paths.append((meter_coords, pixel_coords, gcode_text))
     
     return paths
-
 
 def generate_stroke_frame_image(scene: Scene, pen_name: str, path_idx: int, pixel_coords: np.ndarray, arm: str) -> str:
     """
@@ -244,7 +231,6 @@ def generate_stroke_frame_image(scene: Scene, pen_name: str, path_idx: int, pixe
     cv2.imwrite(frame_path, frame_img)
     
     return frame_path
-
 
 def make_gcode_strokes(scene: Scene) -> StrokeList:
     assert scene.design_dir is not None, "❌ Design directory is not set, does this scene have a design?"
