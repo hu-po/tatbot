@@ -174,9 +174,10 @@ def record(config: RecordConfig):
     atari_teleop = AtariTeleoperator(AtariTeleoperatorConfig())
     atari_teleop.connect()
     offset_idx: int = 0 # offset index controls needle depth
-    log.info(f"Recording {num_strokes} paths...")
+    
     # one episode is a single path
     # when resuming, start from the idx of the next episode
+    log.info(f"Recording {num_strokes} paths...")
     for stroke_idx in range(dataset.num_episodes, num_strokes):
         # reset in-memory log buffer for the new episode
         episode_log_buffer.seek(0)
@@ -228,15 +229,9 @@ def record(config: RecordConfig):
         episode_cond["stroke_l"] = stroke_l.to_dict()
         episode_cond["stroke_r"] = stroke_r.to_dict()
         if stroke_l.frame_path is not None:
-            shutil.copy(
-                os.path.join(dataset_plan_dir, "frames", stroke_l.frame_path),
-                os.path.join(episode_cond_dir, "stroke_l.png")
-            )
+            shutil.copy(stroke_l.frame_path, os.path.join(episode_cond_dir, "stroke_l.png"))
         if stroke_r.frame_path is not None:
-            shutil.copy(
-                os.path.join(dataset_plan_dir, "frames", stroke_r.frame_path),
-                os.path.join(episode_cond_dir, "stroke_r.png")
-            )
+            shutil.copy(stroke_r.frame_path, os.path.join(episode_cond_dir, "stroke_r.png"))
 
         log.info(f"🤖 recording path {stroke_idx} of {num_strokes}")
         for pose_idx in range(scene.stroke_length):
@@ -250,7 +245,7 @@ def record(config: RecordConfig):
                 offset_idx += 1
             elif action.get("y", 0.0) < 0.0:
                 offset_idx -= 1
-            log.info(f"🎮 offset index: {needle_depth_idx}")
+            log.info(f"🎮 offset index: {offset_idx}")
 
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")

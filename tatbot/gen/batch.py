@@ -15,7 +15,7 @@ from tatbot.data.strokebatch import StrokeBatch
 from tatbot.gen.ik import batch_ik
 from tatbot.utils.log import get_logger
 
-log = get_logger('gen.strokebatch', '💠')
+log = get_logger('gen.batch', '💠')
 
 @jdc.jit
 def transform_and_offset(
@@ -41,55 +41,80 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
     Convert a list of (Stroke, Stroke) tuples into a StrokeBatch, running IK to fill in joint values.
     Each tuple is (left_stroke, right_stroke) for a single stroke step.
     """
-    b = len(strokelist.strokes)
-    l = scene.stroke_length
+    b = len(strokelist.strokes)              # strokes in list
+    l = scene.stroke_length                  # poses per stroke
+    o = scene.offset_num                     # offset samples
+
     # Fill arrays from strokes
-    ee_pos_l = np.zeros((b, l, 3), dtype=np.float32)
-    ee_pos_r = np.zeros((b, l, 3), dtype=np.float32)
+    ee_pos_l = np.zeros((b, l, o, 3), dtype=np.float32)
+    ee_pos_r = np.zeros((b, l, o, 3), dtype=np.float32)
 
     # HACK: hardcoded orientations for left and right arm end effectors
-    ee_rot_l = np.tile(scene.ee_rot_l.wxyz, (b, l, 1))
-    ee_rot_r = np.tile(scene.ee_rot_r.wxyz, (b, l, 1))
+    ee_rot_l = np.tile(scene.ee_rot_l.wxyz, (b, l, o, 1))
+    ee_rot_r = np.tile(scene.ee_rot_r.wxyz, (b, l, o, 1))
 
     # default time between poses is fast movement
-    dt = np.full((b, l), scene.arms.goal_time_fast)
+    dt = np.full((b, l, o), scene.arms.goal_time_fast, dtype=np.float32)
     # slow movement to and from hover positions
-    dt[:, :2] = scene.arms.goal_time_slow
-    dt[:, -2:] = scene.arms.goal_time_slow
+    dt[:, :2, :] = scene.arms.goal_time_slow
+    dt[:, -2:, :] = scene.arms.goal_time_slow
 
     for i, (stroke_l, stroke_r) in enumerate(strokelist.strokes):
         if not stroke_l.is_inkdip:
             # if the stroke is not an inkdip, ee_pos is in the design frame
-            ee_pos_l[i] = transform_and_offset(
+            base_l = transform_and_offset(
                 stroke_l.ee_pos,
                 scene.skin.design_pose.pos.xyz,
                 scene.skin.design_pose.rot.wxyz,
                 scene.ee_offset_l.xyz,
             )
+            base_l = base_l.reshape(l, 3)
+            ee_pos_l[i] = np.repeat(base_l[:, None, :], o, axis=1)
         else:
-            ee_pos_l[i] = stroke_l.ee_pos
+            ee_pos_l[i] = np.repeat(stroke_l.ee_pos.reshape(l, 1, 3), o, 1)
         if not stroke_r.is_inkdip:
-            ee_pos_r[i] = transform_and_offset(
+            base_r = transform_and_offset(
                 stroke_r.ee_pos,
                 scene.skin.design_pose.pos.xyz,
                 scene.skin.design_pose.rot.wxyz,
                 scene.ee_offset_r.xyz,
             )
+            base_r = base_r.reshape(l, 3)
+            ee_pos_r[i] = np.repeat(base_r[:, None, :], o, 1)
         else:
-            ee_pos_r[i] = stroke_r.ee_pos
+            ee_pos_r[i] = np.repeat(stroke_r.ee_pos.reshape(l, 1, 3), o, 1)
+
         # first and last poses in each stroke are offset by hover offset
         ee_pos_l[i, 0] += scene.hover_offset.xyz
         ee_pos_l[i, -1] += scene.hover_offset.xyz
         ee_pos_r[i, 0] += scene.hover_offset.xyz
         ee_pos_r[i, -1] += scene.hover_offset.xyz
 
-    # Prepare IK targets: shape (b*l, 2, ...)
-    target_pos = np.stack([ee_pos_l, ee_pos_r], axis=2).reshape(b * l, 2, 3)
-    target_wxyz = np.stack([ee_rot_l, ee_rot_r], axis=2).reshape(b * l, 2, 4)
+    # offset depths
+    offsets = np.linspace(scene.offset_range[0], scene.offset_range[1], o).astype(np.float32)
+    depth_axis = np.array([0.0, 0.0, -1.0], dtype=np.float32)
+    ee_pos_l += offsets[None, None, :, None] * depth_axis
+    ee_pos_r += offsets[None, None, :, None] * depth_axis
+
+    # ------------------------------------------------------------------ #
+    # stack ALONG AXIS 3  → (b, l, o, 2, 3/4) so that every row in the
+    # later (b·l·o, 2, …) tensor contains the **left & right arm for the
+    # SAME (stroke, pose, offset)**.  Stacking on axis 2 (as before) gave
+    # (b, l, 2, o, …) and produced mismatched pairs after reshape.
+    # ------------------------------------------------------------------ #
+    target_pos   = (
+        np.stack([ee_pos_l, ee_pos_r], axis=3)     # (b, l, o, 2, 3)
+        .reshape(b * l * o, 2, 3)
+    )
+    target_wxyz  = (
+        np.stack([ee_rot_l, ee_rot_r], axis=3)     # (b, l, o, 2, 4)
+        .reshape(b * l * o, 2, 4)
+    )
+
     # Run IK in batches
-    joints_out = np.zeros((b * l, 16), dtype=np.float32)
-    for start in range(0, b * l, batch_size):
-        end = min(start + batch_size, b * l)
+    joints_out = np.zeros((b * l * o, 16), dtype=np.float32)
+    for start in range(0, b * l * o, batch_size):
+        end = min(start + batch_size, b * l * o)
         batch_pos = jnp.array(target_pos[start:end])
         batch_wxyz = jnp.array(target_wxyz[start:end])
         batch_joints = batch_ik(
@@ -100,12 +125,12 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
             link_names=scene.urdf.ee_link_names,
         )
         joints_out[start:end] = np.asarray(batch_joints, dtype=np.float32)
-    # Reshape to (b, l, 16)
-    joints_out = joints_out.reshape(b, l, 16)
-    # HACK: the right arm of the first (not counting alignments) stroke should be at rest while left arm is ink dipping
-    joints_out[2, :, 8:] = np.tile(scene.ready_pos_r.joints, (l, 1))
-    # HACK: the left arm of the final path should be at rest since last stroke is right-only
-    joints_out[-1, :, :8] = np.tile(scene.ready_pos_l.joints, (l, 1))
+    joints_out = joints_out.reshape(b, l, o, 16)
+
+    # # HACK: the right arm of the first stroke should be at rest while left arm is ink dipping
+    # joints_out[0, :, :, 8:] = np.tile(scene.ready_pos_r.joints, (l, o, 1))
+    # # HACK: the left arm of the final path should be at rest since last stroke is right-only
+    # joints_out[-1, :, :, :8] = np.tile(scene.ready_pos_l.joints, (l, o, 1))
 
     strokebatch = StrokeBatch(
         ee_pos_l=jnp.array(ee_pos_l),
