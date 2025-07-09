@@ -218,34 +218,9 @@ class VizStrokes(BaseViz):
                 self.pointcloud_path_r.colors = points_color_r
         if self.scene.design_img_path is not None:
             log.debug("Updating design image")
-            frame_img_np = None
             for stroke in self.strokelist.strokes[self.stroke_idx]:
                 if stroke.frame_path is not None:
-                    frame_img_np = cv2.imread(stroke.frame_path)
-                    break
-            if frame_img_np is not None:
-                for stroke in self.strokelist.strokes[self.stroke_idx]:
-                    if stroke.pixel_coords is not None and not stroke.is_inkdip:
-                        # Highlight entire path in red
-                        for pw, ph in stroke.pixel_coords:
-                            cv2.circle(frame_img_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["red"], -1)
-                        # Highlight path up until current pose in orange
-                        for pw, ph in stroke.pixel_coords[:self.pose_idx]:
-                            cv2.circle(frame_img_np, (int(pw), int(ph)), self.config.path_highlight_radius, COLORS["orange"], -1)
-                        color = COLORS["blue"] if stroke.arm == "left" else COLORS["purple"]
-                        # Highlight current pose
-                        px, py = stroke.pixel_coords[self.pose_idx - 2] # -2 because of hover poses at start and end
-                        cv2.circle(frame_img_np, (int(px), int(py)), self.config.pose_highlight_radius, color, -1)
-                        # Add L or R text
-                        text = "L" if stroke.arm == "left" else "R"
-                        text_pos = (int(px) - 5, int(py) - self.config.pose_highlight_radius - 5)
-                        cv2.putText(frame_img_np, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-                    if stroke.is_inkdip:
-                        # Text indicating arm that is inkdipping
-                        text = f"{stroke.arm} inkdip {stroke.inkcap}"
-                        text_pos = (10, 10)
-                        cv2.putText(frame_img_np, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.2, COLORS["black"], 1)
-                self.frame_img_gui.image = frame_img_np
+                    self.frame_img_gui.image = cv2.imread(stroke.frame_path)
 
         if self.pose_idx == 0:
             log.debug("Sending robot to rest pose")
