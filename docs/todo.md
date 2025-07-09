@@ -2,6 +2,8 @@
 
 Roughly sorted by priority
 
+- use mcp server for strokebatch job
+- write local, sync later for robot recordings to save trossen-ai compute
 - affine heat method for design wrapping on skin mesh
 - ee calibration using square
 - use VLM call with horizontal lines to ask if tips are close or not
