@@ -14,222 +14,182 @@ from tatbot.data.scene import Scene
 
 log = get_logger('gen.gcode', '🖋️')
 
+
 def parse_gcode_file(gcode_path: str, scene: Scene) -> list[tuple[np.ndarray, np.ndarray, str]]:
     """
-    Parse a G-code file and convert each path to meter and pixel coordinates.
-    Returns list of tuples: (meter_coords, pixel_coords, gcode_text)
-    
-    G-code format:
-    - G0: Rapid movement (pen up) - separator
-    - G1: Linear movement (pen down) - part of path
-    - X, Y coordinates in millimeters with (0,0) at center
+    Parse a G‑code file and convert every contiguous pen‑down segment to:
+        (meter_coords, pixel_coords, gcode_text)
+
+    *  G‑code coordinates are millimetres, origin at the image centre.
+    *  ``meter_coords`` are 3‑D robot points (x/y in m, z=0).
+    *  ``pixel_coords`` are (row, col) pairs in the design image reference
+       frame – **no axis swap, no zone scaling** – so they overlay correctly
+       on the design image.
+
+    Conversion summary
+    ------------------
+    X_gcode → image *width*  → pixel *column*
+    Y_gcode → image *height* → pixel *row* (with Y up → row down, hence sign flip)
+
+             X_pix = (X_m + W/2) / W · W_px
+             Y_pix = (H/2 – Y_m) / H · H_px
     """
-    # Load design image to get dimensions for pixel coordinate calculation
+    # ----------------------------------------------------------------—— helpers
+    def mm2m(arr_mm: np.ndarray) -> np.ndarray:
+        """millimetres → metres (N, 2)"""
+        return arr_mm / 1_000.0
+
+    # Image dimensions ---------------------------------------------------------
+    img_w_px: int = scene.skin.image_width_px
+    img_h_px: int = scene.skin.image_height_px
+    img_w_m:  float = scene.skin.image_width_m
+    img_h_m:  float = scene.skin.image_height_m
+
+    # If the design image exists, prefer its true pixel shape for clamping;
+    # this lets the code survive if someone edits the YAML but forgets to update
+    # the file itself.
     if scene.design_img_path and os.path.exists(scene.design_img_path):
-        with Image.open(scene.design_img_path) as img:
-            img_width, img_height = img.size
-    else:
-        raise ValueError(f"Design image not found at {scene.design_img_path}")
-    
-    paths = []
-    current_path_points = []
-    current_path_gcode = []
+        with Image.open(scene.design_img_path) as _im:
+            img_w_px, img_h_px = _im.size  # (width, height)
+
+    # State machine ------------------------------------------------------------
+    paths: list[tuple[np.ndarray, np.ndarray, str]] = []
+    cur_pts_mm: list[list[float]] = []
+    cur_gcode: list[str] = []
     pen_down = False
-    
-    with open(gcode_path, 'r') as f:
-        for line_num, line in enumerate(f, 1):
-            line = line.strip()
-            if not line or line.startswith(';'):
+
+    def _flush_current():
+        """Convert the current path (if any) and append to *paths*."""
+        if not pen_down or len(cur_pts_mm) < 1:
+            return
+
+        pts_mm = np.asarray(cur_pts_mm, dtype=np.float32)
+        gcode_txt = "\n".join(cur_gcode)
+
+        # ─ Robot coordinates (metres, z=0) ────────────────────────────────────
+        meter_coords = np.hstack([mm2m(pts_mm), np.zeros((len(pts_mm), 1), np.float32)])
+
+        # ─ Pixel coordinates (row, col) ───────────────────────────────────────
+        pts_m = mm2m(pts_mm)
+        # Shift origin from centre → image top‑left (keeping X rightwards)
+        col = (pts_m[:, 0] +  img_w_m / 2) / img_w_m * img_w_px
+        row = (img_h_m / 2 - pts_m[:, 1]) / img_h_m * img_h_px  # flip Y
+
+        pixel_coords = np.stack([row, col], axis=1).astype(np.float32)
+        # Clamp to valid pixels
+        pixel_coords[:, 0] = np.clip(pixel_coords[:, 0], 0, img_h_px - 1)
+        pixel_coords[:, 1] = np.clip(pixel_coords[:, 1], 0, img_w_px - 1)
+
+        paths.append((meter_coords, pixel_coords, gcode_txt))
+
+    # ----------------------------------------------------------------—— parse
+    with open(gcode_path, "r") as fh:
+        for line_num, raw in enumerate(fh, 1):
+            line = raw.strip()
+            if not line or line.startswith(";"):
                 continue
-                
-            parts = line.split()
-            if not parts:
-                continue
-                
-            command = parts[0].upper()
-            
-            if command == 'G0':  # Rapid movement (pen up) - separator
-                if pen_down and current_path_points:
-                    # End current path and convert coordinates
-                    if len(current_path_points) >= 1:
-                        gcode_coords_mm = np.array(current_path_points, dtype=np.float32)
-                        gcode_text = '\n'.join(current_path_gcode)
-                        
-                        # Convert mm to meters for robot coordinates
-                        meter_coords = np.hstack([gcode_coords_mm / 1000.0, np.zeros((len(gcode_coords_mm), 1), dtype=np.float32)])
-                        
-                        # Convert to pixel coordinates directly
-                        gcode_coords_m = gcode_coords_mm / 1000.0  # mm to meters
-                        pixel_coords = np.zeros_like(gcode_coords_m)
-                        # Map G-code X to pixel width, G-code Y to pixel height (inverted)
-                        pixel_coords[:, 1] = ((gcode_coords_m[:, 0] + scene.skin.image_width_m / 2) / scene.skin.image_width_m) * img_width   # pixel X (width)
-                        pixel_coords[:, 0] = ((-gcode_coords_m[:, 1] + scene.skin.image_height_m / 2) / scene.skin.image_height_m) * img_height  # pixel Y (height)
-                        
-                        # Clamp to image bounds
-                        pixel_coords[:, 0] = np.clip(pixel_coords[:, 0], 0, img_height - 1)
-                        pixel_coords[:, 1] = np.clip(pixel_coords[:, 1], 0, img_width - 1)
-                        
-                        paths.append((meter_coords, pixel_coords, gcode_text))
-                    current_path_points = []
-                    current_path_gcode = []
-                
-                # Extract coordinates from G0 command to use as starting point for next path
-                x_coord = None
-                y_coord = None
-                
-                for part in parts[1:]:
-                    if part.startswith('X'):
-                        try:
-                            x_coord = float(part[1:])
-                        except ValueError:
-                            log.warning(f"Invalid X coordinate in line {line_num}: {part}")
-                    elif part.startswith('Y'):
-                        try:
-                            y_coord = float(part[1:])
-                        except ValueError:
-                            log.warning(f"Invalid Y coordinate in line {line_num}: {part}")
-                
-                if x_coord is not None and y_coord is not None:
-                    point = np.array([x_coord, y_coord], dtype=np.float32)
-                    current_path_points = [point]  # Start new path with G0 coordinates
-                    current_path_gcode = [line]  # Include G0 line in gcode text
-                else:
-                    current_path_points = []
-                    current_path_gcode = []
-                
+
+            tokens = line.split()
+            cmd = tokens[0].upper()
+
+            if cmd == "G0":                                  # pen *up* – separator
+                _flush_current()
+                cur_pts_mm.clear()
+                cur_gcode.clear()
                 pen_down = False
-                
-            elif command == 'G1':  # Linear movement (pen down)
-                if not pen_down:
-                    # If we don't have any points yet, start fresh
-                    if not current_path_points:
-                        current_path_points = []
-                        current_path_gcode = []
+
+                # Capture the rapid‑move endpoint as the *start* of the next path
+                x_mm = y_mm = None
+                for t in tokens[1:]:
+                    if t.startswith("X"):
+                        x_mm = float(t[1:])
+                    elif t.startswith("Y"):
+                        y_mm = float(t[1:])
+
+                if x_mm is not None and y_mm is not None:
+                    cur_pts_mm.append([x_mm, y_mm])
+                    cur_gcode.append(line)
+
+            elif cmd == "G1":                                # pen *down*
                 pen_down = True
-                current_path_gcode.append(line)
-                
-                # Extract coordinates
-                x_coord = None
-                y_coord = None
-                
-                for part in parts[1:]:
-                    if part.startswith('X'):
-                        try:
-                            x_coord = float(part[1:])
-                        except ValueError:
-                            log.warning(f"Invalid X coordinate in line {line_num}: {part}")
-                    elif part.startswith('Y'):
-                        try:
-                            y_coord = float(part[1:])
-                        except ValueError:
-                            log.warning(f"Invalid Y coordinate in line {line_num}: {part}")
-                
-                if x_coord is not None and y_coord is not None:
-                    point = np.array([x_coord, y_coord], dtype=np.float32)
-                    current_path_points.append(point)
-    
-    # Handle final path
-    if pen_down and current_path_points and len(current_path_points) >= 1:
-        gcode_coords_mm = np.array(current_path_points, dtype=np.float32)
-        gcode_text = '\n'.join(current_path_gcode)
-        
-        # Convert mm to meters for robot coordinates
-        meter_coords = np.hstack([gcode_coords_mm / 1000.0, np.zeros((len(gcode_coords_mm), 1), dtype=np.float32)])
-        
-        # Convert to pixel coordinates directly
-        gcode_coords_m = gcode_coords_mm / 1000.0  # mm to meters
-        pixel_coords = np.zeros_like(gcode_coords_m)
-        # Map G-code X to pixel width, G-code Y to pixel height (inverted)
-        pixel_coords[:, 1] = ((gcode_coords_m[:, 0] + scene.skin.image_width_m / 2) / scene.skin.image_width_m) * img_width   # pixel X (width)
-        pixel_coords[:, 0] = ((-gcode_coords_m[:, 1] + scene.skin.image_height_m / 2) / scene.skin.image_height_m) * img_height  # pixel Y (height)
-        
-        # Clamp to image bounds
-        pixel_coords[:, 0] = np.clip(pixel_coords[:, 0], 0, img_height - 1)
-        pixel_coords[:, 1] = np.clip(pixel_coords[:, 1], 0, img_width - 1)
-        
-        paths.append((meter_coords, pixel_coords, gcode_text))
-    
+                cur_gcode.append(line)
+
+                x_mm = y_mm = None
+                for t in tokens[1:]:
+                    if t.startswith("X"):
+                        x_mm = float(t[1:])
+                    elif t.startswith("Y"):
+                        y_mm = float(t[1:])
+
+                if x_mm is not None and y_mm is not None:
+                    cur_pts_mm.append([x_mm, y_mm])
+            else:
+                log.warning(f"⚠️ Unrecognised G‑code '{cmd}' on line {line_num}")
+
+    # Flush any trailing path
+    _flush_current()
     return paths
 
-def generate_stroke_frame_image(scene: Scene, pen_name: str, path_idx: int, pixel_coords: np.ndarray, arm: str) -> str:
+
+def generate_stroke_frame_image(
+    scene: Scene,
+    pen_name: str,
+    path_idx: int,
+    pixel_coords: np.ndarray,
+    arm: str,
+) -> str:
     """
-    Generate a frame image for a specific stroke by drawing the path on the base design image.
-    
-    Args:
-        scene: The scene containing design information
-        pen_name: Name of the pen/color being used
-        path_idx: Index of the path within the pen's paths
-        pixel_coords: Pixel coordinates of the path
-        arm: Which arm is drawing ("left" or "right")
-    
-    Returns:
-        Path to the generated frame image
+    Draw a single stroke on top of the design image and save the frame.
+
+    ``pixel_coords`` must be (row, col) pairs produced by *parse_gcode_file*.
     """
-    # Load the base design image
     if not scene.design_img_path or not os.path.exists(scene.design_img_path):
         raise ValueError(f"Design image not found at {scene.design_img_path}")
-    
-    # Read the base image
+
     base_img = cv2.imread(scene.design_img_path)
     if base_img is None:
         raise ValueError(f"Could not read design image at {scene.design_img_path}")
-    
-    # Create a copy to draw on
+
     frame_img = base_img.copy()
-    
-    # Define colors for visualization (BGR format for OpenCV)
-    path_color = COLORS["red"]  # Red for the path
-    
-    # Draw the complete path in red
-    log.debug(f"Drawing path with {len(pixel_coords)} points for {arm} arm {pen_name}")
+    path_color = COLORS["red"]
+
+    # ─ Draw polyline ----------------------------------------------------------
+    log.debug(f"Drawing path with {len(pixel_coords)} points for {arm} arm ({pen_name})")
     for i in range(len(pixel_coords) - 1):
-        # For landscape mode: pixel_coords[:, 0] is height (Y), pixel_coords[:, 1] is width (X)
-        # OpenCV expects (x, y) where x is column (width) and y is row (height)
-        pt1 = (int(pixel_coords[i, 1]), int(pixel_coords[i, 0]))  # (width, height)
-        pt2 = (int(pixel_coords[i + 1, 1]), int(pixel_coords[i + 1, 0]))  # (width, height)
-        cv2.line(frame_img, pt1, pt2, path_color, 2)
-    
-    # Draw points along the path
-    for px, py in pixel_coords:
-        # For landscape mode: px is height (Y), py is width (X)
-        cv2.circle(frame_img, (int(py), int(px)), 3, path_color, -1)  # (width, height)
-    
-    # Add text indicating the pen and arm near the stroke but biased towards center
-    if len(pixel_coords) > 0:
-        # Calculate stroke center (in pixel coordinates)
-        stroke_center_x = np.mean(pixel_coords[:, 1])  # width coordinate
-        stroke_center_y = np.mean(pixel_coords[:, 0])  # height coordinate
-        
-        # Get image center
-        img_center_x = frame_img.shape[1] / 2  # width
-        img_center_y = frame_img.shape[0] / 2  # height
-        
-        # Calculate text position: 70% towards stroke center, 30% towards image center
-        placement_ratio = 0.8
-        text_x = int(placement_ratio * stroke_center_x + (1 - placement_ratio) * img_center_x)
-        text_y = int(placement_ratio * stroke_center_y + (1 - placement_ratio) * img_center_y)
-        
-        # Ensure text stays within image bounds with some padding
-        text_x = max(10, min(text_x, frame_img.shape[1] - 150))
-        text_y = max(30, min(text_y, frame_img.shape[0] - 10))
-        
-        # Draw three lines of text
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.8
-        thickness = 2
-        line_height = 25
-        
-        cv2.putText(frame_img, arm.upper(), (text_x, text_y), font, font_scale, COLORS["red"], thickness)
-        cv2.putText(frame_img, pen_name, (text_x, text_y + line_height), font, font_scale, COLORS["red"], thickness)
-        cv2.putText(frame_img, f"{path_idx:04d}", (text_x, text_y + 2 * line_height), font, font_scale, COLORS["red"], thickness)
-    
-    # Generate filename
+        r1, c1 = pixel_coords[i]      # row, col
+        r2, c2 = pixel_coords[i + 1]
+        cv2.line(frame_img, (int(c1), int(r1)), (int(c2), int(r2)), path_color, 2)
+
+    # ─ Draw nodes -------------------------------------------------------------
+    for r, c in pixel_coords:
+        cv2.circle(frame_img, (int(c), int(r)), 3, path_color, -1)
+
+    # ─ Label ------------------------------------------------------------------
+    if pixel_coords.size:
+        # Stroke centre in pixel space
+        r_c = float(np.mean(pixel_coords[:, 0]))
+        c_c = float(np.mean(pixel_coords[:, 1]))
+
+        r_img_c = frame_img.shape[0] / 2
+        c_img_c = frame_img.shape[1] / 2
+
+        α = 0.8  # bias toward stroke centre
+        text_r = int(α * r_c + (1 - α) * r_img_c)
+        text_c = int(α * c_c + (1 - α) * c_img_c)
+
+        text_r = np.clip(text_r, 30, frame_img.shape[0] - 10)
+        text_c = np.clip(text_c, 10, frame_img.shape[1] - 150)
+
+        font, scale, thick, lh = cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2, 25
+        cv2.putText(frame_img, arm.upper(), (text_c, text_r), font, scale, path_color, thick)
+        cv2.putText(frame_img, pen_name, (text_c, text_r + lh), font, scale, path_color, thick)
+        cv2.putText(frame_img, f"{path_idx:04d}", (text_c, text_r + 2 * lh), font, scale, path_color, thick)
+
+    # ─ Save -------------------------------------------------------------------
     frame_filename = f"stroke_{pen_name}_{arm}_{path_idx:04d}.png"
     frame_path = os.path.join(scene.design_dir, frame_filename)
-    
-    # Save the frame image
     cv2.imwrite(frame_path, frame_img)
-    
+
     return frame_path
 
 def make_gcode_strokes(scene: Scene) -> StrokeList:
