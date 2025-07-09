@@ -64,6 +64,9 @@ class RecordConfig:
     resume: bool = False
     """If true, resumes recording from the last episode, dataset name must match."""
 
+    enable_conditioning_cameras: bool = False
+    """Whether to enable conditioning cameras (this slows down the loop)."""
+
 
 def record(config: RecordConfig):
     scene: Scene = Scene.from_name(config.scene)
@@ -155,10 +158,11 @@ def record(config: RecordConfig):
     dataset_cond_dir = os.path.join(dataset_dir, "cond")
     log.info(f"🗃️ Creating condition directory inside dataset directory at {dataset_cond_dir}...")
     os.makedirs(dataset_cond_dir, exist_ok=True)
-    cond_obs = robot.get_conditioning()
-    for cam_key, obs in cond_obs.items():
-        filepath = os.path.join(dataset_cond_dir, f"{cam_key}.png")
-        dataset._save_image(obs, filepath)
+    if config.enable_conditioning_cameras:
+        cond_obs = robot.get_conditioning()
+        for cam_key, obs in cond_obs.items():
+            filepath = os.path.join(dataset_cond_dir, f"{cam_key}.png")
+            dataset._save_image(obs, filepath)
 
     logs_dir = os.path.join(dataset_dir, "logs")
     log.info(f"🗃️ Creating logs directory inside dataset directory at {logs_dir}...")
@@ -214,12 +218,6 @@ def record(config: RecordConfig):
         ready_action = robot._urdf_joints_to_action(_full_joints)
         robot.send_action(ready_action, goal_time=robot.config.goal_time_slow, block="left")
 
-        # TODO: use apriltags to calculate realsense extrinsics
-        # TODO: use extrinsics to get pointcloud
-        # TODO: use zone to crop pointcloud
-        # TODO: use design pose and pointcloud to get geodesic
-        # TODO: use geodesic to get ee pose
-
         # Per-episode conditioning information is stored in seperate directory
         # TODO: add conditioning cameras, but right now they slow down the loop too much
         episode_cond = {}
@@ -243,8 +241,10 @@ def record(config: RecordConfig):
                 raise KeyboardInterrupt()
             if action.get("y", 0.0) > 0.0:
                 offset_idx += 1
+                offset_idx = min(offset_idx, scene.offset_num - 1)
             elif action.get("y", 0.0) < 0.0:
                 offset_idx -= 1
+                offset_idx = max(0, offset_idx)
             log.info(f"🎮 offset index: {offset_idx}")
 
             observation = robot.get_observation()
