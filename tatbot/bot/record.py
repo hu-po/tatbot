@@ -66,6 +66,8 @@ class RecordConfig:
 
     enable_conditioning_cameras: bool = False
     """Whether to enable conditioning cameras (this slows down the loop)."""
+    enable_joystick: bool = False
+    """Whether to enable joystick control."""
 
 
 def record(config: RecordConfig):
@@ -178,9 +180,10 @@ def record(config: RecordConfig):
     episode_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=TIME_FORMAT))
     logging.getLogger().addHandler(episode_handler)
 
-    # Initialize AtariTeleoperator
-    atari_teleop = AtariTeleoperator(AtariTeleoperatorConfig())
-    atari_teleop.connect()
+    if config.enable_joystick:
+        log.info("🎮 Enabling joystick control...")
+        atari_teleop = AtariTeleoperator(AtariTeleoperatorConfig())
+        atari_teleop.connect()
     offset_idx: int = 0 # offset index controls needle depth
     
     # one episode is a single path
@@ -236,16 +239,17 @@ def record(config: RecordConfig):
             log.debug(f"pose_idx: {pose_idx}/{scene.stroke_length}")
             start_loop_t = time.perf_counter()
 
-            action = atari_teleop.get_action()
-            if action.get("red_button", False):
-                raise KeyboardInterrupt()
-            if action.get("y", 0.0) > 0.0:
-                offset_idx += 1
-                offset_idx = min(offset_idx, scene.offset_num - 1)
-            elif action.get("y", 0.0) < 0.0:
-                offset_idx -= 1
-                offset_idx = max(0, offset_idx)
-            log.info(f"🎮 offset index: {offset_idx}")
+            if config.enable_joystick:
+                action = atari_teleop.get_action()
+                if action.get("red_button", False):
+                    raise KeyboardInterrupt()
+                if action.get("y", 0.0) > 0.0:
+                    offset_idx += 1
+                    offset_idx = min(offset_idx, scene.offset_num - 1)
+                elif action.get("y", 0.0) < 0.0:
+                    offset_idx -= 1
+                    offset_idx = max(0, offset_idx)
+                log.info(f"🎮 offset index: {offset_idx}")
 
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
