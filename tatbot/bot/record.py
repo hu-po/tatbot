@@ -155,6 +155,10 @@ def record(config: RecordConfig):
     dataset_cond_dir = os.path.join(dataset_dir, "cond")
     log.info(f"🗃️ Creating condition directory inside dataset directory at {dataset_cond_dir}...")
     os.makedirs(dataset_cond_dir, exist_ok=True)
+    cond_obs = robot.get_conditioning()
+    for cam_key, obs in cond_obs.items():
+        filepath = os.path.join(dataset_cond_dir, f"{cam_key}.png")
+        dataset._save_image(obs, filepath)
 
     logs_dir = os.path.join(dataset_dir, "logs")
     log.info(f"🗃️ Creating logs directory inside dataset directory at {logs_dir}...")
@@ -217,15 +221,11 @@ def record(config: RecordConfig):
         # TODO: use geodesic to get ee pose
 
         # Per-episode conditioning information is stored in seperate directory
+        # TODO: add conditioning cameras, but right now they slow down the loop too much
         episode_cond = {}
         episode_cond_dir = os.path.join(dataset_cond_dir, f"episode_{stroke_idx:06d}")
         os.makedirs(episode_cond_dir, exist_ok=True)
         log.debug(f"🗃️ Creating episode-specific condition directory at {episode_cond_dir}...")
-        cond_obs = robot.get_conditioning()
-        for cam_key, obs in cond_obs.items():
-            filepath = os.path.join(episode_cond_dir, f"{cam_key}.png")
-            dataset._save_image(obs, filepath)
-            episode_cond[cam_key] = filepath
         episode_cond["stroke_l"] = stroke_l.to_dict()
         episode_cond["stroke_r"] = stroke_r.to_dict()
         if stroke_l.frame_path is not None:
