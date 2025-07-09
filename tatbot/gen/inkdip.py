@@ -3,7 +3,6 @@ from typing import Callable
 
 import numpy as np
 
-from tatbot.gen.ik import transform_and_offset
 from tatbot.utils.log import get_logger
 from tatbot.data.stroke import Stroke
 from tatbot.data.scene import Scene
@@ -31,18 +30,11 @@ def make_inkdip_func(scene: Scene) -> Callable:
         wait_z = np.full(num_wait, inkcap.depth_m)
         # retract back up
         up_z = np.linspace(inkcap.depth_m, 0, num_up, endpoint=True)
-        # concatenate into offset array
-        offsets = np.hstack([
+        # concatenate into final inkdip position array
+        inkdip_pos = inkcap.pose.pos.xyz + scene.inkdip_hover_offset.xyz + np.hstack([
             np.zeros((scene.stroke_length, 2)), # x and y are 0
             -np.concatenate([down_z, wait_z, up_z]).reshape(-1, 1),
         ])
-        offsets = offsets + scene.inkdip_hover_offset.xyz
-        inkdip_pos = transform_and_offset(
-            np.zeros((scene.stroke_length, 3)), # <x, y, z>
-            inkcap.pose.pos.xyz,
-            inkcap.pose.rot.wxyz,
-            offsets,
-        )
         return Stroke(
                 description=f"{arm} arm inkdip into {inkcap.name} to fill with {color} ink",
                 is_inkdip=True,

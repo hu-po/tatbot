@@ -1,7 +1,6 @@
 import numpy as np
 
 from tatbot.data.stroke import Stroke, StrokeList
-from tatbot.gen.ik import transform_and_offset
 from tatbot.gen.inkdip import make_inkdip_func
 from tatbot.utils.log import get_logger
 from tatbot.data.scene import Scene
@@ -31,14 +30,9 @@ def make_align_strokes(scene: Scene) -> StrokeList:
         strokelist.strokes.append(
             (
                 Stroke(
-                    description="left arm over design",
+                    description="left arm hovering over design",
                     arm="left",
-                    ee_pos=transform_and_offset(
-                        np.zeros((scene.stroke_length, 3)),
-                        scene.skin.design_pose.pos.xyz,
-                        scene.skin.design_pose.rot.wxyz,
-                        scene.needle_hover_offset.xyz,
-                    ),
+                    ee_pos=np.tile(scene.needle_hover_offset.xyz, (scene.stroke_length, 1)),
                     ee_rot=ee_rot_l,
                     dt=dt,
                 ),
@@ -54,14 +48,9 @@ def make_align_strokes(scene: Scene) -> StrokeList:
             (
                 _inkdip_stroke,
                 Stroke(
-                    description="right arm over design",
+                    description="right arm hovering over design",
                     arm="right",
-                    ee_pos=transform_and_offset(
-                        np.zeros((scene.stroke_length, 3)),
-                        scene.skin.design_pose.pos.xyz,
-                        scene.skin.design_pose.rot.wxyz,
-                        scene.needle_hover_offset.xyz,
-                    ),
+                    ee_pos=np.tile(scene.needle_hover_offset.xyz, (scene.stroke_length, 1)),
                     ee_rot=ee_rot_r,
                     dt=dt,
                 ),

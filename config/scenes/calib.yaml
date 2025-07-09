@@ -30,3 +30,4 @@ needle_offset_l:
 needle_offset_r:
   xyz: [0.0, 0.0, -0.0038]
 design_dir_path: "~/tatbot/nfs/designs/calib"
+# design_dir_path: "~/tatbot/nfs/designs/zorya"
