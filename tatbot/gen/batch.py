@@ -8,6 +8,7 @@ from jaxtyping import Array, Float
 from typing import Optional
 import numpy as np
 
+from tatbot.data.scene import Scene
 from tatbot.data.pose import Pos, Pose
 from tatbot.data.stroke import StrokeList
 from tatbot.data.strokebatch import StrokeBatch
@@ -35,58 +36,53 @@ def transform_and_offset(
     return result
 
 
-def strokebatch_from_strokes(
-    strokelist: StrokeList,
-    stroke_length: int,
-    joints: np.ndarray,
-    urdf_path: str,
-    link_names: tuple[str, ...],
-    design_pose: Pose,
-    hover_offset: Pos,
-    ee_offset_l: Pos,
-    ee_offset_r: Pos,
-    batch_size: int = 256,
-) -> StrokeBatch:
+def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: int = 256) -> StrokeBatch:
     """
     Convert a list of (Stroke, Stroke) tuples into a StrokeBatch, running IK to fill in joint values.
     Each tuple is (left_stroke, right_stroke) for a single stroke step.
     """
     b = len(strokelist.strokes)
-    l = stroke_length
+    l = scene.stroke_length
     # Fill arrays from strokes
     ee_pos_l = np.zeros((b, l, 3), dtype=np.float32)
     ee_pos_r = np.zeros((b, l, 3), dtype=np.float32)
-    ee_rot_l = np.zeros((b, l, 4), dtype=np.float32)
-    ee_rot_r = np.zeros((b, l, 4), dtype=np.float32)
-    dt = np.zeros((b, l), dtype=np.float32)
+
+    # HACK: hardcoded orientations for left and right arm end effectors
+    ee_rot_l = np.tile(scene.ee_rot_l.wxyz, (b, l, 1))
+    ee_rot_r = np.tile(scene.ee_rot_r.wxyz, (b, l, 1))
+
+    # default time between poses is fast movement
+    dt = np.full((b, l), scene.arms.goal_time_fast)
+    # slow movement to and from hover positions
+    dt[:, :2] = scene.arms.goal_time_slow
+    dt[:, -2:] = scene.arms.goal_time_slow
+
     for i, (stroke_l, stroke_r) in enumerate(strokelist.strokes):
         if not stroke_l.is_inkdip:
+            # if the stroke is not an inkdip, ee_pos is in the design frame
             ee_pos_l[i] = transform_and_offset(
                 stroke_l.ee_pos,
-                design_pose.pos.xyz,
-                design_pose.rot.wxyz,
-                ee_offset_l.xyz,
+                scene.skin.design_pose.pos.xyz,
+                scene.skin.design_pose.rot.wxyz,
+                scene.ee_offset_l.xyz,
             )
         else:
             ee_pos_l[i] = stroke_l.ee_pos
         if not stroke_r.is_inkdip:
             ee_pos_r[i] = transform_and_offset(
                 stroke_r.ee_pos,
-                design_pose.pos.xyz,
-                design_pose.rot.wxyz,
-                ee_offset_r.xyz,
+                scene.skin.design_pose.pos.xyz,
+                scene.skin.design_pose.rot.wxyz,
+                scene.ee_offset_r.xyz,
             )
         else:
             ee_pos_r[i] = stroke_r.ee_pos
         # first and last poses in each stroke are offset by hover offset
-        ee_pos_l[i, 0] += hover_offset.xyz
-        ee_pos_l[i, -1] += hover_offset.xyz
-        ee_pos_r[i, 0] += hover_offset.xyz
-        ee_pos_r[i, -1] += hover_offset.xyz
-        # rotations are hardcoded
-        ee_rot_l[i] = stroke_l.ee_rot
-        ee_rot_r[i] = stroke_r.ee_rot
-        dt[i] = stroke_l.dt.squeeze() if hasattr(stroke_l.dt, 'squeeze') else stroke_l.dt
+        ee_pos_l[i, 0] += scene.hover_offset.xyz
+        ee_pos_l[i, -1] += scene.hover_offset.xyz
+        ee_pos_r[i, 0] += scene.hover_offset.xyz
+        ee_pos_r[i, -1] += scene.hover_offset.xyz
+
     # Prepare IK targets: shape (b*l, 2, ...)
     target_pos = np.stack([ee_pos_l, ee_pos_r], axis=2).reshape(b * l, 2, 3)
     target_wxyz = np.stack([ee_rot_l, ee_rot_r], axis=2).reshape(b * l, 2, 4)
@@ -99,17 +95,17 @@ def strokebatch_from_strokes(
         batch_joints = batch_ik(
             target_wxyz=batch_wxyz,
             target_pos=batch_pos,
-            joints=joints,
-            urdf_path=urdf_path,
-            link_names=link_names,
+            joints=scene.ready_pos_full,
+            urdf_path=scene.urdf.path,
+            link_names=scene.urdf.ee_link_names,
         )
         joints_out[start:end] = np.asarray(batch_joints, dtype=np.float32)
     # Reshape to (b, l, 16)
     joints_out = joints_out.reshape(b, l, 16)
     # HACK: the right arm of the first (not counting alignments) stroke should be at rest while left arm is ink dipping
-    joints_out[2, :, 8:] = np.tile(joints[8:], (stroke_length, 1))
+    joints_out[2, :, 8:] = np.tile(scene.ready_pos_r.joints, (l, 1))
     # HACK: the left arm of the final path should be at rest since last stroke is right-only
-    joints_out[-1, :, :8] = np.tile(joints[:8], (stroke_length, 1))
+    joints_out[-1, :, :8] = np.tile(scene.ready_pos_l.joints, (l, 1))
 
     strokebatch = StrokeBatch(
         ee_pos_l=jnp.array(ee_pos_l),

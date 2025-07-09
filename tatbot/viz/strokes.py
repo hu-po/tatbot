@@ -36,17 +36,7 @@ class VizStrokes(BaseViz):
             self.strokelist: StrokeList = make_gcode_strokes(self.scene)
         else:
             self.strokelist: StrokeList = make_align_strokes(self.scene)
-        self.strokebatch: StrokeBatch = strokebatch_from_strokes(
-            strokelist=self.strokelist,
-            stroke_length=self.scene.stroke_length,
-            joints=self.scene.ready_pos_full,
-            urdf_path=self.scene.urdf.path,
-            link_names=self.scene.urdf.ee_link_names,
-            design_pose=self.scene.skin.design_pose,
-            hover_offset=self.scene.hover_offset,
-            ee_offset_l=self.scene.ee_offset_l,
-            ee_offset_r=self.scene.ee_offset_r,
-        )
+        self.strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, self.strokelist)
         self.num_strokes = len(self.strokelist.strokes)
         self.stroke_idx = 0
         self.pose_idx = 0
@@ -74,27 +64,6 @@ class VizStrokes(BaseViz):
                 self.pause = False
 
         with self.server.gui.add_folder("Strokes"):
-            def _format_seconds(secs):
-                secs = int(secs)
-                h = secs // 3600
-                m = (secs % 3600) // 60
-                s = secs % 60
-                return f"{h:02}h{m:02}m{s:02}s"
-
-            self.time_label = self.server.gui.add_text(
-                label="time",
-                initial_value=f"{_format_seconds(0)} / {_format_seconds(0)}",
-                disabled=True,
-            )
-
-            def _update_time_label():
-                current_time = 0.0
-                for i in range(self.stroke_idx):
-                    current_time += self.strokebatch.dt[i, :].sum().item()
-                current_time += self.strokebatch.dt[self.stroke_idx, :self.pose_idx+1].sum().item()
-                total_time = self.strokebatch.dt.sum().item()
-                self.time_label.value = f"{_format_seconds(current_time)} / {_format_seconds(total_time)}"
-
             self.stroke_idx_slider = self.server.gui.add_slider(
                 "stroke",
                 min=0,
@@ -129,16 +98,12 @@ class VizStrokes(BaseViz):
             self.pose_idx_slider.max = self.scene.stroke_length - 1
             if self.pose_idx_slider.value > self.pose_idx_slider.max:
                 self.pose_idx_slider.value = self.pose_idx_slider.max
-            _update_time_label()
             self.stroke_description_l.value = self.strokelist.strokes[self.stroke_idx][0].description
             self.stroke_description_r.value = self.strokelist.strokes[self.stroke_idx][1].description
 
         @self.pose_idx_slider.on_update
         def _(_):
             self.pose_idx = self.pose_idx_slider.value
-            _update_time_label()
-
-        _update_time_label()
 
         if self.scene.design_img_path is not None:
             self.design_img_np = cv2.imread(self.scene.design_img_path)

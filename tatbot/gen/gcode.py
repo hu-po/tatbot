@@ -244,31 +244,17 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
     # left arm and right arm strokes in order of execution on robot
     strokelist: StrokeList = StrokeList(strokes=[])
 
-    # default time between poses is fast movement
-    dt = np.full((scene.stroke_length, 1), scene.arms.goal_time_fast)
-    # slow movement to and from hover positions
-    dt[:2] = scene.arms.goal_time_slow
-    dt[-2:] = scene.arms.goal_time_slow
-
-    # hardcoded orientations for left and right arm end effectors
-    ee_rot_l = np.tile(scene.ee_rot_l.wxyz, (scene.stroke_length, 1))
-    ee_rot_r = np.tile(scene.ee_rot_r.wxyz, (scene.stroke_length, 1))
-
     inkdip_func = make_inkdip_func(scene)
 
     # start with inkdip on left arm, right arm will be at rest
     first_color_l = pen_paths_l[0][0]
     _inkdip_stroke = inkdip_func(first_color_l, "left")
-    _inkdip_stroke.ee_rot = ee_rot_l
-    _inkdip_stroke.dt = dt
     strokelist.strokes.append(
         (
             _inkdip_stroke,
             Stroke(
                 description="right arm at rest",
                 ee_pos=np.zeros((scene.stroke_length, 3)),
-                ee_rot=ee_rot_r,
-                dt=dt,
                 arm="right",
             ),
         )
@@ -290,8 +276,6 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
             stroke_l = Stroke(
                 description="left arm at rest",
                 ee_pos=np.zeros((scene.stroke_length, 3)),
-                ee_rot=ee_rot_l,
-                dt=dt,
                 arm="left",
             )
         elif inkcap_name_l is not None:
@@ -304,8 +288,6 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
                 arm="left",
                 pixel_coords=pixel_coords,
                 ee_pos=meter_coords,
-                ee_rot=ee_rot_l,
-                dt=dt,
                 gcode_text=gcode_text,
                 inkcap=inkcap_name_l,
                 is_inkdip=False,
@@ -318,15 +300,11 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
             # Only perform inkdip if a stroke will follow
             if path_l is not None:
                 stroke_l = inkdip_func(color_l, "left")
-                stroke_l.ee_rot = ee_rot_l
-                stroke_l.dt = dt
                 inkcap_name_l = stroke_l.inkcap
             else:
                 stroke_l = Stroke(
                     description="left arm at rest",
                     ee_pos=np.zeros((scene.stroke_length, 3)),
-                    ee_rot=ee_rot_l,
-                    dt=dt,
                     arm="left",
                 )
 
@@ -335,8 +313,6 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
             stroke_r = Stroke(
                 description="right arm at rest",
                 ee_pos=np.zeros((scene.stroke_length, 3)),
-                ee_rot=ee_rot_r,
-                dt=dt,
                 arm="right",
             )
         elif inkcap_name_r is not None:
@@ -349,8 +325,6 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
                 arm="right",
                 pixel_coords=pixel_coords,
                 ee_pos=meter_coords,
-                ee_rot=ee_rot_r,
-                dt=dt,
                 gcode_text=gcode_text,
                 inkcap=inkcap_name_r,
                 is_inkdip=False,
@@ -363,15 +337,11 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
             # Only perform inkdip if a stroke will follow
             if path_r is not None:
                 stroke_r = inkdip_func(color_r, "right")
-                stroke_r.ee_rot = ee_rot_r
-                stroke_r.dt = dt
                 inkcap_name_r = stroke_r.inkcap
             else:
                 stroke_r = Stroke(
                     description="right arm at rest",
                     ee_pos=np.zeros((scene.stroke_length, 3)),
-                    ee_rot=ee_rot_r,
-                    dt=dt,
                     arm="right",
                 )
         strokelist.strokes.append((stroke_l, stroke_r))

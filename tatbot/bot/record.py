@@ -87,17 +87,7 @@ def record(config: RecordConfig):
     else:
         strokes: StrokeList = make_align_strokes(scene)
     num_strokes = len(strokes.strokes)
-    strokebatch: StrokeBatch = strokebatch_from_strokes(
-        strokelist=strokes,
-        stroke_length=scene.stroke_length,
-        joints=scene.ready_pos_full,
-        urdf_path=scene.urdf.path,
-        link_names=scene.urdf.ee_link_names,
-        design_pose=scene.skin.design_pose,
-        hover_offset=scene.hover_offset,
-        ee_offset_l=scene.ee_offset_l,
-        ee_offset_r=scene.ee_offset_r,
-    )
+    strokebatch: StrokeBatch = strokebatch_from_strokes(scene=scene, strokelist=strokes)
     strokebatch_path = os.path.join(dataset_dir, f"strokebatch.safetensors")
     log.info(f"💾 Saving strokebatch to {strokebatch_path}")
     strokebatch.save(strokebatch_path)
