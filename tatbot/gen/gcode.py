@@ -141,21 +141,44 @@ def coords_from_path(scene: Scene, path_array: np.ndarray) -> tuple[np.ndarray, 
                     metric_coords[i] = segment_start + segment_progress * (segment_end - segment_start)
     
     # Convert metric coordinates (mm) to pixel coordinates
-    # Assuming the G-code coordinates span the full image dimensions
-    # Find the bounding box of the G-code coordinates to determine the scale
+    # G-code coordinates are typically centered at (0,0), so we need to map them to image coordinates
+    # Find the bounding box of the G-code coordinates to determine the scale and offset
     min_x, min_y = np.min(metric_coords, axis=0)
     max_x, max_y = np.max(metric_coords, axis=0)
     gcode_width = max_x - min_x
     gcode_height = max_y - min_y
     
-    # Calculate scale factors
+    # Calculate scale factors to fit the G-code area into the image
     scale_x = img_width / gcode_width if gcode_width > 0 else 1.0
     scale_y = img_height / gcode_height if gcode_height > 0 else 1.0
+    scale = min(scale_x, scale_y)  # Use uniform scaling to maintain aspect ratio
     
-    # Convert to pixel coordinates
+    # Calculate the center of the G-code area
+    gcode_center_x = (min_x + max_x) / 2.0
+    gcode_center_y = (min_y + max_y) / 2.0
+    
+    # Calculate the center of the image
+    img_center_x = img_width / 2.0
+    img_center_y = img_height / 2.0
+    
+    # Convert to pixel coordinates by:
+    # 1. Centering the G-code coordinates around (0,0)
+    # 2. Scaling them to fit the image
+    # 3. Translating to the image center
     pixel_coords = np.zeros_like(metric_coords)
-    pixel_coords[:, 0] = (metric_coords[:, 0] - min_x) * scale_x
-    pixel_coords[:, 1] = (metric_coords[:, 1] - min_y) * scale_y
+    pixel_coords[:, 0] = (metric_coords[:, 0] - gcode_center_x) * scale + img_center_x
+    pixel_coords[:, 1] = (metric_coords[:, 1] - gcode_center_y) * scale + img_center_y
+    
+    # Clamp pixel coordinates to image bounds
+    pixel_coords[:, 0] = np.clip(pixel_coords[:, 0], 0, img_width - 1)
+    pixel_coords[:, 1] = np.clip(pixel_coords[:, 1], 0, img_height - 1)
+    
+    # Debug logging for coordinate conversion
+    log.info(f"G-code bounds: ({min_x:.2f}, {min_y:.2f}) to ({max_x:.2f}, {max_y:.2f})")
+    log.info(f"G-code center: ({gcode_center_x:.2f}, {gcode_center_y:.2f})")
+    log.info(f"Image size: {img_width}x{img_height}, center: ({img_center_x:.2f}, {img_center_y:.2f})")
+    log.info(f"Scale factors: x={scale_x:.3f}, y={scale_y:.3f}, using uniform scale={scale:.3f}")
+    log.info(f"Pixel coord range: x=[{np.min(pixel_coords[:, 0]):.1f}, {np.max(pixel_coords[:, 0]):.1f}], y=[{np.min(pixel_coords[:, 1]):.1f}, {np.max(pixel_coords[:, 1]):.1f}]")
     
     # Convert mm to meters for the robot
     meter_coords = np.hstack([metric_coords / 1000.0, np.zeros((scene.stroke_length, 1), dtype=np.float32)])  # z axis is 0
@@ -194,6 +217,7 @@ def generate_stroke_frame_image(scene: Scene, pen_name: str, path_idx: int, pixe
     arm_color = COLORS["blue"] if arm == "left" else COLORS["purple"]  # Blue for left, Purple for right
     
     # Draw the complete path in red
+    log.debug(f"Drawing path with {len(pixel_coords)} points for {arm} arm {pen_name}")
     for i in range(len(pixel_coords) - 1):
         pt1 = (int(pixel_coords[i, 0]), int(pixel_coords[i, 1]))
         pt2 = (int(pixel_coords[i + 1, 0]), int(pixel_coords[i + 1, 1]))
