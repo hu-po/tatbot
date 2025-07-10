@@ -13,7 +13,7 @@ from tatbot.data.tags import Tags
 from tatbot.utils.colors import COLORS
 from tatbot.utils.log import get_logger
 
-log = get_logger('tag', '🏷️')
+log = get_logger('tag.tracker', '🏷️')
 
 class TagTracker:
     def __init__(self, config: Tags):

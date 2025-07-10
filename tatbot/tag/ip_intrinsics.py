@@ -1,7 +1,7 @@
 from tatbot.data.cams import Cams
 from tatbot.utils.log import get_logger
 
-log = get_logger('tag.intrinsics', '🔎')
+log = get_logger('tag.ip_intrinsics', '🔎')
 
 def get_intrinsics(
     image_paths: list[str],
