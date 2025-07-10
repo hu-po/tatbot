@@ -55,9 +55,9 @@ class IPCameraConfig(CameraConfig):
 
 @dataclass
 class Cams(Yaml):
-    realsenses: tuple[RealSenseCameraConfig, ...]
+    realsenses: list[RealSenseCameraConfig]
     """List of camera configurations."""
-    ipcameras: tuple[IPCameraConfig, ...]
+    ipcameras: list[IPCameraConfig]
     """List of camera configurations."""
     yaml_dir: str = "~/tatbot/config/cams"
     """Directory containing the config yaml files."""
