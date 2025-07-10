@@ -9,9 +9,7 @@ from typing import Optional
 import numpy as np
 
 from tatbot.data.scene import Scene
-from tatbot.data.pose import Pos, Pose
-from tatbot.data.stroke import StrokeList
-from tatbot.data.strokebatch import StrokeBatch
+from tatbot.data.stroke import StrokeList, StrokeBatch
 from tatbot.gen.ik import batch_ik
 from tatbot.utils.log import get_logger
 
