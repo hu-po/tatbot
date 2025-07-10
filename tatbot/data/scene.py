@@ -10,6 +10,10 @@ from tatbot.data.urdf import URDF
 from tatbot.data.skin import Skin
 from tatbot.data.inks import Inks, InkCap, Ink
 from tatbot.data.tags import Tags
+from tatbot.data.stroke import StrokeList, StrokeBatch
+from tatbot.gen.gcode import make_gcode_strokes
+from tatbot.gen.align import make_align_strokes
+from tatbot.gen.strokebatch import strokebatch_from_strokes
 from tatbot.utils.log import get_logger
 from tatbot.bot.urdf import get_link_poses
 
@@ -105,6 +109,14 @@ class Scene(Yaml):
     inkready_pos_l: ArmPose = field(init=False)
     inkready_pos_r: ArmPose = field(init=False)
 
+    inkcaps_l: dict[str, InkCap] = field(init=False)
+    """Left inkcaps."""
+    inkcaps_r: dict[str, InkCap] = field(init=False)
+    """Right inkcaps."""
+
+    num_strokes: int = field(init=False)
+    """Number of strokes in the scene."""
+
     def __post_init__(self):
         log.info(f"📂 Loading scene config: {self.yaml_dir}/{self.name}.yaml")
         self.arms = Arms.from_name(self.arms_config_name)
@@ -180,3 +192,26 @@ class Scene(Yaml):
                     break
             assert design_img_filename is not None, f"❌ No design image found in {self.design_dir}"
             self.design_img_path = os.path.join(self.design_dir, design_img_filename)
+
+        def load_make_strokes(self, dirpath: str, resume: bool = False) -> tuple[StrokeList, StrokeBatch]:
+            strokes_path = os.path.join(dirpath, f"strokes.yaml")
+            strokebatch_path = os.path.join(dirpath, f"strokebatch.safetensors")
+            if resume:
+                log.info(f"🔄 Resuming from {dirpath}")
+                assert os.path.exists(strokes_path), f"❌ Strokes file {strokes_path} does not exist"
+                assert os.path.exists(strokebatch_path), f"❌ Strokebatch file {strokebatch_path} does not exist"
+                strokebatch: StrokeBatch = StrokeBatch.load(strokebatch_path)
+                strokes: StrokeList = StrokeList.load(strokes_path)
+            else:
+                if self.design_dir_path is not None:
+                    log.info(f"📂 Generating strokes from design")
+                    strokes: StrokeList = make_gcode_strokes(self)
+                else:
+                    log.info(f"📂 Generating generic alignment strokes")
+                    strokes: StrokeList = make_align_strokes(self)
+                strokes.save(strokes_path)
+                strokebatch: StrokeBatch = strokebatch_from_strokes(scene=self, strokelist=strokes)
+                strokebatch.save(strokebatch_path)
+            self.num_strokes = len(strokes.strokes)
+            log.info(f"✅ Loaded {self.num_strokes} strokes")
+            return strokes, strokebatch

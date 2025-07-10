@@ -5,11 +5,6 @@ import time
 import cv2
 import numpy as np
 
-from tatbot.data.stroke import StrokeList
-from tatbot.data.strokebatch import StrokeBatch
-from tatbot.gen.align import make_align_strokes
-from tatbot.gen.gcode import make_gcode_strokes
-from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.utils.colors import COLORS
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 from tatbot.viz.base import BaseViz, BaseVizConfig
@@ -32,12 +27,7 @@ class VizStrokes(BaseViz):
     def __init__(self, config: VizStrokesConfig):
         super().__init__(config)
 
-        if self.scene.design_dir_path is not None:
-            self.strokelist: StrokeList = make_gcode_strokes(self.scene)
-        else:
-            self.strokelist: StrokeList = make_align_strokes(self.scene)
-        self.strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, self.strokelist)
-        self.num_strokes = len(self.strokelist.strokes)
+        self.strokelist, self.strokebatch = self.scene.load_make_strokes(self.scene.design_dir, resume=False)
         self.stroke_idx = 0
         self.pose_idx = 0
 
@@ -67,7 +57,7 @@ class VizStrokes(BaseViz):
             self.stroke_idx_slider = self.server.gui.add_slider(
                 "stroke",
                 min=0,
-                max=self.num_strokes - 1,
+                max=self.scene.num_strokes - 1,
                 step=1,
                 initial_value=0,
             )
@@ -176,7 +166,7 @@ class VizStrokes(BaseViz):
             self.stroke_idx += 1
             self.pose_idx = 0
             log.debug(f"Moving to next stroke {self.stroke_idx}")
-        if self.stroke_idx >= self.num_strokes:
+        if self.stroke_idx >= self.scene.num_strokes:
             log.debug(f"Looping back to stroke 0")
             self.stroke_idx = 0
             self.pose_idx = 0
@@ -197,7 +187,7 @@ class VizStrokes(BaseViz):
         # ------------------------------------------------------------------ #
         offset_idx_l      = self.offset_idx_slider_l.value
         offset_idx_r      = self.offset_idx_slider_r.value
-        points_per_offset = self.num_strokes * self.scene.stroke_length
+        points_per_offset = self.scene.num_strokes * self.scene.stroke_length
         base_l            = offset_idx_l * points_per_offset + self.stroke_idx * self.scene.stroke_length
         base_r            = offset_idx_r * points_per_offset + self.stroke_idx * self.scene.stroke_length
         idx_l             = base_l + self.pose_idx

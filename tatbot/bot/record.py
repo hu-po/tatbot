@@ -86,20 +86,7 @@ def record(config: RecordConfig):
     scene_path = os.path.join(dataset_dir, "scene.yaml")
     scene.to_yaml(scene_path)
 
-    strokes_path = os.path.join(dataset_dir, f"strokes.yaml")
-    strokebatch_path = os.path.join(dataset_dir, f"strokebatch.safetensors")
-    if config.resume:
-        strokebatch: StrokeBatch = StrokeBatch.load(strokebatch_path)
-        strokes: StrokeList = StrokeList.load(strokes_path)
-    else:
-        if scene.design_dir_path is not None:
-            strokes: StrokeList = make_gcode_strokes(scene)
-        else:
-            strokes: StrokeList = make_align_strokes(scene)
-        strokes.save(strokes_path)
-        num_strokes = len(strokes.strokes)
-        strokebatch: StrokeBatch = strokebatch_from_strokes(scene=scene, strokelist=strokes)
-        strokebatch.save(strokebatch_path)
+    strokes, strokebatch = scene.load_make_strokes(dataset_dir, config.resume)
 
     log.info("🤗 Adding LeRobot robot...")
     robot = make_robot_from_config(TatbotConfig(
@@ -197,8 +184,8 @@ def record(config: RecordConfig):
     
     # one episode is a single path
     # when resuming, start from the idx of the next episode
-    log.info(f"Recording {num_strokes} paths...")
-    for stroke_idx in range(dataset.num_episodes, num_strokes):
+    log.info(f"Recording {scene.num_strokes} paths...")
+    for stroke_idx in range(dataset.num_episodes, scene.num_strokes):
         # reset in-memory log buffer for the new episode
         episode_log_buffer.seek(0)
         episode_log_buffer.truncate(0)
@@ -243,7 +230,7 @@ def record(config: RecordConfig):
         if stroke_r.frame_path is not None:
             shutil.copy(stroke_r.frame_path, os.path.join(episode_cond_dir, "stroke_r.png"))
 
-        log.info(f"🤖 recording path {stroke_idx} of {num_strokes}")
+        log.info(f"🤖 recording path {stroke_idx} of {scene.num_strokes}")
         for pose_idx in range(scene.stroke_length):
             log.debug(f"pose_idx: {pose_idx}/{scene.stroke_length}")
             start_loop_t = time.perf_counter()
