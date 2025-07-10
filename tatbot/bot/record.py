@@ -84,7 +84,6 @@ def record(config: RecordConfig):
 
     # copy the scene yaml to the output directory
     scene_path = os.path.join(dataset_dir, "scene.yaml")
-    log.info(f"💾 Saving scene yaml to {scene_path}")
     scene.to_yaml(scene_path)
 
     if scene.design_dir_path is not None:
@@ -92,10 +91,12 @@ def record(config: RecordConfig):
     else:
         strokes: StrokeList = make_align_strokes(scene)
     num_strokes = len(strokes.strokes)
-    strokebatch: StrokeBatch = strokebatch_from_strokes(scene=scene, strokelist=strokes)
     strokebatch_path = os.path.join(dataset_dir, f"strokebatch.safetensors")
-    log.info(f"💾 Saving strokebatch to {strokebatch_path}")
-    strokebatch.save(strokebatch_path)
+    if config.resume:
+        strokebatch: StrokeBatch = StrokeBatch.load(strokebatch_path)
+    else:
+        strokebatch: StrokeBatch = strokebatch_from_strokes(scene=scene, strokelist=strokes)
+        strokebatch.save(strokebatch_path)
 
     log.info("🤗 Adding LeRobot robot...")
     robot = make_robot_from_config(TatbotConfig(
@@ -285,7 +286,7 @@ def record(config: RecordConfig):
 
     logging.getLogger().removeHandler(episode_handler)
 
-    log.info("🤖✅ End")
+    log.info("✅ Done")
     robot.disconnect()
 
     if config.push_to_hub:

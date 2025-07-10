@@ -1,78 +1,101 @@
-import glob
 import logging
 import os
+import shutil
 import time
 from dataclasses import dataclass
-
+from io import StringIO
+import traceback
+from typing import Union
+from PIL import Image
 import numpy as np
-from _bot import get_link_poses
-from _log import TIME_FORMAT, get_logger, print_config, setup_log_with_config
-from _scan import Scan
-from _tag import TagTracker
 
-log = get_logger('run_scan')
+from lerobot.cameras.realsense import RealSenseCameraConfig
+from lerobot.cameras.opencv import OpenCVCameraConfig
 
+from tatbot.tag.extrinsics import get_extrinsics
+from tatbot.data.scene import Scene
+from tatbot.utils.log import (
+    TIME_FORMAT,
+    get_logger,
+    print_config,
+    setup_log_with_config,
+)
+
+log = get_logger('tag.scan', '📡')
 
 @dataclass
-class RunScanConfig:
+class ScanConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    bot_scan_dir: str = ""
-    """Path to the bot scan directory."""
+    scene: str = "align"
+    """Name of the scene config to use (Scene)."""
 
-    output_dir: str = "~/tatbot/output/scans"
-    """Directory to save the scan."""
+    output_dir: str = "~/tatbot/nfs/scans"
+    """Directory to save the dataset."""
 
-def run_scan(config: RunScanConfig) -> None:
-    bot_scan_dir = os.path.expanduser(config.bot_scan_dir)
-    frames_dir = os.path.join(bot_scan_dir, "frames")
-    assert os.path.exists(frames_dir), f"Frames directory {frames_dir} does not exist"
-    log.info(f"🔎🗃️ Ingesting bot scan at {bot_scan_dir} with frames")
 
-    scan_name = f"{time.strftime(TIME_FORMAT, time.localtime())}"
-    scan = Scan(name=scan_name)
+def scan(config: ScanConfig):
+    scene: Scene = Scene.from_name(config.scene)
 
     output_dir = os.path.expanduser(config.output_dir)
-    output_dir = os.path.join(output_dir, scan_name)
-    log.info(f"🔎🗃️ Creating output directory at {output_dir}")
+    log.info(f"🗃️ Creating output directory at {output_dir}...")
     os.makedirs(output_dir, exist_ok=True)
+    
+    scan_name = f"{scene.name}-{time.strftime(TIME_FORMAT, time.localtime())}"
+    scan_dir = f"{output_dir}/{scan_name}"
+    log.info(f"🗃️ Creating scan directory at {scan_dir}...")
+    os.makedirs(scan_dir, exist_ok=True)
 
-    log.info("🔎🗃️ Populating camera extrinsics from URDF...")
-    link_names = scan.optical_frame_urdf_link_names.values()
-    link_poses = get_link_poses(link_names, bot_config=scan.bot_config)
-    for camera_name, link_name in scan.optical_frame_urdf_link_names.items():
-        scan.extrinsics[camera_name].pos = np.array(link_poses[link_name][0])
-        scan.extrinsics[camera_name].wxyz = np.array(link_poses[link_name][1])
-        log.info(f"🔎🗃️ Camera {camera_name} extrinsics: {scan.extrinsics[camera_name]}")
+    # copy the scene yaml to the scan directory
+    scene_path = os.path.join(scan_dir, "scene.yaml")
+    scene.to_yaml(scene_path)
 
-    log.info("📡 Tracking tags in images...")
-    tracker = TagTracker(scan.tag_config)
-    for image_path in glob.glob(os.path.join(frames_dir, '*.png')):
-        camera_name = os.path.splitext(os.path.basename(image_path))[0].split('_')[0]
-        output_path = os.path.join(output_dir, image_path.split('/')[-1].replace('.png', '_tagged.png'))
-        log.info(f"🔎🗃️ Tracking tags in {image_path} and saving to {output_path}")
-        # TODO: get camera_pos and camera_wxyz from URDF? initialize as identity?
-        tracker.track_tags(
-            image_path,
-            scan.intrinsics[camera_name],
-            scan.extrinsics[camera_name].pos,
-            scan.extrinsics[camera_name].wxyz,
-            output_path=output_path
+    cameras: dict[str, Union[RealSenseCameraConfig, OpenCVCameraConfig]] = {}
+    for cam in scene.cams.realsenses:
+        cameras[cam.name] = RealSenseCameraConfig(
+            fps=cam.fps,
+            width=cam.width,
+            height=cam.height,
+            serial_number_or_name=cam.serial_number,
         )
+    for cam in scene.cams.ipcameras:
+        cameras[cam.name] = OpenCVCameraConfig(
+            fps=cam.fps,
+            width=cam.width,
+            height=cam.height,
+            ip=cam.ip,
+            username=cam.username,
+            password=cam.password,
+            rtsp_port=cam.rtsp_port,
+        )
+    
+    for cam in cameras.values():
+        cam.connect()
 
-    # use origin tag to get camera extrinsics of realsense1, realsense2, camera2, camera3, camera4
-    # use arm_l and arm_r tags to get extrinsics of camera1, camera5
-    # use camera extrinsics to get palette and skin tags
-
-    # update URDF file? save to scan metadata?
-
-    scan.save(output_dir)
-    log.info("🔎✅ Done")
+    image_paths = []
+    for cam_name, cam in cameras.items():
+        start = time.perf_counter()
+        try:
+            image_np = cam.async_read()
+        except Exception as e:
+            log.error(f"❌Error reading frame from {cam_name}:\n{e}")
+            image_np = np.zeros((cam.height, cam.width, 3), dtype=np.uint8)
+        dt_ms = (time.perf_counter() - start) * 1e3
+        log.debug(f"{cam_name} read frame: {dt_ms:.1f}ms")
+        image_path = os.path.join(scan_dir, f"{cam_name}.png")
+        Image.fromarray(image_np).save(image_path)
+        log.info(f"🗃️ Saved frame to {image_path}")
+        image_paths.append(image_path)
+    
+    cams = get_extrinsics(image_paths, cameras, scene.tags)
+    log.info(f"cams: {cams}")
+    log.info("✅ Done")
 
 if __name__ == "__main__":
-    args = setup_log_with_config(RunScanConfig)
+    args = setup_log_with_config(ScanConfig)
+    print_config(args)
     if args.debug:
         log.setLevel(logging.DEBUG)
-    print_config(args)
-    run_scan(args)
+        logging.getLogger('lerobot').setLevel(logging.DEBUG)
+    scan(args)
