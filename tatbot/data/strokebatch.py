@@ -3,6 +3,7 @@ import os
 import jax_dataclasses as jdc
 from jaxtyping import Array, Float
 from safetensors.flax import load_file, save_file
+import numpy as np
 
 from tatbot.utils.log import get_logger
 
@@ -34,3 +35,8 @@ class StrokeBatch:
         log.debug(f"💾 Loading StrokeBatch from {filepath}")
         data = load_file(filepath)
         return cls(**data)
+    
+    def offset_joints(self, stroke_idx: int, pose_idx: int, offset_idx_l: int, offset_idx_r: int) -> Float[Array, "16"]:
+        left_joints = self.joints[stroke_idx, pose_idx, offset_idx_l][:8]
+        right_joints = self.joints[stroke_idx, pose_idx, offset_idx_r][8:]
+        return np.concatenate([left_joints, right_joints])
