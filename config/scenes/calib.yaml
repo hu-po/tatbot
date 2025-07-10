@@ -16,7 +16,7 @@ pen_names_l:
 pen_names_r:
   - nighthawk_black
 pens_config_path: "~/tatbot/config/drawingbotv3/pens/full.json"
-stroke_length: 64
+stroke_length: 128
 ee_rot_l:
   wxyz: [0.5, 0.5, 0.5, -0.5]
 ee_rot_r:
