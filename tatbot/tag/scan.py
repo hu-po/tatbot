@@ -1,10 +1,7 @@
 import logging
 import os
-import shutil
 import time
 from dataclasses import dataclass
-from io import StringIO
-import traceback
 from typing import Union
 from PIL import Image
 import numpy as np
@@ -13,6 +10,7 @@ from lerobot.cameras.realsense import RealSenseCameraConfig
 from lerobot.cameras.opencv import OpenCVCameraConfig
 
 from tatbot.tag.extrinsics import get_extrinsics
+from tatbot.data.cams import Cams
 from tatbot.data.scene import Scene
 from tatbot.utils.log import (
     TIME_FORMAT,
@@ -88,7 +86,7 @@ def scan(config: ScanConfig):
         log.info(f"🗃️ Saved frame to {image_path}")
         image_paths.append(image_path)
     
-    cams = get_extrinsics(image_paths, cameras, scene.tags)
+    cams: Cams = get_extrinsics(image_paths, cameras, scene.tags)
     log.info(f"cams: {cams}")
     log.info("✅ Done")
 

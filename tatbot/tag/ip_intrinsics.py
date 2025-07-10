@@ -11,7 +11,7 @@ def get_intrinsics(
     log.debug(f"cameras: {cams}")
     log.debug(f"image_paths: {image_paths}")
 
-    # TODO : Calculate intrinsics for each camera, especially poe ip cameras
+    # TODO : Calculate intrinsics for the poe ip cameras, perhaps using checkerboard?
 
     log.info("✅ Done")
     return cams

@@ -24,7 +24,7 @@ def make_inkdip_func(scene: Scene) -> Callable:
         num_down = scene.stroke_length // 3
         num_up = scene.stroke_length // 3
         num_wait = scene.stroke_length - num_down - num_up
-        depth_m = inkcap.depth_m / 2 # half depth
+        depth_m = inkcap.depth_m / 3 # 1/3 depth # TODO: make this a function of the session duration? (stroke idx)
         # dip down to inkcap depth
         down_z = np.linspace(0, depth_m, num_down, endpoint=False)
         # wait at depth
