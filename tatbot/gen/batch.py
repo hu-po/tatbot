@@ -36,7 +36,7 @@ def transform_and_offset(
     return result
 
 
-def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: int = 256) -> StrokeBatch:
+def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: int = 1024) -> StrokeBatch:
     """
     Convert a list of (Stroke, Stroke) tuples into a StrokeBatch, running IK to fill in joint values.
     Each tuple is (left_stroke, right_stroke) for a single stroke step.
