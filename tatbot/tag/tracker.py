@@ -7,7 +7,7 @@ import jaxlie
 import numpy as np
 import pupil_apriltags as apriltag
 
-from tatbot.data.cams import Instrinsics
+from tatbot.data.cams import Intrinsics
 from tatbot.data.pose import Pose
 from tatbot.data.tags import Tags
 from tatbot.utils.colors import COLORS
@@ -25,7 +25,7 @@ class TagTracker:
     def track_tags(
         self,
         image_path: str,
-        intrinsics: Instrinsics,
+        intrinsics: Intrinsics,
         camera_pos: np.ndarray,
         camera_wxyz: np.ndarray,
         output_path: str | None = None
