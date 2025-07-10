@@ -65,7 +65,7 @@ def scan(config: ScanConfig):
             height=cam.height,
             ip=cam.ip,
             username=cam.username,
-            password=cam.password,
+            password=os.environ.get(cam.password, None),
             rtsp_port=cam.rtsp_port,
         )
     cameras = make_cameras_from_configs(camera_configs)
