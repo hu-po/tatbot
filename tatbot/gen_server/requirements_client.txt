@@ -1,2 +1,0 @@
-# Minimal dependencies for strokebatch client
-requests>=2.25.0 

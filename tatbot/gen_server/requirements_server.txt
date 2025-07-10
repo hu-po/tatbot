@@ -1,3 +1,0 @@
-# Minimal dependencies for strokebatch server
-flask>=2.0.0
-werkzeug>=2.0.0 
