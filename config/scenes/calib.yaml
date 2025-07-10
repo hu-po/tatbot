@@ -1,6 +1,6 @@
 name: "calib"
 arms_config_name: "bimanual"
-cams_config_name: "all"
+cams_config_name: "fast"
 urdf_config_name: "default"
 skin_config_name: "fakeskin"
 tags_config_name: "default"
