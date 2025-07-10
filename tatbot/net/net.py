@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import concurrent.futures
 import getpass
 import logging
@@ -6,7 +7,6 @@ import socket
 import stat
 import subprocess
 import traceback
-from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 import paramiko
@@ -14,22 +14,10 @@ import yaml
 from paramiko.client import SSHClient
 from paramiko.sftp_client import SFTPClient
 
+from tatbot.data.node import Node
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger('net', '🌐')
-
-@dataclass
-class Node:
-    name: str
-    """Name of the node (a computer within the tatbot network)."""
-    ip: str
-    """IP address of the node, used for SSH connection."""
-    user: str
-    """Username for SSH connection."""
-    emoji: str = "🌐"
-    """Emoji to use for logging."""
-    deps: str = "."
-    """Dependencies to install on the node, see pyproject.toml."""
 
 @dataclass
 class NetworkManagerConfig:

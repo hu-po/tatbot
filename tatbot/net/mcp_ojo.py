@@ -1,3 +1,4 @@
+"""MCP server for tatbot node that runs "gen" tasks."""
 import concurrent.futures
 import json
 import logging
