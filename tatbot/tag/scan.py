@@ -52,14 +52,14 @@ def scan(config: ScanConfig):
 
     camera_configs: dict[str, Union[RealSenseCameraConfig, OpenCVCameraConfig]] = {}
     for cam in scene.cams.realsenses:
-        cameras[cam.name] = RealSenseCameraConfig(
+        camera_configs[cam.name] = RealSenseCameraConfig(
             fps=cam.fps,
             width=cam.width,
             height=cam.height,
             serial_number_or_name=cam.serial_number,
         )
     for cam in scene.cams.ipcameras:
-        cameras[cam.name] = OpenCVCameraConfig(
+        camera_configs[cam.name] = OpenCVCameraConfig(
             fps=cam.fps,
             width=cam.width,
             height=cam.height,
