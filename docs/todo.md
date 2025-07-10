@@ -4,6 +4,7 @@ Roughly sorted by priority
 
 - async policy server/client on https://github.com/hu-po/lerobot/blob/main/docs/source/async.mdx
 - JAX on ojo via jetson-containers https://github.com/dusty-nv/jetson-containers/tree/master/packages/ml/jax
+- red sharpie cross with laser line leveler
 - mcp server for strokebatch job
 - write local, sync later for robot recordings to save trossen-ai compute
 - affine heat method for design wrapping on skin mesh

@@ -16,8 +16,8 @@ class ViewConfig:
     debug: bool = False
     config_dir: str = "~/tatbot/config/polyscope"
     ini_files: tuple = (".polyscope.ini", "imgui.ini")
-    mesh_path: Optional[str] = "~/tatbot/nfs/3d/fakeskin-lowpoly/fakeskin-lowpoly.obj"
-    pointcloud_path: Optional[str] = "~/tatbot/nfs/3d/skin.ply"
+    mesh_path: Optional[str] = "~/tatbot/nfs/3d/fakeskin/skin.obj"
+    pointcloud_path: Optional[str] = "~/tatbot/nfs/3d/fakeskin.ply"
     use_trimesh_viewer: bool = True  # If True, use trimesh viewer for OBJ
 
 @dataclass
