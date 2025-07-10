@@ -4,7 +4,7 @@ from tatbot.data import Yaml
 from tatbot.data.pose import Pose
 
 @dataclass
-class Instrinsics(Yaml):
+class Intrinsics(Yaml):
     fov: float
     """Field of view in radians."""
     aspect: float
@@ -32,7 +32,7 @@ class CameraConfig(Yaml):
     """Height of the image in pixels."""
     fps: int
     """Frames per second."""
-    intrinsics: Instrinsics
+    intrinsics: Intrinsics
     """Intrinsics of the camera."""
     extrinsics: Pose
     """Extrinsics of the camera: pose in the global frame."""
