@@ -18,9 +18,7 @@ log = get_logger('tag', '🏷️')
 class TagTracker:
     def __init__(self, config: Tags):
         self.config = config
-        self.detector = apriltag.Detector(
-            families=config.tag_family,
-        )
+        self.detector = apriltag.Detector(families=config.family)
 
     def track_tags(
         self,
