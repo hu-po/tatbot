@@ -71,7 +71,7 @@ def scan(config: ScanConfig):
     cameras = make_cameras_from_configs(camera_configs)
     for cam in cameras.values():
         cam.connect()
-        log.info(f"✅ Connected to {cam.name}")
+        log.info(f"✅ Connected to {cam}")
 
     image_paths = []
     for cam_name, cam in cameras.items():
