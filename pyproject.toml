@@ -5,7 +5,7 @@ discord = "https://discord.gg/pPAFwndTJd"
 
 [project]
 name = "tatbot"
-version = "0.5.0"
+version = "0.5.2"
 description="tattoo robot"
 authors = [
     { name = "Hugo Ponte", email = "hu.po.xyz@gmail.com" },
@@ -32,15 +32,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+bot = [
+    "lerobot[tatbot,intelrealsense,smolvla] @ git+https://github.com/hu-po/lerobot.git@main",
+    "trossen-arm==1.8.3",
+    "evdev==1.9.2",
+]
 dev = [
     "isort",
     "ruff",
 ]
-bot = [
-    "lerobot[tatbot,intelrealsense,smolvla] @ git+https://github.com/hu-po/lerobot.git@main",
-    "pyrealsense2==2.55.1.6486",
-    "trossen-arm==1.8.3",
-    "evdev==1.9.2",
+img = [
+    "opencv-python==4.11.0.86",
+    "Pillow>=9.0.0,<11.0.0",
 ]
 gen = [
     "jax[cuda12]>=0.4.0,<0.5.0",
@@ -58,13 +61,13 @@ net = [
     "paramiko==3.5.1",
     "mcp[cli]==1.9.4",
 ]
+rs = [
+    "pyrealsense2==2.55.1.6486",
+]
 tag = [
-    "ffmpeg-python==0.2.0",
     "pupil-apriltags==1.0.4.post11",
 ]
 viz = [
-    "opencv-python==4.11.0.86",
-    "Pillow>=9.0.0,<11.0.0",
     "viser==1.0.0",
     "pyliblzfse>=0.4.1",
 ]
