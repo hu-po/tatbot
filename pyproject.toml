@@ -34,6 +34,7 @@ dependencies = [
 [project.optional-dependencies]
 bot = [
     "lerobot[tatbot,intelrealsense,smolvla] @ git+https://github.com/hu-po/lerobot.git@main",
+    "pyrealsense2==2.55.1.6486",
     "trossen-arm==1.8.3",
     "evdev==1.9.2",
 ]
@@ -60,9 +61,6 @@ map = [
 net = [
     "paramiko==3.5.1",
     "mcp[cli]==1.9.4",
-]
-rs = [
-    "pyrealsense2==2.55.1.6486",
 ]
 tag = [
     "pupil-apriltags==1.0.4.post11",
