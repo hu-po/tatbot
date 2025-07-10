@@ -720,7 +720,7 @@
     <parent link="left/link_6"/>
     <child link="left/carriage_right"/>
     <axis xyz="0 -1 0"/>
-    <limit effort="400.0" lower="0.0" upper="0.001" velocity="0.0875"/>
+    <limit effort="400.0" lower="0.0" upper="0.04" velocity="0.0875"/>
   </joint>
   <link name="left/carriage_left">
     <inertial>
@@ -773,7 +773,6 @@
     <origin rpy="0 0 0" xyz="0 0 0"/>
     <parent link="left/carriage_left"/>
     <child link="left/leader_finger_left_thumb"/>
-    <axis xyz="0 0 0"/>
   </joint>
 
   <!-- apriltag 6 -->
@@ -1051,7 +1050,7 @@
     <parent link="right/link_6"/>
     <child link="right/carriage_right"/>
     <axis xyz="0 -1 0"/>
-    <limit effort="400.0" lower="0.0" upper="0.001" velocity="0.0875"/>
+    <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
   </joint>
   <link name="right/carriage_left">
     <inertial>
@@ -1078,7 +1077,7 @@
     <parent link="right/link_6"/>
     <child link="right/carriage_left"/>
     <axis xyz="0 1 0"/>
-    <limit effort="400.0" lower="0.0" upper="0.001" velocity="0.0875"/>
+    <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
   </joint>
   <link name="right/leader_finger_right_thumb">
     <inertial>
@@ -1104,7 +1103,6 @@
     <origin rpy="0 0 0" xyz="0 0 -0.008"/>
     <parent link="right/carriage_right"/>
     <child link="right/leader_finger_right_thumb"/>
-    <axis xyz="0 0 0"/>
   </joint>
 
   <!-- apriltag 7 -->
