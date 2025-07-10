@@ -86,15 +86,18 @@ def record(config: RecordConfig):
     scene_path = os.path.join(dataset_dir, "scene.yaml")
     scene.to_yaml(scene_path)
 
-    if scene.design_dir_path is not None:
-        strokes: StrokeList = make_gcode_strokes(scene)
-    else:
-        strokes: StrokeList = make_align_strokes(scene)
-    num_strokes = len(strokes.strokes)
+    strokes_path = os.path.join(dataset_dir, f"strokes.yaml")
     strokebatch_path = os.path.join(dataset_dir, f"strokebatch.safetensors")
     if config.resume:
         strokebatch: StrokeBatch = StrokeBatch.load(strokebatch_path)
+        strokes: StrokeList = StrokeList.load(strokes_path)
     else:
+        if scene.design_dir_path is not None:
+            strokes: StrokeList = make_gcode_strokes(scene)
+        else:
+            strokes: StrokeList = make_align_strokes(scene)
+        strokes.save(strokes_path)
+        num_strokes = len(strokes.strokes)
         strokebatch: StrokeBatch = strokebatch_from_strokes(scene=scene, strokelist=strokes)
         strokebatch.save(strokebatch_path)
 

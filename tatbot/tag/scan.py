@@ -8,6 +8,7 @@ import numpy as np
 
 from lerobot.cameras.realsense import RealSenseCameraConfig
 from lerobot.cameras.opencv import OpenCVCameraConfig
+from lerobot.cameras.utils import make_cameras_from_configs
 
 from tatbot.tag.extrinsics import get_extrinsics
 from tatbot.data.cams import Cams
@@ -49,7 +50,7 @@ def scan(config: ScanConfig):
     scene_path = os.path.join(scan_dir, "scene.yaml")
     scene.to_yaml(scene_path)
 
-    cameras: dict[str, Union[RealSenseCameraConfig, OpenCVCameraConfig]] = {}
+    camera_configs: dict[str, Union[RealSenseCameraConfig, OpenCVCameraConfig]] = {}
     for cam in scene.cams.realsenses:
         cameras[cam.name] = RealSenseCameraConfig(
             fps=cam.fps,
@@ -67,9 +68,10 @@ def scan(config: ScanConfig):
             password=cam.password,
             rtsp_port=cam.rtsp_port,
         )
-    
+    cameras = make_cameras_from_configs(camera_configs)
     for cam in cameras.values():
         cam.connect()
+        log.info(f"✅ Connected to {cam.name}")
 
     image_paths = []
     for cam_name, cam in cameras.items():
@@ -83,7 +85,7 @@ def scan(config: ScanConfig):
         log.debug(f"{cam_name} read frame: {dt_ms:.1f}ms")
         image_path = os.path.join(scan_dir, f"{cam_name}.png")
         Image.fromarray(image_np).save(image_path)
-        log.info(f"🗃️ Saved frame to {image_path}")
+        log.info(f"✅ Saved frame to {image_path}")
         image_paths.append(image_path)
     
     cams: Cams = get_extrinsics(image_paths, cameras, scene.tags)
