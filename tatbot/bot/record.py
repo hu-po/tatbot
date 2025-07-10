@@ -66,7 +66,7 @@ class RecordConfig:
 
     enable_conditioning_cameras: bool = False
     """Whether to enable conditioning cameras (this slows down the loop)."""
-    enable_joystick: bool = False
+    enable_joystick: bool = True
     """Whether to enable joystick control."""
 
 
@@ -245,11 +245,9 @@ def record(config: RecordConfig):
                 action = atari_teleop.get_action()
                 if action.get("red_button", False):
                     raise KeyboardInterrupt()
-                if action.get("y", 0.0) > 0.0:
-                    offset_idx += 1
+                if action.get("y", None) is not None:
+                    offset_idx += int(action["y"])
                     offset_idx = min(offset_idx, scene.offset_num - 1)
-                elif action.get("y", 0.0) < 0.0:
-                    offset_idx -= 1
                     offset_idx = max(0, offset_idx)
                 log.info(f"🎮 offset index: {offset_idx}")
 

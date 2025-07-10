@@ -24,17 +24,22 @@ def make_inkdip_func(scene: Scene) -> Callable:
         num_down = scene.stroke_length // 3
         num_up = scene.stroke_length // 3
         num_wait = scene.stroke_length - num_down - num_up
+        depth_m = inkcap.depth_m / 2 # half depth
         # dip down to inkcap depth
-        down_z = np.linspace(0, inkcap.depth_m, num_down, endpoint=False)
+        down_z = np.linspace(0, depth_m, num_down, endpoint=False)
         # wait at depth
-        wait_z = np.full(num_wait, inkcap.depth_m)
+        wait_z = np.full(num_wait, depth_m)
         # retract back up
-        up_z = np.linspace(inkcap.depth_m, 0, num_up, endpoint=True)
+        up_z = np.linspace(depth_m, 0, num_up, endpoint=True)
         # concatenate into final inkdip position array
         inkdip_pos = inkcap.pose.pos.xyz + np.hstack([
             np.zeros((scene.stroke_length, 2)), # x and y are 0
             -np.concatenate([down_z, wait_z, up_z]).reshape(-1, 1),
         ])
+        if arm == "left":
+            inkdip_pos += scene.ee_offset_l.xyz
+        else:
+            inkdip_pos += scene.ee_offset_r.xyz
         return Stroke(
                 description=f"{arm} arm inkdip into {inkcap.name} to fill with {color} ink",
                 is_inkdip=True,
