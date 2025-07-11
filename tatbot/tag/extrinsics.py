@@ -33,21 +33,14 @@ def get_extrinsics(
         camera_name = image_path.split('/')[-1].split('.')[0]
         log.info(f"Tracking tags in {image_path} for {camera_name}")
         camera_config = cams.get_camera(camera_name)
-        camera_pos = camera_config.extrinsics.pos
-        camera_wxyz = camera_config.extrinsics.wxyz
-        intrinsics = camera_config.intrinsics
-
         _detected_tags = tracker.track_tags(
             image_path,
-            intrinsics,
-            camera_pos,
-            camera_wxyz,
+            camera_config.intrinsics,
+            camera_config.extrinsics.pos.xyz,
+            camera_config.extrinsics.rot.wxyz,
             output_path=os.path.dirname(image_path),
         )
         detected_tags[camera_name] = _detected_tags
-
-    # assume tags are in the same position for all cameras, and current camera extrinsics are just a guess
-    # do some kind of averaging/optimization to converge towards the correct extrinsics
 
     # First, compute observed T_cam_tag for each detection using initial extrinsics
     observed_tag_cam: dict[str, dict[int, jaxlie.SE3]] = {}
