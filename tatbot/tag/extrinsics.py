@@ -1,5 +1,6 @@
 import os
 from collections import defaultdict
+from dataclasses import replace
 
 import jax.numpy as jnp
 import jaxlie
@@ -18,7 +19,7 @@ def get_extrinsics(
     cams: Cams,
     tags: Tags,
     max_iter: int = 20,
-    epsilon: float = 1e-3,
+    epsilon: float = 1e-5,
 ) -> Cams:
     log.info("Calculating camera extrinsics...")
     log.debug(f"image_paths: {image_paths}")
@@ -132,14 +133,14 @@ def get_extrinsics(
             log.info(f"Converged after {it + 1} iterations")
             break
 
-    updated_cams = cams.copy()
+    updated_cams = replace(cams)
     # populate new camera extrinsics
     for camera_name in current_extrinsics:
         T = current_extrinsics[camera_name]
         new_pos = np.array(T.translation())
         new_wxyz = np.array(T.rotation().wxyz)
         new_extrinsics = Pose(pos=Pos(xyz=new_pos), rot=Rot(wxyz=new_wxyz))
-        camera_config = cams.get_camera(camera_name)
+        camera_config = updated_cams.get_camera(camera_name)
         camera_config.extrinsics = new_extrinsics
         updated_cams.set_camera(camera_name, camera_config)
 
