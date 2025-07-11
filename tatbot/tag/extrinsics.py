@@ -33,12 +33,17 @@ def get_extrinsics(
         camera_name = image_path.split('/')[-1].split('.')[0]
         log.info(f"Tracking tags in {image_path} for {camera_name}")
         camera_config = cams.get_camera(camera_name)
+        # Create output path for annotated image
+        output_dir = os.path.dirname(image_path)
+        base_name = os.path.splitext(os.path.basename(image_path))[0]
+        output_path = os.path.join(output_dir, f"{base_name}_annotated.png")
+        
         _detected_tags = tracker.track_tags(
             image_path,
             camera_config.intrinsics,
             camera_config.extrinsics.pos.xyz,
             camera_config.extrinsics.rot.wxyz,
-            output_path=os.path.dirname(image_path),
+            output_path=output_path,
         )
         detected_tags[camera_name] = _detected_tags
 
