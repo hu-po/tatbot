@@ -8,13 +8,13 @@ ipcameras:
     password: "CAMERA_1_PASSWORD"
     rtsp_port: 554
     intrinsics:
-      fov: 1.57
+      fov: 1.937 # 111° horizontal FOV in radians
       fov_depth: null
       aspect: 1.77
-      fx: 1000.0
-      fy: 1000.0
-      ppx: 1480.0
-      ppy: 834.0
+      fx: 1020.0 # focal length in pixels (width direction)
+      fy: 1500.0 # focal length in pixels (height direction)
+      ppx: 1480.0 # principal point x (image center)
+      ppy: 834.0 # principal point y (image center)
     extrinsics:
       pos:
         xyz: [0.0, 0.0, 0.0]
@@ -29,13 +29,13 @@ ipcameras:
     password: "CAMERA_2_PASSWORD"
     rtsp_port: 554
     intrinsics:
-      fov: 1.57
+      fov: 1.937 # 111° horizontal FOV in radians
       fov_depth: null
       aspect: 1.77
-      fx: 1000.0
-      fy: 1000.0
-      ppx: 1480.0
-      ppy: 834.0
+      fx: 1020.0 # focal length in pixels (width direction)
+      fy: 1500.0 # focal length in pixels (height direction)
+      ppx: 1480.0 # principal point x (image center)
+      ppy: 834.0 # principal point y (image center)
     extrinsics:
       pos:
         xyz: [0.0, 0.0, 0.0]
@@ -50,13 +50,13 @@ ipcameras:
     password: "CAMERA_3_PASSWORD"
     rtsp_port: 554
     intrinsics:
-      fov: 1.57
+      fov: 1.937 # 111° horizontal FOV in radians
       fov_depth: null
       aspect: 1.77
-      fx: 1000.0
-      fy: 1000.0
-      ppx: 1480.0
-      ppy: 834.0
+      fx: 1020.0 # focal length in pixels (width direction)
+      fy: 1500.0 # focal length in pixels (height direction)
+      ppx: 1480.0 # principal point x (image center)
+      ppy: 834.0 # principal point y (image center)
     extrinsics:
       pos:
         xyz: [0.0, 0.0, 0.0]
@@ -71,13 +71,13 @@ ipcameras:
     password: "CAMERA_4_PASSWORD"
     rtsp_port: 554
     intrinsics:
-      fov: 1.57
+      fov: 1.937 # 111° horizontal FOV in radians
       fov_depth: null
       aspect: 1.77
-      fx: 1000.0
-      fy: 1000.0
-      ppx: 1480.0
-      ppy: 834.0
+      fx: 1020.0 # focal length in pixels (width direction)
+      fy: 1500.0 # focal length in pixels (height direction)
+      ppx: 1480.0 # principal point x (image center)
+      ppy: 834.0 # principal point y (image center)
     extrinsics:
       pos:
         xyz: [0.0, 0.0, 0.0]
@@ -92,13 +92,13 @@ ipcameras:
     password: "CAMERA_5_PASSWORD"
     rtsp_port: 554
     intrinsics:
-      fov: 1.57
+      fov: 1.937 # 111° horizontal FOV in radians
       fov_depth: null
       aspect: 1.77
-      fx: 1000.0
-      fy: 1000.0
-      ppx: 1480.0
-      ppy: 834.0
+      fx: 1020.0 # focal length in pixels (width direction)
+      fy: 1500.0 # focal length in pixels (height direction)
+      ppx: 1480.0 # principal point x (image center)
+      ppy: 834.0 # principal point y (image center)
     extrinsics:
       pos:
         xyz: [0.0, 0.0, 0.0]

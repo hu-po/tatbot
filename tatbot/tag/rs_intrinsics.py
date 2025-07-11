@@ -13,7 +13,7 @@ class RealSenseConfig:
     debug: bool = False
     camera_name: Optional[str] = None
     serial_number: Optional[str] = None
-    cams_yaml: str = "~/tatbot/config/cams/all.yaml"
+    cams_yaml: str = "~/tatbot/config/cams/fast.yaml"
     """Path to the camera config YAML file."""
 
 def get_local_realsense_serials() -> List[str]:
