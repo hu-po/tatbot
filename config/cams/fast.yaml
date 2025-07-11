@@ -11,10 +11,10 @@ ipcameras:
       fov: 1.937 # 111° horizontal FOV in radians
       fov_depth: null
       aspect: 1.77
-      fx: 1020.0 # focal length in pixels (width direction)
-      fy: 1500.0 # focal length in pixels (height direction)
-      ppx: 1480.0 # principal point x (image center)
-      ppy: 834.0 # principal point y (image center)
+      fx: 664.0 # focal length in pixels (width direction)
+      fy: 976.5 # focal length in pixels (height direction)
+      ppx: 960.0 # principal point x (image center)
+      ppy: 540.0 # principal point y (image center)
     extrinsics:
       pos:
         xyz: [0.0, 0.0, 0.0]
@@ -32,10 +32,10 @@ ipcameras:
       fov: 1.937 # 111° horizontal FOV in radians
       fov_depth: null
       aspect: 1.77
-      fx: 1020.0 # focal length in pixels (width direction)
-      fy: 1500.0 # focal length in pixels (height direction)
-      ppx: 1480.0 # principal point x (image center)
-      ppy: 834.0 # principal point y (image center)
+      fx: 664.0 # focal length in pixels (width direction)
+      fy: 976.5 # focal length in pixels (height direction)
+      ppx: 960.0 # principal point x (image center)
+      ppy: 540.0 # principal point y (image center)
     extrinsics:
       pos:
         xyz: [0.0, 0.0, 0.0]
@@ -53,10 +53,10 @@ ipcameras:
       fov: 1.937 # 111° horizontal FOV in radians
       fov_depth: null
       aspect: 1.77
-      fx: 1020.0 # focal length in pixels (width direction)
-      fy: 1500.0 # focal length in pixels (height direction)
-      ppx: 1480.0 # principal point x (image center)
-      ppy: 834.0 # principal point y (image center)
+      fx: 664.0 # focal length in pixels (width direction)
+      fy: 976.5 # focal length in pixels (height direction)
+      ppx: 960.0 # principal point x (image center)
+      ppy: 540.0 # principal point y (image center)
     extrinsics:
       pos:
         xyz: [0.0, 0.0, 0.0]
@@ -74,10 +74,10 @@ ipcameras:
       fov: 1.937 # 111° horizontal FOV in radians
       fov_depth: null
       aspect: 1.77
-      fx: 1020.0 # focal length in pixels (width direction)
-      fy: 1500.0 # focal length in pixels (height direction)
-      ppx: 1480.0 # principal point x (image center)
-      ppy: 834.0 # principal point y (image center)
+      fx: 664.0 # focal length in pixels (width direction)
+      fy: 976.5 # focal length in pixels (height direction)
+      ppx: 960.0 # principal point x (image center)
+      ppy: 540.0 # principal point y (image center)
     extrinsics:
       pos:
         xyz: [0.0, 0.0, 0.0]
@@ -95,10 +95,10 @@ ipcameras:
       fov: 1.937 # 111° horizontal FOV in radians
       fov_depth: null
       aspect: 1.77
-      fx: 1020.0 # focal length in pixels (width direction)
-      fy: 1500.0 # focal length in pixels (height direction)
-      ppx: 1480.0 # principal point x (image center)
-      ppy: 834.0 # principal point y (image center)
+      fx: 664.0 # focal length in pixels (width direction)
+      fy: 976.5 # focal length in pixels (height direction)
+      ppx: 960.0 # principal point x (image center)
+      ppy: 540.0 # principal point y (image center)
     extrinsics:
       pos:
         xyz: [0.0, 0.0, 0.0]
@@ -111,15 +111,15 @@ realsenses:
     fps: 30
     serial_number: "218622278376"
     intrinsics:
-      # Color FOV (degrees): H=69.4, V=42.5, D=77
-      # Depth FOV (degrees): H=86, V=57, D=94
-      fov: 1.211 # 69.4 deg in radians
-      fov_depth: 1.501 # 86 deg in radians
+      # Color FOV (degrees): H≈88.5, V≈58, D≈95 (D455 model)
+      # Depth FOV (degrees): H≈90, V≈65, D≈103 (D455 model)
+      fov: 1.544 # ≈88.5 deg in radians (color)
+      fov_depth: 1.571 # ≈90 deg in radians (depth)
       aspect: 1.33
-      fx: 434.0506591796875
-      fy: 433.5442810058594
-      ppx: 430.9583435058594
-      ppy: 238.70144653320312
+      fx: 327.5
+      fy: 433.54
+      ppx: 325.1
+      ppy: 238.7
     extrinsics:
       pos:
         xyz: [0.0, 0.0, 0.0]
@@ -131,15 +131,15 @@ realsenses:
     fps: 30
     serial_number: "230422273017"
     intrinsics:
-      # Color FOV (degrees): H=69.4, V=42.5, D=77
-      # Depth FOV (degrees): H=86, V=57, D=94
-      fov: 1.211 # 69.4 deg in radians
-      fov_depth: 1.501 # 86 deg in radians
+      # Color FOV (degrees): H≈88.5, V≈58, D≈95 (D455 model)
+      # Depth FOV (degrees): H≈90, V≈65, D≈103 (D455 model)
+      fov: 1.544 # ≈88.5 deg in radians (color)
+      fov_depth: 1.571 # ≈90 deg in radians (depth)
       aspect: 1.33
-      fx: 434.95263671875
-      fy: 434.330078125
-      ppx: 419.0846862792969
-      ppy: 237.813232421875
+      fx: 328.2
+      fy: 434.33
+      ppx: 316.3
+      ppy: 237.81
     extrinsics:
       pos:
         xyz: [0.0, 0.0, 0.0]
