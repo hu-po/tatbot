@@ -63,13 +63,12 @@ class Cams(Yaml):
     yaml_dir: str = "~/tatbot/config/cams"
     """Directory containing the config yaml files."""
 
-    @classmethod
-    def get_camera(cls, camera_name: str) -> CameraConfig:
+    def get_camera(self, camera_name: str) -> CameraConfig:
         camera_idx = int(camera_name[-1])
         if "realsense" in camera_name:
-            return cls.realsenses[camera_idx]
+            return self.realsenses[camera_idx]
         else:
-            return cls.ipcameras[camera_idx]
+            return self.ipcameras[camera_idx]
 
     def set_camera(self, camera_name: str, camera_config: CameraConfig):
         camera_idx = int(camera_name[-1])
