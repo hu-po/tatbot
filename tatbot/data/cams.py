@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Union
 
 from tatbot.data import Yaml
 from tatbot.data.pose import Pose
@@ -61,3 +62,18 @@ class Cams(Yaml):
     """List of camera configurations."""
     yaml_dir: str = "~/tatbot/config/cams"
     """Directory containing the config yaml files."""
+
+    @classmethod
+    def get_camera(cls, camera_name: str) -> CameraConfig:
+        camera_idx = int(camera_name[-1])
+        if "realsense" in camera_name:
+            return cls.realsenses[camera_idx]
+        else:
+            return cls.ipcameras[camera_idx]
+
+    def set_camera(self, camera_name: str, camera_config: CameraConfig):
+        camera_idx = int(camera_name[-1])
+        if "realsense" in camera_name:
+            self.realsenses[camera_idx] = camera_config
+        else:
+            self.ipcameras[camera_idx] = camera_config
