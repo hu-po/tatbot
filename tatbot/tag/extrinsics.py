@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import jaxlie
 import numpy as np
 
-from tatbot.data.pose import Pose
+from tatbot.data.pose import Pose, Pos, Rot
 from tatbot.data.cams import Cams
 from tatbot.data.tags import Tags
 from tatbot.tag.tracker import TagTracker
@@ -53,8 +53,8 @@ def get_extrinsics(
     for camera_name in detected_tags:
         camera_config = cams.get_camera(camera_name)
         cam_ex = camera_config.extrinsics
-        camera_pos = jnp.array(cam_ex.pos)
-        camera_wxyz = jnp.array(cam_ex.wxyz)
+        camera_pos = jnp.array(cam_ex.pos.xyz)
+        camera_wxyz = jnp.array(cam_ex.rot.wxyz)
         T_world_cam = jaxlie.SE3.from_rotation_and_translation(
             jaxlie.SO3(camera_wxyz),
             camera_pos
@@ -63,8 +63,8 @@ def get_extrinsics(
 
         observed_tag_cam[camera_name] = {}
         for tag_id, world_pose in detected_tags[camera_name].items():
-            tag_pos = jnp.array(world_pose.pos)
-            tag_wxyz = jnp.array(world_pose.wxyz)
+            tag_pos = jnp.array(world_pose.pos.xyz)
+            tag_wxyz = jnp.array(world_pose.rot.wxyz)
             T_world_tag = jaxlie.SE3.from_rotation_and_translation(
                 jaxlie.SO3(tag_wxyz),
                 tag_pos
@@ -138,7 +138,7 @@ def get_extrinsics(
         T = current_extrinsics[camera_name]
         new_pos = np.array(T.translation())
         new_wxyz = np.array(T.rotation().wxyz)
-        new_extrinsics = Pose(pos=new_pos, wxyz=new_wxyz)
+        new_extrinsics = Pose(pos=Pos(xyz=new_pos), rot=Rot(wxyz=new_wxyz))
         camera_config = cams.get_camera(camera_name)
         camera_config.extrinsics = new_extrinsics
         updated_cams.set_camera(camera_name, camera_config)
