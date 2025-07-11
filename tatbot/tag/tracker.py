@@ -8,7 +8,7 @@ import numpy as np
 import pupil_apriltags as apriltag
 
 from tatbot.data.cams import Intrinsics
-from tatbot.data.pose import Pose
+from tatbot.data.pose import Pose, Rot, Pos
 from tatbot.data.tags import Tags
 from tatbot.utils.colors import COLORS
 from tatbot.utils.log import get_logger
@@ -62,7 +62,7 @@ class TagTracker:
                 tag_in_world = camera_transform_b @ tag_transform_cam
                 pos = tag_in_world.translation()
                 wxyz = tag_in_world.rotation().wxyz
-                detected_tags[d.tag_id] = Pose(pos=pos, wxyz=wxyz)
+                detected_tags[d.tag_id] = Pose(pos=Pos(xyz=pos), rot=Rot(wxyz=wxyz))
                 log.debug(f"🏷️ AprilTag {d.tag_id} - {self.config.enabled_tags[d.tag_id]} - pos: {pos}, wxyz: {wxyz}")
 
                 if output_path is not None:
