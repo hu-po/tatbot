@@ -106,7 +106,13 @@ class Yaml:
             elif origin is list and args:
                 subtype = args[0]
                 return [convert(subtype, v) for v in value]
-            if fieldtype is np.ndarray:
+            # Handle Union types (e.g., np.ndarray | None)
+            if origin is type(None) or (hasattr(fieldtype, '__origin__') and fieldtype.__origin__ is type(None)):
+                return None
+            # Check if fieldtype is np.ndarray or contains np.ndarray in a Union
+            if fieldtype is np.ndarray or (args and np.ndarray in args):
+                if value is None:
+                    return None
                 return np.array(value, dtype=FLOAT_TYPE)
             if hasattr(fieldtype, '__dataclass_fields__') and isinstance(value, dict):
                 fromdict = getattr(fieldtype, '_fromdict', None)

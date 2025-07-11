@@ -9,25 +9,24 @@ from tatbot.utils.log import get_logger
 
 log = get_logger('gen.strokes', '🖌️')
 
-def load_make_strokes(scene: Scene, dirpath: str | None = None, resume: bool = False) -> tuple[StrokeList, StrokeBatch]:
-    if dirpath is not None:
-        strokes_path = os.path.join(dirpath, f"strokes.yaml")
-        strokebatch_path = os.path.join(dirpath, f"strokebatch.safetensors")
-        if resume:
-            log.info(f"🔄 Resuming from {dirpath}")
-            assert os.path.exists(strokes_path), f"❌ Strokes file {strokes_path} does not exist"
-            assert os.path.exists(strokebatch_path), f"❌ Strokebatch file {strokebatch_path} does not exist"
-            strokes: StrokeList = StrokeList.load(strokes_path)
-            strokebatch: StrokeBatch = StrokeBatch.load(strokebatch_path)
-        else:
+def load_make_strokes(scene: Scene, dirpath: str, resume: bool = False) -> tuple[StrokeList, StrokeBatch]:
+    strokes_path = os.path.join(dirpath, f"strokes.yaml")
+    strokebatch_path = os.path.join(dirpath, f"strokebatch.safetensors")
+    if resume:
+        log.info(f"🔄 Resuming from {dirpath}")
+        assert os.path.exists(strokes_path), f"❌ Strokes file {strokes_path} does not exist"
+        assert os.path.exists(strokebatch_path), f"❌ Strokebatch file {strokebatch_path} does not exist"
+        strokes: StrokeList = StrokeList.from_yaml(strokes_path)
+        strokebatch: StrokeBatch = StrokeBatch.load(strokebatch_path)
+    else:
+        if scene.design_dir is not None:
             log.info(f"📂 Generating strokes from design")
             strokes: StrokeList = make_gcode_strokes(scene)
-            strokes.to_yaml(strokes_path)
-    else:
-        log.info(f"📂 Generating generic alignment strokes")
-        strokes: StrokeList = make_align_strokes(scene)
-    strokebatch: StrokeBatch = strokebatch_from_strokes(scene=scene, strokelist=strokes)
-    if dirpath is not None:
+        else:
+            log.info(f"📂 Generating generic alignment strokes")
+            strokes: StrokeList = make_align_strokes(scene, dirpath)
+        strokes.to_yaml(strokes_path)
+        strokebatch: StrokeBatch = strokebatch_from_strokes(scene=scene, strokelist=strokes)
         strokebatch.save(strokebatch_path)
     log.info(f"✅ Loaded {len(strokes.strokes)} strokes")
     return strokes, strokebatch
