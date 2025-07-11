@@ -32,6 +32,7 @@ def get_extrinsics(
         camera_name = image_path.split('/')[-1].split('.')[0]
         log.info(f"Tracking tags in {image_path} for {camera_name}")
         # get camera_pos and camera_wxyz from cams yaml (could be from URDF in future)
+        import pdb; pdb.set_trace()
         camera_pos = cams[camera_name].extrinsics.pos
         camera_wxyz = cams[camera_name].extrinsics.wxyz
         intrinsics = cams[camera_name].intrinsics
