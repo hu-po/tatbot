@@ -33,13 +33,13 @@ def get_extrinsics(
         log.info(f"Tracking tags in {image_path} for {camera_name}")
         # get camera_pos and camera_wxyz from cams yaml (could be from URDF in future)
         if "realsense" in camera_name:
-            camera_pos = cams.realsenses[camera_name].extrinsics.pos
-            camera_wxyz = cams.realsenses[camera_name].extrinsics.wxyz
-            intrinsics = cams.realsenses[camera_name].intrinsics
+            camera_pos = cams['realsenses'][camera_name].extrinsics.pos
+            camera_wxyz = cams['realsenses'][camera_name].extrinsics.wxyz
+            intrinsics = cams['realsenses'][camera_name].intrinsics
         else:
-            camera_pos = cams.ipcameras[camera_name].extrinsics.pos
-            camera_wxyz = cams.ipcameras[camera_name].extrinsics.wxyz
-            intrinsics = cams.ipcameras[camera_name].intrinsics
+            camera_pos = cams['ipcameras'][camera_name].extrinsics.pos
+            camera_wxyz = cams['ipcameras'][camera_name].extrinsics.wxyz
+            intrinsics = cams['ipcameras'][camera_name].intrinsics
 
         _detected_tags = tracker.track_tags(
             image_path,
