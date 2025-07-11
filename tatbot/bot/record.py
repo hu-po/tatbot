@@ -178,6 +178,9 @@ def record(config: RecordConfig):
     # offset index controls needle depth
     offset_idx_l: int = 1 
     offset_idx_r: int = 1
+    # inkdip-specific offset index
+    inkdip_offset_idx_l: int = 1
+    inkdip_offset_idx_r: int = 1
     
     # one episode is a single path
     # when resuming, start from the idx of the next episode
@@ -237,19 +240,37 @@ def record(config: RecordConfig):
                 if action.get("red_button", False):
                     raise KeyboardInterrupt()
                 if action.get("y", None) is not None:
-                    offset_idx_l += int(action["y"])
-                    offset_idx_l = min(offset_idx_l, scene.offset_num - 1)
-                    offset_idx_l = max(0, offset_idx_l)
+                    if stroke_l.is_inkdip:
+                        inkdip_offset_idx_l += int(action["y"])
+                        inkdip_offset_idx_l = min(inkdip_offset_idx_l, scene.offset_num - 1)
+                        inkdip_offset_idx_l = max(0, inkdip_offset_idx_l)
+                    else:
+                        offset_idx_l += int(action["y"])
+                        offset_idx_l = min(offset_idx_l, scene.offset_num - 1)
+                        offset_idx_l = max(0, offset_idx_l)
                 if action.get("x", None) is not None:
-                    offset_idx_r += int(action["x"])
-                    offset_idx_r = min(offset_idx_r, scene.offset_num - 1)
-                    offset_idx_r = max(0, offset_idx_r)
+                    if stroke_r.is_inkdip:
+                        inkdip_offset_idx_r += int(action["x"])
+                        inkdip_offset_idx_r = min(inkdip_offset_idx_r, scene.offset_num - 1)
+                        inkdip_offset_idx_r = max(0, inkdip_offset_idx_r)
+                    else:
+                        offset_idx_r += int(action["x"])
+                        offset_idx_r = min(offset_idx_r, scene.offset_num - 1)
+                        offset_idx_r = max(0, offset_idx_r)
                 log.info(f"🎮 offset index: {offset_idx_l}, {offset_idx_r}")
 
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 
-            joints = strokebatch.offset_joints(stroke_idx, pose_idx, offset_idx_l, offset_idx_r)
+            if stroke_l.is_inkdip:
+                _offset_idx_l = inkdip_offset_idx_l
+            else:
+                _offset_idx_l = offset_idx_l
+            if stroke_r.is_inkdip:
+                _offset_idx_r = inkdip_offset_idx_r
+            else:
+                _offset_idx_r = offset_idx_r
+            joints = strokebatch.offset_joints(stroke_idx, pose_idx, _offset_idx_l, _offset_idx_r)
             robot_action = robot._urdf_joints_to_action(joints)
             goal_time = strokebatch.dt[stroke_idx, pose_idx, offset_idx_l] # TODO: this is a hack, currently dt is the same for both arms
             sent_action = robot.send_action(robot_action, goal_time=goal_time, block="left")
