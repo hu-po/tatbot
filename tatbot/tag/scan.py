@@ -50,16 +50,16 @@ def scan(config: ScanConfig):
     scene_path = os.path.join(scan_dir, "scene.yaml")
     scene.to_yaml(scene_path)
 
-    camera_configs: dict[str, Union[RealSenseCameraConfig, OpenCVCameraConfig]] = {}
+    lerobot_camera_configs: dict[str, Union[RealSenseCameraConfig, OpenCVCameraConfig]] = {}
     for cam in scene.cams.realsenses:
-        camera_configs[cam.name] = RealSenseCameraConfig(
+        lerobot_camera_configs[cam.name] = RealSenseCameraConfig(
             fps=cam.fps,
             width=cam.width,
             height=cam.height,
             serial_number_or_name=cam.serial_number,
         )
     for cam in scene.cams.ipcameras:
-        camera_configs[cam.name] = OpenCVCameraConfig(
+        lerobot_camera_configs[cam.name] = OpenCVCameraConfig(
             fps=cam.fps,
             width=cam.width,
             height=cam.height,
@@ -68,13 +68,13 @@ def scan(config: ScanConfig):
             password=os.environ.get(cam.password, None),
             rtsp_port=cam.rtsp_port,
         )
-    cameras = make_cameras_from_configs(camera_configs)
-    for cam in cameras.values():
+    lerobot_cameras = make_cameras_from_configs(lerobot_camera_configs)
+    for cam in lerobot_cameras.values():
         cam.connect()
         log.info(f"✅ Connected to {cam}")
 
     image_paths = []
-    for cam_name, cam in cameras.items():
+    for cam_name, cam in lerobot_cameras.items():
         start = time.perf_counter()
         try:
             image_np = cam.async_read()
@@ -88,7 +88,7 @@ def scan(config: ScanConfig):
         log.info(f"✅ Saved frame to {image_path}")
         image_paths.append(image_path)
     
-    cams: Cams = get_extrinsics(image_paths, cameras, scene.tags)
+    cams: Cams = get_extrinsics(image_paths, scene.cams, scene.tags)
     log.info(f"cams: {cams}")
     log.info("✅ Done")
 
@@ -97,5 +97,5 @@ if __name__ == "__main__":
     print_config(args)
     if args.debug:
         log.setLevel(logging.DEBUG)
-        # logging.getLogger('lerobot').setLevel(logging.DEBUG)
+        logging.getLogger('lerobot').setLevel(logging.DEBUG)
     scan(args)

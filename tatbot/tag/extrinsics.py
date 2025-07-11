@@ -1,10 +1,9 @@
-import glob
 import os
-import time
 from collections import defaultdict
 
 import jax.numpy as jnp
 import jaxlie
+import numpy as np
 
 from tatbot.data.pose import Pose
 from tatbot.data.cams import Cams
@@ -32,10 +31,14 @@ def get_extrinsics(
         camera_name = image_path.split('/')[-1].split('.')[0]
         log.info(f"Tracking tags in {image_path} for {camera_name}")
         # get camera_pos and camera_wxyz from cams yaml (could be from URDF in future)
-        import pdb; pdb.set_trace()
-        camera_pos = cams[camera_name].extrinsics.pos
-        camera_wxyz = cams[camera_name].extrinsics.wxyz
-        intrinsics = cams[camera_name].intrinsics
+        if "realsense" in camera_name:
+            camera_pos = cams.realsenses[camera_name].extrinsics.pos
+            camera_wxyz = cams.realsenses[camera_name].extrinsics.wxyz
+            intrinsics = cams.realsenses[camera_name].intrinsics
+        else:
+            camera_pos = cams.ipcameras[camera_name].extrinsics.pos
+            camera_wxyz = cams.ipcameras[camera_name].extrinsics.wxyz
+            intrinsics = cams.ipcameras[camera_name].intrinsics
 
         _detected_tags = tracker.track_tags(
             image_path,
@@ -53,7 +56,10 @@ def get_extrinsics(
     observed_tag_cam: dict[str, dict[int, jaxlie.SE3]] = {}
     current_extrinsics: dict[str, jaxlie.SE3] = {}
     for camera_name in detected_tags:
-        cam_ex = cams[camera_name].extrinsics
+        if "realsense" in camera_name:
+            cam_ex = cams.realsenses[camera_name].extrinsics
+        else:
+            cam_ex = cams.ipcameras[camera_name].extrinsics
         camera_pos = jnp.array(cam_ex.pos)
         camera_wxyz = jnp.array(cam_ex.wxyz)
         T_world_cam = jaxlie.SE3.from_rotation_and_translation(
@@ -142,7 +148,10 @@ def get_extrinsics(
         new_pos = np.array(T.translation())
         new_wxyz = np.array(T.rotation().wxyz)
         new_extrinsics = Pose(pos=new_pos, wxyz=new_wxyz)
-        updated_cams[camera_name].extrinsics = new_extrinsics
+        if "realsense" in camera_name:
+            updated_cams.realsenses[camera_name].extrinsics = new_extrinsics
+        else:
+            updated_cams.ipcameras[camera_name].extrinsics = new_extrinsics
 
     log.info("✅ Done")
     return updated_cams
