@@ -1,0 +1,32 @@
+name: "flower"
+arms_config_name: "bimanual"
+cams_config_name: "fast"
+urdf_config_name: "default"
+skin_config_name: "knee"
+tags_config_name: "default"
+sleep_pos_l_name: "left/sleep"
+sleep_pos_r_name: "right/sleep"
+ready_pos_l_name: "left/ready"
+ready_pos_r_name: "right/ready"
+inkready_pos_l_name: "left/inkready"
+inkready_pos_r_name: "right/inkready"
+inks_config_name: "black_red"
+pen_names_l:
+  - nighthawk_black
+pen_names_r:
+  - bright_red
+pens_config_path: "~/tatbot/config/drawingbotv3/pens/full.json"
+stroke_length: 108
+ee_rot_l:
+  wxyz: [0.5, 0.5, 0.5, -0.5]
+ee_rot_r:
+  wxyz: [0.5, -0.5, 0.5, 0.5]
+hover_offset:
+  xyz: [0.0, 0.0, 0.005]
+ee_offset_l:
+  xyz: [0.002, -0.005, 0.001]
+ee_offset_r:
+  xyz: [0.0, 0.0, 0.0]
+offset_range: [-0.001, 0.003]
+offset_num: 4
+design_dir_path: "~/tatbot/nfs/designs/flower"
