@@ -125,10 +125,10 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
         joints_out[start:end] = np.asarray(batch_joints, dtype=np.float32)
     joints_out = joints_out.reshape(b, l, o, 16)
 
-    # # HACK: the right arm of the first stroke should be at rest while left arm is ink dipping
-    # joints_out[0, :, :, 8:] = np.tile(scene.ready_pos_r.joints, (l, o, 1))
-    # # HACK: the left arm of the final path should be at rest since last stroke is right-only
-    # joints_out[-1, :, :, :8] = np.tile(scene.ready_pos_l.joints, (l, o, 1))
+    # HACK: the right arm of the first stroke should be at rest while left arm is ink dipping
+    joints_out[0, :, :, 8:] = np.tile(scene.ready_pos_r.joints, (l, o, 1))
+    # HACK: the left arm of the final path should be at rest since last stroke is right-only
+    joints_out[-1, :, :, :8] = np.tile(scene.ready_pos_l.joints, (l, o, 1))
 
     strokebatch = StrokeBatch(
         ee_pos_l=jnp.array(ee_pos_l),

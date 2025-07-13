@@ -230,6 +230,17 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
     if len(pen_paths_l) == 0 or len(pen_paths_r) == 0:
         raise ValueError("No paths found for left or right arm")
 
+    # Clear existing stroke frame images
+    log.info("Clearing existing stroke frame images...")
+    for file in os.listdir(scene.design_dir):
+        if file.startswith("stroke_") and file.endswith(".png"):
+            file_path = os.path.join(scene.design_dir, file)
+            try:
+                os.remove(file_path)
+                log.debug(f"Removed existing frame: {file}")
+            except OSError as e:
+                log.warning(f"Could not remove {file}: {e}")
+
     # Generate frame images for each stroke
     log.info("Generating frame images for strokes...")
     stroke_frame_paths = {}
