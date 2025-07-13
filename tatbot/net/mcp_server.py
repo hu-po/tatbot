@@ -14,7 +14,7 @@ from mcp.server.fastmcp import FastMCP
 from tatbot.net.net import NetworkManager
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
-log = get_logger('run_mcp', '🔌')
+log = get_logger('net.mcp_server', '🔌')
 
 @dataclass
 class MCPConfig:

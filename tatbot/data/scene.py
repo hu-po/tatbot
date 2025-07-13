@@ -13,7 +13,7 @@ from tatbot.data.tags import Tags
 from tatbot.utils.log import get_logger
 from tatbot.bot.urdf import get_link_poses
 
-log = get_logger("scene", "🌆")
+log = get_logger("data.scene", "🌆")
 
 @dataclass
 class Scene(Yaml):

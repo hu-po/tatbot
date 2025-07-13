@@ -11,7 +11,7 @@ from tatbot.utils.log import get_logger
 from tatbot.utils.colors import COLORS
 from tatbot.data.scene import Scene
 
-log = get_logger('gen.gcode', '🖋️')
+log = get_logger('gen.gcode', '⚙️')
 
 
 def parse_gcode_file(gcode_path: str, scene: Scene) -> list[tuple[np.ndarray, np.ndarray, str]]:

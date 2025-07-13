@@ -10,7 +10,7 @@ import numpy as np
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 from tatbot.map.base import ViewConfig, AppState, symlink_ini_files, cleanup_ini_files, polyscope_view, remove_polyscope_ini_files
 
-log = get_logger('map.view_obj', "📐")
+log = get_logger('map.view_obj', "📦")
 
 def view_obj(config: ViewConfig):
     if not config.mesh_path:

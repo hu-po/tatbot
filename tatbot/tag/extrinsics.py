@@ -12,7 +12,7 @@ from tatbot.data.tags import Tags
 from tatbot.tag.tracker import TagTracker
 from tatbot.utils.log import get_logger
 
-log = get_logger('tag.extrinsics', '🔎')
+log = get_logger('tag.extrinsics', '🎯')
 
 def get_extrinsics(
     image_paths: list[str],

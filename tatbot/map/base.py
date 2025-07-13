@@ -9,7 +9,7 @@ import numpy as np
 
 from tatbot.utils.log import get_logger
 
-log = get_logger('map.base', "📐")
+log = get_logger('map.base', "🗺️")
 
 @dataclass
 class ViewConfig:

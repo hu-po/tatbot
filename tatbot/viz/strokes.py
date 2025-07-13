@@ -10,7 +10,7 @@ from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 from tatbot.viz.base import BaseViz, BaseVizConfig
 from tatbot.gen.strokes import load_make_strokes
 
-log = get_logger('viz.strokes', '🖥️')
+log = get_logger('viz.strokes', '🎨')
 
 @dataclass
 class VizStrokesConfig(BaseVizConfig):

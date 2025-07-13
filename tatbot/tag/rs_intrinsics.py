@@ -6,7 +6,7 @@ from typing import Optional, List, Dict, Any
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 from tatbot.data.cams import Cams, RealSenseCameraConfig
 
-log = get_logger('tag.rs_intrinsics', '🔎')
+log = get_logger('tag.rs_intrinsics', '📷')
 
 @dataclass
 class RealSenseConfig:

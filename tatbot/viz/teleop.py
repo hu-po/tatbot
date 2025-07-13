@@ -10,7 +10,7 @@ from tatbot.viz.base import BaseViz, BaseVizConfig
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 from tatbot.data.pose import Pose, ArmPose
 
-log = get_logger('viz.base', '🖥️')
+log = get_logger('viz.teleop', '🎮')
 
 @dataclass
 class TeleopVizConfig(BaseVizConfig):

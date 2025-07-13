@@ -9,7 +9,7 @@ import numpy as np
 from tatbot.data import Yaml
 from tatbot.utils.log import get_logger
 
-log = get_logger('stroke', '🔳')
+log = get_logger('data.stroke', '🔳')
 
 
 @dataclass
