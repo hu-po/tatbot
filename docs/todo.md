@@ -2,6 +2,11 @@
 
 Roughly sorted by priority
 
+- Alignment and calib should be optional add ons to any recording session. 
+- Add origin as alignment points, undergrid with sticking up points to get alignment
+- GUI used by webui agent
+- Use the white amcrest to observe the 3d printer.
+- Plug 3d printer into other battery
 - async policy server/client on https://github.com/hu-po/lerobot/blob/main/docs/source/async.mdx
 - JAX on ojo via jetson-containers https://github.com/dusty-nv/jetson-containers/tree/master/packages/ml/jax
 - red sharpie cross with laser line leveler
