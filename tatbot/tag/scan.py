@@ -70,8 +70,12 @@ def scan(config: ScanConfig):
         )
     lerobot_cameras = make_cameras_from_configs(lerobot_camera_configs)
     for cam in lerobot_cameras.values():
-        cam.connect()
-        log.info(f"✅ Connected to {cam}")
+        try:
+            cam.connect()
+            log.info(f"✅ Connected to {cam}")
+        except Exception as e:
+            log.warning(f"❌Error connecting to {cam}:\n{e}")
+            continue
 
     image_paths = []
     for cam_name, cam in lerobot_cameras.items():
