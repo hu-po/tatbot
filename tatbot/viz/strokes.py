@@ -87,14 +87,14 @@ class VizStrokes(BaseViz):
                 min=0,
                 max=self.scene.offset_num - 1,
                 step=1,
-                initial_value=1,
+                initial_value=0,
             )
             self.offset_idx_slider_r = self.server.gui.add_slider(
                 "offset_idx_r",
                 min=0,
                 max=self.scene.offset_num - 1,
                 step=1,
-                initial_value=1,
+                initial_value=0,
             )
         
 

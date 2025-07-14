@@ -90,7 +90,7 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
 
     # offset depths
     offsets = np.linspace(scene.offset_range[0], scene.offset_range[1], o).astype(np.float32)
-    depth_axis = np.array([0.0, 0.0, -1.0], dtype=np.float32)
+    depth_axis = np.array([0.0, 0.0, 1.0], dtype=np.float32)
     ee_pos_l += offsets[None, None, :, None] * depth_axis
     ee_pos_r += offsets[None, None, :, None] * depth_axis
 

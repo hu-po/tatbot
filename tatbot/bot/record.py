@@ -176,11 +176,11 @@ def record(config: RecordConfig):
         atari_teleop.connect()
     
     # offset index controls needle depth
-    offset_idx_l: int = 1 
-    offset_idx_r: int = 1
+    offset_idx_l: int = 0
+    offset_idx_r: int = 0
     # inkdip-specific offset index
-    inkdip_offset_idx_l: int = 1
-    inkdip_offset_idx_r: int = 1
+    inkdip_offset_idx_l: int = 0
+    inkdip_offset_idx_r: int = 0
     
     # one episode is a single path
     # when resuming, start from the idx of the next episode
