@@ -176,11 +176,12 @@ def record(config: RecordConfig):
         atari_teleop.connect()
     
     # offset index controls needle depth
-    offset_idx_l: int = 0
-    offset_idx_r: int = 0
+    mid_offset_idx: int = scene.offset_num // 2
+    offset_idx_l: int = mid_offset_idx
+    offset_idx_r: int = mid_offset_idx
     # inkdip-specific offset index
-    inkdip_offset_idx_l: int = 0
-    inkdip_offset_idx_r: int = 0
+    inkdip_offset_idx_l: int = mid_offset_idx
+    inkdip_offset_idx_r: int = mid_offset_idx
     
     # one episode is a single path
     # when resuming, start from the idx of the next episode
@@ -257,19 +258,22 @@ def record(config: RecordConfig):
                         offset_idx_r += int(action["x"])
                         offset_idx_r = min(offset_idx_r, scene.offset_num - 1)
                         offset_idx_r = max(0, offset_idx_r)
-                log.info(f"🎮 offset index: {offset_idx_l}, {offset_idx_r}")
 
             observation = robot.get_observation()
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 
             if stroke_l.is_inkdip:
                 _offset_idx_l = inkdip_offset_idx_l
+                log.info(f"🎮 left inkdip offset index: {_offset_idx_l}")
             else:
                 _offset_idx_l = offset_idx_l
+                log.info(f"🎮 left offset index: {_offset_idx_l}")
             if stroke_r.is_inkdip:
                 _offset_idx_r = inkdip_offset_idx_r
+                log.info(f"🎮 right inkdip offset index: {_offset_idx_r}")
             else:
                 _offset_idx_r = offset_idx_r
+                log.info(f"🎮 right offset index: {_offset_idx_r}")
             joints = strokebatch.offset_joints(stroke_idx, pose_idx, _offset_idx_l, _offset_idx_r)
             robot_action = robot._urdf_joints_to_action(joints)
             goal_time = strokebatch.dt[stroke_idx, pose_idx, offset_idx_l] # TODO: this is a hack, currently dt is the same for both arms
