@@ -276,7 +276,7 @@ def record(config: RecordConfig):
                 log.info(f"🎮 right offset index: {_offset_idx_r}")
             joints = strokebatch.offset_joints(stroke_idx, pose_idx, _offset_idx_l, _offset_idx_r)
             robot_action = robot._urdf_joints_to_action(joints)
-            goal_time = strokebatch.dt[stroke_idx, pose_idx, offset_idx_l] # TODO: this is a hack, currently dt is the same for both arms
+            goal_time = float(strokebatch.dt[stroke_idx, pose_idx, offset_idx_l]) # TODO: this is a hack, currently dt is the same for both arms
             sent_action = robot.send_action(robot_action, goal_time=goal_time, block="left")
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
