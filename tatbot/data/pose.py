@@ -24,7 +24,7 @@ class Pose(Yaml):
 
 @dataclass
 class ArmPose(Yaml):
-    joints: tuple[float, ...]
+    joints: np.ndarray = field(default_factory=lambda: np.array([0.0] * 7, dtype=np.float32))
     """Joint positions in radians."""
     yaml_dir: str = "~/tatbot/config/poses"
     """Directory containing the config yaml files."""

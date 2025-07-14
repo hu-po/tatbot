@@ -97,7 +97,6 @@ def record(config: RecordConfig):
         home_pos_l=scene.sleep_pos_l.joints[:7],
         home_pos_r=scene.sleep_pos_r.joints[:7],
         cameras={},
-        cond_cameras={},
         # cameras={
         #     cam.name : RealSenseCameraConfig(
         #         fps=cam.fps,
@@ -106,17 +105,18 @@ def record(config: RecordConfig):
         #         serial_number_or_name=cam.serial_number,
         #     ) for cam in scene.cams.realsenses
         # },
-        # cond_cameras={
-        #     cam.name : OpenCVCameraConfig(
-        #         fps=cam.fps,
-        #         width=cam.width,
-        #         height=cam.height,
-        #         ip=cam.ip,
-        #         username=cam.username,
-        #         password=os.environ.get(cam.password, None),
-        #         rtsp_port=cam.rtsp_port,
-        #     ) for cam in scene.cams.ipcameras
-        # }
+        # cond_cameras={},
+        cond_cameras={
+            cam.name : OpenCVCameraConfig(
+                fps=cam.fps,
+                width=cam.width,
+                height=cam.height,
+                ip=cam.ip,
+                username=cam.username,
+                password=os.environ.get(cam.password, None),
+                rtsp_port=cam.rtsp_port,
+            ) for cam in scene.cams.ipcameras
+        }
     ))
     robot.connect()
 
@@ -219,7 +219,6 @@ def record(config: RecordConfig):
         robot.send_action(ready_action, goal_time=robot.config.goal_time_slow, block="left")
 
         # Per-episode conditioning information is stored in seperate directory
-        # TODO: add conditioning cameras, but right now they slow down the loop too much
         episode_cond = {}
         episode_cond_dir = os.path.join(dataset_cond_dir, f"episode_{stroke_idx:06d}")
         os.makedirs(episode_cond_dir, exist_ok=True)
@@ -230,6 +229,12 @@ def record(config: RecordConfig):
             shutil.copy(stroke_l.frame_path, os.path.join(episode_cond_dir, "stroke_l.png"))
         if stroke_r.frame_path is not None:
             shutil.copy(stroke_r.frame_path, os.path.join(episode_cond_dir, "stroke_r.png"))
+        # conditioning cameras can slow down the loop quite a bit
+        if robot.cond_cameras is not None:
+            episode_cond["images"] = robot.get_conditioning()
+            for cam_key, frame in episode_cond["images"].items():
+                filepath = os.path.join(episode_cond_dir, f"{cam_key}.png")
+                dataset._save_image(frame, filepath)
 
         log.info(f"🤖 recording path {stroke_idx} of {num_strokes}")
         for pose_idx in range(scene.stroke_length):
