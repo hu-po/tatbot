@@ -216,7 +216,7 @@ def record(config: RecordConfig):
             _joints_r = scene.inkready_pos_r
         _full_joints = ArmPose.make_bimanual_joints(_joints_l, _joints_r)
         ready_action = robot._urdf_joints_to_action(_full_joints)
-        robot.send_action(ready_action, goal_time=robot.config.goal_time_slow, block="left")
+        robot.send_action(ready_action, goal_time=robot.config.goal_time_slow, block="both")
 
         # Per-episode conditioning information is stored in seperate directory
         episode_cond = {}
@@ -282,7 +282,7 @@ def record(config: RecordConfig):
             joints = strokebatch.offset_joints(stroke_idx, pose_idx, _offset_idx_l, _offset_idx_r)
             robot_action = robot._urdf_joints_to_action(joints)
             goal_time = float(strokebatch.dt[stroke_idx, pose_idx, offset_idx_l]) # TODO: this is a hack, currently dt is the same for both arms
-            sent_action = robot.send_action(robot_action, goal_time=goal_time, block="left")
+            sent_action = robot.send_action(robot_action, goal_time=goal_time, block="none")
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
@@ -299,7 +299,7 @@ def record(config: RecordConfig):
         dataset.save_episode(episode_cond=episode_cond)
 
         # re-send the arms to the appropriate "ready" pose
-        robot.send_action(ready_action, goal_time=robot.config.goal_time_slow, block="left")
+        robot.send_action(ready_action, goal_time=robot.config.goal_time_slow, block="both")
 
     logging.getLogger().removeHandler(episode_handler)
 
