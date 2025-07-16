@@ -1,9 +1,6 @@
-"""Base MCP server"""
+"""Base MCP server, usually runs on ook."""
 import concurrent.futures
 import logging
-import os
-import re
-import tarfile
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -45,7 +42,7 @@ def ping_nodes(nodes: Optional[List[str]] = None) -> str:
             executor.submit(net._test_node_connection, node): node for node in target_nodes
         }
         for future in concurrent.futures.as_completed(future_to_node):
-            _name, success, message = future.result()
+            _, success, message = future.result()
             messages.append(message)
             if not success:
                 all_success = False
@@ -56,48 +53,53 @@ def ping_nodes(nodes: Optional[List[str]] = None) -> str:
 
     return f"{header}:\n" + "\n".join(f"- {msg}" for msg in sorted(messages))
 
-@mcp.tool(description="Update tatbot repo and Python env on nodes via git pull and uv.")
-def update_nodes(nodes: Optional[List[str]] = None, timeout: float = 300.0) -> str:
-    log.info(f"🔌 Updating nodes: {nodes or 'all'}")
+
+@mcp.tool(description="(Re)start MCP servers on nodes using their respective startup scripts.")
+def start_mcp_servers(
+    nodes: Optional[List[str]] = ["ojo", "trossen-ai", "rpi1", "rpi2"],
+    timeout: float = 20.0
+) -> str:
+    log.info(f"🔌 Starting MCP servers on nodes: {nodes}")
     target_nodes, error = net.get_target_nodes(nodes)
     if error:
         return error
     if not target_nodes:
-        return "No nodes to update."
-
+        return "No nodes to start MCP servers on."
     results = []
-
     for node in target_nodes:
-        emoji = node.emoji
-
-        log.info(f"{emoji} Updating {node.name} ({node.ip})")
-
+        log.info(f"{node.emoji} Starting MCP server on {node.name} ({node.ip})")
         if net.is_local_node(node):
-            results.append(f"{emoji} {node.name}: Skipped (local node)")
+            results.append(f"{node.emoji} {node.name}: Skipped (local node)")
             continue
-
         try:
             client = net.get_ssh_client(node.ip, node.user)
+            
+            # First, check for and kill any existing MCP servers
+            kill_command = f"pkill -f 'mcp-{node.name}.sh' || true"
+            exit_code, out, err = net._run_remote_command(client, kill_command, timeout=timeout)
+            if exit_code == 0:
+                log.warning(f"{node.emoji} {node.name}: ⚠️ Killed existing MCP server processes")
+            
+            # Wait a moment for processes to fully terminate
+            wait_command = "sleep 2"
+            net._run_remote_command(client, wait_command, timeout=timeout)
+            
+            # Start the new MCP server
             command = (
-                "export PATH=\"$HOME/.local/bin:$PATH\" && "
-                "git -C ~/tatbot pull && "
-                "cd ~/tatbot/src && "
-                "deactivate >/dev/null 2>&1 || true && "
-                "rm -rf .venv && "
-                "rm -f uv.lock && "
-                "uv venv --prompt=\"tatbot\" && "
-                f"uv pip install {node.deps}"
+                f"cd ~/tatbot && "
+                f"nohup bash scripts/mcp-{node.name}.sh > /tmp/mcp-{node.name}.log 2>&1 & "
+                f"echo $!"
             )
             exit_code, out, err = net._run_remote_command(client, command, timeout=timeout)
             client.close()
             if exit_code == 0:
-                results.append(f"{emoji} {node.name}: Success\n{out}")
+                pid = out.strip()
+                results.append(f"{node.emoji} {node.name}: ✅ MCP server started in background (PID: {pid})")
             else:
-                results.append(f"{emoji} {node.name}: Failed\n{err}")
-
+                results.append(f"{node.emoji} {node.name}: ❌ Failed to start MCP server\n{err}")
         except Exception as e:
-            results.append(f"{emoji} {node.name}: Exception occurred: {str(e)}")
-            log.error(f"Failed to pull on {node.name}: {e}")
+            results.append(f"{node.emoji} {node.name}: ❌ Exception occurred: {str(e)}")
+            log.error(f"❌ Failed to start MCP server on {node.name}: {e}")
 
     return "\n\n".join(results)
 
