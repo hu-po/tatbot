@@ -32,10 +32,12 @@ declare -A IGNORE_DIRS=(
   ["$TATBOT_ROOT/.venv"]=""
   ["$TATBOT_ROOT/__pycache__"]=""
   ["$TATBOT_ROOT/config/drawingbotv3"]=""
+  ["$TATBOT_ROOT/config/polyscope"]=""
   ["$TATBOT_ROOT/build"]=""
   ["$TATBOT_ROOT/docs/paper"]=""
   ["$TATBOT_ROOT/docs/logos"]=""
   ["$TATBOT_ROOT/tatbot.egg-info"]=""
+  ["$TATBOT_ROOT/.ruff_cache"]=""
   ["$TATBOT_ROOT/nfs"]=""
   ["$TATBOT_ROOT/urdf"]=""
 )
