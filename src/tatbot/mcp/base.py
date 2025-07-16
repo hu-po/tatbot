@@ -2,6 +2,7 @@
 import concurrent.futures
 import logging
 from dataclasses import dataclass
+import os
 from typing import List, Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -53,6 +54,11 @@ def ping_nodes(nodes: Optional[List[str]] = None) -> str:
 
     return f"{header}:\n" + "\n".join(f"- {msg}" for msg in sorted(messages))
 
+@mcp.tool()
+def list_scenes() -> list[str]:
+    """Lists all available scenes."""
+    scenes_dir = os.path.expanduser("~/tatbot/config/scenes")
+    return [f.replace(".yaml", "") for f in os.listdir(scenes_dir) if f.endswith(".yaml")]
 
 if __name__ == "__main__":
     args = setup_log_with_config(MCPConfig)
