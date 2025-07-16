@@ -9,10 +9,10 @@ import numpy as np
 from tatbot.data.pose import Pose, Pos, Rot
 from tatbot.data.cams import Cams
 from tatbot.data.tags import Tags
-from tatbot.tag.tracker import TagTracker
+from tatbot.cam.tracker import TagTracker
 from tatbot.utils.log import get_logger
 
-log = get_logger('tag.extrinsics', '🎯')
+log = get_logger('cam.extrinsics', '🎯')
 
 def get_extrinsics(
     image_paths: list[str],

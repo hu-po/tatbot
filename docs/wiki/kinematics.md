@@ -9,5 +9,4 @@
 see:
 
 - `tatbot/tatbot/data/stroke.py`
-- `tatbot/tatbot/data/tags.py`
 - `tatbot/tatbot/gen/batch.py`

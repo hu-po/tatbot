@@ -26,7 +26,6 @@ classifiers = [
 ]
 dependencies = [
     "mcp[cli]==1.9.4",
-    "opencv-python==4.11.0.86",
     "paramiko==3.5.1",
     "Pillow>=9.0.0,<11.0.0",
     "pyroki @ git+https://github.com/chungmin99/pyroki.git@main#egg=pyroki",
@@ -37,11 +36,15 @@ dependencies = [
 
 [project.optional-dependencies]
 bot = [
-    "lerobot[tatbot,intelrealsense,smolvla] @ git+https://github.com/hu-po/lerobot.git@main",
-    "pupil-apriltags==1.0.4.post11",
-    "pyrealsense2==2.55.1.6486",
+    "lerobot[tatbot,smolvla] @ git+https://github.com/hu-po/lerobot.git@main",
     "trossen-arm==1.8.3",
     "evdev==1.9.2",
+]
+cam = [
+    "opencv-python==4.11.0.86",
+    "lerobot[intelrealsense] @ git+https://github.com/hu-po/lerobot.git@main",
+    "pupil-apriltags==1.0.4.post11",
+    "pyrealsense2==2.55.1.6486",
 ]
 dev = [
     "isort",
@@ -65,7 +68,7 @@ viz = [
 
 [tool.setuptools.packages.find]
 where = ["src/tatbot"]
-include = ["bot", "data", "gen", "map", "utils", "viz"]
+include = ["bot", "cam", "data", "gen", "map", "mcp", "utils", "viz"]
 
 [build-system]
 requires = ["setuptools>=61.0"]

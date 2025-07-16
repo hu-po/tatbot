@@ -10,7 +10,7 @@ from lerobot.cameras.realsense import RealSenseCameraConfig
 from lerobot.cameras.opencv import OpenCVCameraConfig
 from lerobot.cameras.utils import make_cameras_from_configs
 
-from tatbot.tag.extrinsics import get_extrinsics
+from tatbot.cam.extrinsics import get_extrinsics
 from tatbot.data.cams import Cams
 from tatbot.data.scene import Scene
 from tatbot.utils.log import (
@@ -20,7 +20,7 @@ from tatbot.utils.log import (
     setup_log_with_config,
 )
 
-log = get_logger('tag.scan', '📡')
+log = get_logger('cam.scan', '📡')
 
 @dataclass
 class ScanConfig:
