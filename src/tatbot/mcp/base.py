@@ -18,7 +18,7 @@ class MCPConfig:
     transport: str = "streamable-http"
     """Transport type for MCP server."""
 
-mcp = FastMCP("tatbot.base")
+mcp = FastMCP("tatbot.base", host="127.0.0.1", port=8000)
 net = NetworkManager()
 
 @mcp.resource("nodes://all")
@@ -106,5 +106,6 @@ if __name__ == "__main__":
     args = setup_log_with_config(MCPConfig)
     if args.debug:
         log.setLevel(logging.DEBUG)
+        logging.getLogger('server').setLevel(logging.DEBUG)
     print_config(args)
     mcp.run(transport=args.transport)
