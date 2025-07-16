@@ -65,4 +65,8 @@ if __name__ == "__main__":
     if args.debug:
         log.setLevel(logging.DEBUG)
     print_config(args)
-    mcp.run(transport=args.transport)
+    mcp.run(
+        transport=args.transport,
+        host="0.0.0.0",
+        port=8000,
+    )
