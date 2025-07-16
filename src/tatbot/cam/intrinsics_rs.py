@@ -1,10 +1,11 @@
-import pyrealsense2 as rs
 import logging
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
-from tatbot.utils.log import get_logger, print_config, setup_log_with_config
+import pyrealsense2 as rs
+
 from tatbot.data.cams import Cams, RealSenseCameraConfig
+from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger('cam.intrinsics_rs', '📷')
 

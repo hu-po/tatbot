@@ -3,10 +3,10 @@ from typing import Callable
 
 import numpy as np
 
-from tatbot.utils.log import get_logger
-from tatbot.data.stroke import Stroke
-from tatbot.data.scene import Scene
 from tatbot.data.inks import InkCap
+from tatbot.data.scene import Scene
+from tatbot.data.stroke import Stroke
+from tatbot.utils.log import get_logger
 
 log = get_logger('gen.inkdip', '💧')
 

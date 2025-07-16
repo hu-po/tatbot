@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from tatbot.data import Yaml
 
+
 @dataclass
 class Tags(Yaml):
     family: str

@@ -1,14 +1,14 @@
 import logging
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
 import numpy as np
 
-from tatbot.gen.ik import ik
 from tatbot.bot.urdf import get_link_indices, get_link_poses
-from tatbot.viz.base import BaseViz, BaseVizConfig
+from tatbot.data.pose import ArmPose, Pose
+from tatbot.gen.ik import ik
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
-from tatbot.data.pose import Pose, ArmPose
+from tatbot.viz.base import BaseViz, BaseVizConfig
 
 log = get_logger('viz.teleop', '🎮')
 

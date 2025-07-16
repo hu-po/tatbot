@@ -4,6 +4,7 @@ from typing import Union
 from tatbot.data import Yaml
 from tatbot.data.pose import Pose
 
+
 @dataclass
 class Intrinsics(Yaml):
     fov: float

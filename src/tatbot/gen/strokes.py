@@ -1,10 +1,10 @@
 import os
 
 from tatbot.data.scene import Scene
-from tatbot.data.stroke import StrokeList, StrokeBatch
-from tatbot.gen.gcode import make_gcode_strokes
+from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.align import make_align_strokes
 from tatbot.gen.batch import strokebatch_from_strokes
+from tatbot.gen.gcode import make_gcode_strokes
 from tatbot.utils.log import get_logger
 
 log = get_logger('gen.strokes', '🖌️')

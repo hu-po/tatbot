@@ -1,14 +1,21 @@
 import logging
 import os
 
+import numpy as np
 import polyscope as ps
 import potpourri3d as pp3d
 import trimesh
 from PIL import Image
-import numpy as np
 
+from tatbot.map.base import (
+    AppState,
+    ViewConfig,
+    cleanup_ini_files,
+    polyscope_view,
+    remove_polyscope_ini_files,
+    symlink_ini_files,
+)
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
-from tatbot.map.base import ViewConfig, AppState, symlink_ini_files, cleanup_ini_files, polyscope_view, remove_polyscope_ini_files
 
 log = get_logger('map.view_obj', "📦")
 

@@ -1,9 +1,9 @@
 import numpy as np
 
+from tatbot.data.scene import Scene
 from tatbot.data.stroke import Stroke, StrokeList
 from tatbot.gen.inkdip import make_inkdip_func
 from tatbot.utils.log import get_logger
-from tatbot.data.scene import Scene
 
 log = get_logger('gen.align', '📏')
 

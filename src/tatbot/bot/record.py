@@ -2,25 +2,25 @@ import logging
 import os
 import shutil
 import time
+import traceback
 from dataclasses import dataclass
 from io import StringIO
-import traceback
 
+from lerobot.cameras.opencv import OpenCVCameraConfig
+from lerobot.cameras.realsense import RealSenseCameraConfig
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
 from lerobot.robots import make_robot_from_config
 from lerobot.robots.tatbot.config_tatbot import TatbotConfig
-from lerobot.cameras.realsense import RealSenseCameraConfig
-from lerobot.cameras.opencv import OpenCVCameraConfig
+from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorConfig
 from lerobot.utils.control_utils import (
     sanity_check_dataset_name,
     sanity_check_dataset_robot_compatibility,
 )
 from lerobot.utils.robot_utils import busy_wait
-from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorConfig
 
-from tatbot.data.scene import Scene
 from tatbot.data.pose import ArmPose
+from tatbot.data.scene import Scene
 from tatbot.gen.strokes import load_make_strokes
 from tatbot.utils.log import (
     LOG_FORMAT,

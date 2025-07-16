@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from tatbot.data import Yaml
 
+
 @dataclass
 class Arms(Yaml):
     ip_address_l: str

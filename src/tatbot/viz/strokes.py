@@ -1,14 +1,14 @@
 import logging
-from dataclasses import dataclass
 import time
+from dataclasses import dataclass
 
 import cv2
 import numpy as np
 
+from tatbot.gen.strokes import load_make_strokes
 from tatbot.utils.colors import COLORS
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 from tatbot.viz.base import BaseViz, BaseVizConfig
-from tatbot.gen.strokes import load_make_strokes
 
 log = get_logger('viz.strokes', '🎨')
 

@@ -1,10 +1,10 @@
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
 import jax_dataclasses as jdc
+import numpy as np
 from jaxtyping import Array, Float
 from safetensors.flax import load_file, save_file
-import numpy as np
 
 from tatbot.data import Yaml
 from tatbot.utils.log import get_logger

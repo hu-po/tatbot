@@ -1,15 +1,15 @@
 import time
+from typing import Optional
 
 import jax
 import jax.numpy as jnp
 import jax_dataclasses as jdc
 import jaxlie
-from jaxtyping import Array, Float
-from typing import Optional
 import numpy as np
+from jaxtyping import Array, Float
 
 from tatbot.data.scene import Scene
-from tatbot.data.stroke import StrokeList, StrokeBatch
+from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.ik import batch_ik
 from tatbot.utils.log import get_logger
 

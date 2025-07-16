@@ -5,11 +5,11 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from tatbot.data.scene import Scene
 from tatbot.data.stroke import Stroke, StrokeList
 from tatbot.gen.inkdip import make_inkdip_func
-from tatbot.utils.log import get_logger
 from tatbot.utils.colors import COLORS
-from tatbot.data.scene import Scene
+from tatbot.utils.log import get_logger
 
 log = get_logger('gen.gcode', '⚙️')
 

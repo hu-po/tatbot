@@ -8,7 +8,7 @@ import numpy as np
 import pupil_apriltags as apriltag
 
 from tatbot.data.cams import Intrinsics
-from tatbot.data.pose import Pose, Rot, Pos
+from tatbot.data.pose import Pos, Pose, Rot
 from tatbot.data.tags import Tags
 from tatbot.utils.colors import COLORS
 from tatbot.utils.log import get_logger

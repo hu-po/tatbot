@@ -1,11 +1,11 @@
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Callable, Any, Optional
+from typing import Any, Callable, Optional
 
+import numpy as np
 import polyscope as ps
 import polyscope.imgui as psim
-import numpy as np
 
 from tatbot.utils.log import get_logger
 

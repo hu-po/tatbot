@@ -1,17 +1,17 @@
-from dataclasses import dataclass, field
-import os
 import json
+import os
+from dataclasses import dataclass, field
 
+from tatbot.bot.urdf import get_link_poses
 from tatbot.data import Yaml
 from tatbot.data.arms import Arms
-from tatbot.data.pose import ArmPose, Pos, Rot
 from tatbot.data.cams import Cams
-from tatbot.data.urdf import URDF
+from tatbot.data.inks import Ink, InkCap, Inks
+from tatbot.data.pose import ArmPose, Pos, Rot
 from tatbot.data.skin import Skin
-from tatbot.data.inks import Inks, InkCap, Ink
 from tatbot.data.tags import Tags
+from tatbot.data.urdf import URDF
 from tatbot.utils.log import get_logger
-from tatbot.bot.urdf import get_link_poses
 
 log = get_logger("data.scene", "🌆")
 

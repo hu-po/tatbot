@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from tatbot.data.pose import Pose
 from tatbot.data import Yaml
+from tatbot.data.pose import Pose
 
 
 @dataclass

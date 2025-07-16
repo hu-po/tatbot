@@ -6,8 +6,8 @@ from itertools import chain
 import viser
 from viser.extras import ViserUrdf
 
-from tatbot.data.scene import Scene
 from tatbot.bot.urdf import get_link_poses, load_robot
+from tatbot.data.scene import Scene
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger('viz.base', '🖼️')
