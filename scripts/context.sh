@@ -29,16 +29,15 @@ declare -A IGNORE_DIRS=(
   # ----------------------------- ADD DIRECTORIES TO IGNORE HERE
   ["$TATBOT_ROOT/.git"]=""
   ["$TATBOT_ROOT/.cursor"]=""
-  ["$TATBOT_ROOT/urdf"]=""
-  ["$TATBOT_ROOT/config"]=""
+  ["$TATBOT_ROOT/.venv"]=""
+  ["$TATBOT_ROOT/__pycache__"]=""
+  ["$TATBOT_ROOT/config/drawingbotv3"]=""
+  ["$TATBOT_ROOT/build"]=""
   ["$TATBOT_ROOT/docs/paper"]=""
   ["$TATBOT_ROOT/docs/logos"]=""
-  ["$TATBOT_ROOT/output"]=""
-  ["$TATBOT_ROOT/__pycache__"]=""
-  ["$TATBOT_ROOT/.venv"]=""
-  ["$TATBOT_ROOT/build"]=""
   ["$TATBOT_ROOT/tatbot.egg-info"]=""
   ["$TATBOT_ROOT/nfs"]=""
+  ["$TATBOT_ROOT/urdf"]=""
 )
 
 declare -A DIRECTORIES=(

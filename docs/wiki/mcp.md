@@ -1,10 +1,10 @@
-# MCP
+# MCP (Model Context Protocol)
 
-tatbot uses the [MCP](https://github.com/modelcontextprotocol/python-sdk) protocol to communicate between nodes.
+- individual nodes run mcp servers which are combined
+- [`mcp-python`](https://github.com/modelcontextprotocol/python-sdk)
 
-```bash
-uv pip install .[mcp]
-uv run tatbot.net.mcp_server
-```
+## Cursor
 
-go to Cursor Settings > Tools and toggle the tatbot mcp server
+- Cursor IDE (on `ook`) is used to interact with mcp servers, to add an mcp server to cursor:
+- `ctrl-shift-p` > "View: OpenMCP Settings" > Toggle the MCP server
+- If you change the tools or restart the server, you must re-toggle the server above

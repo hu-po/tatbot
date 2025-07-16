@@ -25,7 +25,11 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
 dependencies = [
-        "pyroki @ git+https://github.com/chungmin99/pyroki.git@main#egg=pyroki",
+    "mcp[cli]==1.9.4",
+    "opencv-python==4.11.0.86",
+    "paramiko==3.5.1",
+    "Pillow>=9.0.0,<11.0.0",
+    "pyroki @ git+https://github.com/chungmin99/pyroki.git@main#egg=pyroki",
     "pyyaml==6.0.2",
     "safetensors==0.5.3",
     "tyro==0.9.24",
@@ -34,6 +38,7 @@ dependencies = [
 [project.optional-dependencies]
 bot = [
     "lerobot[tatbot,intelrealsense,smolvla] @ git+https://github.com/hu-po/lerobot.git@main",
+    "pupil-apriltags==1.0.4.post11",
     "pyrealsense2==2.55.1.6486",
     "trossen-arm==1.8.3",
     "evdev==1.9.2",
@@ -41,11 +46,6 @@ bot = [
 dev = [
     "isort",
     "ruff",
-]
-img = [
-    "opencv-python==4.11.0.86",
-    "Pillow>=9.0.0,<11.0.0",
-    "replicate==1.0.7",
 ]
 gen = [
     "jax[cuda12]>=0.4.0,<0.5.0",
@@ -58,24 +58,14 @@ map = [
     "trimesh==4.6.13",
     "pyglet==1.5.31",
 ]
-net = [
-    "paramiko==3.5.1",
-    "mcp[cli]==1.9.4",
-]
-tag = [
-    "pupil-apriltags==1.0.4.post11",
-]
 viz = [
     "viser==1.0.0",
     "pyliblzfse>=0.4.1",
 ]
-vla = [
-    "lerobot[tatbot,smolvla] @ git+https://github.com/hu-po/lerobot.git@main",
-]
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["bot", "data", "gen", "map", "net", "tag", "utils", "viz"]
+where = ["src/tatbot"]
+include = ["bot", "data", "gen", "map", "utils", "viz"]
 
 [build-system]
 requires = ["setuptools>=61.0"]
@@ -86,11 +76,9 @@ profile = "black"
 line_length = 88
 
 [tool.ruff]
-line-length = 120
-# Read more here https://beta.ruff.rs/docs/rules/
-# By default, Ruff enables Flake8's E and F rules
-# Pyflakes - F, pycodestyle - E, W
-# flake8-builtins - A
-# Pylint - PLC, PLE, PLW
-# isort - I
-select = ['E', 'F', 'W', 'A', 'PLC', 'PLE', 'PLW', 'I']
+line-length = 110
+target-version = "py310"
+exclude = ["tests/artifacts/**/*.safetensors", "*_pb2.py", "*_pb2_grpc.py"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "N", "B", "C4", "SIM"]

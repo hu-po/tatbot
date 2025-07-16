@@ -1,8 +1,9 @@
 # Gr00t
 
-[blog](https://huggingface.co/blog/nvidia/gr00t-n1-5-so101-tuning)
-[model](https://huggingface.co/nvidia/GR00T-N1.5-3B)
-[repo](https://github.com/NVIDIA/Isaac-GR00T)
+- [blog](https://huggingface.co/blog/nvidia/gr00t-n1-5-so101-tuning)
+- [model](https://huggingface.co/nvidia/GR00T-N1.5-3B)
+- [repo](https://github.com/NVIDIA/Isaac-GR00T)
+- [tatbot fork](https://github.com/hu-po/Isaac-GR00T)
 
 ## Train
 

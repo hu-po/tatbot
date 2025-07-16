@@ -1,7 +1,9 @@
 # SmolVLA
 
-[blog](https://huggingface.co/blog/smolvla)
-[model](https://huggingface.co/lerobot/smolvla_base)
+- [blog](https://huggingface.co/blog/smolvla)
+- [model](https://huggingface.co/lerobot/smolvla_base)
+- [tatbot fork](https://github.com/hu-po/lerobot)
+- smolvla is part of the lerobot repo
 
 #### Train
 
