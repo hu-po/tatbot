@@ -1,9 +1,9 @@
 #!/bin/bash
 echo "Closing existing MCP server on trossen-ai 🦾..."
 pkill -f "tatbot.mcp.trossen-ai" || true
-rm -f ~/tatbot/nfs/logs/trossen-ai.log
+rm -f ~/tatbot/nfs/mcp-logs/trossen-ai.log
 echo "Starting MCP server on trossen-ai 🦾..."
 export PATH="$HOME/.local/bin:$PATH"
 source ~/tatbot/scripts/setup-env.sh
 uv pip install .[bot,cam,viz]
-nohup uv run -m tatbot.mcp.trossen-ai > ~/tatbot/nfs/logs/trossen-ai.log 2>&1 &
+nohup uv run -m tatbot.mcp.trossen-ai > ~/tatbot/nfs/mcp-logs/trossen-ai.log 2>&1 &

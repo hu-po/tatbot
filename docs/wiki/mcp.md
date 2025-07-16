@@ -10,6 +10,8 @@ start all the mcp servers:
 ./scripts/start-mcp-servers.sh
 ```
 
+mcp logs are written to `~/tatbot/nfs/mcp-logs/`
+
 ## Cursor
 
 - Cursor IDE (on `ook`) is used to interact with mcp servers, to add an mcp server to cursor:
