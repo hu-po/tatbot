@@ -238,13 +238,14 @@ class NetworkManager:
 
         try:
             # Use explicit shell invocation for better environment handling
+            export_path = 'export PATH="$HOME/.local/bin:$PATH" && '
             if background:
                 # For background processes, use nohup and capture PID
-                shell_command = f'bash -l -c "nohup {command} > /tmp/remote_cmd.log 2>&1 & echo $!"'
+                shell_command = f'bash -l -c "{export_path}nohup {command} > /tmp/remote_cmd.log 2>&1 & echo $!"'
                 log.debug(f"🌐 Running background command: {shell_command}")
             else:
                 # For foreground processes, use login shell
-                shell_command = f'bash -l -c "{command}"'
+                shell_command = f'bash -l -c "{export_path}{command}"'
                 log.debug(f"🌐 Running foreground command: {shell_command}")
 
             stdin, stdout, stderr = client.exec_command(shell_command, timeout=timeout, get_pty=True)

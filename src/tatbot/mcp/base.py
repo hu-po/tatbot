@@ -84,7 +84,7 @@ def start_mcp_servers(
             wait_command = "sleep 2"
             net._run_remote_command(client, wait_command, timeout=timeout)
             # Start the new MCP server in background
-            command = f"cd ~/tatbot && bash scripts/mcp-{node.name}.sh"
+            command = f"bash ~/tatbot/scripts/mcp-{node.name}.sh"
             exit_code, out, err = net._run_remote_command(client, command, timeout=timeout, background=True)
             client.close()
             if exit_code == 0:
