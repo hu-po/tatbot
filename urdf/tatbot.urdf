@@ -187,7 +187,7 @@
 
   <!-- camera1 -->
   <joint name="camera1_mount_joint" type="fixed">
-    <origin rpy="0 1.5707963267948966 0" xyz="0.0378 0.258125 -0.08"/>
+    <origin rpy="0 1.5707963267948966 -1.5707963267948966" xyz="-0.0275 0.09 0.2"/>
     <parent link="root"/>
     <child link="camera1"/>
   </joint>
@@ -221,7 +221,7 @@
   
   <!-- camera2 -->
   <joint name="camera2_mount_joint" type="fixed">
-    <origin rpy="0 1.5707963267948966 0" xyz="-0.257 0.08128 0.5"/>
+    <origin rpy="0 1.5707963267948966 0" xyz="-0.0275 0.27 0.6"/>
     <parent link="root"/>
     <child link="camera2"/>
   </joint>
@@ -255,7 +255,7 @@
   
   <!-- camera3 -->
   <joint name="camera3_mount_joint" type="fixed">
-    <origin rpy="0 1.5707963267948966 0" xyz="-0.257 0.06 0.7"/>
+    <origin rpy="0 1.5707963267948966 0" xyz="-0.0275 0.11 0.7"/>
     <parent link="root"/>
     <child link="camera3"/>
   </joint>
@@ -289,7 +289,7 @@
 
   <!-- camera4 -->
   <joint name="camera4_mount_joint" type="fixed">
-    <origin rpy="0 1.5707963267948966 0" xyz="-0.257 -0.06 0.7"/>
+    <origin rpy="0 1.5707963267948966 0" xyz="-0.0275 -0.11 0.7"/>
     <parent link="root"/>
     <child link="camera4"/>
   </joint>
@@ -317,7 +317,7 @@
 
   <!-- camera5 -->
   <joint name="camera5_mount_joint" type="fixed">
-    <origin rpy="0 1.5707963267948966 0" xyz="0.0378 -0.258125 -0.08"/>
+    <origin rpy="0 1.5707963267948966 0" xyz="-0.0275 -0.27 0.6"/>
     <parent link="root"/>
     <child link="camera5"/>
   </joint>
@@ -509,7 +509,7 @@
 
   <!-- arm_l -->
   <joint name="left/mount_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0.238125 0"/>
+    <origin rpy="0 0 0" xyz="0 0.2675 0"/>
     <parent link="root"/>
     <child link="left/base_link"/>
   </joint>
@@ -839,7 +839,7 @@
 
   <!-- arm_r -->
   <joint name="right/mount_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 -0.238125 0"/>
+    <origin rpy="0 0 0" xyz="0 -0.2675 0"/>
     <parent link="root"/>
     <child link="right/base_link"/>
   </joint>
@@ -1177,7 +1177,7 @@
     </visual>
   </link>
   <joint name="600mm_front_horizontal_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.0278 0 -0.03"/>
+    <origin rpy="0 0 0" xyz="0.0275 0 -0.01"/>
     <parent link="root"/>
     <child link="600mm_front_horizontal"/>
   </joint>
@@ -1191,7 +1191,7 @@
     </visual>
   </link>
   <joint name="600mm_back_horizontal_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.267 0 -0.03"/>
+    <origin rpy="0 0 0" xyz="-0.0275 0 -0.01"/>
     <parent link="root"/>
     <child link="600mm_back_horizontal"/>
   </joint>
@@ -1207,7 +1207,7 @@
     </visual>
   </link>
   <joint name="600mm_vertical_left_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.267 0.08128 0.28"/>
+    <origin rpy="0 0 0" xyz="-0.0275 0.1 0.30"/>
     <parent link="root"/>
     <child link="600mm_vertical_left"/>
   </joint>
@@ -1221,27 +1221,27 @@
     </visual>
   </link>
   <joint name="600mm_vertical_right_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.267 -0.08128 0.28"/>
+    <origin rpy="0 0 0" xyz="-0.0275 -0.1 0.30"/>
     <parent link="root"/>
     <child link="600mm_vertical_right"/>
   </joint>
-  <link name="300mm_vertical_top">
+  <link name="600mm_vertical_top">
     <visual>
       <origin rpy="1.57079632679 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/frame/t2020_300mm.stl" scale="0.001 0.001 0.001"/>
+        <mesh filename="meshes/frame/t2020_600mm.stl" scale="0.001 0.001 0.001"/>
       </geometry>
       <material name="black"/>
     </visual>
   </link>
-  <joint name="300mm_vertical_top_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.267 0 0.59"/>
+  <joint name="600mm_vertical_top_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.0275 0 0.61"/>
     <parent link="root"/>
-    <child link="300mm_vertical_top"/>
+    <child link="600mm_vertical_top"/>
   </joint>
 
-  <!-- left arm rails -->
-  <link name="300mm_left_rail_left">
+  <!-- front rails -->
+  <link name="300mm_front_rail_left">
     <visual>
       <origin rpy="1.57079632679 0 1.57079632679" xyz="0 0 0"/>
       <geometry>
@@ -1250,12 +1250,12 @@
       <material name="black"/>
     </visual>
   </link>
-  <joint name="300mm_left_rail_left_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.12 0.258125 -0.01"/>
+  <joint name="300mm_front_rail_left_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.08 0.1 -0.01"/>
     <parent link="root"/>
-    <child link="300mm_left_rail_left"/>
+    <child link="300mm_front_rail_left"/>
   </joint>
-  <link name="300mm_left_rail_right">
+  <link name="300mm_front_rail_right">
     <visual>
       <origin rpy="1.57079632679 0 1.57079632679" xyz="0 0 0"/>
       <geometry>
@@ -1264,40 +1264,10 @@
       <material name="black"/>
     </visual>
   </link>
-  <joint name="300mm_left_rail_right_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.12 0.218125 -0.01"/>
+  <joint name="300mm_front_rail_right_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.08 -0.1 -0.01"/>
     <parent link="root"/>
-    <child link="300mm_left_rail_right"/>
-  </joint>
-
-  <!-- right arm rails -->
-  <link name="300mm_right_rail_left">
-    <visual>
-      <origin rpy="1.57079632679 0 1.57079632679" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/frame/t2020_300mm.stl" scale="0.001 0.001 0.001"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-  </link>
-  <joint name="300mm_right_rail_left_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.12 -0.218125 -0.01"/>
-    <parent link="root"/>
-    <child link="300mm_right_rail_left"/>
-  </joint>
-  <link name="300mm_right_rail_right">
-    <visual>
-      <origin rpy="1.57079632679 0 1.57079632679" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/frame/t2020_300mm.stl" scale="0.001 0.001 0.001"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-  </link>
-  <joint name="300mm_right_rail_right_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.12 -0.258125 -0.01"/>
-    <parent link="root"/>
-    <child link="300mm_right_rail_right"/>
+    <child link="300mm_front_rail_right"/>
   </joint>
 
 </robot>
