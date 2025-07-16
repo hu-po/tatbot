@@ -29,7 +29,7 @@ pen_names_r:
   - bright_red
   - lime_green
   - true_blue
-pens_config_path: "~/tatbot/config/drawingbotv3/pens/full.json"
+pens_config_path: "~/tatbot/config/dbv3/pens/full.json"
 stroke_length: 32
 ee_rot_l:
   wxyz: [0.5, 0.5, 0.5, -0.5]
