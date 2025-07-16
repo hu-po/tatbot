@@ -67,7 +67,7 @@ viz = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["src/tatbot"]
+where = ["src"]
 include = ["bot", "cam", "data", "gen", "map", "mcp", "utils", "viz"]
 
 [build-system]
