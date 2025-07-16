@@ -7,7 +7,7 @@ for NODE in "${NODES[@]}"; do
   ssh -f "$NODE" '
     pkill -f mcp-'"$NODE"'.sh || true
     rm -f ~/tatbot/nfs/logs/mcp-'"$NODE"'.txt
-    nohup bash PATH="$HOME/.local/bin:$PATH" ~/tatbot/scripts/mcp/'"$NODE"'.sh > ~/tatbot/nfs/logs/mcp-'"$NODE"'.txt 2>&1 &
+    nohup bash ~/tatbot/scripts/mcp/'"$NODE"'.sh > ~/tatbot/nfs/logs/mcp-'"$NODE"'.txt 2>&1 &
   '
 done
 
