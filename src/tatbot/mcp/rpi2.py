@@ -6,7 +6,7 @@ from tatbot.mcp.base import MCPConfig
 
 log = get_logger('mcp.rpi2', '🔌🍇')
 
-mcp = FastMCP("tatbot.rpi2")
+mcp = FastMCP("tatbot.rpi2", host="0.0.0.0", port=8000)
 
 @mcp.tool(description="Get nfs information")
 def get_nfs_info() -> str:
@@ -17,9 +17,4 @@ if __name__ == "__main__":
     if args.debug:
         log.setLevel(logging.DEBUG)
     print_config(args)
-    
-    mcp.run(
-        transport=args.transport,
-        host="0.0.0.0",
-        port=8000,
-    )
+    mcp.run(transport=args.transport)
