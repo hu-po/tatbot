@@ -83,13 +83,9 @@ def start_mcp_servers(
             # Wait a moment for processes to fully terminate
             wait_command = "sleep 2"
             net._run_remote_command(client, wait_command, timeout=timeout)
-            # Start the new MCP server
-            command = (
-                f"cd ~/tatbot && "
-                f"nohup bash scripts/mcp-{node.name}.sh > /tmp/mcp-{node.name}.log 2>&1 & "
-                f"echo $!"
-            )
-            exit_code, out, err = net._run_remote_command(client, command, timeout=timeout)
+            # Start the new MCP server in background
+            command = f"cd ~/tatbot && bash scripts/mcp-{node.name}.sh"
+            exit_code, out, err = net._run_remote_command(client, command, timeout=timeout, background=True)
             client.close()
             if exit_code == 0:
                 pid = out.strip()

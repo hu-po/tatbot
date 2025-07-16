@@ -221,7 +221,7 @@ class NetworkManager:
         log.debug("🌐 SSH config written and permissions set.")
 
     def _run_remote_command(
-        self, client: SSHClient, command: str, timeout: float = 30.0
+        self, client: SSHClient, command: str, timeout: float = 30.0, background: bool = False
     ) -> Tuple[int, str, str]:
         """Run a command on the remote host.
 
@@ -229,6 +229,7 @@ class NetworkManager:
             client: Connected SSH client
             command: Command to execute
             timeout: Command timeout in seconds
+            background: If True, run command in background and return immediately
 
         Returns:
             Tuple[int, str, str]: (exit_code, stdout, stderr)
@@ -236,25 +237,87 @@ class NetworkManager:
         log.info(f"🌐 🖥️ Running remote command: {command}")
 
         try:
-            stdin, stdout, stderr = client.exec_command(command, timeout=timeout, get_pty=True)
-            exit_code = stdout.channel.recv_exit_status()
-            out = stdout.read().decode("utf-8").strip()
-            err = stderr.read().decode("utf-8").strip()
-
-            if exit_code != 0:
-                log.error(f"🌐 ❌ Command failed with exit code {exit_code}")
-                if err:
-                    log.error(f"🌐 stderr: {err}")
+            # Use explicit shell invocation for better environment handling
+            if background:
+                # For background processes, use nohup and capture PID
+                shell_command = f'bash -l -c "nohup {command} > /tmp/remote_cmd.log 2>&1 & echo $!"'
+                log.debug(f"🌐 Running background command: {shell_command}")
             else:
-                log.debug(f"🌐 ✅ Command completed successfully")
-                if out:
-                    log.debug(f"🌐 stdout: {out}")
+                # For foreground processes, use login shell
+                shell_command = f'bash -l -c "{command}"'
+                log.debug(f"🌐 Running foreground command: {shell_command}")
 
-            return exit_code, out, err
+            stdin, stdout, stderr = client.exec_command(shell_command, timeout=timeout, get_pty=True)
+            
+            if background:
+                # For background processes, just get the PID and return immediately
+                pid = stdout.read().decode("utf-8").strip()
+                err = stderr.read().decode("utf-8").strip()
+                
+                if pid and pid.isdigit():
+                    log.debug(f"🌐 ✅ Background command started with PID: {pid}")
+                    return 0, pid, err
+                else:
+                    log.error(f"🌐 ❌ Failed to start background command: {err}")
+                    return -1, "", err
+            else:
+                # For foreground processes, wait for completion
+                exit_code = stdout.channel.recv_exit_status()
+                out = stdout.read().decode("utf-8").strip()
+                err = stderr.read().decode("utf-8").strip()
+
+                if exit_code != 0:
+                    log.error(f"🌐 ❌ Command failed with exit code {exit_code}")
+                    if err:
+                        log.error(f"🌐 stderr: {err}")
+                else:
+                    log.debug(f"🌐 ✅ Command completed successfully")
+                    if out:
+                        log.debug(f"🌐 stdout: {out}")
+
+                return exit_code, out, err
 
         except Exception as e:
             log.error(f"🌐 ❌ Failed to execute command: {str(e)}")
             raise
+
+    def _check_process_running(self, client: SSHClient, pid: str) -> bool:
+        """Check if a process with the given PID is still running on the remote host.
+        
+        Args:
+            client: Connected SSH client
+            pid: Process ID to check
+            
+        Returns:
+            True if process is running, False otherwise
+        """
+        try:
+            command = f"ps -p {pid} > /dev/null 2>&1 && echo 'running' || echo 'not running'"
+            exit_code, out, err = self._run_remote_command(client, command, timeout=5.0)
+            return exit_code == 0 and "running" in out
+        except Exception as e:
+            log.error(f"🌐 ❌ Failed to check process status: {str(e)}")
+            return False
+
+    def _get_background_log(self, client: SSHClient, log_file: str = "/tmp/remote_cmd.log") -> str:
+        """Get the log output from a background command.
+        
+        Args:
+            client: Connected SSH client
+            log_file: Path to the log file
+            
+        Returns:
+            Contents of the log file, or error message if file doesn't exist
+        """
+        try:
+            command = f"cat {log_file} 2>/dev/null || echo 'Log file not found'"
+            exit_code, out, err = self._run_remote_command(client, command, timeout=5.0)
+            if exit_code == 0 and "Log file not found" not in out:
+                return out
+            else:
+                return f"Log file {log_file} not found or empty"
+        except Exception as e:
+            return f"Failed to read log file: {str(e)}"
 
     def _transfer_file(
         self, client: SSHClient, local_path: str, remote_path: str, direction: str = "put"
