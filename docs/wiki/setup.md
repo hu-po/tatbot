@@ -6,7 +6,7 @@ streamlined environment setup:
 
 ```bash
 git clone --depth=1 https://github.com/hu-po/tatbot.git && cd tatbot
-source scripts/env.sh
+source scripts/setup-env.sh
 uv pip install .[foo,bar] # see optional dependencies below
 ```
 

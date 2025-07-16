@@ -1,5 +1,5 @@
 #!/bin/bash
-source ~/tatbot/scripts/env.sh
+source ~/tatbot/scripts/setup-env.sh
 NODES=("ojo" "rpi1" "rpi2" "trossen-ai")
 
 for NODE in "${NODES[@]}"; do
