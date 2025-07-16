@@ -1,4 +1,6 @@
 """MCP server running on ojo node."""
+import logging
+
 from mcp.server.fastmcp import FastMCP
 
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
