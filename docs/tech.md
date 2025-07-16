@@ -5,6 +5,7 @@ wiki for tatbot (tattoo robot) technical stack
 - [AprilTags](wiki/apriltags.md)
 - [Artwork](wiki/artwork.md)
 - [Cameras](wiki/cameras.md)
+- [Tattoo Gear](wiki/gear.md)
 - [Inverse Kinematics](wiki/kinematics.md)
 - [Model Context Protocol](wiki/mcp.md)
 - [Nodes](wiki/nodes.md)
