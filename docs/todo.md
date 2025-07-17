@@ -14,6 +14,13 @@ Roughly sorted by priority
 - write local, sync later for robot recordings to save trossen-ai compute
 - affine heat method for design wrapping on skin mesh
 - ee calibration using square
+- replace JAX ik with Nvidia warp ik
+- build the new hardware and switch to the 3d print workflow and single arm queues and behavior trees and base mounted ink palettes
+- Lerobot tatbot can take any number/subset of these three abstractions: ip_cameras, wxai_arms, rs_cameras
+- colmap/Xm2 use AprilTag to construct scene graph
+- Realsense incorporated with scissor lift pen adaptable, circular section of skin pressed softly on with barrier for sanitation
+- use the jaws for scissor lift for height on the needle for depth. removes the need for batch ik, saving computation, giving the perfect angle and solves the safety problem too, since the strength can be tuned 
+- tatbot logo with https://youtube.com/@mrupsidedownshorts
 - use VLM call with horizontal lines to ask if tips are close or not
 - calculate multiple points along the needle offset normal vector for every pose, this can be done in a batch before each episode. then the user has full control in realtime where they can move up and down that needle offset normal vector. the red safety button instantly sets the next pose to the most retracted point in the normal vector
 - Points in image space used to get points in mesh using affine map. Points on ply/mesh are used to sample dense points using geodesic. Geodesic is used to create evenly spaced batch of vector offset 6d ee poses, with retraction and penetration vectors calculated effectively per position.
