@@ -11,8 +11,8 @@ log = get_logger('mcp.trossen-ai', '🔌🦾')
 
 mcp = FastMCP("tatbot.trossen-ai", host="0.0.0.0", port=8000)
 
-@mcp.tool(description="Perform a scan, saving images into the scan directory")
-def scan(scene: str) -> str:
+@mcp.tool(description="Run a scan, saving images into the scan directory")
+def run_scan(scene: str) -> str:
     """Performs a scan, saving images into the scan directory."""
     scan(ScanConfig(scene=scene))
 
