@@ -1,6 +1,6 @@
 #!/bin/bash
 echo "Closing existing MCP server on rpi1 🍓..."
-pkill -f "tatbot.mcp.rpi1" || true
+pkill -f "python.*" || true # assumes all python processes are tatbot related
 rm -f ~/tatbot/nfs/mcp-logs/rpi1.log
 echo "Starting MCP server on rpi1 🍓..."
 export PATH="$HOME/.local/bin:$PATH"
