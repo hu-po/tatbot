@@ -14,7 +14,13 @@ mcp = FastMCP("tatbot.trossen-ai", host="0.0.0.0", port=8000)
 @mcp.tool(description="Run a scan, saving images into the scan directory")
 def run_scan(scene: str) -> str:
     """Performs a scan, saving images into the scan directory."""
-    scan(ScanConfig(scene=scene))
+    try:
+        scan_name = scan(ScanConfig(scene=scene))
+        log.info(f"✅ Scan completed: {scan_name}")
+        return scan_name
+    except Exception as e:
+        log.error(f"❌ Error calling run_scan: {e}")
+        return "failed_scan"
 
 @mcp.tool(description="Run visualization on trossen-ai")
 def run_viz(viz_type: str, name: str) -> str:
