@@ -34,7 +34,7 @@ class ScanConfig:
     """Directory to save the dataset."""
 
 
-def scan(config: ScanConfig):
+def scan(config: ScanConfig) -> str:
     scene: Scene = Scene.from_name(config.scene)
 
     output_dir = os.path.expanduser(config.output_dir)
@@ -95,6 +95,7 @@ def scan(config: ScanConfig):
     cams: Cams = get_extrinsics(image_paths, scene.cams, scene.tags)
     log.info(f"cams: {cams}")
     log.info("✅ Done")
+    return scan_name
 
 if __name__ == "__main__":
     args = setup_log_with_config(ScanConfig)
