@@ -1,8 +1,8 @@
-description: "20mm x 10mm area used for testing/calibration"
+description: "20mm x 10mm area used for testing"
 image_width_m: 0.02
 image_height_m: 0.01
-image_width_px: 256
-image_height_px: 128
+image_width_px: 236
+image_height_px: 118
 design_pose:
   pos:
     xyz: [0.18, 0.0, -0.01]

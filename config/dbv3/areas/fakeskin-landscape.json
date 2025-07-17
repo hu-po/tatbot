@@ -9,7 +9,7 @@
     "settings": {
       "drawingAreaPaddingLeft": "0.0",
       "drawingAreaPaddingBottom": "0.0",
-      "inputUnits": "m",
+      "inputUnits": "mm",
       "drawingAreaGang": "false",
       "drawingAreaHeight": "70.0",
       "drawingAreaPaddingRight": "0.0",
