@@ -17,7 +17,7 @@ class BaseVizConfig:
     debug: bool = False
     """Enable debug logging."""
 
-    scene: str = "align"
+    scene: str = "default"
     """Name of the scene (Scene)."""
 
     env_map_hdri: str = "forest"

@@ -1,0 +1,13 @@
+description: "20mm x 10mm area used for testing/calibration"
+image_width_m: 0.02
+image_height_m: 0.01
+image_width_px: 256
+image_height_px: 128
+design_pose:
+  pos:
+    xyz: [0.18, 0.0, -0.01]
+  rot:
+    wxyz: [1.0, 0.0, 0.0, 0.0]
+zone_depth_m: 0.03
+zone_width_m: 0.02
+zone_height_m: 0.05

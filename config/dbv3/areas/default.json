@@ -1,0 +1,24 @@
+{
+  "presetType": "drawing_area",
+  "version": "2.0",
+  "presetSubType": "User",
+  "presetName": "tatbot-default",
+  "enabled": true,
+  "userCreated": true,
+  "data": {
+    "settings": {
+      "drawingAreaPaddingLeft": "0.0",
+      "drawingAreaPaddingBottom": "0.0",
+      "inputUnits": "m",
+      "drawingAreaGang": "false",
+      "drawingAreaHeight": "10.0",
+      "drawingAreaPaddingRight": "0.0",
+      "rescaleMode": "High Quality",
+      "drawingAreaPaddingTop": "0.0",
+      "useOriginalSizing": "false",
+      "drawingAreaWidth": "20.0",
+      "scalingMode": "Scale to fit",
+      "targetPenWidth": "0.0035"
+    }
+  }
+}

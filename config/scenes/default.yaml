@@ -1,8 +1,8 @@
-name: "align"
+name: "default"
 arms_config_name: "bimanual"
 cams_config_name: "fast"
 urdf_config_name: "default"
-skin_config_name: "fakeskin"
+skin_config_name: "default"
 tags_config_name: "default"
 sleep_pos_l_name: "left/sleep"
 sleep_pos_r_name: "right/sleep"
@@ -43,4 +43,4 @@ ee_offset_r:
   xyz: [0.0, 0.0, 0.0]
 offset_range: [-0.01, 0.01]
 offset_num: 3
-design_dir_path: null # align scene does not have a design
+design_dir_path: null # default scene does not have a design
