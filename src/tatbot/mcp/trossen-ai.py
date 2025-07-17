@@ -16,7 +16,10 @@ def scan(scene: str) -> str:
     """Performs a scan, saving images into the scan directory."""
     scan(ScanConfig(scene=scene))
 
-# TODO: add tools, resources, etc.
+@mcp.tool(description="Run visualization on trossen-ai")
+def run_viz(viz_type: str, name: str) -> str:
+    return "viz ran"
+
 if __name__ == "__main__":
     args = setup_log_with_config(MCPConfig)
     if args.debug:
