@@ -172,7 +172,7 @@ class VizStrokes(BaseViz):
             self.pose_idx = 0
             log.debug(f"Moving to next stroke {self.stroke_idx}")
         if self.stroke_idx >= self.num_strokes:
-            log.debug(f"Looping back to stroke 0")
+            log.debug("Looping back to stroke 0")
             self.stroke_idx = 0
             self.pose_idx = 0
         self.stroke_idx_slider.value = self.stroke_idx

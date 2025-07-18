@@ -98,7 +98,7 @@ class Yaml:
         log.info(f"💾 Saving {self.__class__.__name__} to {filepath}")
         with open(filepath, "w") as f:
             yaml.safe_dump(dataclass_to_dict(self), f)
-        log.info(f"💾✅ Saved")
+        log.info("💾✅ Saved")
 
     @classmethod
     def _fromdict(cls: Type[T], data: Any) -> T:

@@ -72,17 +72,17 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
 
     end_effector = driver.get_end_effector()
     log.debug("End effector:")
-    log.debug(f"  palm:")
+    log.debug("  palm:")
     log.debug(f"    mass: {end_effector.palm.mass}")
     log.debug(f"    inertia: {end_effector.palm.inertia}")
     log.debug(f"    origin xyz: {end_effector.palm.origin_xyz}")
     log.debug(f"    origin rpy: {end_effector.palm.origin_rpy}")
-    log.debug(f"  finger left:")
+    log.debug("  finger left:")
     log.debug(f"    mass: {end_effector.finger_left.mass}")
     log.debug(f"    inertia: {end_effector.finger_left.inertia}")
     log.debug(f"    origin xyz: {end_effector.finger_left.origin_xyz}")
     log.debug(f"    origin rpy: {end_effector.finger_left.origin_rpy}")
-    log.debug(f"  finger right:")
+    log.debug("  finger right:")
     log.debug(f"    mass: {end_effector.finger_right.mass}")
     log.debug(f"    inertia: {end_effector.finger_right.inertia}")
     log.debug(f"    origin xyz: {end_effector.finger_right.origin_xyz}")
@@ -110,12 +110,12 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
         log.debug(f"  Joint {i}:")
         for mode, param in motor_param.items():
             log.debug(f"    Mode {mode.value}:")
-            log.debug(f"      Position loop:")
+            log.debug("      Position loop:")
             log.debug(
                 f"        kp: {param.position.kp}, ki: {param.position.ki}, "
                 f"kd: {param.position.kd}, imax: {param.position.imax}"
             )
-            log.debug(f"      Velocity loop:")
+            log.debug("      Velocity loop:")
             log.debug(
                 f"        kp: {param.velocity.kp}, ki: {param.velocity.ki}, "
                 f"kd: {param.velocity.kd}, imax: {param.velocity.imax}"
@@ -127,7 +127,7 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
 
 
 def driver_from_arms(config: Arms) -> tuple[trossen_arm.TrossenArmDriver, trossen_arm.TrossenArmDriver]:
-    log.info(f"Setting up left arm driver...")
+    log.info("Setting up left arm driver...")
     arm_l = trossen_arm.TrossenArmDriver()
     arm_l.configure(
         trossen_arm.Model.wxai_v0,
@@ -141,7 +141,7 @@ def driver_from_arms(config: Arms) -> tuple[trossen_arm.TrossenArmDriver, trosse
     arm_l.load_configs_from_file(config_filepath)
     arm_l.set_all_modes(trossen_arm.Mode.position)
 
-    log.info(f"Setting up right arm driver...")
+    log.info("Setting up right arm driver...")
     arm_r = trossen_arm.TrossenArmDriver()
     arm_r.configure(
         trossen_arm.Model.wxai_v0,

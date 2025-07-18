@@ -213,10 +213,10 @@ def record(config: RecordConfig):
         _joints_l = scene.ready_pos_l
         _joints_r = scene.ready_pos_r
         if stroke_l.is_inkdip:
-            log.info(f"🤖 sending left arm to inkready pose")
+            log.info("🤖 sending left arm to inkready pose")
             _joints_l = scene.inkready_pos_l
         if stroke_r.is_inkdip:
-            log.info(f"🤖 sending right arm to inkready pose")
+            log.info("🤖 sending right arm to inkready pose")
             _joints_r = scene.inkready_pos_r
         _full_joints = ArmPose.make_bimanual_joints(_joints_l, _joints_r)
         ready_action = robot._urdf_joints_to_action(_full_joints)
@@ -327,7 +327,7 @@ if __name__ == "__main__":
         logging.getLogger("lerobot").setLevel(logging.DEBUG)
     try:
         record(args)
-    except Exception as e:
+    except Exception:
         log.error("❌ Robot Loop Exit with Error:\n" + traceback.format_exc())
     except KeyboardInterrupt:
         log.info("🛑⌨️ Keyboard/E-stop interrupt detected")

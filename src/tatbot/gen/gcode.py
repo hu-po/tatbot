@@ -222,7 +222,7 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
         log.info(f"Found {len(paths)} paths")
         for meter_coords, pixel_coords, gcode_text in paths:
             if len(meter_coords) < 1:
-                log.warning(f"❌ Path has no points, skipping")
+                log.warning("❌ Path has no points, skipping")
                 continue
             if pen_name in scene.pen_names_l:
                 pen_paths_l.append((pen_name, meter_coords, pixel_coords, gcode_text))

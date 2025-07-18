@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Union
 
 from tatbot.data import Yaml
 from tatbot.data.pose import Pose

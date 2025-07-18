@@ -11,8 +11,8 @@ log = get_logger("gen.strokes", "🖌️")
 
 
 def load_make_strokes(scene: Scene, dirpath: str, resume: bool = False) -> tuple[StrokeList, StrokeBatch]:
-    strokes_path = os.path.join(dirpath, f"strokes.yaml")
-    strokebatch_path = os.path.join(dirpath, f"strokebatch.safetensors")
+    strokes_path = os.path.join(dirpath, "strokes.yaml")
+    strokebatch_path = os.path.join(dirpath, "strokebatch.safetensors")
     if resume:
         log.info(f"🔄 Resuming from {dirpath}")
         assert os.path.exists(strokes_path), f"❌ Strokes file {strokes_path} does not exist"
@@ -21,10 +21,10 @@ def load_make_strokes(scene: Scene, dirpath: str, resume: bool = False) -> tuple
         strokebatch: StrokeBatch = StrokeBatch.load(strokebatch_path)
     else:
         if scene.design_dir is not None:
-            log.info(f"📂 Generating strokes from design")
+            log.info("📂 Generating strokes from design")
             strokes: StrokeList = make_gcode_strokes(scene)
         else:
-            log.info(f"📂 Generating generic alignment strokes")
+            log.info("📂 Generating generic alignment strokes")
             strokes: StrokeList = make_align_strokes(scene, dirpath)
         strokes.to_yaml(strokes_path)
         strokebatch: StrokeBatch = strokebatch_from_strokes(scene=scene, strokelist=strokes)

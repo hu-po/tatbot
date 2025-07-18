@@ -135,7 +135,7 @@ class BaseViz:
 
         log.info("Adding skin zone to viser")
         self.skin_zone = self.server.scene.add_box(
-            name=f"/skin/zone",
+            name="/skin/zone",
             color=(0, 255, 0),
             dimensions=(
                 self.scene.skin.zone_depth_m,

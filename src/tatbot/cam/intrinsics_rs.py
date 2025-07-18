@@ -89,7 +89,7 @@ def select_realsense_config(
     if len(intersection) == 1:
         return intersection[0]
     log.error(
-        f"Multiple RealSense cameras are both connected and configured. Please specify one with --camera_name or --serial_number."
+        "Multiple RealSense cameras are both connected and configured. Please specify one with --camera_name or --serial_number."
     )
     log.info(f"Available: {[cam.name + ' (' + cam.serial_number + ')' for cam in intersection]}")
     return None
