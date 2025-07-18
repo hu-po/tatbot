@@ -7,7 +7,8 @@ from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.gen.gcode import make_gcode_strokes
 from tatbot.utils.log import get_logger
 
-log = get_logger('gen.strokes', '🖌️')
+log = get_logger("gen.strokes", "🖌️")
+
 
 def load_make_strokes(scene: Scene, dirpath: str, resume: bool = False) -> tuple[StrokeList, StrokeBatch]:
     strokes_path = os.path.join(dirpath, f"strokes.yaml")

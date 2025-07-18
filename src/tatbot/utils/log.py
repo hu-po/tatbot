@@ -8,7 +8,8 @@ import tyro
 
 TIME_FORMAT: str = "%Yy-%mm-%dd-%Hh-%Mm-%Ss"
 LOG_FORMAT: str = "%(asctime)s %(levelname)s: %(message)s"
-SUBMODULES: list[str] = ['bot', 'cam', 'data', 'gen', 'map', 'mcp', 'utils', 'viz']
+SUBMODULES: list[str] = ["bot", "cam", "data", "gen", "map", "mcp", "utils", "viz"]
+
 
 def get_logger(name: str, emoji: str = "❓") -> logging.Logger:
     """Get a logger with a specific name."""
@@ -20,11 +21,14 @@ def get_logger(name: str, emoji: str = "❓") -> logging.Logger:
     _log.propagate = False
     return _log
 
-log = get_logger('utils.log', '📝')
+
+log = get_logger("utils.log", "📝")
+
 
 def print_config(args: Any):
     log.info(f"🛠️ Full Config of type {type(args)}:")
     log.info(pformat(asdict(args)))
+
 
 def setup_log_with_config(config: Any) -> Any:
     args = tyro.cli(config)
@@ -39,6 +43,7 @@ def setup_log_with_config(config: Any) -> Any:
         log.info(f"💾 Saving output to {args.output_dir}")
     try:
         import jax
+
         log.info(f"🧠 JAX devices: {jax.devices()}")
     except ImportError:
         log.info("🧠 JAX not available")

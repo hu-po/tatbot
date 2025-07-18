@@ -9,7 +9,8 @@ import polyscope.imgui as psim
 
 from tatbot.utils.log import get_logger
 
-log = get_logger('map.base', "🗺️")
+log = get_logger("map.base", "🗺️")
+
 
 @dataclass
 class ViewConfig:
@@ -20,14 +21,16 @@ class ViewConfig:
     pointcloud_path: Optional[str] = "~/tatbot/nfs/3d/fakeskin.ply"
     use_trimesh_viewer: bool = True  # If True, use trimesh viewer for OBJ
 
+
 @dataclass
 class AppState:
     geodesic_source: int = -1
     extension_sources: list = field(default_factory=list)
     transport_source: int = -1
-    transport_vector: list = field(default_factory=lambda: [6., 6.])
+    transport_vector: list = field(default_factory=lambda: [6.0, 6.0])
     logmap_source: int = -1
     curves: list = field(default_factory=lambda: [[]])
+
 
 def symlink_ini_files(config: ViewConfig):
     log.info("🔗 Symlink .ini files from config to current directory")
@@ -49,12 +52,14 @@ def symlink_ini_files(config: ViewConfig):
             except OSError as e:
                 log.error(f"Failed to create symlink for {ini_file}: {e}")
 
+
 def cleanup_ini_files(config: ViewConfig):
     for ini_file in config.ini_files:
         link_path = os.path.join(os.getcwd(), ini_file)
         if os.path.exists(link_path):
             log.info(f"🗑️ Removing symlink {link_path}")
             os.remove(link_path)
+
 
 def remove_polyscope_ini_files(config: ViewConfig):
     # Remove .polyscope.ini and imgui.ini if they exist as real files (not just symlinks)
@@ -66,6 +71,7 @@ def remove_polyscope_ini_files(config: ViewConfig):
                 log.info(f"🗑️ Removed real file {link_path} after Polyscope exit")
             except Exception as e:
                 log.error(f"Failed to remove {link_path}: {e}")
+
 
 def polyscope_view(
     state: AppState,
@@ -81,6 +87,7 @@ def polyscope_view(
     log_prefix: str = "",
 ):
     ui_scale_set = False
+
     def callback():
         nonlocal ui_scale_set
         if not ui_scale_set:
@@ -102,7 +109,9 @@ def polyscope_view(
                         log.info(f"Set geodesic source to {idx}")
                 else:
                     log.warning(f"'Set Source {selection_label}' clicked but no selection was made.")
-            psim.TextUnformatted(f"Source: {state.geodesic_source if state.geodesic_source != -1 else 'None'}")
+            psim.TextUnformatted(
+                f"Source: {state.geodesic_source if state.geodesic_source != -1 else 'None'}"
+            )
             if psim.Button("Compute Geodesic Distance"):
                 log.debug("Button 'Compute Geodesic Distance' clicked")
                 if state.geodesic_source != -1:
@@ -136,7 +145,7 @@ def polyscope_view(
                 log.debug("Button 'Compute Scalar Extension' clicked")
                 if len(state.extension_sources) >= 2:
                     points = state.extension_sources
-                    values = np.linspace(0., 1., len(points)).tolist()
+                    values = np.linspace(0.0, 1.0, len(points)).tolist()
                     ext = solver.extend_scalar(points, values)
                     add_scalar_quantity("Scalar Extension", ext, enabled=True)
                 else:
@@ -157,14 +166,16 @@ def polyscope_view(
                         log.info(f"Set transport source to {idx}")
                 else:
                     log.warning("'Set Source' clicked but no selection was made.")
-            psim.TextUnformatted(f"Source: {state.transport_source if state.transport_source != -1 else 'None'}")
+            psim.TextUnformatted(
+                f"Source: {state.transport_source if state.transport_source != -1 else 'None'}"
+            )
             _, state.transport_vector[0] = psim.InputFloat("vx", state.transport_vector[0])
             _, state.transport_vector[1] = psim.InputFloat("vy", state.transport_vector[1])
             if psim.Button("Compute Vector Transport"):
                 log.debug("Button 'Compute Vector Transport' clicked")
                 if state.transport_source != -1:
                     ext = solver.transport_tangent_vector(state.transport_source, state.transport_vector)
-                    ext3D = ext[:,0,np.newaxis] * basisX +  ext[:,1,np.newaxis] * basisY
+                    ext3D = ext[:, 0, np.newaxis] * basisX + ext[:, 1, np.newaxis] * basisY
                     add_vector_quantity("Transported Vector", ext3D, enabled=True)
                 else:
                     log.warning("No source selected for vector transport.")
@@ -189,7 +200,7 @@ def polyscope_view(
                 log.debug("Button 'Compute Log Map' clicked")
                 if state.logmap_source != -1:
                     logmap = solver.compute_log_map(state.logmap_source)
-                    logmap3D = logmap[:,0,np.newaxis] * basisX +  logmap[:,1,np.newaxis] * basisY
+                    logmap3D = logmap[:, 0, np.newaxis] * basisX + logmap[:, 1, np.newaxis] * basisY
                     add_vector_quantity("Log Map", logmap3D, enabled=True)
                 else:
                     log.warning("No source selected for log map.")
@@ -227,5 +238,6 @@ def polyscope_view(
                 else:
                     log.warning("No valid curves to compute signed distance.")
             psim.TreePop()
+
     ps.set_user_callback(callback)
     ps.show()

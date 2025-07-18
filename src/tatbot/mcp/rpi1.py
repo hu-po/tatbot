@@ -1,4 +1,5 @@
 """MCP server running on rpi1 node."""
+
 import logging
 
 from mcp.server.fastmcp import FastMCP
@@ -6,9 +7,10 @@ from mcp.server.fastmcp import FastMCP
 from tatbot.mcp.base import MCPConfig
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
-log = get_logger('mcp.rpi1', '🔌🍓')
+log = get_logger("mcp.rpi1", "🔌🍓")
 
 mcp = FastMCP("tatbot.rpi1", host="0.0.0.0", port=8000)
+
 
 @mcp.tool(description="Run visualization on rpi1")
 def run_viz(viz_type: str, name: str) -> str:
@@ -61,6 +63,7 @@ def run_viz(viz_type: str, name: str) -> str:
     # except Exception as e:
     #     log.error(f"Failed to run viz script on rpi1: {e}")
     #     return f"❌ rpi1: Exception occurred: {str(e)}"
+
 
 if __name__ == "__main__":
     args = setup_log_with_config(MCPConfig)

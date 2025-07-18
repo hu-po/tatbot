@@ -10,7 +10,8 @@ from tatbot.gen.ik import ik
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 from tatbot.viz.base import BaseViz, BaseVizConfig
 
-log = get_logger('viz.teleop', '🎮')
+log = get_logger("viz.teleop", "🎮")
+
 
 @dataclass
 class TeleopVizConfig(BaseVizConfig):
@@ -22,13 +23,16 @@ class TeleopVizConfig(BaseVizConfig):
     transform_control_opacity: float = 0.2
     """Opacity of the transform control frames for visualization."""
 
+
 class TeleopViz(BaseViz):
     def __init__(self, config: TeleopVizConfig):
         super().__init__(config)
 
         log.info("🎯 Adding ee ik targets...")
         self.ee_link_indices = get_link_indices(self.scene.urdf.path, self.scene.urdf.ee_link_names)
-        link_poses = get_link_poses(self.scene.urdf.path, self.scene.urdf.ee_link_names, self.scene.ready_pos_full)
+        link_poses = get_link_poses(
+            self.scene.urdf.path, self.scene.urdf.ee_link_names, self.scene.ready_pos_full
+        )
         self.ee_l_pose: Pose = link_poses[self.scene.urdf.ee_link_names[0]]
         self.ee_r_pose: Pose = link_poses[self.scene.urdf.ee_link_names[1]]
         self.ik_target_l = self.server.scene.add_transform_controls(
@@ -48,16 +52,12 @@ class TeleopViz(BaseViz):
         self.arm_l_ik_toggle: bool = True
         self.arm_r_ik_toggle: bool = True
         with self.server.gui.add_folder("Teleop"):
-            arm_l_button_group = self.server.gui.add_button_group(
-                "left", ("⏸️", "▶️", "💾")
-            )
+            arm_l_button_group = self.server.gui.add_button_group("left", ("⏸️", "▶️", "💾"))
             arm_l_pose_text = self.server.gui.add_text(
                 "left pose name",
                 initial_value="foo_left_pose",
             )
-            arm_r_button_group = self.server.gui.add_button_group(
-                "right", ("⏸️", "▶️", "💾")
-            )
+            arm_r_button_group = self.server.gui.add_button_group("right", ("⏸️", "▶️", "💾"))
             arm_r_pose_text = self.server.gui.add_text(
                 "right pose name",
                 initial_value="foo_right_pose",
@@ -111,6 +111,7 @@ class TeleopViz(BaseViz):
         log.debug(f"🎯 left joints: {solution[:8]}")
         log.debug(f"🎯 right joints: {solution[8:]}")
         self.joints = np.asarray(solution, dtype=np.float32)
+
 
 if __name__ == "__main__":
     args = setup_log_with_config(TeleopVizConfig)

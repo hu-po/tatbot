@@ -14,7 +14,8 @@ from tatbot.map.base import (
 )
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
-log = get_logger('map.view_ply', "📊")
+log = get_logger("map.view_ply", "📊")
+
 
 def view_pointcloud(config: ViewConfig):
     if not config.pointcloud_path:
@@ -43,6 +44,7 @@ def view_pointcloud(config: ViewConfig):
         add_vector_quantity=ps_pointcloud.add_vector_quantity,
         selection_label="Point",
     )
+
 
 if __name__ == "__main__":
     args = setup_log_with_config(ViewConfig)

@@ -10,10 +10,12 @@ class Pos(Yaml):
     xyz: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.0], dtype=np.float32))
     """Position in meters (xyz)."""
 
+
 @dataclass
 class Rot(Yaml):
     wxyz: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
     """Orientation quaternion (wxyz)."""
+
 
 @dataclass
 class Pose(Yaml):
@@ -21,6 +23,7 @@ class Pose(Yaml):
     """Position in meters (xyz)."""
     rot: Rot
     """Orientation quaternion (wxyz)."""
+
 
 @dataclass
 class ArmPose(Yaml):

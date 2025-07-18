@@ -15,6 +15,7 @@ from tatbot.utils.log import get_logger
 
 log = get_logger("data.scene", "🌆")
 
+
 @dataclass
 class Scene(Yaml):
     """Scene is a collection of objects that represent the scene."""
@@ -96,7 +97,7 @@ class Scene(Yaml):
     # sleep pose is the arm folded up, resting on itself, facing forwards
     sleep_pos_l: ArmPose = field(init=False)
     sleep_pos_r: ArmPose = field(init=False)
-    
+
     # ready pose is the arm raised up, facing towards skin, tilted down
     ready_pos_l: ArmPose = field(init=False)
     ready_pos_r: ArmPose = field(init=False)
@@ -104,7 +105,6 @@ class Scene(Yaml):
     # inkready pose is the arms raised up, facing towards ink palette, tilted down
     inkready_pos_l: ArmPose = field(init=False)
     inkready_pos_r: ArmPose = field(init=False)
-
 
     def __post_init__(self):
         log.info(f"📂 Loading scene config: {self.yaml_dir}/{self.name}.yaml")
@@ -114,15 +114,15 @@ class Scene(Yaml):
         self.skin = Skin.from_name(self.skin_config_name)
         self.tags = Tags.from_name(self.tags_config_name)
         self.inks = Inks.from_name(self.inks_config_name)
-        
+
         self.sleep_pos_l = ArmPose.from_name(self.sleep_pos_l_name)
         self.sleep_pos_r = ArmPose.from_name(self.sleep_pos_r_name)
         self.sleep_pos_full = ArmPose.make_bimanual_joints(self.sleep_pos_l, self.sleep_pos_r)
-        
+
         self.ready_pos_l = ArmPose.from_name(self.ready_pos_l_name)
         self.ready_pos_r = ArmPose.from_name(self.ready_pos_r_name)
         self.ready_pos_full = ArmPose.make_bimanual_joints(self.ready_pos_l, self.ready_pos_r)
-        
+
         self.inkready_pos_l = ArmPose.from_name(self.inkready_pos_l_name)
         self.inkready_pos_r = ArmPose.from_name(self.inkready_pos_r_name)
         self.inkready_pos_full = ArmPose.make_bimanual_joints(self.inkready_pos_l, self.inkready_pos_r)
@@ -131,7 +131,7 @@ class Scene(Yaml):
         pens_config_path = os.path.expanduser(self.pens_config_path)
         assert os.path.exists(pens_config_path), f"❌ Pens config file {pens_config_path} does not exist"
         log.info(f"📂 Loading pens from config file: {pens_config_path}")
-        with open(pens_config_path, 'r') as f:
+        with open(pens_config_path, "r") as f:
             pens_config = json.load(f)
         self.pens_config = {pen["name"]: pen for pen in pens_config["data"]["pens"]}
         log.info(f"✅ Found {len(self.pens_config)} pens")
@@ -175,10 +175,10 @@ class Scene(Yaml):
             assert os.path.exists(self.design_dir), f"❌ Design directory {self.design_dir} does not exist"
             log.debug(f"📂 Design directory: {self.design_dir}")
 
-            # final design image 
+            # final design image
             design_img_filename = None
             for file in os.listdir(self.design_dir):
-                if file.endswith('.png') and '_F' not in file and 'plotted' in file:
+                if file.endswith(".png") and "_F" not in file and "plotted" in file:
                     design_img_filename = file
                     break
             assert design_img_filename is not None, f"❌ No design image found in {self.design_dir}"

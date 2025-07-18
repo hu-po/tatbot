@@ -8,7 +8,7 @@ import yourdfpy
 from tatbot.data.pose import Pos, Pose, Rot
 from tatbot.utils.log import get_logger
 
-log = get_logger('bot.urdf', '🧱')
+log = get_logger("bot.urdf", "🧱")
 
 
 @functools.lru_cache(maxsize=1)
@@ -19,6 +19,7 @@ def load_robot(urdf_path: str) -> tuple[yourdfpy.URDF, pk.Robot]:
     robot = pk.Robot.from_urdf(urdf)
     return urdf, robot
 
+
 @functools.lru_cache(maxsize=4)
 def get_link_indices(urdf_path: str, link_names: tuple[str, ...]) -> np.ndarray:
     log.info(f"getting link indices for {link_names}")
@@ -26,6 +27,7 @@ def get_link_indices(urdf_path: str, link_names: tuple[str, ...]) -> np.ndarray:
     link_indices = np.array([robot.links.names.index(link_name) for link_name in link_names], dtype=np.int32)
     log.debug(f"link indices: {link_indices}")
     return link_indices
+
 
 def get_link_poses(
     urdf_path: str,
@@ -39,8 +41,7 @@ def get_link_poses(
     wxyz = all_link_poses[link_indices, :4]
     pos = all_link_poses[link_indices, 4:]
     link_poses = {
-        link_name: Pose(pos=Pos(xyz=pos[i]), rot=Rot(wxyz=wxyz[i]))
-        for i, link_name in enumerate(link_names)
+        link_name: Pose(pos=Pos(xyz=pos[i]), rot=Rot(wxyz=wxyz[i])) for i, link_name in enumerate(link_names)
     }
     log.debug(f"link poses: {link_poses}")
     return link_poses

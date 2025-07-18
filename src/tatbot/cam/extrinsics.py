@@ -12,7 +12,8 @@ from tatbot.data.pose import Pos, Pose, Rot
 from tatbot.data.tags import Tags
 from tatbot.utils.log import get_logger
 
-log = get_logger('cam.extrinsics', '🎯')
+log = get_logger("cam.extrinsics", "🎯")
+
 
 def get_extrinsics(
     image_paths: list[str],
@@ -31,14 +32,14 @@ def get_extrinsics(
     log.info("Tracking tags in images...")
     tracker = TagTracker(tags)
     for image_path in image_paths:
-        camera_name = image_path.split('/')[-1].split('.')[0]
+        camera_name = image_path.split("/")[-1].split(".")[0]
         log.info(f"Tracking tags in {image_path} for {camera_name}")
         camera_config = cams.get_camera(camera_name)
         # Create output path for annotated image
         output_dir = os.path.dirname(image_path)
         base_name = os.path.splitext(os.path.basename(image_path))[0]
         output_path = os.path.join(output_dir, f"{base_name}_annotated.png")
-        
+
         _detected_tags = tracker.track_tags(
             image_path,
             camera_config.intrinsics,
@@ -56,20 +57,14 @@ def get_extrinsics(
         cam_ex = camera_config.extrinsics
         camera_pos = jnp.array(cam_ex.pos.xyz)
         camera_wxyz = jnp.array(cam_ex.rot.wxyz)
-        T_world_cam = jaxlie.SE3.from_rotation_and_translation(
-            jaxlie.SO3(camera_wxyz),
-            camera_pos
-        )
+        T_world_cam = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(camera_wxyz), camera_pos)
         current_extrinsics[camera_name] = T_world_cam
 
         observed_tag_cam[camera_name] = {}
         for tag_id, world_pose in detected_tags[camera_name].items():
             tag_pos = jnp.array(world_pose.pos.xyz)
             tag_wxyz = jnp.array(world_pose.rot.wxyz)
-            T_world_tag = jaxlie.SE3.from_rotation_and_translation(
-                jaxlie.SO3(tag_wxyz),
-                tag_pos
-            )
+            T_world_tag = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(tag_wxyz), tag_pos)
             T_cam_tag = T_world_cam.inverse() @ T_world_tag
             observed_tag_cam[camera_name][tag_id] = T_cam_tag
 
@@ -89,9 +84,7 @@ def get_extrinsics(
             avg_p = jnp.mean(poss, axis=0)
             avg_q = jnp.mean(quats, axis=0)
             avg_q = avg_q / jnp.linalg.norm(avg_q)
-            avg_tag_world[tag_id] = jaxlie.SE3.from_rotation_and_translation(
-                jaxlie.SO3(avg_q), avg_p
-            )
+            avg_tag_world[tag_id] = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(avg_q), avg_p)
 
         new_extrinsics = {}
         max_delta = 0.0
@@ -109,9 +102,7 @@ def get_extrinsics(
                 avg_p = jnp.mean(poss, axis=0)
                 avg_q = jnp.mean(quats, axis=0)
                 avg_q = avg_q / jnp.linalg.norm(avg_q)
-                new_T = jaxlie.SE3.from_rotation_and_translation(
-                    jaxlie.SO3(avg_q), avg_p
-                )
+                new_T = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(avg_q), avg_p)
                 delta = jnp.max(jnp.abs(new_T.translation() - current_extrinsics[camera_name].translation()))
                 if delta > max_delta:
                     max_delta = delta
@@ -120,7 +111,7 @@ def get_extrinsics(
                 new_extrinsics[camera_name] = current_extrinsics[camera_name]
 
         # Anchor to reference camera (set to identity)
-        ref_cam = 'realsense1'
+        ref_cam = "realsense1"
         if ref_cam in new_extrinsics:
             T_ref = new_extrinsics[ref_cam]
             T_correct = T_ref.inverse()

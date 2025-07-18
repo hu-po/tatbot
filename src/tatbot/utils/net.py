@@ -15,7 +15,8 @@ from paramiko.sftp_client import SFTPClient
 from tatbot.data.node import Node
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
-log = get_logger('net', '🌐')
+log = get_logger("net", "🌐")
+
 
 @dataclass
 class NetworkManagerConfig:
@@ -71,9 +72,7 @@ class NetworkManager:
             log.error(f"Error parsing node configuration file: {e}")
             return []
 
-    def get_target_nodes(
-        self, node_names: Optional[List[str]] = None
-    ) -> Tuple[List[Node], Optional[str]]:
+    def get_target_nodes(self, node_names: Optional[List[str]] = None) -> Tuple[List[Node], Optional[str]]:
         """
         Filters nodes based on a list of names.
 
@@ -230,9 +229,7 @@ class NetworkManager:
 
         log.info("🌐 Testing connectivity to all nodes...")
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            futures = {
-                executor.submit(self._test_node_connection, node): node for node in self.nodes
-            }
+            futures = {executor.submit(self._test_node_connection, node): node for node in self.nodes}
             for future in concurrent.futures.as_completed(futures):
                 _name, success, message = future.result()
                 messages.append(message)

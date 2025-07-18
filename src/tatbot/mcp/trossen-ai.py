@@ -1,4 +1,5 @@
 """MCP server running on trossen-ai node."""
+
 import logging
 
 from mcp.server.fastmcp import FastMCP
@@ -7,9 +8,10 @@ from tatbot.cam.scan import ScanConfig, scan
 from tatbot.mcp.base import MCPConfig
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
-log = get_logger('mcp.trossen-ai', '🔌🦾')
+log = get_logger("mcp.trossen-ai", "🔌🦾")
 
 mcp = FastMCP("tatbot.trossen-ai", host="0.0.0.0", port=8000)
+
 
 @mcp.tool(description="Run a scan, saving images into the scan directory")
 def run_scan(scene: str) -> str:
@@ -22,9 +24,11 @@ def run_scan(scene: str) -> str:
         log.error(f"❌ Error calling run_scan: {e}")
         return "failed_scan"
 
+
 @mcp.tool(description="Run visualization on trossen-ai")
 def run_viz(viz_type: str, name: str) -> str:
     return "viz ran"
+
 
 if __name__ == "__main__":
     args = setup_log_with_config(MCPConfig)

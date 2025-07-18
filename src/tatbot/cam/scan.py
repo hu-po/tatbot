@@ -20,7 +20,8 @@ from tatbot.utils.log import (
     setup_log_with_config,
 )
 
-log = get_logger('cam.scan', '📡')
+log = get_logger("cam.scan", "📡")
+
 
 @dataclass
 class ScanConfig:
@@ -40,7 +41,7 @@ def scan(config: ScanConfig) -> str:
     output_dir = os.path.expanduser(config.output_dir)
     log.info(f"🗃️ Creating output directory at {output_dir}...")
     os.makedirs(output_dir, exist_ok=True)
-    
+
     scan_name = f"{scene.name}-{time.strftime(TIME_FORMAT, time.localtime())}"
     scan_dir = f"{output_dir}/{scan_name}"
     log.info(f"🗃️ Creating scan directory at {scan_dir}...")
@@ -91,16 +92,17 @@ def scan(config: ScanConfig) -> str:
         Image.fromarray(image_np).save(image_path)
         log.info(f"✅ Saved frame to {image_path}")
         image_paths.append(image_path)
-    
+
     cams: Cams = get_extrinsics(image_paths, scene.cams, scene.tags)
     log.info(f"cams: {cams}")
     log.info("✅ Done")
     return scan_name
+
 
 if __name__ == "__main__":
     args = setup_log_with_config(ScanConfig)
     print_config(args)
     if args.debug:
         log.setLevel(logging.DEBUG)
-        logging.getLogger('lerobot').setLevel(logging.DEBUG)
+        logging.getLogger("lerobot").setLevel(logging.DEBUG)
     scan(args)

@@ -23,7 +23,8 @@ class Intrinsics(Yaml):
     """Field of view in radians for depth camera."""
     aspect_depth: float | None = None
     """Aspect ratio for depth camera."""
-    
+
+
 @dataclass
 class CameraConfig(Yaml):
     name: str
@@ -39,10 +40,12 @@ class CameraConfig(Yaml):
     extrinsics: Pose
     """Extrinsics of the camera: pose in the global frame."""
 
+
 @dataclass
 class RealSenseCameraConfig(CameraConfig):
     serial_number: str
     """Serial number of the camera (only for realsense cameras)."""
+
 
 @dataclass
 class IPCameraConfig(CameraConfig):
@@ -54,6 +57,7 @@ class IPCameraConfig(CameraConfig):
     """Password for the camera (only for ip cameras)."""
     rtsp_port: int
     """RTSP port of the camera (only for ip cameras)."""
+
 
 @dataclass
 class Cams(Yaml):

@@ -1,4 +1,5 @@
 """MCP server running on ojo node."""
+
 import logging
 
 from mcp.server.fastmcp import FastMCP
@@ -6,9 +7,10 @@ from mcp.server.fastmcp import FastMCP
 from tatbot.mcp.base import MCPConfig
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
-log = get_logger('mcp.ojo', '🔌🦎')
+log = get_logger("mcp.ojo", "🔌🦎")
 
 mcp = FastMCP("tatbot.ojo", host="0.0.0.0", port=8000)
+
 
 @mcp.tool()
 def manage_policy_server(action: str, policy_type: str = "gr00t") -> str:
@@ -26,6 +28,7 @@ def manage_policy_server(action: str, policy_type: str = "gr00t") -> str:
         # command to stop the policy server
         return f"{policy_type} policy server stopped."
     return "Invalid action."
+
 
 if __name__ == "__main__":
     args = setup_log_with_config(MCPConfig)

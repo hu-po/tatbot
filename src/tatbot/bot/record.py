@@ -30,7 +30,8 @@ from tatbot.utils.log import (
     setup_log_with_config,
 )
 
-log = get_logger('bot.record', '🤖')
+log = get_logger("bot.record", "🤖")
+
 
 @dataclass
 class RecordConfig:
@@ -72,7 +73,7 @@ def record(config: RecordConfig):
     output_dir = os.path.expanduser(config.output_dir)
     log.info(f"🗃️ Creating output directory at {output_dir}...")
     os.makedirs(output_dir, exist_ok=True)
-    
+
     dataset_name = config.dataset_name or f"{scene.name}-{time.strftime(TIME_FORMAT, time.localtime())}"
     dataset_dir = f"{output_dir}/{dataset_name}"
     log.info(f"🗃️ Creating dataset directory at {dataset_dir}...")
@@ -86,38 +87,41 @@ def record(config: RecordConfig):
     num_strokes = len(strokes.strokes)
 
     log.info("🤗 Adding LeRobot robot...")
-    robot = make_robot_from_config(TatbotConfig(
-        ip_address_l=scene.arms.ip_address_l,
-        ip_address_r=scene.arms.ip_address_r,
-        arm_l_config_filepath=scene.arms.arm_l_config_filepath,
-        arm_r_config_filepath=scene.arms.arm_r_config_filepath,
-        goal_time_fast=scene.arms.goal_time_fast,
-        goal_time_slow=scene.arms.goal_time_slow,
-        connection_timeout=scene.arms.connection_timeout,
-        home_pos_l=scene.sleep_pos_l.joints[:7],
-        home_pos_r=scene.sleep_pos_r.joints[:7],
-        cameras={},
-        # cameras={
-        #     cam.name : RealSenseCameraConfig(
-        #         fps=cam.fps,
-        #         width=cam.width,
-        #         height=cam.height,
-        #         serial_number_or_name=cam.serial_number,
-        #     ) for cam in scene.cams.realsenses
-        # },
-        # cond_cameras={},
-        cond_cameras={
-            cam.name : OpenCVCameraConfig(
-                fps=cam.fps,
-                width=cam.width,
-                height=cam.height,
-                ip=cam.ip,
-                username=cam.username,
-                password=os.environ.get(cam.password, None),
-                rtsp_port=cam.rtsp_port,
-            ) for cam in scene.cams.ipcameras
-        }
-    ))
+    robot = make_robot_from_config(
+        TatbotConfig(
+            ip_address_l=scene.arms.ip_address_l,
+            ip_address_r=scene.arms.ip_address_r,
+            arm_l_config_filepath=scene.arms.arm_l_config_filepath,
+            arm_r_config_filepath=scene.arms.arm_r_config_filepath,
+            goal_time_fast=scene.arms.goal_time_fast,
+            goal_time_slow=scene.arms.goal_time_slow,
+            connection_timeout=scene.arms.connection_timeout,
+            home_pos_l=scene.sleep_pos_l.joints[:7],
+            home_pos_r=scene.sleep_pos_r.joints[:7],
+            cameras={},
+            # cameras={
+            #     cam.name : RealSenseCameraConfig(
+            #         fps=cam.fps,
+            #         width=cam.width,
+            #         height=cam.height,
+            #         serial_number_or_name=cam.serial_number,
+            #     ) for cam in scene.cams.realsenses
+            # },
+            # cond_cameras={},
+            cond_cameras={
+                cam.name: OpenCVCameraConfig(
+                    fps=cam.fps,
+                    width=cam.width,
+                    height=cam.height,
+                    ip=cam.ip,
+                    username=cam.username,
+                    password=os.environ.get(cam.password, None),
+                    rtsp_port=cam.rtsp_port,
+                )
+                for cam in scene.cams.ipcameras
+            },
+        )
+    )
     robot.connect()
 
     action_features = hw_to_dataset_features(robot.action_features, "action", True)
@@ -130,7 +134,7 @@ def record(config: RecordConfig):
         if hasattr(robot, "cameras") and len(robot.cameras) > 0:
             dataset.start_image_writer(
                 num_processes=0,
-                num_threads=4* len(robot.cameras),
+                num_threads=4 * len(robot.cameras),
             )
         sanity_check_dataset_robot_compatibility(dataset, robot, config.fps, dataset_features)
     else:
@@ -174,7 +178,7 @@ def record(config: RecordConfig):
         log.info("🎮 Enabling joystick control...")
         atari_teleop = AtariTeleoperator(AtariTeleoperatorConfig())
         atari_teleop.connect()
-    
+
     # offset index controls needle depth
     mid_offset_idx: int = scene.offset_num // 2
     offset_idx_l: int = mid_offset_idx
@@ -182,7 +186,7 @@ def record(config: RecordConfig):
     # inkdip-specific offset index
     inkdip_offset_idx_l: int = mid_offset_idx
     inkdip_offset_idx_r: int = mid_offset_idx
-    
+
     # one episode is a single path
     # when resuming, start from the idx of the next episode
     log.info(f"Recording {num_strokes} paths...")
@@ -281,7 +285,9 @@ def record(config: RecordConfig):
                 log.info(f"🎮 right offset index: {_offset_idx_r}")
             joints = strokebatch.offset_joints(stroke_idx, pose_idx, _offset_idx_l, _offset_idx_r)
             robot_action = robot._urdf_joints_to_action(joints)
-            goal_time = float(strokebatch.dt[stroke_idx, pose_idx, offset_idx_l]) # TODO: this is a hack, currently dt is the same for both arms
+            goal_time = float(
+                strokebatch.dt[stroke_idx, pose_idx, offset_idx_l]
+            )  # TODO: this is a hack, currently dt is the same for both arms
             sent_action = robot.send_action(robot_action, goal_time=goal_time, block="none")
 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
@@ -310,14 +316,15 @@ def record(config: RecordConfig):
         log.info("📦🤗 Pushing dataset to Hugging Face Hub...")
         dataset.push_to_hub(tags=list(config.tags), private=config.private)
 
+
 if __name__ == "__main__":
     args = setup_log_with_config(RecordConfig)
     print_config(args)
     # TODO: waiting on https://github.com/TrossenRobotics/trossen_arm/issues/86#issue-3144375498
-    logging.getLogger('trossen_arm').setLevel(logging.ERROR)
+    logging.getLogger("trossen_arm").setLevel(logging.ERROR)
     if args.debug:
         log.setLevel(logging.DEBUG)
-        logging.getLogger('lerobot').setLevel(logging.DEBUG)
+        logging.getLogger("lerobot").setLevel(logging.DEBUG)
     try:
         record(args)
     except Exception as e:
@@ -327,20 +334,22 @@ if __name__ == "__main__":
     finally:
         log.info("🛑 Disconnecting robot...")
         scene: Scene = Scene.from_name(args.scene)
-        robot = make_robot_from_config(TatbotConfig(
-            ip_address_l=scene.arms.ip_address_l,
-            ip_address_r=scene.arms.ip_address_r,
-            arm_l_config_filepath=scene.arms.arm_l_config_filepath,
-            arm_r_config_filepath=scene.arms.arm_r_config_filepath,
-            goal_time_fast=1.0, # move very slowly
-            goal_time_slow=5.0, # move very slowly
-            connection_timeout=20.0,
-            home_pos_l=scene.sleep_pos_l.joints[:7],
-            home_pos_r=scene.sleep_pos_r.joints[:7],
-            # no cameras
-            cameras={},
-            cond_cameras={},
-        ))
+        robot = make_robot_from_config(
+            TatbotConfig(
+                ip_address_l=scene.arms.ip_address_l,
+                ip_address_r=scene.arms.ip_address_r,
+                arm_l_config_filepath=scene.arms.arm_l_config_filepath,
+                arm_r_config_filepath=scene.arms.arm_r_config_filepath,
+                goal_time_fast=1.0,  # move very slowly
+                goal_time_slow=5.0,  # move very slowly
+                connection_timeout=20.0,
+                home_pos_l=scene.sleep_pos_l.joints[:7],
+                home_pos_r=scene.sleep_pos_r.joints[:7],
+                # no cameras
+                cameras={},
+                cond_cameras={},
+            )
+        )
         robot._connect_l(clear_error=False)
         log.error(robot._get_error_str_l())
         robot._connect_r(clear_error=False)

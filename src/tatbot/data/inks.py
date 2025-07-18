@@ -11,6 +11,7 @@ class Ink(Yaml):
     rgb: tuple[int, int, int]
     """Color of the ink in rgb (0-255)."""
 
+
 @dataclass
 class InkCap(Yaml):
     name: str
@@ -23,6 +24,7 @@ class InkCap(Yaml):
     """Ink inside the inkcap, if None the inkcap is empty."""
     pose: Pose | None = None
     """Pose of the inkcap."""
+
 
 @dataclass
 class Inks(Yaml):

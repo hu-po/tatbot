@@ -12,7 +12,8 @@ from jaxtyping import Array, Float, Int
 from tatbot.bot.urdf import get_link_indices, load_robot
 from tatbot.utils.log import get_logger
 
-log = get_logger('gen.ik', '🧮')
+log = get_logger("gen.ik", "🧮")
+
 
 @jdc.pytree_dataclass
 class IKConfig:
@@ -27,10 +28,11 @@ class IKConfig:
     lambda_initial: float = 1.0
     """Initial lambda value for the IK trust region solver."""
 
+
 @jdc.jit
 def ik(
     robot: pk.Robot,
-    target_link_indices: Int[Array, "n"], # n=2 for bimanual
+    target_link_indices: Int[Array, "n"],  # n=2 for bimanual
     target_wxyz: Float[Array, "n 4"],
     target_position: Float[Array, "n 3"],
     rest_pose: Float[Array, "16"],
@@ -43,9 +45,7 @@ def ik(
         pk.costs.pose_cost(
             robot,
             joint_var,
-            jaxlie.SE3.from_rotation_and_translation(
-                jaxlie.SO3(target_wxyz), target_position
-            ),
+            jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(target_wxyz), target_position),
             target_link_indices,
             pos_weight=config.pos_weight,
             ori_weight=config.ori_weight,
@@ -66,7 +66,7 @@ def ik(
         .analyze()
         .solve(
             verbose=False,
-            linear_solver="dense_cholesky", # TODO: try other solvers
+            linear_solver="dense_cholesky",  # TODO: try other solvers
             trust_region=jaxls.TrustRegionConfig(lambda_initial=config.lambda_initial),
         )
     )
@@ -74,6 +74,7 @@ def ik(
     log.debug(f"ik solution: {_solution}")
     log.debug(f"ik time: {time.time() - start_time:.2f}s")
     return _solution
+
 
 def batch_ik(
     target_wxyz: Float[Array, "b n 4"],

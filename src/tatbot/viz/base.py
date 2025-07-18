@@ -10,7 +10,8 @@ from tatbot.bot.urdf import get_link_poses, load_robot
 from tatbot.data.scene import Scene
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
-log = get_logger('viz.base', '🖼️')
+log = get_logger("viz.base", "🖼️")
+
 
 @dataclass
 class BaseVizConfig:
@@ -43,6 +44,7 @@ class BaseVizConfig:
     use_real_robot: bool = False
     """Use the real robot instead of the simulated one."""
 
+
 class BaseViz:
     def __init__(self, config: BaseVizConfig):
         self.config = config
@@ -67,18 +69,14 @@ class BaseViz:
                 self.left_joint_textboxes = []
                 for i in range(8):
                     tb = self.server.gui.add_text(
-                        f"{i+1}",
-                        initial_value=str(self.joints[i]),
-                        disabled=True
+                        f"{i + 1}", initial_value=str(self.joints[i]), disabled=True
                     )
                     self.left_joint_textboxes.append(tb)
             with self.server.gui.add_folder("Right", expand_by_default=False):
                 self.right_joint_textboxes = []
                 for i in range(8):
                     tb = self.server.gui.add_text(
-                        f"{i+1}",
-                        initial_value=str(self.joints[i+8]),
-                        disabled=True
+                        f"{i + 1}", initial_value=str(self.joints[i + 8]), disabled=True
                     )
                     self.right_joint_textboxes.append(tb)
 
@@ -88,10 +86,10 @@ class BaseViz:
         if config.use_real_robot:
             log.debug("Using real robot")
             from tatbot.bot.trossen import driver_from_arms, trossen_arm
-            
+
             self.arm_l, self.arm_r = driver_from_arms(self.scene.arms)
             self.to_trossen_vector = lambda x: trossen_arm.VectorDouble(x)
-    
+
         log.debug("Adding inkcaps to viser")
         for inkcap in chain(self.scene.inkcaps_l.values(), self.scene.inkcaps_r.values()):
             self.server.scene.add_icosphere(
@@ -105,7 +103,9 @@ class BaseViz:
             )
 
         log.info("Adding camera frustrums ...")
-        link_poses = get_link_poses(self.scene.urdf.path, self.scene.urdf.cam_link_names, self.scene.ready_pos_full)
+        link_poses = get_link_poses(
+            self.scene.urdf.path, self.scene.urdf.cam_link_names, self.scene.ready_pos_full
+        )
         _camera_counter: int = 0
         self.realsense_frustrums = {}
         for realsense in self.scene.cams.realsenses:
@@ -137,7 +137,11 @@ class BaseViz:
         self.skin_zone = self.server.scene.add_box(
             name=f"/skin/zone",
             color=(0, 255, 0),
-            dimensions=(self.scene.skin.zone_depth_m, self.scene.skin.zone_width_m, self.scene.skin.zone_height_m),
+            dimensions=(
+                self.scene.skin.zone_depth_m,
+                self.scene.skin.zone_width_m,
+                self.scene.skin.zone_height_m,
+            ),
             position=self.scene.skin.design_pose.pos.xyz,
             wxyz=self.scene.skin.design_pose.rot.wxyz,
             opacity=0.2,
@@ -166,8 +170,9 @@ class BaseViz:
             for i, tb in enumerate(self.left_joint_textboxes):
                 tb.value = str(self.joints[i])
             for i, tb in enumerate(self.right_joint_textboxes):
-                tb.value = str(self.joints[i+8])
+                tb.value = str(self.joints[i + 8])
             log.debug(f"Step time: {time.time() - start_time:.4f}s")
+
 
 if __name__ == "__main__":
     args = setup_log_with_config(BaseVizConfig)

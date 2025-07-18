@@ -6,6 +6,7 @@ from tatbot.data import Yaml
 @dataclass
 class Node(Yaml):
     """Node in the tatbot network."""
+
     name: str
     """Name of the node."""
     ip: str

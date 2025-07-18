@@ -11,7 +11,7 @@ from tatbot.gen.inkdip import make_inkdip_func
 from tatbot.utils.colors import COLORS
 from tatbot.utils.log import get_logger
 
-log = get_logger('gen.gcode', '⚙️')
+log = get_logger("gen.gcode", "⚙️")
 
 
 def parse_gcode_file(gcode_path: str, scene: Scene) -> list[tuple[np.ndarray, np.ndarray, str]]:
@@ -26,6 +26,7 @@ def parse_gcode_file(gcode_path: str, scene: Scene) -> list[tuple[np.ndarray, np
     Each stroke is **re-sampled** so that *all* strokes have exactly
     `scene.stroke_length` points, evenly spaced along arc-length.
     """
+
     # ----------------------------------------------------------------—— helpers
     def mm2m(arr_mm: np.ndarray) -> np.ndarray:
         return arr_mm / 1_000.0
@@ -53,7 +54,7 @@ def parse_gcode_file(gcode_path: str, scene: Scene) -> list[tuple[np.ndarray, np
                 seg_idx += 1
 
             t0, t1 = cum_len[seg_idx], cum_len[seg_idx + 1]
-            if t1 == t0:          # duplicate points
+            if t1 == t0:  # duplicate points
                 resampled[i] = points[seg_idx]
             else:
                 alpha = (t - t0) / (t1 - t0)
@@ -63,8 +64,8 @@ def parse_gcode_file(gcode_path: str, scene: Scene) -> list[tuple[np.ndarray, np
     # ----------------------------------------------------------------—— image info
     img_w_px: int = scene.skin.image_width_px
     img_h_px: int = scene.skin.image_height_px
-    img_w_m:  float = scene.skin.image_width_m
-    img_h_m:  float = scene.skin.image_height_m
+    img_w_m: float = scene.skin.image_width_m
+    img_h_m: float = scene.skin.image_height_m
 
     if scene.design_img_path and os.path.exists(scene.design_img_path):
         with Image.open(scene.design_img_path) as _im:
@@ -83,8 +84,8 @@ def parse_gcode_file(gcode_path: str, scene: Scene) -> list[tuple[np.ndarray, np
             return
 
         pts_mm = np.asarray(cur_pts_mm, dtype=np.float32)
-        pts_m  = mm2m(pts_mm)                        # (N,2)  centre-origin
-        pts_m  = resample_path(pts_m, n_target)      # uniform length
+        pts_m = mm2m(pts_mm)  # (N,2)  centre-origin
+        pts_m = resample_path(pts_m, n_target)  # uniform length
 
         # ─ Robot space (metres, z=0) ──────────────────────────────────────────
         meter_coords = np.hstack([pts_m, np.zeros((n_target, 1), dtype=np.float32)])
@@ -109,7 +110,7 @@ def parse_gcode_file(gcode_path: str, scene: Scene) -> list[tuple[np.ndarray, np
             tokens = line.split()
             cmd = tokens[0].upper()
 
-            if cmd == "G0":                              # pen up  (separator)
+            if cmd == "G0":  # pen up  (separator)
                 _flush_current()
                 cur_pts_mm.clear()
                 cur_gcode.clear()
@@ -125,7 +126,7 @@ def parse_gcode_file(gcode_path: str, scene: Scene) -> list[tuple[np.ndarray, np
                     cur_pts_mm.append([x_mm, y_mm])
                     cur_gcode.append(line)
 
-            elif cmd == "G1":                            # pen down (draw)
+            elif cmd == "G1":  # pen down (draw)
                 pen_down = True
                 cur_gcode.append(line)
 
@@ -195,12 +196,13 @@ def generate_stroke_frame_image(
     cv2.imwrite(frame_path, frame_img)
     return frame_path
 
+
 def make_gcode_strokes(scene: Scene) -> StrokeList:
     assert scene.design_dir is not None, "❌ Design directory is not set, does this scene have a design?"
     gcode_files = []
     gcode_pens: dict[str, str] = {}
     for file in os.listdir(scene.design_dir):
-        if file.endswith('.gcode'):
+        if file.endswith(".gcode"):
             gcode_path = os.path.join(scene.design_dir, file)
             gcode_files.append(gcode_path)
             match = re.match(r".*_pen\d+_(\w+)\.gcode$", file)
@@ -271,7 +273,7 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
         )
     )
     inkcap_name_l = _inkdip_stroke.inkcap
-    inkcap_name_r = None # when None, indicates that an inkdip stroke is required
+    inkcap_name_r = None  # when None, indicates that an inkdip stroke is required
     ptr_l = ptr_r = 0
     num_paths_l = len(pen_paths_l)
     num_paths_r = len(pen_paths_r)
@@ -305,7 +307,7 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
                 frame_path=frame_path,
                 color=color_l,
             )
-            inkcap_name_l = None # inkdip on next stroke
+            inkcap_name_l = None  # inkdip on next stroke
             ptr_l += 1
         else:
             # Only perform inkdip if a stroke will follow
@@ -342,7 +344,7 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
                 frame_path=frame_path,
                 color=color_r,
             )
-            inkcap_name_r = None # inkdip on next stroke
+            inkcap_name_r = None  # inkdip on next stroke
             ptr_r += 1
         else:
             # Only perform inkdip if a stroke will follow

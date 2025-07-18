@@ -33,7 +33,8 @@ from tatbot.data.arms import Arms
 from tatbot.data.pose import ArmPose
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
-log = get_logger('bot.trossen', '🎛️')
+log = get_logger("bot.trossen", "🎛️")
+
 
 @dataclass
 class TrossenConfig:
@@ -54,6 +55,7 @@ class TrossenConfig:
     test_tolerance: float = 0.1
     """Tolerance for the test pose."""
 
+
 def print_configurations(driver: trossen_arm.TrossenArmDriver):
     log.debug(f"EEPROM factory reset flag: {driver.get_factory_reset_flag()}")
     log.debug(f"EEPROM IP method: {driver.get_ip_method()}")
@@ -62,12 +64,8 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
     log.debug(f"EEPROM gateway: {driver.get_gateway()}")
     log.debug(f"EEPROM subnet: {driver.get_subnet()}")
     log.debug(f"EEPROM effort corrections: {driver.get_effort_corrections()}")
-    log.debug(
-        f"EEPROM friction transition velocities: {driver.get_friction_transition_velocities()}"
-    )
-    log.debug(
-        f"EEPROM friction constant terms: {driver.get_friction_constant_terms()}"
-    )
+    log.debug(f"EEPROM friction transition velocities: {driver.get_friction_transition_velocities()}")
+    log.debug(f"EEPROM friction constant terms: {driver.get_friction_constant_terms()}")
     log.debug(f"EEPROM friction coulomb coefs: {driver.get_friction_coulomb_coefs()}")
     log.debug(f"EEPROM friction viscous coefs: {driver.get_friction_viscous_coefs()}")
     log.debug(f"Modes: {[mode.value for mode in driver.get_modes()]}")
@@ -127,6 +125,7 @@ def print_configurations(driver: trossen_arm.TrossenArmDriver):
     log.debug("Algorithm parameter:")
     log.debug(f"  singularity threshold: {algorithm_parameter.singularity_threshold}")
 
+
 def driver_from_arms(config: Arms) -> tuple[trossen_arm.TrossenArmDriver, trossen_arm.TrossenArmDriver]:
     log.info(f"Setting up left arm driver...")
     arm_l = trossen_arm.TrossenArmDriver()
@@ -134,7 +133,7 @@ def driver_from_arms(config: Arms) -> tuple[trossen_arm.TrossenArmDriver, trosse
         trossen_arm.Model.wxai_v0,
         trossen_arm.StandardEndEffector.wxai_v0_base,
         config.ip_address_l,
-        True, # clear_error
+        True,  # clear_error
         timeout=config.connection_timeout,
     )
     config_filepath = os.path.expanduser(config.arm_l_config_filepath)
@@ -148,7 +147,7 @@ def driver_from_arms(config: Arms) -> tuple[trossen_arm.TrossenArmDriver, trosse
         trossen_arm.Model.wxai_v0,
         trossen_arm.StandardEndEffector.wxai_v0_base,
         config.ip_address_r,
-        True, # clear_error
+        True,  # clear_error
         timeout=config.connection_timeout,
     )
     config_filepath = os.path.expanduser(config.arm_r_config_filepath)
@@ -157,14 +156,15 @@ def driver_from_arms(config: Arms) -> tuple[trossen_arm.TrossenArmDriver, trosse
     arm_r.set_all_modes(trossen_arm.Mode.position)
     return arm_l, arm_r
 
+
 def configure_arm(filepath: str, ip: str, test_pose_name: str, test_tolerance: float):
     assert os.path.exists(filepath), f"❌📄 yaml file does not exist: {filepath}"
     driver = trossen_arm.TrossenArmDriver()
     driver.configure(
-        trossen_arm.Model.wxai_v0, # model
-        trossen_arm.StandardEndEffector.wxai_v0_base, # end_effector
-        ip, # serv_ip
-        True # clear_error
+        trossen_arm.Model.wxai_v0,  # model
+        trossen_arm.StandardEndEffector.wxai_v0_base,  # end_effector
+        ip,  # serv_ip
+        True,  # clear_error
     )
     assert driver is not None, f"❌🦾 failed to connect to arm {ip}"
     # print_configurations(driver)
@@ -181,16 +181,21 @@ def configure_arm(filepath: str, ip: str, test_pose_name: str, test_tolerance: f
     log.info(f"🦾 Testing arm {ip} with pose {test_pose}")
     driver.set_all_positions(trossen_arm.VectorDouble(test_pose), blocking=True)
     current_pose = driver.get_all_positions()[:7]
-    assert np.allclose(current_pose, test_pose, atol=test_tolerance), f"❌🦾 current pose {current_pose} does not match test pose {test_pose}"
+    assert np.allclose(current_pose, test_pose, atol=test_tolerance), (
+        f"❌🦾 current pose {current_pose} does not match test pose {test_pose}"
+    )
     driver.set_all_positions(trossen_arm.VectorDouble(sleep_pose), blocking=True)
     current_pose = driver.get_all_positions()[:7]
-    assert np.allclose(current_pose, sleep_pose, atol=test_tolerance), f"❌🦾 current pose {current_pose} does not match sleep pose {sleep_pose}"
+    assert np.allclose(current_pose, sleep_pose, atol=test_tolerance), (
+        f"❌🦾 current pose {current_pose} does not match sleep pose {sleep_pose}"
+    )
     driver.set_all_modes(trossen_arm.Mode.idle)
 
-if __name__=='__main__':
+
+if __name__ == "__main__":
     args = setup_log_with_config(TrossenConfig)
     # TODO: waiting on https://github.com/TrossenRobotics/trossen_arm/issues/86#issue-3144375498
-    logging.getLogger('trossen_arm').setLevel(logging.ERROR)
+    logging.getLogger("trossen_arm").setLevel(logging.ERROR)
     if args.debug:
         log.setLevel(logging.DEBUG)
     print_config(args)

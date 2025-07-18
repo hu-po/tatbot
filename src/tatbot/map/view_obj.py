@@ -17,7 +17,8 @@ from tatbot.map.base import (
 )
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
-log = get_logger('map.view_obj', "📦")
+log = get_logger("map.view_obj", "📦")
+
 
 def view_obj(config: ViewConfig):
     if not config.mesh_path:
@@ -26,12 +27,12 @@ def view_obj(config: ViewConfig):
     log.info(f"Reading mesh from {mesh_path}")
 
     # Load mesh with trimesh to get UVs and texture
-    mesh = trimesh.load(mesh_path, force='mesh')
+    mesh = trimesh.load(mesh_path, force="mesh")
     if not isinstance(mesh, trimesh.Trimesh):
         raise ValueError("Loaded mesh is not a trimesh.Trimesh instance")
 
     # Optionally use the trimesh viewer for true texture visualization
-    if getattr(config, 'use_trimesh_viewer', False):
+    if getattr(config, "use_trimesh_viewer", False):
         log.info("Launching trimesh viewer for true texture visualization.")
         scene = trimesh.Scene(mesh)
         scene.show()
@@ -42,7 +43,7 @@ def view_obj(config: ViewConfig):
 
     # Try to get UVs
     uvs = None
-    if hasattr(mesh.visual, 'uv') and mesh.visual.uv is not None:
+    if hasattr(mesh.visual, "uv") and mesh.visual.uv is not None:
         uvs = mesh.visual.uv
         log.info(f"Loaded {uvs.shape[0]} UV coordinates")
     else:
@@ -50,20 +51,28 @@ def view_obj(config: ViewConfig):
 
     # Try to get texture image
     texture_img = None
-    if hasattr(mesh.visual, 'material') and hasattr(mesh.visual.material, 'image') and mesh.visual.material.image is not None:
+    if (
+        hasattr(mesh.visual, "material")
+        and hasattr(mesh.visual.material, "image")
+        and mesh.visual.material.image is not None
+    ):
         texture_img = mesh.visual.material.image
         log.info(f"Loaded texture image from material: {texture_img.size}")
-        texture_np = np.array(texture_img.convert('RGB')) / 255.0  # shape (H, W, 3), float32
+        texture_np = np.array(texture_img.convert("RGB")) / 255.0  # shape (H, W, 3), float32
     else:
         log.warning("No texture image found in mesh material.")
         texture_np = None
 
     # Fallback: try to find texture image in the same directory as the OBJ
-    if texture_np is None and hasattr(mesh.visual, 'material') and hasattr(mesh.visual.material, 'image_path'):
+    if (
+        texture_np is None
+        and hasattr(mesh.visual, "material")
+        and hasattr(mesh.visual.material, "image_path")
+    ):
         tex_path = mesh.visual.material.image_path
         if tex_path and os.path.exists(tex_path):
             texture_img = Image.open(tex_path)
-            texture_np = np.array(texture_img.convert('RGB')) / 255.0
+            texture_np = np.array(texture_img.convert("RGB")) / 255.0
             log.info(f"Loaded texture image from path: {tex_path}")
         else:
             log.warning(f"Texture image path not found or does not exist: {tex_path}")
@@ -111,6 +120,7 @@ def view_obj(config: ViewConfig):
         add_vector_quantity=ps_mesh.add_vector_quantity,
         selection_label="Vertex",
     )
+
 
 if __name__ == "__main__":
     args = setup_log_with_config(ViewConfig)

@@ -13,7 +13,8 @@ from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.ik import batch_ik
 from tatbot.utils.log import get_logger
 
-log = get_logger('gen.batch', '💠')
+log = get_logger("gen.batch", "💠")
+
 
 @jdc.jit
 def transform_and_offset(
@@ -39,9 +40,9 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
     Convert a list of (Stroke, Stroke) tuples into a StrokeBatch, running IK to fill in joint values.
     Each tuple is (left_stroke, right_stroke) for a single stroke step.
     """
-    b = len(strokelist.strokes)              # strokes in list
-    l = scene.stroke_length                  # poses per stroke
-    o = scene.offset_num                     # offset samples
+    b = len(strokelist.strokes)  # strokes in list
+    l = scene.stroke_length  # poses per stroke
+    o = scene.offset_num  # offset samples
 
     # Fill arrays from strokes
     ee_pos_l = np.zeros((b, l, o, 3), dtype=np.float32)
@@ -100,14 +101,8 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
     # SAME (stroke, pose, offset)**.  Stacking on axis 2 (as before) gave
     # (b, l, 2, o, …) and produced mismatched pairs after reshape.
     # ------------------------------------------------------------------ #
-    target_pos   = (
-        np.stack([ee_pos_l, ee_pos_r], axis=3)     # (b, l, o, 2, 3)
-        .reshape(b * l * o, 2, 3)
-    )
-    target_wxyz  = (
-        np.stack([ee_rot_l, ee_rot_r], axis=3)     # (b, l, o, 2, 4)
-        .reshape(b * l * o, 2, 4)
-    )
+    target_pos = np.stack([ee_pos_l, ee_pos_r], axis=3).reshape(b * l * o, 2, 3)  # (b, l, o, 2, 3)
+    target_wxyz = np.stack([ee_rot_l, ee_rot_r], axis=3).reshape(b * l * o, 2, 4)  # (b, l, o, 2, 4)
 
     # Run IK in batches
     joints_out = np.zeros((b * l * o, 16), dtype=np.float32)
