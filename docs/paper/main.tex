@@ -116,40 +116,16 @@ The distance the needle travels is called the \textit{stroke length}.
 
 \subsection{Theory}
 
-the artist controls:
-\begin{itemize}
-    \item the speed of the machine travel along the surface of the skin.
-    \item the angle of the needle with respect to the skin surface.
-    \item the depth of the needle penetration.
-    \item the choice of needle cartridge.
-    \item the choice of ink color (and dilution)
-\end{itemize}
-
-A tattoo $T = (m_1, m_2, \ldots, m_n)$ is a sequence of $n$ marks $m_i$.
-A mark $m_i$ is pattern of ink deposition on a bounded surface $S_i$ representing a small patch of skin.
+A tattoo $T = (s_1, s_2, \ldots, s_n)$ is a sequence of $n$ strokes $s_i$.
+A stroke $s_i$ is sequence of needle poses $p_i$.
+Each pose represents the position $\mathbf{p}_i \in \mathbb{R}^3$ and orientation quaternion $\mathbf{q}_i \in \mathbb{H}$.
+The optimal angle of the needle is perpendicular to the skin surface.
 We approximate this surface using a mesh $M_i$, which is a collection of vertices $V_i$, edges $E_i$, and faces $F_i$.
-Each vertex $v_j \in V_i$ has a position $p_j \in \mathbb{R}^3$.
-Each edge $e_k \in E_i$ has a start vertex $s_k \in V_i$ and an end vertex $e_k \in V_i$.
-Each face $f_l \in F_i$ has a normal vector $n_l \in \mathbb{R}^3$ and a center position $c_l \in \mathbb{R}^3$.
-The angle of the needle with respect to the skin surface is represented by a quaternion $q_i \in \mathbb{H}$.
-Each mark $m_i$ is parameterized by a start position \( \mathbf{p}_i \in \mathbb{R}^3 \), a direction vector \( \mathbf{d}_i \in \mathbb{R}^3 \), and a radius \( r_i \).
-The bounded surface $S_i$ is represented by a sdf $\phi: \mathbb{R}^3 \to \mathbb{R}$.
-and the skin penetration depth at a point cae computed as:
-\[
-d(\mathbf{x}) = -\phi(\mathbf{x}) \quad \text{(for points inside the skin)}
-\]
-the robot can be broken down into the arm and the tool.
-in the literature the tool is also called end effector, gripper, or manipulator.
-the arm is controlled in joint space $\mathbf{q} = (q_1, q_2, \ldots, q_j)$ where the number joints $J$ is $6$.
-robot end effector has a position and quaternion $\mathbf{p}_{ee} \in \mathbb{R}^3 \quad \text{and} \quad \mathbf{q}_{ee} \in \mathbb{H} \quad (\text{a quaternion})$
+The arm is controlled in joint space $\mathbf{q} = (q_1, q_2, \ldots, q_j)$ where the number joints $J$ is $6$.
 Inverse kinematics (IK) is the process that converts the joint space coordinates \( \mathbf{q} \) into the end effector space coordinates \( (\mathbf{p}_{ee}, \mathbf{q}_{ee}) \):
 \[
 \text{IK}: \mathbf{q} \mapsto (\mathbf{p}_{ee}, \mathbf{q}_{ee})
 \]
-
-condition the mark on a sequence of mesh vertices
-mesh transformers are probably very good for generating these kind of vertex sequences
-you can then condition the arm controller on the vertex sequence
 
 \pagebreak
 
@@ -157,11 +133,11 @@ you can then condition the arm controller on the vertex sequence
 
 \subsection{Hardware}
 
-TatBot uses a pair of Trossen Robotics WidowXAI arms, each providing six degrees of freedom plus a gripper. The arms are driven by dedicated controller boxes on a gigabit Ethernet network.
+TatBot uses a pair of Trossen Robotics WidowXAI arms driven by dedicated controller boxes on a gigabit Ethernet network. The system employs a distributed computing architecture with multiple specialized nodes.
 
-Perception is handled by two Intel RealSense D405 cameras---one mounted on the right arm and another mounted overhead---along with five PoE overhead cameras. An NVIDIA Jetson AGX Orin and a System76 Meerkat PC handle inference and visualization, while two Raspberry Pi 5 computers manage auxiliary tasks.
+Perception is handled by two Intel RealSense D405 cameras---one mounted on the right arm and another mounted overhead---along with five Amcrest 5MP PoE turret cameras providing overhead coverage. The compute infrastructure includes an NVIDIA Jetson AGX Orin for AI inference, a System76 Meerkat PC for visualization and control, an Acer Nitro V 15 laptop for development, and two Raspberry Pi 5 computers for auxiliary tasks.
 
-Interchangeable end effectors, including a calibration cone, a tattoo machine, and a paper towel roll, attach to the arms via locating fiducials to maintain consistent poses.
+The tattoo application system consists of two Ambition Lutin rotary tattoo machines with 3.8mm straight drive bar stroke cams, powered by swappable 2200mAh RCA batteries operating at 5-12V with ±0.1V precision adjustment.
 
 \begin{table}[h]
     \centering
@@ -169,30 +145,39 @@ Interchangeable end effectors, including a calibration cone, a tattoo machine, a
     \label{tab:hardware-devices}
     \begin{tabular}{lll}
         \toprule
-        Device & Type & Notes \\
+        Device & Type & Specifications \\
         \midrule
-        Jetson AGX Orin (\texttt{ojo}) & Compute & 12-core ARM, 32GB RAM \\
-        System76 Meerkat (\texttt{trossen-ai}) & Compute & Intel i5-1340P, 15GB RAM \\
-        Raspberry Pi~5 $\times$2 & Compute & 4-core ARM, 8GB RAM each \\
-        Intel RealSense D405 $\times$2 & Camera & Wrist and overhead mounts \\
-        Amcrest PoE cameras $\times$5 & Camera & Overhead coverage \\
+        Jetson AGX Orin (\texttt{ojo}) & Compute & 12-core ARM Cortex-A78AE @ 2.2GHz, 32GB RAM, 200 TOPS \\
+        Acer Nitro V 15 (\texttt{ook}) & Compute & Intel i7-13620H 16-core @ 3.6GHz, 16GB RAM, RTX 4050 6GB \\
+        System76 Meerkat (\texttt{trossen-ai}) & Compute & Intel i5-1340P 16-core @ 4.6GHz, 15GB RAM \\
+        Raspberry Pi~5 $\times$2 (\texttt{rpi1}, \texttt{rpi2}) & Compute & ARM Cortex-A76 4-core @ 2.4GHz, 8GB RAM each \\
+        Intel RealSense D405 $\times$2 & Camera & 1280×720 RGBD, 90fps depth, USB3 connection \\
+        Amcrest IP5M-T1179EW-AI-V3 $\times$5 & Camera & 5MP, 1920×1080, 5fps, 132° FOV, PoE \\
         \bottomrule
     \end{tabular}
 \end{table}
 
 \subsection{Software}
 
-The TatBot system relies on a suite of open-source software packages:
+The TatBot system relies on a suite of open-source software packages organized into modular dependency groups:
+
 \begin{itemize}
-    \item \textbf{viser (v0.2.23):} Used for 3D visualization and creating interactive browser-based GUIs. Essential for visualizing robot workspaces, tattoo designs, and simulation results.
-    \item \textbf{Pillow (>=9.0.0,<11.0.0):} A Python Imaging Library fork, used for image manipulation tasks, which could include processing tattoo designs or camera input.
-    \item \textbf{trossen-arm (v1.8.1):} The official Python library for controlling Trossen Robotics arms, likely used for interfacing with the Aloha Solo robot arm.
-    \item \textbf{pyrealsense2 (v2.55.1.6486):} Python bindings for Intel RealSense SDK, used for capturing data from RealSense depth cameras, likely for environment perception and skin surface mapping.
-    \item \textbf{pyroki (git+https://github.com/chungmin99/pyroki.git@main):} A robotics library, potentially used for kinematics, trajectory planning, or other robot control functions.
-    \item \textbf{jax[cuda12] (>=0.4.0,<0.5.0):} A high-performance numerical computation library, accelerated with CUDA for GPU usage. Likely used for machine learning model training and inference, and complex calculations.
-    \item \textbf{jaxtyping (>=0.2.25,<1.0.0):} Type annotations for JAX, enhancing code clarity and robustness for JAX-based computations.
-    \item \textbf{jaxlie (>=1.3.4,<2.0.0):} A library for Lie theory operations with a JAX backend, often used in robotics for representing and manipulating rotations and transformations.
+    \item \textbf{Core Dependencies:} The system uses \texttt{uv} for dependency management with Python 3.11.10. Core packages include \texttt{mcp} (v1.11.0) for Model Context Protocol communication, \texttt{paramiko} (v3.5.1) for SSH-based distributed computing, and \texttt{pyroki} for robotics kinematics and trajectory planning.
+    
+    \item \textbf{Robot Control (\texttt{bot}):} \texttt{lerobot} with TatBot-specific extensions for robot control, \texttt{trossen-arm} (v1.8.3) for WidowXAI arm interfacing, and \texttt{evdev} (v1.9.2) for input device handling.
+    
+    \item \textbf{Computer Vision (\texttt{cam}):} \texttt{opencv-python} (v4.11.0.86) for image processing, \texttt{pyrealsense2} (v2.55.1.6486) for Intel RealSense camera integration, and \texttt{pupil-apriltags} (v1.0.4.post11) for fiducial marker detection.
+    
+    \item \textbf{AI/ML Generation (\texttt{gen}):} \texttt{jax[cuda12]} (>=0.4.0,<0.5.0) for GPU-accelerated numerical computation, \texttt{jaxtyping} (>=0.2.25,<1.0.0) for JAX type annotations, and \texttt{jaxlie} (>=1.3.4,<2.0.0) for Lie theory operations in robotics.
+    
+    \item \textbf{3D Mapping (\texttt{map}):} \texttt{polyscope} (v2.4.0) for 3D geometry visualization, \texttt{potpourri3d} (v1.3.0) for 3D data processing, \texttt{trimesh} (v4.6.13) for mesh operations, and \texttt{pyglet} (v1.5.31) for OpenGL rendering.
+    
+    \item \textbf{Visualization (\texttt{viz}):} \texttt{viser} (v1.0.0) for 3D visualization and interactive browser-based GUIs, and \texttt{pyliblzfse} (>=0.4.1) for data compression.
+    
+    \item \textbf{Development (\texttt{dev}):} \texttt{isort} and \texttt{ruff} for code formatting and linting.
 \end{itemize}
+
+The system employs a distributed architecture with MCP servers running on individual nodes, enabling remote execution of tasks like camera calibration, skin scanning, and stroke visualization across the network.
 
 \subsection{VLA}
 
@@ -233,10 +218,6 @@ Every single previous robotic tattoo system has been constrained to the 2D plane
 Robot arms have been used before, but the control is still classical.
 A set of waypoints are programmed by the human operator and the robot arm just simply executes.
 Modern attempts have focused on 2D gantry systems, similar to 3D printers.
-The most advanced tattoo robot to date is from an Austin based startup called Blackdot.
-I have personally received a tattoo from the system and can vouch for the quality of the tattoo.
-The Blackdot system breaks down 2D designs into very small black dots and then tattoos each dot individually.
-However, the proccess is still fundamentally limited: the control is classical, the 2D constraint is still present.
 Even the designs are not AI generated, but rather come from a library of pre-existing human designs.
 These robots are not artists, they are printers.
 Technology has advanced and we need to create new systems that go beyond these limitations.
