@@ -1,13 +1,13 @@
 import logging
-from dataclasses import dataclass
-from typing import Tuple, Dict
 import time
+from dataclasses import dataclass
+from typing import Dict, Tuple
 
-import numpy as np
 import jax.numpy as jnp
+import jaxlie
+import numpy as np
 import numpy.typing as npt
 import pyrealsense2 as rs
-import jaxlie
 from viser.extras import PointCloudHandle
 
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
