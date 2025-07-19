@@ -20,6 +20,12 @@ class RsPcVizConfig(BaseVizConfig):
     debug: bool = False
     """Enable debug logging."""
 
+@dataclass
+class RealSenseConfig:
+    fps: int = 5
+    """Frames per second for the RealSense camera."""
+    serial_number: str = ""
+    """Serial number of the RealSense camera device."""
     point_size: float = 0.001
     """Size of points in the point cloud visualization."""
     decimation: int = 6
@@ -27,14 +33,6 @@ class RsPcVizConfig(BaseVizConfig):
     clipping: Tuple[float, float] = (0.03, 0.8)
     """Clipping range for depth in meters (min, max)."""
 
-@dataclass
-class RealSenseConfig:
-    fps: int = 5
-    """Frames per second for the RealSense camera."""
-    serial_number: str = ""
-    """Serial number of the RealSense camera device."""
-    link_name: str = ""
-    """Name of the camera link in the robot URDF."""
 
 class RealSenseCamera:
     def __init__(self, config: RealSenseConfig):
@@ -96,18 +94,13 @@ class RsPcViz(BaseViz):
         self.realsense_cams: Dict[str, RealSenseCamera] = {}
         self.realsense_pointclouds: Dict[str, PointCloudHandle] = {}
         for i, realsense in enumerate(self.scene.cams.realsenses):
-            self.realsense_cams[realsense.name] = RealSenseCamera(
-                RealSenseConfig(
-                    fps=realsense.fps,
-                    serial_number=realsense.serial_number,
-                    link_name=self.scene.urdf.cam_link_names[i],
-                )
-            )
+            _config = RealSenseConfig(fps=realsense.fps, serial_number=realsense.serial_number)
+            self.realsense_cams[realsense.name] = RealSenseCamera(_config)
             self.realsense_pointclouds[realsense.name] = self.server.scene.add_point_cloud(
                 f"/pointcloud_{realsense.name}",
                 points=np.zeros((1, 3)),
                 colors=np.zeros((1, 3), dtype=np.uint8),
-                point_size=config.point_size,
+                point_size=_config.point_size,
             )
 
     def step(self):
@@ -115,12 +108,6 @@ class RsPcViz(BaseViz):
             realsense_start_time = time.time()
             rgb, positions, colors = self.realsense_cams[realsense.name].make_observation()
             self.realsense_frustrums[realsense.name].image = rgb
-
-            # forward kinematics to get realsense pose
-            camera_link_idx_a = self.robot.links.names.index(config.realsense_a.link_name)
-            joint_array = np.concatenate([joint_pos_current.left, joint_pos_current.right])
-            camera_pose_a = self.robot.forward_kinematics(joint_array)[camera_link_idx_a]
-            
             # update pointcloud
             positions_world = jaxlie.SE3(camera_pose) @ positions
             self.realsense_pointclouds[realsense.name].points = np.array(positions_world)

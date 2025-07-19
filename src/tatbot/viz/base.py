@@ -166,6 +166,11 @@ class BaseViz:
                 arm_r_joints = self.joints[8:-1]
                 log.debug(f"Setting real right arm positions: {arm_r_joints}")
                 self.arm_r.set_all_positions(self.to_trossen_vector(arm_r_joints), blocking=True)
+            link_poses = get_link_poses(self.scene.urdf.path, self.scene.urdf.cam_link_names, self.joints)
+            for i, realsense in enumerate(self.scene.cams.realsenses):
+                link_name = self.scene.urdf.cam_link_names[i]
+                self.realsense_frustrums[realsense.name].position = link_poses[link_name].pos.xyz
+                self.realsense_frustrums[realsense.name].wxyz = link_poses[link_name].rot.wxyz
             self.step()
             for i, tb in enumerate(self.left_joint_textboxes):
                 tb.value = str(self.joints[i])
