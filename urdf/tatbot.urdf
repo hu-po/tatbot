@@ -343,170 +343,6 @@
   </joint>
   <link name="camera5_optical_frame"/>
 
-  <!-- realsense1 -->
-  <joint name="realsense1_joint" type="fixed">
-    <origin rpy="0 0.7853981633974483 -2.3" xyz="0.2 0.15 0.05"/>
-    <parent link="root"/>
-    <child link="realsense1_bottom_screw_frame"/>
-  </joint>
-  <link name="realsense1_bottom_screw_frame"/>
-  <joint name="realsense1_link_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.01085 0.009 0.021"/>
-    <parent link="realsense1_bottom_screw_frame"/>
-    <child link="realsense1_link"/>
-  </joint>
-  <link name="realsense1_link">
-    <visual>
-      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0038 -0.009 0"/>
-      <geometry>
-        <mesh filename="meshes/cameras/d405.stl" scale="0.001 0.001 0.001"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="-0.0078 -0.009 0"/>
-      <geometry>
-        <box size="0.023 0.042 0.042"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0.072"/>
-      <origin xyz="0 0 0"/>
-      <inertia ixx="0.00002117" ixy="0.0" ixz="0.0" iyy="0.000013758" iyz="0.0" izz="0.000013758"/>
-    </inertial>
-  </link>
-  <joint name="realsense1_depth_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
-    <parent link="realsense1_link"/>
-    <child link="realsense1_depth_frame"/>
-  </joint>
-  <link name="realsense1_depth_frame"/>
-  <joint name="realsense1_depth_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="realsense1_depth_frame"/>
-    <child link="realsense1_depth_optical_frame"/>
-  </joint>
-  <link name="realsense1_depth_optical_frame"/>
-  <joint name="realsense1_infra1_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0.0 0"/>
-    <parent link="realsense1_link"/>
-    <child link="realsense1_infra1_frame"/>
-  </joint>
-  <link name="realsense1_infra1_frame"/>
-  <joint name="realsense1_infra1_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="realsense1_infra1_frame"/>
-    <child link="realsense1_infra1_optical_frame"/>
-  </joint>
-  <link name="realsense1_infra1_optical_frame"/>
-  <joint name="realsense1_infra2_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 -0.018 0"/>
-    <parent link="realsense1_link"/>
-    <child link="realsense1_infra2_frame"/>
-  </joint>
-  <link name="realsense1_infra2_frame"/>
-  <joint name="realsense1_infra2_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="realsense1_infra2_frame"/>
-    <child link="realsense1_infra2_optical_frame"/>
-  </joint>
-  <link name="realsense1_infra2_optical_frame"/>
-  <joint name="realsense1_color_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0.0 0"/>
-    <parent link="realsense1_link"/>
-    <child link="realsense1_color_frame"/>
-  </joint>
-  <link name="realsense1_color_frame"/>
-  <joint name="realsense1_color_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="realsense1_color_frame"/>
-    <child link="realsense1_color_optical_frame"/>
-  </joint>
-  <link name="realsense1_color_optical_frame"/>
-
-
-  <!-- realsense2 -->
-  <joint name="realsense2_joint" type="fixed">
-    <origin rpy="0 0.7853981633974483 2.3" xyz="0.2 -0.15 0.05"/>
-    <parent link="root"/>
-    <child link="realsense2_bottom_screw_frame"/>
-  </joint>
-  <link name="realsense2_bottom_screw_frame"/>
-  <joint name="realsense2_link_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.01085 0.009 0.021"/>
-    <parent link="realsense2_bottom_screw_frame"/>
-    <child link="realsense2_link"/>
-  </joint>
-  <link name="realsense2_link">
-    <visual>
-      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0038 -0.009 0"/>
-      <geometry>
-        <mesh filename="meshes/cameras/d405.stl" scale="0.001 0.001 0.001"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="-0.0078 -0.009 0"/>
-      <geometry>
-        <box size="0.023 0.042 0.042"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0.072"/>
-      <origin xyz="0 0 0"/>
-      <inertia ixx="0.00002117" ixy="0.0" ixz="0.0" iyy="0.000013758" iyz="0.0" izz="0.000013758"/>
-    </inertial>
-  </link>
-  <joint name="realsense2_depth_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
-    <parent link="realsense2_link"/>
-    <child link="realsense2_depth_frame"/>
-  </joint>
-  <link name="realsense2_depth_frame"/>
-  <joint name="realsense2_depth_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="realsense2_depth_frame"/>
-    <child link="realsense2_depth_optical_frame"/>
-  </joint>
-  <link name="realsense2_depth_optical_frame"/>
-  <joint name="realsense2_infra1_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0.0 0"/>
-    <parent link="realsense2_link"/>
-    <child link="realsense2_infra1_frame"/>
-  </joint>
-  <link name="realsense2_infra1_frame"/>
-  <joint name="realsense2_infra1_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="realsense2_infra1_frame"/>
-    <child link="realsense2_infra1_optical_frame"/>
-  </joint>
-  <link name="realsense2_infra1_optical_frame"/>
-  <joint name="realsense2_infra2_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 -0.018 0"/>
-    <parent link="realsense2_link"/>
-    <child link="realsense2_infra2_frame"/>
-  </joint>
-  <link name="realsense2_infra2_frame"/>
-  <joint name="realsense2_infra2_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="realsense2_infra2_frame"/>
-    <child link="realsense2_infra2_optical_frame"/>
-  </joint>
-  <link name="realsense2_infra2_optical_frame"/>
-  <joint name="realsense2_color_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0.0 0"/>
-    <parent link="realsense2_link"/>
-    <child link="realsense2_color_frame"/>
-  </joint>
-  <link name="realsense2_color_frame"/>
-  <joint name="realsense2_color_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="realsense2_color_frame"/>
-    <child link="realsense2_color_optical_frame"/>
-  </joint>
-  <link name="realsense2_color_optical_frame"/>
-
-
   <!-- arm_l -->
   <joint name="left/mount_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0.2675 0"/>
@@ -695,6 +531,114 @@
     <axis xyz="1 0 0"/>
     <limit effort="7.0" lower="-3.141592653589793" upper="3.141592653589793" velocity="7.0"/>
   </joint>
+
+  <!-- left realsense -->
+  <link name="left/realsense_mount_d405">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.03023383 0.00679835 0.05006687"/>
+      <mass value="0.04518012"/>
+      <inertia ixx="0.00003426" ixy="-0.00000027" ixz="-0.00000309" iyy="0.00001980" iyz="-0.00000319" izz="0.00002470"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/camera_mount_d405.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/camera_mount_d405.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left/realsense_mount_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.012 0 0"/>
+    <parent link="left/link_6"/>
+    <child link="left/realsense_mount_d405"/>
+  </joint>
+  <joint name="left/realsense_joint" type="fixed">
+    <origin rpy="0 0.3490658503988659 0" xyz="0.02927207801 0 0.03824951197"/>
+    <parent link="left/realsense_mount_d405"/>
+    <child link="left/realsense_bottom_screw_frame"/>
+  </joint>
+  <link name="left/realsense_bottom_screw_frame"/>
+  <joint name="left/realsense_link_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.01085 0.009 0.021"/>
+    <parent link="left/realsense_bottom_screw_frame"/>
+    <child link="left/realsense_link"/>
+  </joint>
+  <link name="left/realsense_link">
+    <visual>
+      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0038 -0.009 0"/>
+      <geometry>
+        <mesh filename="meshes/cameras/d405.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="-0.0078 -0.009 0"/>
+      <geometry>
+        <box size="0.023 0.042 0.042"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.072"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.00002117" ixy="0.0" ixz="0.0" iyy="0.000013758" iyz="0.0" izz="0.000013758"/>
+    </inertial>
+  </link>
+  <joint name="left/realsense_depth_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="left/realsense_link"/>
+    <child link="left/realsense_depth_frame"/>
+  </joint>
+  <link name="left/realsense_depth_frame"/>
+  <joint name="left/realsense_depth_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="left/realsense_depth_frame"/>
+    <child link="left/realsense_depth_optical_frame"/>
+  </joint>
+  <link name="left/realsense_depth_optical_frame"/>
+  <joint name="left/realsense_infra1_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.0 0"/>
+    <parent link="left/realsense_link"/>
+    <child link="left/realsense_infra1_frame"/>
+  </joint>
+  <link name="left/realsense_infra1_frame"/>
+  <joint name="left/realsense_infra1_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="left/realsense_infra1_frame"/>
+    <child link="left/realsense_infra1_optical_frame"/>
+  </joint>
+  <link name="left/realsense_infra1_optical_frame"/>
+  <joint name="left/realsense_infra2_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 -0.018 0"/>
+    <parent link="left/realsense_link"/>
+    <child link="left/realsense_infra2_frame"/>
+  </joint>
+  <link name="left/realsense_infra2_frame"/>
+  <joint name="left/realsense_infra2_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="left/realsense_infra2_frame"/>
+    <child link="left/realsense_infra2_optical_frame"/>
+  </joint>
+  <link name="left/realsense_infra2_optical_frame"/>
+  <joint name="left/realsense_color_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.0 0"/>
+    <parent link="left/realsense_link"/>
+    <child link="left/realsense_color_frame"/>
+  </joint>
+  <link name="left/realsense_color_frame"/>
+  <joint name="left/realsense_color_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="left/realsense_color_frame"/>
+    <child link="left/realsense_color_optical_frame"/>
+  </joint>
+  <link name="left/realsense_color_optical_frame"/>
+
+  <!-- left arm carriage -->
   <link name="left/carriage_right">
     <inertial>
       <origin rpy="0 0 0" xyz="-0.00889602 0.00403514 0.00457901"/>
@@ -775,22 +719,7 @@
     <child link="left/leader_finger_left_thumb"/>
   </joint>
 
-  <!-- apriltag 6 -->
-  <link name="tag6">
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/tags/16h5_006_4cm/tag.obj" scale="1 1 1"/>
-      </geometry>
-    </visual>
-  </link>
-  <joint name="tag6_joint" type="fixed">
-    <origin rpy="0 1.5707963267948966 0" xyz="0.002 0 0"/>
-    <parent link="left/leader_finger_left_thumb"/>
-    <child link="tag6"/>
-  </joint>
-
-  <!-- right arm tattoo pen -->
+  <!-- left arm tattoo pen -->
   <link name="left/tattoo_pen">
     <inertial>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -1025,6 +954,114 @@
     <axis xyz="1 0 0"/>
     <limit effort="7.0" lower="-3.141592653589793" upper="3.141592653589793" velocity="7.0"/>
   </joint>
+
+  <!-- right realsense -->
+  <link name="right/realsense_mount_d405">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.03023383 0.00679835 0.05006687"/>
+      <mass value="0.04518012"/>
+      <inertia ixx="0.00003426" ixy="-0.00000027" ixz="-0.00000309" iyy="0.00001980" iyz="-0.00000319" izz="0.00002470"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/camera_mount_d405.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/camera_mount_d405.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="right/realsense_mount_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.012 0 0"/>
+    <parent link="right/link_6"/>
+    <child link="right/realsense_mount_d405"/>
+  </joint>
+  <joint name="right/realsense_joint" type="fixed">
+    <origin rpy="0 0.3490658503988659 0" xyz="0.02927207801 0 0.03824951197"/>
+    <parent link="right/realsense_mount_d405"/>
+    <child link="right/realsense_bottom_screw_frame"/>
+  </joint>
+  <link name="right/realsense_bottom_screw_frame"/>
+  <joint name="right/realsense_link_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.01085 0.009 0.021"/>
+    <parent link="right/realsense_bottom_screw_frame"/>
+    <child link="right/realsense_link"/>
+  </joint>
+  <link name="right/realsense_link">
+    <visual>
+      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0038 -0.009 0"/>
+      <geometry>
+        <mesh filename="meshes/cameras/d405.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="-0.0078 -0.009 0"/>
+      <geometry>
+        <box size="0.023 0.042 0.042"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.072"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.00002117" ixy="0.0" ixz="0.0" iyy="0.000013758" iyz="0.0" izz="0.000013758"/>
+    </inertial>
+  </link>
+  <joint name="right/realsense_depth_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="right/realsense_link"/>
+    <child link="right/realsense_depth_frame"/>
+  </joint>
+  <link name="right/realsense_depth_frame"/>
+  <joint name="right/realsense_depth_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="right/realsense_depth_frame"/>
+    <child link="right/realsense_depth_optical_frame"/>
+  </joint>
+  <link name="right/realsense_depth_optical_frame"/>
+  <joint name="right/realsense_infra1_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.0 0"/>
+    <parent link="right/realsense_link"/>
+    <child link="right/realsense_infra1_frame"/>
+  </joint>
+  <link name="right/realsense_infra1_frame"/>
+  <joint name="right/realsense_infra1_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="right/realsense_infra1_frame"/>
+    <child link="right/realsense_infra1_optical_frame"/>
+  </joint>
+  <link name="right/realsense_infra1_optical_frame"/>
+  <joint name="right/realsense_infra2_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 -0.018 0"/>
+    <parent link="right/realsense_link"/>
+    <child link="right/realsense_infra2_frame"/>
+  </joint>
+  <link name="right/realsense_infra2_frame"/>
+  <joint name="right/realsense_infra2_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="right/realsense_infra2_frame"/>
+    <child link="right/realsense_infra2_optical_frame"/>
+  </joint>
+  <link name="right/realsense_infra2_optical_frame"/>
+  <joint name="right/realsense_color_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.0 0"/>
+    <parent link="right/realsense_link"/>
+    <child link="right/realsense_color_frame"/>
+  </joint>
+  <link name="right/realsense_color_frame"/>
+  <joint name="right/realsense_color_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="right/realsense_color_frame"/>
+    <child link="right/realsense_color_optical_frame"/>
+  </joint>
+  <link name="right/realsense_color_optical_frame"/>
+
+  <!-- right arm carriage -->
   <link name="right/carriage_right">
     <inertial>
       <origin rpy="0 0 0" xyz="-0.00889602 0.00403514 0.00457901"/>
@@ -1103,21 +1140,6 @@
     <origin rpy="0 0 0" xyz="0 0 -0.008"/>
     <parent link="right/carriage_right"/>
     <child link="right/leader_finger_right_thumb"/>
-  </joint>
-
-  <!-- apriltag 7 -->
-  <link name="tag7">
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/tags/16h5_007_4cm/tag.obj" scale="1 1 1"/>
-      </geometry>
-    </visual>
-  </link>
-  <joint name="tag7_joint" type="fixed">
-    <origin rpy="0 1.5707963267948966 0" xyz="0.002 0 0"/>
-    <parent link="right/leader_finger_right_thumb"/>
-    <child link="tag7"/>
   </joint>
 
   <!-- right arm tattoo pen -->
