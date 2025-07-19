@@ -4,6 +4,7 @@ from typing import Tuple, Dict
 import time
 
 import numpy as np
+import jax.numpy as jnp
 import numpy.typing as npt
 import pyrealsense2 as rs
 import jaxlie
@@ -109,7 +110,10 @@ class RsPcViz(BaseViz):
             rgb, positions, colors = self.realsense_cams[realsense.name].make_observation()
             self.realsense_frustrums[realsense.name].image = rgb
             # update pointcloud
-            positions_world = jaxlie.SE3(camera_pose) @ positions
+            positions_world = jaxlie.SE3(wxyz_xyz=jnp.concatenate([
+                self.realsense_frustrums[realsense.name].wxyz,
+                self.realsense_frustrums[realsense.name].position,
+            ], axis=-1)) @ positions
             self.realsense_pointclouds[realsense.name].points = np.array(positions_world)
             self.realsense_pointclouds[realsense.name].colors = np.array(colors)
             
