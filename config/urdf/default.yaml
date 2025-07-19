@@ -9,8 +9,8 @@ tag_link_names:
   - "tag6"
   - "tag7"
 cam_link_names:
-  - "realsense1_color_optical_frame"
-  - "realsense2_color_optical_frame"
+  - "left/realsense_color_optical_frame"
+  - "right/realsense_color_optical_frame"
   - "camera1_optical_frame"
   - "camera2_optical_frame"
   - "camera3_optical_frame"
