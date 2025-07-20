@@ -95,6 +95,8 @@ class RsPcViz(BaseViz):
     def __init__(self, config: RsPcVizConfig):
         super().__init__(config)
 
+        import pdb; pdb.set_trace()
+
         self.realsense_cams: Dict[str, RealSenseCamera] = {}
         self.realsense_pointclouds: Dict[str, PointCloudHandle] = {}
         for i, realsense in enumerate(self.scene.cams.realsenses):
