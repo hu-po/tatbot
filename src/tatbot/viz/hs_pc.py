@@ -13,18 +13,6 @@ from tatbot.viz.base import BaseViz, BaseVizConfig
 
 log = get_logger("viz.hs_pc", "📊")
 
-
-@dataclass
-class AppState:
-    """Application state for geometric operations"""
-    geodesic_source: int = -1
-    extension_sources: list = field(default_factory=list)
-    transport_source: int = -1
-    transport_vector: list = field(default_factory=lambda: [6.0, 6.0])
-    logmap_source: int = -1
-    curves: list = field(default_factory=lambda: [[]])
-
-
 @dataclass
 class PointcloudVizConfig(BaseVizConfig):
     """Configuration for pointcloud visualization"""
@@ -37,6 +25,15 @@ class PointcloudVizConfig(BaseVizConfig):
     view_camera_look_at: tuple[float, float, float] = (0.0, 0.0, 0.0)
     """Initial camera look_at for pointcloud viewing."""
 
+@dataclass
+class AppState:
+    """Application state for geometric operations"""
+    geodesic_source: int = -1
+    extension_sources: list = field(default_factory=list)
+    transport_source: int = -1
+    transport_vector: list = field(default_factory=lambda: [6.0, 6.0])
+    logmap_source: int = -1
+    curves: list = field(default_factory=lambda: [[]])
 
 class PointcloudViz(BaseViz):
     """Pointcloud visualization using viser, inheriting from BaseViz"""
