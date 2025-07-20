@@ -8,7 +8,7 @@ import jaxlie
 import numpy as np
 import numpy.typing as npt
 import pyrealsense2 as rs
-from viser.extras import PointCloudHandle
+from viser import PointCloudHandle
 
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 from tatbot.viz.base import BaseViz, BaseVizConfig
@@ -109,7 +109,6 @@ class RsPcViz(BaseViz):
             realsense_start_time = time.time()
             rgb, positions, colors = self.realsense_cams[realsense.name].make_observation()
             self.realsense_frustrums[realsense.name].image = rgb
-            # update pointcloud
             positions_world = jaxlie.SE3(wxyz_xyz=jnp.concatenate([
                 self.realsense_frustrums[realsense.name].wxyz,
                 self.realsense_frustrums[realsense.name].position,
