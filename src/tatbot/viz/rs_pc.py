@@ -44,8 +44,8 @@ class RealSenseCamera:
         pipeline_wrapper = rs.pipeline_wrapper(self.pipeline)
         self.config.resolve(pipeline_wrapper)
         self.config.enable_device(config.serial_number)
-        self.config.enable_stream(rs.stream.depth, rs.format.z16, config.fps)
-        self.config.enable_stream(rs.stream.color, rs.format.rgb8, config.fps)
+        self.config.enable_stream(rs.stream.depth) #, rs.format.z16, config.fps)
+        self.config.enable_stream(rs.stream.color) #, rs.format.rgb8, config.fps)
         self.pipeline.start(self.config)
         self.intrinsics = self.pipeline.get_active_profile().get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
         self.decimation = config.decimation
