@@ -23,8 +23,6 @@ class RsPcVizConfig(BaseVizConfig):
 
 @dataclass
 class RealSenseConfig:
-    fps: int = 5
-    """Frames per second for the RealSense camera."""
     serial_number: str = ""
     """Serial number of the RealSense camera device."""
     point_size: float = 0.001
@@ -35,6 +33,8 @@ class RealSenseConfig:
     """Clipping range for depth in meters (min, max)."""
     timeout_ms: int = 8000
     """Timeout for the RealSense camera in milliseconds."""
+    fps: int = 5
+    """Frames per second for the RealSense camera."""
 
 class RealSenseCamera:
     def __init__(self, config: RealSenseConfig):
@@ -104,6 +104,7 @@ class RsPcViz(BaseViz):
                 points=np.zeros((1, 3)),
                 colors=np.zeros((1, 3), dtype=np.uint8),
                 point_size=_config.point_size,
+                fps=realsense.fps,
             )
 
     def step(self):
