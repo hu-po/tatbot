@@ -33,7 +33,7 @@ class RealSenseConfig:
     """Clipping range for depth in meters (min, max)."""
     timeout_ms: int = 8000
     """Timeout for the RealSense camera in milliseconds."""
-    fps: int = 5
+    fps: int = 30
     """Frames per second for the RealSense camera."""
 
 class RealSenseCamera:
@@ -97,14 +97,13 @@ class RsPcViz(BaseViz):
         self.realsense_cams: Dict[str, RealSenseCamera] = {}
         self.realsense_pointclouds: Dict[str, PointCloudHandle] = {}
         for i, realsense in enumerate(self.scene.cams.realsenses):
-            _config = RealSenseConfig(fps=realsense.fps, serial_number=realsense.serial_number)
+            _config = RealSenseConfig(serial_number=realsense.serial_number, fps=realsense.fps)
             self.realsense_cams[realsense.name] = RealSenseCamera(_config)
             self.realsense_pointclouds[realsense.name] = self.server.scene.add_point_cloud(
                 f"/pointcloud_{realsense.name}",
                 points=np.zeros((1, 3)),
                 colors=np.zeros((1, 3), dtype=np.uint8),
                 point_size=_config.point_size,
-                fps=realsense.fps,
             )
 
     def step(self):
