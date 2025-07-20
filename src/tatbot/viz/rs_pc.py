@@ -33,7 +33,8 @@ class RealSenseConfig:
     """Decimation filter magnitude for depth frames (integer >= 1)."""
     clipping: Tuple[float, float] = (0.03, 0.8)
     """Clipping range for depth in meters (min, max)."""
-
+    timeout_ms: int = 8000
+    """Timeout for the RealSense camera in milliseconds."""
 
 class RealSenseCamera:
     def __init__(self, config: RealSenseConfig):
@@ -48,6 +49,7 @@ class RealSenseCamera:
         self.intrinsics = self.pipeline.get_active_profile().get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
         self.decimation = config.decimation
         self.clipping = config.clipping
+        self.timeout_ms = config.timeout_ms
         
     @property
     def fov(self) -> float:
@@ -63,7 +65,7 @@ class RealSenseCamera:
         point_cloud = rs.pointcloud()
         decimate = rs.decimation_filter()
         decimate.set_option(rs.option.filter_magnitude, self.decimation)
-        frames = self.pipeline.wait_for_frames()
+        frames = self.pipeline.wait_for_frames(timeout_ms=self.timeout_ms)
         depth_frame = frames.get_depth_frame()
         depth_frame = decimate.process(depth_frame)
         depth_min, depth_max = self.clipping
