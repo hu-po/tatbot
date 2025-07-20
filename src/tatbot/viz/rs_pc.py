@@ -33,17 +33,15 @@ class RealSenseConfig:
     """Clipping range for depth in meters (min, max)."""
     timeout_ms: int = 8000
     """Timeout for the RealSense camera in milliseconds."""
-    fps: int = 30
-    """Frames per second for the RealSense camera."""
 
 class RealSenseCamera:
     def __init__(self, config: RealSenseConfig):
         self.pipeline = rs.pipeline()
         self.config = rs.config()
-        # import pdb; pdb.set_trace()
         pipeline_wrapper = rs.pipeline_wrapper(self.pipeline)
         self.config.resolve(pipeline_wrapper)
         self.config.enable_device(config.serial_number)
+        # TODO: tune the stream parameters for optimal high quality skin detection
         self.config.enable_stream(rs.stream.depth) #, rs.format.z16, config.fps)
         self.config.enable_stream(rs.stream.color) #, rs.format.rgb8, config.fps)
         self.pipeline.start(self.config)
@@ -95,12 +93,10 @@ class RsPcViz(BaseViz):
     def __init__(self, config: RsPcVizConfig):
         super().__init__(config)
 
-        import pdb; pdb.set_trace()
-
         self.realsense_cams: Dict[str, RealSenseCamera] = {}
         self.realsense_pointclouds: Dict[str, PointCloudHandle] = {}
         for i, realsense in enumerate(self.scene.cams.realsenses):
-            _config = RealSenseConfig(serial_number=realsense.serial_number, fps=realsense.fps)
+            _config = RealSenseConfig(serial_number=realsense.serial_number)
             log.info(f"Initializing {realsense.name} config: {_config}")
             self.realsense_cams[realsense.name] = RealSenseCamera(_config)
             self.realsense_pointclouds[realsense.name] = self.server.scene.add_point_cloud(
