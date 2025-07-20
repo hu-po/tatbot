@@ -64,6 +64,7 @@ map = [
 viz = [
     "viser==1.0.0",
     "pyliblzfse>=0.4.1",
+    "open3d>=0.18.0",
 ]
 
 [tool.setuptools.packages.find]

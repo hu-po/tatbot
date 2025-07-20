@@ -49,6 +49,7 @@ class BaseViz:
     def __init__(self, config: BaseVizConfig):
         self.config = config
         self.scene: Scene = Scene.from_name(config.scene)
+        self.global_step = 0
 
         log.info("Starting viser server")
         self.server: viser.ViserServer = viser.ViserServer()
@@ -79,6 +80,14 @@ class BaseViz:
                         f"{i + 1}", initial_value=str(self.joints[i + 8]), disabled=True
                     )
                     self.right_joint_textboxes.append(tb)
+
+        with self.server.gui.add_folder("System", expand_by_default=False):
+            self.global_step_textbox = self.server.gui.add_text(
+                "Global Step", 
+                initial_value="0", 
+                disabled=True,
+                hint="Current global step counter"
+            )
 
         self.arm_l = None
         self.arm_r = None
@@ -176,6 +185,8 @@ class BaseViz:
                 tb.value = str(self.joints[i])
             for i, tb in enumerate(self.right_joint_textboxes):
                 tb.value = str(self.joints[i + 8])
+            self.global_step += 1
+            self.global_step_textbox.value = str(self.global_step)
             log.debug(f"Step time: {time.time() - start_time:.4f}s")
 
 
