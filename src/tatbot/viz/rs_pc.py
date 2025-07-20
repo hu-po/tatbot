@@ -13,7 +13,7 @@ from viser import PointCloudHandle
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 from tatbot.viz.base import BaseViz, BaseVizConfig
 
-log = get_logger("viz.rs_pc", "�")
+log = get_logger("viz.rs_pc", "📹")
 
 
 @dataclass
@@ -98,6 +98,7 @@ class RsPcViz(BaseViz):
         self.realsense_pointclouds: Dict[str, PointCloudHandle] = {}
         for i, realsense in enumerate(self.scene.cams.realsenses):
             _config = RealSenseConfig(serial_number=realsense.serial_number, fps=realsense.fps)
+            log.info(f"Initializing {realsense.name} config: {_config}")
             self.realsense_cams[realsense.name] = RealSenseCamera(_config)
             self.realsense_pointclouds[realsense.name] = self.server.scene.add_point_cloud(
                 f"/pointcloud_{realsense.name}",
@@ -118,7 +119,7 @@ class RsPcViz(BaseViz):
             self.realsense_pointclouds[realsense.name].points = np.array(positions_world)
             self.realsense_pointclouds[realsense.name].colors = np.array(colors)
             
-            log.info(f"🔍 {realsense.name} took {time.time() - realsense_start_time} seconds")
+            log.info(f"{realsense.name} took {time.time() - realsense_start_time} seconds")
 
 
 if __name__ == "__main__":
