@@ -1,0 +1,147 @@
+ipcameras:
+  - name: "camera1"
+    width: 1920
+    height: 1080
+    fps: 5
+    ip: "192.168.1.91"
+    username: "admin"
+    password: "CAMERA_1_PASSWORD"
+    rtsp_port: 554
+    intrinsics:
+      fov: 1.937 # 111° horizontal FOV in radians
+      fov_depth: null
+      aspect: 1.77
+      fx: 664.0 # focal length in pixels (width direction)
+      fy: 976.5 # focal length in pixels (height direction)
+      ppx: 960.0 # principal point x (image center)
+      ppy: 540.0 # principal point y (image center)
+    extrinsics:
+      pos:
+        xyz: [0.0, 0.0, 0.0]
+      rot:
+        wxyz: [1.0, 0.0, 0.0, 0.0]
+  - name: "camera2"
+    width: 1920
+    height: 1080
+    fps: 5
+    ip: "192.168.1.92"
+    username: "admin"
+    password: "CAMERA_2_PASSWORD"
+    rtsp_port: 554
+    intrinsics:
+      fov: 1.937 # 111° horizontal FOV in radians
+      fov_depth: null
+      aspect: 1.77
+      fx: 664.0 # focal length in pixels (width direction)
+      fy: 976.5 # focal length in pixels (height direction)
+      ppx: 960.0 # principal point x (image center)
+      ppy: 540.0 # principal point y (image center)
+    extrinsics:
+      pos:
+        xyz: [0.0, 0.0, 0.0]
+      rot:
+        wxyz: [1.0, 0.0, 0.0, 0.0]
+  - name: "camera3"
+    width: 1920
+    height: 1080
+    fps: 5
+    ip: "192.168.1.93"
+    username: "admin"
+    password: "CAMERA_3_PASSWORD"
+    rtsp_port: 554
+    intrinsics:
+      fov: 1.937 # 111° horizontal FOV in radians
+      fov_depth: null
+      aspect: 1.77
+      fx: 664.0 # focal length in pixels (width direction)
+      fy: 976.5 # focal length in pixels (height direction)
+      ppx: 960.0 # principal point x (image center)
+      ppy: 540.0 # principal point y (image center)
+    extrinsics:
+      pos:
+        xyz: [0.0, 0.0, 0.0]
+      rot:
+        wxyz: [1.0, 0.0, 0.0, 0.0]
+  - name: "camera4"
+    width: 1920
+    height: 1080
+    fps: 5
+    ip: "192.168.1.94"
+    username: "admin"
+    password: "CAMERA_4_PASSWORD"
+    rtsp_port: 554
+    intrinsics:
+      fov: 1.937 # 111° horizontal FOV in radians
+      fov_depth: null
+      aspect: 1.77
+      fx: 664.0 # focal length in pixels (width direction)
+      fy: 976.5 # focal length in pixels (height direction)
+      ppx: 960.0 # principal point x (image center)
+      ppy: 540.0 # principal point y (image center)
+    extrinsics:
+      pos:
+        xyz: [0.0, 0.0, 0.0]
+      rot:
+        wxyz: [1.0, 0.0, 0.0, 0.0]
+  - name: "camera5"
+    width: 1920
+    height: 1080
+    fps: 5
+    ip: "192.168.1.95"
+    username: "admin"
+    password: "CAMERA_5_PASSWORD"
+    rtsp_port: 554
+    intrinsics:
+      fov: 1.937 # 111° horizontal FOV in radians
+      fov_depth: null
+      aspect: 1.77
+      fx: 664.0 # focal length in pixels (width direction)
+      fy: 976.5 # focal length in pixels (height direction)
+      ppx: 960.0 # principal point x (image center)
+      ppy: 540.0 # principal point y (image center)
+    extrinsics:
+      pos:
+        xyz: [0.0, 0.0, 0.0]
+      rot:
+        wxyz: [1.0, 0.0, 0.0, 0.0]
+realsenses:
+  - name: "realsense1"
+    width: 1280
+    height: 720
+    fps: 5
+    serial_number: "218622278376"
+    intrinsics:
+      # Color FOV (degrees): H≈88.5, V≈58, D≈95 (D455 model)
+      # Depth FOV (degrees): H≈90, V≈65, D≈103 (D455 model)
+      fov: 1.544 # ≈88.5 deg in radians (color)
+      fov_depth: 1.571 # ≈90 deg in radians (depth)
+      aspect: 1.33
+      fx: 327.5
+      fy: 433.54
+      ppx: 325.1
+      ppy: 238.7
+    extrinsics:
+      pos:
+        xyz: [0.0, 0.0, 0.0]
+      rot:
+        wxyz: [1.0, 0.0, 0.0, 0.0]
+  - name: "realsense2"
+    width: 1280
+    height: 720
+    fps: 5
+    serial_number: "230422273017"
+    intrinsics:
+      # Color FOV (degrees): H≈88.5, V≈58, D≈95 (D455 model)
+      # Depth FOV (degrees): H≈90, V≈65, D≈103 (D455 model)
+      fov: 1.544 # ≈88.5 deg in radians (color)
+      fov_depth: 1.571 # ≈90 deg in radians (depth)
+      aspect: 1.33
+      fx: 328.2
+      fy: 434.33
+      ppx: 316.3
+      ppy: 237.81
+    extrinsics:
+      pos:
+        xyz: [0.0, 0.0, 0.0]
+      rot:
+        wxyz: [1.0, 0.0, 0.0, 0.0]

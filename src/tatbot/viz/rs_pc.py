@@ -40,6 +40,7 @@ class RealSenseCamera:
     def __init__(self, config: RealSenseConfig):
         self.pipeline = rs.pipeline()
         self.config = rs.config()
+        import pdb; pdb.set_trace()
         pipeline_wrapper = rs.pipeline_wrapper(self.pipeline)
         self.config.resolve(pipeline_wrapper)
         self.config.enable_device(config.serial_number)
