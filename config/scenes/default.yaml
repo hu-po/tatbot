@@ -29,4 +29,4 @@ ee_offset_r:
   xyz: [0.0, 0.0, 0.0]
 offset_range: [-0.01, 0.01]
 offset_num: 3
-design_dir_path: null # default scene does not have a design
+design_dir_path: "~/tatbot/nfs/designs/default"

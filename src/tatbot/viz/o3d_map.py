@@ -2,14 +2,13 @@
 Surface Mapping Debug Visualizer
 ================================
 
-This module provides an interactive Open3D visualizer for debugging the surface mapping process.
+This module provides a simple Open3D visualizer for debugging the surface mapping process.
 It allows visualization of:
 - Point cloud surface
 - Original flat strokes (2D)
 - Mapped 3D strokes on surface
 - Surface normals
 - Design origin position
-- Interactive exploration and comparison
 
 Usage:
     python -m tatbot.viz.o3d_map --pointcloud path/to/pointcloud.ply --scene scene_name
@@ -20,13 +19,12 @@ import argparse
 import numpy as np
 import open3d as o3d
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List
 
-from tatbot.data.pose import Pose
 from tatbot.data.stroke import Stroke, StrokeList
 from tatbot.data.scene import Scene
 from tatbot.gen.map import map_strokes_to_surface
-from tatbot.gen.strokes import load_make_strokes
+from tatbot.gen.gcode import make_gcode_strokes
 from tatbot.utils.log import get_logger
 
 log = get_logger("viz.o3d_map", "🔍")
@@ -34,7 +32,7 @@ log = get_logger("viz.o3d_map", "🔍")
 
 class MappingDebugVisualizer:
     """
-    Interactive Open3D visualizer for debugging surface mapping process.
+    Simple Open3D visualizer for debugging surface mapping process.
     """
     
     def __init__(self, point_cloud_file: str, scene_name: str, skip_mapping: bool = False):
@@ -52,12 +50,6 @@ class MappingDebugVisualizer:
         
         # Visualization state
         self.vis = None
-        self.geometries = {}
-        self.current_stroke_idx = 0
-        self.show_normals = True
-        self.show_flat_strokes = False
-        self.show_mapped_strokes = True
-        self.show_origin = True
         self.normal_length = 0.005  # meters
         
         # Data
@@ -185,7 +177,7 @@ class MappingDebugVisualizer:
             design_dir = tempfile.mkdtemp()
             log.info(f"No design directory specified, using temporary directory: {design_dir}")
         
-        stroke_list, stroke_batch = load_make_strokes(self.scene, design_dir, resume=False)
+        stroke_list: StrokeList = make_gcode_strokes(self.scene)
         # Extract individual strokes from stroke pairs
         for stroke_pair in stroke_list.strokes:
             self.original_strokes.extend(stroke_pair)
@@ -312,156 +304,8 @@ class MappingDebugVisualizer:
         
         return sphere
     
-    def _update_geometries(self):
-        """Update all geometries in the visualizer."""
-        # Clear existing geometries
-        for geometry in self.geometries.values():
-            if geometry is not None:
-                self.vis.remove_geometry(geometry, False)
-        
-        self.geometries.clear()
-        
-        # Add point cloud
-        pcd = self._create_point_cloud_geometry()
-        self.geometries['pointcloud'] = pcd
-        self.vis.add_geometry(pcd, False)
-        
-        # Add origin marker
-        if self.show_origin:
-            origin_sphere = self._create_origin_geometry()
-            self.geometries['origin'] = origin_sphere
-            self.vis.add_geometry(origin_sphere, False)
-        
-        # Add current stroke
-        if 0 <= self.current_stroke_idx < len(self.original_strokes):
-            stroke = self.original_strokes[self.current_stroke_idx]
-            mapped_stroke = self.mapped_strokes[self.current_stroke_idx]
-            
-            # Original flat stroke (red)
-            if self.show_flat_strokes and stroke.ee_pos is not None:
-                flat_geom = self._create_stroke_geometry(stroke, [1, 0, 0], is_3d=False)
-                if flat_geom is not None:
-                    self.geometries['flat_stroke'] = flat_geom
-                    self.vis.add_geometry(flat_geom, False)
-            
-            # Mapped 3D stroke (green)
-            if self.show_mapped_strokes and mapped_stroke.ee_pos is not None:
-                mapped_geom = self._create_stroke_geometry(mapped_stroke, [0, 1, 0], is_3d=True)
-                if mapped_geom is not None:
-                    self.geometries['mapped_stroke'] = mapped_geom
-                    self.vis.add_geometry(mapped_geom, False)
-                
-                # Normals (blue)
-                if self.show_normals:
-                    normal_geom = self._create_normal_geometry(mapped_stroke)
-                    if normal_geom is not None:
-                        self.geometries['normals'] = normal_geom
-                        self.vis.add_geometry(normal_geom, False)
-        
-        self.vis.poll_events()
-        self.vis.update_renderer()
-    
-    def _key_callback(self, vis, action, mods):
-        """Handle key press events."""
-        if action == o3d.visualization.KeyEvent.Action.Down:
-            return False
-            
-        key = vis.get_key()
-        
-        if key == ord('N') or key == ord('n'):
-            # Toggle normals
-            self.show_normals = not self.show_normals
-            log.info(f"Normals: {'ON' if self.show_normals else 'OFF'}")
-            self._update_geometries()
-            
-        elif key == ord('F') or key == ord('f'):
-            # Toggle flat strokes
-            self.show_flat_strokes = not self.show_flat_strokes
-            log.info(f"Flat strokes: {'ON' if self.show_flat_strokes else 'OFF'}")
-            self._update_geometries()
-            
-        elif key == ord('M') or key == ord('m'):
-            # Toggle mapped strokes
-            self.show_mapped_strokes = not self.show_mapped_strokes
-            log.info(f"Mapped strokes: {'ON' if self.show_mapped_strokes else 'OFF'}")
-            self._update_geometries()
-            
-        elif key == ord('O') or key == ord('o'):
-            # Toggle origin marker
-            self.show_origin = not self.show_origin
-            log.info(f"Origin marker: {'ON' if self.show_origin else 'OFF'}")
-            self._update_geometries()
-            
-        elif key == ord('L') or key == ord('l'):
-            # Increase normal length
-            self.normal_length *= 1.5
-            log.info(f"Normal length: {self.normal_length:.6f}")
-            self._update_geometries()
-            
-        elif key == ord('K') or key == ord('k'):
-            # Decrease normal length
-            self.normal_length /= 1.5
-            log.info(f"Normal length: {self.normal_length:.6f}")
-            self._update_geometries()
-            
-        elif key == ord('RIGHT') or key == ord('D') or key == ord('d'):
-            # Next stroke
-            self.current_stroke_idx = (self.current_stroke_idx + 1) % len(self.original_strokes)
-            log.info(f"Stroke {self.current_stroke_idx + 1}/{len(self.original_strokes)}: {self.original_strokes[self.current_stroke_idx].description}")
-            self._update_geometries()
-            
-        elif key == ord('LEFT') or key == ord('A') or key == ord('a'):
-            # Previous stroke
-            self.current_stroke_idx = (self.current_stroke_idx - 1) % len(self.original_strokes)
-            log.info(f"Stroke {self.current_stroke_idx + 1}/{len(self.original_strokes)}: {self.original_strokes[self.current_stroke_idx].description}")
-            self._update_geometries()
-            
-        elif key == ord('H') or key == ord('h'):
-            # Show help
-            self._show_help()
-            
-        elif key == ord('Q') or key == ord('q'):
-            # Quit
-            vis.close()
-            
-        return True
-    
-    def _show_help(self):
-        """Display help information."""
-        help_text = """
-        Mapping Debug Visualizer Controls:
-        ===================================
-        
-        Navigation:
-        - Mouse: Rotate, pan, zoom
-        - A/LEFT: Previous stroke
-        - D/RIGHT: Next stroke
-        
-        Toggle Visibility:
-        - N: Toggle normals (blue arrows)
-        - F: Toggle flat strokes (red, 2D)
-        - M: Toggle mapped strokes (green, 3D)
-        - O: Toggle origin marker (yellow sphere)
-        
-        Normal Display:
-        - L: Increase normal length
-        - K: Decrease normal length
-        
-        Other:
-        - H: Show this help
-        - Q: Quit
-        
-        Colors:
-        - Gray: Point cloud surface
-        - Yellow: Design origin
-        - Red: Original flat strokes (2D)
-        - Green: Mapped strokes (3D)
-        - Blue: Surface normals
-        """
-        log.info(help_text)
-    
     def run(self):
-        """Run the interactive visualizer."""
+        """Run the simple visualizer."""
         log.info("Starting Mapping Debug Visualizer")
         log.info(f"Loaded {len(self.original_strokes)} strokes")
         
@@ -494,26 +338,49 @@ class MappingDebugVisualizer:
             self._run_headless()
             return
         
-        # Set up key callback
-        try:
-            self.vis.register_key_callback(self._key_callback)
-        except Exception as e:
-            log.warning(f"Failed to register key callback: {e}")
-            log.info("Running without interactive controls")
+        # Add all geometries
+        self._add_all_geometries()
         
-        # Initial geometry setup
-        self._update_geometries()
-        
-        # Show help
-        self._show_help()
-        
-        # Main loop
-        log.info("Visualizer ready. Press H for help.")
+        # Main loop - just display the visualization
+        log.info("Visualizer ready. Close the window to exit.")
         while self.vis.poll_events():
             self.vis.update_renderer()
         
         self.vis.destroy_window()
         log.info("Visualizer closed")
+    
+    def _add_all_geometries(self):
+        """Add all geometries to the visualizer."""
+        # Add point cloud
+        pcd = self._create_point_cloud_geometry()
+        self.vis.add_geometry(pcd, False)
+        
+        # Add origin marker
+        origin_sphere = self._create_origin_geometry()
+        self.vis.add_geometry(origin_sphere, False)
+        
+        # Add all strokes
+        for i, (stroke, mapped_stroke) in enumerate(zip(self.original_strokes, self.mapped_strokes)):
+            # Original flat stroke (red)
+            if stroke.ee_pos is not None:
+                flat_geom = self._create_stroke_geometry(stroke, [1, 0, 0], is_3d=False)
+                if flat_geom is not None:
+                    self.vis.add_geometry(flat_geom, False)
+            
+            # Mapped 3D stroke (green)
+            if mapped_stroke.ee_pos is not None:
+                mapped_geom = self._create_stroke_geometry(mapped_stroke, [0, 1, 0], is_3d=True)
+                if mapped_geom is not None:
+                    self.vis.add_geometry(mapped_geom, False)
+                
+                # Normals (blue)
+                if mapped_stroke.normals is not None:
+                    normal_geom = self._create_normal_geometry(mapped_stroke)
+                    if normal_geom is not None:
+                        self.vis.add_geometry(normal_geom, False)
+        
+        self.vis.poll_events()
+        self.vis.update_renderer()
     
     def _run_headless(self):
         """Run visualizer in headless mode, saving screenshots."""
@@ -560,9 +427,6 @@ class MappingDebugVisualizer:
         
         # Also print to console
         print('\n'.join(summary))
-
-
-
 
 
 def main():
