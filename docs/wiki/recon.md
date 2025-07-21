@@ -10,3 +10,5 @@ https://geometry-central.net/surface/algorithms/vector_heat_method/#logarithmic-
 https://polyscope.run/structures/point_cloud/basics/
 
 https://github.com/DanuserLab/u-unwrap3D
+
+https://github.com/mhogg/pygeodesic
