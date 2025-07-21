@@ -17,8 +17,8 @@ class DepthCamera:
     def __init__(self,
             serial_number: str,
             initial_pose: Pose,
-            decimation: int = 6, # Decimation filter magnitude for depth frames (integer >= 1)
-            clipping: Tuple[float, float] = (0.03, 0.8), # Clipping range for depth in meters (min, max).
+            decimation: int = 8, # Decimation filter magnitude for depth frames (integer >= 1)
+            clipping: Tuple[float, float] = (0.01, 0.3), # Clipping range for depth in meters (min, max).
             timeout_ms: int = 8000, # Timeout for the RealSense camera in milliseconds.
             save_prefix: str = "rs_",
             save_dir: str = "/tmp",
@@ -70,12 +70,12 @@ class DepthCamera:
             (texture_uv[:, 0] * (color_w - 1.0)).astype(np.int32),
             :,
         ]
-        positions_world = jaxlie.SE3(wxyz_xyz=jnp.concatenate([self.pose.rot.wxyz, self.pose.pos.xyz], axis=-1)) @ positions
+        # positions_world = jaxlie.SE3(wxyz_xyz=jnp.concatenate([self.pose.rot.wxyz, self.pose.pos.xyz], axis=-1)) @ positions
         if save:
             output_path = os.path.join(self.save_dir, f"{self.save_prefix}{self.frame_idx:06d}.ply")
-            self.save_ply(output_path, positions_world, colors)
+            self.save_ply(output_path, positions, colors)
             self.frame_idx += 1
-        return color_image, positions_world, colors
+        return color_image, positions, colors
     
     def save_ply(self, filename: str, points: npt.NDArray[np.float32], colors: npt.NDArray[np.uint8]):
         log.info(f"Saving point cloud to {filename}")
