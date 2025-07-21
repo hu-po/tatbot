@@ -1,51 +1,11 @@
 """
-Surface Mapper Module
-=====================
+Surface Mapping
 
 This module provides functionality to map flat 2D strokes to 3D positions on a point cloud surface 
 representing the skin. It uses the potpourri3d library to compute intrinsic surface properties like tangent frames 
 (including normals) and logarithmic maps for low-distortion parameterization. This allows "wrapping" the strokes onto 
 the curved surface while preserving approximate geodesic paths, and provides per-point normals for orienting the 
 end effector perpendicular to the surface.
-
-Process Overview:
------------------
-1. **Load Point Cloud**: Load the point cloud from a file (assumed to be a NumPy array of shape (N, 3) in meters).
-
-2. **Compute Tangent Frames**: Use PointCloudHeatSolver to estimate per-point normals (basisN) and other basis vectors.
-
-3. **Select Source Point**: Find the point in the cloud closest to the design origin pose position to serve as the 
-   center for the logarithmic map. This minimizes distortion for designs placed relative to the specified origin.
-
-4. **Compute Log Map**: Generate a 2D parameterization U (shape (N, 2)) for all points relative to the source, 
-   approximating a tangent space unfolding.
-
-5. **Build KD-Tree**: Create a spatial index on U for efficient nearest-neighbor queries.
-
-6. **Map Each Stroke**:
-   - For each flat stroke (resampled 2D points in meter coords), treat them as coordinates in the log map space.
-   - Query the KD-Tree to find the closest point indices in U.
-   - Retrieve the corresponding 3D positions and normals from the point cloud.
-   - (Optional) Resample the mapped 3D points along their arc-length to ensure even spacing on the surface, 
-     interpolating positions and normals accordingly.
-
-7. **Output**: Return the list of mapped strokes with 3D positions, original pixel coords (for 2D visualization), 
-   normals, and G-code text.
-
-This separation allows the core G-code parsing to remain flat and agnostic to the surface, while this module handles 
-the 3D projection. Assumptions:
-- The point cloud is dense enough for accurate mapping.
-- Designs are not too large relative to curvature to avoid high distortion (if needed, use multiple sources or 
-  external parameterization).
-- Normals point outward; flip if the robot requires inward orientation.
-
-Integration:
-------------
-- Call this after parsing flat paths in `make_gcode_strokes`.
-- Update `Stroke` class to include a `normals: np.ndarray` field.
-- For non-mapped strokes (e.g., inkdip, rest), use zero arrays as dummies.
-
-Dependencies: numpy, potpourri3d, scipy.spatial.KDTree
 """
 
 import numpy as np
