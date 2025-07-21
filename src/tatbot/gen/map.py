@@ -80,7 +80,11 @@ def map_strokes_to_surface(
     assert strokes, "No strokes provided"
     try:
         log.info(f"Loading pointcloud from {point_cloud_file}")
-        P = pp3d.read_point_cloud(point_cloud_file)
+        # Check if it's a numpy file
+        if point_cloud_file.endswith('.npy'):
+            P = np.load(point_cloud_file)
+        else:
+            P = pp3d.read_point_cloud(point_cloud_file)
     except Exception as e:
         raise ValueError(f"Failed to load point cloud from {point_cloud_file}: {e}")
     

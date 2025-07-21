@@ -60,6 +60,7 @@ class DepthCamera:
             .view(np.float32)
             .reshape((-1, 2))
         )
+        # TODO: https://github.com/IntelRealSense/librealsense/blob/master/doc/post-processing-filters.md#holes-filling-filter
         color_image = np.asanyarray(color_frame.get_data())
         color_h, color_w, _ = color_image.shape
         texture_uv = texture_uv.clip(0.0, 1.0)

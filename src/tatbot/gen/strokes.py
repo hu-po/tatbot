@@ -25,7 +25,7 @@ def load_make_strokes(scene: Scene, dirpath: str, resume: bool = False) -> tuple
             strokes: StrokeList = make_gcode_strokes(scene)
         else:
             log.info("📂 Generating generic alignment strokes")
-            strokes: StrokeList = make_align_strokes(scene, dirpath)
+            strokes: StrokeList = make_align_strokes(scene)
         strokes.to_yaml(strokes_path)
         strokebatch: StrokeBatch = strokebatch_from_strokes(scene=scene, strokelist=strokes)
         strokebatch.save(strokebatch_path)
