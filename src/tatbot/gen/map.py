@@ -53,7 +53,7 @@ from scipy.spatial import KDTree
 import potpourri3d as pp3d
 
 from tatbot.data.pose import Pose
-from tatbot.data.stroke import Stroke
+from tatbot.data.stroke import Stroke, StrokeList
 from tatbot.utils.log import get_logger
 
 log = get_logger("gen.map", "🗺️")
@@ -61,22 +61,10 @@ log = get_logger("gen.map", "🗺️")
 
 def map_strokes_to_surface(
     ply_file: str,
-    strokes: list[Stroke],
+    strokes: StrokeList,
     design_origin: Pose,
     stroke_length: int = 100,
 ) -> list[Stroke]:
-    """
-    Map flat 2D strokes to 3D surface positions and normals.
-
-    Args:
-        point_cloud_file (str): Path to the point cloud file (numpy .npy format).
-        strokes (list[Stroke]): List of Stroke objects with flat 2D coordinates in ee_pos (z=0).
-        design_origin (Pose): The design origin pose used to select the source point for the logarithmic map.
-        stroke_length (int): Number of points to resample each stroke to for even spacing.
-
-    Returns:
-        list[Stroke]: List of Stroke objects with updated 3D surface positions in ee_pos and normals added.
-    """
     assert strokes, "No strokes provided"
     try:
         log.info(f"Loading pointcloud from {ply_file}")
@@ -103,18 +91,13 @@ def map_strokes_to_surface(
     # Build KDTree on U for querying
     u_tree = KDTree(U)
 
-    mapped_strokes = []
+    def map_stroke(stroke: Stroke) -> Stroke:
 
-    for stroke in strokes:
-        # Skip strokes that don't have position data or are inkdip strokes
+        # inkdip or rest strokes do not need to be mapped
         if stroke.ee_pos is None or stroke.is_inkdip:
-            mapped_strokes.append(stroke)
-            continue
-
-        # Extract flat 2D coords (ignore z=0)
+            return stroke
+        
         pts_flat = stroke.ee_pos[:, :2]  # (N,2)
-
-        # Query nearest indices in log map space
         dists, indices = u_tree.query(pts_flat, k=1)
         indices = indices.flatten()  # (N,)
 
@@ -156,7 +139,7 @@ def map_strokes_to_surface(
             normals = resampled_normals
 
         # Create a new Stroke object with the mapped 3D positions and normals
-        mapped_stroke = Stroke(
+        return Stroke(
             description=stroke.description,
             arm=stroke.arm,
             ee_pos=meter_coords_3d,
@@ -170,7 +153,10 @@ def map_strokes_to_surface(
             frame_path=stroke.frame_path,
             normals=normals,
         )
-        
-        mapped_strokes.append(mapped_stroke)
 
+    mapped_strokes: StrokeList = StrokeList(strokes=[])
+    for stroke_l, stroke_r in strokes.strokes:
+        mapped_stroke_l = map_stroke(stroke_l)
+        mapped_stroke_r = map_stroke(stroke_r)
+        mapped_strokes.strokes.append((mapped_stroke_l, mapped_stroke_r))
     return mapped_strokes

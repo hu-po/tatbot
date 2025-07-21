@@ -30,7 +30,7 @@ def visualize_mapping(config: O3DMapVizConfig):
     strokes: StrokeList = make_gcode_strokes(scene)
     strokes = map_strokes_to_surface(
         config.ply_file,
-        strokes.strokes,
+        strokes,
         scene.skin.design_pose,
         scene.stroke_length,
     )
