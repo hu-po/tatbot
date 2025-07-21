@@ -8,6 +8,7 @@ import numpy.typing as npt
 import pyrealsense2 as rs
 
 import open3d as o3d
+from tatbot.data.pose import Pose
 from tatbot.utils.log import get_logger
 
 log = get_logger("cam.depth", "📹")
@@ -15,12 +16,14 @@ log = get_logger("cam.depth", "📹")
 class DepthCamera:
     def __init__(self,
             serial_number: str,
+            initial_pose: Pose,
             decimation: int = 6, # Decimation filter magnitude for depth frames (integer >= 1)
             clipping: Tuple[float, float] = (0.03, 0.8), # Clipping range for depth in meters (min, max).
             timeout_ms: int = 8000, # Timeout for the RealSense camera in milliseconds.
             save_prefix: str = "rs_",
             save_dir: str = "/tmp",
         ):
+        self.pose: Pose = initial_pose
         self.pipeline = rs.pipeline()
         self.config = rs.config()
         pipeline_wrapper = rs.pipeline_wrapper(self.pipeline)
@@ -40,11 +43,7 @@ class DepthCamera:
             os.makedirs(self.save_dir, exist_ok=True)
         self.frame_idx: int = 0 # counter keeps track of number of saved frames
 
-    def make_observation(self,
-        save: bool = False,
-        camera_wxyz: npt.NDArray[np.float32] = None,
-        camera_xyz: npt.NDArray[np.float32] = None,
-        ) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.float32], npt.NDArray[np.uint8]]:
+    def make_observation(self, save: bool = False) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.float32], npt.NDArray[np.uint8]]:
         point_cloud = rs.pointcloud()
         decimate = rs.decimation_filter()
         decimate.set_option(rs.option.filter_magnitude, self.decimation)
@@ -71,7 +70,7 @@ class DepthCamera:
             (texture_uv[:, 0] * (color_w - 1.0)).astype(np.int32),
             :,
         ]
-        positions_world = jaxlie.SE3(wxyz_xyz=jnp.concatenate([camera_wxyz, camera_xyz], axis=-1)) @ positions
+        positions_world = jaxlie.SE3(wxyz_xyz=jnp.concatenate([self.pose.rot.wxyz, self.pose.pos.xyz], axis=-1)) @ positions
         if save:
             output_path = os.path.join(self.save_dir, f"{self.save_prefix}{self.frame_idx:06d}.ply")
             self.save_ply(output_path, positions_world, colors)
