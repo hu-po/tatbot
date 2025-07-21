@@ -114,7 +114,7 @@ realsenses:
     width: 640
     height: 480
     fps: 30
-    serial_number: "218622278376"
+    serial_number: "230422273017"
     urdf_link_name: "left/realsense_depth_optical_frame"
     intrinsics:
       fov: 1.544 # ≈88.5 deg in radians (color)
@@ -133,7 +133,7 @@ realsenses:
     width: 640
     height: 480
     fps: 30
-    serial_number: "230422273017"
+    serial_number: "218622278376"
     urdf_link_name: "right/realsense_depth_optical_frame"
     intrinsics:
       fov: 1.544 # ≈88.5 deg in radians (color)
