@@ -115,7 +115,7 @@ realsenses:
     height: 480
     fps: 30
     serial_number: "218622278376"
-    urdf_link_name: "left/realsense_depth_optical_frame"
+    urdf_link_name: "left/realsense_color_optical_frame"
     intrinsics:
       # Color FOV (degrees): H≈88.5, V≈58, D≈95 (D455 model)
       # Depth FOV (degrees): H≈90, V≈65, D≈103 (D455 model)
@@ -136,7 +136,7 @@ realsenses:
     height: 480
     fps: 30
     serial_number: "230422273017"
-    urdf_link_name: "right/realsense_depth_optical_frame"
+    urdf_link_name: "right/realsense_color_optical_frame"
     intrinsics:
       # Color FOV (degrees): H≈88.5, V≈58, D≈95 (D455 model)
       # Depth FOV (degrees): H≈90, V≈65, D≈103 (D455 model)
