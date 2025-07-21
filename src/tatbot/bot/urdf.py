@@ -13,7 +13,7 @@ log = get_logger("bot.urdf", "🧱")
 
 @functools.lru_cache(maxsize=1)
 def load_robot(urdf_path: str) -> tuple[yourdfpy.URDF, pk.Robot]:
-    log.info(f"loading PyRoKi robot from yourdfpy URDF at {urdf_path}...")
+    log.debug(f"loading PyRoKi robot from yourdfpy URDF at {urdf_path}...")
     urdf_path = os.path.expanduser(urdf_path)
     urdf = yourdfpy.URDF.load(urdf_path)
     robot = pk.Robot.from_urdf(urdf)
@@ -22,7 +22,7 @@ def load_robot(urdf_path: str) -> tuple[yourdfpy.URDF, pk.Robot]:
 
 @functools.lru_cache(maxsize=4)
 def get_link_indices(urdf_path: str, link_names: tuple[str, ...]) -> np.ndarray:
-    log.info(f"getting link indices for {link_names}")
+    log.debug(f"getting link indices for {link_names}")
     _, robot = load_robot(urdf_path)
     link_indices = np.array([robot.links.names.index(link_name) for link_name in link_names], dtype=np.int32)
     log.debug(f"link indices: {link_indices}")
@@ -34,7 +34,7 @@ def get_link_poses(
     link_names: tuple[str, ...],
     joint_positions: np.ndarray,
 ) -> dict[str, Pose]:
-    log.info(f"getting link poses for {link_names}")
+    log.debug(f"getting link poses for {link_names}")
     _, robot = load_robot(urdf_path)
     link_indices = get_link_indices(urdf_path, link_names)
     all_link_poses = robot.forward_kinematics(joint_positions)

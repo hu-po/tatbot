@@ -207,7 +207,7 @@ class BaseViz:
                     self.realsense_frustrums[realsense.name].image = image
                     self.realsense_pointclouds[realsense.name].points = np.array(positions)
                     self.realsense_pointclouds[realsense.name].colors = np.array(colors)
-                    log.info(f"{realsense.name} took {time.time() - realsense_start_time} seconds")
+                    log.debug(f"{realsense.name} took {time.time() - realsense_start_time} seconds")
             self.step()
             for i, tb in enumerate(self.left_joint_textboxes):
                 tb.value = str(self.joints[i])
