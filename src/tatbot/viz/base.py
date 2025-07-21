@@ -207,8 +207,11 @@ class BaseViz:
                 self.realsense_frustrums[realsense.name].wxyz = link_poses[link_name].rot.wxyz
                 if self.config.enable_depth:
                     realsense_start_time = time.time()
-                    self.depth_cameras[realsense.name].pose = link_poses[link_name]
-                    image, positions, colors = self.depth_cameras[realsense.name].make_observation(save=self.save_checkbox.value)
+                    image, positions, colors = self.depth_cameras[realsense.name].make_observation(
+                        save=self.save_checkbox.value,
+                        camera_wxyz=self.realsense_frustrums[realsense.name].wxyz,
+                        camera_xyz=self.realsense_frustrums[realsense.name].position,
+                    )
                     self.realsense_frustrums[realsense.name].image = image
                     self.realsense_pointclouds[realsense.name].points = np.array(positions)
                     self.realsense_pointclouds[realsense.name].colors = np.array(colors)
