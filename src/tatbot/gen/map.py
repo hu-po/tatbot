@@ -60,7 +60,7 @@ log = get_logger("gen.map", "🗺️")
 
 
 def map_strokes_to_surface(
-    point_cloud_file: str,
+    ply_file: str,
     strokes: list[Stroke],
     design_origin: Pose,
     stroke_length: int = 100,
@@ -79,14 +79,10 @@ def map_strokes_to_surface(
     """
     assert strokes, "No strokes provided"
     try:
-        log.info(f"Loading pointcloud from {point_cloud_file}")
-        # Check if it's a numpy file
-        if point_cloud_file.endswith('.npy'):
-            P = np.load(point_cloud_file)
-        else:
-            P = pp3d.read_point_cloud(point_cloud_file)
+        log.info(f"Loading pointcloud from {ply_file}")
+        P = pp3d.read_point_cloud(ply_file)
     except Exception as e:
-        raise ValueError(f"Failed to load point cloud from {point_cloud_file}: {e}")
+        raise ValueError(f"Failed to load point cloud from {ply_file}: {e}")
     
     if P.shape[1] != 3:
         raise ValueError(f"Point cloud must have shape (N, 3), got {P.shape}")
