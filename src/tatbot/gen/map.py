@@ -13,6 +13,7 @@ elimination, and radius-based outlier removal for local isolates. These preproce
 efficiency of the mesh reconstruction and geodesic computations, especially for noisy or dense skin scans.
 """
 
+import os
 import numpy as np
 from scipy.spatial import KDTree
 import open3d as o3d
@@ -46,7 +47,7 @@ def map_strokes_to_surface(
     pcds = []
     for file in ply_files:
         try:
-            pcd = o3d.io.read_point_cloud(file)
+            pcd = o3d.io.read_point_cloud(os.path.expanduser(file))
             pcds.append(pcd)
         except Exception as e:
             raise ValueError(f"Failed to load {file}: {e}")

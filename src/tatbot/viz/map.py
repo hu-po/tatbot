@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass
+import os
 
 import numpy as np
 import open3d as o3d
@@ -16,8 +17,11 @@ log = get_logger("viz.map", "🗺️")
 
 @dataclass
 class VizMapConfig(BaseVizConfig):
-    ply_file: str = "/tmp/rs_000001.ply"
-    """Path to the PLY file to visualize."""
+    ply_files: tuple[str, ...] = (
+        "~/tatbot/nfs/3d/hand/rs_000000.ply",
+        "~/tatbot/nfs/3d/hand/rs_000001.ply",
+    )
+    """Path to the PLY files to visualize."""
     
     stroke_point_size: float = 0.003
     """Size of stroke points in the visualization (meters)."""
@@ -88,15 +92,17 @@ class VizMap(BaseViz):
                 )
                 self.mapped_stroke_pointclouds["r"].append(mapped_pointcloud)
 
-        pcd = o3d.io.read_point_cloud(config.ply_file)
-        self.skin_pointcloud = self.server.scene.add_point_cloud(
-            name="/skin",
-            points=np.asarray(pcd.points),
-            colors=np.asarray(pcd.colors),
-            point_size=config.surface_point_size,
-            point_shape=config.surface_point_shape,
-        )
-        log.info(f"Loaded skin pointcloud with {len(pcd.points)} points from {config.ply_file}")
+        self.skin_pointclouds = {}
+        for ply_file in config.ply_files:
+            pcd = o3d.io.read_point_cloud(os.path.expanduser(ply_file))
+            self.skin_pointclouds[ply_file] = self.server.scene.add_point_cloud(
+                name=f"/skin/{ply_file.split('/')[-1]}",
+                points=np.asarray(pcd.points),
+                colors=np.asarray(pcd.colors),
+                point_size=config.surface_point_size,
+                point_shape=config.surface_point_shape,
+            )
+            log.info(f"Loaded skin pointcloud with {len(pcd.points)} points from {ply_file}")
 
         with self.server.gui.add_folder("Mapping", expand_by_default=True):
             self.map_strokes_button = self.server.gui.add_button(
@@ -117,7 +123,7 @@ class VizMap(BaseViz):
             try:
                 log.info("Mapping strokes to surface...")
                 mapped_strokes = map_strokes_to_surface(
-                    self.config.ply_file,
+                    self.config.ply_files,
                     self.strokes,
                     Pose(
                         pos=self.design_pose_tf.position,
