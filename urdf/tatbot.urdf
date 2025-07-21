@@ -699,13 +699,13 @@
       <mass value="0.02088075"/>
       <inertia ixx="0.00001780" ixy="-0.00000050" ixz="-0.00000239" iyy="0.00001685" iyz="-0.00000235" izz="0.00000317"/>
     </inertial>
-    <visual>
+    <!-- <visual>
       <origin rpy="0 3.141592653589793 0" xyz="0 0 0"/>
       <geometry>
         <mesh filename="meshes/wxai/leader_finger_left_thumb.stl"/>
       </geometry>
       <material name="black"/>
-    </visual>
+    </visual> -->
     <collision>
       <origin rpy="0 3.141592653589793 0" xyz="0 0 0"/>
       <geometry>
@@ -726,13 +726,13 @@
       <mass value="0.01"/>
       <inertia ixx="0.000001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.000001"/>
     </inertial>
-    <visual>
+    <!-- <visual>
       <origin rpy="0 1.5707963267948966 0" xyz="-0.05 0 0"/>
       <geometry>
         <cylinder length="0.1" radius="0.012"/>
       </geometry>
       <material name="black"/>
-    </visual>
+    </visual> -->
     <collision>
       <origin rpy="0 1.5707963267948966 0" xyz="-0.05 0 0"/>
       <geometry>
@@ -746,12 +746,12 @@
     <child link="left/tattoo_pen"/>
   </joint>
   <link name="left/tattoo_needle">
-    <visual>
+    <!-- <visual>
       <origin rpy="0 1.5707963267948966 0" xyz="-0.0175 0 0"/>
       <geometry>
         <cylinder length="0.035" radius="0.002"/>
       </geometry>
-    </visual>
+    </visual> -->
     <collision>
       <origin rpy="0 1.5707963267948966 0" xyz="-0.0175 0 0"/>
       <geometry>
@@ -1122,13 +1122,13 @@
       <mass value="0.02088075"/>
       <inertia ixx="0.00001780" ixy="-0.00000050" ixz="-0.00000239" iyy="0.00001685" iyz="-0.00000235" izz="0.00000317"/>
     </inertial>
-    <visual>
+    <!-- <visual>
       <origin rpy="0 3.141592653589793 0" xyz="0 0 0"/>
       <geometry>
         <mesh filename="meshes/wxai/leader_finger_right_thumb.stl"/>
       </geometry>
       <material name="black"/>
-    </visual>
+    </visual> -->
     <collision>
       <origin rpy="0 3.141592653589793 0" xyz="0 0 0"/>
       <geometry>
@@ -1149,13 +1149,13 @@
       <mass value="0.01"/>
       <inertia ixx="0.000001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.000001"/>
     </inertial>
-    <visual>
+    <!-- <visual>
       <origin rpy="0 1.5707963267948966 0" xyz="-0.05 0 0"/>
       <geometry>
         <cylinder length="0.1" radius="0.012"/>
       </geometry>
       <material name="black"/>
-    </visual>
+    </visual> -->
     <collision>
       <origin rpy="0 1.5707963267948966 0" xyz="-0.05 0 0"/>
       <geometry>
@@ -1169,12 +1169,12 @@
     <child link="right/tattoo_pen"/>
   </joint>
   <link name="right/tattoo_needle">
-    <visual>
+    <!-- <visual>
       <origin rpy="0 1.5707963267948966 0" xyz="-0.0175 0 0"/>
       <geometry>
         <cylinder length="0.035" radius="0.002"/>
       </geometry>
-    </visual>
+    </visual> -->
     <collision>
       <origin rpy="0 1.5707963267948966 0" xyz="-0.0175 0 0"/>
       <geometry>
