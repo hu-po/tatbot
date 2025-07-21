@@ -3,6 +3,7 @@ import time
 from dataclasses import dataclass
 from itertools import chain
 
+import numpy as np
 import viser
 from viser.extras import ViserUrdf
 
@@ -32,6 +33,8 @@ class BaseVizConfig:
     """Scale of the realsense camera frustrums used for visualization."""
     realsense_frustrum_color: tuple[int, int, int] = (200, 200, 200)
     """Color of the realsense camera frustrums used for visualization."""
+    realsense_point_size: float = 0.001
+    """Size of points in point cloud visualizations."""
 
     camera_frustrum_scale: float = 0.04
     """Scale of the ip camera frustrum used for visualization."""
@@ -41,8 +44,10 @@ class BaseVizConfig:
     speed: float = 1.0
     """Speed multipler for visualization."""
 
-    use_real_robot: bool = False
-    """Use the real robot instead of the simulated one."""
+    enable_robot: bool = False
+    """Enable the real robot (instead of only the simulated one)."""
+    enable_depth: bool = False
+    """Enable the depth visualization."""
 
 
 class BaseViz:
@@ -88,11 +93,22 @@ class BaseViz:
                 disabled=True,
                 hint="Current global step counter"
             )
+        if config.enable_depth:
+            log.debug('Using pointcloud cameras')
+            from tatbot.cam.depth import DepthCamera
+
+            self.depth_cameras = {}
+            with self.server.gui.add_folder("Point Cloud Recording", expand_by_default=False):
+                self.save_checkbox = self.server.gui.add_checkbox(
+                    "Save Point Clouds", 
+                    initial_value=False,
+                    hint="Toggle saving point clouds as PLY files"
+                )
 
         self.arm_l = None
         self.arm_r = None
         self.to_trossen_vector = None
-        if config.use_real_robot:
+        if config.enable_robot:
             log.debug("Using real robot")
             from tatbot.bot.trossen import driver_from_arms, trossen_arm
 
@@ -117,6 +133,7 @@ class BaseViz:
         )
         _camera_counter: int = 0
         self.realsense_frustrums = {}
+        self.realsense_pointclouds = {}
         for realsense in self.scene.cams.realsenses:
             self.realsense_frustrums[realsense.name] = self.server.scene.add_camera_frustum(
                 f"/realsense/{realsense.name}",
@@ -127,6 +144,14 @@ class BaseViz:
                 position=link_poses[self.scene.urdf.cam_link_names[_camera_counter]].pos.xyz,
                 wxyz=link_poses[self.scene.urdf.cam_link_names[_camera_counter]].rot.wxyz,
             )
+            if config.enable_depth:
+                self.depth_cameras[realsense.name] = DepthCamera(realsense.serial_number)
+                self.realsense_pointclouds[realsense.name] = self.server.scene.add_point_cloud(
+                    f"/realsense/{realsense.name}/pointcloud",
+                    points=np.zeros((1, 3)),
+                    colors=np.zeros((1, 3), dtype=np.uint8),
+                    point_size=config.realsense_point_size,
+                )
             _camera_counter += 1
         self.ipcameras_frustrums = {}
         for ipcamera in self.scene.cams.ipcameras:
@@ -180,6 +205,14 @@ class BaseViz:
                 link_name = self.scene.urdf.cam_link_names[i]
                 self.realsense_frustrums[realsense.name].position = link_poses[link_name].pos.xyz
                 self.realsense_frustrums[realsense.name].wxyz = link_poses[link_name].rot.wxyz
+                if self.config.enable_depth:
+                    realsense_start_time = time.time()
+                    self.depth_cameras[realsense.name].pose = link_poses[link_name]
+                    rgb, positions, colors = self.depth_cameras[realsense.name].make_observation(save=self.save_checkbox.value)
+                    self.realsense_frustrums[realsense.name].image = rgb
+                    self.realsense_pointclouds[realsense.name].points = np.array(positions)
+                    self.realsense_pointclouds[realsense.name].colors = np.array(colors)
+                    log.info(f"{realsense.name} took {time.time() - realsense_start_time} seconds")
             self.step()
             for i, tb in enumerate(self.left_joint_textboxes):
                 tb.value = str(self.joints[i])
