@@ -144,7 +144,7 @@ class BaseViz:
                 wxyz=link_poses[realsense.urdf_link_name].rot.wxyz,
             )
             if config.enable_depth:
-                self.depth_cameras[realsense.name] = DepthCamera(realsense.serial_number)
+                self.depth_cameras[realsense.name] = DepthCamera(realsense.serial_number, link_poses[realsense.urdf_link_name])
                 self.realsense_pointclouds[realsense.name] = self.server.scene.add_point_cloud(
                     f"/realsense/{realsense.name}/pointcloud",
                     points=np.zeros((1, 3)),
