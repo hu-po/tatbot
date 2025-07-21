@@ -8,7 +8,7 @@ import numpy.typing as npt
 import pyrealsense2 as rs
 
 import open3d as o3d
-from tatbot.data.scene import Pose
+from tatbot.data.pose import Pose
 from tatbot.utils.log import get_logger
 
 log = get_logger("cam.depth", "📹")
