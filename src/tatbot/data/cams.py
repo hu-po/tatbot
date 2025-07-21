@@ -38,6 +38,8 @@ class CameraConfig(Yaml):
     """Intrinsics of the camera."""
     extrinsics: Pose
     """Extrinsics of the camera: pose in the global frame."""
+    urdf_link_name: str
+    """Name of the link in the URDF that the camera is attached to."""
 
 
 @dataclass

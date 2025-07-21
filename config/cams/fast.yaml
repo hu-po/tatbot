@@ -3,6 +3,7 @@ ipcameras:
     width: 1920
     height: 1080
     fps: 5
+    urdf_link_name: "camera1_optical_frame"
     ip: "192.168.1.91"
     username: "admin"
     password: "CAMERA_1_PASSWORD"
@@ -24,6 +25,7 @@ ipcameras:
     width: 1920
     height: 1080
     fps: 5
+    urdf_link_name: "camera2_optical_frame"
     ip: "192.168.1.92"
     username: "admin"
     password: "CAMERA_2_PASSWORD"
@@ -45,6 +47,7 @@ ipcameras:
     width: 1920
     height: 1080
     fps: 5
+    urdf_link_name: "camera3_optical_frame"
     ip: "192.168.1.93"
     username: "admin"
     password: "CAMERA_3_PASSWORD"
@@ -66,6 +69,7 @@ ipcameras:
     width: 1920
     height: 1080
     fps: 5
+    urdf_link_name: "camera4_optical_frame"
     ip: "192.168.1.94"
     username: "admin"
     password: "CAMERA_4_PASSWORD"
@@ -87,6 +91,7 @@ ipcameras:
     width: 1920
     height: 1080
     fps: 5
+    urdf_link_name: "camera5_optical_frame"
     ip: "192.168.1.95"
     username: "admin"
     password: "CAMERA_5_PASSWORD"
@@ -110,6 +115,7 @@ realsenses:
     height: 480
     fps: 30
     serial_number: "218622278376"
+    urdf_link_name: "left/realsense_depth_optical_frame"
     intrinsics:
       # Color FOV (degrees): H≈88.5, V≈58, D≈95 (D455 model)
       # Depth FOV (degrees): H≈90, V≈65, D≈103 (D455 model)
@@ -130,6 +136,7 @@ realsenses:
     height: 480
     fps: 30
     serial_number: "230422273017"
+    urdf_link_name: "right/realsense_depth_optical_frame"
     intrinsics:
       # Color FOV (degrees): H≈88.5, V≈58, D≈95 (D455 model)
       # Depth FOV (degrees): H≈90, V≈65, D≈103 (D455 model)

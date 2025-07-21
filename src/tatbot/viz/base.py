@@ -131,7 +131,6 @@ class BaseViz:
         link_poses = get_link_poses(
             self.scene.urdf.path, self.scene.urdf.cam_link_names, self.scene.ready_pos_full
         )
-        _camera_counter: int = 0
         self.realsense_frustrums = {}
         self.realsense_pointclouds = {}
         for realsense in self.scene.cams.realsenses:
@@ -141,8 +140,8 @@ class BaseViz:
                 aspect=realsense.intrinsics.aspect,
                 scale=config.realsense_frustrum_scale,
                 color=config.realsense_frustrum_color,
-                position=link_poses[self.scene.urdf.cam_link_names[_camera_counter]].pos.xyz,
-                wxyz=link_poses[self.scene.urdf.cam_link_names[_camera_counter]].rot.wxyz,
+                position=link_poses[realsense.urdf_link_name].pos.xyz,
+                wxyz=link_poses[realsense.urdf_link_name].rot.wxyz,
             )
             if config.enable_depth:
                 self.depth_cameras[realsense.name] = DepthCamera(realsense.serial_number)
@@ -152,7 +151,6 @@ class BaseViz:
                     colors=np.zeros((1, 3), dtype=np.uint8),
                     point_size=config.realsense_point_size,
                 )
-            _camera_counter += 1
         self.ipcameras_frustrums = {}
         for ipcamera in self.scene.cams.ipcameras:
             self.ipcameras_frustrums[ipcamera.name] = self.server.scene.add_camera_frustum(
@@ -161,11 +159,9 @@ class BaseViz:
                 aspect=ipcamera.intrinsics.aspect,
                 scale=config.camera_frustrum_scale,
                 color=config.camera_frustrum_color,
-                position=link_poses[self.scene.urdf.cam_link_names[_camera_counter]].pos.xyz,
-                wxyz=link_poses[self.scene.urdf.cam_link_names[_camera_counter]].rot.wxyz,
+                position=link_poses[ipcamera.urdf_link_name].pos.xyz,
+                wxyz=link_poses[ipcamera.urdf_link_name].rot.wxyz,
             )
-            _camera_counter += 1
-        log.info(f"Added {_camera_counter} cameras")
 
         log.info("Adding skin zone to viser")
         self.skin_zone = self.server.scene.add_box(
@@ -201,10 +197,9 @@ class BaseViz:
                 log.debug(f"Setting real right arm positions: {arm_r_joints}")
                 self.arm_r.set_all_positions(self.to_trossen_vector(arm_r_joints), blocking=True)
             link_poses = get_link_poses(self.scene.urdf.path, self.scene.urdf.cam_link_names, self.joints)
-            for i, realsense in enumerate(self.scene.cams.realsenses):
-                link_name = self.scene.urdf.cam_link_names[i]
-                self.realsense_frustrums[realsense.name].position = link_poses[link_name].pos.xyz
-                self.realsense_frustrums[realsense.name].wxyz = link_poses[link_name].rot.wxyz
+            for realsense in self.scene.cams.realsenses:
+                self.realsense_frustrums[realsense.name].position = link_poses[realsense.urdf_link_name].pos.xyz
+                self.realsense_frustrums[realsense.name].wxyz = link_poses[realsense.urdf_link_name].rot.wxyz
                 if self.config.enable_depth:
                     realsense_start_time = time.time()
                     image, positions, colors = self.depth_cameras[realsense.name].make_observation(
