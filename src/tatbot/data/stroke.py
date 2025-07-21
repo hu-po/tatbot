@@ -19,26 +19,32 @@ class Stroke(Yaml):
     arm: str
     """Arm that will execute the path, either left or right."""
 
-    ee_pos: np.ndarray | None = None  # (N, 3)
-    """End effector position in meters <x, y, z>."""
-    ee_rot: np.ndarray | None = None  # (N, 4)
-    """End effector orientation in quaternion <x, y, z, w>."""
-    normals: np.ndarray | None = None  # (N, 3)
-    """Surface normals for each pose in the stroke <x, y, z>."""
-    dt: np.ndarray | None = None  # (N, 1)
-    """Time between poses in seconds."""
+    meter_coords: np.ndarray | None = None  # (N, 3)
+    """Numpy array of meter coordinates for each pose in path <x, y, z> (design frame)."""
     pixel_coords: np.ndarray | None = None  # (N, 2)
-    """Numpy array of pixel coordinates for each pose in path <x (0-width), y (0-height)>."""
+    """Numpy array of pixel coordinates for each pose in path <x (0-width), y (0-height)> (design frame)."""
     
     gcode_text: str | None = None
     """G-code text for the stroke."""
     frame_path: str | None = None
     """Relative path to the frame image for this stroke, or None if not applicable."""
-    
+
+    ee_pos: np.ndarray | None = None  # (N, 3)
+    """End effector position in meters <x, y, z> (world frame)."""
+    ee_rot: np.ndarray | None = None  # (N, 4)
+    """End effector orientation in quaternion <x, y, z, w> (world frame)."""
+    normals: np.ndarray | None = None  # (N, 3)
+    """Surface normals for each pose in the stroke <x, y, z> (world frame)."""
+    dt: np.ndarray | None = None  # (N, 1)
+    """Time between poses in seconds."""
+
+    is_rest: bool = False
+    """Whether the stroke is a rest stroke."""
+    is_inkdip: bool = False
+    """Whether the stroke is an inkdip stroke."""
+
     inkcap: str | None = None
     """Name of the inkcap which provided the ink for the stroke."""
-    is_inkdip: bool = False
-    """Whether the path is an inkdip."""
     color: str | None = None
     """Color of the stroke."""    
 

@@ -267,8 +267,9 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
             _inkdip_stroke,
             Stroke(
                 description="right arm at rest",
-                ee_pos=np.zeros((scene.stroke_length, 3)),
+                meter_coords=np.zeros((scene.stroke_length, 3)),
                 arm="right",
+                is_rest=True,
             ),
         )
     )
@@ -288,8 +289,9 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
         if path_l is None:
             stroke_l = Stroke(
                 description="left arm at rest",
-                ee_pos=np.zeros((scene.stroke_length, 3)),
+                meter_coords=np.zeros((scene.stroke_length, 3)),
                 arm="left",
+                is_rest=True,
             )
         elif inkcap_name_l is not None:
             meter_coords = pen_paths_l[ptr_l][1]
@@ -300,7 +302,7 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
                 description=f"left arm stroke after inkdip in {inkcap_name_l}",
                 arm="left",
                 pixel_coords=pixel_coords,
-                ee_pos=meter_coords,
+                meter_coords=meter_coords,
                 gcode_text=gcode_text,
                 inkcap=inkcap_name_l,
                 is_inkdip=False,
@@ -317,16 +319,18 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
             else:
                 stroke_l = Stroke(
                     description="left arm at rest",
-                    ee_pos=np.zeros((scene.stroke_length, 3)),
+                    meter_coords=np.zeros((scene.stroke_length, 3)),
                     arm="left",
+                    is_rest=True,
                 )
 
         # RIGHT ARM
         if path_r is None:
             stroke_r = Stroke(
                 description="right arm at rest",
-                ee_pos=np.zeros((scene.stroke_length, 3)),
+                meter_coords=np.zeros((scene.stroke_length, 3)),
                 arm="right",
+                is_rest=True,
             )
         elif inkcap_name_r is not None:
             meter_coords = pen_paths_r[ptr_r][1]
@@ -337,7 +341,7 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
                 description=f"right arm stroke after inkdip in {inkcap_name_r}",
                 arm="right",
                 pixel_coords=pixel_coords,
-                ee_pos=meter_coords,
+                meter_coords=meter_coords,
                 gcode_text=gcode_text,
                 inkcap=inkcap_name_r,
                 is_inkdip=False,
@@ -354,8 +358,9 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
             else:
                 stroke_r = Stroke(
                     description="right arm at rest",
-                    ee_pos=np.zeros((scene.stroke_length, 3)),
+                    meter_coords=np.zeros((scene.stroke_length, 3)),
                     arm="right",
+                    is_rest=True,
                 )
         strokelist.strokes.append((stroke_l, stroke_r))
 

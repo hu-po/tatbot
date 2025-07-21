@@ -60,9 +60,8 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
 
     for i, (stroke_l, stroke_r) in enumerate(strokelist.strokes):
         if not stroke_l.is_inkdip:
-            # if the stroke is not an inkdip, ee_pos is in the design frame
             base_l = transform_and_offset(
-                stroke_l.ee_pos,
+                stroke_l.meter_coords,
                 scene.skin.design_pose.pos.xyz,
                 scene.skin.design_pose.rot.wxyz,
                 scene.ee_offset_l.xyz,
@@ -70,10 +69,11 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
             base_l = base_l.reshape(l, 3)
             ee_pos_l[i] = np.repeat(base_l[:, None, :], o, axis=1)
         else:
+            # inkdips do not have meter_coords, only ee_pos
             ee_pos_l[i] = np.repeat(stroke_l.ee_pos.reshape(l, 1, 3), o, 1)
         if not stroke_r.is_inkdip:
             base_r = transform_and_offset(
-                stroke_r.ee_pos,
+                stroke_r.meter_coords,
                 scene.skin.design_pose.pos.xyz,
                 scene.skin.design_pose.rot.wxyz,
                 scene.ee_offset_r.xyz,
@@ -81,6 +81,7 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
             base_r = base_r.reshape(l, 3)
             ee_pos_r[i] = np.repeat(base_r[:, None, :], o, 1)
         else:
+            # inkdips do not have meter_coords, only ee_pos
             ee_pos_r[i] = np.repeat(stroke_r.ee_pos.reshape(l, 1, 3), o, 1)
 
         # first and last poses in each stroke are offset by hover offset

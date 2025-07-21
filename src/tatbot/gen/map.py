@@ -52,22 +52,21 @@ def map_strokes_to_surface(
     u_tree = KDTree(U)
 
     def map_stroke(stroke: Stroke) -> Stroke:
-
         # inkdip or rest strokes do not need to be mapped
-        if stroke.ee_pos is None or stroke.is_inkdip:
+        if stroke.is_inkdip or stroke.is_rest:
             return stroke
         
-        pts_flat = stroke.ee_pos[:, :2]  # (N,2)
+        pts_flat = stroke.meter_coords[:, :2]  # (N,2)
         dists, indices = u_tree.query(pts_flat, k=1)
         indices = indices.flatten()  # (N,)
 
         # Map to 3D positions and normals
-        meter_coords_3d = P[indices]  # (N,3)
+        pts_mapped = P[indices]  # (N,3)
         normals = basisN[indices]  # (N,3)
 
         # Optional: Resample along 3D arc-length for even surface spacing
         # Compute cumulative 3D lengths
-        seg = np.diff(meter_coords_3d, axis=0)
+        seg = np.diff(pts_mapped, axis=0)
         seg_len = np.linalg.norm(seg, axis=1)
         cum_len = np.insert(np.cumsum(seg_len), 0, 0.0)
         total_len = cum_len[-1]
@@ -84,25 +83,25 @@ def map_strokes_to_surface(
 
                 t0, t1 = cum_len[seg_idx], cum_len[seg_idx + 1]
                 if t1 == t0:  # duplicate
-                    resampled_3d[i] = meter_coords_3d[seg_idx]
+                    resampled_3d[i] = pts_mapped[seg_idx]
                     resampled_normals[i] = normals[seg_idx]
                 else:
                     alpha = (t - t0) / (t1 - t0)
-                    resampled_3d[i] = (1 - alpha) * meter_coords_3d[seg_idx] + alpha * meter_coords_3d[seg_idx + 1]
+                    resampled_3d[i] = (1 - alpha) * pts_mapped[seg_idx] + alpha * pts_mapped[seg_idx + 1]
                     resampled_normals[i] = (1 - alpha) * normals[seg_idx] + alpha * normals[seg_idx + 1]
                     # Normalize the interpolated normal
                     norm_len = np.linalg.norm(resampled_normals[i])
                     if norm_len > 0:
                         resampled_normals[i] /= norm_len
 
-            meter_coords_3d = resampled_3d
+            pts_mapped = resampled_3d
             normals = resampled_normals
 
         # Create a new Stroke object with the mapped 3D positions and normals
         return Stroke(
             description=stroke.description,
             arm=stroke.arm,
-            ee_pos=meter_coords_3d,
+            meter_coords=pts_mapped,
             ee_rot=stroke.ee_rot,
             dt=stroke.dt,
             pixel_coords=stroke.pixel_coords,

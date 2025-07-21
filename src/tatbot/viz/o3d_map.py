@@ -1,3 +1,4 @@
+""" DISPLAY=:1 uv run python src/tatbot/viz/o3d_map.py """
 from dataclasses import dataclass
 import logging
 
@@ -6,6 +7,7 @@ import open3d as o3d
 
 from tatbot.data.stroke import StrokeList
 from tatbot.data.scene import Scene
+
 from tatbot.gen.map import map_strokes_to_surface
 from tatbot.gen.gcode import make_gcode_strokes
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config

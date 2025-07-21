@@ -43,7 +43,7 @@ class DepthCamera:
             os.makedirs(self.save_dir, exist_ok=True)
         self.frame_idx: int = 0 # counter keeps track of number of saved frames
 
-    def make_observation(self, save: bool = False) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.float32], npt.NDArray[np.uint8]]:
+    def get_pointcloud(self, save: bool = False) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.float32], npt.NDArray[np.uint8]]:
         point_cloud = rs.pointcloud()
         decimate = rs.decimation_filter()
         decimate.set_option(rs.option.filter_magnitude, self.decimation)
@@ -72,6 +72,7 @@ class DepthCamera:
             :,
         ]
         positions_world = jaxlie.SE3(wxyz_xyz=jnp.concatenate([self.pose.rot.wxyz, self.pose.pos.xyz], axis=-1)) @ positions
+        
         if save:
             output_path = os.path.join(self.save_dir, f"{self.save_prefix}{self.frame_idx:06d}.ply")
             self.save_ply(output_path, positions_world, colors)
