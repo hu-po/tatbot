@@ -70,8 +70,7 @@ class DepthCamera:
             (texture_uv[:, 0] * (color_w - 1.0)).astype(np.int32),
             :,
         ]
-        tf_world_to_camera = jaxlie.SE3(wxyz_xyz=jnp.concatenate([self.pose.rot.wxyz, self.pose.pos.xyz], axis=-1))
-        positions_world = tf_world_to_camera.inverse() @ positions
+        positions_world = jaxlie.SE3(wxyz_xyz=jnp.concatenate([self.pose.rot.wxyz, self.pose.pos.xyz], axis=-1)) @ positions
         if save:
             output_path = os.path.join(self.save_dir, f"{self.save_prefix}{self.frame_idx:06d}.ply")
             self.save_ply(output_path, positions_world, colors)
