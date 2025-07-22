@@ -166,7 +166,7 @@ class VizMap(BaseViz):
                         initial_value=True,
                     )
                     @self.enabled_skin_ply_files_checkboxes[ply_file].on_update
-                    def _(_):
+                    def _(_, ply_file=ply_file):
                         self.enabled_skin_ply_files[ply_file] = self.enabled_skin_ply_files_checkboxes[ply_file].value
                         if self.enabled_skin_ply_files[ply_file]:
                             self.skin_pointclouds[ply_file].visible = True

@@ -4,6 +4,7 @@ PLY Mesh Utilities
 This module provides utilities for loading, processing, and creating meshes from PLY point cloud files.
 It handles point cloud loading, merging, cleaning, and mesh reconstruction using Open3D.
 Uses Poisson surface reconstruction, which creates watertight surfaces suitable for closed shapes.
+Includes density-based trimming to remove low-confidence regions and Laplacian smoothing for smoother surfaces.
 """
 
 import os
@@ -22,16 +23,19 @@ log = get_logger("utils.plymesh", "📦")
 def create_mesh_from_ply_files(
     ply_files: str | list[str],
     clean_cloud: bool = True,
-    voxel_size: float = 0.0001,
-    stat_nb_neighbors: int = 10,
-    stat_std_ratio: float = 1.5,
-    radius_nb_points: int = 10,
-    radius: float = 0.01,
+    voxel_size: float = 0.0002,
+    stat_nb_neighbors: int = 16,
+    stat_std_ratio: float = 1.0,
+    radius_nb_points: int = 16,
+    radius: float = 0.008,
     zone_pose: Pose | None = None,
     zone_depth_m: float | None = None,
     zone_width_m: float | None = None,
     zone_height_m: float | None = None,
-    poisson_depth: int = 9,
+    poisson_depth: int = 8,
+    density_trim_quantile: float = 0.02,
+    smooth_iterations: int = 10,
+    smooth_lambda: float = 0.8,
     output_dir: str | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
@@ -50,6 +54,9 @@ def create_mesh_from_ply_files(
         zone_width_m: Width of the zone in meters (y-axis)
         zone_height_m: Height of the zone in meters (z-axis)
         poisson_depth: Depth parameter for Poisson reconstruction (higher = more detail)
+        density_trim_quantile: Quantile for trimming low-density vertices (0.0 = no trim, higher = more aggressive trim)
+        smooth_iterations: Number of Laplacian smoothing iterations
+        smooth_lambda: Laplacian smoothing strength (0-1; higher = stronger smoothing)
         
     Returns:
         Tuple of (points, faces) where:
@@ -161,12 +168,28 @@ def create_mesh_from_ply_files(
     if len(mesh.triangles) < 1:
         raise ValueError(f"Initial mesh has no faces: {len(mesh.triangles)}")
     
+    # Trim low-density vertices to remove blobby or extrapolated regions
+    if density_trim_quantile > 0:
+        log.info(f"Trimming low-density vertices (quantile={density_trim_quantile})...")
+        densities_low = np.quantile(densities, density_trim_quantile)
+        mesh.remove_vertices_by_mask(densities < densities_low)
+        log.info(f"After density trimming: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
+    
     # Clean mesh
     mesh.remove_degenerate_triangles()
     mesh.remove_duplicated_triangles()
     mesh.remove_duplicated_vertices()
     mesh.remove_non_manifold_edges()
     log.info(f"After mesh cleaning: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
+
+    # Apply Laplacian smoothing for smoother surface
+    if smooth_iterations > 0:
+        log.info(f"Applying Laplacian smoothing ({smooth_iterations} iterations, lambda={smooth_lambda})...")
+        mesh = mesh.filter_smooth_laplacian(
+            number_of_iterations=smooth_iterations, 
+            lambda_filter=smooth_lambda
+        )
+        log.info(f"After smoothing: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
 
     mesh.compute_vertex_normals()
     log.info(f"Final mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
