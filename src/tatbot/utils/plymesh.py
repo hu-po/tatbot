@@ -23,8 +23,8 @@ log = get_logger("utils.plymesh", "📦")
 def create_mesh_from_ply_files(
     ply_files: str | list[str],
     clean_cloud: bool = True,
-    voxel_size: float = 0.0002,
-    stat_nb_neighbors: int = 16,
+    voxel_size: float = 0.001,
+    stat_nb_neighbors: int = 32,
     stat_std_ratio: float = 1.0,
     radius_nb_points: int = 16,
     radius: float = 0.008,
@@ -40,6 +40,11 @@ def create_mesh_from_ply_files(
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Load PLY files, combine point clouds, clean them, and create a mesh using Poisson surface reconstruction.
+    
+    Enhanced mesh cleaning includes:
+    - Duplicate edge detection and removal
+    - Manifold topology verification and repair
+    - Comprehensive mesh validation
     
     Args:
         ply_files: Single PLY file path or list of PLY file paths
@@ -176,10 +181,12 @@ def create_mesh_from_ply_files(
         log.info(f"After density trimming: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
     
     # Clean mesh
+    log.info("Cleaning mesh...")
     mesh.remove_degenerate_triangles()
     mesh.remove_duplicated_triangles()
     mesh.remove_duplicated_vertices()
     mesh.remove_non_manifold_edges()
+    mesh.remove_unreferenced_vertices()
     log.info(f"After mesh cleaning: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
 
     # Apply Laplacian smoothing for smoother surface

@@ -119,7 +119,7 @@ class VizMap(BaseViz):
         for ply_file in self.skin_ply_files:
             points, colors = load_ply(ply_file)
             self.skin_pointclouds[ply_file] = self.server.scene.add_point_cloud(
-                name=f"/skin/{ply_file.split('/')[-1]}",
+                name=f"/skin/ply/{ply_file.split('/')[-1]}",
                 points=points,
                 colors=colors,
                 point_size=config.skin_ply_point_size,
