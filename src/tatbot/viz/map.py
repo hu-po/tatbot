@@ -21,7 +21,7 @@ log = get_logger("viz.map", "🗺️")
 
 @dataclass
 class VizMapConfig(BaseVizConfig):
-    stroke_point_size: float = 0.003
+    stroke_point_size: float = 0.0005
     """Size of stroke points in the visualization (meters)."""
     stroke_point_shape: str = "rounded"
     """Shape of stroke points in the visualization."""
