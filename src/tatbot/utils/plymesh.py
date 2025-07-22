@@ -34,8 +34,8 @@ def create_mesh_from_ply_files(
     zone_height_m: float | None = None,
     poisson_depth: int = 8,
     density_trim_quantile: float = 0.02,
-    smooth_iterations: int = 10,
-    smooth_lambda: float = 0.8,
+    smooth_iterations: int = 32,
+    smooth_lambda: float = 0.9,
     output_dir: str | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
@@ -180,8 +180,7 @@ def create_mesh_from_ply_files(
         mesh.remove_vertices_by_mask(densities < densities_low)
         log.info(f"After density trimming: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
     
-    # Clean mesh
-    log.info("Cleaning mesh...")
+    log.info("Cleaning mesh (pre-smoothing)...")
     mesh.remove_degenerate_triangles()
     mesh.remove_duplicated_triangles()
     mesh.remove_duplicated_vertices()
@@ -197,6 +196,14 @@ def create_mesh_from_ply_files(
             lambda_filter=smooth_lambda
         )
         log.info(f"After smoothing: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
+
+    log.info("Cleaning mesh (post-smoothing)...")
+    mesh.remove_degenerate_triangles()
+    mesh.remove_duplicated_triangles()
+    mesh.remove_duplicated_vertices()
+    mesh.remove_non_manifold_edges()
+    mesh.remove_unreferenced_vertices()
+    log.info(f"After mesh cleaning: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
 
     mesh.compute_vertex_normals()
     log.info(f"Final mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
