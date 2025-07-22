@@ -156,7 +156,12 @@ class BaseViz:
                 wxyz=link_poses[realsense.urdf_link_name].rot.wxyz,
             )
             if config.enable_depth:
-                self.depth_cameras[realsense.name] = DepthCamera(realsense.serial_number, link_poses[realsense.urdf_link_name])
+                self.depth_cameras[realsense.name] = DepthCamera(
+                    realsense.serial_number,
+                    link_poses[realsense.urdf_link_name],
+                    save_prefix=f"{self.scene.skin.name}_{realsense.name}",
+                    save_dir=self.scene.skin.plymesh_dir,
+                )
                 self.realsense_pointclouds[realsense.name] = self.server.scene.add_point_cloud(
                     f"/pointcloud/{realsense.name}",
                     points=np.zeros((1, 3)),
@@ -176,7 +181,7 @@ class BaseViz:
             )
 
     def step(self):
-        log.info("Empty step function, implement in subclass")
+        log.debug("Empty step function, implement in subclass")
         pass
 
     def run(self):
