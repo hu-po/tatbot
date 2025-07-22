@@ -77,7 +77,7 @@ def create_mesh_from_ply_files(
     # Load and merge point clouds
     log.info(f"Loading {len(ply_files)} point cloud(s)...")
     pcds = []
-    for i, file in enumerate(ply_files):
+    for file in ply_files:
         try:
             pcd = o3d.io.read_point_cloud(os.path.expanduser(file))
             if len(pcd.points) == 0:

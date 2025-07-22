@@ -58,7 +58,6 @@ def map_strokes_to_mesh(
         raise ValueError("Mesh has no faces - cannot compute geodesics")
     
     # Check for invalid face indices
-    max_vertex_idx = len(vertices) - 1
     if np.any(faces >= len(vertices)) or np.any(faces < 0):
         raise ValueError("Mesh has invalid face indices")
     

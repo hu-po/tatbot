@@ -1,5 +1,5 @@
 import os
-from dataclasses import asdict, is_dataclass
+from dataclasses import is_dataclass
 from typing import Any, Type, TypeVar
 
 import numpy as np
