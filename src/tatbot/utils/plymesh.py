@@ -161,26 +161,62 @@ def create_mesh_from_ply_files(
     
     log.info(f"Initial mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
     
+    # Validate initial mesh
+    if len(mesh.vertices) < 3:
+        raise ValueError(f"Initial mesh has too few vertices: {len(mesh.vertices)}")
+    if len(mesh.triangles) < 1:
+        raise ValueError(f"Initial mesh has no faces: {len(mesh.triangles)}")
+    
     # Post-process to fill holes using tensor mesh
     log.info("Filling holes in mesh...")
-    tensor_mesh = tgeom.TriangleMesh.from_legacy(mesh)
-    tensor_mesh = tensor_mesh.fill_holes(hole_size=hole_size)  # Fill holes up to specified size
-    mesh = tensor_mesh.to_legacy()
+    try:
+        tensor_mesh = tgeom.TriangleMesh.from_legacy(mesh)
+        tensor_mesh = tensor_mesh.fill_holes(hole_size=hole_size)  # Fill holes up to specified size
+        mesh = tensor_mesh.to_legacy()
+        log.info(f"After hole filling: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
+    except Exception as e:
+        log.warning(f"Tensor-based hole filling failed: {e}. Trying alternative hole filling method...")
+        try:
+            # Alternative: use Open3D's built-in hole filling
+            mesh = mesh.fill_holes()
+            log.info(f"After alternative hole filling: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
+        except Exception as e2:
+            log.warning(f"Alternative hole filling also failed: {e2}. Continuing with original mesh.")
+            # Continue with the original mesh if both hole filling methods fail
     
     # Additional cleaning to ensure manifold mesh
-    mesh.remove_degenerate_triangles()
-    mesh.remove_duplicated_triangles()
-    mesh.remove_duplicated_vertices()
-    mesh.remove_non_manifold_edges()
+    try:
+        mesh.remove_degenerate_triangles()
+        mesh.remove_duplicated_triangles()
+        mesh.remove_duplicated_vertices()
+        mesh.remove_non_manifold_edges()
+        log.info(f"After mesh cleaning: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
+    except Exception as e:
+        log.warning(f"Mesh cleaning failed: {e}. Continuing with uncleaned mesh.")
+        # Continue with the uncleaned mesh if cleaning fails
     
     # Apply Laplacian smoothing for planarity
     log.info(f"Applying Laplacian smoothing ({smooth_iterations} iterations, lambda={smooth_lambda})...")
-    mesh = mesh.filter_smooth_laplacian(number_of_iterations=smooth_iterations, lambda_filter=smooth_lambda)
+    try:
+        mesh = mesh.filter_smooth_laplacian(number_of_iterations=smooth_iterations, lambda_filter=smooth_lambda)
+        log.info(f"After Laplacian smoothing: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
+    except Exception as e:
+        log.warning(f"Laplacian smoothing failed: {e}. Continuing with unsmoothed mesh.")
+        # Continue with the unsmoothed mesh if smoothing fails
     
-    mesh.compute_vertex_normals()
-    log.info(f"Final mesh after hole-filling and smoothing: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
+    try:
+        mesh.compute_vertex_normals()
+        log.info(f"Final mesh after hole-filling and smoothing: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
+    except Exception as e:
+        log.warning(f"Vertex normal computation failed: {e}. Continuing without normals.")
+        # Continue without vertex normals if computation fails
 
     # Extract mesh data for geodesic computation
+    if len(mesh.vertices) == 0:
+        raise ValueError("Mesh has no vertices after processing")
+    if len(mesh.triangles) == 0:
+        raise ValueError("Mesh has no faces after processing")
+        
     points = np.asarray(mesh.vertices, dtype=np.float64)
     faces = np.asarray(mesh.triangles, dtype=np.int32)
     
