@@ -214,8 +214,8 @@ class VizMap(BaseViz):
                     stroke_length=self.scene.stroke_length,
                 )
                 for i, (stroke_l, stroke_r) in enumerate(mapped_strokes.strokes):
-                    self.mapped_stroke_pointclouds["l"][i].points = stroke_l.meter_coords
-                    self.mapped_stroke_pointclouds["r"][i].points = stroke_r.meter_coords
+                    self.mapped_stroke_pointclouds["l"][i].points = stroke_l.ee_pos
+                    self.mapped_stroke_pointclouds["r"][i].points = stroke_r.ee_pos
                 log.info("Successfully mapped strokes to surface")
 
             except Exception:

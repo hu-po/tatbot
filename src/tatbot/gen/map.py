@@ -133,7 +133,28 @@ def map_strokes_to_mesh(
 
         if not mapped_pts_list:
             log.warning(f"No valid geodesic paths for stroke {stroke.description}")
-            return stroke
+            # Return original stroke with added normals field for consistency
+            vertex_normals = np.asarray(mesh.vertex_normals)
+            points_tree = KDTree(vertices)
+            _, closest_indices = points_tree.query(stroke.meter_coords, k=1)
+            closest_indices = closest_indices.flatten()
+            normals = vertex_normals[closest_indices]
+            
+            return Stroke(
+                description=stroke.description,
+                arm=stroke.arm,
+                meter_coords=stroke.meter_coords,
+                ee_pos=stroke.ee_pos,
+                ee_rot=stroke.ee_rot,
+                dt=stroke.dt,
+                pixel_coords=stroke.pixel_coords,
+                gcode_text=stroke.gcode_text,
+                inkcap=stroke.inkcap,
+                is_inkdip=stroke.is_inkdip,
+                color=stroke.color,
+                frame_path=stroke.frame_path,
+                normals=normals,
+            )
 
         # Concatenate geodesic segments
         pts_mapped = np.vstack(mapped_pts_list)
@@ -174,7 +195,8 @@ def map_strokes_to_mesh(
         return Stroke(
             description=stroke.description,
             arm=stroke.arm,
-            meter_coords=pts_mapped,
+            meter_coords=stroke.meter_coords,
+            ee_pos=pts_mapped,
             ee_rot=stroke.ee_rot,
             dt=stroke.dt,
             pixel_coords=stroke.pixel_coords,
@@ -188,14 +210,10 @@ def map_strokes_to_mesh(
 
     # Process all stroke pairs
     mapped_strokes = StrokeList(strokes=[])
-    for i, (stroke_l, stroke_r) in enumerate(strokes.strokes):
-        try:
-            mapped_stroke_l = map_stroke(stroke_l)
-            mapped_stroke_r = map_stroke(stroke_r)
-            mapped_strokes.strokes.append((mapped_stroke_l, mapped_stroke_r))
-        except Exception as e:
-            log.error(f"Failed to map stroke pair {i+1}: {e}")
-            raise
+    for stroke_l, stroke_r in strokes.strokes:
+        mapped_stroke_l = map_stroke(stroke_l)
+        mapped_stroke_r = map_stroke(stroke_r)
+        mapped_strokes.strokes.append((mapped_stroke_l, mapped_stroke_r))
     
     log.info(f"Successfully mapped {len(mapped_strokes.strokes)} stroke pairs")
     return mapped_strokes
