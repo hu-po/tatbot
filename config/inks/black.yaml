@@ -29,10 +29,6 @@ inkcaps:
     ink: null
     diameter_m: 0.012
     depth_m: 0.01
-  - name: inkcap_left_medium_2
-    ink: null
-    diameter_m: 0.012
-    depth_m: 0.01
   - name: inkcap_right_large
     ink:
       name: nighthawk_black
@@ -60,10 +56,6 @@ inkcaps:
     diameter_m: 0.012
     depth_m: 0.01
   - name: inkcap_right_medium_1
-    ink: null
-    diameter_m: 0.012
-    depth_m: 0.01
-  - name: inkcap_right_medium_2
     ink: null
     diameter_m: 0.012
     depth_m: 0.01

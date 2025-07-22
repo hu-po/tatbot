@@ -24,7 +24,6 @@ ink_link_names:
   - "inkcap_left_small_3"
   - "inkcap_left_medium_0"
   - "inkcap_left_medium_1"
-  - "inkcap_left_medium_2"
   - "inkcap_right_large"
   - "inkcap_right_small_0"
   - "inkcap_right_small_1"
@@ -32,5 +31,4 @@ ink_link_names:
   - "inkcap_right_small_3"
   - "inkcap_right_medium_0"
   - "inkcap_right_medium_1"
-  - "inkcap_right_medium_2"
 root_link_name: "root"
