@@ -30,7 +30,7 @@ def create_mesh_from_ply_files(
     stat_std_ratio: float = 1.5,  # Stricter to remove noise/offsets
     radius_nb_points: int = 15,
     radius: float = 0.006,  # Slightly smaller to keep more points
-    alpha_value_multiplier: float = 1.5,  # Lower to connect more points, reduce holes
+    alpha_value_multiplier: float = 0.03,  # Lower to connect more points, reduce holes
     zone_pose: Pose | None = None,
     zone_depth_m: float | None = None,
     zone_width_m: float | None = None,
@@ -173,6 +173,11 @@ def create_mesh_from_ply_files(
         tensor_mesh = tgeom.TriangleMesh.from_legacy(mesh)
         tensor_mesh = tensor_mesh.fill_holes(hole_size=hole_size)  # Fill holes up to specified size
         mesh = tensor_mesh.to_legacy()
+        # HACK: force clean memory layout
+        vertices = np.asarray(mesh.vertices)
+        mesh.vertices = o3d.utility.Vector3dVector(np.array(vertices.tolist(), dtype=np.float64))
+        triangles = np.asarray(mesh.triangles)
+        mesh.triangles = o3d.utility.Vector3iVector(np.array(triangles.tolist(), dtype=np.int32))
         log.info(f"After hole filling: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
     except Exception as e:
         log.warning(f"Tensor-based hole filling failed: {e}. Trying alternative hole filling method...")
@@ -198,6 +203,11 @@ def create_mesh_from_ply_files(
     # Apply Laplacian smoothing for planarity
     log.info(f"Applying Laplacian smoothing ({smooth_iterations} iterations, lambda={smooth_lambda})...")
     try:
+        # HACK: force clean memory layout
+        vertices = np.asarray(mesh.vertices)
+        mesh.vertices = o3d.utility.Vector3dVector(np.array(vertices.tolist(), dtype=np.float64))
+        triangles = np.asarray(mesh.triangles)
+        mesh.triangles = o3d.utility.Vector3iVector(np.array(triangles.tolist(), dtype=np.int32))
         mesh = mesh.filter_smooth_laplacian(number_of_iterations=smooth_iterations, lambda_filter=smooth_lambda)
         log.info(f"After Laplacian smoothing: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
     except Exception as e:

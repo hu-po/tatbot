@@ -67,6 +67,7 @@ class VizMap(BaseViz):
         def _(_):
             self.skin_zone.position = self.design_pose_tf.position
             self.skin_zone.wxyz = self.design_pose_tf.wxyz
+            self.design_pose_textbox.value = self.design_pose_text()
         
         self.strokes: StrokeList = make_gcode_strokes(self.scene)
         self.stroke_pointclouds = {"l": [], "r": []}
@@ -151,6 +152,12 @@ class VizMap(BaseViz):
                 "Show Skin Zone",
                 initial_value=True,
             )
+            self.design_pose_textbox = self.server.gui.add_text(
+                "Design Pose",
+                initial_value=self.design_pose_text(),
+                hint="Current design pose position and rotation"
+            )
+            
             with self.server.gui.add_folder("Skin PLY Files", expand_by_default=False):
                 self.enabled_skin_ply_files_checkboxes = {}
                 for ply_file in self.skin_ply_files:
@@ -243,6 +250,11 @@ class VizMap(BaseViz):
         @self.show_skin_zone.on_update
         def _(_):
             self.skin_zone.visible = self.show_skin_zone.value
+
+    def design_pose_text(self) -> str:
+        pos = self.design_pose_tf.position
+        rot = self.design_pose_tf.wxyz
+        return f"x{pos[0]:.3f}, y{pos[1]:.3f}, z{pos[2]:.3f}\nqw{rot[0]:.3f}, qx{rot[1]:.3f}, qy{rot[2]:.3f}, qz{rot[3]:.3f}"
 
     def step(self):
         """Empty step function - this visualization is static."""
