@@ -16,6 +16,7 @@ import numpy as np
 import open3d as o3d
 import pygeodesic.geodesic as geodesic
 from scipy.spatial import KDTree
+import jaxlie
 
 from tatbot.data.pose import Pose
 from tatbot.data.stroke import Stroke, StrokeList
@@ -73,11 +74,13 @@ def map_strokes_to_mesh(
     geoalg = geodesic.PyGeodesicAlgorithmExact(vertices, faces)
     log.info("Geodesic algorithm initialized successfully")
 
-    # Build KDTree for XY projection
-    p_xy_tree = KDTree(vertices[:, :2])
-    design_xy = design_origin.pos.xyz[:2]
-    _, source_idx = p_xy_tree.query(np.array([design_xy]), k=1)
-    log.info(f"Design origin mapped to vertex {source_idx[0]}")
+    # Build KDTree for 3D closest point projection
+    p_3d_tree = KDTree(vertices)
+    
+    # Create jaxlie SE3 transformation from design pose
+    design_translation = jaxlie.SE3(wxyz_xyz=np.concatenate([design_origin.rot.wxyz, design_origin.pos.xyz], axis=-1))
+    
+    log.info(f"Design origin: pos={design_origin.pos.xyz}, quat={design_origin.rot.wxyz}")
 
     def map_stroke(stroke: Stroke) -> Stroke:
         # Skip inkdip or rest strokes
@@ -88,11 +91,17 @@ def map_strokes_to_mesh(
             log.warning(f"Stroke {stroke.description} has < 2 points, skipping")
             return stroke
         
-        # Project flat 2D stroke points to mesh vertices
-        pts_flat = stroke.meter_coords[:, :2]
-        log.info(f"Stroke {stroke.description}: {len(pts_flat)} points, XY range: {pts_flat.min(axis=0)} to {pts_flat.max(axis=0)}")
+        # Transform stroke points from design plane to global coordinates
+        pts_flat = stroke.meter_coords[:, :2]  # 2D points in design plane
+        pts_3d_design = np.column_stack([pts_flat, np.zeros(len(pts_flat))])  # Add Z=0
         
-        _, proj_indices = p_xy_tree.query(pts_flat, k=1)
+        # Apply design transformation using jaxlie SE3
+        pts_3d_global = design_translation @ pts_3d_design
+        
+        log.info(f"Stroke {stroke.description}: {len(pts_3d_global)} points, 3D range: {pts_3d_global.min(axis=0)} to {pts_3d_global.max(axis=0)}")
+        
+        # Project 3D points to mesh vertices using closest point projection
+        _, proj_indices = p_3d_tree.query(pts_3d_global, k=1)
         proj_indices = proj_indices.flatten()
         log.info(f"Projected to {len(set(proj_indices))} unique vertices out of {len(proj_indices)} points")
 

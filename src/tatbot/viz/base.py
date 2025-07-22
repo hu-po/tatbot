@@ -2,6 +2,7 @@ import logging
 import time
 from dataclasses import dataclass
 from itertools import chain
+import os
 
 import numpy as np
 import viser
@@ -99,11 +100,22 @@ class BaseViz:
 
             self.depth_cameras = {}
             with self.server.gui.add_folder("Point Cloud Recording", expand_by_default=False):
-                self.save_checkbox = self.server.gui.add_checkbox(
-                    "Save Point Clouds", 
+                self.save_ply_files_checkbox = self.server.gui.add_checkbox(
+                    "Save PLY Files", 
                     initial_value=False,
                     hint="Toggle saving point clouds as PLY files"
                 )
+                self.clear_plymesh_button = self.server.gui.add_button(
+                    "Clear PLY Files",
+                    hint="Clear all PLY files in the skin plymesh directory"
+                )
+
+        @self.clear_plymesh_button.on_click
+        def _(_):
+            log.info("Clearing PLY files")
+            for file in os.listdir(self.scene.skin.plymesh_dir):
+                os.remove(os.path.join(self.scene.skin.plymesh_dir, file))
+            log.info(f"Cleared {len(os.listdir(self.scene.skin.plymesh_dir))} PLY files")
 
         self.arm_l = None
         self.arm_r = None
@@ -188,7 +200,7 @@ class BaseViz:
                 if self.config.enable_depth:
                     realsense_start_time = time.time()
                     self.depth_cameras[realsense.name].pose = link_poses[realsense.urdf_link_name]
-                    image, positions, colors = self.depth_cameras[realsense.name].get_pointcloud(save=self.save_checkbox.value)
+                    image, positions, colors = self.depth_cameras[realsense.name].get_pointcloud(save=self.save_ply_files_checkbox.value)
                     self.realsense_frustrums[realsense.name].image = image
                     self.realsense_pointclouds[realsense.name].points = np.array(positions)
                     self.realsense_pointclouds[realsense.name].colors = np.array(colors)

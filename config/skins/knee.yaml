@@ -11,3 +11,4 @@ design_pose:
 zone_depth_m: 0.092
 zone_width_m: 0.122
 zone_height_m: 0.04
+plymesh_dir: "~/tatbot/nfs/3d/knee"

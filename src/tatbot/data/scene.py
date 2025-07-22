@@ -162,6 +162,13 @@ class Scene(Yaml):
         log.debug(f"Left inkcaps: {self.inkcaps_l}")
         log.debug(f"Right inkcaps: {self.inkcaps_r}")
 
+        # clean/load plymesh dir for skin
+        plymesh_dir = os.path.expanduser(self.skin.plymesh_dir)
+        if not os.path.exists(plymesh_dir):
+            os.makedirs(plymesh_dir, exist_ok=True)
+        self.skin.plymesh_dir = plymesh_dir
+        log.info(f"📂 Skin plymesh directory: {plymesh_dir}")
+
         self.design_dir = None
         self.design_img_path = None
         if self.design_dir_path is not None:

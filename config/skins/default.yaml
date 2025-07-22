@@ -11,3 +11,4 @@ design_pose:
 zone_depth_m: 0.03
 zone_width_m: 0.02
 zone_height_m: 0.05
+plymesh_dir: "~/tatbot/nfs/3d/default"
