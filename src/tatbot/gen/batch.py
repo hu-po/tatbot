@@ -1,12 +1,7 @@
-import time
-from typing import Optional
-
 import jax
 import jax.numpy as jnp
-import jax_dataclasses as jdc
 import jaxlie
 import numpy as np
-from jaxtyping import Array, Float
 
 from tatbot.data.scene import Scene
 from tatbot.data.stroke import StrokeBatch, StrokeList
@@ -14,25 +9,6 @@ from tatbot.gen.ik import batch_ik
 from tatbot.utils.log import get_logger
 
 log = get_logger("gen.batch", "💠")
-
-
-@jdc.jit
-def transform_and_offset(
-    target_pos: Float[Array, "b 3"],
-    frame_pos: Float[Array, "3"],
-    frame_wxyz: Float[Array, "4"],
-    offsets: Optional[Float[Array, "b 3"]] = None,
-) -> Float[Array, "b 3"]:
-    log.debug(f"transforming and offsetting {target_pos.shape[0]} points")
-    start_time = time.time()
-    if offsets is None:
-        offsets = jnp.zeros_like(target_pos)
-    if offsets.shape[0] != target_pos.shape[0]:
-        offsets = jnp.tile(offsets, (target_pos.shape[0], 1))
-    frame_transform = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(frame_wxyz), frame_pos)
-    result = jax.vmap(lambda pos, offset: frame_transform @ pos + offset)(target_pos, offsets)
-    log.debug(f"transform and offset time: {time.time() - start_time:.4f}s")
-    return result
 
 
 def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: int = 1024) -> StrokeBatch:
@@ -60,22 +36,16 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
 
     for i, (stroke_l, stroke_r) in enumerate(strokelist.strokes):
         if not stroke_l.is_inkdip:
-            base_l = transform_and_offset(
-                stroke_l.meter_coords,
-                scene.skin.design_pose.pos.xyz,
-                scene.skin.design_pose.rot.wxyz,
-            )
+            tf = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(scene.skin.design_pose.rot.wxyz), scene.skin.design_pose.pos.xyz)
+            base_l = jax.vmap(lambda pos: tf @ pos)(stroke_l.meter_coords)
             base_l = base_l.reshape(l, 3)
             ee_pos_l[i] = np.repeat(base_l[:, None, :], o, axis=1)
         else:
             # inkdips do not have meter_coords, only ee_pos
             ee_pos_l[i] = np.repeat(stroke_l.ee_pos.reshape(l, 1, 3), o, 1)
         if not stroke_r.is_inkdip:
-            base_r = transform_and_offset(
-                stroke_r.meter_coords,
-                scene.skin.design_pose.pos.xyz,
-                scene.skin.design_pose.rot.wxyz,
-            )
+            tf = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(scene.skin.design_pose.rot.wxyz), scene.skin.design_pose.pos.xyz)
+            base_r = jax.vmap(lambda pos: tf @ pos)(stroke_r.meter_coords)
             base_r = base_r.reshape(l, 3)
             ee_pos_r[i] = np.repeat(base_r[:, None, :], o, 1)
         else:
