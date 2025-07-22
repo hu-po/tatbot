@@ -110,12 +110,12 @@ class BaseViz:
                     hint="Clear all PLY files in the skin plymesh directory"
                 )
 
-        @self.clear_plymesh_button.on_click
-        def _(_):
-            log.info("Clearing PLY files")
-            for file in os.listdir(self.scene.skin.plymesh_dir):
-                os.remove(os.path.join(self.scene.skin.plymesh_dir, file))
-            log.info(f"Cleared {len(os.listdir(self.scene.skin.plymesh_dir))} PLY files")
+            @self.clear_plymesh_button.on_click
+            def _(_):
+                log.info("Clearing PLY files")
+                for file in os.listdir(self.scene.skin.plymesh_dir):
+                    os.remove(os.path.join(self.scene.skin.plymesh_dir, file))
+                log.info(f"Cleared {len(os.listdir(self.scene.skin.plymesh_dir))} PLY files")
 
         self.arm_l = None
         self.arm_r = None
