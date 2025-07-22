@@ -3,6 +3,8 @@ PLY Mesh Utilities
 
 This module provides utilities for loading, processing, and creating meshes from PLY point cloud files.
 It handles point cloud loading, merging, cleaning, and mesh reconstruction using Open3D.
+Uses Alpha Shapes for reconstruction, which creates non-convex, open surfaces suitable for sheet-like representations 
+of skin, promoting smoother and more planar meshes while preserving curvature.
 """
 
 import os
@@ -26,24 +28,24 @@ def create_mesh_from_ply_files(
     stat_std_ratio: float = 1.8,
     radius_nb_points: int = 15,
     radius: float = 0.008,
-    poisson_depth: int = 9,
+    alpha_value_multiplier: float = 2.0,  # Multiplier for Alpha Shapes alpha (larger = smoother/generalized)
     zone_pose: Pose | None = None,
     zone_depth_m: float | None = None,
     zone_width_m: float | None = None,
     zone_height_m: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Load PLY files, combine point clouds, clean them, and create a mesh.
+    Load PLY files, combine point clouds, clean them, and create a mesh using Alpha Shapes.
     
     Args:
         ply_files: Single PLY file path or list of PLY file paths
         clean_cloud: Whether to apply cleaning operations
-        voxel_size: Voxel size for downsampling
+        voxel_size: Voxel size for downsampling (smaller = more detail, larger = smoother)
         stat_nb_neighbors: Number of neighbors for statistical outlier removal
         stat_std_ratio: Standard deviation ratio for statistical outlier removal
         radius_nb_points: Minimum number of points for radius outlier removal
         radius: Radius for radius outlier removal
-        poisson_depth: Depth for Poisson surface reconstruction
+        alpha_value_multiplier: Multiplier for Alpha Shapes alpha (based on avg point distance; larger = more generalized/planar)
         zone_pose: Pose defining the center and orientation of the zone
         zone_depth_m: Depth of the zone in meters (x-axis)
         zone_width_m: Width of the zone in meters (y-axis)
@@ -136,22 +138,21 @@ def create_mesh_from_ply_files(
         ref_pcd, _ = ref_pcd.remove_radius_outlier(nb_points=radius_nb_points, radius=radius)
         log.info(f"After radius removal: {len(ref_pcd.points)} points")
 
-    # Reconstruct mesh from point cloud
-    log.info("Reconstructing mesh...")
-    ref_pcd.estimate_normals()
-    mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(ref_pcd, depth=poisson_depth)
+    # Reconstruct mesh using Alpha Shapes
+    log.info("Reconstructing mesh using Alpha Shapes...")
+    # Compute adaptive alpha: Based on average nearest-neighbor distance for scaling
+    ref_pcd.estimate_normals()  # Helps with orientation if needed
+    distances = ref_pcd.compute_nearest_neighbor_distance()
+    avg_dist = np.mean(distances)
+    alpha = avg_dist * alpha_value_multiplier  # Larger multiplier = smoother, more planar mesh
+    log.debug(f"Computed alpha: {alpha:.6f} (avg_dist={avg_dist:.6f}, multiplier={alpha_value_multiplier})")
+    
+    mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(ref_pcd, alpha)
     
     if len(mesh.vertices) == 0:
-        raise ValueError("Poisson reconstruction failed - no vertices generated")
+        raise ValueError("Alpha Shapes reconstruction failed - no vertices generated")
     
     log.info(f"Mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
-    
-    # Remove low-density vertices
-    densities = np.asarray(densities)
-    if len(densities) > 0:
-        vertices_to_remove = densities < np.quantile(densities, 0.05)
-        mesh.remove_vertices_by_mask(vertices_to_remove)
-        log.info(f"Removed {np.sum(vertices_to_remove)} low-density vertices")
     
     mesh.compute_vertex_normals()
     log.info(f"Final mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")

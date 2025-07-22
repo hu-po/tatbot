@@ -17,7 +17,7 @@ class DepthCamera:
     def __init__(self,
             serial_number: str,
             initial_pose: Pose,
-            decimation: int = 4, # Decimation filter magnitude for depth frames (integer >= 1)
+            decimation: int = 1, # Decimation filter magnitude for depth frames (integer >= 1)
             clipping: Tuple[float, float] = (0.01, 0.3), # Clipping range for depth in meters (min, max).
             timeout_ms: int = 8000, # Timeout for the RealSense camera in milliseconds.
             save_prefix: str = "rs_",

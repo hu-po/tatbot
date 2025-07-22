@@ -97,6 +97,8 @@ def map_strokes_to_mesh(
         
         # Apply design transformation using jaxlie SE3
         pts_3d_global = design_translation @ pts_3d_design
+        # Convert JAX arrays to NumPy arrays for serialization
+        pts_3d_global = np.array(pts_3d_global)
         
         log.info(f"Stroke {stroke.description}: {len(pts_3d_global)} points, 3D range: {pts_3d_global.min(axis=0)} to {pts_3d_global.max(axis=0)}")
         
@@ -119,6 +121,8 @@ def map_strokes_to_mesh(
             # Transform direction to global coordinates using design transformation
             # We need to apply the rotation part of the transformation to the direction vector
             direction_global = design_translation.rotation() @ stroke_direction_3d
+            # Convert JAX array to NumPy array
+            direction_global = np.array(direction_global)
             
             # Trace geodesic from source vertex in the stroke direction
             try:
@@ -134,8 +138,9 @@ def map_strokes_to_mesh(
                 else:
                     distance = 0.0
                     
-                mapped_pts_list.append(path)
-                log.info(f"Segment {i}: vertex {src_idx}, direction={direction_global}, distance={distance:.4f}, path_length={len(path)}")
+                path_np = np.array(path)
+                mapped_pts_list.append(path_np)
+                log.info(f"Segment {i}: vertex {src_idx}, direction={direction_global}, distance={distance:.4f}, path_length={len(path_np)}")
             except Exception as e:
                 log.warning(f"Geodesic tracing failed for segment {i} (vertex {src_idx}): {e}")
                 continue
@@ -149,20 +154,27 @@ def map_strokes_to_mesh(
             closest_indices = closest_indices.flatten()
             normals = vertex_normals[closest_indices]
             
+            # Ensure arrays are NumPy arrays
+            ee_rot_np = np.array(stroke.ee_rot) if stroke.ee_rot is not None else None
+            meter_coords_np = np.array(stroke.meter_coords) if stroke.meter_coords is not None else None
+            dt_np = np.array(stroke.dt) if stroke.dt is not None else None
+            pixel_coords_np = np.array(stroke.pixel_coords) if stroke.pixel_coords is not None else None
+            ee_pos_np = np.array(stroke.ee_pos) if stroke.ee_pos is not None else None
+            
             return Stroke(
                 description=stroke.description,
                 arm=stroke.arm,
-                meter_coords=stroke.meter_coords,
-                ee_pos=stroke.ee_pos,
-                ee_rot=stroke.ee_rot,
-                dt=stroke.dt,
-                pixel_coords=stroke.pixel_coords,
+                meter_coords=meter_coords_np,
+                ee_pos=ee_pos_np,
+                ee_rot=ee_rot_np,
+                dt=dt_np,
+                pixel_coords=pixel_coords_np,
                 gcode_text=stroke.gcode_text,
                 inkcap=stroke.inkcap,
                 is_inkdip=stroke.is_inkdip,
                 color=stroke.color,
                 frame_path=stroke.frame_path,
-                normals=normals,
+                normals=np.array(normals),
             )
 
         # Concatenate geodesic segments
@@ -201,20 +213,33 @@ def map_strokes_to_mesh(
         normals = vertex_normals[closest_indices]
 
         # Create mapped stroke
+        # Ensure all arrays are NumPy arrays for serialization
+        ee_pos_np = np.array(pts_mapped)
+        normals_np = np.array(normals)
+        ee_rot_np = np.array(stroke.ee_rot) if stroke.ee_rot is not None else None
+        meter_coords_np = np.array(stroke.meter_coords) if stroke.meter_coords is not None else None
+        dt_np = np.array(stroke.dt) if stroke.dt is not None else None
+        pixel_coords_np = np.array(stroke.pixel_coords) if stroke.pixel_coords is not None else None
+        
+        # Debug: check array types
+        log.debug(f"ee_pos_np type: {type(ee_pos_np)}, dtype: {ee_pos_np.dtype}")
+        log.debug(f"normals_np type: {type(normals_np)}, dtype: {normals_np.dtype}")
+        log.debug(f"ee_rot_np type: {type(ee_rot_np)}")
+        
         return Stroke(
             description=stroke.description,
             arm=stroke.arm,
-            meter_coords=stroke.meter_coords,
-            ee_pos=pts_mapped,
-            ee_rot=stroke.ee_rot,
-            dt=stroke.dt,
-            pixel_coords=stroke.pixel_coords,
+            meter_coords=meter_coords_np,
+            ee_pos=ee_pos_np,
+            ee_rot=ee_rot_np,
+            dt=dt_np,
+            pixel_coords=pixel_coords_np,
             gcode_text=stroke.gcode_text,
             inkcap=stroke.inkcap,
             is_inkdip=stroke.is_inkdip,
             color=stroke.color,
             frame_path=stroke.frame_path,
-            normals=normals,
+            normals=normals_np,
         )
 
     # Process all stroke pairs
