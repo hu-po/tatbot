@@ -286,7 +286,7 @@ def create_mesh_from_ply_files(
         mesh_obj.vertices = o3d.utility.Vector3dVector(points)
         mesh_obj.triangles = o3d.utility.Vector3iVector(faces)
         mesh_obj.compute_vertex_normals()
-        o3d.io.write_triangle_mesh(os.path.join(output_dir, f"mesh.ply"), mesh_obj, write_ascii=False)
+        o3d.io.write_triangle_mesh(os.path.join(output_dir, "mesh.ply"), mesh_obj, write_ascii=False)
     
     return points, faces
 

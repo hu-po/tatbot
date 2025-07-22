@@ -1,6 +1,7 @@
-import numpy as np
 import jax
 import jaxlib.xla_extension as xla_ext
+import numpy as np
+
 
 def ensure_numpy_array(obj):
     """Convert JAX arrays to NumPy arrays, leave other types unchanged."""

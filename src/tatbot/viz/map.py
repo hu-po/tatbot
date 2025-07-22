@@ -1,6 +1,6 @@
 import logging
-from dataclasses import dataclass
 import traceback
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -115,7 +115,7 @@ class VizMap(BaseViz):
         self.skin_mesh_vertices = None
         self.skin_mesh_faces = None
         self.skin_ply_files = ply_files_from_dir(self.scene.skin.plymesh_dir)
-        self.enabled_skin_ply_files = {ply_file: True for ply_file in self.skin_ply_files}
+        self.enabled_skin_ply_files = dict.fromkeys(self.skin_ply_files, True)
         self.skin_pointclouds = {}
         for ply_file in self.skin_ply_files:
             points, colors = load_ply(ply_file)

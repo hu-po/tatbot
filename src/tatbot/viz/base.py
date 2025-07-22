@@ -1,8 +1,8 @@
 import logging
+import os
 import time
 from dataclasses import dataclass
 from itertools import chain
-import os
 
 import numpy as np
 import viser

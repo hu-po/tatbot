@@ -12,11 +12,11 @@ The mesh is provided as vertices and faces arrays. The function expects a valid 
 with proper connectivity for accurate geodesic computations.
 """
 
+import jaxlie
 import numpy as np
 import open3d as o3d
 import potpourri3d as pp3d
 from scipy.spatial import KDTree
-import jaxlie
 
 from tatbot.data.pose import Pose
 from tatbot.data.stroke import Stroke, StrokeList
