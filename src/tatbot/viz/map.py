@@ -7,7 +7,8 @@ import numpy as np
 from tatbot.data.pose import Pose
 from tatbot.data.stroke import StrokeList
 from tatbot.gen.gcode import make_gcode_strokes
-from tatbot.gen.map import map_strokes_to_mesh, ensure_numpy_array
+from tatbot.gen.map import map_strokes_to_mesh
+from tatbot.utils.jnp_types import ensure_numpy_array
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 from tatbot.utils.plymesh import (
     create_mesh_from_ply_files,
@@ -73,42 +74,40 @@ class VizMap(BaseViz):
         self.stroke_pointclouds = {"l": [], "r": []}
         self.mapped_stroke_pointclouds = {"l": [], "r": []}
         for i, (stroke_l, stroke_r) in enumerate(self.strokes.strokes):
-            if not stroke_l.is_inkdip and not stroke_l.is_rest:
-                pointcloud = self.server.scene.add_point_cloud(
-                    # By making this a child of design_pose, meter_coords are correctly transformed
-                    name=f"/design_pose/stroke_l_{i:03d}",
-                    points=stroke_l.meter_coords,
-                    colors=np.zeros((len(stroke_l.meter_coords), 3), dtype=np.uint8),
-                    point_size=config.stroke_point_size,
-                    point_shape=config.stroke_point_shape,
-                )
-                self.stroke_pointclouds["l"].append(pointcloud)
-                # mapped pointclouds are in world frame, start off as empty
-                mapped_pointcloud = self.server.scene.add_point_cloud(
-                    name=f"/mapped_stroke_l_{i:03d}",
-                    points=np.zeros((1, 3)),
-                    colors=np.zeros((1, 3), dtype=np.uint8),
-                    point_size=config.stroke_point_size,
-                    point_shape=config.stroke_point_shape,
-                )
-                self.mapped_stroke_pointclouds["l"].append(mapped_pointcloud)
-            if not stroke_r.is_inkdip and not stroke_r.is_rest:
-                pointcloud = self.server.scene.add_point_cloud(
-                    name=f"/design_pose/stroke_r_{i:03d}",
-                    points=stroke_r.meter_coords,
-                    colors=np.zeros((len(stroke_r.meter_coords), 3), dtype=np.uint8),
-                    point_size=config.stroke_point_size,
-                    point_shape=config.stroke_point_shape,
-                )
-                self.stroke_pointclouds["r"].append(pointcloud)
-                mapped_pointcloud = self.server.scene.add_point_cloud(
-                    name=f"/mapped_stroke_r_{i:03d}",
-                    points=np.zeros((1, 3)),
-                    colors=np.zeros((1, 3), dtype=np.uint8),
-                    point_size=config.stroke_point_size,
-                    point_shape=config.stroke_point_shape,
-                )
-                self.mapped_stroke_pointclouds["r"].append(mapped_pointcloud)
+            pointcloud = self.server.scene.add_point_cloud(
+                # By making this a child of design_pose, meter_coords are correctly transformed
+                name=f"/design_pose/stroke_l_{i:03d}",
+                points=stroke_l.meter_coords,
+                colors=np.zeros((len(stroke_l.meter_coords), 3), dtype=np.uint8),
+                point_size=config.stroke_point_size,
+                point_shape=config.stroke_point_shape,
+            )
+            self.stroke_pointclouds["l"].append(pointcloud)
+            # mapped pointclouds are in world frame, start off as empty
+            mapped_pointcloud = self.server.scene.add_point_cloud(
+                name=f"/skin/map/stroke_l_{i:03d}",
+                points=np.zeros((1, 3)),
+                colors=np.zeros((1, 3), dtype=np.uint8),
+                point_size=config.stroke_point_size,
+                point_shape=config.stroke_point_shape,
+            )
+            self.mapped_stroke_pointclouds["l"].append(mapped_pointcloud)
+            pointcloud = self.server.scene.add_point_cloud(
+                name=f"/design_pose/stroke_r_{i:03d}",
+                points=stroke_r.meter_coords,
+                colors=np.zeros((len(stroke_r.meter_coords), 3), dtype=np.uint8),
+                point_size=config.stroke_point_size,
+                point_shape=config.stroke_point_shape,
+            )
+            self.stroke_pointclouds["r"].append(pointcloud)
+            mapped_pointcloud = self.server.scene.add_point_cloud(
+                name=f"/skin/map/stroke_r_{i:03d}",
+                points=np.zeros((1, 3)),
+                colors=np.zeros((1, 3), dtype=np.uint8),
+                point_size=config.stroke_point_size,
+                point_shape=config.stroke_point_shape,
+            )
+            self.mapped_stroke_pointclouds["r"].append(mapped_pointcloud)
 
         self.skin_mesh = None
         self.skin_mesh_vertices = None
@@ -213,10 +212,6 @@ class VizMap(BaseViz):
                     return
                     
                 log.info("Mapping strokes to surface...")
-                log.info(f"Original strokes: {len(self.strokes.strokes)} pairs")
-                log.info(f"Left pointclouds: {len(self.mapped_stroke_pointclouds['l'])}")
-                log.info(f"Right pointclouds: {len(self.mapped_stroke_pointclouds['r'])}")
-                
                 mapped_strokes = map_strokes_to_mesh(
                     vertices=self.skin_mesh_vertices,
                     faces=self.skin_mesh_faces,
@@ -225,48 +220,9 @@ class VizMap(BaseViz):
                     stroke_length=self.scene.stroke_length,
                 )
                 
-                log.info(f"Mapped strokes: {len(mapped_strokes.strokes)} pairs")
-                if len(mapped_strokes.strokes) > 0:
-                    sample_stroke_l = mapped_strokes.strokes[0][0]
-                    sample_stroke_r = mapped_strokes.strokes[0][1]
-                    log.info(f"Sample left stroke: ee_pos shape={getattr(sample_stroke_l, 'ee_pos', None).shape if hasattr(sample_stroke_l, 'ee_pos') and sample_stroke_l.ee_pos is not None else 'None'}")
-                    log.info(f"Sample right stroke: ee_pos shape={getattr(sample_stroke_r, 'ee_pos', None).shape if hasattr(sample_stroke_r, 'ee_pos') and sample_stroke_r.ee_pos is not None else 'None'}")
-                # Map strokes to pointclouds, handling the fact that only non-inkdip/non-rest strokes have pointclouds
-                stroke_idx = 0
-                updated_left = 0
                 for i, (stroke_l, stroke_r) in enumerate(mapped_strokes.strokes):
-                    # Only update pointclouds for strokes that have them (non-inkdip, non-rest)
-                    if not stroke_l.is_inkdip and not stroke_l.is_rest:
-                        if stroke_idx < len(self.mapped_stroke_pointclouds["l"]):
-                            # Ensure ee_pos is a numpy array
-                            if hasattr(stroke_l, 'ee_pos') and stroke_l.ee_pos is not None:
-                                ee_pos_np = ensure_numpy_array(stroke_l.ee_pos)
-                                self.mapped_stroke_pointclouds["l"][stroke_idx].points = ee_pos_np
-                                updated_left += 1
-                            else:
-                                log.warning(f"Stroke {i} left has no ee_pos")
-                        else:
-                            log.warning(f"Stroke index {stroke_idx} exceeds available left pointclouds ({len(self.mapped_stroke_pointclouds['l'])})")
-                        stroke_idx += 1
-                
-                stroke_idx = 0
-                updated_right = 0
-                for i, (stroke_l, stroke_r) in enumerate(mapped_strokes.strokes):
-                    # Only update pointclouds for strokes that have them (non-inkdip, non-rest)
-                    if not stroke_r.is_inkdip and not stroke_r.is_rest:
-                        if stroke_idx < len(self.mapped_stroke_pointclouds["r"]):
-                            # Ensure ee_pos is a numpy array
-                            if hasattr(stroke_r, 'ee_pos') and stroke_r.ee_pos is not None:
-                                ee_pos_np = ensure_numpy_array(stroke_r.ee_pos)
-                                self.mapped_stroke_pointclouds["r"][stroke_idx].points = ee_pos_np
-                                updated_right += 1
-                            else:
-                                log.warning(f"Stroke {i} right has no ee_pos")
-                        else:
-                            log.warning(f"Stroke index {stroke_idx} exceeds available right pointclouds ({len(self.mapped_stroke_pointclouds['r'])})")
-                        stroke_idx += 1
-                
-                log.info(f"Updated {updated_left} left and {updated_right} right stroke pointclouds")
+                    self.mapped_stroke_pointclouds["l"][i].points = ensure_numpy_array(stroke_l.ee_pos)
+                    self.mapped_stroke_pointclouds["r"][i].points = ensure_numpy_array(stroke_r.ee_pos)
                 log.info("Successfully mapped strokes to surface")
 
             except Exception:

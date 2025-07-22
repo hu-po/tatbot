@@ -20,32 +20,8 @@ import jaxlie
 
 from tatbot.data.pose import Pose
 from tatbot.data.stroke import Stroke, StrokeList
+from tatbot.utils.jnp_types import ensure_numpy_array
 from tatbot.utils.log import get_logger
-
-
-def ensure_numpy_array(obj):
-    """Convert JAX arrays to NumPy arrays, leave other types unchanged."""
-    if obj is None:
-        return None
-    
-    # Check if it's a JAX array
-    try:
-        import jax
-        import jaxlib.xla_extension as xla_ext
-        if isinstance(obj, (jax.Array, xla_ext.ArrayImpl)):
-            return np.asarray(obj)
-    except ImportError:
-        pass
-    
-    # If it's already a numpy array, return as-is
-    if isinstance(obj, np.ndarray):
-        return obj
-    
-    # Try to convert to numpy array
-    try:
-        return np.asarray(obj)
-    except:
-        return obj
 
 log = get_logger("gen.map", "🗺️")
 
