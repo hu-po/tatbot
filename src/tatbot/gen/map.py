@@ -22,6 +22,31 @@ from tatbot.data.pose import Pose
 from tatbot.data.stroke import Stroke, StrokeList
 from tatbot.utils.log import get_logger
 
+
+def ensure_numpy_array(obj):
+    """Convert JAX arrays to NumPy arrays, leave other types unchanged."""
+    if obj is None:
+        return None
+    
+    # Check if it's a JAX array
+    try:
+        import jax
+        import jaxlib.xla_extension as xla_ext
+        if isinstance(obj, (jax.Array, xla_ext.ArrayImpl)):
+            return np.asarray(obj)
+    except ImportError:
+        pass
+    
+    # If it's already a numpy array, return as-is
+    if isinstance(obj, np.ndarray):
+        return obj
+    
+    # Try to convert to numpy array
+    try:
+        return np.asarray(obj)
+    except:
+        return obj
+
 log = get_logger("gen.map", "🗺️")
 
 
@@ -30,7 +55,7 @@ def map_strokes_to_mesh(
     faces: np.ndarray,
     strokes: StrokeList,
     design_origin: Pose,
-    stroke_length: int = 100,
+    stroke_length: int,
 ) -> StrokeList:
     """
     Map flat 2D strokes to 3D positions on a mesh surface.
@@ -98,7 +123,7 @@ def map_strokes_to_mesh(
         # Apply design transformation using jaxlie SE3
         pts_3d_global = design_translation @ pts_3d_design
         # Convert JAX arrays to NumPy arrays for serialization
-        pts_3d_global = np.array(pts_3d_global)
+        pts_3d_global = ensure_numpy_array(pts_3d_global)
         
         log.info(f"Stroke {stroke.description}: {len(pts_3d_global)} points, 3D range: {pts_3d_global.min(axis=0)} to {pts_3d_global.max(axis=0)}")
         
@@ -122,7 +147,7 @@ def map_strokes_to_mesh(
             # We need to apply the rotation part of the transformation to the direction vector
             direction_global = design_translation.rotation() @ stroke_direction_3d
             # Convert JAX array to NumPy array
-            direction_global = np.array(direction_global)
+            direction_global = ensure_numpy_array(direction_global)
             
             # Trace geodesic from source vertex in the stroke direction
             try:
@@ -138,7 +163,7 @@ def map_strokes_to_mesh(
                 else:
                     distance = 0.0
                     
-                path_np = np.array(path)
+                path_np = ensure_numpy_array(path)
                 mapped_pts_list.append(path_np)
                 log.info(f"Segment {i}: vertex {src_idx}, direction={direction_global}, distance={distance:.4f}, path_length={len(path_np)}")
             except Exception as e:
@@ -155,11 +180,11 @@ def map_strokes_to_mesh(
             normals = vertex_normals[closest_indices]
             
             # Ensure arrays are NumPy arrays
-            ee_rot_np = np.array(stroke.ee_rot) if stroke.ee_rot is not None else None
-            meter_coords_np = np.array(stroke.meter_coords) if stroke.meter_coords is not None else None
-            dt_np = np.array(stroke.dt) if stroke.dt is not None else None
-            pixel_coords_np = np.array(stroke.pixel_coords) if stroke.pixel_coords is not None else None
-            ee_pos_np = np.array(stroke.ee_pos) if stroke.ee_pos is not None else None
+            ee_rot_np = ensure_numpy_array(stroke.ee_rot) if stroke.ee_rot is not None else None
+            meter_coords_np = ensure_numpy_array(stroke.meter_coords) if stroke.meter_coords is not None else None
+            dt_np = ensure_numpy_array(stroke.dt) if stroke.dt is not None else None
+            pixel_coords_np = ensure_numpy_array(stroke.pixel_coords) if stroke.pixel_coords is not None else None
+            ee_pos_np = ensure_numpy_array(stroke.ee_pos) if stroke.ee_pos is not None else None
             
             return Stroke(
                 description=stroke.description,
@@ -174,7 +199,7 @@ def map_strokes_to_mesh(
                 is_inkdip=stroke.is_inkdip,
                 color=stroke.color,
                 frame_path=stroke.frame_path,
-                normals=np.array(normals),
+                normals=ensure_numpy_array(normals),
             )
 
         # Concatenate geodesic segments
@@ -214,12 +239,12 @@ def map_strokes_to_mesh(
 
         # Create mapped stroke
         # Ensure all arrays are NumPy arrays for serialization
-        ee_pos_np = np.array(pts_mapped)
-        normals_np = np.array(normals)
-        ee_rot_np = np.array(stroke.ee_rot) if stroke.ee_rot is not None else None
-        meter_coords_np = np.array(stroke.meter_coords) if stroke.meter_coords is not None else None
-        dt_np = np.array(stroke.dt) if stroke.dt is not None else None
-        pixel_coords_np = np.array(stroke.pixel_coords) if stroke.pixel_coords is not None else None
+        ee_pos_np = ensure_numpy_array(pts_mapped)
+        normals_np = ensure_numpy_array(normals)
+        ee_rot_np = ensure_numpy_array(stroke.ee_rot) if stroke.ee_rot is not None else None
+        meter_coords_np = ensure_numpy_array(stroke.meter_coords) if stroke.meter_coords is not None else None
+        dt_np = ensure_numpy_array(stroke.dt) if stroke.dt is not None else None
+        pixel_coords_np = ensure_numpy_array(stroke.pixel_coords) if stroke.pixel_coords is not None else None
         
         # Debug: check array types
         log.debug(f"ee_pos_np type: {type(ee_pos_np)}, dtype: {ee_pos_np.dtype}")

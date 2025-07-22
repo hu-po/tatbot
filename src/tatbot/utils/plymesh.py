@@ -23,17 +23,17 @@ log = get_logger("utils.plymesh", "📦")
 def create_mesh_from_ply_files(
     ply_files: str | list[str],
     clean_cloud: bool = True,
-    voxel_size: float = 0.001,
+    voxel_size: float = 0.002,
     stat_nb_neighbors: int = 32,
-    stat_std_ratio: float = 1.0,
+    stat_std_ratio: float = 1.5,
     radius_nb_points: int = 16,
     radius: float = 0.008,
     zone_pose: Pose | None = None,
     zone_depth_m: float | None = None,
     zone_width_m: float | None = None,
     zone_height_m: float | None = None,
-    poisson_depth: int = 8,
-    density_trim_quantile: float = 0.02,
+    poisson_depth: int = 7,
+    density_trim_quantile: float = 0.16,
     smooth_iterations: int = 32,
     smooth_lambda: float = 0.9,
     output_dir: str | None = None,
@@ -204,6 +204,19 @@ def create_mesh_from_ply_files(
     mesh.remove_non_manifold_edges()
     mesh.remove_unreferenced_vertices()
     log.info(f"After mesh cleaning: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
+
+    while not mesh.is_vertex_manifold():
+        nm_verts = np.asarray(mesh.get_non_manifold_vertices())
+        if len(nm_verts) == 0:
+            break
+        log.info(f"Removing {len(nm_verts)} non-manifold vertices")
+        mesh.remove_vertices_by_index(nm_verts)
+        # Re-clean
+        mesh.remove_degenerate_triangles()
+        mesh.remove_duplicated_triangles()
+        mesh.remove_duplicated_vertices()
+        mesh.remove_non_manifold_edges()
+        mesh.remove_unreferenced_vertices()
 
     mesh.compute_vertex_normals()
     log.info(f"Final mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
