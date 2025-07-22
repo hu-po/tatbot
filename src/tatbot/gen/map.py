@@ -2,7 +2,7 @@
 Surface Mapping
 
 This module provides functionality to map flat 2D strokes to 3D positions on a mesh surface 
-representing the skin. It computes exact geodesic paths on the mesh using the pygeodesic library. 
+representing the skin. It computes geodesic paths on the mesh using the pp3d (potpourri3d) library. 
 This allows "wrapping" the strokes onto the curved surface by projecting flat points to the mesh 
 via XY closest points and connecting them with geodesic segments, preserving true shortest paths 
 on the surface. Per-point normals are interpolated from the mesh vertex normals for orienting 
@@ -14,7 +14,7 @@ with proper connectivity for accurate geodesic computations.
 
 import numpy as np
 import open3d as o3d
-import pygeodesic.geodesic as geodesic
+import potpourri3d as pp3d
 from scipy.spatial import KDTree
 import jaxlie
 
@@ -69,10 +69,10 @@ def map_strokes_to_mesh(
     
     log.info(f"Using mesh with {len(vertices)} vertices and {len(faces)} faces")
 
-    # Initialize geodesic algorithm
-    log.info("Initializing geodesic algorithm...")
-    geoalg = geodesic.PyGeodesicAlgorithmExact(vertices, faces)
-    log.info("Geodesic algorithm initialized successfully")
+    # Initialize geodesic tracer
+    log.info("Initializing geodesic tracer...")
+    tracer = pp3d.GeodesicTracer(vertices, faces)
+    log.info("Geodesic tracer initialized successfully")
 
     # Build KDTree for 3D closest point projection
     p_3d_tree = KDTree(vertices)
@@ -105,30 +105,39 @@ def map_strokes_to_mesh(
         proj_indices = proj_indices.flatten()
         log.info(f"Projected to {len(set(proj_indices))} unique vertices out of {len(proj_indices)} points")
 
-        # Connect projected points with geodesic paths
+        # Trace geodesic paths from each point using original stroke direction
         mapped_pts_list = []
-        log.info(f"Computing geodesic paths for {len(proj_indices)} projected points")
+        log.info(f"Tracing geodesic paths for {len(pts_3d_global)} points")
         
-        for i in range(len(proj_indices) - 1):
+        for i in range(len(pts_3d_global) - 1):
             src_idx = proj_indices[i]
-            tgt_idx = proj_indices[i + 1]
             
-            # Skip if same vertex
-            if src_idx == tgt_idx:
-                log.info(f"Skipping segment {i}: same vertex {src_idx}")
-                continue
-                
-            # Compute geodesic path
+            # Calculate direction from original stroke coordinates
+            stroke_direction_2d = pts_flat[i + 1] - pts_flat[i]  # Direction in design plane
+            stroke_direction_3d = np.array([stroke_direction_2d[0], stroke_direction_2d[1], 0.0])  # Add Z=0
+            
+            # Transform direction to global coordinates using design transformation
+            # We need to apply the rotation part of the transformation to the direction vector
+            direction_global = design_translation.rotation() @ stroke_direction_3d
+            
+            # Trace geodesic from source vertex in the stroke direction
             try:
-                distance, path = geoalg.geodesicDistance(src_idx, tgt_idx)
+                path = tracer.trace_geodesic_from_vertex(src_idx, direction_global)
                 if path is None or len(path) == 0:
-                    log.warning(f"Empty geodesic path between vertices {src_idx} and {tgt_idx}")
+                    log.warning(f"Empty geodesic trace from vertex {src_idx} in direction {direction_global}")
                     continue
                     
+                # Calculate distance for logging
+                if len(path) > 1:
+                    seg = np.diff(path, axis=0)
+                    distance = np.sum(np.linalg.norm(seg, axis=1))
+                else:
+                    distance = 0.0
+                    
                 mapped_pts_list.append(path)
-                log.info(f"Segment {i}: {src_idx} → {tgt_idx}, distance={distance:.4f}, path_length={len(path)}")
+                log.info(f"Segment {i}: vertex {src_idx}, direction={direction_global}, distance={distance:.4f}, path_length={len(path)}")
             except Exception as e:
-                log.warning(f"Geodesic computation failed for segment {i} ({src_idx} → {tgt_idx}): {e}")
+                log.warning(f"Geodesic tracing failed for segment {i} (vertex {src_idx}): {e}")
                 continue
 
         if not mapped_pts_list:
