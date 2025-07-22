@@ -4,7 +4,8 @@ PLY Mesh Utilities
 This module provides utilities for loading, processing, and creating meshes from PLY point cloud files.
 It handles point cloud loading, merging, cleaning, and mesh reconstruction using Open3D.
 Uses Alpha Shapes for reconstruction, which creates non-convex, open surfaces suitable for sheet-like representations 
-of skin, promoting smoother and more planar meshes while preserving curvature.
+of skin, promoting smoother and more planar meshes while preserving curvature. Includes post-processing to fill holes 
+using Open3D's tensor-based fill_holes method to reduce gaps in the mesh and Laplacian smoothing for improved planarity.
 """
 
 import os
@@ -13,6 +14,7 @@ import jax.numpy as jnp
 import jaxlie
 import numpy as np
 import open3d as o3d
+import open3d.t.geometry as tgeom  # For tensor-based hole filling
 
 from tatbot.data.pose import Pose
 from tatbot.utils.log import get_logger
@@ -23,16 +25,20 @@ log = get_logger("utils.plymesh", "📦")
 def create_mesh_from_ply_files(
     ply_files: str | list[str],
     clean_cloud: bool = True,
-    voxel_size: float = 0.0005,
+    voxel_size: float = 0.0003,  # Smaller for more detail, reduce holes
     stat_nb_neighbors: int = 30,
-    stat_std_ratio: float = 1.8,
+    stat_std_ratio: float = 1.5,  # Stricter to remove noise/offsets
     radius_nb_points: int = 15,
-    radius: float = 0.008,
-    alpha_value_multiplier: float = 2.0,  # Multiplier for Alpha Shapes alpha (larger = smoother/generalized)
+    radius: float = 0.006,  # Slightly smaller to keep more points
+    alpha_value_multiplier: float = 1.5,  # Lower to connect more points, reduce holes
     zone_pose: Pose | None = None,
     zone_depth_m: float | None = None,
     zone_width_m: float | None = None,
     zone_height_m: float | None = None,
+    hole_size: float = 0.01,  # Max hole size to fill (meters; adjust based on skin patch)
+    smooth_iterations: int = 3,  # Laplacian smoothing iterations
+    smooth_lambda: float = 0.5,  # Laplacian smoothing strength (0-1; higher = smoother)
+    output_dir: str | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Load PLY files, combine point clouds, clean them, and create a mesh using Alpha Shapes.
@@ -45,11 +51,14 @@ def create_mesh_from_ply_files(
         stat_std_ratio: Standard deviation ratio for statistical outlier removal
         radius_nb_points: Minimum number of points for radius outlier removal
         radius: Radius for radius outlier removal
-        alpha_value_multiplier: Multiplier for Alpha Shapes alpha (based on avg point distance; larger = more generalized/planar)
+        alpha_value_multiplier: Multiplier for Alpha Shapes alpha (based on avg point distance; lower = more connections, fewer holes)
         zone_pose: Pose defining the center and orientation of the zone
         zone_depth_m: Depth of the zone in meters (x-axis)
         zone_width_m: Width of the zone in meters (y-axis)
         zone_height_m: Height of the zone in meters (z-axis)
+        hole_size: Max size of holes to fill in meters
+        smooth_iterations: Number of Laplacian smoothing iterations
+        smooth_lambda: Laplacian smoothing strength (0-1; higher = more planar)
         
     Returns:
         Tuple of (points, faces) where:
@@ -103,7 +112,6 @@ def create_mesh_from_ply_files(
         zone_se3 = jaxlie.SE3(wxyz_xyz=jnp.concatenate([zone_pose.rot.wxyz, zone_pose.pos.xyz], axis=-1))
         
         # Transform points to zone coordinate system
-        # Convert points to jax array and apply inverse transformation
         points_jax = jnp.array(points)
         points_zone_frame = zone_se3.inverse() @ points_jax
         
@@ -126,25 +134,24 @@ def create_mesh_from_ply_files(
         log.info("Cleaning point cloud...")
         initial_points = len(ref_pcd.points)
         
-        # Downsample
+        # Downsample to reduce density and noise
         ref_pcd = ref_pcd.voxel_down_sample(voxel_size=voxel_size)
         log.info(f"Downsampled: {initial_points} → {len(ref_pcd.points)} points")
         
-        # Remove statistical outliers
+        # Remove statistical outliers to eliminate global noise
         ref_pcd, _ = ref_pcd.remove_statistical_outlier(nb_neighbors=stat_nb_neighbors, std_ratio=stat_std_ratio)
         log.info(f"After statistical removal: {len(ref_pcd.points)} points")
         
-        # Remove radius outliers
+        # Remove local isolates to reduce sparse outliers
         ref_pcd, _ = ref_pcd.remove_radius_outlier(nb_points=radius_nb_points, radius=radius)
         log.info(f"After radius removal: {len(ref_pcd.points)} points")
 
     # Reconstruct mesh using Alpha Shapes
     log.info("Reconstructing mesh using Alpha Shapes...")
-    # Compute adaptive alpha: Based on average nearest-neighbor distance for scaling
-    ref_pcd.estimate_normals()  # Helps with orientation if needed
+    # Compute adaptive alpha based on average nearest-neighbor distance
     distances = ref_pcd.compute_nearest_neighbor_distance()
     avg_dist = np.mean(distances)
-    alpha = avg_dist * alpha_value_multiplier  # Larger multiplier = smoother, more planar mesh
+    alpha = avg_dist * alpha_value_multiplier  # Lower multiplier reduces holes
     log.debug(f"Computed alpha: {alpha:.6f} (avg_dist={avg_dist:.6f}, multiplier={alpha_value_multiplier})")
     
     mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(ref_pcd, alpha)
@@ -152,10 +159,26 @@ def create_mesh_from_ply_files(
     if len(mesh.vertices) == 0:
         raise ValueError("Alpha Shapes reconstruction failed - no vertices generated")
     
-    log.info(f"Mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
+    log.info(f"Initial mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
+    
+    # Post-process to fill holes using tensor mesh
+    log.info("Filling holes in mesh...")
+    tensor_mesh = tgeom.TriangleMesh.from_legacy(mesh)
+    tensor_mesh = tensor_mesh.fill_holes(hole_size=hole_size)  # Fill holes up to specified size
+    mesh = tensor_mesh.to_legacy()
+    
+    # Additional cleaning to ensure manifold mesh
+    mesh.remove_degenerate_triangles()
+    mesh.remove_duplicated_triangles()
+    mesh.remove_duplicated_vertices()
+    mesh.remove_non_manifold_edges()
+    
+    # Apply Laplacian smoothing for planarity
+    log.info(f"Applying Laplacian smoothing ({smooth_iterations} iterations, lambda={smooth_lambda})...")
+    mesh = mesh.filter_smooth_laplacian(number_of_iterations=smooth_iterations, lambda_filter=smooth_lambda)
     
     mesh.compute_vertex_normals()
-    log.info(f"Final mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
+    log.info(f"Final mesh after hole-filling and smoothing: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
 
     # Extract mesh data for geodesic computation
     points = np.asarray(mesh.vertices, dtype=np.float64)
@@ -211,11 +234,19 @@ def create_mesh_from_ply_files(
         faces = faces[valid_faces]
         log.info(f"Removed degenerate faces, now have {len(faces)} faces")
     
+    if output_dir is not None:
+        log.info(f"Saving mesh to {output_dir}")
+        mesh_obj = o3d.geometry.TriangleMesh()
+        mesh_obj.vertices = o3d.utility.Vector3dVector(points)
+        mesh_obj.triangles = o3d.utility.Vector3iVector(faces)
+        mesh_obj.compute_vertex_normals()
+        o3d.io.write_triangle_mesh(os.path.join(output_dir, f"mesh.ply"), mesh_obj, write_ascii=False)
+    
     return points, faces
 
 
 def ply_files_from_dir(ply_dir: str) -> list[str]:
-    """ Find all .ply files in a directory. """
+    """Find all .ply files in a directory."""
     ply_dir = os.path.expanduser(ply_dir)
     assert os.path.exists(ply_dir), f"Directory does not exist: {ply_dir}"
     assert os.path.isdir(ply_dir), f"Directory does not exist: {ply_dir}"
