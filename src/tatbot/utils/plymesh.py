@@ -83,23 +83,6 @@ def create_mesh_from_ply_files(
     else:
         ref_pcd = pcds[0]
 
-    # Clean point cloud if requested
-    if clean_cloud:
-        log.info("Cleaning point cloud...")
-        initial_points = len(ref_pcd.points)
-        
-        # Downsample
-        ref_pcd = ref_pcd.voxel_down_sample(voxel_size=voxel_size)
-        log.info(f"Downsampled: {initial_points} → {len(ref_pcd.points)} points")
-        
-        # Remove statistical outliers
-        ref_pcd, _ = ref_pcd.remove_statistical_outlier(nb_neighbors=stat_nb_neighbors, std_ratio=stat_std_ratio)
-        log.info(f"After statistical removal: {len(ref_pcd.points)} points")
-        
-        # Remove radius outliers
-        ref_pcd, _ = ref_pcd.remove_radius_outlier(nb_points=radius_nb_points, radius=radius)
-        log.info(f"After radius removal: {len(ref_pcd.points)} points")
-
     # Apply zone-based clipping if zone parameters are provided
     if all(param is not None for param in [zone_depth_m, zone_width_m, zone_height_m, zone_pose]):
         log.info("Applying zone-based clipping...")
@@ -135,6 +118,23 @@ def create_mesh_from_ply_files(
         log.info(f"Zone clipping: {initial_points} → {len(ref_pcd.points)} points")
         log.info(f"Zone center: {center}, rotation: {zone_pose.rot.wxyz}")
         log.info(f"Zone dimensions: depth={zone_depth_m:.3f}m, width={zone_width_m:.3f}m, height={zone_height_m:.3f}m")
+
+    # Clean point cloud if requested
+    if clean_cloud:
+        log.info("Cleaning point cloud...")
+        initial_points = len(ref_pcd.points)
+        
+        # Downsample
+        ref_pcd = ref_pcd.voxel_down_sample(voxel_size=voxel_size)
+        log.info(f"Downsampled: {initial_points} → {len(ref_pcd.points)} points")
+        
+        # Remove statistical outliers
+        ref_pcd, _ = ref_pcd.remove_statistical_outlier(nb_neighbors=stat_nb_neighbors, std_ratio=stat_std_ratio)
+        log.info(f"After statistical removal: {len(ref_pcd.points)} points")
+        
+        # Remove radius outliers
+        ref_pcd, _ = ref_pcd.remove_radius_outlier(nb_points=radius_nb_points, radius=radius)
+        log.info(f"After radius removal: {len(ref_pcd.points)} points")
 
     # Reconstruct mesh from point cloud
     log.info("Reconstructing mesh...")
