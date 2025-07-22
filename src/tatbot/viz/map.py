@@ -125,10 +125,7 @@ class VizMap(BaseViz):
                 mapped_strokes = map_strokes_to_surface(
                     self.config.ply_files,
                     self.strokes,
-                    Pose(
-                        pos=self.design_pose_tf.position,
-                        rot=self.design_pose_tf.wxyz,
-                    ),
+                    Pose.from_wxyz_xyz(self.design_pose_tf.wxyz, self.design_pose_tf.position),
                     self.scene.stroke_length,
                 )
                 for i, (stroke_l, stroke_r) in enumerate(mapped_strokes.strokes):
@@ -159,7 +156,7 @@ class VizMap(BaseViz):
 
 
 if __name__ == "__main__":
-    args = setup_log_with_config(VizMapConfig)
+    args = setup_log_with_config(VizMapConfig, submodules=["gen.map"])
     if args.debug:
         log.setLevel(logging.DEBUG)
     print_config(args)

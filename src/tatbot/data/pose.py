@@ -24,6 +24,10 @@ class Pose(Yaml):
     rot: Rot
     """Orientation quaternion (wxyz)."""
 
+    @classmethod
+    def from_wxyz_xyz(cls, wxyz: np.ndarray, xyz: np.ndarray) -> "Pose":
+        return cls(pos=Pos(xyz=xyz), rot=Rot(wxyz=wxyz))
+
 
 @dataclass
 class ArmPose(Yaml):
