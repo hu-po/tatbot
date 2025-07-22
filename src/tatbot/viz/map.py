@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass
+import traceback
 
 import numpy as np
 
@@ -20,18 +21,15 @@ log = get_logger("viz.map", "🗺️")
 
 @dataclass
 class VizMapConfig(BaseVizConfig):
-    ply_dir: str = "~/tatbot/nfs/3d/hand"
-    """Directory containing the PLY files to visualize."""
-    
     stroke_point_size: float = 0.003
     """Size of stroke points in the visualization (meters)."""
     stroke_point_shape: str = "rounded"
     """Shape of stroke points in the visualization."""
     
-    surface_point_size: float = 0.001
-    """Size of surface points in the visualization (meters)."""
-    surface_point_shape: str = "rounded"
-    """Shape of surface points in the visualization."""
+    skin_ply_point_size: float = 0.0005
+    """Size of skin ply points in the visualization (meters)."""
+    skin_ply_point_shape: str = "rounded"
+    """Shape of skin ply points in the visualization."""
     
     transform_control_scale: float = 0.1
     """Scale of the transform control frame for design pose visualization."""
@@ -114,7 +112,8 @@ class VizMap(BaseViz):
         self.skin_mesh = None
         self.skin_mesh_vertices = None
         self.skin_mesh_faces = None
-        self.skin_ply_files = ply_files_from_dir(config.ply_dir)
+        self.skin_ply_files = ply_files_from_dir(self.scene.skin.plymesh_dir)
+        self.enabled_skin_ply_files = {ply_file: True for ply_file in self.skin_ply_files}
         self.skin_pointclouds = {}
         for ply_file in self.skin_ply_files:
             points, colors = load_ply(ply_file)
@@ -122,8 +121,8 @@ class VizMap(BaseViz):
                 name=f"/skin/{ply_file.split('/')[-1]}",
                 points=points,
                 colors=colors,
-                point_size=config.surface_point_size,
-                point_shape=config.surface_point_shape,
+                point_size=config.skin_ply_point_size,
+                point_shape=config.skin_ply_point_shape,
             )
             log.info(f"Loaded skin pointcloud with {len(points)} points from {ply_file}")
 
@@ -152,13 +151,28 @@ class VizMap(BaseViz):
                 "Show Skin Zone",
                 initial_value=True,
             )
+            with self.server.gui.add_folder("Skin PLY Files", expand_by_default=False):
+                self.enabled_skin_ply_files_checkboxes = {}
+                for ply_file in self.skin_ply_files:
+                    self.enabled_skin_ply_files_checkboxes[ply_file] = self.server.gui.add_checkbox(
+                        ply_file.split("/")[-1],
+                        initial_value=True,
+                    )
+                    @self.enabled_skin_ply_files_checkboxes[ply_file].on_update
+                    def _(_):
+                        self.enabled_skin_ply_files[ply_file] = self.enabled_skin_ply_files_checkboxes[ply_file].value
+                        if self.enabled_skin_ply_files[ply_file]:
+                            self.skin_pointclouds[ply_file].visible = True
+                        else:
+                            self.skin_pointclouds[ply_file].visible = False
+                
         
         @self.build_skin_mesh_button.on_click
         def _(_):
             try:
                 log.info("Building skin mesh...")
                 points, faces = create_mesh_from_ply_files(
-                    self.skin_ply_files,
+                    [ply_file for ply_file in self.skin_ply_files if self.enabled_skin_ply_files[ply_file]],
                     zone_pose=Pose.from_wxyz_xyz(self.skin_zone.wxyz, self.skin_zone.position),
                     zone_depth_m=self.scene.skin.zone_depth_m,
                     zone_width_m=self.scene.skin.zone_width_m,
@@ -181,8 +195,8 @@ class VizMap(BaseViz):
                 )
                 log.info("Successfully built and added skin mesh to scene")
 
-            except Exception as e:
-                log.error(f"Failed to build skin mesh: {e}")
+            except Exception:
+                log.error(f"Failed to build skin mesh: {traceback.format_exc()}")
 
         @self.map_strokes_button.on_click
         def _(_):
@@ -204,8 +218,8 @@ class VizMap(BaseViz):
                     self.mapped_stroke_pointclouds["r"][i].points = stroke_r.meter_coords
                 log.info("Successfully mapped strokes to surface")
 
-            except Exception as e:
-                log.error(f"Failed to map strokes to surface: {e}")
+            except Exception:
+                log.error(f"Failed to map strokes to surface: {traceback.format_exc()}")
         
         @self.show_mapped_stroke_pointclouds.on_update
         def _(_):
