@@ -25,19 +25,19 @@ log = get_logger("utils.plymesh", "📦")
 def create_mesh_from_ply_files(
     ply_files: str | list[str],
     clean_cloud: bool = True,
-    voxel_size: float = 0.0003,  # Smaller for more detail, reduce holes
-    stat_nb_neighbors: int = 30,
-    stat_std_ratio: float = 1.5,  # Stricter to remove noise/offsets
-    radius_nb_points: int = 15,
-    radius: float = 0.006,  # Slightly smaller to keep more points
-    alpha_value_multiplier: float = 0.03,  # Lower to connect more points, reduce holes
+    voxel_size: float = 0.0001,
+    stat_nb_neighbors: int = 10,
+    stat_std_ratio: float = 1.5,
+    radius_nb_points: int = 10,
+    radius: float = 0.01,
+    alpha_value_multiplier: float = 1.5,
     zone_pose: Pose | None = None,
     zone_depth_m: float | None = None,
     zone_width_m: float | None = None,
     zone_height_m: float | None = None,
-    hole_size: float = 0.01,  # Max hole size to fill (meters; adjust based on skin patch)
-    smooth_iterations: int = 3,  # Laplacian smoothing iterations
-    smooth_lambda: float = 0.5,  # Laplacian smoothing strength (0-1; higher = smoother)
+    hole_size: float = 0.01,
+    smooth_iterations: int = 3,
+    smooth_lambda: float = 0.5,
     output_dir: str | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
