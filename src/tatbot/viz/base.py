@@ -159,7 +159,7 @@ class BaseViz:
                 self.depth_cameras[realsense.name] = DepthCamera(
                     realsense.serial_number,
                     link_poses[realsense.urdf_link_name],
-                    save_prefix=f"{self.scene.skin.name}_{realsense.name}",
+                    save_prefix=f"{realsense.name}_",
                     save_dir=self.scene.skin.plymesh_dir,
                 )
                 self.realsense_pointclouds[realsense.name] = self.server.scene.add_point_cloud(
