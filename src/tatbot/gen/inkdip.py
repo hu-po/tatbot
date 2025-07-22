@@ -41,10 +41,6 @@ def make_inkdip_func(scene: Scene) -> Callable:
                 -np.concatenate([down_z, wait_z, up_z]).reshape(-1, 1),
             ]
         )
-        if arm == "left":
-            inkdip_pos += scene.ee_offset_l.xyz
-        else:
-            inkdip_pos += scene.ee_offset_r.xyz
         return Stroke(
             description=f"{arm} arm inkdip into {inkcap.name} to fill with {color} ink",
             is_inkdip=True,

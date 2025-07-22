@@ -69,11 +69,6 @@ class Scene(Yaml):
     hover_offset: Pos
     """<x, y, z> offset for hover (first and last poses in each stroke) in meters."""
 
-    ee_offset_l: Pos
-    """<x, y, z> offset for left ee (applied to full stroke) in meters."""
-    ee_offset_r: Pos
-    """<x, y, z> offset for right ee (applied to full stroke) in meters."""
-
     offset_range: tuple[float, float]
     """Range of offset points in meters."""
     offset_num: int

@@ -64,7 +64,6 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
                 stroke_l.meter_coords,
                 scene.skin.design_pose.pos.xyz,
                 scene.skin.design_pose.rot.wxyz,
-                scene.ee_offset_l.xyz,
             )
             base_l = base_l.reshape(l, 3)
             ee_pos_l[i] = np.repeat(base_l[:, None, :], o, axis=1)
@@ -76,7 +75,6 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
                 stroke_r.meter_coords,
                 scene.skin.design_pose.pos.xyz,
                 scene.skin.design_pose.rot.wxyz,
-                scene.ee_offset_r.xyz,
             )
             base_r = base_r.reshape(l, 3)
             ee_pos_r[i] = np.repeat(base_r[:, None, :], o, 1)
