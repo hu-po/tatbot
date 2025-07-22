@@ -1,15 +1,15 @@
 import os
 from typing import Tuple
 
-import jaxlie
 import jax.numpy as jnp
+import jaxlie
 import numpy as np
 import numpy.typing as npt
 import pyrealsense2 as rs
 
-import open3d as o3d
 from tatbot.data.pose import Pose
 from tatbot.utils.log import get_logger
+from tatbot.utils.plymesh import save_ply
 
 log = get_logger("cam.depth", "📹")
 
@@ -75,13 +75,6 @@ class DepthCamera:
         
         if save:
             output_path = os.path.join(self.save_dir, f"{self.save_prefix}{self.frame_idx:06d}.ply")
-            self.save_ply(output_path, positions_world, colors)
+            save_ply(output_path, positions_world, colors)
             self.frame_idx += 1
         return color_image, positions_world, colors
-    
-    def save_ply(self, filename: str, points: npt.NDArray[np.float32], colors: npt.NDArray[np.uint8]):
-        log.info(f"Saving point cloud to {filename}")
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(points)
-        pcd.colors = o3d.utility.Vector3dVector(colors.astype(float) / 255.0)
-        o3d.io.write_point_cloud(filename, pcd)

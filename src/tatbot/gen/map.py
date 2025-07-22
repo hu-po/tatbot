@@ -1,23 +1,21 @@
 """
 Surface Mapping
 
-This module provides functionality to map flat 2D strokes to 3D positions on a point cloud surface 
-representing the skin. It reconstructs a triangular mesh from the point cloud using Open3D's Poisson surface reconstruction, 
-then computes exact geodesic paths on the mesh using the pygeodesic library. This allows "wrapping" the strokes onto 
-the curved surface by projecting flat points to the mesh via XY closest points and connecting them with geodesic segments, 
-preserving true shortest paths on the surface. Per-point normals are interpolated from the mesh vertex normals for 
-orienting the end effector perpendicular to the surface.
+This module provides functionality to map flat 2D strokes to 3D positions on a mesh surface 
+representing the skin. It computes exact geodesic paths on the mesh using the pygeodesic library. 
+This allows "wrapping" the strokes onto the curved surface by projecting flat points to the mesh 
+via XY closest points and connecting them with geodesic segments, preserving true shortest paths 
+on the surface. Per-point normals are interpolated from the mesh vertex normals for orienting 
+the end effector perpendicular to the surface.
 
-The point cloud can be loaded from one or more PLY files. If multiple files are provided, they are merged directly into a single point cloud assuming they are already aligned in the same coordinate frame. Optional cleaning steps, powered by Open3D, include voxel downsampling for density reduction, statistical outlier removal for global noise 
-elimination, and radius-based outlier removal for local isolates. These preprocessing steps improve the accuracy and 
-efficiency of the mesh reconstruction and geodesic computations, especially for noisy or dense skin scans.
+The mesh is provided as vertices and faces arrays. The function expects a valid triangular mesh
+with proper connectivity for accurate geodesic computations.
 """
 
-import os
 import numpy as np
-from scipy.spatial import KDTree
 import open3d as o3d
 import pygeodesic.geodesic as geodesic
+from scipy.spatial import KDTree
 
 from tatbot.data.pose import Pose
 from tatbot.data.stroke import Stroke, StrokeList
@@ -26,104 +24,57 @@ from tatbot.utils.log import get_logger
 log = get_logger("gen.map", "🗺️")
 
 
-def map_strokes_to_surface(
-    ply_files: str | list[str],
+def map_strokes_to_mesh(
+    vertices: np.ndarray,
+    faces: np.ndarray,
     strokes: StrokeList,
     design_origin: Pose,
     stroke_length: int = 100,
-    clean_cloud: bool = True,
-    voxel_size: float = 0.001,
-    stat_nb_neighbors: int = 20,
-    stat_std_ratio: float = 2.0,
-    radius_nb_points: int = 10,
-    radius: float = 0.01,
-    poisson_depth: int = 8,  # Depth for Poisson reconstruction; higher for more detail
 ) -> StrokeList:
+    """
+    Map flat 2D strokes to 3D positions on a mesh surface.
+    
+    Args:
+        vertices: numpy array of vertex coordinates (N, 3)
+        faces: numpy array of face indices (M, 3)
+        strokes: StrokeList containing stroke pairs to map
+        design_origin: Pose representing the design origin
+        stroke_length: Number of points to resample each stroke to
+        
+    Returns:
+        StrokeList with mapped strokes
+    """
     log.info(f"Mapping {len(strokes.strokes)} stroke pairs to surface")
     assert strokes and len(strokes.strokes) > 0, "No strokes provided"
-    if isinstance(ply_files, str):
-        ply_files = [ply_files]
-
-    # Load and merge point clouds
-    log.info(f"Loading {len(ply_files)} point cloud(s)...")
-    pcds = []
-    for i, file in enumerate(ply_files):
-        try:
-            pcd = o3d.io.read_point_cloud(os.path.expanduser(file))
-            if len(pcd.points) == 0:
-                raise ValueError(f"Point cloud {file} is empty")
-            log.info(f"Loaded {file}: {len(pcd.points)} points")
-            pcds.append(pcd)
-        except Exception as e:
-            raise ValueError(f"Failed to load {file}: {e}")
-
-    # Merge multiple point clouds if needed
-    if len(pcds) > 1:
-        log.info("Merging point clouds...")
-        ref_pcd = pcds[0]
-        for i in range(1, len(pcds)):
-            ref_pcd += pcds[i]
-        log.info(f"Merged to {len(ref_pcd.points)} total points")
-    else:
-        ref_pcd = pcds[0]
-
-    # Clean point cloud if requested
-    if clean_cloud:
-        log.info("Cleaning point cloud...")
-        initial_points = len(ref_pcd.points)
-        
-        # Downsample
-        ref_pcd = ref_pcd.voxel_down_sample(voxel_size=voxel_size)
-        log.info(f"Downsampled: {initial_points} → {len(ref_pcd.points)} points")
-        
-        # Remove statistical outliers
-        ref_pcd, _ = ref_pcd.remove_statistical_outlier(nb_neighbors=stat_nb_neighbors, std_ratio=stat_std_ratio)
-        log.info(f"After statistical removal: {len(ref_pcd.points)} points")
-        
-        # Remove radius outliers
-        ref_pcd, _ = ref_pcd.remove_radius_outlier(nb_points=radius_nb_points, radius=radius)
-        log.info(f"After radius removal: {len(ref_pcd.points)} points")
-
-    # Reconstruct mesh from point cloud
-    log.info("Reconstructing mesh...")
-    ref_pcd.estimate_normals()
-    mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(ref_pcd, depth=poisson_depth)
     
-    if len(mesh.vertices) == 0:
-        raise ValueError("Poisson reconstruction failed - no vertices generated")
-    
-    log.info(f"Mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
-    
-    # Remove low-density vertices
-    densities = np.asarray(densities)
-    if len(densities) > 0:
-        vertices_to_remove = densities < np.quantile(densities, 0.05)
-        mesh.remove_vertices_by_mask(vertices_to_remove)
-        log.info(f"Removed {np.sum(vertices_to_remove)} low-density vertices")
-    
-    mesh.compute_vertex_normals()
-    log.info(f"Final mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
-
-    # Extract mesh data for geodesic computation
-    points = np.asarray(mesh.vertices)
-    faces = np.asarray(mesh.triangles)
-    
-    if points.shape[1] != 3:
-        raise ValueError(f"Mesh vertices must have shape (N, 3), got {points.shape}")
+    # Validate mesh data
+    if vertices.shape[1] != 3:
+        raise ValueError(f"Vertices must have shape (N, 3), got {vertices.shape}")
+    if faces.shape[1] != 3:
+        raise ValueError(f"Faces must have shape (M, 3), got {faces.shape}")
     if len(faces) == 0:
         raise ValueError("Mesh has no faces - cannot compute geodesics")
-    log.info(f"Mesh validation: {len(points)} vertices, {len(faces)} faces")
-    if len(points) < 10:
-        log.warning(f"Very small mesh: {len(points)} vertices")
-    if len(faces) < 10:
-        log.warning(f"Very few faces: {len(faces)} faces")
+    
+    # Check for invalid face indices
+    max_vertex_idx = len(vertices) - 1
+    if np.any(faces >= len(vertices)) or np.any(faces < 0):
+        raise ValueError("Mesh has invalid face indices")
+    
+    # Create Open3D mesh for normal computation
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector(vertices)
+    mesh.triangles = o3d.utility.Vector3iVector(faces)
+    mesh.compute_vertex_normals()
+    
+    log.info(f"Using mesh with {len(vertices)} vertices and {len(faces)} faces")
 
     # Initialize geodesic algorithm
     log.info("Initializing geodesic algorithm...")
-    geoalg = geodesic.PyGeodesicAlgorithmExact(points, faces)
+    geoalg = geodesic.PyGeodesicAlgorithmExact(vertices, faces)
+    log.info("Geodesic algorithm initialized successfully")
 
     # Build KDTree for XY projection
-    p_xy_tree = KDTree(points[:, :2])
+    p_xy_tree = KDTree(vertices[:, :2])
     design_xy = design_origin.pos.xyz[:2]
     _, source_idx = p_xy_tree.query(np.array([design_xy]), k=1)
     log.info(f"Design origin mapped to vertex {source_idx[0]}")
@@ -139,11 +90,11 @@ def map_strokes_to_surface(
         
         # Project flat 2D stroke points to mesh vertices
         pts_flat = stroke.meter_coords[:, :2]
-        log.debug(f"Stroke {stroke.description}: {len(pts_flat)} points, XY range: {pts_flat.min(axis=0)} to {pts_flat.max(axis=0)}")
+        log.info(f"Stroke {stroke.description}: {len(pts_flat)} points, XY range: {pts_flat.min(axis=0)} to {pts_flat.max(axis=0)}")
         
         _, proj_indices = p_xy_tree.query(pts_flat, k=1)
         proj_indices = proj_indices.flatten()
-        log.debug(f"Projected to {len(set(proj_indices))} unique vertices out of {len(proj_indices)} points")
+        log.info(f"Projected to {len(set(proj_indices))} unique vertices out of {len(proj_indices)} points")
 
         # Connect projected points with geodesic paths
         mapped_pts_list = []
@@ -155,7 +106,7 @@ def map_strokes_to_surface(
             
             # Skip if same vertex
             if src_idx == tgt_idx:
-                log.debug(f"Skipping segment {i}: same vertex {src_idx}")
+                log.info(f"Skipping segment {i}: same vertex {src_idx}")
                 continue
                 
             # Compute geodesic path
@@ -166,7 +117,7 @@ def map_strokes_to_surface(
                     continue
                     
                 mapped_pts_list.append(path)
-                log.debug(f"Segment {i}: {src_idx} → {tgt_idx}, distance={distance:.4f}, path_length={len(path)}")
+                log.info(f"Segment {i}: {src_idx} → {tgt_idx}, distance={distance:.4f}, path_length={len(path)}")
             except Exception as e:
                 log.warning(f"Geodesic computation failed for segment {i} ({src_idx} → {tgt_idx}): {e}")
                 continue
@@ -205,7 +156,7 @@ def map_strokes_to_surface(
 
         # Compute normals at resampled points
         vertex_normals = np.asarray(mesh.vertex_normals)
-        points_tree = KDTree(points)
+        points_tree = KDTree(vertices)
         _, closest_indices = points_tree.query(pts_mapped, k=1)
         closest_indices = closest_indices.flatten()
         normals = vertex_normals[closest_indices]

@@ -9,8 +9,8 @@ end effector perpendicular to the surface.
 """
 
 import numpy as np
-from scipy.spatial import KDTree
 import potpourri3d as pp3d
+from scipy.spatial import KDTree
 
 from tatbot.data.pose import Pose
 from tatbot.data.stroke import Stroke, StrokeList
