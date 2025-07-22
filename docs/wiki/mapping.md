@@ -11,3 +11,7 @@ https://github.com/DanuserLab/u-unwrap3D
 
 https://github.com/mhogg/pygeodesic
 "pygeodesic==0.1.11",
+
+https://www.open3d.org/docs/latest/tutorial/Advanced/surface_reconstruction.html#Poisson-surface-reconstruction
+https://github.com/nmwsharp/potpourri3d?tab=readme-ov-file#mesh-geodesic-paths
+https://www.open3d.org/docs/release/tutorial/geometry/mesh.html#
