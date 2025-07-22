@@ -3,9 +3,7 @@ PLY Mesh Utilities
 
 This module provides utilities for loading, processing, and creating meshes from PLY point cloud files.
 It handles point cloud loading, merging, cleaning, and mesh reconstruction using Open3D.
-Uses Alpha Shapes for reconstruction, which creates non-convex, open surfaces suitable for sheet-like representations 
-of skin, promoting smoother and more planar meshes while preserving curvature. Includes post-processing to fill holes 
-using Open3D's tensor-based fill_holes method to reduce gaps in the mesh and Laplacian smoothing for improved planarity.
+Uses Poisson surface reconstruction, which creates watertight surfaces suitable for closed shapes.
 """
 
 import os
@@ -14,7 +12,6 @@ import jax.numpy as jnp
 import jaxlie
 import numpy as np
 import open3d as o3d
-import open3d.t.geometry as tgeom  # For tensor-based hole filling
 
 from tatbot.data.pose import Pose
 from tatbot.utils.log import get_logger
@@ -30,18 +27,15 @@ def create_mesh_from_ply_files(
     stat_std_ratio: float = 1.5,
     radius_nb_points: int = 10,
     radius: float = 0.01,
-    alpha_value_multiplier: float = 1.5,
     zone_pose: Pose | None = None,
     zone_depth_m: float | None = None,
     zone_width_m: float | None = None,
     zone_height_m: float | None = None,
-    hole_size: float = 0.01,
-    smooth_iterations: int = 3,
-    smooth_lambda: float = 0.5,
+    poisson_depth: int = 9,
     output_dir: str | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Load PLY files, combine point clouds, clean them, and create a mesh using Alpha Shapes.
+    Load PLY files, combine point clouds, clean them, and create a mesh using Poisson surface reconstruction.
     
     Args:
         ply_files: Single PLY file path or list of PLY file paths
@@ -51,14 +45,11 @@ def create_mesh_from_ply_files(
         stat_std_ratio: Standard deviation ratio for statistical outlier removal
         radius_nb_points: Minimum number of points for radius outlier removal
         radius: Radius for radius outlier removal
-        alpha_value_multiplier: Multiplier for Alpha Shapes alpha (based on avg point distance; lower = more connections, fewer holes)
         zone_pose: Pose defining the center and orientation of the zone
         zone_depth_m: Depth of the zone in meters (x-axis)
         zone_width_m: Width of the zone in meters (y-axis)
         zone_height_m: Height of the zone in meters (z-axis)
-        hole_size: Max size of holes to fill in meters
-        smooth_iterations: Number of Laplacian smoothing iterations
-        smooth_lambda: Laplacian smoothing strength (0-1; higher = more planar)
+        poisson_depth: Depth parameter for Poisson reconstruction (higher = more detail)
         
     Returns:
         Tuple of (points, faces) where:
@@ -146,18 +137,21 @@ def create_mesh_from_ply_files(
         ref_pcd, _ = ref_pcd.remove_radius_outlier(nb_points=radius_nb_points, radius=radius)
         log.info(f"After radius removal: {len(ref_pcd.points)} points")
 
-    # Reconstruct mesh using Alpha Shapes
-    log.info("Reconstructing mesh using Alpha Shapes...")
-    # Compute adaptive alpha based on average nearest-neighbor distance
-    distances = ref_pcd.compute_nearest_neighbor_distance()
-    avg_dist = np.mean(distances)
-    alpha = avg_dist * alpha_value_multiplier  # Lower multiplier reduces holes
-    log.debug(f"Computed alpha: {alpha:.6f} (avg_dist={avg_dist:.6f}, multiplier={alpha_value_multiplier})")
-    
-    mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(ref_pcd, alpha)
+    # Estimate and orient normals for Poisson reconstruction
+    log.info("Estimating normals...")
+    ref_pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.02, max_nn=30))
+
+    log.info("Orienting normals...")
+    ref_pcd.orient_normals_consistent_tangent_plane(100)
+
+    # Reconstruct mesh using Poisson
+    log.info(f"Reconstructing mesh using Poisson (depth={poisson_depth})...")
+    mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
+        ref_pcd, depth=poisson_depth
+    )
     
     if len(mesh.vertices) == 0:
-        raise ValueError("Alpha Shapes reconstruction failed - no vertices generated")
+        raise ValueError("Poisson reconstruction failed - no vertices generated")
     
     log.info(f"Initial mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
     
@@ -167,61 +161,17 @@ def create_mesh_from_ply_files(
     if len(mesh.triangles) < 1:
         raise ValueError(f"Initial mesh has no faces: {len(mesh.triangles)}")
     
-    # Post-process to fill holes using tensor mesh
-    log.info("Filling holes in mesh...")
-    try:
-        tensor_mesh = tgeom.TriangleMesh.from_legacy(mesh)
-        tensor_mesh = tensor_mesh.fill_holes(hole_size=hole_size)  # Fill holes up to specified size
-        mesh = tensor_mesh.to_legacy()
-        # HACK: force clean memory layout
-        vertices = np.asarray(mesh.vertices)
-        mesh.vertices = o3d.utility.Vector3dVector(np.array(vertices.tolist(), dtype=np.float64))
-        triangles = np.asarray(mesh.triangles)
-        mesh.triangles = o3d.utility.Vector3iVector(np.array(triangles.tolist(), dtype=np.int32))
-        log.info(f"After hole filling: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
-    except Exception as e:
-        log.warning(f"Tensor-based hole filling failed: {e}. Trying alternative hole filling method...")
-        try:
-            # Alternative: use Open3D's built-in hole filling
-            mesh = mesh.fill_holes()
-            log.info(f"After alternative hole filling: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
-        except Exception as e2:
-            log.warning(f"Alternative hole filling also failed: {e2}. Continuing with original mesh.")
-            # Continue with the original mesh if both hole filling methods fail
-    
-    # Additional cleaning to ensure manifold mesh
-    try:
-        mesh.remove_degenerate_triangles()
-        mesh.remove_duplicated_triangles()
-        mesh.remove_duplicated_vertices()
-        mesh.remove_non_manifold_edges()
-        log.info(f"After mesh cleaning: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
-    except Exception as e:
-        log.warning(f"Mesh cleaning failed: {e}. Continuing with uncleaned mesh.")
-        # Continue with the uncleaned mesh if cleaning fails
-    
-    # Apply Laplacian smoothing for planarity
-    log.info(f"Applying Laplacian smoothing ({smooth_iterations} iterations, lambda={smooth_lambda})...")
-    try:
-        # HACK: force clean memory layout
-        vertices = np.asarray(mesh.vertices)
-        mesh.vertices = o3d.utility.Vector3dVector(np.array(vertices.tolist(), dtype=np.float64))
-        triangles = np.asarray(mesh.triangles)
-        mesh.triangles = o3d.utility.Vector3iVector(np.array(triangles.tolist(), dtype=np.int32))
-        mesh = mesh.filter_smooth_laplacian(number_of_iterations=smooth_iterations, lambda_filter=smooth_lambda)
-        log.info(f"After Laplacian smoothing: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
-    except Exception as e:
-        log.warning(f"Laplacian smoothing failed: {e}. Continuing with unsmoothed mesh.")
-        # Continue with the unsmoothed mesh if smoothing fails
-    
-    try:
-        mesh.compute_vertex_normals()
-        log.info(f"Final mesh after hole-filling and smoothing: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
-    except Exception as e:
-        log.warning(f"Vertex normal computation failed: {e}. Continuing without normals.")
-        # Continue without vertex normals if computation fails
+    # Clean mesh
+    mesh.remove_degenerate_triangles()
+    mesh.remove_duplicated_triangles()
+    mesh.remove_duplicated_vertices()
+    mesh.remove_non_manifold_edges()
+    log.info(f"After mesh cleaning: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
 
-    # Extract mesh data for geodesic computation
+    mesh.compute_vertex_normals()
+    log.info(f"Final mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} faces")
+
+    # Extract mesh data
     if len(mesh.vertices) == 0:
         raise ValueError("Mesh has no vertices after processing")
     if len(mesh.triangles) == 0:
