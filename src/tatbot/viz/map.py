@@ -71,43 +71,45 @@ class VizMap(BaseViz):
             self.design_pose_textbox.value = self.design_pose_text()
         
         self.strokes: StrokeList = make_gcode_strokes(self.scene)
-        self.stroke_pointclouds = {"l": [], "r": []}
-        self.mapped_stroke_pointclouds = {"l": [], "r": []}
+        self.stroke_pointclouds = {"l": {}, "r": {}}
+        self.mapped_stroke_pointclouds = {"l": {}, "r": {}}
         for i, (stroke_l, stroke_r) in enumerate(self.strokes.strokes):
-            pointcloud = self.server.scene.add_point_cloud(
-                # By making this a child of design_pose, meter_coords are correctly transformed
-                name=f"/design_pose/stroke_l_{i:03d}",
-                points=stroke_l.meter_coords,
-                colors=np.zeros((len(stroke_l.meter_coords), 3), dtype=np.uint8),
-                point_size=config.stroke_point_size,
-                point_shape=config.stroke_point_shape,
-            )
-            self.stroke_pointclouds["l"].append(pointcloud)
-            # mapped pointclouds are in world frame, start off as empty
-            mapped_pointcloud = self.server.scene.add_point_cloud(
-                name=f"/skin/map/stroke_l_{i:03d}",
-                points=np.zeros((1, 3)),
-                colors=np.zeros((1, 3), dtype=np.uint8),
-                point_size=config.stroke_point_size,
-                point_shape=config.stroke_point_shape,
-            )
-            self.mapped_stroke_pointclouds["l"].append(mapped_pointcloud)
-            pointcloud = self.server.scene.add_point_cloud(
-                name=f"/design_pose/stroke_r_{i:03d}",
-                points=stroke_r.meter_coords,
-                colors=np.zeros((len(stroke_r.meter_coords), 3), dtype=np.uint8),
-                point_size=config.stroke_point_size,
-                point_shape=config.stroke_point_shape,
-            )
-            self.stroke_pointclouds["r"].append(pointcloud)
-            mapped_pointcloud = self.server.scene.add_point_cloud(
-                name=f"/skin/map/stroke_r_{i:03d}",
-                points=np.zeros((1, 3)),
-                colors=np.zeros((1, 3), dtype=np.uint8),
-                point_size=config.stroke_point_size,
-                point_shape=config.stroke_point_shape,
-            )
-            self.mapped_stroke_pointclouds["r"].append(mapped_pointcloud)
+            if not stroke_l.is_inkdip and not stroke_l.is_rest:
+                pointcloud = self.server.scene.add_point_cloud(
+                    # By making this a child of design_pose, meter_coords are correctly transformed
+                    name=f"/design_pose/stroke_l_{i:03d}",
+                    points=stroke_l.meter_coords,
+                    colors=np.zeros((len(stroke_l.meter_coords), 3), dtype=np.uint8),
+                    point_size=config.stroke_point_size,
+                    point_shape=config.stroke_point_shape,
+                )
+                self.stroke_pointclouds["l"][i] = pointcloud
+                # mapped pointclouds are in world frame, start off as empty
+                mapped_pointcloud = self.server.scene.add_point_cloud(
+                    name=f"/skin/map/stroke_l_{i:03d}",
+                    points=np.zeros((1, 3)),
+                    colors=np.zeros((1, 3), dtype=np.uint8),
+                    point_size=config.stroke_point_size,
+                    point_shape=config.stroke_point_shape,
+                )
+                self.mapped_stroke_pointclouds["l"][i] = mapped_pointcloud
+            if not stroke_r.is_inkdip and not stroke_r.is_rest:
+                pointcloud = self.server.scene.add_point_cloud(
+                    name=f"/design_pose/stroke_r_{i:03d}",
+                    points=stroke_r.meter_coords,
+                    colors=np.zeros((len(stroke_r.meter_coords), 3), dtype=np.uint8),
+                    point_size=config.stroke_point_size,
+                    point_shape=config.stroke_point_shape,
+                )
+                self.stroke_pointclouds["r"][i] = pointcloud
+                mapped_pointcloud = self.server.scene.add_point_cloud(
+                    name=f"/skin/map/stroke_r_{i:03d}",
+                    points=np.zeros((1, 3)),
+                    colors=np.zeros((1, 3), dtype=np.uint8),
+                    point_size=config.stroke_point_size,
+                    point_shape=config.stroke_point_shape,
+                )
+                self.mapped_stroke_pointclouds["r"][i] = mapped_pointcloud
 
         self.skin_mesh = None
         self.skin_mesh_vertices = None
@@ -221,8 +223,10 @@ class VizMap(BaseViz):
                 )
                 
                 for i, (stroke_l, stroke_r) in enumerate(mapped_strokes.strokes):
-                    self.mapped_stroke_pointclouds["l"][i].points = ensure_numpy_array(stroke_l.ee_pos)
-                    self.mapped_stroke_pointclouds["r"][i].points = ensure_numpy_array(stroke_r.ee_pos)
+                    if not stroke_l.is_inkdip and not stroke_l.is_rest:
+                        self.mapped_stroke_pointclouds["l"][i].points = ensure_numpy_array(stroke_l.ee_pos)
+                    if not stroke_r.is_inkdip and not stroke_r.is_rest:
+                        self.mapped_stroke_pointclouds["r"][i].points = ensure_numpy_array(stroke_r.ee_pos)
                 log.info("Successfully mapped strokes to surface")
 
             except Exception:
@@ -230,16 +234,16 @@ class VizMap(BaseViz):
         
         @self.show_mapped_stroke_pointclouds.on_update
         def _(_):
-            for pointcloud in self.mapped_stroke_pointclouds["l"]:
+            for pointcloud in self.mapped_stroke_pointclouds["l"].values():
                 pointcloud.visible = self.show_mapped_stroke_pointclouds.value
-            for pointcloud in self.mapped_stroke_pointclouds["r"]:
+            for pointcloud in self.mapped_stroke_pointclouds["r"].values():
                 pointcloud.visible = self.show_mapped_stroke_pointclouds.value
         
         @self.show_stroke_pointclouds.on_update
         def _(_):
-            for pointcloud in self.stroke_pointclouds["l"]:
+            for pointcloud in self.stroke_pointclouds["l"].values():
                 pointcloud.visible = self.show_stroke_pointclouds.value
-            for pointcloud in self.stroke_pointclouds["r"]:
+            for pointcloud in self.stroke_pointclouds["r"].values():
                 pointcloud.visible = self.show_stroke_pointclouds.value
         
         @self.show_skin_mesh.on_update
