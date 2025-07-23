@@ -48,9 +48,7 @@ class StrokeOp(RecordOp):
             )
         )
 
-    async def run(self):
-        async for progress_update in super().run():
-            yield progress_update
+    async def _run(self):
 
         logs_dir = os.path.join(self.dataset_dir, "logs")
         os.makedirs(logs_dir, exist_ok=True)
