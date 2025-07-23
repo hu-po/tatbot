@@ -15,12 +15,12 @@ mcp = FastMCP("tatbot.trossen-ai", host="0.0.0.0", port=8000)
 
 
 @mcp.tool(description="Run a robot operation.")
-async def run_robot_op(op_name: str, ctx: Context, **kwargs) -> str:
+async def run_robot_op(op_name: str, ctx: Context) -> str:
     """Performs a robot operation with progress updates."""
-    await ctx.info(f"Running robot op: {op_name} with kwargs: {kwargs}")
+    await ctx.info(f"Running robot op: {op_name}")
     try:
         op_class, op_config = get_op(op_name)
-        config = op_config(**kwargs)
+        config = op_config()
         op = op_class(config)
         await ctx.report_progress(
             progress=0.01, total=1.0, message=f"Created op class and config: {config}"
