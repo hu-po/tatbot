@@ -35,14 +35,13 @@ async def run_robot_op(op_name: str, ctx: Context) -> str:
             log.info(f"Intermediate result: {result}")
             await ctx.report_progress(progress=result['progress'], total=1.0, message=result['message'])
         _msg = f"✅ Completed robot operation {op_name}"
-        log.info(_msg)
-        return _msg
-        
+        log.info(_msg)    
     except Exception:
         _msg = f"❌ Exception when running op: {traceback.format_exc()}"
         log.error(_msg)
+    finally:
+        op.cleanup()
         return _msg
-    
 
 if __name__ == "__main__":
     args = setup_log_with_config(MCPConfig)

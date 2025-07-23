@@ -71,6 +71,14 @@ class RecordOp(BaseOp):
             )
         )
 
+    def cleanup(self):
+        if self.robot is not None:
+            self.robot.disconnect()
+
+    async def _run(self):
+        log.warning("🤖 _run is not implemented")
+        return
+
     async def run(self):
         """Run the recording operation with progress updates."""
 
@@ -162,3 +170,27 @@ class RecordOp(BaseOp):
             'message': _msg,
         }
         
+        async for progress_update in self._run():
+            yield progress_update
+
+        if self.config.push_to_hub:
+            _msg = "📦🤗 Pushing dataset to Hugging Face Hub..."
+            log.info(_msg)
+            yield {
+                'progress': 0.999,
+                'message': _msg,
+            }
+            self.dataset.push_to_hub(tags=list(self.config.tags), private=self.config.private)
+            _msg = "✅ Pushed dataset to Hugging Face Hub"
+            log.info(_msg)
+            yield {
+                'progress': 0.9991,
+                'message': _msg,
+            }
+
+        _msg = f"✅ Robot operation {self.op_name} completed"
+        log.info(_msg)
+        yield {
+            'progress': 1.0,
+            'message': _msg,
+        }
