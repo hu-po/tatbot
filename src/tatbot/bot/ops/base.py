@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import AsyncGenerator, Any
 
 from tatbot.data.scene import Scene
-from tatbot.utils.log import get_logger
+from tatbot.utils.log import get_logger, print_config
 
 log = get_logger("bot.ops.base", "🤖")
 
@@ -19,10 +19,16 @@ class BaseOpConfig:
 
 
 class BaseOp:
+
+    op_name: str = "base"
+    """Name of the operation."""
+
     def __init__(self, config: BaseOpConfig):
-        self.config = config
         if config.debug:
             log.setLevel(logging.DEBUG)
+        log.info(f"Initializing robot operation: {self.op_name}")
+        print_config(config, log)
+        self.config = config
         self.scene: Scene = Scene.from_name(config.scene)
 
     async def run(self) -> AsyncGenerator[dict[str, Any], None]:

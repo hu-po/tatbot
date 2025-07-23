@@ -139,7 +139,7 @@ def scan(config: ScanConfig) -> str:
 
 if __name__ == "__main__":
     args = setup_log_with_config(ScanConfig)
-    print_config(args)
+    print_config(args, log)
     if args.debug:
         log.setLevel(logging.DEBUG)
         logging.getLogger("lerobot").setLevel(logging.DEBUG)

@@ -198,7 +198,7 @@ if __name__ == "__main__":
     logging.getLogger("trossen_arm").setLevel(logging.ERROR)
     if args.debug:
         log.setLevel(logging.DEBUG)
-    print_config(args)
+    print_config(args, log)
     log.info("🦾 Configuring left arm")
     configure_arm(args.arm_l_config_filepath, args.arm_l_ip, args.test_pose_name_l, args.test_tolerance)
     log.info("🦾 Configuring right arm")

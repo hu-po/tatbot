@@ -74,5 +74,5 @@ if __name__ == "__main__":
     if args.debug:
         log.setLevel(logging.DEBUG)
         logging.getLogger("server").setLevel(logging.DEBUG)
-    print_config(args)
+    print_config(args, log)
     mcp.run(transport=args.transport)

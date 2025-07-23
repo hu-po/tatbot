@@ -25,9 +25,9 @@ def get_logger(name: str, emoji: str = "❓") -> logging.Logger:
 log = get_logger("utils.log", "📝")
 
 
-def print_config(args: Any):
-    log.info(f"🛠️ Full Config of type {type(args)}:")
-    log.info(pformat(asdict(args)))
+def print_config(args: Any, log: logging.Logger = log):
+    log.debug(f"🛠️ Full Config of type {type(args)}:")
+    log.debug(pformat(asdict(args)))
 
 
 def setup_log_with_config(config: Any, submodules: list[str] = SUBMODULES) -> Any:

@@ -42,5 +42,5 @@ if __name__ == "__main__":
     args = setup_log_with_config(MCPConfig)
     if args.debug:
         log.setLevel(logging.DEBUG)
-    print_config(args)
+    print_config(args, log)
     mcp.run(transport=args.transport)

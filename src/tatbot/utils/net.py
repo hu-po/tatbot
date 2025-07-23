@@ -271,7 +271,7 @@ class NetworkManager:
 
 if __name__ == "__main__":
     args = setup_log_with_config(NetworkManagerConfig)
-    print_config(args)
+    print_config(args, log)
     if args.debug:
         log.setLevel(logging.DEBUG)
     manager = NetworkManager(args)

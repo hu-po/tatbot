@@ -1,33 +1,19 @@
 from dataclasses import dataclass
 import os
 import time
-import logging
-from io import StringIO
-import asyncio
+import traceback
 
-
-from lerobot.cameras.opencv import OpenCVCameraConfig
-from lerobot.cameras.realsense import RealSenseCameraConfig
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
-from lerobot.robots import make_robot_from_config
+from lerobot.datasets.utils import hw_to_dataset_features
+from lerobot.robots import make_robot_from_config, Robot
 from lerobot.robots.tatbot.config_tatbot import TatbotConfig
-from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorConfig
 from lerobot.utils.control_utils import (
     sanity_check_dataset_name,
     sanity_check_dataset_robot_compatibility,
 )
 
-from tatbot.data.scene import Scene
 from tatbot.bot.ops.base import BaseOp, BaseOpConfig
-from tatbot.utils.log import get_logger
-from tatbot.utils.log import (
-    LOG_FORMAT,
-    TIME_FORMAT,
-    get_logger,
-    print_config,
-    setup_log_with_config,
-)
+from tatbot.utils.log import get_logger, TIME_FORMAT
 
 log = get_logger("bot.ops.record", "🤖")
 
@@ -51,149 +37,128 @@ class RecordOpConfig(BaseOpConfig):
     """Whether to push the dataset to a private repository."""
     fps: int = 30
     """Frames per second."""
-    max_episodes: int = 256
-    """Maximum number of episodes to record."""
+    resume: bool = False
+    """If true, resumes recording from the last episode, dataset name must match."""
 
-    
 
 class RecordOp(BaseOp):
+
+    op_name: str = "record"
+
     def __init__(self, config: RecordOpConfig):
         super().__init__(config)
+        self.dataset_dir: str | None = None
+        self.dataset: LeRobotDataset | None = None
+        self.robot: Robot | None = None
+        self.num_camera_threads: int = 0
 
-        output_dir = os.path.expanduser(config.output_dir)
-        log.info(f"🗃️ Creating output directory at {output_dir}...")
+    def make_robot(self) -> Robot:
+        """Make a robot from the config."""
+        return make_robot_from_config(
+            TatbotConfig(
+                ip_address_l=self.scene.arms.ip_address_l,
+                ip_address_r=self.scene.arms.ip_address_r,
+                arm_l_config_filepath=self.scene.arms.arm_l_config_filepath,
+                arm_r_config_filepath=self.scene.arms.arm_r_config_filepath,
+                goal_time_fast=self.scene.arms.goal_time_fast,
+                goal_time_slow=self.scene.arms.goal_time_slow,
+                connection_timeout=self.scene.arms.connection_timeout,
+                home_pos_l=self.scene.sleep_pos_l.joints[:7],
+                home_pos_r=self.scene.sleep_pos_r.joints[:7],
+                # base record op does not use cameras
+                cameras={},
+                cond_cameras={},
+            )
+        )
+
+    async def run(self):
+        """Run the recording operation with progress updates."""
+
+        output_dir = os.path.expanduser(self.config.output_dir)
         os.makedirs(output_dir, exist_ok=True)
+        _msg = f"🗃️ Creating output directory at {output_dir}..."
+        log.info(_msg)
+        yield {
+            'progress': 0.01,
+            'message': _msg,
+        }
 
-        dataset_name = config.dataset_name or f"{self.scene.name}-{time.strftime(TIME_FORMAT, time.localtime())}"
+        dataset_name = self.config.dataset_name or f"{self.op_name}-{self.scene.name}-{time.strftime(TIME_FORMAT, time.localtime())}"
         self.dataset_dir = f"{output_dir}/{dataset_name}"
-        log.info(f"🗃️ Creating dataset directory at {self.dataset_dir}...")
+        _msg = f"🗃️ Creating dataset directory at {self.dataset_dir}..."
+        log.info(_msg)
         os.makedirs(self.dataset_dir, exist_ok=True)
+        yield {
+            'progress': 0.02,
+            'message': _msg,
+        }
 
         # copy the scene yaml to the output directory
         scene_path = os.path.join(self.dataset_dir, "scene.yaml")
         self.scene.to_yaml(scene_path)
 
-        logs_dir = os.path.join(self.dataset_dir, "logs")
-        log.info(f"🗃️ Creating logs directory inside dataset directory at {logs_dir}...")
-        os.makedirs(logs_dir, exist_ok=True)
-        episode_log_buffer = StringIO()
+        robot = self.make_robot()
+        _msg = f"🤖 Creating robot from config..."
+        log.info(_msg)
+        yield {
+            'progress': 0.04,
+            'message': _msg,
+        }
 
-        class EpisodeLogHandler(logging.Handler):
-            def emit(self, record):
-                msg = self.format(record)
-                episode_log_buffer.write(msg + "\n")
-
-        episode_handler = EpisodeLogHandler()
-        episode_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=TIME_FORMAT))
-        logging.getLogger().addHandler(episode_handler)
-
-    async def run(self):
-        """Run the recording operation with progress updates."""
-        config = self.config
-        
-        # Step 1: Initialize robot
+        _msg = f"🤖 Connecting to robot..."
+        log.info(_msg)
+        yield {
+            'progress': 0.05,
+            'message': _msg,
+        }
+        try:
+            robot.connect()
+            self.num_camera_threads = 0
+            if hasattr(robot, "cameras") and len(robot.cameras) > 0:
+                self.num_camera_threads += 4 * len(robot.cameras)
+            if hasattr(robot, "cond_cameras") and len(robot.cond_cameras) > 0:
+                self.num_camera_threads += 4 * len(robot.cond_cameras)
+        except Exception:
+            _msg = f"🤖 Failed to connect to robot: {traceback.format_exc()}"
+            log.error(_msg)
+            yield {
+                'progress': 0.1,
+                'message': _msg,
+            }
+            return
+        _msg = f"🤖 Connected to robot with {self.num_camera_threads} camera threads..."
+        log.info(_msg)
         yield {
             'progress': 0.1,
-            'message': 'Initializing robot...',
-            'step': 'init'
-        }
-        
-        robot_config = TatbotConfig()
-        robot = make_robot_from_config(robot_config)
-        
-        # Step 2: Setup dataset
-        yield {
-            'progress': 0.2,
-            'message': 'Setting up dataset...',
-            'step': 'dataset_setup'
+            'message': _msg,
         }
         
         action_features = hw_to_dataset_features(robot.action_features, "action", True)
         obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
         dataset_features = {**action_features, **obs_features}
-        
-        dataset_name = config.dataset_name or f"{self.scene.name}-{time.strftime(TIME_FORMAT, time.localtime())}"
-        repo_id = f"{config.hf_username}/{dataset_name}"
-        
+        repo_id = f"{self.config.hf_username}/{dataset_name}"
+        if self.config.resume:
+            _msg = f"📦🤗 Resuming LeRobot dataset at {repo_id}..."
+            self.dataset = LeRobotDataset(repo_id, root=self.dataset_dir)
+            if self.num_camera_threads > 0:
+                self.dataset.start_image_writer(num_processes=0, num_threads=self.num_camera_threads)
+            sanity_check_dataset_robot_compatibility(self.dataset, robot, self.config.fps, dataset_features)
+        else:
+            _msg = f"📦🤗 Creating new LeRobot dataset at {repo_id}..."
+            sanity_check_dataset_name(repo_id, None)
+            self.dataset = LeRobotDataset.create(
+                repo_id,
+                self.config.fps,
+                root=self.dataset_dir,
+                robot_type=robot.name,
+                features=dataset_features,
+                use_videos=True,
+                image_writer_processes=0,
+                image_writer_threads=self.num_camera_threads,
+            )
+        log.info(_msg)
         yield {
-            'progress': 0.3,
-            'message': f'Creating dataset at {repo_id}...',
-            'step': 'dataset_creation',
-            'data': {'repo_id': repo_id}
+            'progress': 0.11,
+            'message': _msg,
         }
         
-        sanity_check_dataset_name(repo_id, None)
-        dataset = LeRobotDataset.create(
-            repo_id,
-            config.fps,
-            root=self.dataset_dir,
-            robot_type=robot.name,
-            features=dataset_features,
-            use_videos=True,
-            image_writer_processes=0,
-            image_writer_threads=4 * (len(robot.cameras) + len(robot.cond_cameras)),
-        )
-        
-        # Step 3: Setup teleoperator
-        yield {
-            'progress': 0.4,
-            'message': 'Setting up teleoperator...',
-            'step': 'teleop_setup'
-        }
-        
-        teleop_config = AtariTeleoperatorConfig()
-        teleop = AtariTeleoperator(teleop_config)
-        
-        # Step 4: Recording loop
-        yield {
-            'progress': 0.5,
-            'message': f'Starting recording loop (max {config.max_episodes} episodes)...',
-            'step': 'recording_start'
-        }
-        
-        episode_count = 0
-        for episode in range(config.max_episodes):
-            episode_count = episode + 1
-            progress = 0.5 + (episode_count / config.max_episodes) * 0.4
-            
-            yield {
-                'progress': progress,
-                'message': f'Recording episode {episode_count}/{config.max_episodes}',
-                'step': 'recording_episode',
-                'data': {
-                    'episode': episode_count,
-                    'total_episodes': config.max_episodes,
-                    'episode_progress': episode_count / config.max_episodes
-                }
-            }
-            
-            # Here you would implement the actual episode recording logic
-            # For now, just a placeholder
-            await asyncio.sleep(0.1)  # Simulate some work
-        
-        # Step 5: Finalize dataset
-        yield {
-            'progress': 0.9,
-            'message': 'Finalizing dataset...',
-            'step': 'finalize'
-        }
-        
-        if config.push_to_hub:
-            yield {
-                'progress': 0.95,
-                'message': f'Pushing dataset to Hugging Face Hub...',
-                'step': 'push_to_hub'
-            }
-            # Here you would implement the push to hub logic
-            # dataset.push_to_hub(...)
-        
-        yield {
-            'progress': 1.0,
-            'message': f'Successfully recorded {episode_count} episodes',
-            'step': 'complete',
-            'data': {
-                'episodes_recorded': episode_count,
-                'dataset_path': self.dataset_dir,
-                'repo_id': repo_id
-            }
-        }

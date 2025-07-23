@@ -99,7 +99,7 @@ if __name__ == "__main__":
     args = setup_log_with_config(RealSenseConfig)
     if args.debug:
         log.setLevel(logging.DEBUG)
-    print_config(args)
+    print_config(args, log)
 
     cams = Cams.from_yaml(args.cams_yaml)
     log.info(f"Loaded {len(cams.realsenses)} RealSense and {len(cams.ipcameras)} IP cameras from config.")

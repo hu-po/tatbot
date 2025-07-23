@@ -319,7 +319,7 @@ def record(config: RecordConfig):
 
 if __name__ == "__main__":
     args = setup_log_with_config(RecordConfig)
-    print_config(args)
+    print_config(args, log)
     # TODO: waiting on https://github.com/TrossenRobotics/trossen_arm/issues/86#issue-3144375498
     logging.getLogger("trossen_arm").setLevel(logging.ERROR)
     if args.debug:

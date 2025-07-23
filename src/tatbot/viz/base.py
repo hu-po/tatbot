@@ -224,6 +224,6 @@ if __name__ == "__main__":
     args = setup_log_with_config(BaseVizConfig)
     if args.debug:
         log.setLevel(logging.DEBUG)
-    print_config(args)
+    print_config(args, log)
     viz = BaseViz(args)
     viz.run()

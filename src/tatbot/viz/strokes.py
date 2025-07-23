@@ -231,7 +231,7 @@ class VizStrokes(BaseViz):
 
 if __name__ == "__main__":
     args = setup_log_with_config(VizStrokesConfig)
-    print_config(args)
+    print_config(args, log)
     if args.debug:
         log.setLevel(logging.DEBUG)
     viz = VizStrokes(args)

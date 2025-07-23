@@ -1,16 +1,20 @@
 from dataclasses import dataclass
 
-from tatbot.bot.behaviors.base import BaseBehavior, BaseBehaviorConfig
+from tatbot.bot.ops.record import RecordOp, RecordOpConfig
+from tatbot.utils.log import get_logger
+
+log = get_logger("bot.ops.align", "🔍")
 
 
 @dataclass
-class AlignBehaviorConfig(BaseBehaviorConfig):
+class AlignOpConfig(RecordOpConfig):
     pass
 
 
-class AlignBehavior(BaseBehavior):
-    def __init__(self, config: AlignBehaviorConfig):
-        super().__init__(config)
+class AlignOp(RecordOp):
 
-    def run(self):
-        super().run()
+    op_name: str = "align"
+
+    async def run(self):
+        async for progress_update in super().run():
+            yield progress_update
