@@ -74,16 +74,16 @@ class BaseViz:
         with self.server.gui.add_folder("Joints", expand_by_default=False):
             with self.server.gui.add_folder("Left", expand_by_default=False):
                 self.left_joint_textboxes = []
-                for i in range(8):
+                for i in range(7):
                     tb = self.server.gui.add_text(
                         f"{i + 1}", initial_value=str(self.joints[i]), disabled=True
                     )
                     self.left_joint_textboxes.append(tb)
             with self.server.gui.add_folder("Right", expand_by_default=False):
                 self.right_joint_textboxes = []
-                for i in range(8):
+                for i in range(7):
                     tb = self.server.gui.add_text(
-                        f"{i + 1}", initial_value=str(self.joints[i + 8]), disabled=True
+                        f"{i + 1}", initial_value=str(self.joints[i + 7]), disabled=True
                     )
                     self.right_joint_textboxes.append(tb)
 
@@ -195,7 +195,7 @@ class BaseViz:
                 log.debug(f"Setting real left arm positions: {arm_l_joints}")
                 self.arm_l.set_all_positions(self.to_trossen_vector(arm_l_joints), blocking=True)
             if self.arm_r is not None:
-                arm_r_joints = self.joints[8:-1]
+                arm_r_joints = self.joints[7:]
                 log.debug(f"Setting real right arm positions: {arm_r_joints}")
                 self.arm_r.set_all_positions(self.to_trossen_vector(arm_r_joints), blocking=True)
             link_poses = get_link_poses(self.scene.urdf.path, self.scene.urdf.cam_link_names, self.joints)
@@ -214,7 +214,7 @@ class BaseViz:
             for i, tb in enumerate(self.left_joint_textboxes):
                 tb.value = str(self.joints[i])
             for i, tb in enumerate(self.right_joint_textboxes):
-                tb.value = str(self.joints[i + 8])
+                tb.value = str(self.joints[i + 7])
             self.global_step += 1
             self.global_step_textbox.value = str(self.global_step)
             log.debug(f"Step time: {time.time() - start_time:.4f}s")

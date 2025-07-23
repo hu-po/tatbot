@@ -615,33 +615,6 @@
   <link name="left/realsense_color_optical_frame"/>
 
   <!-- left arm carriage -->
-  <!-- <link name="left/carriage_right">
-    <inertial>
-      <origin rpy="0 0 0" xyz="-0.00889602 0.00403514 0.00457901"/>
-      <mass value="0.05036313"/>
-      <inertia ixx="0.00001736" ixy="-0.00000165" ixz="-0.00000104" iyy="0.00000591" iyz="-0.00000172" izz="0.00001378"/>
-    </inertial>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/carriage_right.stl"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/carriage_right.stl"/>
-      </geometry>
-    </collision>
-  </link>
-  <joint name="left/right_carriage_joint" type="prismatic">
-    <origin rpy="0 0 0" xyz="0.0865 -0.023 0"/>
-    <parent link="left/link_6"/>
-    <child link="left/carriage_right"/>
-    <axis xyz="0 -1 0"/>
-    <limit effort="400.0" lower="0.0" upper="0.04" velocity="0.0875"/>
-  </joint> -->
   <link name="left/carriage_left">
     <inertial>
       <origin rpy="0 0 0" xyz="-0.00889602 -0.00403515 -0.00457908"/>
@@ -1051,33 +1024,6 @@
     <axis xyz="0 -1 0"/>
     <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
   </joint>
-  <!-- <link name="right/carriage_left">
-    <inertial>
-      <origin rpy="0 0 0" xyz="-0.00889602 -0.00403515 -0.00457908"/>
-      <mass value="0.05036313"/>
-      <inertia ixx="0.00001736" ixy="-0.00000165" ixz="-0.00000104" iyy="0.00000591" iyz="-0.00000172" izz="0.00001378"/>
-    </inertial>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/carriage_left.stl"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/carriage_left.stl"/>
-      </geometry>
-    </collision>
-  </link>
-  <joint name="right/left_carriage_joint" type="prismatic">
-    <origin rpy="0 0 0" xyz="0.0865 0.023 0"/>
-    <parent link="right/link_6"/>
-    <child link="right/carriage_left"/>
-    <axis xyz="0 1 0"/>
-    <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
-  </joint> -->
   <link name="right/ee_p1">
     <visual>
       <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0 0.007 0"/>

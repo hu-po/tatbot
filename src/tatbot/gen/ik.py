@@ -34,9 +34,9 @@ def ik(
     target_link_indices: Int[Array, "n"],  # n=2 for bimanual
     target_wxyz: Float[Array, "n 4"],
     target_position: Float[Array, "n 3"],
-    rest_pose: Float[Array, "16"],
+    rest_pose: Float[Array, "14"],
     config: IKConfig = IKConfig(),
-) -> Float[Array, "16"]:
+) -> Float[Array, "14"]:
     log.debug(f"performing ik on {target_link_indices.shape[0]} targets")
     start_time = time.time()
     joint_var = robot.joint_var_cls(0)
@@ -78,11 +78,11 @@ def ik(
 def batch_ik(
     target_wxyz: Float[Array, "b n 4"],
     target_pos: Float[Array, "b n 3"],
-    joints: Float[Array, "16"],
+    joints: Float[Array, "14"],
     urdf_path: str,
     link_names: tuple[str, ...],
     ik_config: IKConfig = IKConfig(),
-) -> Float[Array, "b 16"]:
+) -> Float[Array, "b 14"]:
     _, robot = load_robot(urdf_path)
     link_indices = get_link_indices(urdf_path, link_names)
     log.debug(f"performing batch ik on batch of size {target_pos.shape[0]}")

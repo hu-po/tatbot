@@ -177,7 +177,7 @@ def configure_arm(filepath: str, ip: str, test_pose_name: str, test_tolerance: f
     driver.set_all_modes(trossen_arm.Mode.position)
     sleep_pose = driver.get_all_positions()[:7]
     log.info(f"🦾 sleep pose: {sleep_pose}")
-    test_pose = ArmPose.from_name(test_pose_name).joints[:7]
+    test_pose = ArmPose.from_name(test_pose_name).joints
     log.info(f"🦾 Testing arm {ip} with pose {test_pose}")
     driver.set_all_positions(trossen_arm.VectorDouble(test_pose), blocking=True)
     current_pose = driver.get_all_positions()[:7]

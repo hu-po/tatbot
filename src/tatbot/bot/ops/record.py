@@ -63,8 +63,8 @@ class RecordOp(BaseOp):
                 goal_time_fast=self.scene.arms.goal_time_fast,
                 goal_time_slow=self.scene.arms.goal_time_slow,
                 connection_timeout=self.scene.arms.connection_timeout,
-                home_pos_l=self.scene.sleep_pos_l.joints[:7],
-                home_pos_r=self.scene.sleep_pos_r.joints[:7],
+                home_pos_l=self.scene.sleep_pos_l.joints,
+                home_pos_r=self.scene.sleep_pos_r.joints,
                 # base record op does not use cameras
                 rs_cameras={},
                 ip_cameras={},
