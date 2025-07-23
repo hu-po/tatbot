@@ -25,33 +25,24 @@ class AlignOp(RecordOp):
         _msg = "Generating alignment strokes..."
         log.info(_msg)
         yield {
-            'progress': 0.1,
+            'progress': 0.2,
             'message': _msg,
         }
-        
         strokes: StrokeList = make_align_strokes(self.scene)
         strokes.to_yaml(os.path.join(self.dataset_dir, "strokes.yaml"))
 
         _msg = "Creating stroke batch from strokes..."
         log.info(_msg)
         yield {
-            'progress': 0.2,
+            'progress': 0.21,
             'message': _msg,
         }
-        
         strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, strokes)
         strokebatch.save(os.path.join(self.dataset_dir, "strokebatch.safetensors"))
 
         # maximally retracted when performing alignment operation
         offset_idx_l = self.scene.arms.offset_num - 1
         offset_idx_r = self.scene.arms.offset_num - 1
-
-        _msg = f"Starting alignment execution for {len(strokes.strokes)} strokes..."
-        log.info(_msg)
-        yield {
-            'progress': 0.3,
-            'message': _msg,
-        }
 
         for stroke_idx, (stroke_l, stroke_r) in enumerate(strokes.strokes):
             _msg = f"🔍 Executing stroke {stroke_idx + 1}/{len(strokes.strokes)}: left={stroke_l.description}, right={stroke_r.description}"
@@ -77,10 +68,3 @@ class AlignOp(RecordOp):
                 self.dataset.add_frame(frame, task=f"left: {stroke_l.description}, right: {stroke_r.description}")
 
             self.dataset.save_episode()
-
-        _msg = "✅ Alignment operation completed successfully"
-        log.info(_msg)
-        yield {
-            'progress': 1.0,
-            'message': _msg,
-        }
