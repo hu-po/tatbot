@@ -2,7 +2,9 @@ from tatbot.bot.ops.base import BaseOp, BaseOpConfig
 
 
 def get_op(op_name: str) -> tuple[BaseOp, BaseOpConfig]:
-    if op_name == "align":
+    if op_name == "base":
+        return BaseOp, BaseOpConfig
+    elif op_name == "align":
         from tatbot.bot.ops.align import AlignOp, AlignOpConfig
         return AlignOp, AlignOpConfig
     elif op_name == "sense":
