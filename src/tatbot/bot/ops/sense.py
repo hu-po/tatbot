@@ -39,7 +39,7 @@ class SenseOp(RecordOp):
                 connection_timeout=self.scene.arms.connection_timeout,
                 home_pos_l=self.scene.sleep_pos_l.joints[:7],
                 home_pos_r=self.scene.sleep_pos_r.joints[:7],
-                cameras={
+                rs_cameras={
                     cam.name : RealSenseCameraConfig(
                         fps=cam.fps,
                         width=cam.width,
@@ -47,7 +47,7 @@ class SenseOp(RecordOp):
                         serial_number_or_name=cam.serial_number,
                     ) for cam in self.scene.cams.realsenses
                 },
-                cond_cameras={
+                ip_cameras={
                     cam.name: OpenCVCameraConfig(
                         fps=cam.fps,
                         width=cam.width,

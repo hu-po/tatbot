@@ -66,8 +66,8 @@ class RecordOp(BaseOp):
                 home_pos_l=self.scene.sleep_pos_l.joints[:7],
                 home_pos_r=self.scene.sleep_pos_r.joints[:7],
                 # base record op does not use cameras
-                cameras={},
-                cond_cameras={},
+                rs_cameras={},
+                ip_cameras={},
             )
         )
 
