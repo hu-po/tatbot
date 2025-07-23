@@ -80,8 +80,6 @@ class RecordOp(BaseOp):
         return
 
     async def run(self):
-        """Run the recording operation with progress updates."""
-
         output_dir = os.path.expanduser(self.config.output_dir)
         os.makedirs(output_dir, exist_ok=True)
         _msg = f"🗃️ Creating output directory at {output_dir}..."
@@ -105,60 +103,51 @@ class RecordOp(BaseOp):
         scene_path = os.path.join(self.dataset_dir, "scene.yaml")
         self.scene.to_yaml(scene_path)
 
-        robot = self.make_robot()
         _msg = f"🤖 Creating robot from config..."
-        log.info(_msg)
-        yield {
-            'progress': 0.04,
-            'message': _msg,
-        }
-
-        _msg = f"🤖 Connecting to robot..."
         log.info(_msg)
         yield {
             'progress': 0.05,
             'message': _msg,
         }
-        try:
-            robot.connect()
-            self.num_camera_threads = 0
-            if hasattr(robot, "cameras") and len(robot.cameras) > 0:
-                self.num_camera_threads += 4 * len(robot.cameras)
-            if hasattr(robot, "cond_cameras") and len(robot.cond_cameras) > 0:
-                self.num_camera_threads += 4 * len(robot.cond_cameras)
-        except Exception:
-            _msg = f"🤖 Failed to connect to robot: {traceback.format_exc()}"
-            log.error(_msg)
-            yield {
-                'progress': 0.1,
-                'message': _msg,
-            }
-            return
+        self.robot = self.make_robot()
+
+        _msg = f"🤖 Connecting to robot..."
+        log.info(_msg)
+        yield {
+            'progress': 0.06,
+            'message': _msg,
+        }
+        self.robot.connect()
+        self.num_camera_threads = 0
+        if hasattr(self.robot, "rs_cameras") and len(self.robot.rs_cameras) > 0:
+            self.num_camera_threads += 4 * len(self.robot.rs_cameras)
+        if hasattr(self.robot, "ip_cameras") and len(self.robot.ip_cameras) > 0:
+            self.num_camera_threads += 4 * len(self.robot.ip_cameras)
         _msg = f"🤖 Connected to robot with {self.num_camera_threads} camera threads..."
         log.info(_msg)
         yield {
-            'progress': 0.1,
+            'progress': 0.061,
             'message': _msg,
         }
         
-        action_features = hw_to_dataset_features(robot.action_features, "action", True)
-        obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
+        action_features = hw_to_dataset_features(self.robot.action_features, "action", True)
+        obs_features = hw_to_dataset_features(self.robot.observation_features, "observation", True)
         dataset_features = {**action_features, **obs_features}
         repo_id = f"{self.config.hf_username}/{dataset_name}"
         if self.config.resume:
-            _msg = f"📦🤗 Resuming LeRobot dataset at {repo_id}..."
+            _msg = f"📦🤗 Resuming LeRobot dataset at {repo_id}"
             self.dataset = LeRobotDataset(repo_id, root=self.dataset_dir)
             if self.num_camera_threads > 0:
                 self.dataset.start_image_writer(num_processes=0, num_threads=self.num_camera_threads)
-            sanity_check_dataset_robot_compatibility(self.dataset, robot, self.config.fps, dataset_features)
+            sanity_check_dataset_robot_compatibility(self.dataset, self.robot, self.config.fps, dataset_features)
         else:
-            _msg = f"📦🤗 Creating new LeRobot dataset at {repo_id}..."
+            _msg = f"📦🤗 Created new LeRobot dataset at {repo_id}"
             sanity_check_dataset_name(repo_id, None)
             self.dataset = LeRobotDataset.create(
                 repo_id,
                 self.config.fps,
                 root=self.dataset_dir,
-                robot_type=robot.name,
+                robot_type=self.robot.name,
                 features=dataset_features,
                 use_videos=True,
                 image_writer_processes=0,
@@ -166,7 +155,7 @@ class RecordOp(BaseOp):
             )
         log.info(_msg)
         yield {
-            'progress': 0.11,
+            'progress': 0.07,
             'message': _msg,
         }
         
