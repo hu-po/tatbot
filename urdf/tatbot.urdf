@@ -615,7 +615,7 @@
   <link name="left/realsense_color_optical_frame"/>
 
   <!-- left arm carriage -->
-  <link name="left/carriage_right">
+  <!-- <link name="left/carriage_right">
     <inertial>
       <origin rpy="0 0 0" xyz="-0.00889602 0.00403514 0.00457901"/>
       <mass value="0.05036313"/>
@@ -641,7 +641,7 @@
     <child link="left/carriage_right"/>
     <axis xyz="0 -1 0"/>
     <limit effort="400.0" lower="0.0" upper="0.04" velocity="0.0875"/>
-  </joint>
+  </joint> -->
   <link name="left/carriage_left">
     <inertial>
       <origin rpy="0 0 0" xyz="-0.00889602 -0.00403515 -0.00457908"/>
@@ -667,76 +667,62 @@
     <parent link="left/link_6"/>
     <child link="left/carriage_left"/>
     <axis xyz="0 1 0"/>
-    <limit effort="400.0" lower="0.0" upper="0.001" velocity="0.0875"/>
+    <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
   </joint>
-  <link name="left/leader_finger_left_thumb">
-    <inertial>
-      <origin rpy="0 0 0" xyz="-0.00130654 -0.00425887 -0.02751970"/>
-      <mass value="0.02088075"/>
-      <inertia ixx="0.00001780" ixy="-0.00000050" ixz="-0.00000239" iyy="0.00001685" iyz="-0.00000235" izz="0.00000317"/>
-    </inertial>
-    <!-- <visual>
-      <origin rpy="0 3.141592653589793 0" xyz="0 0 0"/>
+  <link name="left/ee_p1">
+    <visual>
+      <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 -0.007 0"/>
       <geometry>
-        <mesh filename="meshes/wxai/leader_finger_left_thumb.stl"/>
+        <mesh filename="meshes/ee/p1.stl" scale="0.001 0.001 0.001"/>
       </geometry>
       <material name="black"/>
-    </visual> -->
-    <collision>
-      <origin rpy="0 3.141592653589793 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/leader_finger_left_thumb.stl"/>
-      </geometry>
-    </collision>
+    </visual>
   </link>
-  <joint name="left/left_index_joint" type="fixed">
+  <joint name="left/ee_p1_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0"/>
     <parent link="left/carriage_left"/>
-    <child link="left/leader_finger_left_thumb"/>
+    <child link="left/ee_p1"/>
+  </joint>
+  <link name="left/ee_p2">
+    <visual>
+      <origin rpy="-1.5707963267948966 0 -0.7853981633974483" xyz="0.0255 0.0475 0"/>
+      <geometry>
+        <mesh filename="meshes/ee/p2.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="left/ee_p2_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="left/ee_p1"/>
+    <child link="left/ee_p2"/>
   </joint>
 
   <!-- left arm tattoo pen -->
   <link name="left/tattoo_pen">
-    <inertial>
+    <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
-      <mass value="0.01"/>
-      <inertia ixx="0.000001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.000001"/>
-    </inertial>
-    <!-- <visual>
-      <origin rpy="0 1.5707963267948966 0" xyz="-0.05 0 0"/>
       <geometry>
-        <cylinder length="0.1" radius="0.012"/>
+        <cylinder length="0.08" radius="0.015"/>
       </geometry>
       <material name="black"/>
-    </visual> -->
-    <collision>
-      <origin rpy="0 1.5707963267948966 0" xyz="-0.05 0 0"/>
-      <geometry>
-        <cylinder length="0.1" radius="0.012"/>
-      </geometry>
-    </collision>
+    </visual>
   </link>
   <joint name="left/tattoo_pen_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.1 -0.01 0.055"/>
-    <parent link="left/leader_finger_left_thumb"/>
+    <origin rpy="-1.5707963267948966 0 0.7853981633974483" xyz="0.061 0.041 0"/>
+    <parent link="left/ee_p1"/>
     <child link="left/tattoo_pen"/>
   </joint>
   <link name="left/tattoo_needle">
-    <!-- <visual>
-      <origin rpy="0 1.5707963267948966 0" xyz="-0.0175 0 0"/>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
         <cylinder length="0.035" radius="0.002"/>
       </geometry>
-    </visual> -->
-    <collision>
-      <origin rpy="0 1.5707963267948966 0" xyz="-0.0175 0 0"/>
-      <geometry>
-        <cylinder length="0.035" radius="0.002"/>
-      </geometry>
-    </collision>
+    </visual>
   </link>
   <joint name="left/tattoo_needle_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.035 0 0"/>
+    <origin rpy="0 0 0" xyz="0 0 -0.057"/>
     <parent link="left/tattoo_pen"/>
     <child link="left/tattoo_needle"/>
   </joint>
@@ -1065,7 +1051,7 @@
     <axis xyz="0 -1 0"/>
     <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
   </joint>
-  <link name="right/carriage_left">
+  <!-- <link name="right/carriage_left">
     <inertial>
       <origin rpy="0 0 0" xyz="-0.00889602 -0.00403515 -0.00457908"/>
       <mass value="0.05036313"/>
@@ -1091,75 +1077,61 @@
     <child link="right/carriage_left"/>
     <axis xyz="0 1 0"/>
     <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
-  </joint>
-  <link name="right/leader_finger_right_thumb">
-    <inertial>
-      <origin rpy="0 0 0" xyz="-0.00130654 -0.00425887 -0.02751970"/>
-      <mass value="0.02088075"/>
-      <inertia ixx="0.00001780" ixy="-0.00000050" ixz="-0.00000239" iyy="0.00001685" iyz="-0.00000235" izz="0.00000317"/>
-    </inertial>
-    <!-- <visual>
-      <origin rpy="0 3.141592653589793 0" xyz="0 0 0"/>
+  </joint> -->
+  <link name="right/ee_p1">
+    <visual>
+      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0 0.007 0"/>
       <geometry>
-        <mesh filename="meshes/wxai/leader_finger_right_thumb.stl"/>
+        <mesh filename="meshes/ee/p1.stl" scale="0.001 0.001 0.001"/>
       </geometry>
       <material name="black"/>
-    </visual> -->
-    <collision>
-      <origin rpy="0 3.141592653589793 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/leader_finger_right_thumb.stl"/>
-      </geometry>
-    </collision>
+    </visual>
   </link>
-  <joint name="right/right_index_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 -0.008"/>
+  <joint name="right/ee_p1_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
     <parent link="right/carriage_right"/>
-    <child link="right/leader_finger_right_thumb"/>
+    <child link="right/ee_p1"/>
+  </joint>
+  <link name="right/ee_p2">
+    <visual>
+      <origin rpy="1.5707963267948966 0 0.7853981633974483" xyz="0.0255 -0.0475 0"/>
+      <geometry>
+        <mesh filename="meshes/ee/p2.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="right/ee_p2_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="right/ee_p1"/>
+    <child link="right/ee_p2"/>
   </joint>
 
   <!-- right arm tattoo pen -->
   <link name="right/tattoo_pen">
-    <inertial>
+    <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
-      <mass value="0.01"/>
-      <inertia ixx="0.000001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.000001"/>
-    </inertial>
-    <!-- <visual>
-      <origin rpy="0 1.5707963267948966 0" xyz="-0.05 0 0"/>
       <geometry>
-        <cylinder length="0.1" radius="0.012"/>
+        <cylinder length="0.08" radius="0.015"/>
       </geometry>
       <material name="black"/>
-    </visual> -->
-    <collision>
-      <origin rpy="0 1.5707963267948966 0" xyz="-0.05 0 0"/>
-      <geometry>
-        <cylinder length="0.1" radius="0.012"/>
-      </geometry>
-    </collision>
+    </visual>
   </link>
   <joint name="right/tattoo_pen_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.1 0.01 0.055"/>
-    <parent link="right/leader_finger_right_thumb"/>
+    <origin rpy="1.5707963267948966 0 -0.7853981633974483" xyz="0.061 -0.041 0"/>
+    <parent link="right/ee_p1"/>
     <child link="right/tattoo_pen"/>
   </joint>
   <link name="right/tattoo_needle">
-    <!-- <visual>
-      <origin rpy="0 1.5707963267948966 0" xyz="-0.0175 0 0"/>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
         <cylinder length="0.035" radius="0.002"/>
       </geometry>
-    </visual> -->
-    <collision>
-      <origin rpy="0 1.5707963267948966 0" xyz="-0.0175 0 0"/>
-      <geometry>
-        <cylinder length="0.035" radius="0.002"/>
-      </geometry>
-    </collision>
+    </visual>
   </link>
   <joint name="right/tattoo_needle_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.035 0 0"/>
+    <origin rpy="0 0 0" xyz="0 0 -0.057"/>
     <parent link="right/tattoo_pen"/>
     <child link="right/tattoo_needle"/>
   </joint>
