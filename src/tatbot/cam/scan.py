@@ -10,6 +10,8 @@ from lerobot.cameras.realsense import RealSenseCameraConfig
 from lerobot.cameras.utils import make_cameras_from_configs
 from PIL import Image
 
+from tatbot.cam.depth import DepthCamera
+from tatbot.bot.urdf import get_link_poses
 from tatbot.cam.extrinsics import get_extrinsics
 from tatbot.data.cams import Cams
 from tatbot.data.scene import Scene
@@ -33,6 +35,9 @@ class ScanConfig:
 
     output_dir: str = "~/tatbot/nfs/scans"
     """Directory to save the dataset."""
+
+    num_plys: int = 1
+    """Number of PLY pointcloud files to capture."""
 
 
 def scan(config: ScanConfig) -> str:
@@ -93,8 +98,41 @@ def scan(config: ScanConfig) -> str:
         log.info(f"✅ Saved frame to {image_path}")
         image_paths.append(image_path)
 
-    cams: Cams = get_extrinsics(image_paths, scene.cams, scene.tags)
-    log.info(f"cams: {cams}")
+    # TODO: get extrinsics using apriltags
+    # cams: Cams = get_extrinsics(image_paths, scene.cams, scene.tags)
+    # log.info(f"cams: {cams}")
+
+    plymesh_dir = os.path.join(scan_dir, "plymesh")
+    log.info(f"🗃️ Creating plymesh directory at {plymesh_dir}...")
+    os.makedirs(plymesh_dir, exist_ok=True)
+
+    link_poses = get_link_poses(
+        scene.urdf.path, scene.urdf.cam_link_names, scene.ready_pos_full
+    )
+    depth_cameras = {}
+    for realsense in scene.cams.realsenses:
+        depth_cameras[realsense.name] = DepthCamera(
+            realsense.serial_number,
+            link_poses[realsense.urdf_link_name],
+            save_prefix=f"{realsense.name}_",
+            save_dir=plymesh_dir,
+        )
+        log.info(f"✅ Initialized depth camera for {realsense.name}")
+
+    # Capture multiple pointclouds
+    log.info(f"Capturing {config.num_plys} pointclouds...")
+    for ply_idx in range(config.num_plys):
+        log.info(f"Capturing pointcloud {ply_idx + 1}/{config.num_plys}...")
+        for realsense in scene.cams.realsenses:
+            if realsense.name in depth_cameras:
+                try:
+                    start = time.perf_counter()
+                    depth_cameras[realsense.name].get_pointcloud(save=True)
+                    dt_ms = (time.perf_counter() - start) * 1e3
+                    log.info(f"✅ Captured pointcloud {ply_idx + 1} for {realsense.name} in {dt_ms:.1f}ms")
+                except Exception as e:
+                    log.error(f"❌Error capturing pointcloud {ply_idx + 1} from {realsense.name}:\n{e}")
+
     log.info("✅ Done")
     return scan_name
 

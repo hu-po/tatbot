@@ -1,0 +1,45 @@
+import time
+import logging
+from dataclasses import dataclass
+from typing import AsyncGenerator, Any
+
+from tatbot.data.scene import Scene
+from tatbot.utils.log import get_logger
+
+log = get_logger("bot.ops.base", "🤖")
+
+
+@dataclass
+class BaseOpConfig:
+    debug: bool = False
+    """Enable debug logging."""
+
+    scene: str = "default"
+    """Name of the scene config to use (Scene)."""
+
+
+class BaseOp:
+    def __init__(self, config: BaseOpConfig):
+        self.config = config
+        if config.debug:
+            log.setLevel(logging.DEBUG)
+        self.scene: Scene = Scene.from_name(config.scene)
+
+    async def run(self) -> AsyncGenerator[dict[str, Any], None]:
+        """Run the operation and yield intermediate results.
+        
+        Yields:
+            dict: Intermediate results with keys like:
+                - 'progress': float (0.0 to 1.0)
+                - 'message': str (status message)
+        """
+        time.sleep(1)
+        yield {
+            'progress': 0.5,
+            'message': f'Starting dummy base operation...',
+        }
+        time.sleep(1)
+        yield {
+            'progress': 1.0,
+            'message': f'Completed dummy base operation...',
+        }

@@ -99,27 +99,27 @@ def record(config: RecordConfig):
             home_pos_l=scene.sleep_pos_l.joints[:7],
             home_pos_r=scene.sleep_pos_r.joints[:7],
             cameras={},
-            cameras={
-                cam.name : RealSenseCameraConfig(
-                    fps=cam.fps,
-                    width=cam.width,
-                    height=cam.height,
-                    serial_number_or_name=cam.serial_number,
-                ) for cam in scene.cams.realsenses
-            },
+            # cameras={
+            #     cam.name : RealSenseCameraConfig(
+            #         fps=cam.fps,
+            #         width=cam.width,
+            #         height=cam.height,
+            #         serial_number_or_name=cam.serial_number,
+            #     ) for cam in scene.cams.realsenses
+            # },
             cond_cameras={},
-            cond_cameras={
-                cam.name: OpenCVCameraConfig(
-                    fps=cam.fps,
-                    width=cam.width,
-                    height=cam.height,
-                    ip=cam.ip,
-                    username=cam.username,
-                    password=os.environ.get(cam.password, None),
-                    rtsp_port=cam.rtsp_port,
-                )
-                for cam in scene.cams.ipcameras
-            },
+            # cond_cameras={
+            #     cam.name: OpenCVCameraConfig(
+            #         fps=cam.fps,
+            #         width=cam.width,
+            #         height=cam.height,
+            #         ip=cam.ip,
+            #         username=cam.username,
+            #         password=os.environ.get(cam.password, None),
+            #         rtsp_port=cam.rtsp_port,
+            #     )
+            #     for cam in scene.cams.ipcameras
+            # },
         )
     )
     robot.connect()

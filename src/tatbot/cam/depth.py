@@ -44,6 +44,7 @@ class DepthCamera:
         self.frame_idx: int = 0 # counter keeps track of number of saved frames
 
     def get_pointcloud(self, save: bool = False) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.float32], npt.NDArray[np.uint8]]:
+        log.info(f"Capturing pointcloud...")
         point_cloud = rs.pointcloud()
         decimate = rs.decimation_filter()
         decimate.set_option(rs.option.filter_magnitude, self.decimation)
