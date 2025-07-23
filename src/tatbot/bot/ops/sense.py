@@ -10,7 +10,6 @@ from lerobot.robots import make_robot_from_config, Robot
 from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 
 from tatbot.cam.depth import DepthCamera
-from tatbot.data.pose import ArmPose
 from tatbot.bot.urdf import get_link_poses
 from tatbot.utils.log import get_logger
 
@@ -70,8 +69,7 @@ class SenseOp(RecordOp):
             'progress': 0.2,
             'message': _msg,
         }
-        _full_joints = ArmPose.make_bimanual_joints(self.scene.ready_pos_l, self.scene.ready_pos_r)
-        ready_action = self.robot._urdf_joints_to_action(_full_joints)
+        ready_action = self.robot._urdf_joints_to_action(self.scene.ready_pos_full)
         self.robot.send_action(ready_action, goal_time=self.robot.config.goal_time_slow, block="both")
 
         _msg = f"🤖 Recording observation (png images)"
