@@ -47,6 +47,8 @@ class AlignOp(RecordOp):
 
             for pose_idx in range(self.scene.stroke_length):
                 observation = self.robot.get_observation()
+                log.info(f"observation: {observation}")
+                log.info(f"dataset features: {self.dataset.features}")
                 observation_frame = build_dataset_frame(self.dataset.features, observation, prefix="observation")
                 
                 joints = strokebatch.offset_joints(stroke_idx, pose_idx, offset_idx_l, offset_idx_r)
