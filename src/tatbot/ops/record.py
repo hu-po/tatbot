@@ -1,4 +1,5 @@
 import os
+import logging
 import time
 from dataclasses import dataclass
 
@@ -46,6 +47,8 @@ class RecordOp(BaseOp):
 
     def __init__(self, config: RecordOpConfig):
         super().__init__(config)
+        if config.debug:
+            logging.getLogger("lerobot").setLevel(logging.DEBUG)
         self.dataset_dir: str | None = None
         self.dataset: LeRobotDataset | None = None
         self.robot: Robot | None = None
