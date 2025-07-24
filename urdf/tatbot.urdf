@@ -76,7 +76,7 @@
   <!-- left inkcaps -->
   <link name="inkcap_left_large" />
   <joint name="inkcap_left_large_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.095 0.051 0.09"/>
+    <origin rpy="0 0 0" xyz="0.095 0.048 0.09"/>
     <parent link="palette"/>
     <child link="inkcap_left_large"/>
   </joint>
@@ -106,13 +106,13 @@
   </joint>
   <link name="inkcap_left_medium_0" />
   <joint name="inkcap_left_medium_0_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.075 0.051 0.09"/>
+    <origin rpy="0 0 0" xyz="0.075 0.048 0.09"/>
     <parent link="palette"/>
     <child link="inkcap_left_medium_0"/>
   </joint>
   <link name="inkcap_left_medium_1" />
   <joint name="inkcap_left_medium_1_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.115 0.051 0.09"/>
+    <origin rpy="0 0 0" xyz="0.115 0.048 0.09"/>
     <parent link="palette"/>
     <child link="inkcap_left_medium_1"/>
   </joint>
@@ -120,7 +120,7 @@
   <!-- right inkcaps -->
   <link name="inkcap_right_large" />
   <joint name="inkcap_right_large_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.095 -0.051 0.09"/>
+    <origin rpy="0 0 0" xyz="0.095 -0.048 0.09"/>
     <parent link="palette"/>
     <child link="inkcap_right_large"/>
   </joint>
@@ -150,13 +150,13 @@
   </joint>
   <link name="inkcap_right_medium_0" />
   <joint name="inkcap_right_medium_0_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.075 -0.051 0.09"/>
+    <origin rpy="0 0 0" xyz="0.075 -0.048 0.09"/>
     <parent link="palette"/>
     <child link="inkcap_right_medium_0"/>
   </joint>
   <link name="inkcap_right_medium_1" />
   <joint name="inkcap_right_medium_1_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.115 -0.051 0.09"/>
+    <origin rpy="0 0 0" xyz="0.115 -0.048 0.09"/>
     <parent link="palette"/>
     <child link="inkcap_right_medium_1"/>
   </joint>
