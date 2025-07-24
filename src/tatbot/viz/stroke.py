@@ -8,6 +8,7 @@ import numpy as np
 from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.align import make_align_strokes
 from tatbot.gen.batch import strokebatch_from_strokes
+from tatbot.gen.gcode import make_gcode_strokes
 from tatbot.utils.colors import COLORS
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 from tatbot.viz.base import BaseViz, BaseVizConfig
@@ -17,6 +18,10 @@ log = get_logger("viz.strokes", "🎨")
 
 @dataclass
 class VizStrokesConfig(BaseVizConfig):
+
+    align: bool = False
+    """Visualize alignment strokes instead of gcode/design strokes."""
+
     design_pointcloud_point_size: float = 0.001
     """Size of points in the point cloud visualization (meters)."""
     design_pointcloud_point_shape: str = "rounded"
@@ -32,9 +37,12 @@ class VizStrokes(BaseViz):
     def __init__(self, config: VizStrokesConfig):
         super().__init__(config)
 
-        # self.strokelist, self.strokebatch = load_make_strokes(self.scene, self.scene.design_dir, resume=False)
-        self.strokelist: StrokeList = make_align_strokes(self.scene)
-        self.strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, self.strokelist, first_last_rest=False)
+        if self.config.align:
+            self.strokelist: StrokeList = make_align_strokes(self.scene)
+            self.strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, self.strokelist, first_last_rest=False)
+        else:
+            self.strokelist: StrokeList = make_gcode_strokes(self.scene)
+            self.strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, self.strokelist)
         self.num_strokes = len(self.strokelist.strokes)
         self.stroke_idx = 0
         self.pose_idx = 0

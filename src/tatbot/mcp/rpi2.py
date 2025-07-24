@@ -17,17 +17,6 @@ mcp = FastMCP("tatbot.rpi2", host="0.0.0.0", port=8000)
 def get_nfs_info() -> str:
     return "nfs info"
 
-
-@mcp.tool(description="Get the latest scan")
-def get_latest_scan() -> str:
-    scan_dir = os.path.expanduser("~/tatbot/nfs/scans")
-    scans = [f for f in os.listdir(scan_dir) if f.endswith(".yaml")]
-    if not scans:
-        return "No scans found"
-    latest_scan = max(scans, key=lambda x: os.path.getctime(os.path.join(scan_dir, x)))
-    return latest_scan
-
-
 @mcp.tool(description="Get the latest recording")
 def get_latest_recording() -> str:
     recording_dir = os.path.expanduser("~/tatbot/nfs/recordings")
@@ -36,6 +25,12 @@ def get_latest_recording() -> str:
         return "No recordings found"
     latest_recording = max(recordings, key=lambda x: os.path.getctime(os.path.join(recording_dir, x)))
     return latest_recording
+
+@mcp.tool()
+def list_scenes() -> list[str]:
+    """Lists all available scenes."""
+    scenes_dir = os.path.expanduser("~/tatbot/config/scenes")
+    return [f.replace(".yaml", "") for f in os.listdir(scenes_dir) if f.endswith(".yaml")]
 
 
 if __name__ == "__main__":

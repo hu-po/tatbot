@@ -7,6 +7,9 @@ for NODE in "${NODES[@]}"; do
   ssh "$NODE" "bash ~/tatbot/scripts/mcp/${NODE}.sh"
 done
 
-echo "Starting base MCP server $HOSTNAME..."
-uv pip install .[bot,dev,gen]
-uv run -m tatbot.mcp.base --debug
+if [[ "$(hostname)" != "ook" ]]; then
+  echo "This script should only be run on the ook node."
+  exit 1
+fi
+
+bash ~/tatbot/scripts/mcp/ook.sh
