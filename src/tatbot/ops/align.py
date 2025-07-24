@@ -45,6 +45,12 @@ class AlignOp(RecordOp):
                 'message': _msg,
             }
 
+            if not self.robot.is_connected:
+                log.warning("⚠️ Robot is not connected. Attempting to reconnect...")
+                self.robot.connect()
+                if not self.robot.is_connected:
+                    raise RuntimeError("❌ Failed to connect to robot")
+
             for pose_idx in range(self.scene.stroke_length):
                 observation = self.robot.get_observation()
                 log.info(f"observation: {observation}")
