@@ -11,7 +11,7 @@ from tatbot.utils.log import get_logger
 log = get_logger("gen.batch", "💠")
 
 
-def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: int = 1024, first_last_rest: bool = True) -> StrokeBatch:
+def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: int = 256, first_last_rest: bool = True) -> StrokeBatch:
     """
     Convert a list of (Stroke, Stroke) tuples into a StrokeBatch, running IK to fill in joint values.
     Each tuple is (left_stroke, right_stroke) for a single stroke step.
