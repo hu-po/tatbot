@@ -3,10 +3,10 @@ from dataclasses import dataclass
 
 from lerobot.datasets.utils import build_dataset_frame
 
-from tatbot.ops.record import RecordOp, RecordOpConfig
 from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.align import make_align_strokes
 from tatbot.gen.batch import strokebatch_from_strokes
+from tatbot.ops.record import RecordOp, RecordOpConfig
 from tatbot.utils.log import get_logger
 
 log = get_logger("ops.align", "🔍")

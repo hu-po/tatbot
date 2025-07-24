@@ -10,11 +10,11 @@ from lerobot.robots import Robot, make_robot_from_config
 from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorConfig
 
-from tatbot.ops.record import RecordOp, RecordOpConfig
 from tatbot.data.pose import ArmPose
 from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.gen.gcode import make_gcode_strokes
+from tatbot.ops.record import RecordOp, RecordOpConfig
 from tatbot.utils.log import LOG_FORMAT, TIME_FORMAT, get_logger
 
 log = get_logger("ops.stroke", "🖌️")

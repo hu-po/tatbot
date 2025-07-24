@@ -7,9 +7,9 @@ from lerobot.robots import Robot, make_robot_from_config
 from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 from PIL import Image
 
-from tatbot.ops.record import RecordOp, RecordOpConfig
 from tatbot.bot.urdf import get_link_poses
 from tatbot.cam.depth import DepthCamera
+from tatbot.ops.record import RecordOp, RecordOpConfig
 from tatbot.utils.log import get_logger
 
 log = get_logger("ops.sense", "🔍")
