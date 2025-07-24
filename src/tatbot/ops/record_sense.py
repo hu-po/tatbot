@@ -61,15 +61,6 @@ class SenseOp(RecordOp):
         )
 
     async def _run(self):
-        _msg = "🤖 Sending robot to ready position"
-        log.info(_msg)
-        yield {
-            'progress': 0.2,
-            'message': _msg,
-        }
-        ready_action = self.robot._urdf_joints_to_action(self.scene.ready_pos_full)
-        self.robot.send_action(ready_action)
-
         _msg = "🤖 Recording observation (png images)"
         log.info(_msg)
         yield {

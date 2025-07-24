@@ -121,28 +121,22 @@ class StrokeOp(RecordOp):
             episode_log_buffer.seek(0)
             episode_log_buffer.truncate(0)
 
+            # make sure robot is connected and in ready position
+            if not self.robot.is_connected:
+                log.warning("⚠️ Robot is not connected. Attempting to reconnect...")
+                self.robot.connect()
+                if not self.robot.is_connected:
+                    raise RuntimeError("❌ Failed to connect to robot")
+            self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full))
+
             # get the strokes that will be executed this episode
             stroke_l, stroke_r = strokes.strokes[stroke_idx]
-
             _msg = f"Executing stroke {stroke_idx + 1}/{num_strokes}: left={stroke_l.description}, right={stroke_r.description}"
             log.info(_msg)
             yield {
                 'progress': 0.3 + (0.6 * stroke_idx / num_strokes),
                 'message': _msg,
             }
-
-            # send the arms to the appropriate "ready" pose
-            _joints_l = self.scene.ready_pos_l
-            _joints_r = self.scene.ready_pos_r
-            if stroke_l.is_inkdip:
-                log.info("🤖 sending left arm to inkready pose")
-                _joints_l = self.scene.inkready_pos_l
-            if stroke_r.is_inkdip:
-                log.info("🤖 sending right arm to inkready pose")
-                _joints_r = self.scene.inkready_pos_r
-            _full_joints = ArmPose.make_bimanual_joints(_joints_l, _joints_r)
-            ready_action = self.robot._urdf_joints_to_action(_full_joints)
-            self.robot.send_action(ready_action)
 
             # Per-episode conditioning information is stored in seperate directory
             episode_cond = {}
@@ -215,8 +209,5 @@ class StrokeOp(RecordOp):
                 f.write(episode_log_buffer.getvalue())
 
             self.dataset.save_episode(episode_cond=episode_cond)
-
-            # re-send the arms to the appropriate "ready" pose
-            self.robot.send_action(ready_action)
 
         logging.getLogger().removeHandler(episode_handler)

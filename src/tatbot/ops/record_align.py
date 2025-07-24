@@ -38,18 +38,21 @@ class AlignOp(RecordOp):
         offset_idx_r = self.scene.offset_num - 1
 
         for stroke_idx, (stroke_l, stroke_r) in enumerate(strokes.strokes):
+
+            # make sure robot is connected and in ready position
+            if not self.robot.is_connected:
+                log.warning("⚠️ Robot is not connected. Attempting to reconnect...")
+                self.robot.connect()
+                if not self.robot.is_connected:
+                    raise RuntimeError("❌ Failed to connect to robot")
+            self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full))
+
             _msg = f"🔍 Executing stroke {stroke_idx + 1}/{len(strokes.strokes)}: left={stroke_l.description}, right={stroke_r.description}"
             log.info(_msg)
             yield {
                 'progress': 0.3 + (0.6 * stroke_idx / len(strokes.strokes)),
                 'message': _msg,
             }
-
-            if not self.robot.is_connected:
-                log.warning("⚠️ Robot is not connected. Attempting to reconnect...")
-                self.robot.connect()
-                if not self.robot.is_connected:
-                    raise RuntimeError("❌ Failed to connect to robot")
 
             for pose_idx in range(self.scene.stroke_length):
                 observation = self.robot.get_observation()

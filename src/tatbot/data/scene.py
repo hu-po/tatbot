@@ -46,11 +46,6 @@ class Scene(Yaml):
     ready_pos_r_name: str
     """Name of the right arm ready pose (ArmPose)."""
 
-    inkready_pos_l_name: str
-    """Name of the left arm inkready pose (ArmPose)."""
-    inkready_pos_r_name: str
-    """Name of the right arm inkready pose (ArmPose)."""
-
     pen_names_l: list[str]
     """Name of pens that will be drawn using left arm."""
     pen_names_r: list[str]
@@ -97,10 +92,6 @@ class Scene(Yaml):
     ready_pos_l: ArmPose = field(init=False)
     ready_pos_r: ArmPose = field(init=False)
 
-    # inkready pose is the arms raised up, facing towards ink palette, tilted down
-    inkready_pos_l: ArmPose = field(init=False)
-    inkready_pos_r: ArmPose = field(init=False)
-
     def __post_init__(self):
         log.info(f"📂 Loading scene config: {self.yaml_dir}/{self.name}.yaml")
         self.arms = Arms.from_name(self.arms_config_name)
@@ -118,10 +109,6 @@ class Scene(Yaml):
         self.ready_pos_r = ArmPose.from_name(self.ready_pos_r_name)
         self.ready_pos_full = ArmPose.make_bimanual_joints(self.ready_pos_l, self.ready_pos_r)
 
-        self.inkready_pos_l = ArmPose.from_name(self.inkready_pos_l_name)
-        self.inkready_pos_r = ArmPose.from_name(self.inkready_pos_r_name)
-        self.inkready_pos_full = ArmPose.make_bimanual_joints(self.inkready_pos_l, self.inkready_pos_r)
-
         # load pens from config file
         pens_config_path = os.path.expanduser(self.pens_config_path)
         assert os.path.exists(pens_config_path), f"❌ Pens config file {pens_config_path} does not exist"
@@ -137,7 +124,7 @@ class Scene(Yaml):
             assert pen_name in self.pens_config, f"❌ Pen {pen_name} (right) not in pen config"
 
         # get the link poses for the inkcaps
-        link_poses = get_link_poses(self.urdf.path, self.urdf.ink_link_names, self.inkready_pos_full)
+        link_poses = get_link_poses(self.urdf.path, self.urdf.ink_link_names, self.ready_pos_full)
         self.inkcaps_l: dict[str, InkCap] = {}
         self.inkcaps_r: dict[str, InkCap] = {}
         for inkcap in self.inks.inkcaps:
