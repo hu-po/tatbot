@@ -5,7 +5,7 @@ discord = "https://discord.gg/pPAFwndTJd"
 
 [project]
 name = "tatbot"
-version = "0.5.2"
+version = "0.5.3"
 description="tattoo robot"
 authors = [
     { name = "Hugo Ponte", email = "hu.po.xyz@gmail.com" },
@@ -64,7 +64,7 @@ viz = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["bot", "cam", "data", "gen", "mcp", "utils", "viz"]
+include = ["bot", "cam", "data", "gen", "mcp", "ops", "utils", "viz"]
 
 [build-system]
 requires = ["setuptools>=61.0"]
