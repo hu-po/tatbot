@@ -6,8 +6,6 @@ import traceback
 from dataclasses import dataclass
 from io import StringIO
 
-from lerobot.cameras.opencv import OpenCVCameraConfig
-from lerobot.cameras.realsense import RealSenseCameraConfig
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
 from lerobot.robots import make_robot_from_config
