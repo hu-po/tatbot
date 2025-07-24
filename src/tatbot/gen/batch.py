@@ -11,7 +11,7 @@ from tatbot.utils.log import get_logger
 log = get_logger("gen.batch", "💠")
 
 
-def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: int = 1024) -> StrokeBatch:
+def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: int = 1024, first_last_rest: bool = True) -> StrokeBatch:
     """
     Convert a list of (Stroke, Stroke) tuples into a StrokeBatch, running IK to fill in joint values.
     Each tuple is (left_stroke, right_stroke) for a single stroke step.
@@ -89,10 +89,11 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
         joints_out[start:end] = np.asarray(batch_joints, dtype=np.float32)
     joints_out = joints_out.reshape(b, l, o, 14)
 
-    # HACK: the right arm of the first stroke should be at rest while left arm is ink dipping
-    joints_out[0, :, :, 7:] = np.tile(scene.ready_pos_r.joints, (l, o, 1))
-    # HACK: the left arm of the final path should be at rest since last stroke is right-only
-    joints_out[-1, :, :, :7] = np.tile(scene.ready_pos_l.joints, (l, o, 1))
+    if first_last_rest:
+        # HACK: the right arm of the first stroke should be at rest while left arm is ink dipping
+        joints_out[0, :, :, 7:] = np.tile(scene.ready_pos_r.joints, (l, o, 1))
+        # HACK: the left arm of the final path should be at rest since last stroke is right-only
+        joints_out[-1, :, :, :7] = np.tile(scene.ready_pos_l.joints, (l, o, 1))
 
     strokebatch = StrokeBatch(
         ee_pos_l=jnp.array(ee_pos_l),

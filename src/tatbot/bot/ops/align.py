@@ -37,7 +37,7 @@ class AlignOp(RecordOp):
             'progress': 0.21,
             'message': _msg,
         }
-        strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, strokes)
+        strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, strokes, first_last_rest=False)
         strokebatch.save(os.path.join(self.dataset_dir, "strokebatch.safetensors"))
 
         # maximally retracted when performing alignment operation

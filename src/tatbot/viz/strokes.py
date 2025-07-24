@@ -34,7 +34,7 @@ class VizStrokes(BaseViz):
 
         # self.strokelist, self.strokebatch = load_make_strokes(self.scene, self.scene.design_dir, resume=False)
         self.strokelist: StrokeList = make_align_strokes(self.scene)
-        self.strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, self.strokelist)
+        self.strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, self.strokelist, first_last_rest=False)
         self.num_strokes = len(self.strokelist.strokes)
         self.stroke_idx = 0
         self.pose_idx = 0
