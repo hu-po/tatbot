@@ -3,9 +3,11 @@ import os
 import shutil
 from dataclasses import dataclass
 from io import StringIO
+import time
 
 from lerobot.cameras.realsense import RealSenseCameraConfig
 from lerobot.datasets.utils import build_dataset_frame
+from lerobot.utils.robot_utils import busy_wait
 from lerobot.robots import Robot, make_robot_from_config
 from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorConfig
@@ -126,7 +128,7 @@ class StrokeOp(RecordOp):
                 self.robot.connect()
                 if not self.robot.is_connected:
                     raise RuntimeError("❌ Failed to connect to robot")
-            self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full))
+            self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full), safe=True)
 
             # get the strokes that will be executed this episode
             stroke_l, stroke_r = strokes.strokes[stroke_idx]
@@ -151,6 +153,8 @@ class StrokeOp(RecordOp):
 
             log.info(f"🤖 recording path {stroke_idx} of {num_strokes}")
             for pose_idx in range(self.scene.stroke_length):
+                start_loop_t = time.perf_counter()
+                
                 log.debug(f"pose_idx: {pose_idx}/{self.scene.stroke_length}")
                 
                 action = atari_teleop.get_action()
@@ -193,14 +197,17 @@ class StrokeOp(RecordOp):
                 joints = strokebatch.offset_joints(stroke_idx, pose_idx, _offset_idx_l, _offset_idx_r)
                 robot_action = self.robot._urdf_joints_to_action(joints)
                 if pose_idx == 0 or pose_idx == self.scene.stroke_length - 1:
-                    goal_time = self.scene.arms.goal_time_slow # use slow movements for first and last poses
+                    # use slow movements for first and last poses
+                    sent_action = self.robot.send_action(robot_action, self.scene.arms.goal_time_slow, safe=True)
                 else:
-                    goal_time = self.scene.arms.goal_time_fast
-                sent_action = self.robot.send_action(robot_action, goal_time)
+                    sent_action = self.robot.send_action(robot_action, self.scene.arms.goal_time_fast)
 
                 action_frame = build_dataset_frame(self.dataset.features, sent_action, prefix="action")
                 frame = {**observation_frame, **action_frame}
                 self.dataset.add_frame(frame, task=f"left: {stroke_l.description}, right: {stroke_r.description}")
+
+                dt_s = time.perf_counter() - start_loop_t
+                busy_wait(1 / self.config.fps - dt_s)
 
             log_path = os.path.join(logs_dir, f"episode_{stroke_idx:06d}.txt")
             log.info(f"🗃️ Writing episode log to {log_path}")

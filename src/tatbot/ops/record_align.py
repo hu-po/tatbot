@@ -1,7 +1,9 @@
 import os
 from dataclasses import dataclass
+import time
 
 from lerobot.datasets.utils import build_dataset_frame
+from lerobot.utils.robot_utils import busy_wait
 
 from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.align import make_align_strokes
@@ -45,7 +47,7 @@ class AlignOp(RecordOp):
                 self.robot.connect()
                 if not self.robot.is_connected:
                     raise RuntimeError("❌ Failed to connect to robot")
-            self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full))
+            self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full), safe=True)
 
             _msg = f"🔍 Executing stroke {stroke_idx + 1}/{len(strokes.strokes)}: left={stroke_l.description}, right={stroke_r.description}"
             log.info(_msg)
@@ -55,6 +57,8 @@ class AlignOp(RecordOp):
             }
 
             for pose_idx in range(self.scene.stroke_length):
+                start_loop_t = time.perf_counter()
+                
                 observation = self.robot.get_observation()
                 log.info(f"observation: {observation}")
                 log.info(f"dataset features: {self.dataset.features}")
@@ -63,13 +67,16 @@ class AlignOp(RecordOp):
                 joints = strokebatch.offset_joints(stroke_idx, pose_idx, offset_idx_l, offset_idx_r)
                 robot_action = self.robot._urdf_joints_to_action(joints)
                 if pose_idx == 0 or pose_idx == self.scene.stroke_length - 1:
-                    goal_time = self.scene.arms.goal_time_slow # use slow movements for first and last poses
+                    # use slow movements for first and last poses
+                    sent_action = self.robot.send_action(robot_action, self.scene.arms.goal_time_slow, safe=True)
                 else:
-                    goal_time = self.scene.arms.goal_time_fast
-                sent_action = self.robot.send_action(robot_action, goal_time)
+                    sent_action = self.robot.send_action(robot_action, self.scene.arms.goal_time_fast)
 
                 action_frame = build_dataset_frame(self.dataset.features, sent_action, prefix="action")
                 frame = {**observation_frame, **action_frame}
                 self.dataset.add_frame(frame, task=f"left: {stroke_l.description}, right: {stroke_r.description}")
+
+                dt_s = time.perf_counter() - start_loop_t
+                busy_wait(1 / self.config.fps - dt_s)
 
             self.dataset.save_episode()

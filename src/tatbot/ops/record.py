@@ -35,7 +35,7 @@ class RecordOpConfig(BaseOpConfig):
     """Tags to add to the dataset on Hugging Face."""
     private: bool = False
     """Whether to push the dataset to a private repository."""
-    fps: int = 30
+    fps: int = 10
     """Frames per second."""
     resume: bool = False
     """If true, resumes recording from the last episode, dataset name must match."""
@@ -166,7 +166,7 @@ class RecordOp(BaseOp):
             'progress': 0.08,
             'message': _msg,
         }
-        self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full))
+        self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full), safe=True)
         
         async for progress_update in self._run():
             yield progress_update
@@ -177,7 +177,7 @@ class RecordOp(BaseOp):
             'progress': 0.998,
             'message': _msg,
         }
-        self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full))
+        self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full), safe=True)
 
         if self.config.push_to_hub:
             _msg = "📦🤗 Pushing dataset to Hugging Face Hub..."

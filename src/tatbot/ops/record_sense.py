@@ -67,7 +67,7 @@ class SenseOp(RecordOp):
             'progress': 0.3,
             'message': _msg,
         }
-        observation = self.robot.get_observation_full()
+        observation = self.robot.get_observation(full=True)
         for key, data in observation.items():
             if key in self.robot.rs_cameras or key in self.robot.ip_cameras:
                 image_path = os.path.join(self.dataset_dir, f"{key}.png")
