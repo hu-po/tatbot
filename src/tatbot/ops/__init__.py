@@ -1,15 +1,22 @@
 from tatbot.ops.base import BaseOp, BaseOpConfig
 
 
+NODE_AVAILABLE_OPS: dict[str, list[str]] = {
+    "trossen-ai": ["align", "sense", "stroke"],
+    "oop": ["align", "stroke"],
+}
+
 def get_op(op_name: str, node_name: str) -> tuple[BaseOp, BaseOpConfig]:
+    if node_name not in NODE_AVAILABLE_OPS:
+        raise ValueError(f"Node {node_name} does not support any operations")
+    if op_name not in NODE_AVAILABLE_OPS[node_name]:
+        raise ValueError(f"Operation {op_name} is not supported on {node_name}")
     if op_name == "base":
         return BaseOp, BaseOpConfig
     elif op_name == "align":
         from tatbot.ops.align import AlignOp, AlignOpConfig
         return AlignOp, AlignOpConfig
     elif op_name == "sense":
-        if node_name not in ["trossen-ai"]:
-            raise ValueError(f"Sense op requires realsense cameras and is not supported on {node_name}")
         from tatbot.ops.sense import SenseOp, SenseOpConfig
         return SenseOp, SenseOpConfig
     elif op_name == "stroke":
