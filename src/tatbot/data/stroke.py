@@ -72,7 +72,7 @@ class StrokeBatch:
     """End effector frame orientation as quaternion (w, x, y, z) for left arm."""
     ee_rot_r: Float[Array, "b l o 4"]
     """End effector frame orientation as quaternion (w, x, y, z) for right arm."""
-    joints: Float[Array, "b l o 16"]
+    joints: Float[Array, "b l o 14"]
     """Joint positions in radians (URDF convention)."""
     dt: Float[Array, "b l o"]
     """Travel time from pose N to pose N+1 in seconds."""
@@ -91,7 +91,7 @@ class StrokeBatch:
 
     def offset_joints(
         self, stroke_idx: int, pose_idx: int, offset_idx_l: int, offset_idx_r: int
-    ) -> Float[Array, "16"]:
-        left_joints = self.joints[stroke_idx, pose_idx, offset_idx_l][:8]
-        right_joints = self.joints[stroke_idx, pose_idx, offset_idx_r][8:]
+    ) -> Float[Array, "14"]:
+        left_joints = self.joints[stroke_idx, pose_idx, offset_idx_l][:7]
+        right_joints = self.joints[stroke_idx, pose_idx, offset_idx_r][7:]
         return np.concatenate([left_joints, right_joints])
