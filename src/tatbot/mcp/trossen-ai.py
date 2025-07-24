@@ -35,7 +35,10 @@ async def run_robot_op(op_name: str, ctx: Context) -> str:
             log.info(f"Intermediate result: {result}")
             await ctx.report_progress(progress=result['progress'], total=1.0, message=result['message'])
         _msg = f"✅ Completed robot operation {op_name}"
-        log.info(_msg)    
+        log.info(_msg)
+    except KeyboardInterrupt:
+        _msg = "🛑⌨️ Keyboard/E-stop interrupt detected"
+        log.error(_msg)
     except Exception:
         _msg = f"❌ Exception when running op: {traceback.format_exc()}"
         log.error(_msg)
