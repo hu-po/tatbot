@@ -8,7 +8,7 @@
       <origin rpy="0 0 0" xyz="0 0 0"/>
   </link>
 
-  apriltag 0 
+  <!-- apriltag 0  -->
   <link name="tag0">
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -183,7 +183,7 @@
     </collision>
   </link>
   <joint name="camera1_frame_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <origin rpy="-1.5707963267948966 0 0.7853981633974483" xyz="0 0 0.07"/>
     <parent link="camera1"/>
     <child link="camera1_frame"/>
   </joint>
@@ -217,7 +217,7 @@
     </collision>
   </link>
   <joint name="camera2_frame_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <origin rpy="0 0 0" xyz="0 0 0.07"/>
     <parent link="camera2"/>
     <child link="camera2_frame"/>
   </joint>
@@ -251,7 +251,7 @@
     </collision>
   </link>
   <joint name="camera3_frame_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <origin rpy="0 0 0" xyz="0 0 0.07"/>
     <parent link="camera3"/>
     <child link="camera3_frame"/>
   </joint>
@@ -279,7 +279,7 @@
     </visual>
   </link>
   <joint name="camera4_frame_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <origin rpy="0 0 0" xyz="0 0 0.07"/>
     <parent link="camera4"/>
     <child link="camera4_frame"/>
   </joint>
@@ -307,7 +307,7 @@
     </visual>
   </link>
   <joint name="camera5_frame_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <origin rpy="0 0 0" xyz="0 0 0.07"/>
     <parent link="camera5"/>
     <child link="camera5_frame"/>
   </joint>

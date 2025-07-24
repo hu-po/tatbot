@@ -37,7 +37,7 @@ class BaseVizConfig:
     realsense_point_size: float = 0.001
     """Size of points in point cloud visualizations."""
 
-    camera_frustrum_scale: float = 0.04
+    camera_frustrum_scale: float = 0.02
     """Scale of the ip camera frustrum used for visualization."""
     camera_frustrum_color: tuple[int, int, int] = (200, 200, 200)
     """Color of the ip camera frustrum used for visualization."""
