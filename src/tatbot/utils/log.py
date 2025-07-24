@@ -8,7 +8,7 @@ import tyro
 
 TIME_FORMAT: str = "%Yy-%mm-%dd-%Hh-%Mm-%Ss"
 LOG_FORMAT: str = "%(asctime)s %(levelname)s: %(message)s"
-SUBMODULES: list[str] = ["bot", "cam", "data", "gen", "map", "mcp", "utils", "viz"]
+SUBMODULES: list[str] = ["bot", "cam", "data", "gen", "mcp", "ops", "utils", "viz"]
 
 
 def get_logger(name: str, emoji: str = "❓") -> logging.Logger:

@@ -11,10 +11,10 @@ from lerobot.utils.control_utils import (
     sanity_check_dataset_robot_compatibility,
 )
 
-from tatbot.bot.ops.base import BaseOp, BaseOpConfig
+from tatbot.ops.base import BaseOp, BaseOpConfig
 from tatbot.utils.log import TIME_FORMAT, get_logger
 
-log = get_logger("bot.ops.record", "🤖")
+log = get_logger("ops.record", "🤖")
 
 
 @dataclass
