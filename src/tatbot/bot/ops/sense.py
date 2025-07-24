@@ -62,7 +62,7 @@ class SenseOp(RecordOp):
         )
 
     async def _run(self):
-        _msg = f"🤖 Sending robot to ready position"
+        _msg = "🤖 Sending robot to ready position"
         log.info(_msg)
         yield {
             'progress': 0.2,
@@ -71,7 +71,7 @@ class SenseOp(RecordOp):
         ready_action = self.robot._urdf_joints_to_action(self.scene.ready_pos_full)
         self.robot.send_action(ready_action, goal_time=self.robot.config.goal_time_slow, block="both")
 
-        _msg = f"🤖 Recording observation (png images)"
+        _msg = "🤖 Recording observation (png images)"
         log.info(_msg)
         yield {
             'progress': 0.3,
@@ -79,15 +79,11 @@ class SenseOp(RecordOp):
         }
         observation = self.robot.get_observation_full()
         for key, data in observation.items():
-            if key in self.robot.rs_cameras:
+            if key in self.robot.rs_cameras or key in self.robot.ip_cameras:
                 image_path = os.path.join(self.dataset_dir, f"{key}.png")
                 Image.fromarray(data).save(image_path)
                 log.info(f"✅ Saved frame to {image_path}")
-            elif key in self.robot.ip_cameras:
-                image_path = os.path.join(self.dataset_dir, f"{key}.png")
-                Image.fromarray(data).save(image_path)
-                log.info(f"✅ Saved frame to {image_path}")
-        _msg = f"✅ Saved image frames"
+        _msg = "✅ Saved image frames"
         log.info(_msg)
         yield {
             'progress': 0.31,

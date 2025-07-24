@@ -42,10 +42,10 @@ class BaseOp:
         time.sleep(1)
         yield {
             'progress': 0.5,
-            'message': f'Starting dummy base operation...',
+            'message': 'Starting dummy base operation...',
         }
         time.sleep(1)
         yield {
             'progress': 1.0,
-            'message': f'Completed dummy base operation...',
+            'message': 'Completed dummy base operation...',
         }

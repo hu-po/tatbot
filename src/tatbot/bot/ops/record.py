@@ -1,6 +1,5 @@
 import os
 import time
-import traceback
 from dataclasses import dataclass
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -103,7 +102,7 @@ class RecordOp(BaseOp):
         scene_path = os.path.join(self.dataset_dir, "scene.yaml")
         self.scene.to_yaml(scene_path)
 
-        _msg = f"🤖 Creating robot from config..."
+        _msg = "🤖 Creating robot from config..."
         log.info(_msg)
         yield {
             'progress': 0.05,
@@ -111,7 +110,7 @@ class RecordOp(BaseOp):
         }
         self.robot = self.make_robot()
 
-        _msg = f"🤖 Connecting to robot..."
+        _msg = "🤖 Connecting to robot..."
         log.info(_msg)
         yield {
             'progress': 0.06,
