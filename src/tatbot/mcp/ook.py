@@ -4,7 +4,7 @@ import concurrent.futures
 import logging
 from typing import List, Optional
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 
 from tatbot.mcp.base import MCPConfig, _run_op
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
@@ -52,9 +52,9 @@ def ping_nodes(nodes: Optional[List[str]] = None) -> str:
     return f"{header}:\n" + "\n".join(f"- {msg}" for msg in sorted(messages))
 
 @mcp.tool()
-async def run_op(op_name: str, ctx) -> str:
+async def run_op(op_name: str, ctx: Context) -> str:
     """Runs an operation, yields intermediate results, see available ops in tatbot.ops module."""
-    return await _run_op(op_name, ctx, node_name="ook")
+    return await _run_op(op_name, ctx, "ook")
 
 
 if __name__ == "__main__":

@@ -30,13 +30,6 @@ class AlignOp(RecordOp):
         }
         strokes: StrokeList = make_align_strokes(self.scene)
         strokes.to_yaml(os.path.join(self.dataset_dir, "strokes.yaml"))
-
-        _msg = "Creating stroke batch from strokes..."
-        log.info(_msg)
-        yield {
-            'progress': 0.21,
-            'message': _msg,
-        }
         strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, strokes, first_last_rest=False)
         strokebatch.save(os.path.join(self.dataset_dir, "strokebatch.safetensors"))
 
