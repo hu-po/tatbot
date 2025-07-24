@@ -35,8 +35,6 @@ class Stroke(Yaml):
     """End effector orientation in quaternion <x, y, z, w> (world frame)."""
     normals: np.ndarray | None = None  # (N, 3)
     """Surface normals for each pose in the stroke <x, y, z> (world frame)."""
-    dt: np.ndarray | None = None  # (N, 1)
-    """Time between poses in seconds."""
 
     is_rest: bool = False
     """Whether the stroke is a rest stroke."""
@@ -74,8 +72,6 @@ class StrokeBatch:
     """End effector frame orientation as quaternion (w, x, y, z) for right arm."""
     joints: Float[Array, "b l o 14"]
     """Joint positions in radians (URDF convention)."""
-    dt: Float[Array, "b l o"]
-    """Travel time from pose N to pose N+1 in seconds."""
 
     def save(self, filepath: str) -> None:
         log.debug(f"💾 Saving StrokeBatch to {filepath}")

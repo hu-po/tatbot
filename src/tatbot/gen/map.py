@@ -157,7 +157,6 @@ def map_strokes_to_mesh(
             # Ensure arrays are NumPy arrays
             ee_rot_np = ensure_numpy_array(stroke.ee_rot) if stroke.ee_rot is not None else None
             meter_coords_np = ensure_numpy_array(stroke.meter_coords) if stroke.meter_coords is not None else None
-            dt_np = ensure_numpy_array(stroke.dt) if stroke.dt is not None else None
             pixel_coords_np = ensure_numpy_array(stroke.pixel_coords) if stroke.pixel_coords is not None else None
             ee_pos_np = ensure_numpy_array(stroke.ee_pos) if stroke.ee_pos is not None else None
             
@@ -167,7 +166,6 @@ def map_strokes_to_mesh(
                 meter_coords=meter_coords_np,
                 ee_pos=ee_pos_np,
                 ee_rot=ee_rot_np,
-                dt=dt_np,
                 pixel_coords=pixel_coords_np,
                 gcode_text=stroke.gcode_text,
                 inkcap=stroke.inkcap,
@@ -218,7 +216,6 @@ def map_strokes_to_mesh(
         normals_np = ensure_numpy_array(normals)
         ee_rot_np = ensure_numpy_array(stroke.ee_rot) if stroke.ee_rot is not None else None
         meter_coords_np = ensure_numpy_array(stroke.meter_coords) if stroke.meter_coords is not None else None
-        dt_np = ensure_numpy_array(stroke.dt) if stroke.dt is not None else None
         pixel_coords_np = ensure_numpy_array(stroke.pixel_coords) if stroke.pixel_coords is not None else None
         
         # Debug: check array types
@@ -232,7 +229,6 @@ def map_strokes_to_mesh(
             meter_coords=meter_coords_np,
             ee_pos=ee_pos_np,
             ee_rot=ee_rot_np,
-            dt=dt_np,
             pixel_coords=pixel_coords_np,
             gcode_text=stroke.gcode_text,
             inkcap=stroke.inkcap,

@@ -237,7 +237,7 @@ class VizStrokes(BaseViz):
             self.joints = self.strokebatch.offset_joints(
                 self.stroke_idx, self.pose_idx, offset_idx_l, offset_idx_r
             )
-            self.step_sleep = float(self.strokebatch.dt[self.stroke_idx, self.pose_idx, offset_idx_l].item())
+            self.step_sleep = self.scene.arms.goal_time_fast
         self.pose_idx += 1
 
 

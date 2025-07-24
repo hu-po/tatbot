@@ -28,12 +28,6 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
     ee_rot_l = np.tile(scene.ee_rot_l.wxyz, (b, l, o, 1))
     ee_rot_r = np.tile(scene.ee_rot_r.wxyz, (b, l, o, 1))
 
-    # default time between poses is fast movement
-    dt = np.full((b, l, o), scene.arms.goal_time_fast, dtype=np.float32)
-    # slow movement to and from hover positions
-    dt[:, :2, :] = scene.arms.goal_time_slow
-    dt[:, -2:, :] = scene.arms.goal_time_slow
-
     for i, (stroke_l, stroke_r) in enumerate(strokelist.strokes):
         if not stroke_l.is_inkdip:
             tf = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(scene.skin.design_pose.rot.wxyz), scene.skin.design_pose.pos.xyz)
@@ -101,6 +95,5 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
         ee_rot_l=jnp.array(ee_rot_l),
         ee_rot_r=jnp.array(ee_rot_r),
         joints=jnp.array(joints_out),
-        dt=jnp.array(dt),
     )
     return strokebatch
