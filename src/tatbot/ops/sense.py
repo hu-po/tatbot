@@ -33,8 +33,7 @@ class SenseOp(RecordOp):
                 ip_address_r=self.scene.arms.ip_address_r,
                 arm_l_config_filepath=self.scene.arms.arm_l_config_filepath,
                 arm_r_config_filepath=self.scene.arms.arm_r_config_filepath,
-                goal_time_fast=self.scene.arms.goal_time_fast,
-                goal_time_slow=self.scene.arms.goal_time_slow,
+                goal_time=self.scene.arms.goal_time_slow,
                 connection_timeout=self.scene.arms.connection_timeout,
                 home_pos_l=self.scene.sleep_pos_l.joints,
                 home_pos_r=self.scene.sleep_pos_r.joints,
@@ -69,7 +68,7 @@ class SenseOp(RecordOp):
             'message': _msg,
         }
         ready_action = self.robot._urdf_joints_to_action(self.scene.ready_pos_full)
-        self.robot.send_action(ready_action, goal_time=self.robot.config.goal_time_slow, block="both")
+        self.robot.send_action(ready_action)
 
         _msg = "🤖 Recording observation (png images)"
         log.info(_msg)

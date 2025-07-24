@@ -142,7 +142,7 @@ class StrokeOp(RecordOp):
                 _joints_r = self.scene.inkready_pos_r
             _full_joints = ArmPose.make_bimanual_joints(_joints_l, _joints_r)
             ready_action = self.robot._urdf_joints_to_action(_full_joints)
-            self.robot.send_action(ready_action, goal_time=self.robot.config.goal_time_slow, block="both")
+            self.robot.send_action(ready_action)
 
             # Per-episode conditioning information is stored in seperate directory
             episode_cond = {}
@@ -199,10 +199,11 @@ class StrokeOp(RecordOp):
                     log.info(f"🎮 right offset index: {_offset_idx_r}")
                 joints = strokebatch.offset_joints(stroke_idx, pose_idx, _offset_idx_l, _offset_idx_r)
                 robot_action = self.robot._urdf_joints_to_action(joints)
-                goal_time = float(
-                    strokebatch.dt[stroke_idx, pose_idx, offset_idx_l]
-                )  # TODO: this is a hack, currently dt is the same for both arms
-                sent_action = self.robot.send_action(robot_action, goal_time=goal_time, block="none")
+                if pose_idx == 0 or pose_idx == self.scene.stroke_length - 1:
+                    goal_time = self.scene.arms.goal_time_slow # use slow movements for first and last poses
+                else:
+                    goal_time = self.scene.arms.goal_time_fast
+                sent_action = self.robot.send_action(robot_action, goal_time)
 
                 action_frame = build_dataset_frame(self.dataset.features, sent_action, prefix="action")
                 frame = {**observation_frame, **action_frame}
@@ -216,6 +217,6 @@ class StrokeOp(RecordOp):
             self.dataset.save_episode(episode_cond=episode_cond)
 
             # re-send the arms to the appropriate "ready" pose
-            self.robot.send_action(ready_action, goal_time=self.robot.config.goal_time_slow, block="both")
+            self.robot.send_action(ready_action)
 
         logging.getLogger().removeHandler(episode_handler)

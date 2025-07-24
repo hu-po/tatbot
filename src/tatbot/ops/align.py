@@ -59,10 +59,11 @@ class AlignOp(RecordOp):
                 
                 joints = strokebatch.offset_joints(stroke_idx, pose_idx, offset_idx_l, offset_idx_r)
                 robot_action = self.robot._urdf_joints_to_action(joints)
-                goal_time = float(
-                    strokebatch.dt[stroke_idx, pose_idx, offset_idx_l]
-                )  # TODO: this is a hack, currently dt is the same for both arms
-                sent_action = self.robot.send_action(robot_action, goal_time=goal_time, block="none")
+                if pose_idx == 0 or pose_idx == self.scene.stroke_length - 1:
+                    goal_time = self.scene.arms.goal_time_slow # use slow movements for first and last poses
+                else:
+                    goal_time = self.scene.arms.goal_time_fast
+                sent_action = self.robot.send_action(robot_action, goal_time)
 
                 action_frame = build_dataset_frame(self.dataset.features, sent_action, prefix="action")
                 frame = {**observation_frame, **action_frame}
