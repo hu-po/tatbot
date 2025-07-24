@@ -682,20 +682,20 @@
     </visual>
   </link>
   <joint name="left/tattoo_pen_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 0.7853981633974483" xyz="0.061 0.041 0"/>
+    <origin rpy="-1.5707963267948966 0 0.7853981633974483" xyz="0.051 0.051 0"/>
     <parent link="left/ee_p1"/>
     <child link="left/tattoo_pen"/>
   </joint>
   <link name="left/tattoo_needle">
     <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <origin rpy="0 0 0" xyz="0 0 0.016"/>
       <geometry>
         <cylinder length="0.035" radius="0.002"/>
       </geometry>
     </visual>
   </link>
   <joint name="left/tattoo_needle_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 -0.057"/>
+    <origin rpy="0 0 0" xyz="0 0 -0.065"/>
     <parent link="left/tattoo_pen"/>
     <child link="left/tattoo_needle"/>
   </joint>
@@ -1064,20 +1064,20 @@
     </visual>
   </link>
   <joint name="right/tattoo_pen_joint" type="fixed">
-    <origin rpy="1.5707963267948966 0 -0.7853981633974483" xyz="0.061 -0.041 0"/>
+    <origin rpy="1.5707963267948966 0 -0.7853981633974483" xyz="0.051 -0.051 0"/>
     <parent link="right/ee_p1"/>
     <child link="right/tattoo_pen"/>
   </joint>
   <link name="right/tattoo_needle">
     <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <origin rpy="0 0 0" xyz="0 0 0.016"/>
       <geometry>
         <cylinder length="0.035" radius="0.002"/>
       </geometry>
     </visual>
   </link>
   <joint name="right/tattoo_needle_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 -0.057"/>
+    <origin rpy="0 0 0" xyz="0 0 -0.065"/>
     <parent link="right/tattoo_pen"/>
     <child link="right/tattoo_needle"/>
   </joint>
