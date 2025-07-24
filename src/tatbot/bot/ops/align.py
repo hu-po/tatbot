@@ -1,11 +1,11 @@
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
 from lerobot.datasets.utils import build_dataset_frame
 
 from tatbot.bot.ops.record import RecordOp, RecordOpConfig
-from tatbot.gen.align import make_align_strokes
 from tatbot.data.stroke import StrokeBatch, StrokeList
+from tatbot.gen.align import make_align_strokes
 from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.utils.log import get_logger
 

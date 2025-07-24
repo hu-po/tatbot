@@ -1,16 +1,15 @@
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
 from lerobot.cameras.opencv import OpenCVCameraConfig
 from lerobot.cameras.realsense import RealSenseCameraConfig
+from lerobot.robots import Robot, make_robot_from_config
+from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 from PIL import Image
 
 from tatbot.bot.ops.record import RecordOp, RecordOpConfig
-from lerobot.robots import make_robot_from_config, Robot
-from lerobot.robots.tatbot.config_tatbot import TatbotConfig
-
-from tatbot.cam.depth import DepthCamera
 from tatbot.bot.urdf import get_link_poses
+from tatbot.cam.depth import DepthCamera
 from tatbot.utils.log import get_logger
 
 log = get_logger("bot.ops.sense", "🔍")

@@ -10,8 +10,8 @@ from lerobot.cameras.realsense import RealSenseCameraConfig
 from lerobot.cameras.utils import make_cameras_from_configs
 from PIL import Image
 
-from tatbot.cam.depth import DepthCamera
 from tatbot.bot.urdf import get_link_poses
+from tatbot.cam.depth import DepthCamera
 from tatbot.cam.extrinsics import get_extrinsics
 from tatbot.data.cams import Cams
 from tatbot.data.scene import Scene

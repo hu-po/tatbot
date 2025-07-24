@@ -1,7 +1,7 @@
-import time
 import logging
+import time
 from dataclasses import dataclass
-from typing import AsyncGenerator, Any
+from typing import Any, AsyncGenerator
 
 from tatbot.data.scene import Scene
 from tatbot.utils.log import get_logger, print_config

@@ -1,23 +1,22 @@
-from dataclasses import dataclass
-import os
-from io import StringIO
 import logging
+import os
 import shutil
 import time
+from dataclasses import dataclass
+from io import StringIO
 
-from lerobot.datasets.utils import build_dataset_frame
 from lerobot.cameras.realsense import RealSenseCameraConfig
+from lerobot.datasets.utils import build_dataset_frame
+from lerobot.robots import Robot, make_robot_from_config
+from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorConfig
 
 from tatbot.bot.ops.record import RecordOp, RecordOpConfig
-from lerobot.robots import make_robot_from_config, Robot
-from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 from tatbot.data.pose import ArmPose
 from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.gen.gcode import make_gcode_strokes
-
-from tatbot.utils.log import get_logger, LOG_FORMAT, TIME_FORMAT
+from tatbot.utils.log import LOG_FORMAT, TIME_FORMAT, get_logger
 
 log = get_logger("bot.ops.stroke", "🖌️")
 
