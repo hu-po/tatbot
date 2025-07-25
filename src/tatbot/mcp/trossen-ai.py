@@ -9,7 +9,7 @@ from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger("mcp.trossen-ai", "🔌🦾")
 
-mcp = FastMCP("tatbot.trossen-ai", host="localhost", port=8000)
+mcp = FastMCP("tatbot.trossen-ai", host="192.168.1.97", port=8000)
 
 @mcp.tool()
 async def run_op(op_name: str, ctx: Context) -> str:
