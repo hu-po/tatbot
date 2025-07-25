@@ -1,6 +1,3 @@
-from tatbot.ops.base import BaseOp, BaseOpConfig
-
-
 NODE_AVAILABLE_OPS: dict[str, list[str]] = {
     "trossen-ai": ["align", "sense", "stroke"],
     "ook": ["align", "stroke"],
@@ -12,6 +9,7 @@ def get_op(op_name: str, node_name: str) -> tuple[BaseOp, BaseOpConfig]:
     if op_name not in NODE_AVAILABLE_OPS[node_name]:
         raise ValueError(f"Operation {op_name} is not supported on {node_name}")
     if op_name == "base":
+        from tatbot.ops.base import BaseOp, BaseOpConfig
         return BaseOp, BaseOpConfig
     elif op_name == "align":
         from tatbot.ops.record_align import AlignOp, AlignOpConfig
