@@ -6,7 +6,7 @@ from typing import Any, AsyncGenerator
 from tatbot.data.scene import Scene
 from tatbot.utils.log import get_logger, print_config
 
-log = get_logger("ops.base", "🤖")
+log = get_logger("ops.base", "✳️")
 
 
 @dataclass

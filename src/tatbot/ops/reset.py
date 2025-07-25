@@ -6,7 +6,7 @@ from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 from tatbot.ops.base import BaseOp, BaseOpConfig
 from tatbot.utils.log import get_logger
 
-log = get_logger("ops.reset", "🤖")
+log = get_logger("ops.reset", "🔄")
 
 
 class ResetOp(BaseOp):

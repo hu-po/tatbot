@@ -11,7 +11,7 @@ from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.ops.record import RecordOp, RecordOpConfig
 from tatbot.utils.log import get_logger
 
-log = get_logger("ops.align", "🔍")
+log = get_logger("ops.align", "📐")
 
 
 @dataclass

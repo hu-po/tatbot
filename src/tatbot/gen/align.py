@@ -5,7 +5,7 @@ from tatbot.data.stroke import Stroke, StrokeList
 from tatbot.gen.inkdip import make_inkdip_func
 from tatbot.utils.log import get_logger
 
-log = get_logger("gen.align", "📏")
+log = get_logger("gen.align", "📐")
 
 
 def make_align_strokes(scene: Scene) -> StrokeList:
