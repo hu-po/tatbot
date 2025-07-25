@@ -3,7 +3,7 @@ NODE_AVAILABLE_OPS: dict[str, list[str]] = {
     "ook": ["align", "stroke"],
 }
 
-def get_op(op_name: str, node_name: str) -> tuple[BaseOp, BaseOpConfig]:
+def get_op(op_name: str, node_name: str) -> tuple:
     if node_name not in NODE_AVAILABLE_OPS:
         raise ValueError(f"Node {node_name} does not support any operations")
     if op_name not in NODE_AVAILABLE_OPS[node_name]:
