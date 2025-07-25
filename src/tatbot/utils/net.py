@@ -151,6 +151,30 @@ class NetworkManager:
         log.info(f"🌐 Running: {command}")
         subprocess.run(command, shell=True, check=True, **kwargs)
 
+    def _run_remote_command(self, client: SSHClient, command: str) -> Tuple[int, str, str]:
+        """
+        Runs a command on a remote SSH client.
+        
+        Args:
+            client: The SSH client to use
+            command: The command to run
+            
+        Returns:
+            A tuple of (exit_code, stdout, stderr)
+        """
+        log.debug(f"🌐 Running remote command: {command}")
+        stdin, stdout, stderr = client.exec_command(command)
+        exit_code = stdout.channel.recv_exit_status()
+        stdout_str = stdout.read().decode('utf-8').strip()
+        stderr_str = stderr.read().decode('utf-8').strip()
+        
+        if exit_code != 0:
+            log.warning(f"🌐 Remote command failed with exit code {exit_code}: {stderr_str}")
+        else:
+            log.debug(f"🌐 Remote command succeeded: {stdout_str}")
+            
+        return exit_code, stdout_str, stderr_str
+
     def _generate_key(self):
         """Generates the shared SSH key if it doesn't exist."""
         if not os.path.exists(self.config.key_path):
