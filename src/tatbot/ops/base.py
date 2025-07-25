@@ -31,6 +31,10 @@ class BaseOp:
         self.config = config
         self.scene: Scene = Scene.from_name(config.scene)
 
+    def cleanup(self):
+        """Cleanup the operation."""
+        pass
+
     async def run(self) -> AsyncGenerator[dict[str, Any], None]:
         """Run the operation and yield intermediate results.
         

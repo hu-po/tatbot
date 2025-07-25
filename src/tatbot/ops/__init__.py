@@ -1,6 +1,6 @@
 NODE_AVAILABLE_OPS: dict[str, list[str]] = {
-    "trossen-ai": ["align", "sense", "stroke"],
-    "ook": ["align", "stroke"],
+    "trossen-ai": ["align", "sense", "stroke", "reset"],
+    "ook": ["align", "stroke", "reset"],
 }
 
 def get_op(op_name: str, node_name: str) -> tuple:
@@ -11,6 +11,9 @@ def get_op(op_name: str, node_name: str) -> tuple:
     if op_name == "base":
         from tatbot.ops.base import BaseOp, BaseOpConfig
         return BaseOp, BaseOpConfig
+    if op_name == "reset":
+        from tatbot.ops.reset import ResetOp, ResetOpConfig
+        return ResetOp, ResetOpConfig
     elif op_name == "align":
         from tatbot.ops.record_align import AlignOp, AlignOpConfig
         return AlignOp, AlignOpConfig
