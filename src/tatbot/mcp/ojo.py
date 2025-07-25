@@ -9,7 +9,7 @@ from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger("mcp.ojo", "🔌🦎")
 
-mcp = FastMCP("tatbot.ojo", host="0.0.0.0", port=8000)
+mcp = FastMCP("tatbot.ojo", host="localhost", port=8000)
 
 
 @mcp.tool()
