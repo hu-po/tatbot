@@ -1,6 +1,6 @@
 import os
-from dataclasses import dataclass
 import time
+from dataclasses import dataclass
 
 from lerobot.datasets.utils import build_dataset_frame
 from lerobot.utils.robot_utils import busy_wait

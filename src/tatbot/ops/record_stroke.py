@@ -1,18 +1,17 @@
 import logging
 import os
 import shutil
+import time
 from dataclasses import dataclass
 from io import StringIO
-import time
 
 from lerobot.cameras.realsense import RealSenseCameraConfig
 from lerobot.datasets.utils import build_dataset_frame
-from lerobot.utils.robot_utils import busy_wait
 from lerobot.robots import Robot, make_robot_from_config
 from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorConfig
+from lerobot.utils.robot_utils import busy_wait
 
-from tatbot.data.pose import ArmPose
 from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.gen.gcode import make_gcode_strokes
