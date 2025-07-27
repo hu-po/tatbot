@@ -1,6 +1,7 @@
 NODE_AVAILABLE_OPS: dict[str, list[str]] = {
     "trossen-ai": ["align", "sense", "stroke", "reset"],
     "ook": ["align", "stroke", "reset"],
+    "oop": ["align", "stroke", "reset"],
 }
 
 def get_op(op_name: str, node_name: str) -> tuple:

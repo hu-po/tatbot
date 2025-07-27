@@ -2,14 +2,17 @@
 source ~/tatbot/scripts/setup-env.sh
 NODES=("ojo" "rpi1" "rpi2" "trossen-ai")
 
+# remote nodes
 for NODE in "${NODES[@]}"; do
   echo "Starting MCP server on $NODE ..."
   ssh "$NODE" "bash ~/tatbot/scripts/mcp/${NODE}.sh"
 done
 
-if [[ "$(hostname)" != "ook" ]]; then
-  echo "This script should only be run on the ook node."
-  exit 1
+# local nodes
+if [[ "$(hostname)" == "ook" ]]; then
+  bash ~/tatbot/scripts/mcp/ook.sh
 fi
 
-bash ~/tatbot/scripts/mcp/ook.sh
+if [[ "$(hostname)" == "oop" ]]; then
+  bash ~/tatbot/scripts/mcp/oop.sh
+fi

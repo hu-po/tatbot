@@ -30,29 +30,32 @@ class StrokeOp(RecordOp):
 
     op_name: str = "stroke"
 
-    def make_robot(self) -> Robot:
-        """Make a robot from the config."""
-        return make_robot_from_config(
-            TatbotConfig(
-                ip_address_l=self.scene.arms.ip_address_l,
-                ip_address_r=self.scene.arms.ip_address_r,
-                arm_l_config_filepath=self.scene.arms.arm_l_config_filepath,
-                arm_r_config_filepath=self.scene.arms.arm_r_config_filepath,
-                goal_time=self.scene.arms.goal_time_slow,
-                connection_timeout=self.scene.arms.connection_timeout,
-                home_pos_l=self.scene.sleep_pos_l.joints,
-                home_pos_r=self.scene.sleep_pos_r.joints,
-                rs_cameras={
-                    cam.name : RealSenseCameraConfig(
-                        fps=cam.fps,
-                        width=cam.width,
-                        height=cam.height,
-                        serial_number_or_name=cam.serial_number,
-                    ) for cam in self.scene.cams.realsenses
-                },
-                ip_cameras={},
-            )
-        )
+    # TODO: the realsense cameras are just too slow on trossen-ai
+    #       we need them for finetuning VLA, but recording is just too slow
+    #       some kind of long term solution is needed
+    # def make_robot(self) -> Robot:
+    #     """Make a robot from the config."""
+    #     return make_robot_from_config(
+    #         TatbotConfig(
+    #             ip_address_l=self.scene.arms.ip_address_l,
+    #             ip_address_r=self.scene.arms.ip_address_r,
+    #             arm_l_config_filepath=self.scene.arms.arm_l_config_filepath,
+    #             arm_r_config_filepath=self.scene.arms.arm_r_config_filepath,
+    #             goal_time=self.scene.arms.goal_time_slow,
+    #             connection_timeout=self.scene.arms.connection_timeout,
+    #             home_pos_l=self.scene.sleep_pos_l.joints,
+    #             home_pos_r=self.scene.sleep_pos_r.joints,
+    #             rs_cameras={
+    #                 cam.name : RealSenseCameraConfig(
+    #                     fps=cam.fps,
+    #                     width=cam.width,
+    #                     height=cam.height,
+    #                     serial_number_or_name=cam.serial_number,
+    #                 ) for cam in self.scene.cams.realsenses
+    #             },
+    #             ip_cameras={},
+    #         )
+    #     )
 
     async def _run(self):
         _msg = "Creating episode logger..."
