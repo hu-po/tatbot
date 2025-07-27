@@ -4,6 +4,10 @@
       "url": "http://127.0.0.1:8000/mcp",
       "transport": "streamable-http"
     },
+    "tatbot.oop": {
+      "url": "http://192.168.1.51:8000/mcp",
+      "transport": "streamable-http"
+    },
     "tatbot.ojo": {
       "url": "http://192.168.1.96:8000/mcp",
       "transport": "streamable-http"
