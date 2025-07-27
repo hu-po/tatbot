@@ -73,7 +73,7 @@ class TeleopViz(BaseViz):
                 self.arm_l_ik_toggle = True
             elif arm_l_button_group.value == "💾":
                 log.debug("💾 Save left arm")
-                self.save_pose("left", self.joints[:8], arm_l_pose_text.value)
+                self.save_pose("left", self.joints[:7], arm_l_pose_text.value)
 
         @arm_r_button_group.on_click
         def _(_):
@@ -85,7 +85,7 @@ class TeleopViz(BaseViz):
                 self.arm_r_ik_toggle = True
             elif arm_r_button_group.value == "💾":
                 log.debug("💾 Save right arm")
-                self.save_pose("right", self.joints[8:], arm_r_pose_text.value)
+                self.save_pose("right", self.joints[7:], arm_r_pose_text.value)
 
     def save_pose(self, arm: str, joints: np.ndarray, name: str):
         pose_path = os.path.join(ArmPose.get_yaml_dir(), arm, f"{name}.yaml")
@@ -108,8 +108,8 @@ class TeleopViz(BaseViz):
             np.array([self.ee_l_pose.pos.xyz, self.ee_r_pose.pos.xyz]),
             self.scene.ready_pos_full,
         )
-        log.debug(f"🎯 left joints: {solution[:8]}")
-        log.debug(f"🎯 right joints: {solution[8:]}")
+        log.debug(f"🎯 left joints: {solution[:7]}")
+        log.debug(f"🎯 right joints: {solution[7:]}")
         self.joints = np.asarray(solution, dtype=np.float32)
 
 
