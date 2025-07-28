@@ -31,3 +31,7 @@ https://docs.trossenrobotics.com/trossen_arm/main/getting_started/configuration.
 TODO: Edit end effector parameters for tattoo ee
 https://docs.trossenrobotics.com/trossen_arm/main/api/structtrossen__arm_1_1EndEffector.html#struct-documentation
 TODO: Create trossen_arm.StandardEndEffector.wxai_v0_tatbot_l and trossen_arm.StandardEndEffector.wxai_v0_tatbot_r
+
+# Home the arms
+
+https://docs.trossenrobotics.com/trossen_arm/main/service.html#arm-homing
