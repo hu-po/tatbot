@@ -17,12 +17,12 @@ class MCPConfig:
     transport: str = "streamable-http"
     """Transport type for MCP server."""
 
-async def _run_op(op_name: str, ctx: Context, node_name: str, debug: bool = False) -> str:
+async def _run_op(op_name: str, ctx: Context, node_name: str, scene_name: str = "default", debug: bool = False) -> str:
     """Runs an operation, yields intermediate results, see available ops in tatbot.ops module."""
     await ctx.info(f"Running robot op: {op_name}")
     try:
         op_class, op_config = get_op(op_name, node_name)
-        config = op_config(debug=debug)
+        config = op_config(scene=scene_name, debug=debug)
         op = op_class(config)
         await ctx.report_progress(
             progress=0.01, total=1.0, message=f"Created op class and config: {config}"
