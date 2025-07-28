@@ -167,7 +167,7 @@ joint_limits:
     position_tolerance: 0.004000000189989805
     velocity_max: 0.25
     velocity_tolerance: 0
-    effort_max: 100
+    effort_max: 200
     effort_tolerance: 300
 motor_parameters:
   - idle:
