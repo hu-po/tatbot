@@ -12,9 +12,9 @@ log = get_logger("mcp.oop", "🔌🦊")
 mcp = FastMCP("tatbot.oop", host="192.168.1.51", port=8000)
 
 @mcp.tool()
-async def run_op(op_name: str, ctx: Context) -> str:
+async def run_op(op_name: str, ctx: Context, scene_name: str = "default") -> str:
     """Runs an operation, yields intermediate results, see available ops in tatbot.ops module."""
-    return await _run_op(op_name, ctx, "oop")
+    return await _run_op(op_name, ctx, "oop", scene_name=scene_name)
 
 
 if __name__ == "__main__":

@@ -52,9 +52,9 @@ def ping_nodes(nodes: Optional[List[str]] = None) -> str:
     return f"{header}:\n" + "\n".join(f"- {msg}" for msg in sorted(messages))
 
 @mcp.tool()
-async def run_op(op_name: str, ctx: Context) -> str:
+async def run_op(op_name: str, ctx: Context, scene_name: str = "default") -> str:
     """Runs an operation, yields intermediate results, see available ops in tatbot.ops module."""
-    return await _run_op(op_name, ctx, "ook")
+    return await _run_op(op_name, ctx, "ook", scene_name=scene_name)
 
 
 if __name__ == "__main__":
