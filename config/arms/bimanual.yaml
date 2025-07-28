@@ -14,6 +14,6 @@ hover_offset:
 offset_range: [-0.001, 0.002]
 offset_num: 4
 ee_offset_l:
-  xyz: [0.0, -0.002, 0.0]
+  xyz: [0.0, -0.001, 0.0]
 ee_offset_r:
-  xyz: [0.002, 0.013, 0.006]
+  xyz: [0.003, 0.015, 0.006]
