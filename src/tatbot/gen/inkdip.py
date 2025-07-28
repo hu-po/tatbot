@@ -25,15 +25,15 @@ def make_inkdip_func(scene: Scene) -> Callable:
         num_down = scene.stroke_length // 3
         num_up = scene.stroke_length // 3
         num_wait = scene.stroke_length - num_down - num_up
-        depth_m = (
-            inkcap.depth_m / 3
-        )  # 1/3 depth # TODO: make this a function of the session duration? (stroke idx)
+        # TODO: make depth change during session as ink level drops? (stroke_idx)
+        depth_m_top = 0.002 # 2mm above inkcap
+        depth_m_bot = inkcap.depth_m / 3 # 1/3 of the inkcap depth
         # dip down to inkcap depth
-        down_z = np.linspace(0, depth_m, num_down, endpoint=False)
+        down_z = np.linspace(depth_m_top, depth_m_bot, num_down, endpoint=False)
         # wait at depth
-        wait_z = np.full(num_wait, depth_m)
+        wait_z = np.full(num_wait, depth_m_bot)
         # retract back up
-        up_z = np.linspace(depth_m, 0, num_up, endpoint=True)
+        up_z = np.linspace(depth_m_bot, depth_m_top, num_up, endpoint=True)
         # concatenate into final inkdip position array
         inkdip_pos = inkcap.pose.pos.xyz + np.hstack(
             [

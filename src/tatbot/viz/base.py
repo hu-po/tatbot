@@ -122,7 +122,7 @@ class BaseViz:
         self.to_trossen_vector = None
         if config.enable_robot:
             log.debug("Using real robot")
-            from tatbot.bot.trossen import driver_from_arms, trossen_arm
+            from tatbot.bot.trossen_config import driver_from_arms, trossen_arm
 
             self.arm_l, self.arm_r = driver_from_arms(self.scene.arms)
             self.to_trossen_vector = lambda x: trossen_arm.VectorDouble(x)
