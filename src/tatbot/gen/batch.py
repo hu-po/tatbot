@@ -18,7 +18,7 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
     """
     b = len(strokelist.strokes)  # strokes in list
     l = scene.stroke_length  # poses per stroke
-    o = scene.offset_num  # offset samples
+    o = scene.arms.offset_num  # offset samples
 
     # Fill arrays from strokes
     ee_pos_l = np.zeros((b, l, o, 3), dtype=np.float32)
