@@ -18,7 +18,7 @@ def make_align_strokes(scene: Scene) -> StrokeList:
                 Stroke(
                     description="left arm hovering over design",
                     arm="left",
-                    meter_coords=np.tile(scene.hover_offset.xyz, (scene.stroke_length, 1)),
+                    meter_coords=np.tile(scene.arms.hover_offset.xyz, (scene.stroke_length, 1)),
                 ),
                 _inkdip_stroke,
             )
@@ -31,7 +31,7 @@ def make_align_strokes(scene: Scene) -> StrokeList:
                 Stroke(
                     description="right arm hovering over design",
                     arm="right",
-                    meter_coords=np.tile(scene.hover_offset.xyz, (scene.stroke_length, 1)),
+                    meter_coords=np.tile(scene.arms.hover_offset.xyz, (scene.stroke_length, 1)),
                 ),
             )
         )
