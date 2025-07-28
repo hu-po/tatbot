@@ -25,8 +25,8 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
     ee_pos_r = np.zeros((b, l, o, 3), dtype=np.float32)
 
     # HACK: hardcoded orientations for left and right arm end effectors
-    ee_rot_l = np.tile(scene.ee_rot_l.wxyz, (b, l, o, 1))
-    ee_rot_r = np.tile(scene.ee_rot_r.wxyz, (b, l, o, 1))
+    ee_rot_l = np.tile(scene.arms.ee_rot_l.wxyz, (b, l, o, 1))
+    ee_rot_r = np.tile(scene.arms.ee_rot_r.wxyz, (b, l, o, 1))
 
     for i, (stroke_l, stroke_r) in enumerate(strokelist.strokes):
         if not stroke_l.is_inkdip:
