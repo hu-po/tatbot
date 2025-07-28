@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from tatbot.data import Yaml
+from tatbot.data.pose import Pos, Rot
 
 
 @dataclass
@@ -21,6 +22,24 @@ class Arms(Yaml):
     """Robot travel time when moving slowly, usually larger movements."""
     connection_timeout: float
     """Timeout when connecting to the robot arms in seconds."""
+
+    ee_rot_l: Rot
+    """<w, x, y, z> quaternion of left arm end effector when performing a stroke."""
+    ee_rot_r: Rot
+    """<w, x, y, z> quaternion of right arm end effector when performing a stroke."""
+
+    hover_offset: Pos
+    """<x, y, z> offset for hover (first and last poses in each stroke) in meters."""
+
+    offset_range: tuple[float, float]
+    """Range of offset points in meters."""
+    offset_num: int
+    """Number of offset points."""
+
+    ee_offset_l: Pos
+    """<x, y, z> offset for left end effector to account for arm slop."""
+    ee_offset_r: Pos
+    """<x, y, z> offset for right end effector to account for arm slop."""
 
     yaml_dir: str = "~/tatbot/config/arms"
     """Directory containing the config yaml files."""

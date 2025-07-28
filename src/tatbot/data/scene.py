@@ -7,7 +7,7 @@ from tatbot.data import Yaml
 from tatbot.data.arms import Arms
 from tatbot.data.cams import Cams
 from tatbot.data.inks import Ink, InkCap, Inks
-from tatbot.data.pose import ArmPose, Pos, Rot
+from tatbot.data.pose import ArmPose
 from tatbot.data.skin import Skin
 from tatbot.data.tags import Tags
 from tatbot.data.urdf import URDF
@@ -55,19 +55,6 @@ class Scene(Yaml):
 
     stroke_length: int
     """All strokes will be resampled to this length."""
-
-    ee_rot_l: Rot
-    """<w, x, y, z> quaternion of left arm end effector when performing a stroke."""
-    ee_rot_r: Rot
-    """<w, x, y, z> quaternion of right arm end effector when performing a stroke."""
-
-    hover_offset: Pos
-    """<x, y, z> offset for hover (first and last poses in each stroke) in meters."""
-
-    offset_range: tuple[float, float]
-    """Range of offset points in meters."""
-    offset_num: int
-    """Number of offset points."""
 
     design_dir_path: str | None = None
     """Path to the design directory."""

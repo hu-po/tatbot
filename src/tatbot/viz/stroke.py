@@ -99,14 +99,14 @@ class VizStrokes(BaseViz):
             self.offset_idx_slider_l = self.server.gui.add_slider(
                 "offset_idx_l",
                 min=0,
-                max=self.scene.offset_num - 1,
+                max=self.scene.arms.offset_num - 1,
                 step=1,
                 initial_value=0,
             )
             self.offset_idx_slider_r = self.server.gui.add_slider(
                 "offset_idx_r",
                 min=0,
-                max=self.scene.offset_num - 1,
+                max=self.scene.arms.offset_num - 1,
                 step=1,
                 initial_value=0,
             )
@@ -141,7 +141,7 @@ class VizStrokes(BaseViz):
         log.debug("Adding pointcloud")
         points_l = []  # pointcloud for left arm stroke
         points_r = []  # pointcloud for right arm stroke
-        for k in range(self.scene.offset_num):
+        for k in range(self.scene.arms.offset_num):
             for i in range(self.strokebatch.ee_pos_l.shape[0]):
                 for j in range(self.strokebatch.ee_pos_l.shape[1]):
                     points_l.append(self.strokebatch.ee_pos_l[i, j, k])

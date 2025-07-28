@@ -108,7 +108,7 @@ class StrokeOp(RecordOp):
         num_strokes = len(strokes.strokes)
 
         # offset index controls needle depth
-        mid_offset_idx: int = self.scene.offset_num // 2
+        mid_offset_idx: int = self.scene.arms.offset_num // 2
         offset_idx_l: int = mid_offset_idx
         offset_idx_r: int = mid_offset_idx
         # inkdip-specific offset index
@@ -165,20 +165,20 @@ class StrokeOp(RecordOp):
                 if action.get("y", None) is not None:
                     if stroke_l.is_inkdip:
                         inkdip_offset_idx_l += int(action["y"])
-                        inkdip_offset_idx_l = min(inkdip_offset_idx_l, self.scene.offset_num - 1)
+                        inkdip_offset_idx_l = min(inkdip_offset_idx_l, self.scene.arms.offset_num - 1)
                         inkdip_offset_idx_l = max(0, inkdip_offset_idx_l)
                     else:
                         offset_idx_l += int(action["y"])
-                        offset_idx_l = min(offset_idx_l, self.scene.offset_num - 1)
+                        offset_idx_l = min(offset_idx_l, self.scene.arms.offset_num - 1)
                         offset_idx_l = max(0, offset_idx_l)
                 if action.get("x", None) is not None:
                     if stroke_r.is_inkdip:
                         inkdip_offset_idx_r += int(action["x"])
-                        inkdip_offset_idx_r = min(inkdip_offset_idx_r, self.scene.offset_num - 1)
+                        inkdip_offset_idx_r = min(inkdip_offset_idx_r, self.scene.arms.offset_num - 1)
                         inkdip_offset_idx_r = max(0, inkdip_offset_idx_r)
                     else:
                         offset_idx_r += int(action["x"])
-                        offset_idx_r = min(offset_idx_r, self.scene.offset_num - 1)
+                        offset_idx_r = min(offset_idx_r, self.scene.arms.offset_num - 1)
                         offset_idx_r = max(0, offset_idx_r)
 
                 observation = self.robot.get_observation()

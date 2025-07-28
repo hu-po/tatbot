@@ -30,7 +30,8 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
 
     for i, (stroke_l, stroke_r) in enumerate(strokelist.strokes):
         if not stroke_l.is_inkdip:
-            tf = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(scene.skin.design_pose.rot.wxyz), scene.skin.design_pose.pos.xyz)
+            pos_offset = scene.arms.ee_offset_l.xyz + scene.arms.hover_offset.xyz
+            tf = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(scene.skin.design_pose.rot.wxyz), pos_offset)
             base_l = jax.vmap(lambda pos: tf @ pos)(stroke_l.meter_coords)
             base_l = base_l.reshape(l, 3)
             ee_pos_l[i] = np.repeat(base_l[:, None, :], o, axis=1)
@@ -38,7 +39,8 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
             # inkdips do not have meter_coords, only ee_pos
             ee_pos_l[i] = np.repeat(stroke_l.ee_pos.reshape(l, 1, 3), o, 1)
         if not stroke_r.is_inkdip:
-            tf = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(scene.skin.design_pose.rot.wxyz), scene.skin.design_pose.pos.xyz)
+            pos_offset = scene.arms.ee_offset_r.xyz + scene.arms.hover_offset.xyz
+            tf = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(scene.skin.design_pose.rot.wxyz), pos_offset)
             base_r = jax.vmap(lambda pos: tf @ pos)(stroke_r.meter_coords)
             base_r = base_r.reshape(l, 3)
             ee_pos_r[i] = np.repeat(base_r[:, None, :], o, 1)
@@ -47,13 +49,13 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
             ee_pos_r[i] = np.repeat(stroke_r.ee_pos.reshape(l, 1, 3), o, 1)
 
         # first and last poses in each stroke are offset by hover offset
-        ee_pos_l[i, 0] += scene.hover_offset.xyz
-        ee_pos_l[i, -1] += scene.hover_offset.xyz
-        ee_pos_r[i, 0] += scene.hover_offset.xyz
-        ee_pos_r[i, -1] += scene.hover_offset.xyz
+        ee_pos_l[i, 0] += scene.arms.hover_offset.xyz
+        ee_pos_l[i, -1] += scene.arms.hover_offset.xyz
+        ee_pos_r[i, 0] += scene.arms.hover_offset.xyz
+        ee_pos_r[i, -1] += scene.arms.hover_offset.xyz
 
     # offset depths
-    offsets = np.linspace(scene.offset_range[0], scene.offset_range[1], o).astype(np.float32)
+    offsets = np.linspace(scene.arms.offset_range[0], scene.arms.offset_range[1], o).astype(np.float32)
     depth_axis = np.array([0.0, 0.0, 1.0], dtype=np.float32)
     ee_pos_l += offsets[None, None, :, None] * depth_axis
     ee_pos_r += offsets[None, None, :, None] * depth_axis
