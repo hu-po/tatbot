@@ -1,6 +1,6 @@
 #!/bin/bash
 echo "Closing existing MCP server on ojo 🦎..."
-pkill -9 -f "python.*" || true # assumes all python processes are tatbot related
+pkill -9 -f ".*tatbot.*" || true
 rm -f ~/tatbot/nfs/mcp-logs/ojo.log
 echo "Starting MCP server on ojo 🦎..."
 export PATH="$HOME/.local/bin:$PATH"
