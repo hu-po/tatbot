@@ -19,10 +19,8 @@ def make_inkdip_func(scene: Scene) -> Callable:
         """Get <x, y, z> coordinates for an inkdip into a specific inkcap."""
         if arm == "left":
             inkcap: InkCap = scene.inkcaps_l[color]
-            ee_offset = scene.arms.ee_offset_l.xyz
         else:
             inkcap: InkCap = scene.inkcaps_r[color]
-            ee_offset = scene.arms.ee_offset_r.xyz
         # Split: 1/3 down, 1/3 wait, 1/3 up (adjust as needed)
         num_down = scene.stroke_length // 3
         num_up = scene.stroke_length // 3
@@ -37,7 +35,7 @@ def make_inkdip_func(scene: Scene) -> Callable:
         # retract back up
         up_z = np.linspace(depth_m_bot, depth_m_top, num_up, endpoint=True)
         # concatenate into final inkdip position array
-        inkdip_pos = inkcap.pose.pos.xyz + ee_offset + np.hstack(
+        inkdip_pos = inkcap.pose.pos.xyz + np.hstack(
             [
                 np.zeros((scene.stroke_length, 2)),  # x and y are 0
                 -np.concatenate([down_z, wait_z, up_z]).reshape(-1, 1),

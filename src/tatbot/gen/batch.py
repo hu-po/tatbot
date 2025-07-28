@@ -30,8 +30,7 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
 
     for i, (stroke_l, stroke_r) in enumerate(strokelist.strokes):
         if not stroke_l.is_inkdip:
-            pos_offset = scene.arms.ee_offset_l.xyz + scene.arms.hover_offset.xyz
-            tf = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(scene.skin.design_pose.rot.wxyz), pos_offset)
+            tf = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(scene.skin.design_pose.rot.wxyz), scene.skin.design_pose.pos.xyz)
             base_l = jax.vmap(lambda pos: tf @ pos)(stroke_l.meter_coords)
             base_l = base_l.reshape(l, 3)
             ee_pos_l[i] = np.repeat(base_l[:, None, :], o, axis=1)
@@ -39,14 +38,17 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
             # inkdips do not have meter_coords, only ee_pos
             ee_pos_l[i] = np.repeat(stroke_l.ee_pos.reshape(l, 1, 3), o, 1)
         if not stroke_r.is_inkdip:
-            pos_offset = scene.arms.ee_offset_r.xyz + scene.arms.hover_offset.xyz
-            tf = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(scene.skin.design_pose.rot.wxyz), pos_offset)
+            tf = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(scene.skin.design_pose.rot.wxyz), scene.skin.design_pose.pos.xyz)
             base_r = jax.vmap(lambda pos: tf @ pos)(stroke_r.meter_coords)
             base_r = base_r.reshape(l, 3)
             ee_pos_r[i] = np.repeat(base_r[:, None, :], o, 1)
         else:
             # inkdips do not have meter_coords, only ee_pos
             ee_pos_r[i] = np.repeat(stroke_r.ee_pos.reshape(l, 1, 3), o, 1)
+
+        # add ee_offset
+        ee_pos_l[i] += scene.arms.ee_offset_l.xyz
+        ee_pos_r[i] += scene.arms.ee_offset_r.xyz
 
         # first and last poses in each stroke are offset by hover offset
         ee_pos_l[i, 0] += scene.arms.hover_offset.xyz
