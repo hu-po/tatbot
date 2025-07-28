@@ -12,7 +12,7 @@ from tatbot.utils.net import NetworkManager
 
 log = get_logger("mcp.ook", "🔌🦧")
 
-mcp = FastMCP("tatbot.ook", host="127.0.0.1", port=8000)
+mcp = FastMCP("tatbot.ook", host="192.168.1.90", port=8000)
 net = NetworkManager()
 
 
