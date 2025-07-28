@@ -16,6 +16,7 @@
 - (✅ **06/25/2025**) [hardware 0.3](https://x.com/tatbots/status/1937928922005442873) ([✨view in 3D](https://poly.cam/capture/ad7d9477-f7a3-4a36-8da3-59dc0354f149))
 - (✅ **06/25/2025**) [software 0.3.2](https://x.com/tatbots/status/1937928658720559385) ([📦🤗 view on HF](https://huggingface.co/datasets/tatbot/plan-bench-2025y-06m-25d-12h-13m-57s))
 - (✅ **07/14/2025**) [software 0.4](https://x.com/tatbots/status/1944786516217057413)
-- (🚧 **Q3 2025**) software 0.5
-- (🚧 **Q3 2025**) hardware 0.4
+- (✅ **07/28/2025**) [hardware 0.4](https://x.com/tatbots/status/1949917412226453599) ([✨view in 3D](https://poly.cam/capture/abfea3ec-4ac5-4d11-9407-1e1510f8e5f6))
+- (🚧 **Q3 2025**) software 0.6
+- (🚧 **Q4 2025**) hardware 0.5
 - (🚧 **Q4 2025**) paper
