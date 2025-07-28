@@ -13,7 +13,7 @@ def make_align_strokes(scene: Scene) -> StrokeList:
     strokelist: StrokeList = StrokeList(strokes=[])
     for inkcap in scene.inkcaps_r.values():
         _inkdip_stroke: Stroke = inkdip_func(inkcap.ink.name, "right")
-        hover_pos = scene.arms.hover_offset.xyz + scene.arms.ee_offset_r.xyz
+        hover_pos = scene.arms.hover_offset.xyz + scene.arms.ee_offset_l.xyz
         strokelist.strokes.append(
             (
                 Stroke(
@@ -26,7 +26,7 @@ def make_align_strokes(scene: Scene) -> StrokeList:
         )
     for inkcap in scene.inkcaps_l.values():
         _inkdip_stroke: Stroke = inkdip_func(inkcap.ink.name, "left")
-        hover_pos = scene.arms.hover_offset.xyz + scene.arms.ee_offset_l.xyz
+        hover_pos = scene.arms.hover_offset.xyz + scene.arms.ee_offset_r.xyz
         strokelist.strokes.append(
             (
                 _inkdip_stroke,
