@@ -1,6 +1,6 @@
 #!/bin/bash
 echo "Closing existing MCP server on ook 🦧..."
-pkill -9 -f ".*tatbot.*" || true
+pkill -9 -f tatbot || true
 rm -f ~/tatbot/nfs/mcp-logs/ook.log
 echo "Starting MCP server on ook 🦧..."
 export PATH="$HOME/.local/bin:$PATH"
