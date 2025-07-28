@@ -14,13 +14,13 @@ pen_names_l:
 pen_names_r:
   - bright_red
 pens_config_path: "~/tatbot/config/dbv3/pens/full.json"
-stroke_length: 64
+stroke_length: 108
 ee_rot_l:
   wxyz: [0.7071, 0.0, 0.0, -0.7071]
 ee_rot_r:
   wxyz: [0.7071, 0.0, 0.0, 0.7071]
 hover_offset:
-  xyz: [0.0, 0.0, 0.002]
+  xyz: [0.0, 0.0, 0.005]
 offset_range: [-0.001, 0.002]
 offset_num: 4
 design_dir_path: "~/tatbot/nfs/designs/default"
