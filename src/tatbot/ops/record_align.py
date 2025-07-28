@@ -36,8 +36,8 @@ class AlignOp(RecordOp):
         strokebatch.save(os.path.join(self.dataset_dir, "strokebatch.safetensors"))
 
         # maximally retracted when performing alignment operation
-        offset_idx_l = self.scene.offset_num - 1
-        offset_idx_r = self.scene.offset_num - 1
+        offset_idx_l = self.scene.arms.offset_num - 1
+        offset_idx_r = self.scene.arms.offset_num - 1
 
         for stroke_idx, (stroke_l, stroke_r) in enumerate(strokes.strokes):
 
