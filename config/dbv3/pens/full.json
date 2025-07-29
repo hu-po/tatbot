@@ -15,7 +15,7 @@
         "argb": -16777216,
         "distributionWeight": 100,
         "strokeSize": 1.0,
-        "isEnabled": true
+        "isEnabled": false
       },
       {
         "type": "tatbot",
@@ -23,7 +23,7 @@
         "argb": -16777216,
         "distributionWeight": 100,
         "strokeSize": 1.0,
-        "isEnabled": true
+        "isEnabled": false
       },
       {
         "type": "tatbot",
@@ -31,7 +31,7 @@
         "argb": -1,
         "distributionWeight": 100,
         "strokeSize": 1.0,
-        "isEnabled": true
+        "isEnabled": false
       },
       {
         "type": "tatbot",
@@ -55,7 +55,7 @@
         "argb": -29696,
         "distributionWeight": 100,
         "strokeSize": 1.0,
-        "isEnabled": true
+        "isEnabled": false
       },
       {
         "type": "tatbot",
@@ -63,7 +63,7 @@
         "argb": -10496,
         "distributionWeight": 100,
         "strokeSize": 1.0,
-        "isEnabled": true
+        "isEnabled": false
       },
       {
         "type": "tatbot",
@@ -71,7 +71,7 @@
         "argb": -33251,
         "distributionWeight": 100,
         "strokeSize": 1.0,
-        "isEnabled": true
+        "isEnabled": false
       },
       {
         "type": "tatbot",
@@ -79,7 +79,7 @@
         "argb": -13087362,
         "distributionWeight": 100,
         "strokeSize": 1.0,
-        "isEnabled": true
+        "isEnabled": false
       },
       {
         "type": "tatbot",
@@ -87,7 +87,7 @@
         "argb": -4567797,
         "distributionWeight": 100,
         "strokeSize": 1.0,
-        "isEnabled": true
+        "isEnabled": false
       },
       {
         "type": "tatbot",
@@ -95,7 +95,7 @@
         "argb": -16724738,
         "distributionWeight": 100,
         "strokeSize": 1.0,
-        "isEnabled": true
+        "isEnabled": false
       },
       {
         "type": "tatbot",
@@ -103,7 +103,7 @@
         "argb": -4144960,
         "distributionWeight": 100,
         "strokeSize": 1.0,
-        "isEnabled": true
+        "isEnabled": false
       },
       {
         "type": "tatbot",
@@ -111,7 +111,7 @@
         "argb": -9414325,
         "distributionWeight": 100,
         "strokeSize": 1.0,
-        "isEnabled": true
+        "isEnabled": false
       },
       {
         "type": "tatbot",
@@ -119,7 +119,7 @@
         "argb": -65281,
         "distributionWeight": 100,
         "strokeSize": 1.0,
-        "isEnabled": true
+        "isEnabled": false
       }
     ]
   }
