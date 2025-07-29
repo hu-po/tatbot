@@ -1,14 +1,13 @@
-import os
-import re
-
 import cv2
 import numpy as np
+import os
+import re
 from PIL import Image
 
 from tatbot.data.scene import Scene
 from tatbot.data.stroke import Stroke, StrokeList
 from tatbot.gen.inkdip import make_inkdip_func
-from tatbot.utils.colors import COLORS
+from tatbot.utils.colors import COLORS, argb_to_bgr
 from tatbot.utils.log import get_logger
 
 log = get_logger("gen.gcode", "⚙️")
@@ -152,6 +151,7 @@ def generate_stroke_frame_image(
     path_idx: int,
     pixel_coords: np.ndarray,
     arm: str,
+    pen_color: tuple[int, int, int] | None = None,
 ) -> str:
     if not scene.design_img_path or not os.path.exists(scene.design_img_path):
         raise ValueError(f"Design image not found at {scene.design_img_path}")
@@ -161,7 +161,12 @@ def generate_stroke_frame_image(
         raise ValueError(f"Could not read design image at {scene.design_img_path}")
 
     frame_img = base_img.copy()
-    path_color = COLORS["red"]
+    
+    # Use provided pen color or fall back to red
+    if pen_color is not None:
+        path_color = pen_color
+    else:
+        path_color = COLORS["red"]
 
     # poly-line ---------------------------------------------------------------
     for i in range(len(pixel_coords) - 1):
@@ -174,22 +179,22 @@ def generate_stroke_frame_image(
         cv2.circle(frame_img, (int(c), int(r)), 3, path_color, -1)
 
     # label -------------------------------------------------------------------
-    if pixel_coords.size:
-        r_c = float(np.mean(pixel_coords[:, 0]))
-        c_c = float(np.mean(pixel_coords[:, 1]))
-        r_img_c = frame_img.shape[0] / 2
-        c_img_c = frame_img.shape[1] / 2
+    # if pixel_coords.size:
+    #     r_c = float(np.mean(pixel_coords[:, 0]))
+    #     c_c = float(np.mean(pixel_coords[:, 1]))
+    #     r_img_c = frame_img.shape[0] / 2
+    #     c_img_c = frame_img.shape[1] / 2
 
-        label_pose_norm = 0.8
-        text_r = int(label_pose_norm * r_c + (1 - label_pose_norm) * r_img_c)
-        text_c = int(label_pose_norm * c_c + (1 - label_pose_norm) * c_img_c)
-        text_r = np.clip(text_r, 30, frame_img.shape[0] - 10)
-        text_c = np.clip(text_c, 10, frame_img.shape[1] - 150)
+    #     label_pose_norm = 0.8
+    #     text_r = int(label_pose_norm * r_c + (1 - label_pose_norm) * r_img_c)
+    #     text_c = int(label_pose_norm * c_c + (1 - label_pose_norm) * c_img_c)
+    #     text_r = np.clip(text_r, 30, frame_img.shape[0] - 10)
+    #     text_c = np.clip(text_c, 10, frame_img.shape[1] - 150)
 
-        font, scale, thick, lh = cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2, 25
-        cv2.putText(frame_img, arm.upper(), (text_c, text_r), font, scale, path_color, thick)
-        cv2.putText(frame_img, pen_name, (text_c, text_r + lh), font, scale, path_color, thick)
-        cv2.putText(frame_img, f"{path_idx:04d}", (text_c, text_r + 2 * lh), font, scale, path_color, thick)
+    #     font, scale, thick, lh = cv2.FONT_HERSHEY_SIMPLEX, 0.8, 1, 10
+    #     cv2.putText(frame_img, arm.upper(), (text_c, text_r), font, scale, path_color, thick)
+    #     cv2.putText(frame_img, pen_name, (text_c, text_r + lh), font, scale, path_color, thick)
+    #     cv2.putText(frame_img, f"{path_idx:04d}", (text_c, text_r + 2 * lh), font, scale, path_color, thick)
 
     frame_filename = f"stroke_{pen_name}_{arm}_{path_idx:04d}.png"
     frame_path = os.path.join(scene.design_dir, frame_filename)
@@ -247,10 +252,12 @@ def make_gcode_strokes(scene: Scene) -> StrokeList:
     log.info("Generating frame images for strokes...")
     stroke_frame_paths = {}
     for path_idx, (pen_name, _, pixel_coords, _) in enumerate(pen_paths_l):
-        fp = generate_stroke_frame_image(scene, pen_name, path_idx, pixel_coords, "left")
+        pen_color = argb_to_bgr(scene.pens_config[pen_name]["argb"])
+        fp = generate_stroke_frame_image(scene, pen_name, path_idx, pixel_coords, "left", pen_color)
         stroke_frame_paths[(pen_name, "left", path_idx)] = fp
     for path_idx, (pen_name, _, pixel_coords, _) in enumerate(pen_paths_r):
-        fp = generate_stroke_frame_image(scene, pen_name, path_idx, pixel_coords, "right")
+        pen_color = argb_to_bgr(scene.pens_config[pen_name]["argb"])
+        fp = generate_stroke_frame_image(scene, pen_name, path_idx, pixel_coords, "right", pen_color)
         stroke_frame_paths[(pen_name, "right", path_idx)] = fp
     log.info(f"Generated {len(stroke_frame_paths)} frame images")
 

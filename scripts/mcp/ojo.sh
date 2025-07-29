@@ -1,8 +1,8 @@
 #!/bin/bash
-echo "Closing existing MCP server on ojo 🦎..."
-pkill -9 -f tatbot || true
+echo "Closing existing MCP server on ojo 🦎 ..."
+source ~/tatbot/scripts/kill.sh
 rm -f ~/tatbot/nfs/mcp-logs/ojo.log
-echo "Starting MCP server on ojo 🦎..."
+echo "Starting MCP server on ojo 🦎 ..."
 export PATH="$HOME/.local/bin:$PATH"
 source ~/tatbot/scripts/setup-env.sh
 uv pip install .[bot,gen,gpu,img]

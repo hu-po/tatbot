@@ -20,3 +20,15 @@ COLORS: Dict[str, Tuple[int, int, int]] = {
     "magenta": (224, 82, 201),
     "pink": (224, 82, 129),
 }
+
+
+def argb_to_bgr(argb: int) -> tuple[int, int, int]:
+    """Convert ARGB color value to BGR tuple for OpenCV."""
+    # ARGB format: 0xAARRGGBB
+    alpha = (argb >> 24) & 0xFF
+    red = (argb >> 16) & 0xFF
+    green = (argb >> 8) & 0xFF
+    blue = argb & 0xFF
+    
+    # Convert to BGR (OpenCV format)
+    return (blue, green, red)
