@@ -19,7 +19,7 @@
     </visual>
   </link>
   <joint name="origin_widget_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.158 0 0.08"/>
+    <origin rpy="0 0 0" xyz="0.16 0 0.08"/>
     <parent link="root"/>
     <child link="origin_widget"/>
   </joint>
