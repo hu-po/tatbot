@@ -16,12 +16,14 @@ def make_align_strokes(scene: Scene) -> StrokeList:
             Stroke(
                 description="left arm hovering over (left) origin widget",
                 arm="left",
-                meter_coords=np.tile(scene.origin_widget_l_pos.xyz, (scene.stroke_length, 1)),
+                ee_pos=np.tile(scene.origin_widget_l_pos.xyz, (scene.stroke_length, 1)),
+                is_inkdip=True, # inkdip strokes are in final ee_pos
             ),
             Stroke(
                 description="right arm hovering over (right) origin widget",
                 arm="right",
-                meter_coords=np.tile(scene.origin_widget_r_pos.xyz, (scene.stroke_length, 1)),
+                ee_pos=np.tile(scene.origin_widget_r_pos.xyz, (scene.stroke_length, 1)),
+                is_inkdip=True,
             ),
         )
     )
