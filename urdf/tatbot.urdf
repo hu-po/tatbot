@@ -19,19 +19,19 @@
     </visual>
   </link>
   <joint name="origin_widget_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.152 0 0.08"/>
+    <origin rpy="0 0 0" xyz="0.154 0 0.08"/>
     <parent link="root"/>
     <child link="origin_widget"/>
   </joint>
   <link name="origin_widget_left" />
   <joint name="origin_widget_left_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0.0375 0.003"/>
+    <origin rpy="0 0 0" xyz="0 0.0375 0.005"/>
     <parent link="origin_widget"/>
     <child link="origin_widget_left"/>
   </joint>
   <link name="origin_widget_right" />
   <joint name="origin_widget_right_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 -0.0375 0.003"/>
+    <origin rpy="0 0 0" xyz="0 -0.0375 0.005"/>
     <parent link="origin_widget"/>
     <child link="origin_widget_right"/>
   </joint>
