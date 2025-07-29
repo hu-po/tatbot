@@ -1,6 +1,6 @@
 #!/bin/bash
 echo "Closing existing MCP server on rpi1 🍓 ..."
-source ~/tatbot/scripts/kill.sh
+bash ~/tatbot/scripts/kill.sh
 rm -f ~/tatbot/nfs/mcp-logs/rpi1.log
 echo "Starting MCP server on rpi1 🍓 ..."
 export PATH="$HOME/.local/bin:$PATH"

@@ -1,6 +1,6 @@
 #!/bin/bash
 echo "Closing existing MCP server on ojo 🦎 ..."
-source ~/tatbot/scripts/kill.sh
+bash ~/tatbot/scripts/kill.sh
 rm -f ~/tatbot/nfs/mcp-logs/ojo.log
 echo "Starting MCP server on ojo 🦎 ..."
 export PATH="$HOME/.local/bin:$PATH"

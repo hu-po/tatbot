@@ -1,6 +1,6 @@
 #!/bin/bash
 echo "Closing existing MCP server on trossen-ai 🦾 ..."
-pkill -9 -f tatbot || true
+bash ~/tatbot/scripts/kill.sh
 rm -f ~/tatbot/nfs/mcp-logs/trossen-ai.log
 echo "Starting MCP server on trossen-ai 🦾 ..."
 export PATH="$HOME/.local/bin:$PATH"
