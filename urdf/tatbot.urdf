@@ -19,7 +19,7 @@
     </visual>
   </link>
   <joint name="origin_widget_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.152 0 0"/>
+    <origin rpy="0 0 0" xyz="0.152 0 0.08"/>
     <parent link="root"/>
     <child link="origin_widget"/>
   </joint>
@@ -51,106 +51,98 @@
     <child link="tag0"/>
   </joint>
 
-  <!-- palette -->
-  <link name="palette" />
-  <joint name="palette_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
-    <parent link="root"/>
-    <child link="palette"/>
-  </joint>
-
   <!-- left inkcaps -->
   <link name="inkcap_left_large" />
   <joint name="inkcap_left_large_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.101 0.053 0.08"/>
-    <parent link="palette"/>
+    <origin rpy="0 0 0" xyz="-0.06 0.053 0"/>
+    <parent link="origin_widget"/>
     <child link="inkcap_left_large"/>
   </joint>
   <link name="inkcap_left_small_0" />
   <joint name="inkcap_left_small_0_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.077 0.032 0.08"/>
-    <parent link="palette"/>
+    <origin rpy="0 0 0" xyz="-0.084 0.032 0"/>
+    <parent link="origin_widget"/>
     <child link="inkcap_left_small_0"/>
   </joint>
   <link name="inkcap_left_small_1" />
   <joint name="inkcap_left_small_1_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.093 0.032 0.08"/>
-    <parent link="palette"/>
+    <origin rpy="0 0 0" xyz="-0.068 0.032 0"/>
+    <parent link="origin_widget"/>
     <child link="inkcap_left_small_1"/>
   </joint>
   <link name="inkcap_left_small_2" />
   <joint name="inkcap_left_small_2_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.109 0.032 0.08"/>
-    <parent link="palette"/>
+    <origin rpy="0 0 0" xyz="-0.052 0.032 0"/>
+    <parent link="origin_widget"/>
     <child link="inkcap_left_small_2"/>
   </joint>
   <link name="inkcap_left_small_3" />
   <joint name="inkcap_left_small_3_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.125 0.032 0.08"/>
-    <parent link="palette"/>
+    <origin rpy="0 0 0" xyz="-0.036 0.032 0"/>
+    <parent link="origin_widget"/>
     <child link="inkcap_left_small_3"/>
   </joint>
   <link name="inkcap_left_medium_0" />
   <joint name="inkcap_left_medium_0_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.081 0.053 0.08"/>
-    <parent link="palette"/>
+    <origin rpy="0 0 0" xyz="-0.080 0.053 0"/>
+    <parent link="origin_widget"/>
     <child link="inkcap_left_medium_0"/>
   </joint>
   <link name="inkcap_left_medium_1" />
   <joint name="inkcap_left_medium_1_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.121 0.053 0.08"/>
-    <parent link="palette"/>
+    <origin rpy="0 0 0" xyz="-0.040 0.053 0"/>
+    <parent link="origin_widget"/>
     <child link="inkcap_left_medium_1"/>
   </joint>
   
   <!-- right inkcaps -->
   <link name="inkcap_right_large" />
   <joint name="inkcap_right_large_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.101 -0.053 0.08"/>
-    <parent link="palette"/>
+    <origin rpy="0 0 0" xyz="-0.06 -0.053 0"/>
+    <parent link="origin_widget"/>
     <child link="inkcap_right_large"/>
   </joint>
   <link name="inkcap_right_small_0" />
   <joint name="inkcap_right_small_0_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.077 -0.032 0.08"/>
-    <parent link="palette"/>
+    <origin rpy="0 0 0" xyz="-0.084 -0.032 0"/>
+    <parent link="origin_widget"/>
     <child link="inkcap_right_small_0"/>
   </joint>
   <link name="inkcap_right_small_1" />
   <joint name="inkcap_right_small_1_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.093 -0.032 0.08"/>
-    <parent link="palette"/>
+    <origin rpy="0 0 0" xyz="-0.068 -0.032 0"/>
+    <parent link="origin_widget"/>
     <child link="inkcap_right_small_1"/>
   </joint>
   <link name="inkcap_right_small_2" />
   <joint name="inkcap_right_small_2_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.109 -0.032 0.08"/>
-    <parent link="palette"/>
+    <origin rpy="0 0 0" xyz="-0.052 -0.032 0"/>
+    <parent link="origin_widget"/>
     <child link="inkcap_right_small_2"/>
   </joint>
   <link name="inkcap_right_small_3" />
   <joint name="inkcap_right_small_3_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.125 -0.032 0.08"/>
-    <parent link="palette"/>
+    <origin rpy="0 0 0" xyz="-0.036 -0.032 0"/>
+    <parent link="origin_widget"/>
     <child link="inkcap_right_small_3"/>
   </joint>
   <link name="inkcap_right_medium_0" />
   <joint name="inkcap_right_medium_0_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.081 -0.053 0.08"/>
-    <parent link="palette"/>
+    <origin rpy="0 0 0" xyz="-0.080 -0.053 0"/>
+    <parent link="origin_widget"/>
     <child link="inkcap_right_medium_0"/>
   </joint>
   <link name="inkcap_right_medium_1" />
   <joint name="inkcap_right_medium_1_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.121 -0.053 0.08"/>
-    <parent link="palette"/>
+    <origin rpy="0 0 0" xyz="-0.040 -0.053 0"/>
+    <parent link="origin_widget"/>
     <child link="inkcap_right_medium_1"/>
   </joint>
 
   <!-- camera1 -->
   <joint name="camera1_mount_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.04 0 0.05"/>
-    <parent link="root"/>
+    <origin rpy="0 0 0" xyz="-0.2 0 0"/>
+    <parent link="origin_widget"/>
     <child link="camera1"/>
   </joint>
   <link name="camera1">
