@@ -5,7 +5,7 @@ image_width_px: 236
 image_height_px: 118
 design_pose:
   pos:
-    xyz: [0.22, 0.0, 0.074]
+    xyz: [0.22, 0.0, 0.08]
   rot:
     # wxyz: [1.0, 0.0, 0.0, 0.0]
     wxyz: [0.7071, 0.0, 0.0, -0.7071] # -90 degrees in Z

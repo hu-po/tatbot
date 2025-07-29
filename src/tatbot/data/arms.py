@@ -41,7 +41,7 @@ class Arms(Yaml):
     ee_offset_r: Pos
     """<x, y, z> offset for right end effector to account for arm slop."""
 
-    align_x_size_m: float = 0.01
+    align_x_size_m: float
     """Size of the laser X when performing align strokes."""
 
     yaml_dir: str = "~/tatbot/config/arms"
