@@ -11,6 +11,20 @@ log = get_logger("gen.align", "📐")
 def make_align_strokes(scene: Scene) -> StrokeList:
     inkdip_func = make_inkdip_func(scene)
     strokelist: StrokeList = StrokeList(strokes=[])
+    strokelist.strokes.append(
+        (
+            Stroke(
+                description="left arm hovering over (left) origin widget",
+                arm="left",
+                meter_coords=np.tile(scene.origin_widget_l_pos.xyz, (scene.stroke_length, 1)),
+            ),
+            Stroke(
+                description="right arm hovering over (right) origin widget",
+                arm="right",
+                meter_coords=np.tile(scene.origin_widget_r_pos.xyz, (scene.stroke_length, 1)),
+            ),
+        )
+    )
     for inkcap in scene.inkcaps_r.values():
         _inkdip_stroke: Stroke = inkdip_func(inkcap.ink.name, "right")
         strokelist.strokes.append(

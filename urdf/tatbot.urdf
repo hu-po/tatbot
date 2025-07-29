@@ -8,61 +8,47 @@
       <origin rpy="0 0 0" xyz="0 0 0"/>
   </link>
 
+  <!-- origin widget -->
+  <link name="origin_widget">
+    <visual>
+      <origin rpy="0 0 1.5707963267948966" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/origin_widget.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="origin_widget_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.152 0 0"/>
+    <parent link="root"/>
+    <child link="origin_widget"/>
+  </joint>
+  <link name="origin_widget_left" />
+  <joint name="origin_widget_left_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.0375 0.003"/>
+    <parent link="origin_widget"/>
+    <child link="origin_widget_left"/>
+  </joint>
+  <link name="origin_widget_right" />
+  <joint name="origin_widget_right_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 -0.0375 0.003"/>
+    <parent link="origin_widget"/>
+    <child link="origin_widget_right"/>
+  </joint>
+
   <!-- apriltag 0  -->
   <link name="tag0">
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/tags/16h5_000_5cm/tag.obj" scale="1 1 1"/>
+        <mesh filename="meshes/tags/16h5_008_4cm/tag.obj" scale="1 1 1"/>
       </geometry>
     </visual>
   </link>
   <joint name="tag0_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.02 0 0"/>
-    <parent link="root"/>
+    <origin rpy="0 0 0" xyz="0 0 0.0035"/>
+    <parent link="origin_widget"/>
     <child link="tag0"/>
-  </joint>
-  <!-- apriltag 1  -->
-  <link name="tag1">
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/tags/16h5_001_5cm/tag.obj" scale="1 1 1"/>
-      </geometry>
-    </visual>
-  </link>
-  <joint name="tag1_joint" type="fixed">
-    <origin rpy="0 -1.57 0" xyz="0.02 0 0.025"/>
-    <parent link="root"/>
-    <child link="tag1"/>
-  </joint>
-  <!-- apriltag 2  -->
-  <link name="tag2">
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/tags/16h5_002_5cm/tag.obj" scale="1 1 1"/>
-      </geometry>
-    </visual>
-  </link>
-  <joint name="tag2_joint" type="fixed">
-    <origin rpy="0 1.57 0" xyz="0.03 0 0.025"/>
-    <parent link="root"/>
-    <child link="tag2"/>
-  </joint>
-  <!-- apriltag 3  -->
-  <link name="tag3">
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/tags/16h5_003_5cm/tag.obj" scale="1 1 1"/>
-      </geometry>
-    </visual>
-  </link>
-  <joint name="tag3_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.06 0 0"/>
-    <parent link="root"/>
-    <child link="tag3"/>
   </joint>
 
   <!-- palette -->

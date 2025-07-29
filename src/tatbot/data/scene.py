@@ -7,7 +7,7 @@ from tatbot.data import Yaml
 from tatbot.data.arms import Arms
 from tatbot.data.cams import Cams
 from tatbot.data.inks import Ink, InkCap, Inks
-from tatbot.data.pose import ArmPose
+from tatbot.data.pose import ArmPose, Pos
 from tatbot.data.skin import Skin
 from tatbot.data.tags import Tags
 from tatbot.data.urdf import URDF
@@ -135,6 +135,11 @@ class Scene(Yaml):
         log.info(f"✅ Found {len(self.inkcaps_l)} left inkcaps and {len(self.inkcaps_r)} right inkcaps")
         log.debug(f"Left inkcaps: {self.inkcaps_l}")
         log.debug(f"Right inkcaps: {self.inkcaps_r}")
+
+        # get the link poses for the origin widgets
+        link_poses = get_link_poses(self.urdf.path, self.urdf.origin_widget_names, self.ready_pos_full)
+        self.origin_widget_l_pos: Pos = link_poses[self.urdf.origin_widget_names[0]].pos
+        self.origin_widget_r_pos: Pos = link_poses[self.urdf.origin_widget_names[1]].pos
 
         # clean/load plymesh dir for skin
         plymesh_dir = os.path.expanduser(self.skin.plymesh_dir)

@@ -4,10 +4,6 @@ ee_link_names:
   - "right/tattoo_needle"
 tag_link_names:
   - "tag0"
-  - "tag1"
-  - "tag2"
-  - "tag6"
-  - "tag7"
 cam_link_names:
   - "left/realsense_depth_optical_frame"
   - "right/realsense_depth_optical_frame"
@@ -31,4 +27,7 @@ ink_link_names:
   - "inkcap_right_small_3"
   - "inkcap_right_medium_0"
   - "inkcap_right_medium_1"
+origin_widget_names:
+  - "origin_widget_left"
+  - "origin_widget_right"
 root_link_name: "root"

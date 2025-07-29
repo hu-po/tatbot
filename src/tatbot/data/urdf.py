@@ -16,6 +16,8 @@ class URDF(Yaml):
     """Names of the camera links in the URDF."""
     ink_link_names: tuple[str, ...]
     """Names of the inkcap links in the URDF."""
+    origin_widget_names: tuple[str, str]
+    """Names of the origin widget links in the URDF."""
     root_link_name: str
     """Name of the origin/root link in the URDF."""
 
