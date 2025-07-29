@@ -11,8 +11,8 @@ ee_rot_r:
   wxyz: [0.7071, 0.0, 0.0, 0.7071]
 hover_offset:
   xyz: [0.0, 0.0, 0.001]
-offset_range: [-0.001, 0.002]
-offset_num: 4
+offset_range: [-0.001, 0.003]
+offset_num: 5
 ee_offset_l:
   xyz: [0.0, -0.001, -0.002]
 ee_offset_r:

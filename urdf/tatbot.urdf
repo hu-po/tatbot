@@ -163,7 +163,7 @@
 
   <!-- camera1 -->
   <joint name="camera1_mount_joint" type="fixed">
-    <origin rpy="0 1.5707963267948966 -1.5707963267948966" xyz="-0.0275 0.09 0.2"/>
+    <origin rpy="0 0 0" xyz="-0.04 0 0.05"/>
     <parent link="root"/>
     <child link="camera1"/>
   </joint>
