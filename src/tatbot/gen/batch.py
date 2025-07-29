@@ -11,7 +11,7 @@ from tatbot.utils.log import get_logger
 log = get_logger("gen.batch", "💠")
 
 
-def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: int = 256, first_last_rest: bool = True) -> StrokeBatch:
+def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: int = 256, first_last_rest: bool = True, use_ee_offsets: bool = True) -> StrokeBatch:
     """
     Convert a list of (Stroke, Stroke) tuples into a StrokeBatch, running IK to fill in joint values.
     Each tuple is (left_stroke, right_stroke) for a single stroke step.
@@ -47,8 +47,10 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
             ee_pos_r[i] = np.repeat(stroke_r.ee_pos.reshape(l, 1, 3), o, 1)
 
         # add ee_offset
-        ee_pos_l[i] += scene.arms.ee_offset_l.xyz
-        ee_pos_r[i] += scene.arms.ee_offset_r.xyz
+        if use_ee_offsets:
+            log.debug("Using ee offsets")
+            ee_pos_l[i] += scene.arms.ee_offset_l.xyz
+            ee_pos_r[i] += scene.arms.ee_offset_r.xyz
 
         # first and last poses in each stroke are offset by hover offset
         ee_pos_l[i, 0] += scene.arms.hover_offset.xyz
@@ -88,6 +90,7 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
     joints_out = joints_out.reshape(b, l, o, 14)
 
     if first_last_rest:
+        log.debug("Using first and last rest")
         # HACK: the right arm of the first stroke should be at rest while left arm is ink dipping
         joints_out[0, :, :, 7:] = np.tile(scene.ready_pos_r.joints, (l, o, 1))
         # HACK: the left arm of the final path should be at rest since last stroke is right-only

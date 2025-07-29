@@ -39,10 +39,10 @@ class VizStrokes(BaseViz):
 
         if self.config.align:
             self.strokelist: StrokeList = make_align_strokes(self.scene)
-            self.strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, self.strokelist, first_last_rest=False)
+            self.strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, self.strokelist, first_last_rest=False, use_ee_offsets=False)
         else:
             self.strokelist: StrokeList = make_gcode_strokes(self.scene)
-            self.strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, self.strokelist)
+            self.strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, self.strokelist, use_ee_offsets=False)
         self.num_strokes = len(self.strokelist.strokes)
         self.stroke_idx = 0
         self.pose_idx = 0
