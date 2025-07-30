@@ -184,6 +184,7 @@ class StrokeOp(RecordOp):
                 observation = self.robot.get_observation()
                 observation_frame = build_dataset_frame(self.dataset.features, observation, prefix="observation")
 
+                _left_first = True # default move left arm first
                 if stroke_l.is_inkdip:
                     _offset_idx_l = inkdip_offset_idx_l
                     log.info(f"🎮 left inkdip offset index: {_offset_idx_l}")
@@ -191,6 +192,7 @@ class StrokeOp(RecordOp):
                     _offset_idx_l = offset_idx_l
                     log.info(f"🎮 left offset index: {_offset_idx_l}")
                 if stroke_r.is_inkdip:
+                    _left_first = False
                     _offset_idx_r = inkdip_offset_idx_r
                     log.info(f"🎮 right inkdip offset index: {_offset_idx_r}")
                 else:
@@ -200,7 +202,7 @@ class StrokeOp(RecordOp):
                 robot_action = self.robot._urdf_joints_to_action(joints)
                 if pose_idx in (0, 1):
                     # use slow movements for initial pose and hover pose
-                    sent_action = self.robot.send_action(robot_action, self.scene.arms.goal_time_slow, safe=True)
+                    sent_action = self.robot.send_action(robot_action, self.scene.arms.goal_time_slow, safe=True, left_first=_left_first)
                 else:
                     sent_action = self.robot.send_action(robot_action, self.scene.arms.goal_time_fast)
 

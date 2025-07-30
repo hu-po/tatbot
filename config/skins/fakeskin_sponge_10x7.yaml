@@ -3,7 +3,7 @@ image_width_m: 0.1
 image_height_m: 0.07
 design_pose: 
   pos:
-    xyz: [0.22, 0.0, 0.079]
+    xyz: [0.22, 0.0, 0.08]
   rot:
     wxyz: [0.7071, 0.0, 0.0, -0.7071]
 zone_depth_m: 0.06
