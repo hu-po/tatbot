@@ -61,14 +61,13 @@ def parse_gcode_file(gcode_path: str, scene: Scene) -> list[tuple[np.ndarray, np
         return resampled
 
     # ----------------------------------------------------------------—— image info
-    img_w_px: int = scene.skin.image_width_px
-    img_h_px: int = scene.skin.image_height_px
     img_w_m: float = scene.skin.image_width_m
     img_h_m: float = scene.skin.image_height_m
 
-    if scene.design_img_path and os.path.exists(scene.design_img_path):
-        with Image.open(scene.design_img_path) as _im:
-            img_w_px, img_h_px = _im.size  # override with actual file size
+    assert scene.design_img_path and os.path.exists(scene.design_img_path), f"Design image not found at {scene.design_img_path}"
+    
+    with Image.open(scene.design_img_path) as _im:
+        img_w_px, img_h_px = _im.size
 
     # ----------------------------------------------------------------—— parsing state
     paths: list[tuple[np.ndarray, np.ndarray, str]] = []

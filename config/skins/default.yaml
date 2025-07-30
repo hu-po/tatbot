@@ -1,8 +1,6 @@
 description: "20mm x 10mm area on sponge fake skin"
 image_width_m: 0.02
 image_height_m: 0.01
-image_width_px: 236
-image_height_px: 118
 design_pose:
   pos:
     xyz: [0.22, 0.0, 0.08]

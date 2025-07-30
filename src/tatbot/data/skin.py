@@ -15,10 +15,6 @@ class Skin(Yaml):
     """Width of the image in meters."""
     image_height_m: float
     """Height of the image in meters."""
-    image_width_px: int
-    """Width of the image in pixels."""
-    image_height_px: int
-    """Height of the image in pixels."""
 
     design_pose: Pose
     """Pose of the design in the global frame."""
