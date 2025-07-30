@@ -2,6 +2,8 @@
 
 Roughly sorted by priority
 
+- rpi1 as dns server, viz network chatter
+- The stroke MCP tool calls the batch creation MCP tool using file paths to coordinate. Other one waits until file is available to continue. Mcp tool calls MCP tool. Viz tool is also called, pulling up the latest viz on the rpi screen.
 - Alignment and calib should be optional add ons to any recording session. 
 - Add origin as alignment points, undergrid with sticking up points to get alignment
 - GUI used by webui agent
