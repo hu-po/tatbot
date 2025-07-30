@@ -5,7 +5,7 @@ image_width_px: 590
 image_height_px: 590
 design_pose:
   pos:
-    xyz: [0.22, 0.0, 0.078]
+    xyz: [0.22, 0.0, 0.079]
   rot:
     wxyz: [0.7071, 0.0, 0.0, -0.7071]
 zone_depth_m: 0.06
