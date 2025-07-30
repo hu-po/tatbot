@@ -1,0 +1,18 @@
+name: "pylogo"
+arms_config_name: "bimanual"
+cams_config_name: "fast"
+urdf_config_name: "default"
+skin_config_name: "fakeskin_sponge_5x5"
+tags_config_name: "default"
+sleep_pos_l_name: "left/sleep"
+sleep_pos_r_name: "right/sleep"
+ready_pos_l_name: "left/ready"
+ready_pos_r_name: "right/ready"
+inks_config_name: "red_blue"
+pen_names_l:
+  - true_blue
+pen_names_r:
+  - bright_red
+pens_config_path: "~/tatbot/config/dbv3/pens/full.json"
+stroke_length: 32
+design_dir_path: "~/tatbot/nfs/designs/pylogo"
