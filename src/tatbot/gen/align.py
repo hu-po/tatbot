@@ -29,14 +29,14 @@ def make_align_strokes(scene: Scene) -> StrokeList:
     for inkcap in scene.inkcaps_l.values():
         strokelist.strokes.append((inkdip_func(inkcap.ink.name, "left"), right_origin_widget_stroke))
     left_design_stroke_xaxis = Stroke(
-        description=f"left arm hovering over design pose, +{scene.arms.align_x_size_m}cm in X axis",
+        description=f"left arm hovering over design pose, -{scene.arms.align_x_size_m}cm in X axis",
         arm="left",
-        meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([scene.arms.align_x_size_m, 0, 0]), (scene.stroke_length, 1)),
+        meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([-scene.arms.align_x_size_m, 0, 0]), (scene.stroke_length, 1)),
     )
     right_design_stroke_xaxis = Stroke(
-        description=f"right arm hovering over design pose, -{scene.arms.align_x_size_m}cm in X axis",
+        description=f"right arm hovering over design pose, +{scene.arms.align_x_size_m}cm in X axis",
         arm="right",
-        meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([-scene.arms.align_x_size_m, 0, 0]), (scene.stroke_length, 1)),
+        meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([scene.arms.align_x_size_m, 0, 0]), (scene.stroke_length, 1)),
     )
     left_design_stroke_yaxis = Stroke(
         description=f"left arm hovering over design pose, +{scene.arms.align_x_size_m}cm in Y axis",
