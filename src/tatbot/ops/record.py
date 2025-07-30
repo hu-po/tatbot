@@ -35,7 +35,7 @@ class RecordOpConfig(BaseOpConfig):
     """Tags to add to the dataset on Hugging Face."""
     private: bool = False
     """Whether to push the dataset to a private repository."""
-    fps: int = 16
+    fps: int = 10
     """Frames per second."""
     resume: bool = False
     """If true, resumes recording from the last episode, dataset name must match."""
