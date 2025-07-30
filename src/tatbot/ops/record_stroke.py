@@ -198,8 +198,8 @@ class StrokeOp(RecordOp):
                     log.info(f"🎮 right offset index: {_offset_idx_r}")
                 joints = strokebatch.offset_joints(stroke_idx, pose_idx, _offset_idx_l, _offset_idx_r)
                 robot_action = self.robot._urdf_joints_to_action(joints)
-                if pose_idx == 0 or pose_idx == self.scene.stroke_length - 1:
-                    # use slow movements for first and last poses
+                if pose_idx in (0, 1, self.scene.stroke_length - 2, self.scene.stroke_length - 1):
+                    # use slow movements for first and last poses and entry/exit from hover poses (2nd and 2nd to last)
                     sent_action = self.robot.send_action(robot_action, self.scene.arms.goal_time_slow, safe=True)
                 else:
                     sent_action = self.robot.send_action(robot_action, self.scene.arms.goal_time_fast)
