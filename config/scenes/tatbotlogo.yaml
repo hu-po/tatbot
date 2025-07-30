@@ -1,4 +1,4 @@
-name: "pylogo"
+name: "tatbotlogo"
 arms_config_name: "bimanual"
 cams_config_name: "fast"
 urdf_config_name: "default"
@@ -15,4 +15,4 @@ pen_names_r:
   - bright_red
 pens_config_path: "~/tatbot/config/dbv3/pens/full.json"
 stroke_length: 42
-design_dir_path: "~/tatbot/nfs/designs/pylogo"
+design_dir_path: "~/tatbot/nfs/designs/tatbotlogo"
