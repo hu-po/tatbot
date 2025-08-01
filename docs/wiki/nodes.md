@@ -20,7 +20,7 @@ tatbot consists of several computers, cameras, and robots connected via ethernet
 - `arm-r` 🦾: Trossen Arm Controller box (front) connected to WidowXAI arm
 - `display` 🖥️: touchscreen monitor w/ speakers
 
-during development *dev mode*, the following pc is also available:
+during development *home mode*, the following pc is also available:
 
 - `oop` 🦊: Ubuntu PC w/ NVIDIA RTX 3090 (AMD Ryzen 9 5900X, 24-core @ 4.95 GHz) (66GB RAM) (24GB VRAM) (TOPS)
 
@@ -42,7 +42,7 @@ tatbot uses shared ssh keys for easy communication
     - (4) blue ethernet cable to `arm-r` controller box
     - (5) long black ethernet cable to `ook`
     - (6) 
-    - (7) *dev mode* long ethernet cable to `oop`
+    - (7) *home mode* long ethernet cable to `oop`
     - (8) short black ethernet cable to `switch-poe`
 - `switch-poe`:
     - (uplink-1) -
@@ -95,4 +95,15 @@ sudo nano /etc/fstab
 > 192.168.1.99:/home/rpi2/tatbot/nfs /home/<USERNAME>/tatbot/nfs nfs defaults,nolock,vers=3,_netdev 0 0
 sudo systemctl daemon-reload
 sudo mount -a
+```
+
+## Home vs Edge Mode
+
+In *home mode*, tatbot nodes are connected to the local home network.
+In *edge mode*, the `rpi1` node acts as the DNS server for the network, `oop` node is no longer available.
+
+on `rpi1`:
+
+```bash
+sudo apt install dnsmasq -y
 ```
