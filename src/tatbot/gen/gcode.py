@@ -1,7 +1,8 @@
-import cv2
-import numpy as np
 import os
 import re
+
+import cv2
+import numpy as np
 from PIL import Image
 
 from tatbot.data.scene import Scene

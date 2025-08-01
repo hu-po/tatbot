@@ -24,8 +24,8 @@ This script does the following:
 """
 
 import argparse
-from enum import Enum
 import socket
+from enum import Enum
 from typing import Dict
 
 import trossen_arm
