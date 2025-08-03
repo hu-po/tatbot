@@ -39,7 +39,8 @@ run_check() {
 run_check "Unit Tests" "pytest tests/ -v --tb=short"
 
 # 2. Linting with ruff
-run_check "Ruff Linting" "ruff check src/tatbot --fix"
+run_check "Ruff Linting" "ruff check src/tatbot"
+run_check "Ruff Formatting" "ruff format --check src/tatbot"
 
 # 3. Type checking with mypy
 run_check "MyPy Type Checking" "mypy src/tatbot/mcp --ignore-missing-imports"

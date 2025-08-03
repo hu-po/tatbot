@@ -1,19 +1,14 @@
 """MCP tool handlers with registration decorator."""
 
+import asyncio
 import concurrent.futures
 import os
+from pathlib import Path
 from typing import Dict, Callable, Any
 
 from mcp.server.fastmcp import Context
 
-from tatbot.mcp.models import (
-    RunOpInput, RunOpResult,
-    PingNodesInput, PingNodesResponse,
-    ListScenesInput, ListScenesResponse,
-    ListNodesInput, ListNodesResponse,
-    GetNfsInfoInput, GetNfsInfoResponse,
-    GetLatestRecordingInput, GetLatestRecordingResponse
-)
+# Import models locally inside functions to avoid circular imports
 from tatbot.utils.log import get_logger
 
 log = get_logger("mcp.handlers", "🔌🛠️")
@@ -34,12 +29,15 @@ def get_available_tools() -> Dict[str, Callable]:
 
 
 @mcp_handler
-async def run_op(input_data: RunOpInput, ctx: Context, node_name: str) -> RunOpResult:
+async def run_op(input_data, ctx: Context, node_name: str):
     """Runs an operation, yields intermediate results, see available ops in tatbot.ops module."""
+    # Import locally to avoid circular imports
+    from tatbot.mcp.models import RunOpResult
+    from tatbot.ops import get_op
+    
     await ctx.info(f"Running robot op: {input_data.op_name} on {node_name}")
     
     try:
-        from tatbot.ops import get_op
         
         op_class, op_config = get_op(input_data.op_name, node_name)
         config = op_config(scene=input_data.scene_name, debug=input_data.debug)
@@ -67,7 +65,7 @@ async def run_op(input_data: RunOpInput, ctx: Context, node_name: str) -> RunOpR
             scene_name=input_data.scene_name
         )
         
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         message = "🛑⌨️ Keyboard/E-stop interrupt detected"
         log.error(message)
         return RunOpResult(
@@ -91,12 +89,15 @@ async def run_op(input_data: RunOpInput, ctx: Context, node_name: str) -> RunOpR
 
 
 @mcp_handler
-async def ping_nodes(input_data: PingNodesInput, ctx: Context) -> PingNodesResponse:
+async def ping_nodes(input_data, ctx: Context):
     """Ping nodes and report connectivity status."""
+    # Import locally to avoid circular imports
+    from tatbot.mcp.models import PingNodesResponse
+    from tatbot.utils.net import NetworkManager
+    
     log.info(f"🔌 Pinging nodes: {input_data.nodes or 'all'}")
     
     try:
-        from tatbot.utils.net import NetworkManager
         net = NetworkManager()
         
         target_nodes, error = net.get_target_nodes(input_data.nodes)
@@ -156,16 +157,19 @@ async def ping_nodes(input_data: PingNodesInput, ctx: Context) -> PingNodesRespo
 
 
 @mcp_handler
-async def list_scenes(input_data: ListScenesInput, ctx: Context) -> ListScenesResponse:
+async def list_scenes(input_data, ctx: Context):
     """List available scenes from the config directory."""
+    # Import locally to avoid circular imports
+    from tatbot.mcp.models import ListScenesResponse
+    
     try:
-        scenes_dir = os.path.expanduser("~/tatbot/config/scenes")
-        if not os.path.exists(scenes_dir):
+        scenes_dir = Path("~/tatbot/config/scenes").expanduser().resolve()
+        if not scenes_dir.exists():
             return ListScenesResponse(scenes=[], count=0)
         
         scenes = [
             f.replace(".yaml", "") 
-            for f in os.listdir(scenes_dir) 
+            for f in os.listdir(str(scenes_dir)) 
             if f.endswith(".yaml")
         ]
         scenes.sort()
@@ -179,10 +183,13 @@ async def list_scenes(input_data: ListScenesInput, ctx: Context) -> ListScenesRe
 
 
 @mcp_handler
-async def list_nodes(input_data: ListNodesInput, ctx: Context) -> ListNodesResponse:
+async def list_nodes(input_data, ctx: Context):
     """List available network nodes."""
+    # Import locally to avoid circular imports
+    from tatbot.mcp.models import ListNodesResponse
+    from tatbot.utils.net import NetworkManager
+    
     try:
-        from tatbot.utils.net import NetworkManager
         net = NetworkManager()
         
         node_names = [node.name for node in net.nodes]
@@ -196,8 +203,11 @@ async def list_nodes(input_data: ListNodesInput, ctx: Context) -> ListNodesRespo
 
 
 @mcp_handler
-async def get_nfs_info(input_data: GetNfsInfoInput, ctx: Context) -> GetNfsInfoResponse:
+async def get_nfs_info(input_data, ctx: Context):
     """Get NFS information."""
+    # Import locally to avoid circular imports
+    from tatbot.mcp.models import GetNfsInfoResponse
+    
     try:
         # This is a placeholder - in the real implementation, this would
         # gather actual NFS status information
@@ -210,20 +220,23 @@ async def get_nfs_info(input_data: GetNfsInfoInput, ctx: Context) -> GetNfsInfoR
 
 
 @mcp_handler
-async def get_latest_recording(input_data: GetLatestRecordingInput, ctx: Context) -> GetLatestRecordingResponse:
+async def get_latest_recording(input_data, ctx: Context):
     """Get the latest recording file."""
+    # Import locally to avoid circular imports
+    from tatbot.mcp.models import GetLatestRecordingResponse
+    
     try:
-        recording_dir = os.path.expanduser("~/tatbot/nfs/recordings")
-        if not os.path.exists(recording_dir):
+        recording_dir = Path("~/tatbot/nfs/recordings").expanduser().resolve()
+        if not recording_dir.exists():
             return GetLatestRecordingResponse(filename="", found=False)
         
-        recordings = [f for f in os.listdir(recording_dir) if f.endswith(".yaml")]
+        recordings = [f for f in os.listdir(str(recording_dir)) if f.endswith(".yaml")]
         if not recordings:
             return GetLatestRecordingResponse(filename="", found=False)
         
         latest_recording = max(
             recordings, 
-            key=lambda x: os.path.getctime(os.path.join(recording_dir, x))
+            key=lambda x: os.path.getctime(str(recording_dir / x))
         )
         
         log.info(f"Found latest recording: {latest_recording}")

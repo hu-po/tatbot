@@ -1,6 +1,7 @@
 """Generic MCP server with Hydra configuration support."""
 
 import hydra
+from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 from mcp.server.fastmcp import FastMCP
 
@@ -34,15 +35,20 @@ def _register_tools(mcp: FastMCP, tool_names: list[str] | None, node_name: str):
             log.warning(f"⚠️ Tool {tool_name} not found in handlers")
 
 
-@hydra.main(version_base=None, config_path="../../conf", config_name="config")
+@hydra.main(
+    version_base=None, 
+    config_path=str(Path(__file__).resolve().parent.parent.parent / "conf"), 
+    config_name="config"
+)
 def main(cfg: DictConfig):
     """Main server entry point with Hydra configuration."""
     # Extract MCP settings from Hydra config
     mcp_config = OmegaConf.to_object(cfg.mcp)
     settings = MCPSettings(**mcp_config)
     
-    # Get node name from Hydra config
-    node_name = cfg.get("node", "unknown")
+    # Get node name from Hydra config, fallback to hostname
+    import socket
+    node_name = cfg.get("node", socket.gethostname())
     
     log.info(f"Starting MCP server for node: {node_name}")
     log.info(f"Settings: host={settings.host}, port={settings.port}, transport={settings.transport}")

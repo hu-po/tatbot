@@ -1,6 +1,7 @@
 """Pydantic models for MCP requests and responses."""
 
 import os
+from pathlib import Path
 from typing import List, Optional
 
 from pydantic import BaseModel, field_validator
@@ -49,9 +50,9 @@ class RunOpInput(BaseModel):
     def validate_scene_name(cls, v: str) -> str:
         """Validate that the scene name exists in the scenes directory."""
         # Use the same logic as the list_scenes function
-        scenes_dir = os.path.expanduser("~/tatbot/config/scenes")
+        scenes_dir = Path("~/tatbot/config/scenes").expanduser().resolve()
         try:
-            available_scenes = [f.replace(".yaml", "") for f in os.listdir(scenes_dir) if f.endswith(".yaml")]
+            available_scenes = [f.replace(".yaml", "") for f in os.listdir(str(scenes_dir)) if f.endswith(".yaml")]
             if v not in available_scenes:
                 raise ValueError(f"Invalid scene_name: {v}. Available scenes: {available_scenes}")
         except FileNotFoundError:

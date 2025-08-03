@@ -75,7 +75,9 @@ if [ $? -ne 0 ]; then
 fi
 
 # Install required extras
-if [ -n "$EXTRAS" ]; then
+# Trim whitespace and check if EXTRAS is non-empty
+EXTRAS_TRIMMED=$(echo "$EXTRAS" | tr -d '[:space:]')
+if [ -n "$EXTRAS_TRIMMED" ] && [ "$EXTRAS_TRIMMED" != "" ]; then
     echo "📦 Installing extras: [$EXTRAS]"
     uv pip install ".[$EXTRAS]"
 else
@@ -87,7 +89,7 @@ fi
 echo "🚀 Starting MCP server for $NODE..."
 echo "📝 Logs will be written to ~/tatbot/nfs/mcp-logs/${NODE}.log"
 
-nohup uv run python -m tatbot.mcp.server node=${NODE} "$@" \
+nohup uv run python3 -m tatbot.mcp.server node=${NODE} "$@" \
     > ~/tatbot/nfs/mcp-logs/${NODE}.log 2>&1 &
 
 SERVER_PID=$!
