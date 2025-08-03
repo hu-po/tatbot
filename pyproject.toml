@@ -39,6 +39,7 @@ dependencies = [
     "omegaconf~=2.3",
     "hydra-zen",
     "pydantic-numpy",
+    "pytest>=8.4.1",
 ]
 
 [project.optional-dependencies]

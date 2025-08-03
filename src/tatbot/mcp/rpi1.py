@@ -2,6 +2,7 @@
 
 import logging
 
+from pydantic import BaseModel, field_validator
 from mcp.server.fastmcp import FastMCP
 
 from tatbot.mcp.base import MCPConfig
@@ -12,8 +13,23 @@ log = get_logger("mcp.rpi1", "🔌🍓")
 mcp = FastMCP("tatbot.rpi1", host="192.168.1.98", port=8000)
 
 
-@mcp.tool(description="Run visualization on rpi1")
-def run_viz(viz_type: str, name: str) -> str:
+class RunVizInput(BaseModel):
+    """Input model for running visualization on rpi1."""
+    viz_type: str
+    name: str
+
+    @field_validator('viz_type')
+    @classmethod
+    def validate_viz_type(cls, v: str) -> str:
+        """Validate visualization type."""
+        valid_types = ['stream', 'record', 'plot', 'mesh']  # Add actual viz types
+        if v not in valid_types:
+            raise ValueError(f"Invalid viz_type: {v}. Valid types: {valid_types}")
+        return v
+
+
+@mcp.tool()
+def run_viz(input: RunVizInput) -> str:
     return "viz ran"
 
     # try:
