@@ -1,7 +1,7 @@
 defaults:
   - override /mcp: default
 
-host: "192.168.1.92"  # Assuming different IP for rpi1
+host: "192.168.1.98"
 port: 8000
 extras: [bot]  # RPi nodes likely have fewer resources
 tools:

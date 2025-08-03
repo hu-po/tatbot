@@ -1,7 +1,7 @@
 defaults:
   - override /mcp: default
 
-host: "192.168.1.94"  # Assuming different IP for ojo
+host: "192.168.1.96"
 port: 8000
 extras: [cam, viz]  # Camera-focused node
 tools:

@@ -1,7 +1,7 @@
 defaults:
   - override /mcp: default
 
-host: "192.168.1.95"  # Assuming different IP for trossen-ai
+host: "192.168.1.97"
 port: 8000
 extras: [bot, dev]  # Arm-focused node
 tools:

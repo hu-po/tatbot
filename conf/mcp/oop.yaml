@@ -1,7 +1,7 @@
 defaults:
   - override /mcp: default
 
-host: "192.168.1.91"  # Assuming different IP for oop
+host: "192.168.1.51"
 port: 8000
 extras: [bot, dev, gen, img, viz, gpu]
 tools:

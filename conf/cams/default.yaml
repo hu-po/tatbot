@@ -43,6 +43,72 @@ ipcameras:
         xyz: [0.0, 0.0, 0.0]
       rot:
         wxyz: [1.0, 0.0, 0.0, 0.0]
+  - name: "camera3"
+    width: 1920
+    height: 1080
+    fps: 5
+    urdf_link_name: "camera3_optical_frame"
+    ip: "192.168.1.93"
+    username: "admin"
+    password: "CAMERA_3_PASSWORD"
+    rtsp_port: 554
+    intrinsics:
+      fov: 1.937
+      fov_depth: null
+      aspect: 1.77
+      fx: 664.0
+      fy: 976.5
+      ppx: 960.0
+      ppy: 540.0
+    extrinsics:
+      pos:
+        xyz: [0.0, 0.0, 0.0]
+      rot:
+        wxyz: [1.0, 0.0, 0.0, 0.0]
+  - name: "camera4"
+    width: 1920
+    height: 1080
+    fps: 5
+    urdf_link_name: "camera4_optical_frame"
+    ip: "192.168.1.94"
+    username: "admin"
+    password: "CAMERA_4_PASSWORD"
+    rtsp_port: 554
+    intrinsics:
+      fov: 1.937
+      fov_depth: null
+      aspect: 1.77
+      fx: 664.0
+      fy: 976.5
+      ppx: 960.0
+      ppy: 540.0
+    extrinsics:
+      pos:
+        xyz: [0.0, 0.0, 0.0]
+      rot:
+        wxyz: [1.0, 0.0, 0.0, 0.0]
+  - name: "camera5"
+    width: 1920
+    height: 1080
+    fps: 5
+    urdf_link_name: "camera5_optical_frame"
+    ip: "192.168.1.95"
+    username: "admin"
+    password: "CAMERA_5_PASSWORD"
+    rtsp_port: 554
+    intrinsics:
+      fov: 1.937
+      fov_depth: null
+      aspect: 1.77
+      fx: 664.0
+      fy: 976.5
+      ppx: 960.0
+      ppy: 540.0
+    extrinsics:
+      pos:
+        xyz: [0.0, 0.0, 0.0]
+      rot:
+        wxyz: [1.0, 0.0, 0.0, 0.0]
 realsenses:
   - name: "realsense1"
     width: 640

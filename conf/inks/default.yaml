@@ -11,3 +11,53 @@ inkcaps:
       rgb: [255, 255, 255]
     diameter_m: 0.008
     depth_m: 0.01
+  - name: inkcap_left_small_1
+    ink: null
+    diameter_m: 0.008
+    depth_m: 0.013
+  - name: inkcap_left_small_2
+    ink: null
+    diameter_m: 0.008
+    depth_m: 0.01
+  - name: inkcap_left_small_3
+    ink: null
+    diameter_m: 0.008
+    depth_m: 0.01
+  - name: inkcap_left_medium_0
+    ink: null
+    diameter_m: 0.012
+    depth_m: 0.01
+  - name: inkcap_left_medium_1
+    ink: null
+    diameter_m: 0.012
+    depth_m: 0.01
+  - name: inkcap_right_large
+    ink:
+      name: bright_red
+      rgb: [255, 0, 0]
+    diameter_m: 0.014
+    depth_m: 0.014
+  - name: inkcap_right_small_0
+    ink: null
+    diameter_m: 0.008
+    depth_m: 0.01
+  - name: inkcap_right_small_1
+    ink: null
+    diameter_m: 0.008
+    depth_m: 0.01
+  - name: inkcap_right_small_2
+    ink: null
+    diameter_m: 0.008
+    depth_m: 0.01
+  - name: inkcap_right_small_3
+    ink: null
+    diameter_m: 0.008
+    depth_m: 0.01
+  - name: inkcap_right_medium_0
+    ink: null
+    diameter_m: 0.012
+    depth_m: 0.01
+  - name: inkcap_right_medium_1
+    ink: null
+    diameter_m: 0.012
+    depth_m: 0.01
