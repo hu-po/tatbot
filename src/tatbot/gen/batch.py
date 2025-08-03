@@ -1,19 +1,6 @@
-# Heavy JAX imports deferred to runtime for faster CLI start-up
-
-def _import_jax():
-    import jax
-    return jax
-
-
-def _import_jnp():
-    import jax.numpy as jnp
-    return jnp
-
-
-def _import_jaxlie():
-    import jaxlie
-    return jaxlie
-
+import jax
+import jax.numpy as jnp
+import jaxlie
 import numpy as np
 
 from tatbot.data.scene import Scene
@@ -33,8 +20,6 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
     l = scene.stroke_length  # poses per stroke
     o = scene.arms.offset_num  # offset samples
 
-    jnp = _import_jnp()
-
     # Fill arrays from strokes
     ee_pos_l = np.zeros((b, l, o, 3), dtype=np.float32)
     ee_pos_r = np.zeros((b, l, o, 3), dtype=np.float32)
@@ -45,8 +30,6 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
 
     for i, (stroke_l, stroke_r) in enumerate(strokelist.strokes):
         if not stroke_l.is_inkdip:
-            jax = _import_jax()
-            jaxlie = _import_jaxlie()
             tf = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(scene.skin.design_pose.rot.wxyz), scene.skin.design_pose.pos.xyz)
             base_l = jax.vmap(lambda pos: tf @ pos)(stroke_l.meter_coords)
             base_l = base_l.reshape(l, 3)
@@ -55,8 +38,6 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
             # inkdips do not have meter_coords, only ee_pos
             ee_pos_l[i] = np.repeat(stroke_l.ee_pos.reshape(l, 1, 3), o, 1)
         if not stroke_r.is_inkdip:
-            jax = _import_jax()
-            jaxlie = _import_jaxlie()
             tf = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(scene.skin.design_pose.rot.wxyz), scene.skin.design_pose.pos.xyz)
             base_r = jax.vmap(lambda pos: tf @ pos)(stroke_r.meter_coords)
             base_r = base_r.reshape(l, 3)

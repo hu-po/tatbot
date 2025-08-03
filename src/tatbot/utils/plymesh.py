@@ -9,21 +9,10 @@ Includes density-based trimming to remove low-confidence regions and Laplacian s
 
 import os
 
+import jax.numpy as jnp
+import jaxlie
 import numpy as np
-
-
-# Defer heavy imports until needed
-def _import_jax_numpy():
-    import jax.numpy as jnp
-    return jnp
-
-def _import_jaxlie():
-    import jaxlie
-    return jaxlie
-
-def _import_open3d():
-    import open3d as o3d
-    return o3d
+import open3d as o3d
 
 from tatbot.data.pose import Pose
 from tatbot.utils.log import get_logger
@@ -123,8 +112,6 @@ def create_mesh_from_ply_files(
         half_height = zone_height_m / 2.0
         
         # Create SE3 transformation from zone pose
-        jaxlie = _import_jaxlie()
-        jnp = _import_jax_numpy()
         zone_se3 = jaxlie.SE3(wxyz_xyz=jnp.concatenate([zone_pose.rot.wxyz, zone_pose.pos.xyz], axis=-1))
         
         # Transform points to zone coordinate system
