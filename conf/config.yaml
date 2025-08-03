@@ -8,3 +8,4 @@ defaults:
   - skins: default
   - tags: default
   - urdf: default
+  - mcp: default
