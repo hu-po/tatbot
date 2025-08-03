@@ -1,20 +1,22 @@
-from pydantic import field_validator, model_validator
+import functools
+import json
 from pathlib import Path
 from typing import List, Optional
-import json
-import yaml
-import numpy as np
-from pydantic_numpy.typing import NpNDArray
 
-from tatbot.data.base import BaseCfg
+import yaml
+from pydantic import field_validator, model_validator
+
+from tatbot.bot.urdf import get_link_poses
 from tatbot.data.arms import Arms
+from tatbot.data.base import BaseCfg
 from tatbot.data.cams import Cams
-from tatbot.data.inks import Inks, InkCap
+from tatbot.data.inks import InkCap, Inks
 from tatbot.data.pose import ArmPose, Pos
 from tatbot.data.skin import Skin
 from tatbot.data.tags import Tags
 from tatbot.data.urdf import URDF
-from tatbot.bot.urdf import get_link_poses
+from tatbot.utils.validation import expand_user_path
+
 
 class Scene(BaseCfg):
     """Scene is a collection of objects that represent the scene."""
@@ -61,8 +63,8 @@ class Scene(BaseCfg):
     sleep_pos_r: Optional[ArmPose] = None
     ready_pos_l: Optional[ArmPose] = None
     ready_pos_r: Optional[ArmPose] = None
-    sleep_pos_full: Optional[NpNDArray] = None
-    ready_pos_full: Optional[NpNDArray] = None
+    sleep_pos_full: Optional[ArmPose] = None
+    ready_pos_full: Optional[ArmPose] = None
     pens_config: Optional[dict] = None
     inkcaps_l: Optional[dict[str, InkCap]] = None
     inkcaps_r: Optional[dict[str, InkCap]] = None
@@ -71,51 +73,54 @@ class Scene(BaseCfg):
     design_dir: Optional[Path] = None
 
     @field_validator('pens_config_path', 'design_dir_path', mode='before')
-    def expand_user_path(cls, v):
-        if v:
-            path = Path(v).expanduser()
-            if 'plymesh_dir' in v:
-                path.mkdir(parents=True, exist_ok=True)
-            return path
-        return v
-
-    @field_validator('pens_config_path', 'design_dir_path')
-    def path_must_exist(cls, v: Path):
-        if v and not v.exists():
-            raise ValueError(f"Path does not exist: {v}")
-        return v
+    def expand_user_path_validator(cls, v):
+        return expand_user_path(v)
 
     @model_validator(mode='after')
     def load_poses(self) -> 'Scene':
+        # Load poses using cached function
+        poses = self._load_poses_cached(
+            self.sleep_pos_l_name, 
+            self.sleep_pos_r_name,
+            self.ready_pos_l_name, 
+            self.ready_pos_r_name
+        )
+        
+        # Return updated model copy
+        return self.model_copy(update=poses)
+    
+    @staticmethod
+    @functools.lru_cache(maxsize=32)
+    def _load_poses_cached(sleep_l_name: str, sleep_r_name: str, ready_l_name: str, ready_r_name: str) -> dict:
+        """Cache pose loading to avoid repeated file I/O."""
         poses_dir = Path.home() / "tatbot/config/poses"
         
-        # Load poses without mutating self
-        with open(poses_dir / f"{self.sleep_pos_l_name}.yaml") as f:
+        # Load poses
+        with open(poses_dir / f"{sleep_l_name}.yaml") as f:
             sleep_pos_l = ArmPose(**yaml.safe_load(f))
-        with open(poses_dir / f"{self.sleep_pos_r_name}.yaml") as f:
+        with open(poses_dir / f"{sleep_r_name}.yaml") as f:
             sleep_pos_r = ArmPose(**yaml.safe_load(f))
-        with open(poses_dir / f"{self.ready_pos_l_name}.yaml") as f:
+        with open(poses_dir / f"{ready_l_name}.yaml") as f:
             ready_pos_l = ArmPose(**yaml.safe_load(f))
-        with open(poses_dir / f"{self.ready_pos_r_name}.yaml") as f:
+        with open(poses_dir / f"{ready_r_name}.yaml") as f:
             ready_pos_r = ArmPose(**yaml.safe_load(f))
 
         sleep_pos_full = ArmPose.make_bimanual_joints(sleep_pos_l, sleep_pos_r)
         ready_pos_full = ArmPose.make_bimanual_joints(ready_pos_l, ready_pos_r)
         
-        # Return updated model copy
-        return self.model_copy(update={
+        return {
             'sleep_pos_l': sleep_pos_l,
             'sleep_pos_r': sleep_pos_r,
             'ready_pos_l': ready_pos_l,
             'ready_pos_r': ready_pos_r,
             'sleep_pos_full': sleep_pos_full,
             'ready_pos_full': ready_pos_full,
-        })
+        }
 
     @model_validator(mode='after')
     def load_urdf_poses(self) -> 'Scene':
         link_names = self.urdf.ink_link_names + self.urdf.origin_widget_names
-        link_poses = get_link_poses(self.urdf.path, link_names, self.ready_pos_full)
+        link_poses = get_link_poses(self.urdf.path, link_names, self.ready_pos_full.joints)
 
         # Update inkcap poses without mutating existing objects
         updated_inkcaps = []

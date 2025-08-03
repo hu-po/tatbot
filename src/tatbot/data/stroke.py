@@ -1,10 +1,8 @@
 import os
 from typing import Optional
-from pathlib import Path
 
 import jax_dataclasses as jdc
 import numpy as np
-import yaml
 from jaxtyping import Array, Float
 from pydantic import field_validator
 from safetensors.flax import load_file, save_file

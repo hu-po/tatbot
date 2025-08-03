@@ -1,9 +1,11 @@
-from pydantic import field_validator
-from typing import List, Optional
 import ipaddress
+from typing import List, Optional
+
+from pydantic import field_validator
 
 from tatbot.data.base import BaseCfg
 from tatbot.data.pose import Pose
+
 
 class Intrinsics(BaseCfg):
     fov: float

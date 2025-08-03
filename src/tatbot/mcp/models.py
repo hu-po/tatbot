@@ -16,6 +16,11 @@ class MCPSettings(BaseSettings):
     debug: bool = False
     extras: List[str] = []
     tools: List[str] = []
+    
+    # Security settings
+    auth_token: Optional[str] = None
+    ip_allowlist: List[str] = ["127.0.0.1", "::1"]  # localhost by default
+    require_auth: bool = True
 
     class Config:
         env_prefix = "MCP_"
@@ -24,6 +29,7 @@ class MCPSettings(BaseSettings):
 # Request Models
 class RunOpInput(BaseModel):
     """Input model for running robot operations."""
+    version: str = "1.0"  # Tool versioning
     op_name: str
     scene_name: str = "default"
     debug: bool = False
@@ -34,7 +40,7 @@ class RunOpInput(BaseModel):
         """Validate that the operation name exists in available operations."""
         # Import here to avoid circular imports
         from tatbot.ops import NODE_AVAILABLE_OPS
-        
+
         # Get all available operations across all nodes
         all_ops = set()
         for ops in NODE_AVAILABLE_OPS.values():
@@ -63,6 +69,7 @@ class RunOpInput(BaseModel):
 
 class PingNodesInput(BaseModel):
     """Input model for pinging network nodes."""
+    version: str = "1.0"  # Tool versioning
     nodes: Optional[List[str]] = None
 
     @field_validator('nodes')
@@ -84,17 +91,18 @@ class PingNodesInput(BaseModel):
 
 class ListScenesInput(BaseModel):
     """Input model for listing available scenes."""
-    pass
+    version: str = "1.0"  # Tool versioning
 
 
 class ListNodesInput(BaseModel):
     """Input model for listing available nodes."""
-    pass
+    version: str = "1.0"  # Tool versioning
 
 
 # Response Models
 class RunOpResult(BaseModel):
     """Response model for robot operation execution."""
+    version: str = "1.0"  # Tool versioning
     message: str
     success: bool
     op_name: str
@@ -103,6 +111,7 @@ class RunOpResult(BaseModel):
 
 class PingNodesResponse(BaseModel):
     """Response model for network node ping results."""
+    version: str = "1.0"  # Tool versioning
     status: str
     details: List[str]
     all_success: bool
@@ -110,12 +119,14 @@ class PingNodesResponse(BaseModel):
 
 class ListScenesResponse(BaseModel):
     """Response model for available scenes listing."""
+    version: str = "1.0"  # Tool versioning
     scenes: List[str]
     count: int
 
 
 class ListNodesResponse(BaseModel):
     """Response model for available nodes listing."""
+    version: str = "1.0"  # Tool versioning
     nodes: List[str]
     count: int
 
@@ -129,6 +140,7 @@ class NodeInfo(BaseModel):
 
 class NodesStatusResponse(BaseModel):
     """Response model for nodes status."""
+    version: str = "1.0"  # Tool versioning
     nodes: List[NodeInfo]
     total_count: int
     online_count: int
@@ -136,20 +148,22 @@ class NodesStatusResponse(BaseModel):
 
 class GetNfsInfoInput(BaseModel):
     """Input model for getting NFS information."""
-    pass
+    version: str = "1.0"  # Tool versioning
 
 
 class GetNfsInfoResponse(BaseModel):
     """Response model for NFS information."""
+    version: str = "1.0"  # Tool versioning
     info: str
 
 
 class GetLatestRecordingInput(BaseModel):
     """Input model for getting latest recording."""
-    pass
+    version: str = "1.0"  # Tool versioning
 
 
 class GetLatestRecordingResponse(BaseModel):
     """Response model for latest recording."""
+    version: str = "1.0"  # Tool versioning
     filename: str
     found: bool

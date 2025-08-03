@@ -1,10 +1,11 @@
-from pydantic import Field, field_validator
-import numpy as np
-import yaml
 from pathlib import Path
+
+import numpy as np
+from pydantic import field_validator
 from pydantic_numpy.typing import NpNDArray
 
 from tatbot.data.base import BaseCfg
+
 
 class Pos(BaseCfg):
     """Position in meters (xyz)."""
@@ -16,7 +17,10 @@ class Pos(BaseCfg):
         # Handle pydantic-numpy serialized format
         if isinstance(v, dict) and 'data' in v:
             return np.array(v['data'], dtype=np.float32)
-        return np.array(v, dtype=np.float32)
+        # Convert only if needed to avoid unnecessary copies
+        if not isinstance(v, np.ndarray):
+            v = np.asarray(v, dtype=np.float32)
+        return v
 
     @field_validator('xyz')
     def check_shape(cls, v):
@@ -34,7 +38,10 @@ class Rot(BaseCfg):
         # Handle pydantic-numpy serialized format
         if isinstance(v, dict) and 'data' in v:
             return np.array(v['data'], dtype=np.float32)
-        return np.array(v, dtype=np.float32)
+        # Convert only if needed to avoid unnecessary copies
+        if not isinstance(v, np.ndarray):
+            v = np.asarray(v, dtype=np.float32)
+        return v
 
     @field_validator('wxyz')
     def check_shape(cls, v):
@@ -60,12 +67,16 @@ class ArmPose(BaseCfg):
         # Handle pydantic-numpy serialized format
         if isinstance(v, dict) and 'data' in v:
             return np.array(v['data'], dtype=np.float32)
-        return np.array(v, dtype=np.float32)
+        # Convert only if needed to avoid unnecessary copies
+        if not isinstance(v, np.ndarray):
+            v = np.asarray(v, dtype=np.float32)
+        return v
 
-    @staticmethod
-    def make_bimanual_joints(pose_l: "ArmPose", pose_r: "ArmPose") -> NpNDArray:
+    @classmethod
+    def make_bimanual_joints(cls, pose_l: "ArmPose", pose_r: "ArmPose") -> "ArmPose":
         """Concatenate two arm poses to a single bimanual pose."""
-        return np.concatenate([pose_l.joints, pose_r.joints]).astype(np.float32)
+        bimanual_joints = np.concatenate([pose_l.joints, pose_r.joints]).astype(np.float32)
+        return cls(joints=bimanual_joints)
 
     @staticmethod
     def get_yaml_dir() -> str:

@@ -4,7 +4,7 @@ import asyncio
 import concurrent.futures
 import os
 from pathlib import Path
-from typing import Dict, Callable, Any
+from typing import Callable, Dict
 
 from mcp.server.fastmcp import Context
 
@@ -37,6 +37,7 @@ async def run_op(input_data, ctx: Context, node_name: str):
     
     await ctx.info(f"Running robot op: {input_data.op_name} on {node_name}")
     
+    op = None  # Initialize op for cleanup
     try:
         
         op_class, op_config = get_op(input_data.op_name, node_name)
@@ -84,8 +85,12 @@ async def run_op(input_data, ctx: Context, node_name: str):
             scene_name=input_data.scene_name
         )
     finally:
-        if 'op' in locals():
-            op.cleanup()
+        # Ensure cleanup is called even if op.run() never yielded
+        if op and hasattr(op, 'cleanup'):
+            try:
+                op.cleanup()
+            except Exception as cleanup_error:
+                log.error(f"Error during op cleanup: {cleanup_error}")
 
 
 @mcp_handler

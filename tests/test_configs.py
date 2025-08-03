@@ -1,17 +1,17 @@
-from pathlib import Path
-import hydra
-from omegaconf import OmegaConf
-import pytest
-import yaml
-import tempfile
 import os
+import tempfile
+from pathlib import Path
+
+import hydra
+import numpy as np
+import pytest
+from omegaconf import OmegaConf
 
 from tatbot.config_schema import AppConfig
-from tatbot.main import compose_and_validate_scene, load_scene_from_config
-from tatbot.data.base import BaseCfg
 from tatbot.data.arms import Arms
 from tatbot.data.pose import ArmPose
-import numpy as np
+from tatbot.main import compose_and_validate_scene, load_scene_from_config
+
 
 def test_scene_configs():
     """Test that scene configurations can be loaded (skip data validation errors)."""

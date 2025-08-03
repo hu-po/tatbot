@@ -1,7 +1,7 @@
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import pyrealsense2 as rs
 import yaml

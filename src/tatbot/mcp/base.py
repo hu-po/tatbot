@@ -1,7 +1,8 @@
 """Base MCP server abstractions (legacy - will be deprecated)."""
 
-import traceback
 import asyncio
+import traceback
+
 from mcp.server.fastmcp import Context
 
 from tatbot.data.base import BaseCfg

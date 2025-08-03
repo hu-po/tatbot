@@ -1,8 +1,10 @@
-from pydantic import field_validator
-from tatbot.data.base import BaseCfg
 from pathlib import Path
 
+from pydantic import field_validator
+
+from tatbot.data.base import BaseCfg
 from tatbot.data.pose import Pose
+
 
 class Skin(BaseCfg):
     """Skin is a collection of points that represent the skin of the robot."""

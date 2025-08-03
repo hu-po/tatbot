@@ -1,9 +1,11 @@
-from pydantic import field_validator
-from pathlib import Path
 import ipaddress
+from pathlib import Path
+
+from pydantic import field_validator
 
 from tatbot.data.base import BaseCfg
 from tatbot.data.pose import Pos, Rot
+
 
 class Arms(BaseCfg):
     ip_address_l: str

@@ -1,7 +1,8 @@
+from pathlib import Path
+
 import hydra
 from hydra import compose, initialize
 from omegaconf import DictConfig, OmegaConf
-from pathlib import Path
 
 from tatbot.config_schema import AppConfig
 from tatbot.data.scene import Scene

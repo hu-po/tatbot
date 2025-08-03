@@ -1,5 +1,7 @@
-from tatbot.data.base import BaseCfg
 from typing import Tuple
+
+from tatbot.data.base import BaseCfg
+
 
 class Tags(BaseCfg):
     family: str

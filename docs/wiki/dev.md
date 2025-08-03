@@ -9,6 +9,12 @@ uv run ruff format --config pyproject.toml
 uv run ruff check --config pyproject.toml --fix
 ```
 
+helpful oneliner to get diff for browser based models:
+
+```bash
+rm -rf diff.txt && git diff main...configrefactor > diff.txt && xclip -selection clipboard < diff.txt
+```
+
 To run all quality gates, including tests and type checking, use the CI script:
 ```bash
 ./scripts/ci_quality_gates.sh

@@ -1,18 +1,17 @@
 """Base classes for tatbot data models."""
 
-import yaml
-import numpy as np
+import reprlib
 from pathlib import Path
+
+import numpy as np
+import yaml
 from pydantic import BaseModel
-from typing import Any, Dict
 
 
 class BaseCfg(BaseModel):
     """Base configuration class with utility methods."""
     
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert model to dictionary with JSON-serializable values."""
-        return self.model_dump(mode='json')
+
     
     def to_yaml(self, filepath: str = None) -> str:
         """Convert model to YAML string or save to file."""
@@ -36,8 +35,12 @@ class BaseCfg(BaseModel):
         return yaml_str
     
     def __str__(self) -> str:
-        """Pretty YAML representation."""
-        return self.to_yaml()
+        """Pretty YAML representation, truncated for large arrays."""
+        yaml_str = self.to_yaml()
+        # Truncate very long output for readability
+        if len(yaml_str) > 1000:
+            return reprlib.repr(yaml_str)
+        return yaml_str
     
     def __repr__(self) -> str:
         """Developer-friendly representation."""

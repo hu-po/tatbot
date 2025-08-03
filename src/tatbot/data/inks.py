@@ -1,7 +1,8 @@
-from tatbot.data.base import BaseCfg
 from typing import Optional, Tuple
 
+from tatbot.data.base import BaseCfg
 from tatbot.data.pose import Pose
+
 
 class Ink(BaseCfg):
     name: str

@@ -4,8 +4,8 @@ import pytest
 from pydantic import ValidationError
 
 from tatbot.mcp.base import MCPConfig, RunOpInput
-from tatbot.mcp.ook import PingNodesInput
 from tatbot.mcp.ojo import ManagePolicyInput
+from tatbot.mcp.ook import PingNodesInput
 from tatbot.mcp.rpi1 import RunVizInput
 
 

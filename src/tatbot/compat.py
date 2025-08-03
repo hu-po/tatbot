@@ -1,6 +1,7 @@
 from tatbot.data.scene import Scene
 from tatbot.main import compose_and_validate_scene
 
+
 def load_scene(name="default") -> Scene:
     """Legacy compatibility function for loading scenes.
     

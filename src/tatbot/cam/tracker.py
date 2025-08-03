@@ -2,8 +2,17 @@ import time
 from typing import List
 
 import cv2
-import jax.numpy as jnp
-import jaxlie
+
+# Heavy imports deferred to runtime to speed up CLI startup
+
+def _import_jnp():
+    import jax.numpy as jnp
+    return jnp
+
+
+def _import_jaxlie():
+    import jaxlie
+    return jaxlie
 import numpy as np
 import pupil_apriltags as apriltag
 
@@ -50,6 +59,8 @@ class TagTracker:
             f"🏷️ Filtered down to {len(detections)} detections using decision margin {self.config.decision_margin}"
         )
 
+        jaxlie = _import_jaxlie()
+        jnp = _import_jnp()
         camera_transform_b = jaxlie.SE3.from_rotation_and_translation(
             rotation=jaxlie.SO3(camera_wxyz), translation=jnp.array(camera_pos)
         )

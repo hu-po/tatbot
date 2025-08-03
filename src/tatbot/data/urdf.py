@@ -1,7 +1,10 @@
-from pydantic import field_validator
-from tatbot.data.base import BaseCfg
 from pathlib import Path
 from typing import Tuple
+
+from pydantic import field_validator
+
+from tatbot.data.base import BaseCfg
+
 
 class URDF(BaseCfg):
     path: Path

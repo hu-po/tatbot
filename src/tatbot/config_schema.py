@@ -1,5 +1,7 @@
+from typing import Any, Dict, Optional
+
 from pydantic import BaseModel, model_validator
-from typing import Optional, Dict, Any
+
 from tatbot.data.arms import Arms
 from tatbot.data.cams import Cams
 from tatbot.data.inks import Inks
@@ -8,32 +10,46 @@ from tatbot.data.skin import Skin
 from tatbot.data.tags import Tags
 from tatbot.data.urdf import URDF
 
+
 class AppConfig(BaseModel):
     model_config = {'arbitrary_types_allowed': True}
-    arms: Arms
-    cams: Cams
-    inks: Inks
+    
+    # Keep raw config data (pure data, no object instances)
+    arms: dict
+    cams: dict
+    inks: dict
     poses: Optional[Dict[str, Any]] = None  # Poses are loaded individually by Scene
     scenes: dict  # Raw scene config data
-    skins: Skin
-    tags: Tags
-    urdf: URDF
+    skins: dict
+    tags: dict
+    urdf: dict
     
-    # Computed scene object
+    # Computed objects (instantiated in model_validator)
     scene: Scene = None
     
     @model_validator(mode='after')
     def create_scene(self) -> 'AppConfig':
-        """Compose the full Scene object from all components."""
-        scene_data = self.scenes.copy()
+        """Compose the full Scene object from all components.
         
-        # Inject the actual component objects into the scene data
-        scene_data['arms'] = self.arms
-        scene_data['cams'] = self.cams
-        scene_data['inks'] = self.inks
-        scene_data['skin'] = self.skins
-        scene_data['tags'] = self.tags
-        scene_data['urdf'] = self.urdf
+        Instantiate objects from pure config data to maintain Hydra's
+        guarantee that configs contain only pure data.
+        """
+        # Instantiate component objects from config data
+        arms_obj = Arms(**self.arms)
+        cams_obj = Cams(**self.cams)
+        inks_obj = Inks(**self.inks)
+        skin_obj = Skin(**self.skins)
+        tags_obj = Tags(**self.tags)
+        urdf_obj = URDF(**self.urdf)
+        
+        # Compose scene data with instantiated objects
+        scene_data = self.scenes.copy()
+        scene_data['arms'] = arms_obj
+        scene_data['cams'] = cams_obj
+        scene_data['inks'] = inks_obj
+        scene_data['skin'] = skin_obj
+        scene_data['tags'] = tags_obj
+        scene_data['urdf'] = urdf_obj
         
         # Create the scene with all dependencies
         self.scene = Scene(**scene_data)

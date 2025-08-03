@@ -1,7 +1,7 @@
 import ipaddress
-from pathlib import Path
 
 from pydantic import field_validator
+
 from tatbot.data.base import BaseCfg
 
 

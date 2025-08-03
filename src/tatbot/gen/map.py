@@ -12,9 +12,17 @@ The mesh is provided as vertices and faces arrays. The function expects a valid 
 with proper connectivity for accurate geodesic computations.
 """
 
-import jaxlie
 import numpy as np
-import open3d as o3d
+
+
+# Defer heavy imports until needed
+def _import_jaxlie():
+    import jaxlie
+    return jaxlie
+
+def _import_open3d():
+    import open3d as o3d
+    return o3d
 import potpourri3d as pp3d
 from scipy.spatial import KDTree
 
@@ -62,6 +70,7 @@ def map_strokes_to_mesh(
         raise ValueError("Mesh has invalid face indices")
     
     # Create Open3D mesh for normal computation
+    o3d = _import_open3d()
     mesh = o3d.geometry.TriangleMesh()
     mesh.vertices = o3d.utility.Vector3dVector(vertices)
     mesh.triangles = o3d.utility.Vector3iVector(faces)
@@ -78,6 +87,7 @@ def map_strokes_to_mesh(
     p_3d_tree = KDTree(vertices)
     
     # Create jaxlie SE3 transformation from design pose
+    jaxlie = _import_jaxlie()
     design_translation = jaxlie.SE3(wxyz_xyz=np.concatenate([design_origin.rot.wxyz, design_origin.pos.xyz], axis=-1))
     
     log.info(f"Design origin: pos={design_origin.pos.xyz}, quat={design_origin.rot.wxyz}")

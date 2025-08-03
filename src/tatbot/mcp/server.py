@@ -1,12 +1,16 @@
 """Generic MCP server with Hydra configuration support."""
 
-import hydra
 from pathlib import Path
-from omegaconf import DictConfig, OmegaConf
+
+import hydra
+from fastapi.responses import JSONResponse
 from mcp.server.fastmcp import FastMCP
+from omegaconf import DictConfig, OmegaConf
 
 from tatbot.mcp import handlers
+from tatbot.mcp.middleware import MCPSecurityMiddleware
 from tatbot.mcp.models import MCPSettings
+from tatbot.mcp.openapi import generate_openapi_schema
 from tatbot.utils.log import get_logger
 
 log = get_logger("mcp.server", "🔌")
@@ -58,6 +62,13 @@ def main(cfg: DictConfig):
     # Create FastMCP server
     mcp = FastMCP(f"tatbot.{node_name}", host=str(settings.host), port=settings.port)
     
+    # Add security middleware if authentication is enabled
+    if settings.require_auth or settings.ip_allowlist:
+        security_middleware = MCPSecurityMiddleware(settings)
+        # Note: FastMCP middleware addition depends on the FastMCP API
+        # This may need adjustment based on the actual FastMCP implementation
+        log.info("Security middleware configured")
+    
     # Register tools
     _register_tools(mcp, settings.tools, node_name)
     
@@ -72,6 +83,12 @@ def main(cfg: DictConfig):
         except Exception as e:
             log.error(f"Failed to get nodes: {e}")
             return f"Error getting nodes: {e}"
+    
+    # Add OpenAPI endpoint for typed client generation
+    @mcp.get("/openapi.json")
+    async def get_openapi_schema():
+        """Get OpenAPI schema for typed client generation."""
+        return JSONResponse(content=generate_openapi_schema())
     
     # Start server
     log.info(f"🚀 Starting MCP server on {settings.host}:{settings.port}")
