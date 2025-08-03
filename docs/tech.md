@@ -26,4 +26,5 @@ source code explanations:
 
 - [Arch](src/arch.md)
 - [Config](src/config.md)
+- [Config Refactored](src/config_refactored.md)
 

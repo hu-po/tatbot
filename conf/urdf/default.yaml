@@ -1,0 +1,18 @@
+path: "~/tatbot/urdf/tatbot.urdf"
+ee_link_names:
+  - "left/tattoo_needle"
+  - "right/tattoo_needle"
+tag_link_names:
+  - "tag0"
+cam_link_names:
+  - "left/realsense_depth_optical_frame"
+  - "right/realsense_depth_optical_frame"
+  - "camera1_optical_frame"
+  - "camera2_optical_frame"
+ink_link_names:
+  - "inkcap_left_large"
+  - "inkcap_left_small_0"
+origin_widget_names:
+  - "origin_widget_left"
+  - "origin_widget_right"
+root_link_name: "root"

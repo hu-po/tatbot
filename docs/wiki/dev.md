@@ -18,3 +18,6 @@ git fetch upstream
 git merge upstream/main
 git push origin main
 ```
+
+tips for models:
+- use "uv pip install" and "uv run python" inside the ~/tatbot/.venv

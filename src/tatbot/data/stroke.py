@@ -1,39 +1,45 @@
 import os
-from dataclasses import dataclass
+from typing import Optional
+from pathlib import Path
 
 import jax_dataclasses as jdc
 import numpy as np
+import yaml
 from jaxtyping import Array, Float
+from pydantic import field_validator
 from safetensors.flax import load_file, save_file
 
-from tatbot.data import Yaml
+from tatbot.data.base import BaseCfg
 from tatbot.utils.log import get_logger
 
 log = get_logger("data.stroke", "🔳")
 
 
-@dataclass
-class Stroke(Yaml):
+class Stroke(BaseCfg):
+    """A stroke in the tatbot system."""
+    
+    model_config = {'arbitrary_types_allowed': True}
+    
     description: str
     """Natural language description of the path."""
     arm: str
     """Arm that will execute the path, either left or right."""
 
-    meter_coords: np.ndarray | None = None  # (N, 3)
+    meter_coords: Optional[np.ndarray] = None  # (N, 3)
     """Numpy array of meter coordinates for each pose in path <x, y, z> (design frame)."""
-    pixel_coords: np.ndarray | None = None  # (N, 2)
+    pixel_coords: Optional[np.ndarray] = None  # (N, 2)
     """Numpy array of pixel coordinates for each pose in path <x (0-width), y (0-height)> (design frame)."""
     
-    gcode_text: str | None = None
+    gcode_text: Optional[str] = None
     """G-code text for the stroke."""
-    frame_path: str | None = None
+    frame_path: Optional[str] = None
     """Relative path to the frame image for this stroke, or None if not applicable."""
 
-    ee_pos: np.ndarray | None = None  # (N, 3)
+    ee_pos: Optional[np.ndarray] = None  # (N, 3)
     """End effector position in meters <x, y, z> (world frame)."""
-    ee_rot: np.ndarray | None = None  # (N, 4)
+    ee_rot: Optional[np.ndarray] = None  # (N, 4)
     """End effector orientation in quaternion <x, y, z, w> (world frame)."""
-    normals: np.ndarray | None = None  # (N, 3)
+    normals: Optional[np.ndarray] = None  # (N, 3)
     """Surface normals for each pose in the stroke <x, y, z> (world frame)."""
 
     is_rest: bool = False
@@ -41,16 +47,25 @@ class Stroke(Yaml):
     is_inkdip: bool = False
     """Whether the stroke is an inkdip stroke."""
 
-    inkcap: str | None = None
+    inkcap: Optional[str] = None
     """Name of the inkcap which provided the ink for the stroke."""
-    color: str | None = None
-    """Color of the stroke."""    
+    color: Optional[str] = None
+    """Color of the stroke."""
+    
+    @field_validator('arm')
+    def validate_arm(cls, v):
+        if v not in ['left', 'right']:
+            raise ValueError("arm must be 'left' or 'right'")
+        return v    
 
 
-@dataclass
-class StrokeList(Yaml):
+class StrokeList(BaseCfg):
+    """List of stroke pairs."""
+    
     strokes: list[tuple[Stroke, Stroke]]
     """List of stroke pairs."""
+
+
 
 
 @jdc.pytree_dataclass

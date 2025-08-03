@@ -1,8 +1,10 @@
 import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+from pathlib import Path
 
 import pyrealsense2 as rs
+import yaml
 
 from tatbot.data.cams import Cams, RealSenseCameraConfig
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
@@ -101,7 +103,10 @@ if __name__ == "__main__":
         log.setLevel(logging.DEBUG)
     print_config(args, log)
 
-    cams = Cams.from_yaml(args.cams_yaml)
+    cams_path = Path(args.cams_yaml).expanduser()
+    with open(cams_path) as f:
+        cams_data = yaml.safe_load(f)
+    cams = Cams(**cams_data)
     log.info(f"Loaded {len(cams.realsenses)} RealSense and {len(cams.ipcameras)} IP cameras from config.")
 
     local_serials = get_local_realsense_serials()

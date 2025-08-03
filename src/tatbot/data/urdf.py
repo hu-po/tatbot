@@ -1,25 +1,31 @@
-from dataclasses import dataclass
+from pydantic import field_validator
+from tatbot.data.base import BaseCfg
+from pathlib import Path
+from typing import Tuple
 
-from tatbot.data import Yaml
-
-
-@dataclass
-class URDF(Yaml):
-    path: str
+class URDF(BaseCfg):
+    path: Path
     """Path to the URDF file for the robot."""
 
-    ee_link_names: tuple[str, str]
+    ee_link_names: Tuple[str, str]
     """Names of the ee (end effector) links in the URDF."""
-    tag_link_names: tuple[str, ...]
+    tag_link_names: Tuple[str, ...]
     """Names of the tag (apriltag) links in the URDF."""
-    cam_link_names: tuple[str, ...]
+    cam_link_names: Tuple[str, ...]
     """Names of the camera links in the URDF."""
-    ink_link_names: tuple[str, ...]
+    ink_link_names: Tuple[str, ...]
     """Names of the inkcap links in the URDF."""
-    origin_widget_names: tuple[str, str]
+    origin_widget_names: Tuple[str, str]
     """Names of the origin widget links in the URDF."""
     root_link_name: str
     """Name of the origin/root link in the URDF."""
 
-    yaml_dir: str = "~/tatbot/config/urdf"
-    """Directory containing the urdf configs."""
+    @field_validator('path', mode='before')
+    def expand_user_path(cls, v):
+        return Path(v).expanduser()
+
+    @field_validator('path')
+    def path_must_exist(cls, v: Path):
+        if not v.exists():
+            raise ValueError(f"Path does not exist: {v}")
+        return v

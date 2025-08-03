@@ -1,0 +1,10 @@
+defaults:
+  - _self_
+  - arms: default
+  - cams: default
+  - inks: default
+  - poses: default
+  - scenes: default
+  - skins: default
+  - tags: default
+  - urdf: default

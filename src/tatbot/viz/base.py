@@ -9,7 +9,7 @@ import viser
 from viser.extras import ViserUrdf
 
 from tatbot.bot.urdf import get_link_poses, load_robot
-from tatbot.data.scene import Scene
+from tatbot.compat import load_scene
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger("viz.base", "🖼️")
@@ -54,7 +54,7 @@ class BaseVizConfig:
 class BaseViz:
     def __init__(self, config: BaseVizConfig):
         self.config = config
-        self.scene: Scene = Scene.from_name(config.scene)
+        self.scene = load_scene(config.scene)
         self.global_step = 0
 
         log.info("Starting viser server")
