@@ -105,6 +105,12 @@ class ListNodesInput(BaseModel):
     version: str = "1.0"  # Tool versioning
 
 
+class ListOpsInput(BaseModel):
+    """Input model for listing available operations."""
+    version: str = "1.0"  # Tool versioning
+    node_name: Optional[str] = None  # If provided, list ops for specific node only
+
+
 # Response Models
 class RunOpResult(BaseModel):
     """Response model for robot operation execution."""
@@ -135,6 +141,14 @@ class ListNodesResponse(BaseModel):
     version: str = "1.0"  # Tool versioning
     nodes: List[str]
     count: int
+
+
+class ListOpsResponse(BaseModel):
+    """Response model for available operations listing."""
+    version: str = "1.0"  # Tool versioning
+    ops: List[str]
+    count: int
+    node_name: Optional[str] = None  # If filtered by node
 
 
 class NodeInfo(BaseModel):

@@ -244,6 +244,51 @@ async def list_nodes(input_data, ctx: Context):
         return ListNodesResponse(nodes=[], count=0)
 
 
+@mcp_handler
+async def list_ops(input_data, ctx: Context):
+    """List available operations, optionally filtered by node."""
+    # Import locally to avoid circular imports
+    from tatbot.mcp.models import ListOpsInput, ListOpsResponse
+    from tatbot.ops import NODE_AVAILABLE_OPS
+    
+    # Parse input data
+    parsed_input = _parse_input_data(input_data, ListOpsInput)
+    
+    try:
+        if parsed_input.node_name:
+            # List ops for specific node
+            if parsed_input.node_name not in NODE_AVAILABLE_OPS:
+                log.warning(f"Node {parsed_input.node_name} not found in available ops")
+                return ListOpsResponse(
+                    ops=[], 
+                    count=0, 
+                    node_name=parsed_input.node_name
+                )
+            
+            ops = NODE_AVAILABLE_OPS[parsed_input.node_name]
+            log.info(f"Found {len(ops)} ops for node {parsed_input.node_name}")
+            
+            return ListOpsResponse(
+                ops=sorted(ops), 
+                count=len(ops), 
+                node_name=parsed_input.node_name
+            )
+        else:
+            # List all unique ops across all nodes
+            all_ops = set()
+            for node_ops in NODE_AVAILABLE_OPS.values():
+                all_ops.update(node_ops)
+            
+            ops = sorted(list(all_ops))
+            log.info(f"Found {len(ops)} unique ops across all nodes")
+            
+            return ListOpsResponse(ops=ops, count=len(ops))
+        
+    except Exception as e:
+        log.error(f"Error listing ops: {e}")
+        return ListOpsResponse(ops=[], count=0, node_name=parsed_input.node_name)
+
+
 
 # Export available tools for discoverability
 __all__ = list(_REGISTRY.keys())
