@@ -16,6 +16,9 @@ fi
 NODE=$1
 shift
 
+# Kill any existing MCP server processes
+bash ~/tatbot/scripts/kill.sh
+
 echo "🔌 Starting MCP server for node: $NODE"
 
 # Set up environment
@@ -24,10 +27,6 @@ source ~/tatbot/scripts/setup_env.sh
 
 # Change to tatbot directory
 cd ~/tatbot
-
-# Kill any existing MCP server processes
-echo "🛑 Closing existing MCP servers..."
-bash ~/tatbot/scripts/kill.sh
 
 # Create log directory if it doesn't exist
 mkdir -p ~/tatbot/nfs/mcp-logs
