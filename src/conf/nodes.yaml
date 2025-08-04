@@ -1,0 +1,30 @@
+nodes:
+  - name: ook
+    emoji: 🤖
+    ip: 192.168.1.90
+    description: Main robot computer
+    
+  - name: oop
+    emoji: 🖥️
+    ip: 192.168.1.91  
+    description: Secondary robot computer
+    
+  - name: ojo
+    emoji: 👁️
+    ip: 192.168.1.92
+    description: Vision/camera node
+    
+  - name: rpi1
+    emoji: 🍓
+    ip: 192.168.1.93
+    description: Raspberry Pi node 1
+    
+  - name: rpi2
+    emoji: 🫐
+    ip: 192.168.1.94
+    description: Raspberry Pi node 2
+    
+  - name: trossen-ai
+    emoji: 🤖
+    ip: 192.168.1.95
+    description: Trossen arm AI controller
