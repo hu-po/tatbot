@@ -86,8 +86,11 @@ class Scene(BaseCfg):
             self.ready_pos_r_name
         )
         
-        # Return updated model copy
-        return self.model_copy(update=poses)
+        # Update self directly instead of returning a copy
+        for key, value in poses.items():
+            setattr(self, key, value)
+        
+        return self
     
     @staticmethod
     @functools.lru_cache(maxsize=32)
@@ -137,21 +140,20 @@ class Scene(BaseCfg):
         origin_widget_l_pos = link_poses[self.urdf.origin_widget_names[0]].pos
         origin_widget_r_pos = link_poses[self.urdf.origin_widget_names[1]].pos
 
-        return self.model_copy(update={
-            'inks': updated_inks,
-            'origin_widget_l_pos': origin_widget_l_pos,
-            'origin_widget_r_pos': origin_widget_r_pos,
-        })
+        # Update self directly instead of returning a copy
+        self.inks = updated_inks
+        self.origin_widget_l_pos = origin_widget_l_pos
+        self.origin_widget_r_pos = origin_widget_r_pos
+        
+        return self
 
     @model_validator(mode='after')
-    def check_pens_and_inks(self) -> 'Scene':
-        updates = {}
-        
+    def check_pens_and_inks(self) -> 'Scene':        
         if self.pens_config_path:
             with self.pens_config_path.open('r') as f:
                 pens_config = json.load(f)
             pens_config_dict = {pen["name"]: pen for pen in pens_config["data"]["pens"]}
-            updates['pens_config'] = pens_config_dict
+            self.pens_config = pens_config_dict
             
             # Validate pen names exist in config
             for pen_name in self.pen_names_l:
@@ -161,14 +163,15 @@ class Scene(BaseCfg):
                 if pen_name not in pens_config_dict:
                     raise ValueError(f"Pen {pen_name} (right) not in pen config")
         
-        # Create inkcap dictionaries without mutating self
+        # Create inkcap dictionaries
         inkcaps_l = {
             inkcap.name: inkcap for inkcap in self.inks.inkcaps if "left" in inkcap.name
         }
         inkcaps_r = {
             inkcap.name: inkcap for inkcap in self.inks.inkcaps if "right" in inkcap.name
         }
-        updates.update({'inkcaps_l': inkcaps_l, 'inkcaps_r': inkcaps_r})
+        self.inkcaps_l = inkcaps_l
+        self.inkcaps_r = inkcaps_r
 
         # Validate pens are available in inkcaps
         for pen_name in self.pen_names_l:
@@ -179,15 +182,13 @@ class Scene(BaseCfg):
             if pen_name not in [inkcap.ink.name for inkcap in inkcaps_r.values() if inkcap.ink]:
                 raise ValueError(f"Pen {pen_name} (right) not in any inkcap")
         
-        return self.model_copy(update=updates)
+        return self
 
     @model_validator(mode='after')
-    def find_design_image(self) -> 'Scene':
-        updates = {}
-        
+    def find_design_image(self) -> 'Scene':        
         if self.design_dir_path:
             design_dir = self.design_dir_path
-            updates['design_dir'] = design_dir
+            self.design_dir = design_dir
             
             if not self.design_img_path:
                 design_img_path = None
@@ -196,11 +197,11 @@ class Scene(BaseCfg):
                         design_img_path = file
                         break
                 if design_img_path:
-                    updates['design_img_path'] = design_img_path
+                    self.design_img_path = design_img_path
                 else:
                     raise ValueError(f"No design image found in {design_dir}")
         
-        return self.model_copy(update=updates) if updates else self
+        return self
 
     def to_yaml(self, filepath: str):
         """Save the Scene to a YAML file."""
