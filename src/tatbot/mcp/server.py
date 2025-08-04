@@ -28,8 +28,6 @@ def _register_tools(mcp: FastMCP, tool_names: list[str] | None, node_name: str):
                 # Use a closure factory to properly capture node_name and tool_fn
                 def make_run_op_wrapper(node_name_captured, tool_fn_captured):
                     async def run_op_wrapper(input_data, ctx):
-                        log.info(f"🔧 run_op_wrapper called with: input_data={type(input_data)}, ctx={type(ctx)}")
-                        log.info(f"🔧 ctx contents: {ctx}")
                         return await tool_fn_captured(input_data, ctx, node_name_captured)
                     return run_op_wrapper
                 
