@@ -29,7 +29,7 @@ def _register_tools(mcp: FastMCP, tool_names: list[str] | None, node_name: str, 
                 
                 # Create wrapper function with proper closure
                 def make_wrapper(fn):
-                    async def namespaced_tool_fn(input_data, ctx=None):
+                    async def namespaced_tool_fn(input_data, ctx):
                         return await fn(input_data, ctx)
                     return namespaced_tool_fn
                 
