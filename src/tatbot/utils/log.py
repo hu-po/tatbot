@@ -1,9 +1,9 @@
 import logging
 import os
+import traceback
 from dataclasses import asdict
 from pprint import pformat
 from typing import Any
-import traceback
 
 import tyro
 

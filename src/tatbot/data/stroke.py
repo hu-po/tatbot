@@ -5,7 +5,7 @@ from typing import Optional, Union
 import jax_dataclasses as jdc
 import numpy as np
 from jaxtyping import Array, Float
-from pydantic import field_validator, Field
+from pydantic import Field, field_validator
 from safetensors.flax import load_file, save_file
 
 from tatbot.data.base import BaseCfg

@@ -1,6 +1,5 @@
 """Generic MCP server with Hydra configuration support."""
 
-from pathlib import Path
 
 import hydra
 from mcp.server.fastmcp import FastMCP

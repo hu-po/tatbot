@@ -61,7 +61,7 @@ async def run_op(input_data, ctx: Context):
     # Import locally to avoid circular imports
     from tatbot.mcp.models import RunOpInput, RunOpResult
     from tatbot.ops import get_op
-    
+
     # Parse input data
     parsed_input = _parse_input_data(input_data, RunOpInput)
     
@@ -133,7 +133,7 @@ async def ping_nodes(input_data, ctx: Context):
     # Import locally to avoid circular imports
     from tatbot.mcp.models import PingNodesInput, PingNodesResponse
     from tatbot.utils.net import NetworkManager
-    
+
     # Parse input data
     parsed_input = _parse_input_data(input_data, PingNodesInput)
     
@@ -254,7 +254,7 @@ async def list_ops(input_data, ctx: Context):
     # Import locally to avoid circular imports
     from tatbot.mcp.models import ListOpsInput, ListOpsResponse
     from tatbot.ops import NODE_AVAILABLE_OPS
-    
+
     # Parse input data
     parsed_input = _parse_input_data(input_data, ListOpsInput)
     

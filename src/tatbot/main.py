@@ -1,4 +1,3 @@
-from pathlib import Path
 
 import hydra
 from hydra import compose, initialize
@@ -17,7 +16,7 @@ def load_scene_from_config(cfg: DictConfig) -> Scene:
 def compose_and_validate_scene(name: str = "default") -> Scene:
     """Compose a scene configuration and validate it."""
     from hydra.core.global_hydra import GlobalHydra
-    
+
     # Check if Hydra is already initialized (e.g., by MCP server)
     if GlobalHydra().is_initialized():
         # Use the existing Hydra instance and compose with overrides
