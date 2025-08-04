@@ -9,3 +9,6 @@ defaults:
   - tags: default
   - urdf: default
   - mcp: default
+
+# Node identifier (can be overridden via command line with node=<name>)
+node: default

@@ -41,7 +41,7 @@ def _register_tools(mcp: FastMCP, tool_names: list[str] | None, node_name: str):
 
 @hydra.main(
     version_base=None, 
-    config_path=str(Path(__file__).resolve().parent.parent.parent / "conf"), 
+    config_path=str(Path(__file__).resolve().parent.parent.parent.parent / "src" / "conf"), 
     config_name="config"
 )
 def main(cfg: DictConfig):
