@@ -68,8 +68,7 @@ class Scene(BaseCfg):
     pens_config: Optional[dict] = None
     inkcaps_l: Optional[dict[str, InkCap]] = None
     inkcaps_r: Optional[dict[str, InkCap]] = None
-    origin_widget_l_pos: Optional[Pos] = None
-    origin_widget_r_pos: Optional[Pos] = None
+    calibrator_pos: Optional[Pos] = None
     design_dir: Optional[Path] = None
 
     @field_validator('pens_config_path', 'design_dir_path', mode='before')
@@ -122,7 +121,7 @@ class Scene(BaseCfg):
 
     @model_validator(mode='after')
     def load_urdf_poses(self) -> 'Scene':
-        link_names = self.urdf.ink_link_names + self.urdf.origin_widget_names
+        link_names = self.urdf.ink_link_names + [self.urdf.calibrator_link_name]
         link_poses = get_link_poses(self.urdf.path, link_names, self.ready_pos_full.joints)
 
         # Update inkcap poses without mutating existing objects
@@ -134,17 +133,8 @@ class Scene(BaseCfg):
             else:
                 updated_inkcaps.append(inkcap)
         
-        # Create updated inks with new inkcaps
-        updated_inks = self.inks.model_copy(update={'inkcaps': updated_inkcaps})
-        
-        origin_widget_l_pos = link_poses[self.urdf.origin_widget_names[0]].pos
-        origin_widget_r_pos = link_poses[self.urdf.origin_widget_names[1]].pos
-
-        # Update self directly instead of returning a copy
-        self.inks = updated_inks
-        self.origin_widget_l_pos = origin_widget_l_pos
-        self.origin_widget_r_pos = origin_widget_r_pos
-        
+        self.inks = self.inks.model_copy(update={'inkcaps': updated_inkcaps})
+        self.calibrator_pos = link_poses[self.urdf.calibrator_link_name].pos
         return self
 
     @model_validator(mode='after')

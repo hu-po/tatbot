@@ -18,8 +18,8 @@ class URDF(BaseCfg):
     """Names of the camera links in the URDF."""
     ink_link_names: Tuple[str, ...]
     """Names of the inkcap links in the URDF."""
-    origin_widget_names: Tuple[str, str]
-    """Names of the origin widget links in the URDF."""
+    calibrator_link_name: str
+    """Name of the calibrator link in the URDF."""
     root_link_name: str
     """Name of the origin/root link in the URDF."""
 

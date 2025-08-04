@@ -27,7 +27,5 @@ ink_link_names:
   - "inkcap_right_small_3"
   - "inkcap_right_medium_0"
   - "inkcap_right_medium_1"
-origin_widget_names:
-  - "origin_widget_left"
-  - "origin_widget_right"
+calibrator_link_name: "palette_calibrator"
 root_link_name: "root"
