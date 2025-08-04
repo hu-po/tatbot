@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from io import StringIO
 
 from lerobot.datasets.utils import build_dataset_frame
+from lerobot.robots import Robot, make_robot_from_config
+from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorConfig
 from lerobot.utils.robot_utils import busy_wait
 
