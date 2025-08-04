@@ -17,7 +17,7 @@ def load_scene_from_config(cfg: DictConfig) -> Scene:
 def compose_and_validate_scene(name: str = "default") -> Scene:
     """Compose a scene configuration and validate it."""
     with initialize(
-        config_path=str(Path(__file__).resolve().parent.parent / "conf"), 
+        config_path="../conf", 
         version_base=None
     ):
         cfg = compose(config_name="config", overrides=[f"scenes={name}"])
@@ -26,7 +26,7 @@ def compose_and_validate_scene(name: str = "default") -> Scene:
 
 @hydra.main(
     version_base=None, 
-    config_path=str(Path(__file__).resolve().parent.parent / "conf"), 
+    config_path="../conf", 
     config_name="config"
 )
 def main(cfg: DictConfig) -> None:
