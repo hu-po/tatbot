@@ -152,16 +152,6 @@ class NodesStatusResponse(BaseModel):
     online_count: int
 
 
-class GetNfsInfoInput(BaseModel):
-    """Input model for getting NFS information."""
-    version: str = "1.0"  # Tool versioning
-
-
-class GetNfsInfoResponse(BaseModel):
-    """Response model for NFS information."""
-    version: str = "1.0"  # Tool versioning
-    info: str
-
 
 class GetLatestRecordingInput(BaseModel):
     """Input model for getting latest recording."""

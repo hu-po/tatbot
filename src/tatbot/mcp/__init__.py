@@ -3,8 +3,6 @@
 from .models import (
     GetLatestRecordingInput,
     GetLatestRecordingResponse,
-    GetNfsInfoInput,
-    GetNfsInfoResponse,
     ListNodesInput,
     ListNodesResponse,
     ListScenesInput,
@@ -21,7 +19,6 @@ __all__ = [
     "PingNodesInput", "PingNodesResponse", 
     "ListScenesInput", "ListScenesResponse",
     "ListNodesInput", "ListNodesResponse",
-    "GetNfsInfoInput", "GetNfsInfoResponse",
     "GetLatestRecordingInput", "GetLatestRecordingResponse",
     "MCPSettings"
 ]

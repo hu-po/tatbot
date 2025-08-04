@@ -244,22 +244,6 @@ async def list_nodes(input_data, ctx: Context):
         return ListNodesResponse(nodes=[], count=0)
 
 
-@mcp_handler
-async def get_nfs_info(input_data, ctx: Context):
-    """Get NFS information."""
-    # Import locally to avoid circular imports
-    from tatbot.mcp.models import GetNfsInfoResponse
-    
-    try:
-        # This is a placeholder - in the real implementation, this would
-        # gather actual NFS status information
-        info = "NFS mounted and accessible"
-        log.info("Retrieved NFS info")
-        return GetNfsInfoResponse(info=info)
-    except Exception as e:
-        log.error(f"Error getting NFS info: {e}")
-        return GetNfsInfoResponse(info=f"Error: {str(e)}")
-
 
 @mcp_handler
 async def get_latest_recording(input_data, ctx: Context):
