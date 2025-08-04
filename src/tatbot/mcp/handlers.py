@@ -2,6 +2,7 @@
 
 import asyncio
 import concurrent.futures
+import json
 import os
 from pathlib import Path
 from typing import Callable, Dict
@@ -28,20 +29,49 @@ def get_available_tools() -> Dict[str, Callable]:
     return _REGISTRY.copy()
 
 
+def _parse_input_data(input_data, model_class):
+    """Parse input_data string or dict into the specified model class."""
+    if isinstance(input_data, str):
+        try:
+            # Parse JSON string into dict
+            data_dict = json.loads(input_data) if input_data.strip() else {}
+            # Create model instance
+            return model_class(**data_dict)
+        except (json.JSONDecodeError, ValueError) as e:
+            log.error(f"Failed to parse input_data: {e}")
+            # Return default model instance
+            return model_class()
+    elif isinstance(input_data, dict):
+        try:
+            # Create model instance directly from dict
+            return model_class(**input_data)
+        except (ValueError, TypeError) as e:
+            log.error(f"Failed to create model from dict: {e}")
+            return model_class()
+    elif isinstance(input_data, model_class):
+        return input_data
+    else:
+        log.error(f"Unexpected input_data type: {type(input_data)}")
+        return model_class()
+
+
 @mcp_handler
 async def run_op(input_data, ctx: Context, node_name: str):
     """Runs an operation, yields intermediate results, see available ops in tatbot.ops module."""
     # Import locally to avoid circular imports
-    from tatbot.mcp.models import RunOpResult
+    from tatbot.mcp.models import RunOpInput, RunOpResult
     from tatbot.ops import get_op
     
-    await ctx.info(f"Running robot op: {input_data.op_name} on {node_name}")
+    # Parse input data
+    parsed_input = _parse_input_data(input_data, RunOpInput)
+    
+    await ctx.info(f"Running robot op: {parsed_input.op_name} on {node_name}")
     
     op = None  # Initialize op for cleanup
     try:
         
-        op_class, op_config = get_op(input_data.op_name, node_name)
-        config = op_config(scene=input_data.scene_name, debug=input_data.debug)
+        op_class, op_config = get_op(parsed_input.op_name, node_name)
+        config = op_config(scene=parsed_input.scene_name, debug=parsed_input.debug)
         op = op_class(config)
         
         await ctx.report_progress(
@@ -56,14 +86,14 @@ async def run_op(input_data, ctx: Context, node_name: str):
                 message=result['message']
             )
         
-        message = f"✅ Completed {input_data.op_name}"
+        message = f"✅ Completed {parsed_input.op_name}"
         log.info(message)
         
         return RunOpResult(
             message=message,
             success=True,
-            op_name=input_data.op_name,
-            scene_name=input_data.scene_name
+            op_name=parsed_input.op_name,
+            scene_name=parsed_input.scene_name
         )
         
     except (KeyboardInterrupt, asyncio.CancelledError):
@@ -72,8 +102,8 @@ async def run_op(input_data, ctx: Context, node_name: str):
         return RunOpResult(
             message=message,
             success=False,
-            op_name=input_data.op_name,
-            scene_name=input_data.scene_name
+            op_name=parsed_input.op_name,
+            scene_name=parsed_input.scene_name
         )
     except Exception as e:
         message = f"❌ Exception when running op: {str(e)}"
@@ -81,8 +111,8 @@ async def run_op(input_data, ctx: Context, node_name: str):
         return RunOpResult(
             message=message,
             success=False,
-            op_name=input_data.op_name,
-            scene_name=input_data.scene_name
+            op_name=parsed_input.op_name,
+            scene_name=parsed_input.scene_name
         )
     finally:
         # Ensure cleanup is called even if op.run() never yielded
@@ -97,15 +127,22 @@ async def run_op(input_data, ctx: Context, node_name: str):
 async def ping_nodes(input_data, ctx: Context):
     """Ping nodes and report connectivity status."""
     # Import locally to avoid circular imports
-    from tatbot.mcp.models import PingNodesResponse
+    from tatbot.mcp.models import PingNodesInput, PingNodesResponse
     from tatbot.utils.net import NetworkManager
     
-    log.info(f"🔌 Pinging nodes: {input_data.nodes or 'all'}")
+    # Parse input data
+    parsed_input = _parse_input_data(input_data, PingNodesInput)
+    
+    log.info(f"🔌 Pinging nodes: {parsed_input.nodes or 'all'}")
     
     try:
+        log.info("Creating NetworkManager...")
         net = NetworkManager()
+        log.info(f"NetworkManager created, loaded {len(net.nodes)} nodes")
         
-        target_nodes, error = net.get_target_nodes(input_data.nodes)
+        target_nodes, error = net.get_target_nodes(parsed_input.nodes)
+        log.info(f"get_target_nodes returned: {len(target_nodes)} nodes, error: {error}")
+        
         if error:
             return PingNodesResponse(
                 status=error,
@@ -139,7 +176,7 @@ async def ping_nodes(input_data, ctx: Context):
             if all_success
             else "❌ Some specified nodes are not responding"
         )
-        if not input_data.nodes:
+        if not parsed_input.nodes:
             header = (
                 "✅ All nodes are responding" 
                 if all_success 

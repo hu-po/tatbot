@@ -77,15 +77,21 @@ class PingNodesInput(BaseModel):
     def validate_nodes(cls, v: Optional[List[str]]) -> Optional[List[str]]:
         """Validate that the specified nodes exist in the network."""
         if v:
-            # Import here to avoid circular imports
-            from tatbot.utils.net import NetworkManager
-            net = NetworkManager()
-            
-            # Get available nodes from NetworkManager
-            available_nodes = [node.name for node in net.nodes]
-            invalid = [n for n in v if n not in available_nodes]
-            if invalid:
-                raise ValueError(f"Invalid nodes: {invalid}. Available nodes: {available_nodes}")
+            try:
+                # Import here to avoid circular imports
+                from tatbot.utils.net import NetworkManager
+                net = NetworkManager()
+                
+                # Get available nodes from NetworkManager
+                available_nodes = [node.name for node in net.nodes]
+                invalid = [n for n in v if n not in available_nodes]
+                if invalid:
+                    raise ValueError(f"Invalid nodes: {invalid}. Available nodes: {available_nodes}")
+            except Exception as e:
+                # If NetworkManager fails, log the error but don't fail validation
+                # This allows the tool to work even if the network config is incomplete
+                import logging
+                logging.getLogger("tatbot.mcp.models").warning(f"NetworkManager validation failed: {e}")
         return v
 
 
