@@ -121,7 +121,7 @@ class Scene(BaseCfg):
 
     @model_validator(mode='after')
     def load_urdf_poses(self) -> 'Scene':
-        link_names = self.urdf.ink_link_names + [self.urdf.calibrator_link_name]
+        link_names = self.urdf.ink_link_names + (self.urdf.calibrator_link_name,)
         link_poses = get_link_poses(self.urdf.path, link_names, self.ready_pos_full.joints)
 
         # Update inkcap poses without mutating existing objects
