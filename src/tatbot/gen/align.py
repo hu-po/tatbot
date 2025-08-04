@@ -49,16 +49,17 @@ def make_align_strokes(scene: Scene) -> StrokeList:
             meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([scene.arms.align_x_size_m, 0, 0]), (scene.stroke_length, 1)),
         ),
     ))
-    strokelist.strokes.append((
-        Stroke(
-            description=f"left arm hovering over design pose, -{scene.arms.align_x_size_m}cm in Y axis",
-            arm="left",
-            meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([0, -scene.arms.align_x_size_m, 0]), (scene.stroke_length, 1)),
-        ),
-        Stroke(
-            description=f"right arm hovering over design pose, +{scene.arms.align_x_size_m}cm in Y axis",
-            arm="right",
-            meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([0, scene.arms.align_x_size_m, 0]), (scene.stroke_length, 1)),
-        ),
-    ))
+    # TODO: the arms collide when doing this...
+    # strokelist.strokes.append((
+    #     Stroke(
+    #         description=f"left arm hovering over design pose, -{scene.arms.align_x_size_m}cm in Y axis",
+    #         arm="left",
+    #         meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([0, -scene.arms.align_x_size_m, 0]), (scene.stroke_length, 1)),
+    #     ),
+    #     Stroke(
+    #         description=f"right arm hovering over design pose, +{scene.arms.align_x_size_m}cm in Y axis",
+    #         arm="right",
+    #         meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([0, scene.arms.align_x_size_m, 0]), (scene.stroke_length, 1)),
+    #     ),
+    # ))
     return strokelist
