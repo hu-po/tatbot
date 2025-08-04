@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from io import StringIO
 
 from lerobot.datasets.utils import build_dataset_frame
-from lerobot.robots import Robot, make_robot_from_config
-from lerobot.robots.tatbot.config_tatbot import TatbotConfig
+# from lerobot.robots import Robot, make_robot_from_config
+# from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorConfig
 from lerobot.utils.robot_utils import busy_wait
 
@@ -97,11 +97,11 @@ class StrokeOp(RecordOp):
             log.info(f"🔄 Resuming from {self.dataset_dir}")
             assert os.path.exists(strokes_path), f"❌ Strokes file {strokes_path} does not exist"
             assert os.path.exists(strokebatch_path), f"❌ Strokebatch file {strokebatch_path} does not exist"
-            strokes: StrokeList = StrokeList.from_yaml(strokes_path)
+            strokes: StrokeList = StrokeList.from_yaml_with_arrays(strokes_path)
             strokebatch: StrokeBatch = StrokeBatch.load(strokebatch_path)
         else:
             strokes: StrokeList = make_gcode_strokes(self.scene)
-            strokes.to_yaml(strokes_path)
+            strokes.to_yaml_with_arrays(strokes_path)
             strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, strokes)
             strokebatch.save(strokebatch_path)
         num_strokes = len(strokes.strokes)
@@ -145,8 +145,8 @@ class StrokeOp(RecordOp):
             episode_cond_dir = os.path.join(self.dataset_dir, f"episode_{stroke_idx:06d}")
             os.makedirs(episode_cond_dir, exist_ok=True)
             log.debug(f"🗃️ Creating episode-specific condition directory at {episode_cond_dir}...")
-            episode_cond["stroke_l"] = stroke_l.to_dict()
-            episode_cond["stroke_r"] = stroke_r.to_dict()
+            episode_cond["stroke_l"] = stroke_l.model_dump_for_yaml()
+            episode_cond["stroke_r"] = stroke_r.model_dump_for_yaml()
             if stroke_l.frame_path is not None:
                 shutil.copy(stroke_l.frame_path, os.path.join(episode_cond_dir, "stroke_l.png"))
             if stroke_r.frame_path is not None:
