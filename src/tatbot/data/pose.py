@@ -21,6 +21,13 @@ class Pos(BaseCfg):
         if not isinstance(v, np.ndarray):
             v = np.asarray(v, dtype=np.float32)
         return v
+    
+    def model_dump(self, **kwargs):
+        """Override model_dump to handle numpy arrays."""
+        data = super().model_dump(**kwargs)
+        if isinstance(data.get('xyz'), np.ndarray):
+            data['xyz'] = data['xyz'].tolist()
+        return data
 
     @field_validator('xyz')
     def check_shape(cls, v):
@@ -42,6 +49,13 @@ class Rot(BaseCfg):
         if not isinstance(v, np.ndarray):
             v = np.asarray(v, dtype=np.float32)
         return v
+    
+    def model_dump(self, **kwargs):
+        """Override model_dump to handle numpy arrays."""
+        data = super().model_dump(**kwargs)
+        if isinstance(data.get('wxyz'), np.ndarray):
+            data['wxyz'] = data['wxyz'].tolist()
+        return data
 
     @field_validator('wxyz')
     def check_shape(cls, v):
@@ -71,6 +85,13 @@ class ArmPose(BaseCfg):
         if not isinstance(v, np.ndarray):
             v = np.asarray(v, dtype=np.float32)
         return v
+    
+    def model_dump(self, **kwargs):
+        """Override model_dump to handle numpy arrays."""
+        data = super().model_dump(**kwargs)
+        if isinstance(data.get('joints'), np.ndarray):
+            data['joints'] = data['joints'].tolist()
+        return data
 
     @classmethod
     def make_bimanual_joints(cls, pose_l: "ArmPose", pose_r: "ArmPose") -> "ArmPose":

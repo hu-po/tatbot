@@ -54,6 +54,13 @@ class Stroke(BaseCfg):
     def validate_arm(cls, v):
         if v not in ['left', 'right']:
             raise ValueError("arm must be 'left' or 'right'")
+        return v
+    
+    @field_validator('meter_coords', 'pixel_coords', 'ee_pos', 'ee_rot', 'normals', mode='before')
+    def convert_numpy_arrays(cls, v):
+        """Convert numpy arrays to lists for serialization."""
+        if isinstance(v, np.ndarray):
+            return v.tolist()
         return v    
 
 
