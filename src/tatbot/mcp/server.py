@@ -12,19 +12,37 @@ from tatbot.utils.log import get_logger
 log = get_logger("mcp.server", "🔌")
 
 
-def _register_tools(mcp: FastMCP, tool_names: list[str] | None, node_name: str):
+def _register_tools(mcp: FastMCP, tool_names: list[str] | None, node_name: str, namespace_tools: bool = True):
     """Register tools dynamically based on configuration."""
     available_tools = handlers.get_available_tools()
     tools_to_register = tool_names or list(available_tools.keys())
     
-    log.info(f"Registering tools for {node_name}: {tools_to_register}")
+    log.info(f"Registering tools for {node_name}: {tools_to_register} (namespace_tools={namespace_tools})")
     
     for tool_name in tools_to_register:
         if tool_name in available_tools:
             tool_fn = available_tools[tool_name]
-            # Register tool directly - all tools now have the standard (input_data, ctx) signature
-            mcp.tool()(tool_fn)
-            log.info(f"✅ Registered tool: {tool_name}")
+            
+            if namespace_tools:
+                # Create namespaced tool name: node_name_tool_name
+                registered_name = f"{node_name}_{tool_name}"
+                
+                # Create wrapper function with proper closure
+                def make_wrapper(fn):
+                    async def namespaced_tool_fn(input_data, ctx=None):
+                        return await fn(input_data, ctx)
+                    return namespaced_tool_fn
+                
+                wrapper_fn = make_wrapper(tool_fn)
+                wrapper_fn.__name__ = registered_name
+                
+                # Register tool with namespaced name
+                mcp.tool()(wrapper_fn)
+                log.info(f"✅ Registered tool: {registered_name} (was {tool_name})")
+            else:
+                # Register tool with original name
+                mcp.tool()(tool_fn)
+                log.info(f"✅ Registered tool: {tool_name}")
         else:
             log.warning(f"⚠️ Tool {tool_name} not found in handlers")
 
@@ -56,7 +74,7 @@ def main(cfg: DictConfig):
     # FastMCP doesn't use HTTP middleware like FastAPI
     
     # Register tools
-    _register_tools(mcp, settings.tools, node_name)
+    _register_tools(mcp, settings.tools, node_name, settings.namespace_tools)
     
     # Add resource for listing nodes
     @mcp.resource("nodes://all")

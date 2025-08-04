@@ -5,3 +5,6 @@ transport: "streamable-http"
 debug: false
 extras: []      # poetry/toml extras this node must install (bot, viz, gpu, ...)
 tools: []       # explicit tool enable list; if empty -> enable all in handlers
+
+# Tool naming settings
+namespace_tools: true  # Prefix tools with node name to avoid conflicts across MCP servers
