@@ -127,7 +127,7 @@ class StrokeOp(RecordOp):
                 self.robot.connect()
                 if not self.robot.is_connected:
                     raise RuntimeError("❌ Failed to connect to robot")
-            self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full), safe=True)
+            self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full.joints), safe=True)
 
             # get the strokes that will be executed this episode
             stroke_l, stroke_r = strokes.strokes[stroke_idx]

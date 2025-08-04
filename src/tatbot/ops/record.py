@@ -166,7 +166,7 @@ class RecordOp(BaseOp):
             'progress': 0.08,
             'message': _msg,
         }
-        self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full), safe=True)
+        self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full.joints), safe=True)
         
         async for progress_update in self._run():
             yield progress_update
@@ -177,7 +177,7 @@ class RecordOp(BaseOp):
             'progress': 0.998,
             'message': _msg,
         }
-        self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full), safe=True)
+        self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full.joints), safe=True)
 
         if self.config.push_to_hub:
             _msg = "📦🤗 Pushing dataset to Hugging Face Hub..."

@@ -47,7 +47,7 @@ class AlignOp(RecordOp):
                 self.robot.connect()
                 if not self.robot.is_connected:
                     raise RuntimeError("❌ Failed to connect to robot")
-            self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full), safe=True)
+            self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full.joints), safe=True)
 
             _msg = f"🔍 Executing stroke {stroke_idx + 1}/{len(strokes.strokes)}: left={stroke_l.description}, right={stroke_r.description}"
             log.info(_msg)

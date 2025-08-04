@@ -106,7 +106,7 @@ class TeleopViz(BaseViz):
             self.ee_link_indices,
             np.array([self.ee_l_pose.rot.wxyz, self.ee_r_pose.rot.wxyz]),
             np.array([self.ee_l_pose.pos.xyz, self.ee_r_pose.pos.xyz]),
-            self.scene.ready_pos_full,
+            self.scene.ready_pos_full.joints,
         )
         log.debug(f"🎯 left joints: {solution[:7]}")
         log.debug(f"🎯 right joints: {solution[7:]}")
