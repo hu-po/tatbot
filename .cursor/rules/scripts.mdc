@@ -1,0 +1,10 @@
+---
+alwaysApply: true
+---
+
+**Use the provided scripts in `scripts/` directory for common operations.**
+
+Available utility scripts:
+- `scripts/setup_env.sh` - Environment setup and activation
+- `scripts/lint.sh` - Code linting and formatting
+- `scripts/kill.sh` - Clean shutdown of running processes
