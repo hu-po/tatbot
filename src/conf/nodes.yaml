@@ -1,36 +1,36 @@
 nodes:
   - name: ook
-    emoji: 🤖
+    emoji: 🦧
     ip: 192.168.1.90
     user: ook
-    deps: "."
+    deps: ".[bot,dev,gen,img,viz] .[gpu]"
     
   - name: oop
-    emoji: 🖥️
-    ip: 192.168.1.91
+    emoji: 🦊
+    ip: 192.168.1.51
     user: oop
-    deps: "."
+    deps: ".[bot,dev,gen,img,viz] .[gpu]"
     
   - name: ojo
-    emoji: 👁️
-    ip: 192.168.1.92
+    emoji: 🦎
+    ip: 192.168.1.96
     user: ojo
-    deps: "."
+    deps: ".[bot,gen,gpu,img]"
     
   - name: rpi1
     emoji: 🍓
-    ip: 192.168.1.93
-    user: pi
-    deps: "."
+    ip: 192.168.1.98
+    user: rpi1
+    deps: ".[viz,img]"
     
   - name: rpi2
-    emoji: 🫐
-    ip: 192.168.1.94
-    user: pi
+    emoji: 🍇
+    ip: 192.168.1.99
+    user: rpi2
     deps: "."
     
   - name: trossen-ai
-    emoji: 🤖
-    ip: 192.168.1.95
-    user: trossen
-    deps: "."
+    emoji: 🦾
+    ip: 192.168.1.97
+    user: trossen-ai
+    deps: ".[bot,cam,gen,img]"

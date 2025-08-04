@@ -3,6 +3,7 @@ import os
 from dataclasses import asdict
 from pprint import pformat
 from typing import Any
+import traceback
 
 import tyro
 
@@ -45,6 +46,6 @@ def setup_log_with_config(config: Any, submodules: list[str] = SUBMODULES) -> An
         import jax
 
         log.info(f"🧠 JAX devices: {jax.devices()}")
-    except ImportError:
-        log.info("🧠 JAX not available")
+    except Exception:
+        log.info(f"🧠 JAX not available: {traceback.format_exc()}")
     return args
