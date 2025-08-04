@@ -3,7 +3,7 @@ echo "🚀  Go to project directory and update"
 cd ~/tatbot && git pull
 
 echo "🧹  Clean old environment (ignore errors)"
-if [[ -n "$VIRTUAL_ENV" ]]; then
+if [[ -n "${VIRTUAL_ENV:-}" ]]; then
   deactivate || true
 fi
 rm -rf .venv || true
