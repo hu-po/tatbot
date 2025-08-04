@@ -11,20 +11,8 @@ log = get_logger("gen.align", "📐")
 def make_align_strokes(scene: Scene) -> StrokeList:
     inkdip_func = make_inkdip_func(scene)
     strokelist: StrokeList = StrokeList(strokes=[])
-    left_rest_stroke = Stroke(
-        description="left arm at rest",
-        arm="left",
-        meter_coords=np.zeros((scene.stroke_length, 3)),
-        is_rest=True,
-    )
-    right_rest_stroke = Stroke(
-        description="right arm at rest",
-        arm="right",
-        meter_coords=np.zeros((scene.stroke_length, 3)),
-        is_rest=True,
-    )
 
-    # First hover arms over the calibrator
+    # First hover arms over the calibrator, alternate arm hovers over large inkcap
     strokelist.strokes.append((
         Stroke(
             description="left arm hovering over calibrator",
@@ -32,10 +20,10 @@ def make_align_strokes(scene: Scene) -> StrokeList:
             ee_pos=np.tile(scene.calibrator_pos.xyz, (scene.stroke_length, 1)),
             is_inkdip=True, # inkdip strokes are in final ee_pos
         ),
-        right_rest_stroke,
+        inkdip_func(list(scene.inkcaps_r.values())[0].ink.name, "right"),
     ))
     strokelist.strokes.append((
-        left_rest_stroke,
+        inkdip_func(list(scene.inkcaps_l.values())[0].ink.name, "left"),
         Stroke(
             description="right arm hovering over calibrator",
             arm="right",
@@ -45,10 +33,8 @@ def make_align_strokes(scene: Scene) -> StrokeList:
     ))
 
     # Then hover arms over each of the inkcaps
-    for inkcap in scene.inkcaps_r.values():
-        strokelist.strokes.append((left_rest_stroke, inkdip_func(inkcap.ink.name, "right")))
-    for inkcap in scene.inkcaps_l.values():
-        strokelist.strokes.append((inkdip_func(inkcap.ink.name, "left"), right_rest_stroke))
+    for inkcap_l, inkcap_r in zip(scene.inkcaps_l.values(), scene.inkcaps_r.values()):
+        strokelist.strokes.append((inkdip_func(inkcap_l.ink.name, "left"), inkdip_func(inkcap_r.ink.name, "right")))
     
     # Finally hover over the "alignment X", which is a red cross centered on the design pose
     strokelist.strokes.append((
