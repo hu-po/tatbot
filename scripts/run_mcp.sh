@@ -40,7 +40,7 @@ import yaml
 import os
 from pathlib import Path
 
-config_path = Path("conf/mcp/${NODE}.yaml")
+config_path = Path("src/conf/mcp/${NODE}.yaml")
 if not config_path.exists():
     print("Error: Configuration file for node '$NODE' not found")
     exit(1)
@@ -51,7 +51,7 @@ with open(config_path) as f:
 # Handle defaults inheritance
 if 'defaults' in config:
     # Load default config first
-    with open('conf/mcp/default.yaml') as f:
+    with open('src/conf/mcp/default.yaml') as f:
         default_config = yaml.safe_load(f)
     # Merge configs (node config overrides defaults)
     extras = default_config.get('extras', [])
