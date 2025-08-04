@@ -3,6 +3,6 @@ defaults:
 
 host: "192.168.1.96"
 port: 8000
-extras: [cam, viz]  # Camera-focused node
+extras: [bot, gen, gpu, img]  # Camera-focused node
 tools:
   - ping_nodes

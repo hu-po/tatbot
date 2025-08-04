@@ -3,7 +3,7 @@ defaults:
 
 host: "192.168.1.98"
 port: 8000
-extras: [bot]  # RPi nodes likely have fewer resources
+extras: [viz, img]  # RPi nodes with visualization capabilities
 tools:
   - ping_nodes
   - list_scenes
