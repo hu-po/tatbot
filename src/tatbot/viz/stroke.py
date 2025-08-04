@@ -231,7 +231,7 @@ class VizStrokes(BaseViz):
         if self.pose_idx == 0:
             log.debug("Sending robot to rest pose")
             self.robot_at_rest = True
-            self.joints = self.scene.ready_pos_full
+            self.joints = self.scene.ready_pos_full.joints.copy()
             self.step_sleep = self.scene.arms.goal_time_slow
         else:
             self.joints = self.strokebatch.offset_joints(
