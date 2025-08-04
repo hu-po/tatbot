@@ -31,7 +31,7 @@ class TeleopViz(BaseViz):
         log.info("🎯 Adding ee ik targets...")
         self.ee_link_indices = get_link_indices(self.scene.urdf.path, self.scene.urdf.ee_link_names)
         link_poses = get_link_poses(
-            self.scene.urdf.path, self.scene.urdf.ee_link_names, self.scene.ready_pos_full
+            self.scene.urdf.path, self.scene.urdf.ee_link_names, self.scene.ready_pos_full.joints
         )
         self.ee_l_pose: Pose = link_poses[self.scene.urdf.ee_link_names[0]]
         self.ee_r_pose: Pose = link_poses[self.scene.urdf.ee_link_names[1]]

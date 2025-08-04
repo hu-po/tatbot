@@ -141,7 +141,7 @@ class BaseViz:
 
         log.info("Adding camera frustrums ...")
         link_poses = get_link_poses(
-            self.scene.urdf.path, self.scene.urdf.cam_link_names, self.scene.ready_pos_full
+            self.scene.urdf.path, self.scene.urdf.cam_link_names, self.scene.ready_pos_full.joints
         )
         self.realsense_frustrums = {}
         self.realsense_pointclouds = {}
