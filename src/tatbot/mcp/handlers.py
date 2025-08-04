@@ -35,29 +35,49 @@ def _parse_input_data(input_data, model_class):
         try:
             # Parse JSON string into dict
             data_dict = json.loads(input_data) if input_data.strip() else {}
-            # Create model instance
-            return model_class(**data_dict)
-        except (json.JSONDecodeError, ValueError) as e:
-            log.error(f"Failed to parse input_data: {e}")
+        except json.JSONDecodeError as e:
+            log.error(f"Failed to parse JSON input_data: {e}")
+            log.error(f"Input was: {repr(input_data)}")
             # Return default model instance
             return model_class()
     elif isinstance(input_data, dict):
-        try:
-            # Create model instance directly from dict
-            return model_class(**input_data)
-        except (ValueError, TypeError) as e:
-            log.error(f"Failed to create model from dict: {e}")
-            return model_class()
+        data_dict = input_data.copy()
     elif isinstance(input_data, model_class):
         return input_data
     else:
         log.error(f"Unexpected input_data type: {type(input_data)}")
         return model_class()
+    
+    # Handle common parameter aliases for better UX
+    if model_class.__name__ == "RunOpInput":
+        # Allow 'scene' as alias for 'scene_name'
+        if 'scene' in data_dict and 'scene_name' not in data_dict:
+            data_dict['scene_name'] = data_dict.pop('scene')
+    
+    try:
+        # Create model instance
+        return model_class(**data_dict)
+    except (ValueError, TypeError) as e:
+        log.error(f"Failed to create {model_class.__name__} from data: {e}")
+        log.error(f"Data was: {data_dict}")
+        log.error(f"Expected fields: {list(model_class.model_fields.keys())}")
+        # Return default model instance
+        return model_class()
 
 
 @mcp_handler
 async def run_op(input_data, ctx: Context):
-    """Runs an operation, yields intermediate results, see available ops in tatbot.ops module."""
+    """Runs an operation, yields intermediate results, see available ops in tatbot.ops module.
+    
+    Parameters (JSON format):
+    - op_name (str, required): Operation to run. Available: "stroke", "align", "reset", "sense"
+    - scene_name (str, optional): Scene to use. Default: "default". Available: "tatbotlogo", "flower", "test", etc.
+    - debug (bool, optional): Enable debug mode. Default: false
+    
+    Example usage:
+    {"op_name": "stroke", "scene_name": "tatbotlogo"}
+    {"op_name": "reset"}
+    """
     # Import locally to avoid circular imports
     from tatbot.mcp.models import RunOpInput, RunOpResult
     from tatbot.ops import get_op
@@ -129,7 +149,15 @@ async def run_op(input_data, ctx: Context):
 
 @mcp_handler
 async def ping_nodes(input_data, ctx: Context):
-    """Ping nodes and report connectivity status."""
+    """Ping nodes and report connectivity status.
+    
+    Parameters (JSON format):
+    - nodes (list, optional): List of node names to ping. If not provided, pings all nodes.
+    
+    Example usage:
+    {"nodes": ["ook", "eek"]}
+    {} (pings all nodes)
+    """
     # Import locally to avoid circular imports
     from tatbot.mcp.models import PingNodesInput, PingNodesResponse
     from tatbot.utils.net import NetworkManager
@@ -204,7 +232,13 @@ async def ping_nodes(input_data, ctx: Context):
 
 @mcp_handler
 async def list_scenes(input_data, ctx: Context):
-    """List available scenes from the config directory."""
+    """List available scenes from the config directory.
+    
+    No parameters required. Returns list of available scene names.
+    
+    Example usage:
+    {}
+    """
     # Import locally to avoid circular imports
     from tatbot.mcp.models import ListScenesResponse
     
@@ -230,7 +264,13 @@ async def list_scenes(input_data, ctx: Context):
 
 @mcp_handler
 async def list_nodes(input_data, ctx: Context):
-    """List available network nodes."""
+    """List available network nodes.
+    
+    No parameters required. Returns list of available node names.
+    
+    Example usage:
+    {}
+    """
     # Import locally to avoid circular imports
     from tatbot.mcp.models import ListNodesResponse
     from tatbot.utils.net import NetworkManager
@@ -250,7 +290,15 @@ async def list_nodes(input_data, ctx: Context):
 
 @mcp_handler
 async def list_ops(input_data, ctx: Context):
-    """List available operations, optionally filtered by node."""
+    """List available operations, optionally filtered by node.
+    
+    Parameters (JSON format):
+    - node_name (str, optional): Filter operations by specific node. If not provided, lists all operations.
+    
+    Example usage:
+    {"node_name": "ook"}
+    {} (lists all operations)
+    """
     # Import locally to avoid circular imports
     from tatbot.mcp.models import ListOpsInput, ListOpsResponse
     from tatbot.ops import NODE_AVAILABLE_OPS

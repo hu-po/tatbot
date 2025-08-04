@@ -1,11 +1,32 @@
 """Pydantic models for MCP requests and responses."""
 
+import json
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
+import numpy as np
 from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings
+
+
+class NumpyEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle numpy arrays and other non-serializable types."""
+    def default(self, obj: Any) -> Any:
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        # For other non-serializable types, convert to string
+        try:
+            json.dumps(obj)
+            return obj
+        except (TypeError, ValueError):
+            return str(obj)
 
 
 class MCPSettings(BaseSettings):
@@ -112,7 +133,15 @@ class ListOpsInput(BaseModel):
 
 
 # Response Models
-class RunOpResult(BaseModel):
+class BaseResponse(BaseModel):
+    """Base response model with custom JSON serialization."""
+    
+    def model_dump_json(self, **kwargs) -> str:
+        """Override to use custom JSON encoder for numpy arrays."""
+        return json.dumps(self.model_dump(**kwargs), cls=NumpyEncoder, ensure_ascii=False)
+
+
+class RunOpResult(BaseResponse):
     """Response model for robot operation execution."""
     version: str = "1.0"  # Tool versioning
     message: str
@@ -121,7 +150,7 @@ class RunOpResult(BaseModel):
     scene_name: str
 
 
-class PingNodesResponse(BaseModel):
+class PingNodesResponse(BaseResponse):
     """Response model for network node ping results."""
     version: str = "1.0"  # Tool versioning
     status: str
@@ -129,21 +158,21 @@ class PingNodesResponse(BaseModel):
     all_success: bool
 
 
-class ListScenesResponse(BaseModel):
+class ListScenesResponse(BaseResponse):
     """Response model for available scenes listing."""
     version: str = "1.0"  # Tool versioning
     scenes: List[str]
     count: int
 
 
-class ListNodesResponse(BaseModel):
+class ListNodesResponse(BaseResponse):
     """Response model for available nodes listing."""
     version: str = "1.0"  # Tool versioning
     nodes: List[str]
     count: int
 
 
-class ListOpsResponse(BaseModel):
+class ListOpsResponse(BaseResponse):
     """Response model for available operations listing."""
     version: str = "1.0"  # Tool versioning
     ops: List[str]
@@ -158,7 +187,7 @@ class NodeInfo(BaseModel):
     status: str
 
 
-class NodesStatusResponse(BaseModel):
+class NodesStatusResponse(BaseResponse):
     """Response model for nodes status."""
     version: str = "1.0"  # Tool versioning
     nodes: List[NodeInfo]
