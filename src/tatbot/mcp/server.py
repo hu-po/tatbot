@@ -84,11 +84,8 @@ def main(cfg: DictConfig):
             log.error(f"Failed to get nodes: {e}")
             return f"Error getting nodes: {e}"
     
-    # Add OpenAPI endpoint for typed client generation
-    @mcp.get("/openapi.json")
-    async def get_openapi_schema():
-        """Get OpenAPI schema for typed client generation."""
-        return JSONResponse(content=generate_openapi_schema())
+    # Note: OpenAPI endpoint removed - FastMCP doesn't support HTTP endpoints
+    # MCP uses its own protocol, not HTTP/OpenAPI
     
     # Start server
     log.info(f"🚀 Starting MCP server on {settings.host}:{settings.port}")
