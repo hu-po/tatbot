@@ -1,8 +1,6 @@
 """MCP (Model Control Protocol) module for tatbot."""
 
 from .models import (
-    GetLatestRecordingInput,
-    GetLatestRecordingResponse,
     ListNodesInput,
     ListNodesResponse,
     ListScenesInput,
@@ -19,6 +17,5 @@ __all__ = [
     "PingNodesInput", "PingNodesResponse", 
     "ListScenesInput", "ListScenesResponse",
     "ListNodesInput", "ListNodesResponse",
-    "GetLatestRecordingInput", "GetLatestRecordingResponse",
     "MCPSettings"
 ]

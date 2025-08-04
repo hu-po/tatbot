@@ -29,7 +29,6 @@ The available tools are defined as handlers in `tatbot/mcp/handlers.py` and enab
 - `ping_nodes`: Pings network nodes to check connectivity.
 - `list_scenes`: Lists available scenes from the config.
 - `list_nodes`: Lists all configured network nodes.
-- `get_latest_recording`: Finds the latest recording file.
 
 ## Cursor IDE Integration
 The workflow in Cursor remains similar:

@@ -245,33 +245,5 @@ async def list_nodes(input_data, ctx: Context):
 
 
 
-@mcp_handler
-async def get_latest_recording(input_data, ctx: Context):
-    """Get the latest recording file."""
-    # Import locally to avoid circular imports
-    from tatbot.mcp.models import GetLatestRecordingResponse
-    
-    try:
-        recording_dir = Path("~/tatbot/nfs/recordings").expanduser().resolve()
-        if not recording_dir.exists():
-            return GetLatestRecordingResponse(filename="", found=False)
-        
-        recordings = [f for f in os.listdir(str(recording_dir)) if f.endswith(".yaml")]
-        if not recordings:
-            return GetLatestRecordingResponse(filename="", found=False)
-        
-        latest_recording = max(
-            recordings, 
-            key=lambda x: os.path.getctime(str(recording_dir / x))
-        )
-        
-        log.info(f"Found latest recording: {latest_recording}")
-        return GetLatestRecordingResponse(filename=latest_recording, found=True)
-        
-    except Exception as e:
-        log.error(f"Error getting latest recording: {e}")
-        return GetLatestRecordingResponse(filename="", found=False)
-
-
 # Export available tools for discoverability
 __all__ = list(_REGISTRY.keys())

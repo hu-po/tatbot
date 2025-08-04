@@ -153,13 +153,3 @@ class NodesStatusResponse(BaseModel):
 
 
 
-class GetLatestRecordingInput(BaseModel):
-    """Input model for getting latest recording."""
-    version: str = "1.0"  # Tool versioning
-
-
-class GetLatestRecordingResponse(BaseModel):
-    """Response model for latest recording."""
-    version: str = "1.0"  # Tool versioning
-    filename: str
-    found: bool
