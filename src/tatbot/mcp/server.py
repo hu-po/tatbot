@@ -28,16 +28,17 @@ def _register_tools(mcp: FastMCP, tool_names: list[str] | None, node_name: str, 
                 registered_name = f"{node_name}_{tool_name}"
                 
                 # Create wrapper function with proper closure
-                def make_wrapper(fn):
-                    async def namespaced_tool_fn(input_data, ctx):
+                def make_wrapper(fn, name):
+                    async def wrapper(input_data, ctx):
                         return await fn(input_data, ctx)
-                    return namespaced_tool_fn
+                    wrapper.__name__ = name
+                    wrapper.__doc__ = fn.__doc__
+                    return wrapper
                 
-                wrapper_fn = make_wrapper(tool_fn)
-                wrapper_fn.__name__ = registered_name
+                wrapper_fn = make_wrapper(tool_fn, registered_name)
                 
-                # Register tool with namespaced name
-                mcp.tool()(wrapper_fn)
+                # Register tool with namespaced name using the named parameter
+                mcp.tool(name=registered_name)(wrapper_fn)
                 log.info(f"✅ Registered tool: {registered_name} (was {tool_name})")
             else:
                 # Register tool with original name
