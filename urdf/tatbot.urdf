@@ -137,7 +137,7 @@
   </joint>
   <link name="camera1_frame"/>
   <joint name="camera1_optical_joint" type="fixed">
-    <origin rpy="-1.5707963267948966 0 -0.7853981633974483" xyz="0 0 0"/>
+    <origin rpy="-1.5707963267948966 1.5707963267948966 -0.7853981633974483" xyz="0 0 0"/>
     <parent link="camera1_frame"/>
     <child link="camera1_optical_frame"/>
   </joint>
