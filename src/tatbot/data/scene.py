@@ -163,12 +163,12 @@ class Scene(BaseCfg):
                 if pen_name not in pens_config_dict:
                     raise ValueError(f"Pen {pen_name} (right) not in pen config")
         
-        # Create inkcap dictionaries
+        # Create inkcap dictionaries keyed by ink name
         inkcaps_l = {
-            inkcap.name: inkcap for inkcap in self.inks.inkcaps if "left" in inkcap.name
+            inkcap.ink.name: inkcap for inkcap in self.inks.inkcaps if "left" in inkcap.name and inkcap.ink
         }
         inkcaps_r = {
-            inkcap.name: inkcap for inkcap in self.inks.inkcaps if "right" in inkcap.name
+            inkcap.ink.name: inkcap for inkcap in self.inks.inkcaps if "right" in inkcap.name and inkcap.ink
         }
         self.inkcaps_l = inkcaps_l
         self.inkcaps_r = inkcaps_r
