@@ -20,7 +20,7 @@ echo "🔌 Starting MCP server for node: $NODE"
 
 # Set up environment
 export PATH="$HOME/.local/bin:$PATH"
-source ~/tatbot/scripts/setup-env.sh
+source ~/tatbot/scripts/setup_env.sh
 
 # Change to tatbot directory
 cd ~/tatbot
