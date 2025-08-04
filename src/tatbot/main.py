@@ -1,3 +1,4 @@
+import os
 
 import hydra
 from hydra import compose, initialize
@@ -5,6 +6,8 @@ from omegaconf import DictConfig, OmegaConf
 
 from tatbot.config_schema import AppConfig
 from tatbot.data.scene import Scene
+
+CONFIG_PATH = os.path.expanduser("~/tatbot/src/conf")
 
 
 def load_scene_from_config(cfg: DictConfig) -> Scene:
@@ -25,7 +28,7 @@ def compose_and_validate_scene(name: str = "default") -> Scene:
     else:
         # Initialize Hydra if not already done
         with initialize(
-            config_path="../conf", 
+            config_path=CONFIG_PATH, 
             version_base=None
         ):
             cfg = compose(config_name="config", overrides=[f"scenes={name}"])
@@ -34,7 +37,7 @@ def compose_and_validate_scene(name: str = "default") -> Scene:
 
 @hydra.main(
     version_base=None, 
-    config_path="../conf", 
+    config_path=CONFIG_PATH, 
     config_name="config"
 )
 def main(cfg: DictConfig) -> None:
