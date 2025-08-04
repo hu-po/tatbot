@@ -113,31 +113,37 @@ async def run_op(input_data, ctx: Context):
         message = f"✅ Completed {parsed_input.op_name}"
         log.info(message)
         
-        return RunOpResult(
+        result = RunOpResult(
             message=message,
             success=True,
             op_name=parsed_input.op_name,
             scene_name=parsed_input.scene_name
         )
+        # Use custom JSON encoder to handle any numpy arrays
+        return json.loads(result.model_dump_json())
         
     except (KeyboardInterrupt, asyncio.CancelledError):
         message = "🛑⌨️ Keyboard/E-stop interrupt detected"
         log.error(message)
-        return RunOpResult(
+        result = RunOpResult(
             message=message,
             success=False,
             op_name=parsed_input.op_name,
             scene_name=parsed_input.scene_name
         )
+        # Use custom JSON encoder to handle any numpy arrays
+        return json.loads(result.model_dump_json())
     except Exception as e:
         message = f"❌ Exception when running op: {str(e)}"
         log.error(message)
-        return RunOpResult(
+        result = RunOpResult(
             message=message,
             success=False,
             op_name=parsed_input.op_name,
             scene_name=parsed_input.scene_name
         )
+        # Use custom JSON encoder to handle any numpy arrays
+        return json.loads(result.model_dump_json())
     finally:
         # Ensure cleanup is called even if op.run() never yielded
         if op and hasattr(op, 'cleanup'):
@@ -215,19 +221,21 @@ async def ping_nodes(input_data, ctx: Context):
                 else "❌ Some nodes are not responding"
             )
 
-        return PingNodesResponse(
+        result = PingNodesResponse(
             status=header,
             details=sorted(messages),
             all_success=all_success
         )
+        return json.loads(result.model_dump_json())
         
     except Exception as e:
         log.error(f"Error pinging nodes: {e}")
-        return PingNodesResponse(
+        result = PingNodesResponse(
             status=f"❌ Error pinging nodes: {str(e)}",
             details=[],
             all_success=False
         )
+        return json.loads(result.model_dump_json())
 
 
 @mcp_handler
@@ -255,11 +263,13 @@ async def list_scenes(input_data, ctx: Context):
         scenes.sort()
         
         log.info(f"Found {len(scenes)} scenes")
-        return ListScenesResponse(scenes=scenes, count=len(scenes))
+        result = ListScenesResponse(scenes=scenes, count=len(scenes))
+        return json.loads(result.model_dump_json())
         
     except Exception as e:
         log.error(f"Error listing scenes: {e}")
-        return ListScenesResponse(scenes=[], count=0)
+        result = ListScenesResponse(scenes=[], count=0)
+        return json.loads(result.model_dump_json())
 
 
 @mcp_handler
@@ -281,11 +291,13 @@ async def list_nodes(input_data, ctx: Context):
         node_names = [node.name for node in net.nodes]
         log.info(f"Found {len(node_names)} nodes")
         
-        return ListNodesResponse(nodes=node_names, count=len(node_names))
+        result = ListNodesResponse(nodes=node_names, count=len(node_names))
+        return json.loads(result.model_dump_json())
         
     except Exception as e:
         log.error(f"Error listing nodes: {e}")
-        return ListNodesResponse(nodes=[], count=0)
+        result = ListNodesResponse(nodes=[], count=0)
+        return json.loads(result.model_dump_json())
 
 
 @mcp_handler
@@ -320,11 +332,12 @@ async def list_ops(input_data, ctx: Context):
             ops = NODE_AVAILABLE_OPS[parsed_input.node_name]
             log.info(f"Found {len(ops)} ops for node {parsed_input.node_name}")
             
-            return ListOpsResponse(
+            result = ListOpsResponse(
                 ops=sorted(ops), 
                 count=len(ops), 
                 node_name=parsed_input.node_name
             )
+            return json.loads(result.model_dump_json())
         else:
             # List all unique ops across all nodes
             all_ops = set()
@@ -334,11 +347,13 @@ async def list_ops(input_data, ctx: Context):
             ops = sorted(list(all_ops))
             log.info(f"Found {len(ops)} unique ops across all nodes")
             
-            return ListOpsResponse(ops=ops, count=len(ops))
+            result = ListOpsResponse(ops=ops, count=len(ops))
+            return json.loads(result.model_dump_json())
         
     except Exception as e:
         log.error(f"Error listing ops: {e}")
-        return ListOpsResponse(ops=[], count=0, node_name=parsed_input.node_name)
+        result = ListOpsResponse(ops=[], count=0, node_name=parsed_input.node_name)
+        return json.loads(result.model_dump_json())
 
 
 
