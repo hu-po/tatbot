@@ -19,7 +19,7 @@
     </visual>
   </link>
   <joint name="palette_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.125 0 0.085"/>
+    <origin rpy="0 0 0" xyz="0.126 0 0.085"/>
     <parent link="root"/>
     <child link="palette"/>
   </joint>
