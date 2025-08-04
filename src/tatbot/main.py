@@ -16,12 +16,21 @@ def load_scene_from_config(cfg: DictConfig) -> Scene:
 
 def compose_and_validate_scene(name: str = "default") -> Scene:
     """Compose a scene configuration and validate it."""
-    with initialize(
-        config_path="../conf", 
-        version_base=None
-    ):
+    from hydra.core.global_hydra import GlobalHydra
+    
+    # Check if Hydra is already initialized (e.g., by MCP server)
+    if GlobalHydra().is_initialized():
+        # Use the existing Hydra instance and compose with overrides
         cfg = compose(config_name="config", overrides=[f"scenes={name}"])
         return load_scene_from_config(cfg)
+    else:
+        # Initialize Hydra if not already done
+        with initialize(
+            config_path="../conf", 
+            version_base=None
+        ):
+            cfg = compose(config_name="config", overrides=[f"scenes={name}"])
+            return load_scene_from_config(cfg)
 
 
 @hydra.main(
