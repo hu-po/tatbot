@@ -25,8 +25,13 @@ def _register_tools(mcp: FastMCP, tool_names: list[str] | None, node_name: str):
             tool_fn = available_tools[tool_name]
             # Create a closure to capture the node_name for tools that need it
             if tool_name == "run_op":
-                async def run_op_wrapper(input_data, ctx):
-                    return await tool_fn(input_data, ctx, node_name)
+                # Use a closure factory to properly capture node_name
+                def make_run_op_wrapper(node_name_captured):
+                    async def run_op_wrapper(input_data, ctx):
+                        return await tool_fn(input_data, ctx, node_name_captured)
+                    return run_op_wrapper
+                
+                run_op_wrapper = make_run_op_wrapper(node_name)
                 run_op_wrapper.__name__ = tool_name
                 mcp.tool()(run_op_wrapper)
             else:
