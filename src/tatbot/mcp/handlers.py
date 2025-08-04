@@ -99,16 +99,31 @@ async def run_op(input_data, ctx: Context):
         op = op_class(config)
         
         await ctx.report_progress(
-            progress=0.01, total=1.0, message=f"Created op: {config}"
+            progress=0.01, total=1.0, message=f"Created op for scene: {parsed_input.scene_name}"
         )
         
         async for result in op.run():
-            log.info(f"Intermediate result: {result}")
-            await ctx.report_progress(
-                progress=result['progress'], 
-                total=1.0, 
-                message=result['message']
-            )
+            # Safely log and report intermediate results without numpy arrays
+            try:
+                from tatbot.mcp.models import NumpyEncoder
+                serialized_result = json.loads(json.dumps(result, cls=NumpyEncoder))
+                log.info(f"Intermediate result: progress={serialized_result.get('progress')}, message={serialized_result.get('message')}")
+                await ctx.report_progress(
+                    progress=serialized_result.get('progress', 0.0), 
+                    total=1.0, 
+                    message=str(serialized_result.get('message', 'Processing...'))
+                )
+            except Exception as serialize_error:
+                log.warning(f"Failed to serialize intermediate result: {serialize_error}")
+                # Extract only basic info for logging and reporting
+                progress = result.get('progress', 0.0) if isinstance(result, dict) else 0.0
+                message = str(result.get('message', 'Processing...')) if isinstance(result, dict) else str(result)
+                log.info(f"Intermediate result: progress={progress}, message={message}")
+                await ctx.report_progress(
+                    progress=progress, 
+                    total=1.0, 
+                    message=message
+                )
         
         message = f"✅ Completed {parsed_input.op_name}"
         log.info(message)
