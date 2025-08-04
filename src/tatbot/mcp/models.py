@@ -56,7 +56,7 @@ class RunOpInput(BaseModel):
     def validate_scene_name(cls, v: str) -> str:
         """Validate that the scene name exists in the scenes directory."""
         # Use the same logic as the list_scenes function
-        scenes_dir = Path("~/tatbot/config/scenes").expanduser().resolve()
+        scenes_dir = Path("~/tatbot/src/conf/scenes").expanduser().resolve()
         try:
             available_scenes = [f.replace(".yaml", "") for f in os.listdir(str(scenes_dir)) if f.endswith(".yaml")]
             if v not in available_scenes:

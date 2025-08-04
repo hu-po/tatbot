@@ -15,7 +15,7 @@ class ToggleDNSConfig:
     debug: bool = False
     """Enable debug logging."""
     
-    config_path: str = os.path.expanduser("~/tatbot/config/nodes.yaml")
+    config_path: str = os.path.expanduser("~/tatbot/src/conf/nodes.yaml")
     """Path to nodes config YAML."""
     
     rpi1_ip: str = "192.168.1.98"
@@ -99,7 +99,7 @@ class NetworkToggler:
         log.info(f"Updating arm YAML configs with DNS: {dns_ip}")
         
         for arm in ['l', 'r']:
-            filepath = os.path.expanduser(f"~/tatbot/config/trossen/arm_{arm}.yaml")
+            filepath = os.path.expanduser(f"~/tatbot/src/conf/trossen/arm_{arm}.yaml")
             try:
                 with open(filepath, 'r') as f:
                     config = yaml.safe_load(f)

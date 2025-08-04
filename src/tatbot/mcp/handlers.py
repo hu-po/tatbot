@@ -205,7 +205,7 @@ async def list_scenes(input_data, ctx: Context):
     from tatbot.mcp.models import ListScenesResponse
     
     try:
-        scenes_dir = Path("~/tatbot/config/scenes").expanduser().resolve()
+        scenes_dir = Path("~/tatbot/src/conf/scenes").expanduser().resolve()
         if not scenes_dir.exists():
             return ListScenesResponse(scenes=[], count=0)
         

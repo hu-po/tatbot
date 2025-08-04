@@ -81,4 +81,4 @@ class ArmPose(BaseCfg):
     @staticmethod
     def get_yaml_dir() -> str:
         """Get the directory containing pose YAML files."""
-        return str(Path("~/tatbot/config/poses").expanduser())
+        return str(Path("~/tatbot/src/conf/poses").expanduser())

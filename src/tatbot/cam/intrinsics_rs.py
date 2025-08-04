@@ -17,7 +17,7 @@ class RealSenseConfig:
     debug: bool = False
     camera_name: Optional[str] = None
     serial_number: Optional[str] = None
-    cams_yaml: str = "~/tatbot/config/cams/fast.yaml"
+    cams_yaml: str = "~/tatbot/src/conf/cams/fast.yaml"
     """Path to the camera config YAML file."""
 
 

@@ -93,7 +93,7 @@ class Scene(BaseCfg):
     @functools.lru_cache(maxsize=32)
     def _load_poses_cached(sleep_l_name: str, sleep_r_name: str, ready_l_name: str, ready_r_name: str) -> dict:
         """Cache pose loading to avoid repeated file I/O."""
-        poses_dir = Path.home() / "tatbot/config/poses"
+        poses_dir = Path.home() / "tatbot/src/conf/poses"
         
         # Load poses
         with open(poses_dir / f"{sleep_l_name}.yaml") as f:

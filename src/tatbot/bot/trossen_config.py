@@ -22,7 +22,7 @@ log = get_logger("bot.trossen", "🎛️")
 
 def load_pose_from_yaml(pose_name: str) -> ArmPose:
     """Load an ArmPose from a YAML file in the poses directory."""
-    poses_dir = Path("~/tatbot/config/poses").expanduser()
+    poses_dir = Path("~/tatbot/src/conf/poses").expanduser()
     pose_path = poses_dir / f"{pose_name}.yaml"
     
     if not pose_path.exists():
