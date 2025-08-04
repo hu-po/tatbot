@@ -3,33 +3,29 @@
 import pytest
 from pydantic import ValidationError
 
-from tatbot.mcp.base import MCPConfig, RunOpInput
+from tatbot.mcp.models import MCPSettings, RunOpInput
 from tatbot.mcp.ojo import ManagePolicyInput
 from tatbot.mcp.ook import PingNodesInput
 from tatbot.mcp.rpi1 import RunVizInput
 
 
-class TestMCPConfig:
-    """Test MCPConfig Pydantic model."""
+class TestMCPSettings:
+    """Test MCPSettings Pydantic model."""
 
-    def test_mcp_config_defaults(self):
-        """Test MCPConfig with default values."""
-        config = MCPConfig()
-        assert config.debug is False
-        assert config.transport == "streamable-http"
+    def test_mcp_settings_defaults(self):
+        """Test MCPSettings with default values."""
+        settings = MCPSettings()
+        assert settings.debug is False
+        assert settings.transport == "streamable-http"
+        assert settings.host == "0.0.0.0"
+        assert settings.port == 8000
 
-    def test_mcp_config_custom_values(self):
-        """Test MCPConfig with custom values."""
-        config = MCPConfig(debug=True, transport="custom-transport")
-        assert config.debug is True
-        assert config.transport == "custom-transport"
-
-    def test_mcp_config_yaml_conversion(self):
-        """Test MCPConfig YAML conversion (inherited from BaseCfg)."""
-        config = MCPConfig(debug=True)
-        yaml_str = config.to_yaml()
-        assert "debug: true" in yaml_str
-        assert "transport: streamable-http" in yaml_str
+    def test_mcp_settings_custom_values(self):
+        """Test MCPSettings with custom values."""
+        settings = MCPSettings(debug=True, transport="custom-transport", port=9000)
+        assert settings.debug is True
+        assert settings.transport == "custom-transport"
+        assert settings.port == 9000
 
 
 class TestRunOpInput:
@@ -182,7 +178,7 @@ class TestIntegration:
     def test_models_json_serializable(self):
         """Test that all models can be serialized to JSON."""
         models = [
-            MCPConfig(debug=True),
+            MCPSettings(debug=True),
             RunOpInput(op_name="align", scene_name="default"),
             PingNodesInput(nodes=["ook"]),  # Use a valid node name
             ManagePolicyInput(action="start"),
@@ -198,16 +194,12 @@ class TestIntegration:
             data = model.model_validate_json(json_data)
             assert data == model
 
-    def test_model_inheritance_consistency(self):
-        """Test that MCPConfig properly inherits from BaseCfg."""
-        config = MCPConfig(debug=True)
-        
-        # Should have BaseCfg methods
-        assert hasattr(config, 'to_yaml')
-        assert hasattr(config, 'to_dict')
-        assert hasattr(config, 'from_yaml')
+    def test_model_pydantic_consistency(self):
+        """Test that MCPSettings properly works as a Pydantic model."""
+        settings = MCPSettings(debug=True, port=9000)
         
         # Should be able to convert to dict
-        data = config.to_dict()
+        data = settings.model_dump()
         assert isinstance(data, dict)
         assert data['debug'] is True
+        assert data['port'] == 9000

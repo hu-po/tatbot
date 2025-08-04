@@ -144,7 +144,4 @@ def test_numpy_array_handling():
     assert np.array_equal(bimanual[:7], pose_l.joints)
     assert np.array_equal(bimanual[7:], pose_r.joints)
 
-# Keep original test for backward compatibility
-def test_configs():
-    """Legacy test name - calls the new test."""
-    test_scene_configs()
+

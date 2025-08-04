@@ -3,7 +3,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator
 
-from tatbot.compat import load_scene
+from tatbot.main import compose_and_validate_scene
 from tatbot.utils.log import get_logger, print_config
 
 log = get_logger("ops.base", "✳️")
@@ -29,7 +29,7 @@ class BaseOp:
         log.info(f"Initializing robot operation: {self.op_name}")
         print_config(config, log)
         self.config = config
-        self.scene = load_scene(config.scene)
+        self.scene = compose_and_validate_scene(config.scene)
 
     def cleanup(self):
         """Cleanup the operation."""
