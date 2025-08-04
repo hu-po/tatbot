@@ -7,15 +7,31 @@ https://github.com/TrossenRobotics/trossen_arm/blob/main/demos/python/configurat
 import logging
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import trossen_arm
+import yaml
 
 from tatbot.data.arms import Arms
 from tatbot.data.pose import ArmPose
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger("bot.trossen", "🎛️")
+
+
+def load_pose_from_yaml(pose_name: str) -> ArmPose:
+    """Load an ArmPose from a YAML file in the poses directory."""
+    poses_dir = Path("~/tatbot/src/conf/poses").expanduser()
+    pose_path = poses_dir / f"{pose_name}.yaml"
+    
+    if not pose_path.exists():
+        raise FileNotFoundError(f"Pose file not found: {pose_path}")
+    
+    with open(pose_path) as f:
+        pose_data = yaml.safe_load(f)
+    
+    return ArmPose(**pose_data)
 
 
 @dataclass
@@ -159,7 +175,7 @@ def configure_arm(filepath: str, ip: str, test_pose_name: str, test_tolerance: f
     driver.set_all_modes(trossen_arm.Mode.position)
     sleep_pose = driver.get_all_positions()[:7]
     log.info(f"🦾 sleep pose: {sleep_pose}")
-    test_pose = ArmPose.from_name(test_pose_name).joints
+    test_pose = load_pose_from_yaml(test_pose_name).joints
     log.info(f"🦾 Testing arm {ip} with pose {test_pose}")
     driver.set_all_positions(trossen_arm.VectorDouble(test_pose), blocking=True)
     current_pose = driver.get_all_positions()[:7]

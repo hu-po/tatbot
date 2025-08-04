@@ -1,0 +1,7 @@
+# Common defaults for every node
+host: "0.0.0.0"
+port: 8000
+transport: "streamable-http"
+debug: false
+extras: []      # poetry/toml extras this node must install (bot, viz, gpu, ...)
+tools: []       # explicit tool enable list; if empty -> enable all in handlers

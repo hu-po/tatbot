@@ -1,0 +1,9 @@
+defaults:
+  - override /mcp: default
+
+host: "192.168.1.97"
+port: 8000
+extras: [bot, dev]  # Arm-focused node
+tools:
+  - run_op
+  - ping_nodes

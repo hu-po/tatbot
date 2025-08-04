@@ -1,11 +1,12 @@
-from dataclasses import dataclass
+from pathlib import Path
 
-from tatbot.data import Yaml
+from pydantic import field_validator
+
+from tatbot.data.base import BaseCfg
 from tatbot.data.pose import Pose
 
 
-@dataclass
-class Skin(Yaml):
+class Skin(BaseCfg):
     """Skin is a collection of points that represent the skin of the robot."""
 
     description: str
@@ -30,8 +31,15 @@ class Skin(Yaml):
     zone_height_m: float
     """Height of the zone in meters. (z)"""
     
-    plymesh_dir: str
+    plymesh_dir: Path
     """Directory containing the ply and mesh files."""
 
-    yaml_dir: str = "~/tatbot/config/skins"
-    """Directory containing the skin configs."""
+    @field_validator('plymesh_dir', mode='before')
+    def expand_user_path(cls, v):
+        return Path(v).expanduser()
+
+    @field_validator('plymesh_dir')
+    def path_must_exist(cls, v: Path):
+        if not v.exists():
+            raise ValueError(f"Path does not exist: {v}")
+        return v

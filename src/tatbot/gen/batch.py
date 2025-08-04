@@ -82,7 +82,7 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
         batch_joints = batch_ik(
             target_wxyz=batch_wxyz,
             target_pos=batch_pos,
-            joints=scene.ready_pos_full,
+            joints=scene.ready_pos_full.joints,
             urdf_path=scene.urdf.path,
             link_names=scene.urdf.ee_link_names,
         )

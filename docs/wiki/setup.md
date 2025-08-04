@@ -1,46 +1,59 @@
 # Setup
 
-python dependencies managed using [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+This project uses [`uv`](https://docs.astral.sh/uv/getting-started/installation/) for Python dependency and virtual environment management.
 
-streamlined environment setup:
-
+## Quick Install
+This command clones the repository and sets up the basic environment.
 ```bash
 git clone --depth=1 https://github.com/hu-po/tatbot.git && cd tatbot
-source scripts/setup-env.sh
-uv pip install .[foo,bar] # see optional dependencies below
-```
-
-dependencies are seperated into groups, see `pyproject.toml`
-
-- `bot` - robot dependencies (lerobot, trossen, realsense, etc)
-- `dev` - development dependencies (ruff, isort)
-- `gen` - generation of strokes and batch ik
-- `map` - skin reconstruction and design mapping
-- `viz` - visualization
-
-camera passwords and model api keys are stored in `.env`, see `.env.example`
-
-```bash
-# Basic install
-git clone --depth=1 https://github.com/hu-po/tatbot.git && \
-cd ~/tatbot && \
-git pull && \
-# Optional: Clean old uv environment
-deactivate && \
-rm -rf .venv && \
-rm uv.lock && \
-# Setup new uv environment
-uv venv --prompt="tatbot" && \
-source .venv/bin/activate && \
+python3 -m venv .venv
+source .venv/bin/activate
 uv pip install .
-# source env variables (i.e. keys, tokens, camera passwords)
-source .env
 ```
 
-to turn on the robot:
+## Optional Dependencies
+Dependencies are separated into optional groups, defined in `pyproject.toml`. Install the groups you need for your task.
+- `bot`: Robot-specific dependencies (`lerobot`, `trossen-arm`, etc.)
+- `dev`: Development tools (`ruff`, `pytest`)
+- `gen`: Stroke generation and inverse kinematics
+- `map`: Skin reconstruction and design mapping
+- `viz`: Visualization tools
+- `gpu`: For GPU-accelerated tasks
 
-1. flip power strip in the back to on.
-2. press power button on `trossen-ai`, it will glow blue.
-3. flip rocker switches to "on" on `arm-r` and `arm-l` control boxes underneath workspace.
-4. flip rocker switch on the back of the light to turn it on.
-5. turn on the tattoo pen batteries
+Install one or more groups like this:
+```bash
+uv pip install .[bot,viz]
+```
+
+## Full Environment Setup
+For a clean, from-scratch setup:
+```bash
+git clone --depth=1 https://github.com/hu-po/tatbot.git && cd ~/tatbot
+git pull
+
+# Create and activate a new virtual environment
+python3 -m venv .venv --prompt="tatbot"
+source .venv/bin/activate
+
+# Install base and optional dependencies
+uv pip install .[bot,dev,gen,map,viz,gpu]
+
+# Source environment variables (e.g., API keys, camera passwords)
+# Ensure you have a .env file (see .env.example)
+set -a; source .env; set +a
+```
+
+## Starting the System
+1. **Power On**: Flip the main power strip on.
+2. **`trossen-ai` PC**: Press the power button; it will glow blue.
+3. **Robot Arms**: Flip the rocker switches on the `arm-r` and `arm-l` control boxes to "ON".
+4. **Lighting**: Turn on the light bar via its rocker switch.
+5. **Pens**: Turn on the tattoo pen batteries.
+6. **MCP Servers**: SSH into each required node (`ook`, `oop`, `trossen-ai`, etc.) and run the appropriate MCP server command.
+   ```bash
+   # On ook
+   cd ~/tatbot && ./scripts/run_mcp.sh ook
+
+   # On trossen-ai
+   cd ~/tatbot && ./scripts/run_mcp.sh trossen-ai
+   ```

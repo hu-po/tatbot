@@ -1,0 +1,12 @@
+description: "50mm x 50mm square on sponge fake skin"
+image_width_m: 0.05
+image_height_m: 0.05
+design_pose:
+  pos:
+    xyz: [0.22, 0.0, 0.08]
+  rot:
+    wxyz: [0.7071, 0.0, 0.0, -0.7071]
+zone_depth_m: 0.06
+zone_width_m: 0.06
+zone_height_m: 0.01
+plymesh_dir: "~/tatbot/nfs/3d/fakeskin_sponge"

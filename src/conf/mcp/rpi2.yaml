@@ -1,0 +1,9 @@
+defaults:
+  - override /mcp: default
+
+host: "192.168.1.99"
+port: 8000
+extras: [bot]  # RPi nodes likely have fewer resources
+tools:
+  - ping_nodes
+  - list_scenes

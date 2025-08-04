@@ -1,11 +1,13 @@
-from dataclasses import dataclass
+import ipaddress
+from typing import List, Optional
 
-from tatbot.data import Yaml
+from pydantic import field_validator
+
+from tatbot.data.base import BaseCfg
 from tatbot.data.pose import Pose
 
 
-@dataclass
-class Intrinsics(Yaml):
+class Intrinsics(BaseCfg):
     fov: float
     """Field of view in radians."""
     aspect: float
@@ -18,14 +20,12 @@ class Intrinsics(Yaml):
     """Principal point in x-direction."""
     ppy: float
     """Principal point in y-direction."""
-    fov_depth: float | None = None
+    fov_depth: Optional[float] = None
     """Field of view in radians for depth camera."""
-    aspect_depth: float | None = None
+    aspect_depth: Optional[float] = None
     """Aspect ratio for depth camera."""
 
-
-@dataclass
-class CameraConfig(Yaml):
+class CameraConfig(BaseCfg):
     name: str
     """Name of the camera."""
     width: int
@@ -41,14 +41,10 @@ class CameraConfig(Yaml):
     urdf_link_name: str
     """Name of the link in the URDF that the camera is attached to."""
 
-
-@dataclass
 class RealSenseCameraConfig(CameraConfig):
     serial_number: str
     """Serial number of the camera (only for realsense cameras)."""
 
-
-@dataclass
 class IPCameraConfig(CameraConfig):
     ip: str
     """IP address of the camera (only for ip cameras)."""
@@ -59,15 +55,19 @@ class IPCameraConfig(CameraConfig):
     rtsp_port: int
     """RTSP port of the camera (only for ip cameras)."""
 
+    @field_validator('ip')
+    def validate_ip(cls, v):
+        try:
+            ipaddress.ip_address(v)
+        except ValueError:
+            raise ValueError(f"'{v}' is not a valid IP address")
+        return v
 
-@dataclass
-class Cams(Yaml):
-    realsenses: list[RealSenseCameraConfig]
+class Cams(BaseCfg):
+    realsenses: List[RealSenseCameraConfig]
     """List of camera configurations."""
-    ipcameras: list[IPCameraConfig]
+    ipcameras: List[IPCameraConfig]
     """List of camera configurations."""
-    yaml_dir: str = "~/tatbot/config/cams"
-    """Directory containing the config yaml files."""
 
     def get_camera(self, camera_name: str) -> CameraConfig:
         camera_idx = int(camera_name[-1]) - 1

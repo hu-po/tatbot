@@ -1,19 +1,21 @@
-from dataclasses import dataclass
+import ipaddress
+from pathlib import Path
 
-from tatbot.data import Yaml
+from pydantic import field_validator
+
+from tatbot.data.base import BaseCfg
 from tatbot.data.pose import Pos, Rot
 
 
-@dataclass
-class Arms(Yaml):
+class Arms(BaseCfg):
     ip_address_l: str
     """IP address of the left robot arm."""
     ip_address_r: str
     """IP address of the right robot arm."""
 
-    arm_l_config_filepath: str
+    arm_l_config_filepath: Path
     """YAML file containing left arm config."""
-    arm_r_config_filepath: str
+    arm_r_config_filepath: Path
     """YAML file containing right arm config."""
 
     goal_time_fast: float
@@ -44,5 +46,20 @@ class Arms(Yaml):
     align_x_size_m: float
     """Size of the laser X when performing align strokes."""
 
-    yaml_dir: str = "~/tatbot/config/arms"
-    """Directory containing the config yaml files."""
+    @field_validator('ip_address_l', 'ip_address_r')
+    def validate_ip(cls, v):
+        try:
+            ipaddress.ip_address(v)
+        except ValueError:
+            raise ValueError(f"'{v}' is not a valid IP address")
+        return v
+    
+    @field_validator('arm_l_config_filepath', 'arm_r_config_filepath', mode='before')
+    def expand_user_path(cls, v):
+        return Path(v).expanduser()
+
+    @field_validator('arm_l_config_filepath', 'arm_r_config_filepath')
+    def path_must_exist(cls, v: Path):
+        if not v.exists():
+            raise ValueError(f"Path does not exist: {v}")
+        return v

@@ -1,40 +1,37 @@
+import functools
 import json
-import os
-from dataclasses import dataclass, field
+from pathlib import Path
+from typing import List, Optional
+
+import yaml
+from pydantic import field_validator, model_validator
 
 from tatbot.bot.urdf import get_link_poses
-from tatbot.data import Yaml
 from tatbot.data.arms import Arms
+from tatbot.data.base import BaseCfg
 from tatbot.data.cams import Cams
-from tatbot.data.inks import Ink, InkCap, Inks
+from tatbot.data.inks import InkCap, Inks
 from tatbot.data.pose import ArmPose, Pos
 from tatbot.data.skin import Skin
 from tatbot.data.tags import Tags
 from tatbot.data.urdf import URDF
-from tatbot.utils.log import get_logger
-
-log = get_logger("data.scene", "🌆")
+from tatbot.utils.validation import expand_user_path
 
 
-@dataclass
-class Scene(Yaml):
+class Scene(BaseCfg):
     """Scene is a collection of objects that represent the scene."""
+    
+    model_config = {'arbitrary_types_allowed': True}
 
     name: str
     """Name of the scene."""
 
-    arms_config_name: str
-    """Name of the arms config (Arms)."""
-    cams_config_name: str
-    """Name of the camera config (Cameras)."""
-    urdf_config_name: str
-    """Name of the urdf config (URDF)."""
-    skin_config_name: str
-    """Name of the skin config (Skin)."""
-    inks_config_name: str
-    """Name of the ink config (Inks)."""
-    tags_config_name: str
-    """Name of the tag config (Tags)."""
+    arms: Arms
+    cams: Cams
+    urdf: URDF
+    skin: Skin
+    inks: Inks
+    tags: Tags
 
     sleep_pos_l_name: str
     """Name of the left arm sleep pose (ArmPose)."""
@@ -46,121 +43,180 @@ class Scene(Yaml):
     ready_pos_r_name: str
     """Name of the right arm ready pose (ArmPose)."""
 
-    pen_names_l: list[str]
+    pen_names_l: List[str]
     """Name of pens that will be drawn using left arm."""
-    pen_names_r: list[str]
+    pen_names_r: List[str]
     """Name of pens that will be drawn using right arm."""
-    pens_config_path: str
+    pens_config_path: Path
     """Path to the DrawingBotV3 Pens config file."""
 
     stroke_length: int
     """All strokes will be resampled to this length."""
 
-    design_dir_path: str | None = None
+    design_dir_path: Optional[Path] = None
     """Path to the design directory."""
-    design_img_path: str | None = None
+    design_img_path: Optional[Path] = None
     """Path to the design image."""
 
-    yaml_dir: str = "~/tatbot/config/scenes"
-    """Directory containing the scene configs."""
+    # Populated by validators
+    sleep_pos_l: Optional[ArmPose] = None
+    sleep_pos_r: Optional[ArmPose] = None
+    ready_pos_l: Optional[ArmPose] = None
+    ready_pos_r: Optional[ArmPose] = None
+    sleep_pos_full: Optional[ArmPose] = None
+    ready_pos_full: Optional[ArmPose] = None
+    pens_config: Optional[dict] = None
+    inkcaps_l: Optional[dict[str, InkCap]] = None
+    inkcaps_r: Optional[dict[str, InkCap]] = None
+    origin_widget_l_pos: Optional[Pos] = None
+    origin_widget_r_pos: Optional[Pos] = None
+    design_dir: Optional[Path] = None
 
-    arms: Arms = field(init=False)
-    cams: Cams = field(init=False)
-    urdf: URDF = field(init=False)
-    skin: Skin = field(init=False)
-    inks: Inks = field(init=False)
-    tags: Tags = field(init=False)
+    @field_validator('pens_config_path', 'design_dir_path', mode='before')
+    def expand_user_path_validator(cls, v):
+        return expand_user_path(v)
 
-    # sleep pose is the arm folded up, resting on itself, facing forwards
-    sleep_pos_l: ArmPose = field(init=False)
-    sleep_pos_r: ArmPose = field(init=False)
+    @model_validator(mode='after')
+    def load_poses(self) -> 'Scene':
+        # Load poses using cached function
+        poses = self._load_poses_cached(
+            self.sleep_pos_l_name, 
+            self.sleep_pos_r_name,
+            self.ready_pos_l_name, 
+            self.ready_pos_r_name
+        )
+        
+        # Update self directly instead of returning a copy
+        for key, value in poses.items():
+            setattr(self, key, value)
+        
+        return self
+    
+    @staticmethod
+    @functools.lru_cache(maxsize=32)
+    def _load_poses_cached(sleep_l_name: str, sleep_r_name: str, ready_l_name: str, ready_r_name: str) -> dict:
+        """Cache pose loading to avoid repeated file I/O."""
+        poses_dir = Path.home() / "tatbot/src/conf/poses"
+        
+        # Load poses
+        with open(poses_dir / f"{sleep_l_name}.yaml") as f:
+            sleep_pos_l = ArmPose(**yaml.safe_load(f))
+        with open(poses_dir / f"{sleep_r_name}.yaml") as f:
+            sleep_pos_r = ArmPose(**yaml.safe_load(f))
+        with open(poses_dir / f"{ready_l_name}.yaml") as f:
+            ready_pos_l = ArmPose(**yaml.safe_load(f))
+        with open(poses_dir / f"{ready_r_name}.yaml") as f:
+            ready_pos_r = ArmPose(**yaml.safe_load(f))
 
-    # ready pose is the arm raised up, facing towards skin, tilted down
-    ready_pos_l: ArmPose = field(init=False)
-    ready_pos_r: ArmPose = field(init=False)
+        sleep_pos_full = ArmPose.make_bimanual_joints(sleep_pos_l, sleep_pos_r)
+        ready_pos_full = ArmPose.make_bimanual_joints(ready_pos_l, ready_pos_r)
+        
+        return {
+            'sleep_pos_l': sleep_pos_l,
+            'sleep_pos_r': sleep_pos_r,
+            'ready_pos_l': ready_pos_l,
+            'ready_pos_r': ready_pos_r,
+            'sleep_pos_full': sleep_pos_full,
+            'ready_pos_full': ready_pos_full,
+        }
 
-    def __post_init__(self):
-        log.info(f"📂 Loading scene config: {self.yaml_dir}/{self.name}.yaml")
-        self.arms = Arms.from_name(self.arms_config_name)
-        self.cams = Cams.from_name(self.cams_config_name)
-        self.urdf = URDF.from_name(self.urdf_config_name)
-        self.skin = Skin.from_name(self.skin_config_name)
-        self.tags = Tags.from_name(self.tags_config_name)
-        self.inks = Inks.from_name(self.inks_config_name)
+    @model_validator(mode='after')
+    def load_urdf_poses(self) -> 'Scene':
+        link_names = self.urdf.ink_link_names + self.urdf.origin_widget_names
+        link_poses = get_link_poses(self.urdf.path, link_names, self.ready_pos_full.joints)
 
-        self.sleep_pos_l = ArmPose.from_name(self.sleep_pos_l_name)
-        self.sleep_pos_r = ArmPose.from_name(self.sleep_pos_r_name)
-        self.sleep_pos_full = ArmPose.make_bimanual_joints(self.sleep_pos_l, self.sleep_pos_r)
-
-        self.ready_pos_l = ArmPose.from_name(self.ready_pos_l_name)
-        self.ready_pos_r = ArmPose.from_name(self.ready_pos_r_name)
-        self.ready_pos_full = ArmPose.make_bimanual_joints(self.ready_pos_l, self.ready_pos_r)
-
-        # load pens from config file
-        pens_config_path = os.path.expanduser(self.pens_config_path)
-        assert os.path.exists(pens_config_path), f"❌ Pens config file {pens_config_path} does not exist"
-        log.info(f"📂 Loading pens from config file: {pens_config_path}")
-        with open(pens_config_path, "r") as f:
-            pens_config = json.load(f)
-        self.pens_config = {pen["name"]: pen for pen in pens_config["data"]["pens"]}
-        log.info(f"✅ Found {len(self.pens_config)} pens")
-        log.debug(f"Pens in config: {self.pens_config.keys()}")
-        for pen_name in self.pen_names_l:
-            assert pen_name in self.pens_config, f"❌ Pen {pen_name} (left) not in pen config"
-        for pen_name in self.pen_names_r:
-            assert pen_name in self.pens_config, f"❌ Pen {pen_name} (right) not in pen config"
-
-        # get the link poses for the inkcaps
-        link_poses = get_link_poses(self.urdf.path, self.urdf.ink_link_names, self.ready_pos_full)
-        self.inkcaps_l: dict[str, InkCap] = {}
-        self.inkcaps_r: dict[str, InkCap] = {}
+        # Update inkcap poses without mutating existing objects
+        updated_inkcaps = []
         for inkcap in self.inks.inkcaps:
-            assert inkcap.name in self.urdf.ink_link_names, f"❌ Inkcap {inkcap.name} not found in URDF"
-            if inkcap.ink is not None:
-                ink: Ink = Ink(**inkcap.ink)
-                _inkcap: InkCap = InkCap(
-                    name=inkcap.name,
-                    diameter_m=inkcap.diameter_m,
-                    depth_m=inkcap.depth_m,
-                    ink=ink,
-                    pose=link_poses[inkcap.name],
-                )
-                log.debug(f"Inkcap {inkcap.name} is filled with {ink.name}")
-                if "left" in inkcap.name:
-                    assert ink.name in self.pen_names_l, f"❌ Ink {ink.name} not found in left pen names"
-                    self.inkcaps_l[ink.name] = _inkcap
+            if inkcap.name in link_poses:
+                # Create a copy with updated pose
+                updated_inkcaps.append(inkcap.model_copy(update={'pose': link_poses[inkcap.name]}))
+            else:
+                updated_inkcaps.append(inkcap)
+        
+        # Create updated inks with new inkcaps
+        updated_inks = self.inks.model_copy(update={'inkcaps': updated_inkcaps})
+        
+        origin_widget_l_pos = link_poses[self.urdf.origin_widget_names[0]].pos
+        origin_widget_r_pos = link_poses[self.urdf.origin_widget_names[1]].pos
+
+        # Update self directly instead of returning a copy
+        self.inks = updated_inks
+        self.origin_widget_l_pos = origin_widget_l_pos
+        self.origin_widget_r_pos = origin_widget_r_pos
+        
+        return self
+
+    @model_validator(mode='after')
+    def check_pens_and_inks(self) -> 'Scene':        
+        if self.pens_config_path:
+            with self.pens_config_path.open('r') as f:
+                pens_config = json.load(f)
+            pens_config_dict = {pen["name"]: pen for pen in pens_config["data"]["pens"]}
+            self.pens_config = pens_config_dict
+            
+            # Validate pen names exist in config
+            for pen_name in self.pen_names_l:
+                if pen_name not in pens_config_dict:
+                    raise ValueError(f"Pen {pen_name} (left) not in pen config")
+            for pen_name in self.pen_names_r:
+                if pen_name not in pens_config_dict:
+                    raise ValueError(f"Pen {pen_name} (right) not in pen config")
+        
+        # Create inkcap dictionaries keyed by ink name
+        inkcaps_l = {
+            inkcap.ink.name: inkcap for inkcap in self.inks.inkcaps if "left" in inkcap.name and inkcap.ink
+        }
+        inkcaps_r = {
+            inkcap.ink.name: inkcap for inkcap in self.inks.inkcaps if "right" in inkcap.name and inkcap.ink
+        }
+        self.inkcaps_l = inkcaps_l
+        self.inkcaps_r = inkcaps_r
+
+        # Validate pens are available in inkcaps
+        for pen_name in self.pen_names_l:
+            if pen_name not in [inkcap.ink.name for inkcap in inkcaps_l.values() if inkcap.ink]:
+                raise ValueError(f"Pen {pen_name} (left) not in any inkcap")
+        
+        for pen_name in self.pen_names_r:
+            if pen_name not in [inkcap.ink.name for inkcap in inkcaps_r.values() if inkcap.ink]:
+                raise ValueError(f"Pen {pen_name} (right) not in any inkcap")
+        
+        return self
+
+    @model_validator(mode='after')
+    def find_design_image(self) -> 'Scene':        
+        if self.design_dir_path:
+            design_dir = self.design_dir_path
+            self.design_dir = design_dir
+            
+            if not self.design_img_path:
+                design_img_path = None
+                for file in design_dir.iterdir():
+                    if file.suffix == ".png" and "_F" not in file.name and "plotted" in file.name:
+                        design_img_path = file
+                        break
+                if design_img_path:
+                    self.design_img_path = design_img_path
                 else:
-                    assert ink.name in self.pen_names_r, f"❌ Ink {ink.name} not found in right pen names"
-                    self.inkcaps_r[ink.name] = _inkcap
-        log.info(f"✅ Found {len(self.inkcaps_l)} left inkcaps and {len(self.inkcaps_r)} right inkcaps")
-        log.debug(f"Left inkcaps: {self.inkcaps_l}")
-        log.debug(f"Right inkcaps: {self.inkcaps_r}")
+                    raise ValueError(f"No design image found in {design_dir}")
+        
+        return self
 
-        # get the link poses for the origin widgets
-        link_poses = get_link_poses(self.urdf.path, self.urdf.origin_widget_names, self.ready_pos_full)
-        self.origin_widget_l_pos: Pos = link_poses[self.urdf.origin_widget_names[0]].pos
-        self.origin_widget_r_pos: Pos = link_poses[self.urdf.origin_widget_names[1]].pos
-
-        # clean/load plymesh dir for skin
-        plymesh_dir = os.path.expanduser(self.skin.plymesh_dir)
-        if not os.path.exists(plymesh_dir):
-            os.makedirs(plymesh_dir, exist_ok=True)
-        self.skin.plymesh_dir = plymesh_dir
-        log.info(f"📂 Skin plymesh directory: {plymesh_dir}")
-
-        self.design_dir = None
-        self.design_img_path = None
-        if self.design_dir_path is not None:
-            log.info(f"📂 Loading design from {self.design_dir_path}")
-            self.design_dir = os.path.expanduser(self.design_dir_path)
-            assert os.path.exists(self.design_dir), f"❌ Design directory {self.design_dir} does not exist"
-            log.debug(f"📂 Design directory: {self.design_dir}")
-
-            # final design image
-            design_img_filename = None
-            for file in os.listdir(self.design_dir):
-                if file.endswith(".png") and "_F" not in file and "plotted" in file:
-                    design_img_filename = file
-                    break
-            assert design_img_filename is not None, f"❌ No design image found in {self.design_dir}"
-            self.design_img_path = os.path.join(self.design_dir, design_img_filename)
+    def to_yaml(self, filepath: str):
+        """Save the Scene to a YAML file."""
+        # Use model_dump to get all data, excluding computed properties
+        data = self.model_dump(exclude={
+            'sleep_pos_l', 'sleep_pos_r', 'ready_pos_l', 'ready_pos_r',
+            'sleep_pos_full', 'ready_pos_full', 'inkcaps_l', 'inkcaps_r',
+            'design_img_path'
+        })
+        
+        # Convert Path objects to strings for YAML serialization
+        for key, value in data.items():
+            if hasattr(value, '__fspath__'):  # Check if it's a Path-like object
+                data[key] = str(value)
+        
+        Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+        with open(filepath, 'w') as f:
+            yaml.dump(data, f)

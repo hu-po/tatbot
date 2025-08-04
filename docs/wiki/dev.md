@@ -1,7 +1,7 @@
 # Development
 
-linting and formatting:
-
+## Linting and Formatting
+This project uses `ruff` for both linting and formatting.
 ```bash
 uv pip install .[dev]
 uv run isort .
@@ -9,12 +9,41 @@ uv run ruff format --config pyproject.toml
 uv run ruff check --config pyproject.toml --fix
 ```
 
-updating forked repos when merge conflics arise:
+helpful oneliner to get diff for browser based models:
 
 ```bash
-cd ~/lerobot # example using hu-po/lerobot fork
+rm -rf diff.txt && git diff main...configrefactor > diff.txt && xclip -selection clipboard < diff.txt
+```
+
+To run all quality gates, including tests and type checking, use the CI script:
+```bash
+./scripts/ci_quality_gates.sh
+```
+
+## Forked Repositories
+When merge conflicts arise in forked repos (e.g., `lerobot`), follow this process:
+```bash
+cd ~/lerobot # or other forked repo
 git pull
 git fetch upstream
 git merge upstream/main
 git push origin main
 ```
+
+## Running MCP Servers
+The MCP server architecture has been refactored. To run a server on any node:
+```bash
+# General usage
+./scripts/run_mcp.sh <node_name>
+
+# Example for the 'ook' node
+./scripts/run_mcp.sh ook
+
+# Example with Hydra overrides
+./scripts/run_mcp.sh oop mcp.debug=true mcp.port=9000
+```
+Refer to the [MCP documentation](./mcp.md) for more details.
+
+## General Tips
+- Always work within the `uv` virtual environment (`source .venv/bin/activate`).
+- Use `uv pip install` and `uv run python` for consistency.

@@ -22,7 +22,7 @@ log = get_logger("net", "🌐")
 class NetworkManagerConfig:
     debug: bool = False
     """Enable debug logging."""
-    yaml_file: str = os.path.expanduser("~/tatbot/config/nodes.yaml")
+    yaml_file: str = os.path.expanduser("~/tatbot/src/conf/nodes.yaml")
     """Path to node config with all node information."""
     shared_key_name: str = "tatbot-key"
     """Name of the shared SSH key."""

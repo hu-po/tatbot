@@ -21,9 +21,3 @@ models and training instructions:
 - [Datasets](wiki/models/data.md)
 - [Gr00t](wiki/models/gr00t.md)
 - [SmolVLA](wiki/models/smolvla.md)
-
-source code explanations:
-
-- [Arch](src/arch.md)
-- [Config](src/config.md)
-

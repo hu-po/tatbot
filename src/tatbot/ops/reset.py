@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 
 from lerobot.robots import Robot, make_robot_from_config
 from lerobot.robots.tatbot.config_tatbot import TatbotConfig
@@ -9,11 +10,17 @@ from tatbot.utils.log import get_logger
 log = get_logger("ops.reset", "🔄")
 
 
+@dataclass
+class ResetOpConfig(BaseOpConfig):
+    """Configuration for the reset operation."""
+    pass
+
+
 class ResetOp(BaseOp):
 
     op_name: str = "reset"
 
-    def __init__(self, config: BaseOpConfig):
+    def __init__(self, config: ResetOpConfig):
         super().__init__(config)
         if config.debug:
             logging.getLogger("lerobot").setLevel(logging.DEBUG)

@@ -31,7 +31,12 @@ class AlignOp(RecordOp):
             'message': _msg,
         }
         strokes: StrokeList = make_align_strokes(self.scene)
-        strokes.to_yaml(os.path.join(self.dataset_dir, "strokes.yaml"))
+        try:
+            strokes.to_yaml_with_arrays(os.path.join(self.dataset_dir, "strokes.yaml"))
+            log.debug("✅ strokes.to_yaml_with_arrays completed successfully")
+        except Exception as e:
+            log.error(f"❌ Error in strokes.to_yaml_with_arrays: {e}")
+            raise
         strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, strokes, first_last_rest=False)
         strokebatch.save(os.path.join(self.dataset_dir, "strokebatch.safetensors"))
 
@@ -47,7 +52,7 @@ class AlignOp(RecordOp):
                 self.robot.connect()
                 if not self.robot.is_connected:
                     raise RuntimeError("❌ Failed to connect to robot")
-            self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full), safe=True)
+            self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full.joints), safe=True)
 
             _msg = f"🔍 Executing stroke {stroke_idx + 1}/{len(strokes.strokes)}: left={stroke_l.description}, right={stroke_r.description}"
             log.info(_msg)

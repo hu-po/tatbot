@@ -1,0 +1,14 @@
+defaults:
+  - _self_
+  - arms: default
+  - cams: default
+  - inks: default
+  - poses: default
+  - scenes: default
+  - skins: default
+  - tags: default
+  - urdf: default
+  - mcp: default
+
+# Node identifier (can be overridden via command line with node=<name>)
+node: default

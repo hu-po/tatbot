@@ -5,10 +5,7 @@ import time
 from dataclasses import dataclass
 from io import StringIO
 
-from lerobot.cameras.realsense import RealSenseCameraConfig
 from lerobot.datasets.utils import build_dataset_frame
-from lerobot.robots import Robot, make_robot_from_config
-from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorConfig
 from lerobot.utils.robot_utils import busy_wait
 
@@ -130,7 +127,7 @@ class StrokeOp(RecordOp):
                 self.robot.connect()
                 if not self.robot.is_connected:
                     raise RuntimeError("❌ Failed to connect to robot")
-            self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full), safe=True)
+            self.robot.send_action(self.robot._urdf_joints_to_action(self.scene.ready_pos_full.joints), safe=True)
 
             # get the strokes that will be executed this episode
             stroke_l, stroke_r = strokes.strokes[stroke_idx]

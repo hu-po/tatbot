@@ -1,10 +1,11 @@
-from dataclasses import dataclass
+import ipaddress
 
-from tatbot.data import Yaml
+from pydantic import field_validator
+
+from tatbot.data.base import BaseCfg
 
 
-@dataclass
-class Node(Yaml):
+class Node(BaseCfg):
     """Node in the tatbot network."""
 
     name: str
@@ -18,5 +19,10 @@ class Node(Yaml):
     deps: str = "."
     """Dependencies to install on the node, see pyproject.toml."""
 
-    yaml_dir: str = "~/tatbot/config"
-    """Directory containing the config yaml files."""
+    @field_validator('ip')
+    def validate_ip(cls, v):
+        try:
+            ipaddress.ip_address(v)
+        except ValueError:
+            raise ValueError(f"Invalid IP address: {v}")
+        return v
