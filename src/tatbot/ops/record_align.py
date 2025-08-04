@@ -32,10 +32,10 @@ class AlignOp(RecordOp):
         }
         strokes: StrokeList = make_align_strokes(self.scene)
         try:
-            strokes.to_yaml(os.path.join(self.dataset_dir, "strokes.yaml"))
-            log.debug("✅ strokes.to_yaml completed successfully")
+            strokes.to_yaml_with_arrays(os.path.join(self.dataset_dir, "strokes.yaml"))
+            log.debug("✅ strokes.to_yaml_with_arrays completed successfully")
         except Exception as e:
-            log.error(f"❌ Error in strokes.to_yaml: {e}")
+            log.error(f"❌ Error in strokes.to_yaml_with_arrays: {e}")
             raise
         strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, strokes, first_last_rest=False)
         strokebatch.save(os.path.join(self.dataset_dir, "strokebatch.safetensors"))

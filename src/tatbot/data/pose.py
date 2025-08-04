@@ -17,16 +17,19 @@ class Pos(BaseCfg):
         # Handle pydantic-numpy serialized format
         if isinstance(v, dict) and 'data' in v:
             return np.array(v['data'], dtype=np.float32)
-        # Convert only if needed to avoid unnecessary copies
+        # Convert lists to arrays, keep arrays as-is
+        if isinstance(v, list):
+            return np.asarray(v, dtype=np.float32)
         if not isinstance(v, np.ndarray):
             v = np.asarray(v, dtype=np.float32)
         return v
     
     def model_dump(self, **kwargs):
-        """Override model_dump to handle numpy arrays."""
+        """Override model_dump to convert small arrays to lists for YAML."""
         data = super().model_dump(**kwargs)
-        if isinstance(data.get('xyz'), np.ndarray):
-            data['xyz'] = data['xyz'].tolist()
+        # Convert small arrays to lists for YAML storage
+        if hasattr(self, 'xyz') and isinstance(self.xyz, np.ndarray):
+            data['xyz'] = self.xyz.tolist()
         return data
 
     @field_validator('xyz')
@@ -45,16 +48,19 @@ class Rot(BaseCfg):
         # Handle pydantic-numpy serialized format
         if isinstance(v, dict) and 'data' in v:
             return np.array(v['data'], dtype=np.float32)
-        # Convert only if needed to avoid unnecessary copies
+        # Convert lists to arrays, keep arrays as-is
+        if isinstance(v, list):
+            return np.asarray(v, dtype=np.float32)
         if not isinstance(v, np.ndarray):
             v = np.asarray(v, dtype=np.float32)
         return v
     
     def model_dump(self, **kwargs):
-        """Override model_dump to handle numpy arrays."""
+        """Override model_dump to convert small arrays to lists for YAML."""
         data = super().model_dump(**kwargs)
-        if isinstance(data.get('wxyz'), np.ndarray):
-            data['wxyz'] = data['wxyz'].tolist()
+        # Convert small arrays to lists for YAML storage
+        if hasattr(self, 'wxyz') and isinstance(self.wxyz, np.ndarray):
+            data['wxyz'] = self.wxyz.tolist()
         return data
 
     @field_validator('wxyz')
@@ -81,16 +87,19 @@ class ArmPose(BaseCfg):
         # Handle pydantic-numpy serialized format
         if isinstance(v, dict) and 'data' in v:
             return np.array(v['data'], dtype=np.float32)
-        # Convert only if needed to avoid unnecessary copies
+        # Convert lists to arrays, keep arrays as-is
+        if isinstance(v, list):
+            return np.asarray(v, dtype=np.float32)
         if not isinstance(v, np.ndarray):
             v = np.asarray(v, dtype=np.float32)
         return v
     
     def model_dump(self, **kwargs):
-        """Override model_dump to handle numpy arrays."""
+        """Override model_dump to convert small arrays to lists for YAML."""
         data = super().model_dump(**kwargs)
-        if isinstance(data.get('joints'), np.ndarray):
-            data['joints'] = data['joints'].tolist()
+        # Convert small arrays to lists for YAML storage
+        if hasattr(self, 'joints') and isinstance(self.joints, np.ndarray):
+            data['joints'] = self.joints.tolist()
         return data
 
     @classmethod
