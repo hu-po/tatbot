@@ -16,5 +16,5 @@ offset_num: 3
 ee_offset_l:
   xyz: [0.0, -0.0015, -0.0025]
 ee_offset_r:
-  xyz: [0.004, 0.017, 0.004]
+  xyz: [0.004, 0.015, 0.004]
 align_x_size_m: 0.03
