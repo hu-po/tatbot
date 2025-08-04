@@ -17,18 +17,6 @@ inkcaps:
       rgb: [255, 0, 255]
     diameter_m: 0.008
     depth_m: 0.013
-  - name: inkcap_left_small_2
-    ink:
-      name: golden_yellow
-      rgb: [255, 215, 0]
-    diameter_m: 0.008
-    depth_m: 0.01
-  - name: inkcap_left_small_3
-    ink:
-      name: bright_orange
-      rgb: [255, 165, 0]
-    diameter_m: 0.008
-    depth_m: 0.01
   - name: inkcap_left_medium_0
     ink:
       name: nighthawk_black
@@ -57,18 +45,6 @@ inkcaps:
     ink:
       name: fuchsia
       rgb: [255, 0, 255]
-    diameter_m: 0.008
-    depth_m: 0.01
-  - name: inkcap_right_small_2
-    ink:
-      name: golden_yellow
-      rgb: [255, 215, 0]
-    diameter_m: 0.008
-    depth_m: 0.01
-  - name: inkcap_right_small_3
-    ink:
-      name: bright_orange
-      rgb: [255, 165, 0]
     diameter_m: 0.008
     depth_m: 0.01
   - name: inkcap_right_medium_0

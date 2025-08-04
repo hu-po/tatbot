@@ -13,14 +13,6 @@ inkcaps:
     ink: null
     diameter_m: 0.008
     depth_m: 0.013
-  - name: inkcap_left_small_2
-    ink: null
-    diameter_m: 0.008
-    depth_m: 0.01
-  - name: inkcap_left_small_3
-    ink: null
-    diameter_m: 0.008
-    depth_m: 0.01
   - name: inkcap_left_medium_0
     ink: null
     diameter_m: 0.012
@@ -40,14 +32,6 @@ inkcaps:
     diameter_m: 0.008
     depth_m: 0.01
   - name: inkcap_right_small_1
-    ink: null
-    diameter_m: 0.008
-    depth_m: 0.01
-  - name: inkcap_right_small_2
-    ink: null
-    diameter_m: 0.008
-    depth_m: 0.01
-  - name: inkcap_right_small_3
     ink: null
     diameter_m: 0.008
     depth_m: 0.01
