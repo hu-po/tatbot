@@ -56,7 +56,7 @@ def _parse_input_data(input_data, model_class):
 
 
 @mcp_handler
-async def run_op(input_data, ctx: Context, node_name: str):
+async def run_op(input_data, ctx: Context):
     """Runs an operation, yields intermediate results, see available ops in tatbot.ops module."""
     # Import locally to avoid circular imports
     from tatbot.mcp.models import RunOpInput, RunOpResult
@@ -64,6 +64,10 @@ async def run_op(input_data, ctx: Context, node_name: str):
     
     # Parse input data
     parsed_input = _parse_input_data(input_data, RunOpInput)
+    
+    # Extract node name from the server name (format: "tatbot.{node_name}")
+    server_name = ctx.fastmcp.name
+    node_name = server_name.split(".", 1)[1] if "." in server_name else server_name
     
     await ctx.info(f"Running robot op: {parsed_input.op_name} on {node_name}")
     

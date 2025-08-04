@@ -23,22 +23,8 @@ def _register_tools(mcp: FastMCP, tool_names: list[str] | None, node_name: str):
     for tool_name in tools_to_register:
         if tool_name in available_tools:
             tool_fn = available_tools[tool_name]
-            # Create a closure to capture the node_name for tools that need it
-            if tool_name == "run_op":
-                # Use a closure factory to properly capture node_name, tool_fn, and tool_name
-                def make_run_op_wrapper(node_name_captured, tool_fn_captured, tool_name_captured):
-                    async def run_op_wrapper(input_data, ctx):
-                        # FastMCP automatically injects the Context, so we pass it through
-                        return await tool_fn_captured(input_data, ctx, node_name_captured)
-                    # Set the correct name and preserve the function signature
-                    run_op_wrapper.__name__ = tool_name_captured
-                    run_op_wrapper.__doc__ = tool_fn_captured.__doc__
-                    return run_op_wrapper
-                
-                run_op_wrapper = make_run_op_wrapper(node_name, tool_fn, tool_name)
-                mcp.tool()(run_op_wrapper)
-            else:
-                mcp.tool()(tool_fn)
+            # Register tool directly - all tools now have the standard (input_data, ctx) signature
+            mcp.tool()(tool_fn)
             log.info(f"✅ Registered tool: {tool_name}")
         else:
             log.warning(f"⚠️ Tool {tool_name} not found in handlers")
