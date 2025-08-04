@@ -89,7 +89,18 @@ fi
 echo "🚀 Starting MCP server for $NODE..."
 echo "📝 Logs will be written to ~/tatbot/nfs/mcp-logs/${NODE}.log"
 
-nohup uv run python3 -m tatbot.mcp.server node=${NODE} "$@" \
+# Convert --mcp.xxx=yyy arguments to mcp.xxx=yyy for Hydra
+HYDRA_ARGS=()
+for arg in "$@"; do
+    if [[ $arg == --mcp.* ]]; then
+        # Remove the leading -- for Hydra compatibility
+        HYDRA_ARGS+=("${arg#--}")
+    else
+        HYDRA_ARGS+=("$arg")
+    fi
+done
+
+nohup uv run python3 -m tatbot.mcp.server node=${NODE} "${HYDRA_ARGS[@]}" \
     > ~/tatbot/nfs/mcp-logs/${NODE}.log 2>&1 &
 
 SERVER_PID=$!
