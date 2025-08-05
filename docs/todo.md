@@ -2,11 +2,18 @@
 
 Roughly sorted by priority
 
+- Teleop viz behavior used to calibrate arm end effectors. Go-to pose button
+- Ojo runs small reasoner using ollama exposed through mcp
+- Outdoors first tattoo. Working on making the current pipeline work in edge mode.
+- bolt panels on outside for rpi1 mounts
+- Strokes don't need to be the same size because the batch size is already arbitrary and coming from concatenation
 - rpi1 as dns server, viz network chatter
+- Parallel claude codes as a stream. Multi vibe coding
 - The stroke MCP tool calls the batch creation MCP tool using file paths to coordinate. Other one waits until file is available to continue. Mcp tool calls MCP tool. Viz tool is also called, pulling up the latest viz on the rpi screen.
 - Alignment and calib should be optional add ons to any recording session. 
 - Add origin as alignment points, undergrid with sticking up points to get alignment
 - GUI used by webui agent
+- Medieval engraving tattoo https://youtube.com/shorts/lAyhxgaxQdc
 - Use the white amcrest to observe the 3d printer.
 - Plug 3d printer into other battery
 - async policy server/client on https://github.com/hu-po/lerobot/blob/main/docs/source/async.mdx

@@ -20,6 +20,14 @@ To run all quality gates, including tests and type checking, use the CI script:
 ./scripts/ci_quality_gates.sh
 ```
 
+## Prompts
+
+helpful prompts:
+
+```
+Give feedback on the tatbot project below - high level and down to the nitty gritty. How can we improve it? Are there any big architectural changes we should make? What are the biggest opportunities for improvement? Does the design and choice of data structures, abstractions, and implementation make sense?
+```
+
 ## Forked Repositories
 When merge conflicts arise in forked repos (e.g., `lerobot`), follow this process:
 ```bash

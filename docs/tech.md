@@ -12,6 +12,7 @@ wiki for tatbot (tattoo robot) technical stack
 - [Model Context Protocol](wiki/mcp.md)
 - [Nodes](wiki/nodes.md)
 - [Setup](wiki/setup.md)
+- [Source Code](wiki/source.md)
 - [Trossen Robot Arms](wiki/trossen.md)
 - [URDF](wiki/urdf.md)
 - [Visualization](wiki/viz.md)
