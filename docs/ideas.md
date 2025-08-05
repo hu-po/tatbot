@@ -1,6 +1,4 @@
-# Todo
-
-Roughly sorted by priority
+# Ideas
 
 - Teleop viz behavior used to calibrate arm end effectors. Go-to pose button
 - Ojo runs small reasoner using ollama exposed through mcp

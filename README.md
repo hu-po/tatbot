@@ -24,13 +24,38 @@
 
 # **tatbot**: tattoo robot
 
-Understand the open source [tech stack](docs/tech.md) 🦾🖥️
-
-Follow along with the [master plan](docs/plan.md) 📋📅
-
-Learn more by reading the [academic paper](docs/paper) 📜📚
-
 Want a tattoo? Join the [waitlist](https://forms.gle/Zys6f5iLEtYCG8VW7) 🙋‍♂️
+
+## Documentation
+
+technical stack:
+
+- [AprilTags](docs/apriltags.md)
+- [Artwork](docs/artwork.md)
+- [Cameras](docs/cameras.md)
+- [Development](docs/dev.md)
+- [Tattoo Gear](docs/gear.md)
+- [Inverse Kinematics](docs/kinematics.md)
+- [2D to 3D Mapping](docs/mapping.md)
+- [Model Context Protocol](docs/mcp.md)
+- [Nodes](docs/nodes.md)
+- [Setup](docs/setup.md)
+- [Source Code](docs/source.md)
+- [Trossen Robot Arms](docs/trossen.md)
+- [URDF](docs/urdf.md)
+- [Visualization](docs/viz.md)
+
+models and training instructions:
+
+- [Datasets](docs/models/data.md)
+- [Gr00t](docs/models/gr00t.md)
+- [SmolVLA](docs/models/smolvla.md)
+
+more:
+
+- [progress](docs/progress.md)
+- [ideas dump](docs/ideas.md)
+- [academic paper](docs/paper)
 
 ## Citation
 

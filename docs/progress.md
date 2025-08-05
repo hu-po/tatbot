@@ -1,6 +1,4 @@
-# Plan
-
-**Goal**: Create the best tattoo robot delivering high quality tattoos on any body part with AI generated art in a comfortable and unforgettable experience.
+# Progress
 
 - (✅ **03/30/2025**) [hardware 0.1](https://x.com/hupobuboo/status/1906386728874602520)([✨view in 3D](https://poly.cam/capture/0b06160a-b3ff-49d9-b6ab-1a955d2b2b7f))
 - (✅ **04/09/2025**) [software 0.0.1](https://x.com/hupobuboo/status/1909969799838589300)
