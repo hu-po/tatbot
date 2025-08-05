@@ -9,7 +9,6 @@ from typing import Callable, Dict
 
 from mcp.server.fastmcp import Context
 
-# Import models locally inside functions to avoid circular imports
 from tatbot.utils.log import get_logger
 
 log = get_logger("mcp.handlers", "🔌🛠️")
@@ -38,7 +37,6 @@ def _parse_input_data(input_data, model_class):
         except json.JSONDecodeError as e:
             log.error(f"Failed to parse JSON input_data: {e}")
             log.error(f"Input was: {repr(input_data)}")
-            # Return default model instance
             return model_class()
     elif isinstance(input_data, dict):
         data_dict = input_data.copy()
@@ -61,7 +59,6 @@ def _parse_input_data(input_data, model_class):
         log.error(f"Failed to create {model_class.__name__} from data: {e}")
         log.error(f"Data was: {data_dict}")
         log.error(f"Expected fields: {list(model_class.model_fields.keys())}")
-        # Return default model instance
         return model_class()
 
 
@@ -78,7 +75,6 @@ async def run_op(input_data, ctx: Context):
     {"op_name": "stroke", "scene_name": "tatbotlogo"}
     {"op_name": "reset"}
     """
-    # Import locally to avoid circular imports
     from tatbot.mcp.models import RunOpInput, RunOpResult
     from tatbot.ops import get_op
 
@@ -179,7 +175,6 @@ async def ping_nodes(input_data, ctx: Context):
     {"nodes": ["ook", "eek"]}
     {} (pings all nodes)
     """
-    # Import locally to avoid circular imports
     from tatbot.mcp.models import PingNodesInput, PingNodesResponse
     from tatbot.utils.net import NetworkManager
 
@@ -262,7 +257,6 @@ async def list_scenes(input_data, ctx: Context):
     Example usage:
     {}
     """
-    # Import locally to avoid circular imports
     from tatbot.mcp.models import ListScenesResponse
     
     try:
@@ -296,7 +290,6 @@ async def list_nodes(input_data, ctx: Context):
     Example usage:
     {}
     """
-    # Import locally to avoid circular imports
     from tatbot.mcp.models import ListNodesResponse
     from tatbot.utils.net import NetworkManager
     
@@ -326,7 +319,6 @@ async def list_ops(input_data, ctx: Context):
     {"node_name": "ook"}
     {} (lists all operations)
     """
-    # Import locally to avoid circular imports
     from tatbot.mcp.models import ListOpsInput, ListOpsResponse
     from tatbot.ops import NODE_AVAILABLE_OPS
 

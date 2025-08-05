@@ -1,6 +1,5 @@
 from typing import Dict, Tuple
 
-# used for gui log text/circles/bboxes:
 COLORS: Dict[str, Tuple[int, int, int]] = {
     "black": (0, 0, 0),
     "white": (255, 255, 255),
@@ -24,11 +23,9 @@ COLORS: Dict[str, Tuple[int, int, int]] = {
 
 def argb_to_bgr(argb: int) -> tuple[int, int, int]:
     """Convert ARGB color value to BGR tuple for OpenCV."""
-    # ARGB format: 0xAARRGGBB
     alpha = (argb >> 24) & 0xFF
     red = (argb >> 16) & 0xFF
     green = (argb >> 8) & 0xFF
     blue = argb & 0xFF
     
-    # Convert to BGR (OpenCV format)
     return (blue, green, red)

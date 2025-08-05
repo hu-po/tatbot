@@ -178,24 +178,6 @@ def generate_stroke_frame_image(
     for r, c in pixel_coords:
         cv2.circle(frame_img, (int(c), int(r)), 3, path_color, -1)
 
-    # label -------------------------------------------------------------------
-    # if pixel_coords.size:
-    #     r_c = float(np.mean(pixel_coords[:, 0]))
-    #     c_c = float(np.mean(pixel_coords[:, 1]))
-    #     r_img_c = frame_img.shape[0] / 2
-    #     c_img_c = frame_img.shape[1] / 2
-
-    #     label_pose_norm = 0.8
-    #     text_r = int(label_pose_norm * r_c + (1 - label_pose_norm) * r_img_c)
-    #     text_c = int(label_pose_norm * c_c + (1 - label_pose_norm) * c_img_c)
-    #     text_r = np.clip(text_r, 30, frame_img.shape[0] - 10)
-    #     text_c = np.clip(text_c, 10, frame_img.shape[1] - 150)
-
-    #     font, scale, thick, lh = cv2.FONT_HERSHEY_SIMPLEX, 0.8, 1, 10
-    #     cv2.putText(frame_img, arm.upper(), (text_c, text_r), font, scale, path_color, thick)
-    #     cv2.putText(frame_img, pen_name, (text_c, text_r + lh), font, scale, path_color, thick)
-    #     cv2.putText(frame_img, f"{path_idx:04d}", (text_c, text_r + 2 * lh), font, scale, path_color, thick)
-
     frame_filename = f"stroke_{pen_name}_{arm}_{path_idx:04d}.png"
     frame_path = os.path.join(scene.design_dir, frame_filename)
     cv2.imwrite(frame_path, frame_img)

@@ -16,15 +16,15 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
     Convert a list of (Stroke, Stroke) tuples into a StrokeBatch, running IK to fill in joint values.
     Each tuple is (left_stroke, right_stroke) for a single stroke step.
     """
-    b = len(strokelist.strokes)  # strokes in list
-    l = scene.stroke_length  # poses per stroke
-    o = scene.arms.offset_num  # offset samples
+    b = len(strokelist.strokes)
+    l = scene.stroke_length
+    o = scene.arms.offset_num
 
     # Fill arrays from strokes
     ee_pos_l = np.zeros((b, l, o, 3), dtype=np.float32)
     ee_pos_r = np.zeros((b, l, o, 3), dtype=np.float32)
 
-    # HACK: hardcoded orientations for left and right arm end effectors
+    # Use fixed orientations for left and right arm end effectors
     ee_rot_l = np.tile(scene.arms.ee_rot_l.wxyz, (b, l, o, 1))
     ee_rot_r = np.tile(scene.arms.ee_rot_r.wxyz, (b, l, o, 1))
 
@@ -52,24 +52,19 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
             ee_pos_l[i] += scene.arms.ee_offset_l.xyz
             ee_pos_r[i] += scene.arms.ee_offset_r.xyz
 
-        # first and last poses in each stroke are offset by hover offset
+        # Apply hover offset to first and last poses
         ee_pos_l[i, 0] += scene.arms.hover_offset.xyz
         ee_pos_l[i, -1] += scene.arms.hover_offset.xyz
         ee_pos_r[i, 0] += scene.arms.hover_offset.xyz
         ee_pos_r[i, -1] += scene.arms.hover_offset.xyz
 
-    # offset depths
+    # Apply depth offsets
     offsets = np.linspace(scene.arms.offset_range[0], scene.arms.offset_range[1], o).astype(np.float32)
     depth_axis = np.array([0.0, 0.0, 1.0], dtype=np.float32)
     ee_pos_l += offsets[None, None, :, None] * depth_axis
     ee_pos_r += offsets[None, None, :, None] * depth_axis
 
-    # ------------------------------------------------------------------ #
-    # stack ALONG AXIS 3  → (b, l, o, 2, 3/4) so that every row in the
-    # later (b·l·o, 2, …) tensor contains the **left & right arm for the
-    # SAME (stroke, pose, offset)**.  Stacking on axis 2 (as before) gave
-    # (b, l, 2, o, …) and produced mismatched pairs after reshape.
-    # ------------------------------------------------------------------ #
+    # Stack left and right arm data along axis 3 to ensure matching pairs
     target_pos = np.stack([ee_pos_l, ee_pos_r], axis=3).reshape(b * l * o, 2, 3)  # (b, l, o, 2, 3)
     target_wxyz = np.stack([ee_rot_l, ee_rot_r], axis=3).reshape(b * l * o, 2, 4)  # (b, l, o, 2, 4)
 
@@ -91,9 +86,9 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
 
     if first_last_rest:
         log.debug("Using first and last rest")
-        # HACK: the right arm of the first stroke should be at rest while left arm is ink dipping
+        # Keep right arm at rest during first stroke (left arm ink dipping)
         joints_out[0, :, :, 7:] = np.tile(scene.ready_pos_r.joints, (l, o, 1))
-        # HACK: the left arm of the final path should be at rest since last stroke is right-only
+        # Keep left arm at rest during final stroke (right arm only)
         joints_out[-1, :, :, :7] = np.tile(scene.ready_pos_l.joints, (l, o, 1))
 
     strokebatch = StrokeBatch(

@@ -192,16 +192,7 @@ class VizStrokes(BaseViz):
         log.debug(f"Visualizing stroke {self.stroke_idx} pose {self.pose_idx}")
 
         log.debug("Updating pointclouds")
-        # ------------------------------------------------------------------ #
-        # indexing helper                                                    #
-        #                                                                    #
-        # points were pushed in the order:                                   #
-        #   for k in offset                                                  #
-        #     for i in stroke                                                #
-        #       for j in pose                                                #
-        # hence                                                              #
-        #   idx = k * (B * L) + i * L + j                                    #
-        # ------------------------------------------------------------------ #
+        # Calculate point indices: idx = offset * (strokes * poses) + stroke * poses + pose
         offset_idx_l = self.offset_idx_slider_l.value
         offset_idx_r = self.offset_idx_slider_r.value
         points_per_offset = self.num_strokes * self.scene.stroke_length
