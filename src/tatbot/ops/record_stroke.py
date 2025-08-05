@@ -23,7 +23,7 @@ log = get_logger("ops.stroke", "🖌️")
 @dataclass
 class StrokeOpConfig(RecordOpConfig):
     
-    enable_joystick: bool = True
+    enable_joystick: bool = False
     """Enable joystick for recording"""
 
     # TODO: the realsense cameras are needed for finetuning VLA, but recording is just too slow atm
