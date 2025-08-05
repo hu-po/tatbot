@@ -12,8 +12,7 @@ rm -f uv.lock || true
 echo "🛠️  Setup new uv environment"
 uv venv --prompt="tatbot"
 source .venv/bin/activate
-
 uv pip install .
 
 echo "🔑  Source environment variables (keys, tokens, etc.)"
-source ~/tatbot/nfs/.env
+source ~/tatbot/nfs/.env || true
