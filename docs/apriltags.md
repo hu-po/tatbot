@@ -8,6 +8,6 @@ apriltags are used to track objects (i.e. ink palette) in the scene.
 
 see:
 
-- `tatbot/config/tags/default.yaml`
-- `tatbot/tatbot/data/tags.py`
-- `tatbot/tatbot/cam/tracker.py`
+- `src/conf/tags/default.yaml`
+- `src/tatbot/data/tags.py`
+- `src/tatbot/cam/tracker.py`

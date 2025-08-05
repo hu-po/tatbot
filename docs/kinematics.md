@@ -8,5 +8,5 @@
 
 see:
 
-- `tatbot/tatbot/data/stroke.py`
-- `tatbot/tatbot/gen/batch.py`
+- `src/tatbot/data/stroke.py`
+- `src/tatbot/gen/batch.py`

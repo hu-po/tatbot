@@ -11,7 +11,7 @@ Camera calibration is a critical step. While intrinsic parameters (focal length,
 
 The `src/conf/cams/default.yaml` file contains **placeholder** extrinsics. To get real values, you must run the calibration script:
 ```bash
-uv run -m tatbot.cam.extrinsics
+uv run python -m tatbot.cam.extrinsics
 ```
 This script uses AprilTags to find the precise location of each camera relative to the world origin.
 

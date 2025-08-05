@@ -38,20 +38,6 @@ git merge upstream/main
 git push origin main
 ```
 
-## Running MCP Servers
-The MCP server architecture has been refactored. To run a server on any node:
-```bash
-# General usage
-./scripts/run_mcp.sh <node_name>
-
-# Example for the 'ook' node
-./scripts/run_mcp.sh ook
-
-# Example with Hydra overrides
-./scripts/run_mcp.sh oop mcp.debug=true mcp.port=9000
-```
-Refer to the [MCP documentation](./mcp.md) for more details.
-
 ## General Tips
 - Always work within the `uv` virtual environment (`source .venv/bin/activate`).
 - Use `uv pip install` and `uv run python` for consistency.

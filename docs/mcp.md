@@ -1,8 +1,5 @@
 # MCP (Model Context Protocol)
 
-**MCP has been refactored for unified, dynamic, and type-safe server management.** Individual node scripts are replaced by a single, generic server powered by Hydra and Pydantic.
-
-## Key Changes
 - **Unified Server**: A single `tatbot.mcp.server` now runs on all nodes.
 - **Hydra Configuration**: Node-specific behavior (host, port, tools) is defined in YAML files under `conf/mcp/`.
 - **Dynamic Tools**: Tools are now dynamically registered handlers, enabled/disabled via config.
@@ -19,7 +16,7 @@ To start an MCP server on a specific node, use the unified launcher script:
 ```
 
 ## Server Logs
-Logs are now written to `~/tatbot/nfs/mcp-logs/<node_name>.log`. For example, the `ook` server's log is at `~/tatbot/nfs/mcp-logs/ook.log`.
+Logs are written to `~/tatbot/nfs/mcp-logs/<node_name>.log`. For example, the `ook` server's log is at `~/tatbot/nfs/mcp-logs/ook.log`.
 
 ## Node Configuration
 The behavior of each MCP server is defined by a corresponding YAML file in `src/conf/mcp/`. For example, the `ook` node is configured by `src/conf/mcp/ook.yaml`.

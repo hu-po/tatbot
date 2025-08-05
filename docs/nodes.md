@@ -26,9 +26,9 @@ during development *home mode*, the following pc is also available:
 
 see:
 
-- `tatbot/tatbot/data/node.py`
-- `tatbot/config/nodes.yaml`
-- `tatbot/tatbot/utils/net.py`
+- `src/tatbot/data/node.py`
+- `src/conf/nodes.yaml`
+- `src/tatbot/utils/net.py`
 - [`paramiko`](https://github.com/paramiko/paramiko)
 
 ## Network

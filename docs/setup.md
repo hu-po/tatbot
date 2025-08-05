@@ -6,9 +6,9 @@ This project uses [`uv`](https://docs.astral.sh/uv/getting-started/installation/
 This command clones the repository and sets up the basic environment.
 ```bash
 git clone --depth=1 https://github.com/hu-po/tatbot.git && cd tatbot
-python3 -m venv .venv
+uv venv
 source .venv/bin/activate
-uv pip install .
+uv pip install -e .
 ```
 
 ## Optional Dependencies
@@ -30,13 +30,9 @@ uv pip install .[bot,viz,cam]
 For a clean, from-scratch setup:
 ```bash
 git clone --depth=1 https://github.com/hu-po/tatbot.git && cd ~/tatbot
-git pull
+source scripts/setup_env.sh
 
-# Create and activate a new virtual environment
-python3 -m venv .venv --prompt="tatbot"
-source .venv/bin/activate
-
-# Install base and all optional dependencies
+# (Optional) install additional extras
 uv pip install .[bot,cam,dev,gen,gpu,img,viz]
 
 # Source environment variables (e.g., API keys, camera passwords)
