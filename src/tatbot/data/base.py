@@ -27,7 +27,7 @@ class BaseCfg(BaseModel):
         # Use model_dump without mode='json' to avoid JSON serialization issues with numpy
         try:
             data = self.model_dump()
-        except Exception as e:
+        except Exception:
             # If direct model_dump fails, try converting numpy arrays to lists first
             data = self._model_dump_with_numpy_conversion()
         
@@ -42,7 +42,6 @@ class BaseCfg(BaseModel):
     
     def _model_dump_with_numpy_conversion(self) -> dict:
         """Helper method to dump model with numpy arrays converted to lists."""
-        import json
         
         def convert_numpy_to_lists(obj):
             """Recursively convert numpy arrays to lists."""

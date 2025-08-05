@@ -1,7 +1,6 @@
-import argparse
 import logging
 import os
-from typing import List, Tuple
+from typing import List, Literal, Tuple
 
 import paramiko
 import yaml
@@ -18,25 +17,28 @@ class ToggleDNSConfig:
     config_path: str = os.path.expanduser("~/tatbot/src/conf/nodes.yaml")
     """Path to nodes config YAML."""
     
-    rpi1_ip: str = "192.168.1.98"
-    """IP of rpi1 (DNS server in home)."""
+    dns_node_name: str = "rpi2"
+    """Name of the DNS server node."""
     
     router_dns: str = "192.168.1.1"
     """DNS server in edge mode (LAN router)."""
     
     domain: str = "tatbot.local"
     """Local domain for DNS."""
+    
+    mode: Literal["home", "edge", "toggle"] = "toggle"
+    """Mode to switch to (default: toggle)"""
 
 class NetworkToggler:
-    """Toggle DNS configuration between home (rpi1 DNS) and edge (LAN router DNS) modes."""
+    """Toggle DNS configuration between home (DNS node) and edge (LAN router DNS) modes."""
 
     def __init__(self, config: ToggleDNSConfig):
         self.config = config
         self.nodes = self._load_nodes()
         self.key_path = os.path.expanduser("~/.ssh/tatbot-key")  # Use the existing key
-        self.rpi1 = next((n for n in self.nodes if n.name == "rpi1"), None)
-        if not self.rpi1:
-            raise ValueError("rpi1 not found in nodes config")
+        self.dns_node = next((n for n in self.nodes if n.name == self.config.dns_node_name), None)
+        if not self.dns_node:
+            raise ValueError(f"{self.config.dns_node_name} not found in nodes config")
 
     def _load_nodes(self) -> List[Node]:
         with open(self.config.config_path, "r") as f:
@@ -65,9 +67,9 @@ class NetworkToggler:
         return exit_code, stdout.read().decode().strip(), stderr.read().decode().strip()
 
     def _update_node_dns(self, mode: str):
-        dns_server = self.config.rpi1_ip if mode == "home" else ""
+        dns_server = self.dns_node.ip if mode == "home" else ""
         for node in self.nodes:
-            if node.name == "rpi1": 
+            if node.name == self.config.dns_node_name: 
                 continue
             if node.name == "oop":
                 continue
@@ -95,7 +97,7 @@ class NetworkToggler:
             client.close()
 
     def _update_arm_dns_config(self, mode: str):
-        dns_ip = self.config.rpi1_ip if mode == "home" else self.config.router_dns
+        dns_ip = self.dns_node.ip if mode == "home" else self.config.router_dns
         log.info(f"Updating arm YAML configs with DNS: {dns_ip}")
         
         for arm in ['l', 'r']:
@@ -119,8 +121,8 @@ class NetworkToggler:
         # 1. Update arm config files
         self._update_arm_dns_config("home")
 
-        # 2. Start DNS on rpi1
-        client = self._get_ssh_client(self.rpi1)
+        # 2. Start DNS on DNS node
+        client = self._get_ssh_client(self.dns_node)
         cmds = [
             "sudo systemctl start dnsmasq",
             "sudo systemctl enable dnsmasq"
@@ -128,7 +130,7 @@ class NetworkToggler:
         for cmd in cmds:
             exit_code, out, err = self._run_remote(client, cmd)
             if exit_code != 0:
-                log.error(f"Failed on rpi1: {cmd} - {err}")
+                log.error(f"Failed on {self.config.dns_node_name}: {cmd} - {err}")
         client.close()
 
         # 3. Update other nodes' DNS persistently
@@ -141,8 +143,8 @@ class NetworkToggler:
         # 1. Update arm config files
         self._update_arm_dns_config("edge")
 
-        # 2. Stop DNS on rpi1
-        client = self._get_ssh_client(self.rpi1)
+        # 2. Stop DNS on DNS node
+        client = self._get_ssh_client(self.dns_node)
         cmds = [
             "sudo systemctl stop dnsmasq",
             "sudo systemctl disable dnsmasq"
@@ -150,7 +152,7 @@ class NetworkToggler:
         for cmd in cmds:
             exit_code, out, err = self._run_remote(client, cmd)
             if exit_code != 0:
-                log.error(f"Failed on rpi1: {cmd} - {err}")
+                log.error(f"Failed on {self.config.dns_node_name}: {cmd} - {err}")
         client.close()
 
         # 3. Update other nodes' DNS persistently
@@ -158,8 +160,8 @@ class NetworkToggler:
         log.info("✅ Switched to EDGE mode.")
 
     def toggle(self):
-        # Detect current mode by checking dhcpcd.conf on a non-rpi1 node
-        test_node = next((n for n in self.nodes if n.name != "rpi1"), None)
+        # Detect current mode by checking dhcpcd.conf on a non-DNS node
+        test_node = next((n for n in self.nodes if n.name != self.config.dns_node_name), None)
         if not test_node:
             log.error("No test node found")
             return
@@ -174,20 +176,15 @@ class NetworkToggler:
             self.to_home()
 
 if __name__ == "__main__":
-    args = setup_log_with_config(ToggleDNSConfig)
-    if args.debug:
+    config = setup_log_with_config(ToggleDNSConfig)
+    if config.debug:
         log.setLevel(logging.DEBUG)
     
-    parser = argparse.ArgumentParser(description="Toggle DNS mode")
-    parser.add_argument("--mode", choices=["home", "edge", "toggle"], default="toggle",
-                        help="Mode to switch to (default: toggle)")
-    args = parser.parse_args()
+    toggler = NetworkToggler(config)
     
-    toggler = NetworkToggler(args)
-    
-    if args.mode == "home":
+    if config.mode == "home":
         toggler.to_home()
-    elif args.mode == "edge":
+    elif config.mode == "edge":
         toggler.to_edge()
     else:
         toggler.toggle()

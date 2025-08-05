@@ -33,7 +33,7 @@ def make_align_strokes(scene: Scene) -> StrokeList:
     ))
 
     # Then hover arms over each of the inkcaps
-    for inkcap_l, inkcap_r in zip(scene.inkcaps_l.values(), scene.inkcaps_r.values()):
+    for inkcap_l, inkcap_r in zip(scene.inkcaps_l.values(), scene.inkcaps_r.values(), strict=False):
         strokelist.strokes.append((inkdip_func(inkcap_l.ink.name, "left"), inkdip_func(inkcap_r.ink.name, "right")))
     
     # Finally hover over the "alignment X", which is a red cross centered on the design pose
