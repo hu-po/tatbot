@@ -16,8 +16,6 @@ class Node(BaseCfg):
     """Username for SSH connection."""
     emoji: str = "🌐"
     """Emoji to use for logging."""
-    deps: str = "."
-    """Dependencies to install on the node, see pyproject.toml."""
 
     @field_validator('ip')
     def validate_ip(cls, v):

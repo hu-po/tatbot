@@ -14,14 +14,16 @@ uv pip install .
 ## Optional Dependencies
 Dependencies are separated into optional groups, defined in `pyproject.toml`. Install the groups you need for your task.
 - `bot`: Robot-specific dependencies (`lerobot`, `trossen-arm`, etc.)
+- `cam`: Camera-specific dependencies (`pyrealsense2`, `pupil-apriltags`, etc.)
 - `dev`: Development tools (`ruff`, `pytest`)
 - `gen`: Stroke generation and inverse kinematics
-- `viz`: Visualization tools
 - `gpu`: For GPU-accelerated tasks
+- `img`: Image processing libraries (`opencv`)
+- `viz`: Visualization tools
 
 Install one or more groups like this:
 ```bash
-uv pip install .[bot,viz]
+uv pip install .[bot,viz,cam]
 ```
 
 ## Full Environment Setup
@@ -34,8 +36,8 @@ git pull
 python3 -m venv .venv --prompt="tatbot"
 source .venv/bin/activate
 
-# Install base and optional dependencies
-uv pip install .[bot,dev,gen,viz,gpu]
+# Install base and all optional dependencies
+uv pip install .[bot,cam,dev,gen,gpu,img,viz]
 
 # Source environment variables (e.g., API keys, camera passwords)
 # Ensure you have a .env file (see .env.example)
