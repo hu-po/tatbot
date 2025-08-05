@@ -1,5 +1,6 @@
 # Ideas
 
+- ollama mcp https://github.com/jonigl/mcp-client-for-ollama
 - submit to https://devpost.com/submit-to/25802-openai-open-model-hackathon/manage/submissions
 - Teleop viz behavior used to calibrate arm end effectors. Go-to pose button
 - Ojo runs small reasoner using ollama exposed through mcp
