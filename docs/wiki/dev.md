@@ -15,9 +15,9 @@ helpful oneliner to get diff for browser based models:
 rm -rf diff.txt && git diff main...configrefactor > diff.txt && xclip -selection clipboard < diff.txt
 ```
 
-To run all quality gates, including tests and type checking, use the CI script:
+To run all quality gates, including tests and type checking, use the lint script:
 ```bash
-./scripts/ci_quality_gates.sh
+./scripts/lint.sh
 ```
 
 ## Prompts

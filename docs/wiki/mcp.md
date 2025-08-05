@@ -17,7 +17,6 @@ To start an MCP server on a specific node, use the unified launcher script:
 # Start on 'trossen-ai' with debug mode enabled
 ./scripts/run_mcp.sh trossen-ai mcp.debug=true
 ```
-The old `start-mcp-servers.sh` is now **deprecated**. You must start each server individually on its target machine.
 
 ## Server Logs
 Logs are now written to `~/tatbot/nfs/mcp-logs/<node_name>.log`. For example, the `ook` server's log is at `~/tatbot/nfs/mcp-logs/ook.log`.

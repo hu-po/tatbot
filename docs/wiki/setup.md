@@ -16,7 +16,6 @@ Dependencies are separated into optional groups, defined in `pyproject.toml`. In
 - `bot`: Robot-specific dependencies (`lerobot`, `trossen-arm`, etc.)
 - `dev`: Development tools (`ruff`, `pytest`)
 - `gen`: Stroke generation and inverse kinematics
-- `map`: Skin reconstruction and design mapping
 - `viz`: Visualization tools
 - `gpu`: For GPU-accelerated tasks
 
@@ -36,7 +35,7 @@ python3 -m venv .venv --prompt="tatbot"
 source .venv/bin/activate
 
 # Install base and optional dependencies
-uv pip install .[bot,dev,gen,map,viz,gpu]
+uv pip install .[bot,dev,gen,viz,gpu]
 
 # Source environment variables (e.g., API keys, camera passwords)
 # Ensure you have a .env file (see .env.example)

@@ -476,7 +476,7 @@ This module provides a suite of interactive 3D visualization tools for the `tatb
 
 #### `stroke.py`
 
--   **`VizStrokes`**: A tool for visualizing the execution of a `StrokeBatch`.
+-   **`VizStroke`**: A tool for visualizing the execution of a `StrokeBatch`.
 -   **Functionality**:
     -   It first generates a `StrokeList` and a `StrokeBatch` using the functions from the `gen` module.
     -   It displays the entire path of all strokes as a point cloud.

@@ -60,7 +60,7 @@ to setup the network:
 
 ```bash
 cd ~/tatbot
-source scripts/setup-env.sh
+source scripts/setup_env.sh
 uv run -m tatbot.utils.net --debug
 ```
 
