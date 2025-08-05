@@ -69,7 +69,7 @@ class BaseViz:
         log.debug("Adding robot to viser from URDF")
         _urdf, self.robot = load_robot(self.scene.urdf.path)
         self.viser_urdf = ViserUrdf(self.server, _urdf, root_node_name="/root")
-        self.joints = self.scene.ready_pos_full.joints.copy()
+        self.joints = np.array(self.scene.ready_pos_full.joints, dtype=np.float32)
 
         with self.server.gui.add_folder("Joints", expand_by_default=False):
             with self.server.gui.add_folder("Left", expand_by_default=False):
