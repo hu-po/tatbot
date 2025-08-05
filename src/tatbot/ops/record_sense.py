@@ -96,7 +96,7 @@ class SenseOp(RecordOp):
             'message': _msg,
         }
         link_poses = get_link_poses(
-                self.scene.urdf.path, self.scene.urdf.cam_link_names, self.scene.ready_pos_full
+                self.scene.urdf.path, self.scene.urdf.cam_link_names, self.scene.ready_pos_full.joints
             )
         depth_cameras = {}
         for realsense in self.scene.cams.realsenses:
