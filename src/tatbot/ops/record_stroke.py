@@ -7,9 +7,8 @@ from io import StringIO
 
 from lerobot.datasets.utils import build_dataset_frame
 
-# from lerobot.robots import Robot, make_robot_from_config
-# from lerobot.robots.tatbot.config_tatbot import TatbotConfig
-from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorConfig
+from lerobot.robots import Robot, make_robot_from_config
+from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.utils.robot_utils import busy_wait
 
 from tatbot.data.stroke import StrokeBatch, StrokeList
@@ -23,39 +22,47 @@ log = get_logger("ops.stroke", "🖌️")
 
 @dataclass
 class StrokeOpConfig(RecordOpConfig):
-    pass
+    
+    enable_joystick: bool = True
+    """Enable joystick for recording"""
+
+    # TODO: the realsense cameras are needed for finetuning VLA, but recording is just too slow atm
+    enable_realsense: bool = False
+    """Enable Intel RealSense cameras for recording"""
 
 
 class StrokeOp(RecordOp):
 
     op_name: str = "stroke"
 
-    # TODO: the realsense cameras are just too slow on trossen-ai
-    #       we need them for finetuning VLA, but recording is just too slow
-    #       some kind of long term solution is needed
-    # def make_robot(self) -> Robot:
-    #     """Make a robot from the config."""
-    #     return make_robot_from_config(
-    #         TatbotConfig(
-    #             ip_address_l=self.scene.arms.ip_address_l,
-    #             ip_address_r=self.scene.arms.ip_address_r,
-    #             arm_l_config_filepath=self.scene.arms.arm_l_config_filepath,
-    #             arm_r_config_filepath=self.scene.arms.arm_r_config_filepath,
-    #             goal_time=self.scene.arms.goal_time_slow,
-    #             connection_timeout=self.scene.arms.connection_timeout,
-    #             home_pos_l=self.scene.sleep_pos_l.joints,
-    #             home_pos_r=self.scene.sleep_pos_r.joints,
-    #             rs_cameras={
-    #                 cam.name : RealSenseCameraConfig(
-    #                     fps=cam.fps,
-    #                     width=cam.width,
-    #                     height=cam.height,
-    #                     serial_number_or_name=cam.serial_number,
-    #                 ) for cam in self.scene.cams.realsenses
-    #             },
-    #             ip_cameras={},
-    #         )
-    #     )
+    def make_robot(self) -> Robot:
+        if self.config.enable_realsense:
+            log.info("Enabling Intel RealSense cameras for recording")
+            from lerobot.robots.tatbot.config_tatbot import RealSenseCameraConfig
+            rs_cameras = {
+                cam.name : RealSenseCameraConfig(
+                    fps=cam.fps,
+                    width=cam.width,
+                    height=cam.height,
+                    serial_number_or_name=cam.serial_number,
+                ) for cam in self.scene.cams.realsenses
+            }
+        else:
+            rs_cameras = {}
+        return make_robot_from_config(
+            TatbotConfig(
+                ip_address_l=self.scene.arms.ip_address_l,
+                ip_address_r=self.scene.arms.ip_address_r,
+                arm_l_config_filepath=self.scene.arms.arm_l_config_filepath,
+                arm_r_config_filepath=self.scene.arms.arm_r_config_filepath,
+                goal_time=self.scene.arms.goal_time_slow,
+                connection_timeout=self.scene.arms.connection_timeout,
+                home_pos_l=self.scene.sleep_pos_l.joints,
+                home_pos_r=self.scene.sleep_pos_r.joints,
+                rs_cameras=rs_cameras,
+                ip_cameras={},
+            )
+        )
 
     async def _run(self):
         _msg = "Creating episode logger..."
@@ -77,14 +84,17 @@ class StrokeOp(RecordOp):
         episode_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=TIME_FORMAT))
         logging.getLogger().addHandler(episode_handler)
 
-        _msg = "Connecting to joystick..."
-        log.info(_msg)
-        yield {
-            'progress': 0.21,
-            'message': _msg,
-        }
-        atari_teleop = AtariTeleoperator(AtariTeleoperatorConfig())
-        atari_teleop.connect()
+        if self.config.enable_joystick:
+            from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorConfig
+
+            _msg = "Connecting to joystick..."
+            log.info(_msg)
+            yield {
+                'progress': 0.21,
+                'message': _msg,
+            }
+            atari_teleop = AtariTeleoperator(AtariTeleoperatorConfig())
+            atari_teleop.connect()
 
         _msg = "Loading strokes..."
         log.info(_msg)
@@ -159,27 +169,28 @@ class StrokeOp(RecordOp):
                 
                 log.debug(f"pose_idx: {pose_idx}/{self.scene.stroke_length}")
                 
-                action = atari_teleop.get_action()
-                if action.get("red_button", False):
-                    raise KeyboardInterrupt()
-                if action.get("y", None) is not None:
-                    if stroke_l.is_inkdip:
-                        inkdip_offset_idx_l += int(action["y"])
-                        inkdip_offset_idx_l = min(inkdip_offset_idx_l, self.scene.arms.offset_num - 1)
-                        inkdip_offset_idx_l = max(0, inkdip_offset_idx_l)
-                    else:
-                        offset_idx_l += int(action["y"])
-                        offset_idx_l = min(offset_idx_l, self.scene.arms.offset_num - 1)
-                        offset_idx_l = max(0, offset_idx_l)
-                if action.get("x", None) is not None:
-                    if stroke_r.is_inkdip:
-                        inkdip_offset_idx_r += int(action["x"])
-                        inkdip_offset_idx_r = min(inkdip_offset_idx_r, self.scene.arms.offset_num - 1)
-                        inkdip_offset_idx_r = max(0, inkdip_offset_idx_r)
-                    else:
-                        offset_idx_r += int(action["x"])
-                        offset_idx_r = min(offset_idx_r, self.scene.arms.offset_num - 1)
-                        offset_idx_r = max(0, offset_idx_r)
+                if self.config.enable_joystick:
+                    action = atari_teleop.get_action()
+                    if action.get("red_button", False):
+                        raise KeyboardInterrupt()
+                    if action.get("y", None) is not None:
+                        if stroke_l.is_inkdip:
+                            inkdip_offset_idx_l += int(action["y"])
+                            inkdip_offset_idx_l = min(inkdip_offset_idx_l, self.scene.arms.offset_num - 1)
+                            inkdip_offset_idx_l = max(0, inkdip_offset_idx_l)
+                        else:
+                            offset_idx_l += int(action["y"])
+                            offset_idx_l = min(offset_idx_l, self.scene.arms.offset_num - 1)
+                            offset_idx_l = max(0, offset_idx_l)
+                    if action.get("x", None) is not None:
+                        if stroke_r.is_inkdip:
+                            inkdip_offset_idx_r += int(action["x"])
+                            inkdip_offset_idx_r = min(inkdip_offset_idx_r, self.scene.arms.offset_num - 1)
+                            inkdip_offset_idx_r = max(0, inkdip_offset_idx_r)
+                        else:
+                            offset_idx_r += int(action["x"])
+                            offset_idx_r = min(offset_idx_r, self.scene.arms.offset_num - 1)
+                            offset_idx_r = max(0, offset_idx_r)
 
                 observation = self.robot.get_observation()
                 observation_frame = build_dataset_frame(self.dataset.features, observation, prefix="observation")
@@ -187,17 +198,17 @@ class StrokeOp(RecordOp):
                 _left_first = True # default move left arm first
                 if stroke_l.is_inkdip:
                     _offset_idx_l = inkdip_offset_idx_l
-                    log.info(f"🎮 left inkdip offset index: {_offset_idx_l}")
+                    log.info(f"left inkdip offset index: {_offset_idx_l}")
                 else:
                     _offset_idx_l = offset_idx_l
-                    log.info(f"🎮 left offset index: {_offset_idx_l}")
+                    log.info(f"left offset index: {_offset_idx_l}")
                 if stroke_r.is_inkdip:
                     _left_first = False
                     _offset_idx_r = inkdip_offset_idx_r
-                    log.info(f"🎮 right inkdip offset index: {_offset_idx_r}")
+                    log.info(f"right inkdip offset index: {_offset_idx_r}")
                 else:
                     _offset_idx_r = offset_idx_r
-                    log.info(f"🎮 right offset index: {_offset_idx_r}")
+                    log.info(f"right offset index: {_offset_idx_r}")
                 joints = strokebatch.offset_joints(stroke_idx, pose_idx, _offset_idx_l, _offset_idx_r)
                 robot_action = self.robot._urdf_joints_to_action(joints)
                 if pose_idx in (0, 1):
