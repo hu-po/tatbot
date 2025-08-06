@@ -1,4 +1,19 @@
-"""GPU proxy for cross-node stroke conversion."""
+"""Cross-node GPU proxy for distributed stroke trajectory conversion.
+
+This module enables robot operations on non-GPU nodes to automatically leverage 
+GPU-accelerated stroke conversion on remote GPU-enabled nodes. It handles the
+complete cross-node communication pipeline including MCP session establishment,
+NFS path translation, and distributed compute coordination.
+
+Architecture:
+- GPUProxy: Main client for routing conversion requests to GPU nodes
+- NFS Path Translation: Handles different mount points across nodes
+- MCP Protocol: JSON-RPC 2.0 over StreamableHTTP for reliable communication
+- Retry Logic: Exponential backoff with fallback between GPU nodes
+
+The system seamlessly integrates with robot operations (align, stroke) to provide
+transparent GPU acceleration regardless of which node initiates the operation.
+"""
 
 import asyncio
 import json
@@ -44,8 +59,6 @@ class GPUProxy:
         Returns:
             List of node names with GPU extras and running MCP servers
         """
-        # Based on your info: MCP servers are running on ook and trossen-ai
-        # But only ook has GPU support, so return only ook for now
         return ["ook"]
     
     def _select_gpu_node(self, preferred: Optional[str] = None) -> Optional[str]:
@@ -66,7 +79,6 @@ class GPUProxy:
         if preferred and preferred in gpu_nodes:
             return preferred
             
-        # Random selection for load balancing
         selected = random.choice(gpu_nodes)
         log.info(f"Selected GPU node: {selected}")
         return selected
@@ -172,7 +184,6 @@ class GPUProxy:
         try:
             from pathlib import Path
 
-            # Load the specific node's MCP config
             config_dir = Path(__file__).parent.parent.parent / "conf" / "mcp"
             node_config_file = config_dir / f"{node_name}.yaml"
             
@@ -185,22 +196,16 @@ class GPUProxy:
             
             host = node_config.get("host", "localhost")
             port = node_config.get("port", 8000)
-            
-            # MCP servers expect JSON-RPC calls, not REST endpoints
             url = f"http://{host}:{port}/mcp/"
         except Exception as e:
             log.error(f"Error getting node config for {node_name}: {e}")
             return False, {"error": f"Config error: {str(e)}"}
         
-        # Establish MCP session first
         session_success, session_id = await self._establish_mcp_session(node_name, host, port)
         if not session_success or not session_id:
             return False, {"error": "Failed to establish MCP session"}
         
-        # Create JSON-RPC request
         import uuid
-
-        # Tools are namespaced with node name (e.g., "ook_convert_strokelist_to_batch")
         namespaced_tool_name = f"{node_name}_{tool_name}"
         
         rpc_request = {
@@ -300,28 +305,27 @@ class GPUProxy:
             return False, {"error": str(e)}
     
     def _translate_path_for_node(self, local_path: str, target_node: str) -> str:
-        """Translate a local NFS path to the target node's NFS mount point.
+        """Translate NFS paths between different node mount points.
+        
+        Each node mounts the shared NFS at /home/{node}/tatbot/nfs/ but accesses
+        the same underlying files. This method converts paths from the local node's
+        mount point to the target node's mount point for cross-node communication.
+        
+        Example:
+            Local (trossen-ai): /home/trossen-ai/tatbot/nfs/recordings/file.yaml
+            Target (ook): /home/ook/tatbot/nfs/recordings/file.yaml
         
         Args:
-            local_path: Path on the current node
-            target_node: Target node name
+            local_path: File path on the current node's NFS mount
+            target_node: Name of the target node for path translation
             
         Returns:
-            Path as it would appear on the target node
+            Translated path for the target node's mount point
         """
-        import socket
-        
-        current_hostname = socket.gethostname().lower()
-        
-        # NFS paths have the format: /home/{node}/tatbot/nfs/...
-        # We need to translate between node-specific mount points
         if "/tatbot/nfs/" in local_path:
-            # Extract the relative path after /tatbot/nfs/
             nfs_relative = local_path.split("/tatbot/nfs/", 1)[1]
-            # Construct the path for the target node
             return f"/home/{target_node}/tatbot/nfs/{nfs_relative}"
         
-        # If it's not an NFS path, return as-is
         return local_path
 
     async def convert_strokelist_remote(
@@ -364,13 +368,10 @@ class GPUProxy:
             for node_name in attempt_nodes:
                 log.info(f"Attempt {retry + 1}/{max_retries}: Calling convert_strokelist_to_batch on {node_name}")
                 
-                # Translate paths for the target node's NFS mount point
                 target_strokes_path = self._translate_path_for_node(strokes_file_path, node_name)
                 target_strokebatch_path = self._translate_path_for_node(strokebatch_file_path, node_name)
                 
                 log.info(f"Translated paths for {node_name}: {strokes_file_path} -> {target_strokes_path}")
-                
-                # Prepare input data with translated paths
                 node_input_data = {
                     "input_data": {
                         "strokes_file_path": target_strokes_path,
@@ -381,7 +382,6 @@ class GPUProxy:
                     }
                 }
                 
-                # Call remote tool
                 success, response = await self._call_remote_tool(
                     node_name,
                     "convert_strokelist_to_batch",
@@ -389,17 +389,14 @@ class GPUProxy:
                 )
                 
                 if success and response.get("success"):
-                    # Since we're using shared NFS, the file is already saved
-                    # Just return success - no need to transfer bytes
                     log.info(f"Successfully converted strokebatch on {node_name}")
                     return True, None
                 else:
                     log.warning(f"Conversion failed on {node_name}: {response}")
                     continue
             
-            # Wait before next retry
             if retry < max_retries - 1:
-                wait_time = 2 ** retry  # Exponential backoff
+                wait_time = 2 ** retry
                 log.info(f"Waiting {wait_time}s before retry...")
                 await asyncio.sleep(wait_time)
         

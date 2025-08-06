@@ -366,24 +366,45 @@ async def list_ops(input_data, ctx: Context):
 
 @mcp_handler
 async def convert_strokelist_to_batch(input_data, ctx: Context):
-    """Convert StrokeList to StrokeBatch using GPU-accelerated IK via shared NFS.
+    """Convert StrokeList to StrokeBatch using GPU-accelerated inverse kinematics.
     
-    This tool requires GPU support and should only be available on GPU-enabled nodes.
-    Uses shared NFS for efficient file-based communication between nodes.
+    This tool performs cross-node GPU processing for stroke trajectory conversion.
+    Robot operations on non-GPU nodes automatically route stroke conversion requests
+    to GPU-enabled nodes via this MCP tool. The system handles NFS path translation
+    between different node mount points for seamless file sharing.
+    
+    GPU Requirements:
+    - Only available on nodes with 'gpu' in their extras configuration
+    - Uses JAX with GPU acceleration for inverse kinematics solving
+    - Automatically selected by GPUProxy when local GPU unavailable
+    
+    NFS Integration:
+    - Files are shared via NFS mount points specific to each node
+    - Path translation handles different mount points: /home/{node}/tatbot/nfs/
+    - Input and output files remain on shared storage throughout process
     
     Parameters (JSON format):
     - strokes_file_path (str, required): Path to strokes YAML file on shared NFS
-    - strokebatch_file_path (str, required): Path where strokebatch should be saved on shared NFS
-    - scene_name (str, required): Scene name for conversion parameters
-    - first_last_rest (bool, optional): Apply first/last rest positions. Default: true
-    - use_ee_offsets (bool, optional): Apply end-effector offsets. Default: true
+    - strokebatch_file_path (str, required): Output path for strokebatch on shared NFS  
+    - scene_name (str, required): Scene configuration name for IK parameters
+    - first_last_rest (bool, optional): Apply rest positions at stroke endpoints. Default: true
+    - use_ee_offsets (bool, optional): Apply end-effector offset corrections. Default: true
     
     Returns:
-    - success (bool): Whether conversion succeeded
-    - message (str): Status message with file path
+    - success (bool): Whether GPU conversion succeeded
+    - message (str): Status message with output file path
+    - strokebatch_base64 (str): Empty (file saved to NFS, not transferred)
+    
+    Cross-Node Usage:
+    This tool is automatically called by robot operations (align, stroke) when:
+    1. Local node lacks GPU support (check_local_gpu() returns False)
+    2. GPUProxy routes request to available GPU node (currently 'ook')
+    3. Paths are translated to target node's NFS mount point
+    4. Remote MCP session established with proper JSON-RPC protocol
+    5. Conversion performed on GPU node, file saved to shared NFS
     
     Example usage:
-    {"strokes_file_path": "/nfs/path/strokes.yaml", "strokebatch_file_path": "/nfs/path/batch.safetensors", "scene_name": "tatbotlogo"}
+    {"strokes_file_path": "/home/trossen-ai/tatbot/nfs/recordings/align-default-2025y-08m-06d-14h-43m-14s/strokes.yaml", "strokebatch_file_path": "/home/trossen-ai/tatbot/nfs/recordings/align-default-2025y-08m-06d-14h-43m-14s/strokebatch.safetensors", "scene_name": "default"}
     """
 
     import yaml
@@ -424,61 +445,32 @@ async def convert_strokelist_to_batch(input_data, ctx: Context):
         
         await ctx.info(f"Converting StrokeList to StrokeBatch on GPU node {node_name}")
         
-        # Wait for NFS file synchronization with timeout
+        # Wait for NFS file synchronization
         import time
         from pathlib import Path
         
         strokes_path = Path(parsed_input.strokes_file_path)
-        parent_dir = strokes_path.parent
-        max_wait_time = 10  # seconds
+        max_wait_time = 10
         start_time = time.time()
         
         await ctx.report_progress(0.1, 1.0, "Waiting for NFS file synchronization...")
-        log.info(f"Looking for strokes file: {strokes_path}")
-        log.info(f"Parent directory: {parent_dir}")
-        log.info(f"Parent directory exists: {parent_dir.exists()}")
-        
-        if parent_dir.exists():
-            try:
-                dir_contents = list(parent_dir.iterdir())
-                log.info(f"Parent directory contents: {[f.name for f in dir_contents]}")
-            except Exception as e:
-                log.warning(f"Could not list parent directory contents: {e}")
         
         while not strokes_path.exists():
             if time.time() - start_time > max_wait_time:
-                # Final diagnostic before failing
-                if parent_dir.exists():
-                    try:
-                        final_contents = list(parent_dir.iterdir())
-                        log.error(f"Final directory contents: {[f.name for f in final_contents]}")
-                    except Exception as e:
-                        log.error(f"Could not list final directory contents: {e}")
                 raise FileNotFoundError(f"Strokes file not found after {max_wait_time}s: {strokes_path}")
-            
-            log.info(f"Waiting for NFS sync of {strokes_path}...")
             time.sleep(0.5)
         
-        # File found! Check its size
-        file_size = strokes_path.stat().st_size
-        log.info(f"Found strokes file: {strokes_path} ({file_size} bytes)")
-        
-        # Wait a bit more to ensure all array files are synced
         await ctx.report_progress(0.15, 1.0, "Verifying array files are synced...")
         time.sleep(1.0)
         
-        # Load StrokeList from file path using the proper method
         from tatbot.data.stroke import StrokeList
         strokes = StrokeList.from_yaml_with_arrays(parsed_input.strokes_file_path)
-        log.info(f"Successfully loaded StrokeList with {len(strokes.strokes)} stroke pairs")
         
-        # Load scene configuration
         from tatbot.main import compose_and_validate_scene
         scene = compose_and_validate_scene(parsed_input.scene_name)
         
         await ctx.report_progress(0.2, 1.0, "Loaded strokes and scene")
         
-        # Perform GPU-accelerated conversion
         strokebatch = strokebatch_from_strokes(
             scene, 
             strokes, 
@@ -487,14 +479,12 @@ async def convert_strokelist_to_batch(input_data, ctx: Context):
         )
         
         await ctx.report_progress(0.8, 1.0, "Conversion complete, saving to shared NFS")
-        
-        # Save strokebatch directly to the shared NFS path
         strokebatch.save(parsed_input.strokebatch_file_path)
         
         await ctx.report_progress(1.0, 1.0, "Conversion successful")
         
         result = ConvertStrokeListResponse(
-            strokebatch_base64="",  # Not needed since file is saved to NFS
+            strokebatch_base64="",
             success=True,
             message=f"Successfully converted StrokeList to StrokeBatch at {parsed_input.strokebatch_file_path}"
         )

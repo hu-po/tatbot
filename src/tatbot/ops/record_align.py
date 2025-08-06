@@ -45,14 +45,12 @@ class AlignOp(RecordOp):
             log.info(f"💾 Saving strokes to {strokes_path}")
             strokes.to_yaml_with_arrays(strokes_path)
             
-            # Verify the file was actually created
             if os.path.exists(strokes_path):
                 file_size = os.path.getsize(strokes_path)
                 log.info(f"✅ strokes.yaml created successfully ({file_size} bytes)")
             else:
                 raise FileNotFoundError(f"strokes.yaml was not created at {strokes_path}")
             
-            # Give NFS a moment to sync files before remote call
             import time
             log.info("⏳ Waiting for NFS sync before remote GPU call...")
             time.sleep(1.0)
@@ -60,7 +58,6 @@ class AlignOp(RecordOp):
             log.error(f"❌ Error in strokes.to_yaml_with_arrays: {e}")
             raise
         
-        # Check if we need to use remote GPU for conversion
         if check_local_gpu():
             log.info("Using local GPU for strokebatch conversion")
             strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, strokes, first_last_rest=False)
@@ -69,7 +66,6 @@ class AlignOp(RecordOp):
             log.info("Using remote GPU node for strokebatch conversion")
             gpu_proxy = GPUProxy()
             
-            # Since all nodes share NFS, just pass the file path instead of YAML content
             success, _ = await gpu_proxy.convert_strokelist_remote(
                 strokes_file_path=strokes_path,
                 strokebatch_file_path=strokebatch_path,
@@ -81,9 +77,6 @@ class AlignOp(RecordOp):
             if not success:
                 raise RuntimeError("Failed to convert strokes to strokebatch on remote GPU node")
             
-            # File is already saved to NFS by the remote GPU node
-            
-            # Load it for use
             strokebatch = StrokeBatch.load(strokebatch_path)
             
         log.info(f"Strokebatch created with shape: {strokebatch.joints.shape}")
