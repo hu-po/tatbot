@@ -21,6 +21,16 @@
                   "thinking": true
               }
             }
+        },
+        "anthropic": {
+            "options": {
+              "apiKey": "{env:ANTHROPIC_API_KEY}"
+            }
+        },
+        "google": {
+            "options": {
+              "apiKey": "{env:GEMINI_API_KEY}"
+            }
         }
     },
     "mcp": {
