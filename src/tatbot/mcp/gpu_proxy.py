@@ -1,7 +1,6 @@
 """GPU proxy for cross-node stroke conversion."""
 
 import asyncio
-import base64
 import json
 import os
 import random
@@ -172,7 +171,7 @@ class GPUProxy:
         """
         try:
             from pathlib import Path
-            
+
             # Load the specific node's MCP config
             config_dir = Path(__file__).parent.parent.parent / "conf" / "mcp"
             node_config_file = config_dir / f"{node_name}.yaml"
@@ -200,6 +199,7 @@ class GPUProxy:
         
         # Create JSON-RPC request
         import uuid
+
         # Tools are namespaced with node name (e.g., "ook_convert_strokelist_to_batch")
         namespaced_tool_name = f"{node_name}_{tool_name}"
         
@@ -386,7 +386,7 @@ class GPUProxy:
         """
         try:
             from pathlib import Path
-            
+
             # Get available nodes from MCP config files
             config_dir = Path(__file__).parent.parent.parent / "conf" / "mcp"
             available_nodes = [
@@ -425,7 +425,7 @@ class GPUProxy:
         """
         try:
             from pathlib import Path
-            
+
             # Load the specific node's MCP config
             config_dir = Path(__file__).parent.parent.parent / "conf" / "mcp"
             node_config_file = config_dir / f"{node_name}.yaml"
@@ -460,10 +460,9 @@ def check_local_gpu() -> bool:
     """
     try:
         import socket
+        from pathlib import Path
 
         import hydra
-        
-        from pathlib import Path
         
         hostname = socket.gethostname()
         node_name = hostname.lower()

@@ -1,5 +1,4 @@
 import os
-import time
 from dataclasses import dataclass
 
 from lerobot.datasets.utils import build_dataset_frame

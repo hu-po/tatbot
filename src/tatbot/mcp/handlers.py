@@ -385,10 +385,7 @@ async def convert_strokelist_to_batch(input_data, ctx: Context):
     Example usage:
     {"strokes_file_path": "/nfs/path/strokes.yaml", "strokebatch_file_path": "/nfs/path/batch.safetensors", "scene_name": "tatbotlogo"}
     """
-    import base64
-    import io
 
-    import safetensors.numpy
     import yaml
 
     from tatbot.data.stroke import StrokeList
@@ -400,8 +397,9 @@ async def convert_strokelist_to_batch(input_data, ctx: Context):
     
     try:
         # Check if this node has GPU support
-        import hydra
         from pathlib import Path
+
+        import hydra
         import yaml
         
         cfg = hydra.compose(config_name="config")
@@ -429,7 +427,6 @@ async def convert_strokelist_to_batch(input_data, ctx: Context):
         # Wait for NFS file synchronization with timeout
         import time
         from pathlib import Path
-        import os
         
         strokes_path = Path(parsed_input.strokes_file_path)
         parent_dir = strokes_path.parent
