@@ -47,7 +47,6 @@ class AlignOp(RecordOp):
             strokes.to_yaml_with_arrays(strokes_path)
             
             # Verify the file was actually created
-            import os
             if os.path.exists(strokes_path):
                 file_size = os.path.getsize(strokes_path)
                 log.info(f"✅ strokes.yaml created successfully ({file_size} bytes)")
