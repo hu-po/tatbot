@@ -9,6 +9,8 @@ from PIL import Image
 
 from tatbot.bot.urdf import get_link_poses
 from tatbot.cam.depth import DepthCamera
+from tatbot.cam.extrinsics import get_extrinsics
+from tatbot.cam.validation import compare_extrinsics_with_urdf
 from tatbot.ops.record import RecordOp, RecordOpConfig
 from tatbot.utils.log import get_logger
 
@@ -19,6 +21,15 @@ class SenseOpConfig(RecordOpConfig):
 
     num_plys: int = 2
     """Number of PLY pointcloud files to capture."""
+    
+    calibrate_extrinsics: bool = True
+    """Whether to calibrate camera extrinsics using AprilTags."""
+    
+    reference_tag_id: int = 0
+    """Reference AprilTag ID for extrinsics calibration."""
+    
+    max_deviation_warning: float = 0.05
+    """Maximum deviation (m) from URDF before showing warning."""
 
 
 class SenseOp(RecordOp):
@@ -88,6 +99,64 @@ class SenseOp(RecordOp):
         }
         for cam in self.robot.rs_cameras.values():
             cam.disconnect()
+
+        # Calibrate camera extrinsics if enabled
+        if self.config.calibrate_extrinsics:
+            _msg = "📐 Calibrating camera extrinsics using AprilTags..."
+            log.info(_msg)
+            yield {
+                'progress': 0.45,
+                'message': _msg,
+            }
+            
+            # Get image paths for all cameras
+            image_paths = []
+            for cam in self.scene.cams.realsenses:
+                image_path = os.path.join(self.dataset_dir, f"{cam.name}.png")
+                if os.path.exists(image_path):
+                    image_paths.append(image_path)
+            for cam in self.scene.cams.ipcameras:
+                image_path = os.path.join(self.dataset_dir, f"{cam.name}.png")
+                if os.path.exists(image_path):
+                    image_paths.append(image_path)
+            
+            if image_paths:
+                try:
+                    # Run extrinsics calibration
+                    calibrated_cams = get_extrinsics(
+                        image_paths=image_paths,
+                        cams=self.scene.cams,
+                        tags=self.scene.tags,
+                    )
+                    
+                    # Compare with URDF positions and show warnings
+                    compare_extrinsics_with_urdf(
+                        calibrated_cams, 
+                        self.scene, 
+                        self.config.max_deviation_warning
+                    )
+                    
+                    _msg = "✅ Camera extrinsics calibration completed"
+                    log.info(_msg)
+                    yield {
+                        'progress': 0.48,
+                        'message': _msg,
+                    }
+                    
+                except Exception as e:
+                    _msg = f"⚠️ Camera extrinsics calibration failed: {e}"
+                    log.warning(_msg)
+                    yield {
+                        'progress': 0.48,
+                        'message': _msg,
+                    }
+            else:
+                _msg = "⚠️ No camera images found for extrinsics calibration"
+                log.warning(_msg)
+                yield {
+                    'progress': 0.48,
+                    'message': _msg,
+                }
 
         _msg = "Connecting to Depth cameras..."
         log.info(_msg)
