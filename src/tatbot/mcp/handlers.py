@@ -366,23 +366,24 @@ async def list_ops(input_data, ctx: Context):
 
 @mcp_handler
 async def convert_strokelist_to_batch(input_data, ctx: Context):
-    """Convert StrokeList to StrokeBatch using GPU-accelerated IK.
+    """Convert StrokeList to StrokeBatch using GPU-accelerated IK via shared NFS.
     
     This tool requires GPU support and should only be available on GPU-enabled nodes.
+    Uses shared NFS for efficient file-based communication between nodes.
     
     Parameters (JSON format):
-    - strokes_yaml (str, required): YAML content of StrokeList
+    - strokes_file_path (str, required): Path to strokes YAML file on shared NFS
+    - strokebatch_file_path (str, required): Path where strokebatch should be saved on shared NFS
     - scene_name (str, required): Scene name for conversion parameters
     - first_last_rest (bool, optional): Apply first/last rest positions. Default: true
     - use_ee_offsets (bool, optional): Apply end-effector offsets. Default: true
     
     Returns:
-    - strokebatch_base64 (str): Base64-encoded safetensors data
     - success (bool): Whether conversion succeeded
-    - message (str): Status message
+    - message (str): Status message with file path
     
     Example usage:
-    {"strokes_yaml": "...", "scene_name": "tatbotlogo"}
+    {"strokes_file_path": "/nfs/path/strokes.yaml", "strokebatch_file_path": "/nfs/path/batch.safetensors", "scene_name": "tatbotlogo"}
     """
     import base64
     import io
@@ -425,9 +426,9 @@ async def convert_strokelist_to_batch(input_data, ctx: Context):
         
         await ctx.info(f"Converting StrokeList to StrokeBatch on GPU node {node_name}")
         
-        # Load StrokeList from YAML using model_validate (since we're now using model_dump format)
-        strokes_data = yaml.safe_load(parsed_input.strokes_yaml)
-        strokes = StrokeList.model_validate(strokes_data)
+        # Load StrokeList from file path using the proper method
+        from tatbot.data.stroke import StrokeList
+        strokes = StrokeList.from_yaml_with_arrays(parsed_input.strokes_file_path)
         log.info(f"Successfully loaded StrokeList with {len(strokes.strokes)} stroke pairs")
         
         # Load scene configuration
@@ -444,26 +445,17 @@ async def convert_strokelist_to_batch(input_data, ctx: Context):
             use_ee_offsets=parsed_input.use_ee_offsets
         )
         
-        await ctx.report_progress(0.8, 1.0, "Conversion complete, encoding result")
+        await ctx.report_progress(0.8, 1.0, "Conversion complete, saving to shared NFS")
         
-        # Save to bytes buffer and encode as base64
-        buffer = io.BytesIO()
-        safetensors.numpy.save({
-            "ee_pos_l": strokebatch.ee_pos_l,
-            "ee_pos_r": strokebatch.ee_pos_r,
-            "ee_rot_l": strokebatch.ee_rot_l,
-            "ee_rot_r": strokebatch.ee_rot_r,
-            "joints": strokebatch.joints,
-        }, buffer)
-        
-        strokebatch_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        # Save strokebatch directly to the shared NFS path
+        strokebatch.save(parsed_input.strokebatch_file_path)
         
         await ctx.report_progress(1.0, 1.0, "Conversion successful")
         
         result = ConvertStrokeListResponse(
-            strokebatch_base64=strokebatch_base64,
+            strokebatch_base64="",  # Not needed since file is saved to NFS
             success=True,
-            message="Successfully converted StrokeList to StrokeBatch"
+            message=f"Successfully converted StrokeList to StrokeBatch at {parsed_input.strokebatch_file_path}"
         )
         return json.loads(result.model_dump_json())
         

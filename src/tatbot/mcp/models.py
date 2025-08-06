@@ -201,7 +201,8 @@ class NodesStatusResponse(BaseResponse):
 class ConvertStrokeListInput(BaseModel):
     """Input model for converting StrokeList to StrokeBatch."""
     version: str = "1.0"  # Tool versioning
-    strokes_yaml: str  # YAML content of StrokeList
+    strokes_file_path: str  # Path to strokes YAML file on shared NFS
+    strokebatch_file_path: str  # Path where strokebatch should be saved on shared NFS
     scene_name: str  # Scene name for conversion parameters
     first_last_rest: bool = True  # Apply first/last rest positions
     use_ee_offsets: bool = True  # Apply end-effector offsets

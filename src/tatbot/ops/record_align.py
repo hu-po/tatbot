@@ -51,13 +51,10 @@ class AlignOp(RecordOp):
             log.info("Using remote GPU node for strokebatch conversion")
             gpu_proxy = GPUProxy()
             
-            # Serialize strokes to YAML format that includes all data inline (no external array files)
-            import yaml
-            strokes_yaml = yaml.dump(strokes.model_dump(), default_flow_style=False)
-            log.info(f"Serialized strokes for remote conversion: {len(strokes_yaml)} chars")
-            
-            success, strokebatch_bytes = await gpu_proxy.convert_strokelist_remote(
-                strokes_yaml=strokes_yaml,
+            # Since all nodes share NFS, just pass the file path instead of YAML content
+            success, _ = await gpu_proxy.convert_strokelist_remote(
+                strokes_file_path=strokes_path,
+                strokebatch_file_path=strokebatch_path,
                 scene_name=self.scene.name,
                 first_last_rest=False,
                 use_ee_offsets=True
@@ -66,9 +63,7 @@ class AlignOp(RecordOp):
             if not success:
                 raise RuntimeError("Failed to convert strokes to strokebatch on remote GPU node")
             
-            # Save the converted strokebatch
-            with open(strokebatch_path, 'wb') as f:
-                f.write(strokebatch_bytes)
+            # File is already saved to NFS by the remote GPU node
             
             # Load it for use
             strokebatch = StrokeBatch.load(strokebatch_path)

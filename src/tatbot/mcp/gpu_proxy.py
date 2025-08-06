@@ -301,7 +301,8 @@ class GPUProxy:
     
     async def convert_strokelist_remote(
         self,
-        strokes_yaml: str,
+        strokes_file_path: str,
+        strokebatch_file_path: str,
         scene_name: str,
         first_last_rest: bool = True,
         use_ee_offsets: bool = True,
@@ -311,7 +312,8 @@ class GPUProxy:
         """Convert StrokeList to StrokeBatch using a remote GPU node with retry logic.
         
         Args:
-            strokes_yaml: YAML content of StrokeList
+            strokes_file_path: Path to strokes YAML file on shared NFS
+            strokebatch_file_path: Path where strokebatch should be saved on shared NFS
             scene_name: Scene name for conversion
             first_last_rest: Apply first/last rest positions
             use_ee_offsets: Apply end-effector offsets
@@ -329,7 +331,8 @@ class GPUProxy:
         # Prepare input data with the wrapper format expected by MCP tools
         input_data = {
             "input_data": {
-                "strokes_yaml": strokes_yaml,
+                "strokes_file_path": strokes_file_path,
+                "strokebatch_file_path": strokebatch_file_path,
                 "scene_name": scene_name,
                 "first_last_rest": first_last_rest,
                 "use_ee_offsets": use_ee_offsets
@@ -355,14 +358,10 @@ class GPUProxy:
                 )
                 
                 if success and response.get("success"):
-                    # Decode base64 response
-                    try:
-                        strokebatch_bytes = base64.b64decode(response["strokebatch_base64"])
-                        log.info(f"Successfully received strokebatch from {node_name}")
-                        return True, strokebatch_bytes
-                    except Exception as e:
-                        log.error(f"Failed to decode strokebatch from {node_name}: {e}")
-                        continue
+                    # Since we're using shared NFS, the file is already saved
+                    # Just return success - no need to transfer bytes
+                    log.info(f"Successfully converted strokebatch on {node_name}")
+                    return True, None
                 else:
                     log.warning(f"Conversion failed on {node_name}: {response}")
                     continue
