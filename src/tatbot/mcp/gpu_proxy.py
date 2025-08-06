@@ -10,7 +10,6 @@ import aiohttp
 import yaml
 
 from tatbot.utils.log import get_logger
-from tatbot.utils.net import NetworkManager
 
 log = get_logger("mcp.gpu_proxy", "🎯🔗")
 
@@ -25,19 +24,56 @@ class GPUProxy:
             timeout: Request timeout in seconds
         """
         self.timeout = timeout
-        self.net = NetworkManager()
+        self._mcp_config = None
         
+    def _get_mcp_config(self):
+        """Get MCP configuration."""
+        if self._mcp_config is None:
+            import hydra
+            try:
+                self._mcp_config = hydra.compose(config_name="config")
+            except Exception as e:
+                log.warning(f"Failed to load hydra config: {e}")
+                # Return a minimal config structure for testing
+                self._mcp_config = type('Config', (), {'mcp': {}})()
+        return self._mcp_config
+    
     def _get_gpu_nodes(self) -> List[str]:
         """Get list of nodes with GPU support.
         
         Returns:
             List of node names with GPU extras
         """
-        gpu_nodes = []
-        for node in self.net.nodes:
-            if "gpu" in node.extras:
-                gpu_nodes.append(node.name)
-        return gpu_nodes
+        try:
+            from pathlib import Path
+            
+            # Get MCP config directory path
+            config_dir = Path(__file__).parent.parent.parent / "conf" / "mcp"
+            gpu_nodes = []
+            
+            # Load each MCP config file to check for GPU extras
+            for mcp_file in config_dir.glob("*.yaml"):
+                if mcp_file.name == "default.yaml":
+                    continue
+                
+                node_name = mcp_file.stem
+                try:
+                    with open(mcp_file, 'r') as f:
+                        config = yaml.safe_load(f)
+                    
+                    extras = config.get("extras", [])
+                    if "gpu" in extras:
+                        gpu_nodes.append(node_name)
+                        log.debug(f"Found GPU node: {node_name} with extras: {extras}")
+                except Exception as e:
+                    log.warning(f"Failed to load MCP config for {node_name}: {e}")
+                    continue
+            
+            log.debug(f"GPU nodes found: {gpu_nodes}")
+            return gpu_nodes
+        except Exception as e:
+            log.error(f"Error getting GPU nodes from config: {e}")
+            return []
     
     def _select_gpu_node(self, preferred: Optional[str] = None) -> Optional[str]:
         """Select a GPU node for processing.
@@ -78,12 +114,28 @@ class GPUProxy:
         Returns:
             Tuple of (success, response_data)
         """
-        node = next((n for n in self.net.nodes if n.name == node_name), None)
-        if not node:
-            log.error(f"Node {node_name} not found")
-            return False, {"error": f"Node {node_name} not found"}
+        try:
+            from pathlib import Path
+            
+            # Load the specific node's MCP config
+            config_dir = Path(__file__).parent.parent.parent / "conf" / "mcp"
+            node_config_file = config_dir / f"{node_name}.yaml"
+            
+            if not node_config_file.exists():
+                log.error(f"Node config file not found: {node_config_file}")
+                return False, {"error": f"Node {node_name} config not found"}
+            
+            with open(node_config_file, 'r') as f:
+                node_config = yaml.safe_load(f)
+            
+            host = node_config.get("host", "localhost")
+            port = node_config.get("port", 8000)
+            
+            url = f"http://{host}:{port}/mcp/tool/{tool_name}"
+        except Exception as e:
+            log.error(f"Error getting node config for {node_name}: {e}")
+            return False, {"error": f"Config error: {str(e)}"}
         
-        url = f"http://{node.host}:{node.port}/mcp/tool/{tool_name}"
         
         try:
             async with aiohttp.ClientSession() as session:
@@ -191,7 +243,20 @@ class GPUProxy:
         Returns:
             Dict mapping node name to connectivity status
         """
-        target_nodes = nodes or [n.name for n in self.net.nodes]
+        try:
+            from pathlib import Path
+            
+            # Get available nodes from MCP config files
+            config_dir = Path(__file__).parent.parent.parent / "conf" / "mcp"
+            available_nodes = [
+                f.stem for f in config_dir.glob("*.yaml") 
+                if f.name != "default.yaml"
+            ]
+            target_nodes = nodes or available_nodes
+        except Exception as e:
+            log.error(f"Error getting nodes for ping: {e}")
+            return {}
+        
         results = {}
         
         tasks = []
@@ -217,13 +282,24 @@ class GPUProxy:
         Returns:
             True if node is reachable
         """
-        node = next((n for n in self.net.nodes if n.name == node_name), None)
-        if not node:
-            return False
-        
-        url = f"http://{node.host}:{node.port}/health"
-        
         try:
+            from pathlib import Path
+            
+            # Load the specific node's MCP config
+            config_dir = Path(__file__).parent.parent.parent / "conf" / "mcp"
+            node_config_file = config_dir / f"{node_name}.yaml"
+            
+            if not node_config_file.exists():
+                return False
+            
+            with open(node_config_file, 'r') as f:
+                node_config = yaml.safe_load(f)
+            
+            host = node_config.get("host", "localhost")
+            port = node_config.get("port", 8000)
+            
+            url = f"http://{host}:{port}/health"
+            
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     url,
@@ -245,17 +321,23 @@ def check_local_gpu() -> bool:
 
         import hydra
         
-        cfg = hydra.compose(config_name="config")
+        from pathlib import Path
+        
         hostname = socket.gethostname()
-        
-        # Map hostname to node name
         node_name = hostname.lower()
-        if node_name in cfg.mcp:
-            node_cfg = cfg.mcp[node_name]
-        else:
-            node_cfg = cfg.mcp.get("default", {})
         
-        return "gpu" in node_cfg.get("extras", [])
+        # Load the current node's MCP config
+        config_dir = Path(__file__).parent.parent.parent / "conf" / "mcp"
+        node_config_file = config_dir / f"{node_name}.yaml"
+        
+        if node_config_file.exists():
+            with open(node_config_file, 'r') as f:
+                node_config = yaml.safe_load(f)
+            return "gpu" in node_config.get("extras", [])
+        else:
+            # Fallback to current hydra config
+            cfg = hydra.compose(config_name="config")
+            return "gpu" in cfg.mcp.get("extras", [])
     except Exception as e:
         log.warning(f"Failed to check local GPU support: {e}")
         return False

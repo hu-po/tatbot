@@ -400,9 +400,21 @@ async def convert_strokelist_to_batch(input_data, ctx: Context):
     try:
         # Check if this node has GPU support
         import hydra
+        from pathlib import Path
+        import yaml
+        
         cfg = hydra.compose(config_name="config")
         node_name = ctx.fastmcp.name.split(".", 1)[1] if "." in ctx.fastmcp.name else ctx.fastmcp.name
-        node_cfg = cfg.mcp[node_name] if node_name in cfg.mcp else cfg.mcp.default
+        
+        # Load node-specific MCP config or fall back to current config
+        config_dir = Path(__file__).parent.parent.parent / "conf" / "mcp"
+        node_config_file = config_dir / f"{node_name}.yaml"
+        
+        if node_config_file.exists():
+            with open(node_config_file, 'r') as f:
+                node_cfg = yaml.safe_load(f)
+        else:
+            node_cfg = cfg.mcp
         
         if "gpu" not in node_cfg.get("extras", []):
             return ConvertStrokeListResponse(
