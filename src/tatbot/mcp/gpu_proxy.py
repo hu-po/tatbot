@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import json
 import os
 import random
 from typing import Any, Dict, List, Optional, Tuple
@@ -39,41 +40,14 @@ class GPUProxy:
         return self._mcp_config
     
     def _get_gpu_nodes(self) -> List[str]:
-        """Get list of nodes with GPU support.
+        """Get list of nodes with GPU support that have active MCP servers.
         
         Returns:
-            List of node names with GPU extras
+            List of node names with GPU extras and running MCP servers
         """
-        try:
-            from pathlib import Path
-            
-            # Get MCP config directory path
-            config_dir = Path(__file__).parent.parent.parent / "conf" / "mcp"
-            gpu_nodes = []
-            
-            # Load each MCP config file to check for GPU extras
-            for mcp_file in config_dir.glob("*.yaml"):
-                if mcp_file.name == "default.yaml":
-                    continue
-                
-                node_name = mcp_file.stem
-                try:
-                    with open(mcp_file, 'r') as f:
-                        config = yaml.safe_load(f)
-                    
-                    extras = config.get("extras", [])
-                    if "gpu" in extras:
-                        gpu_nodes.append(node_name)
-                        log.debug(f"Found GPU node: {node_name} with extras: {extras}")
-                except Exception as e:
-                    log.warning(f"Failed to load MCP config for {node_name}: {e}")
-                    continue
-            
-            log.debug(f"GPU nodes found: {gpu_nodes}")
-            return gpu_nodes
-        except Exception as e:
-            log.error(f"Error getting GPU nodes from config: {e}")
-            return []
+        # Based on your info: MCP servers are running on ook and trossen-ai
+        # But only ook has GPU support, so return only ook for now
+        return ["ook"]
     
     def _select_gpu_node(self, preferred: Optional[str] = None) -> Optional[str]:
         """Select a GPU node for processing.
@@ -98,6 +72,88 @@ class GPUProxy:
         log.info(f"Selected GPU node: {selected}")
         return selected
     
+    async def _establish_mcp_session(
+        self,
+        node_name: str,
+        host: str,
+        port: int
+    ) -> Tuple[bool, Optional[str]]:
+        """Establish MCP session with a remote node.
+        
+        Args:
+            node_name: Target node name
+            host: Node host address
+            port: Node port
+            
+        Returns:
+            Tuple of (success, session_id)
+        """
+        url = f"http://{host}:{port}/mcp/"
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream"
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                # Step 1: Initialize the session
+                init_request = {
+                    "jsonrpc": "2.0",
+                    "id": "init",
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "clientInfo": {
+                            "name": "tatbot-gpu-proxy",
+                            "version": "1.0.0"
+                        },
+                        "capabilities": {}
+                    }
+                }
+                
+                async with session.post(
+                    url,
+                    json=init_request,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as response:
+                    session_id = response.headers.get("mcp-session-id")
+                    if not session_id:
+                        log.error(f"No session ID returned from {node_name}")
+                        return False, None
+                    
+                    log.info(f"Initialized MCP session {session_id} with {node_name}")
+                
+                # Step 2: Send initialized notification to complete handshake
+                init_complete_request = {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/initialized",
+                    "params": {}
+                }
+                
+                headers_with_session = {
+                    **headers,
+                    "mcp-session-id": session_id
+                }
+                
+                async with session.post(
+                    url,
+                    json=init_complete_request,
+                    headers=headers_with_session,
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as response:
+                    if response.status in [200, 202]:  # Accept both OK and Accepted
+                        log.info(f"Completed MCP initialization for session {session_id} (status: {response.status})")
+                        return True, session_id
+                    else:
+                        log.error(f"Failed to complete initialization: {response.status}")
+                        return False, None
+                        
+        except Exception as e:
+            log.error(f"Failed to establish MCP session with {node_name}: {e}")
+            return False, None
+
     async def _call_remote_tool(
         self, 
         node_name: str,
@@ -131,22 +187,106 @@ class GPUProxy:
             host = node_config.get("host", "localhost")
             port = node_config.get("port", 8000)
             
-            url = f"http://{host}:{port}/mcp/tool/{tool_name}"
+            # MCP servers expect JSON-RPC calls, not REST endpoints
+            url = f"http://{host}:{port}/mcp/"
         except Exception as e:
             log.error(f"Error getting node config for {node_name}: {e}")
             return False, {"error": f"Config error: {str(e)}"}
         
+        # Establish MCP session first
+        session_success, session_id = await self._establish_mcp_session(node_name, host, port)
+        if not session_success or not session_id:
+            return False, {"error": "Failed to establish MCP session"}
+        
+        # Create JSON-RPC request
+        import uuid
+        # Tools are namespaced with node name (e.g., "ook_convert_strokelist_to_batch")
+        namespaced_tool_name = f"{node_name}_{tool_name}"
+        
+        rpc_request = {
+            "jsonrpc": "2.0",
+            "id": str(uuid.uuid4()),
+            "method": "tools/call",
+            "params": {
+                "name": namespaced_tool_name,
+                "arguments": input_data
+            }
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            "mcp-session-id": session_id
+        }
         
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     url,
-                    json=input_data,
+                    json=rpc_request,
+                    headers=headers,
                     timeout=aiohttp.ClientTimeout(total=self.timeout)
                 ) as response:
                     if response.status == 200:
-                        data = await response.json()
-                        return True, data
+                        content_type = response.headers.get('content-type', '')
+                        
+                        if 'text/event-stream' in content_type:
+                            # Handle streaming response
+                            response_text = await response.text()
+                            
+                            # Parse SSE (Server-Sent Events) format
+                            for line in response_text.strip().split('\n'):
+                                if line.startswith('data: '):
+                                    data_content = line[6:]  # Remove 'data: ' prefix
+                                    if data_content.strip():
+                                        try:
+                                            rpc_response = json.loads(data_content)
+                                            if "error" in rpc_response:
+                                                log.error(f"JSON-RPC error: {rpc_response['error']}")
+                                                return False, {"error": rpc_response['error']}
+                                            elif "result" in rpc_response:
+                                                # Extract the tool result from JSON-RPC response
+                                                tool_result = rpc_response["result"]
+                                                if isinstance(tool_result, dict) and "content" in tool_result:
+                                                    # MCP tool responses are wrapped in content
+                                                    for content_item in tool_result["content"]:
+                                                        if content_item.get("type") == "text":
+                                                            try:
+                                                                # Parse the JSON result from the text content
+                                                                result_data = json.loads(content_item["text"])
+                                                                return True, result_data
+                                                            except json.JSONDecodeError:
+                                                                return True, {"raw_response": content_item["text"]}
+                                                return True, tool_result
+                                        except json.JSONDecodeError as e:
+                                            log.error(f"Failed to parse SSE data: {e}, data: {data_content}")
+                                            continue
+                            
+                            log.error("No valid JSON-RPC response found in event stream")
+                            return False, {"error": "No valid response in event stream"}
+                        else:
+                            # Handle regular JSON response
+                            rpc_response = await response.json()
+                            if "error" in rpc_response:
+                                log.error(f"JSON-RPC error: {rpc_response['error']}")
+                                return False, {"error": rpc_response['error']}
+                            elif "result" in rpc_response:
+                                # Extract the tool result from JSON-RPC response
+                                tool_result = rpc_response["result"]
+                                if isinstance(tool_result, dict) and "content" in tool_result:
+                                    # MCP tool responses are wrapped in content
+                                    for content_item in tool_result["content"]:
+                                        if content_item.get("type") == "text":
+                                            try:
+                                                # Parse the JSON result from the text content
+                                                result_data = json.loads(content_item["text"])
+                                                return True, result_data
+                                            except json.JSONDecodeError:
+                                                return True, {"raw_response": content_item["text"]}
+                                return True, tool_result
+                            else:
+                                log.error(f"Unexpected JSON-RPC response format: {rpc_response}")
+                                return False, {"error": "Invalid JSON-RPC response"}
                     else:
                         error_text = await response.text()
                         log.error(f"Remote tool call failed: {response.status} - {error_text}")
@@ -186,12 +326,14 @@ class GPUProxy:
             log.error("No GPU nodes available")
             return False, None
         
-        # Prepare input data
+        # Prepare input data with the wrapper format expected by MCP tools
         input_data = {
-            "strokes_yaml": strokes_yaml,
-            "scene_name": scene_name,
-            "first_last_rest": first_last_rest,
-            "use_ee_offsets": use_ee_offsets
+            "input_data": {
+                "strokes_yaml": strokes_yaml,
+                "scene_name": scene_name,
+                "first_last_rest": first_last_rest,
+                "use_ee_offsets": use_ee_offsets
+            }
         }
         
         # Try preferred node first, then others
@@ -298,7 +440,8 @@ class GPUProxy:
             host = node_config.get("host", "localhost")
             port = node_config.get("port", 8000)
             
-            url = f"http://{host}:{port}/health"
+            # Use a simple health check or try the MCP endpoint
+            url = f"http://{host}:{port}/mcp/"
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(
