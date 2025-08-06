@@ -26,10 +26,13 @@
 
 Want a tattoo? Join the [waitlist](https://forms.gle/Zys6f5iLEtYCG8VW7) 🙋‍♂️
 
+Follow the [progress](docs/progress.md) 🚀
+
 ## Documentation
 
 technical stack:
 
+- [Agent](docs/agent.md)
 - [AprilTags](docs/apriltags.md)
 - [Artwork](docs/artwork.md)
 - [Cameras](docs/cameras.md)
@@ -53,7 +56,6 @@ models and training instructions:
 
 more:
 
-- [progress](docs/progress.md)
 - [ideas dump](docs/ideas.md)
 - [academic paper](docs/paper)
 

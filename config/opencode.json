@@ -1,7 +1,18 @@
 {
     "$schema": "https://opencode.ai/config.json",
     "keybinds": {},
+    "model": "ollama/gpt-oss:20b",
     "instructions": [".cursor/rules/*.md"],
+    "agent": {
+      "code-reviewer": {
+        "description": "Reviews code for best practices and potential issues",
+        "prompt": "You are a code reviewer. Focus on security, performance, and maintainability.",
+        "tools": {
+          "write": false,
+          "edit": false
+        }
+      }
+    },
     "provider": {
         "ollama": {
             "npm": "@ai-sdk/openai-compatible",
@@ -13,11 +24,6 @@
                     "tools": true,
                     "reasoning": true
                 }
-            }
-        },
-        "anthropic": {
-            "options": {
-              "apiKey": "{env:ANTHROPIC_API_KEY}"
             }
         }
     },
