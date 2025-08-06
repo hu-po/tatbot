@@ -52,21 +52,35 @@
         }
     },
     "mcp": {
-        "my-local-mcp-server": {
-          "type": "local",
-          "command": ["bun", "x", "my-mcp-command"],
-          "enabled": true,
-          "environment": {
-            "MY_ENV_VAR": "my_env_var_value"
-          }
-        },
-        "my-remote-mcp": {
+        "tatbot.ook": {
           "type": "remote",
-          "url": "https://my-mcp-server.com",
-          "enabled": true,
-          "headers": {
-            "Authorization": "Bearer MY_API_KEY"
-          }
+          "url": "http://192.168.1.90:8000/mcp",
+          "enabled": true
+        },
+        "tatbot.oop": {
+          "type": "remote",
+          "url": "http://192.168.1.51:8000/mcp",
+          "enabled": true
+        },
+        "tatbot.ojo": {
+          "type": "remote",
+          "url": "http://192.168.1.96:8000/mcp",
+          "enabled": true
+        },
+        "tatbot.trossen-ai": {
+          "type": "remote",
+          "url": "http://192.168.1.97:8000/mcp",
+          "enabled": true
+        },
+        "tatbot.rpi1": {
+          "type": "remote",
+          "url": "http://192.168.1.98:8000/mcp",
+          "enabled": true
+        },
+        "tatbot.rpi2": {
+          "type": "remote",
+          "url": "http://192.168.1.99:8000/mcp",
+          "enabled": true
         }
       }
 }
