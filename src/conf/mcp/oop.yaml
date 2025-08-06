@@ -7,3 +7,4 @@ extras: [bot, dev, gen, img, viz, gpu]
 tools:
   - run_op
   - ping_nodes
+  - convert_strokelist_to_batch

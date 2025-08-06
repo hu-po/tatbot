@@ -8,6 +8,7 @@ from lerobot.utils.robot_utils import busy_wait
 from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.align import make_align_strokes
 from tatbot.gen.batch import strokebatch_from_strokes
+from tatbot.mcp.gpu_proxy import GPUProxy, check_local_gpu
 from tatbot.ops.record import RecordOp, RecordOpConfig
 from tatbot.utils.log import get_logger
 
@@ -31,14 +32,47 @@ class AlignOp(RecordOp):
             'message': _msg,
         }
         strokes: StrokeList = make_align_strokes(self.scene)
+        strokes_path = os.path.join(self.dataset_dir, "strokes.yaml")
+        strokebatch_path = os.path.join(self.dataset_dir, "strokebatch.safetensors")
+        
         try:
-            strokes.to_yaml_with_arrays(os.path.join(self.dataset_dir, "strokes.yaml"))
+            strokes.to_yaml_with_arrays(strokes_path)
             log.debug("✅ strokes.to_yaml_with_arrays completed successfully")
         except Exception as e:
             log.error(f"❌ Error in strokes.to_yaml_with_arrays: {e}")
             raise
-        strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, strokes, first_last_rest=False)
-        strokebatch.save(os.path.join(self.dataset_dir, "strokebatch.safetensors"))
+        
+        # Check if we need to use remote GPU for conversion
+        if check_local_gpu():
+            log.info("Using local GPU for strokebatch conversion")
+            strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, strokes, first_last_rest=False)
+            strokebatch.save(strokebatch_path)
+        else:
+            log.info("Using remote GPU node for strokebatch conversion")
+            gpu_proxy = GPUProxy()
+            
+            # Read strokes YAML for remote conversion
+            with open(strokes_path, 'r') as f:
+                strokes_yaml = f.read()
+            
+            success, strokebatch_bytes = await gpu_proxy.convert_strokelist_remote(
+                strokes_yaml=strokes_yaml,
+                scene_name=self.scene.name,
+                first_last_rest=False,
+                use_ee_offsets=True
+            )
+            
+            if not success:
+                raise RuntimeError("Failed to convert strokes to strokebatch on remote GPU node")
+            
+            # Save the converted strokebatch
+            with open(strokebatch_path, 'wb') as f:
+                f.write(strokebatch_bytes)
+            
+            # Load it for use
+            strokebatch = StrokeBatch.load(strokebatch_path)
+            
+        log.info(f"Strokebatch created with shape: {strokebatch.joints.shape}")
 
         # maximally retracted when performing alignment operation
         offset_idx_l = self.scene.arms.offset_num - 1

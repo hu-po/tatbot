@@ -364,5 +364,105 @@ async def list_ops(input_data, ctx: Context):
 
 
 
+@mcp_handler
+async def convert_strokelist_to_batch(input_data, ctx: Context):
+    """Convert StrokeList to StrokeBatch using GPU-accelerated IK.
+    
+    This tool requires GPU support and should only be available on GPU-enabled nodes.
+    
+    Parameters (JSON format):
+    - strokes_yaml (str, required): YAML content of StrokeList
+    - scene_name (str, required): Scene name for conversion parameters
+    - first_last_rest (bool, optional): Apply first/last rest positions. Default: true
+    - use_ee_offsets (bool, optional): Apply end-effector offsets. Default: true
+    
+    Returns:
+    - strokebatch_base64 (str): Base64-encoded safetensors data
+    - success (bool): Whether conversion succeeded
+    - message (str): Status message
+    
+    Example usage:
+    {"strokes_yaml": "...", "scene_name": "tatbotlogo"}
+    """
+    import base64
+    import io
+
+    import safetensors.numpy
+    import yaml
+
+    from tatbot.data.stroke import StrokeList
+    from tatbot.gen.batch import strokebatch_from_strokes
+    from tatbot.mcp.models import ConvertStrokeListInput, ConvertStrokeListResponse
+
+    # Parse input data
+    parsed_input = _parse_input_data(input_data, ConvertStrokeListInput)
+    
+    try:
+        # Check if this node has GPU support
+        import hydra
+        cfg = hydra.compose(config_name="config")
+        node_name = ctx.fastmcp.name.split(".", 1)[1] if "." in ctx.fastmcp.name else ctx.fastmcp.name
+        node_cfg = cfg.mcp[node_name] if node_name in cfg.mcp else cfg.mcp.default
+        
+        if "gpu" not in node_cfg.get("extras", []):
+            return ConvertStrokeListResponse(
+                strokebatch_base64="",
+                success=False,
+                message=f"Node {node_name} does not have GPU support"
+            ).model_dump()
+        
+        await ctx.info(f"Converting StrokeList to StrokeBatch on GPU node {node_name}")
+        
+        # Load StrokeList from YAML
+        strokes_data = yaml.safe_load(parsed_input.strokes_yaml)
+        strokes = StrokeList.model_validate(strokes_data)
+        
+        # Load scene configuration
+        from tatbot.main import compose_and_validate_scene
+        scene = compose_and_validate_scene(parsed_input.scene_name)
+        
+        await ctx.report_progress(0.2, 1.0, "Loaded strokes and scene")
+        
+        # Perform GPU-accelerated conversion
+        strokebatch = strokebatch_from_strokes(
+            scene, 
+            strokes, 
+            first_last_rest=parsed_input.first_last_rest,
+            use_ee_offsets=parsed_input.use_ee_offsets
+        )
+        
+        await ctx.report_progress(0.8, 1.0, "Conversion complete, encoding result")
+        
+        # Save to bytes buffer and encode as base64
+        buffer = io.BytesIO()
+        safetensors.numpy.save({
+            "ee_pos_l": strokebatch.ee_pos_l,
+            "ee_pos_r": strokebatch.ee_pos_r,
+            "ee_rot_l": strokebatch.ee_rot_l,
+            "ee_rot_r": strokebatch.ee_rot_r,
+            "joints": strokebatch.joints,
+        }, buffer)
+        
+        strokebatch_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        
+        await ctx.report_progress(1.0, 1.0, "Conversion successful")
+        
+        result = ConvertStrokeListResponse(
+            strokebatch_base64=strokebatch_base64,
+            success=True,
+            message="Successfully converted StrokeList to StrokeBatch"
+        )
+        return json.loads(result.model_dump_json())
+        
+    except Exception as e:
+        log.error(f"Error converting strokelist to batch: {e}")
+        result = ConvertStrokeListResponse(
+            strokebatch_base64="",
+            success=False,
+            message=f"Conversion failed: {str(e)}"
+        )
+        return json.loads(result.model_dump_json())
+
+
 # Export available tools for discoverability
 __all__ = list(_REGISTRY.keys())

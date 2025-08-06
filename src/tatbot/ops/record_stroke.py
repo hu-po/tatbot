@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from io import StringIO
 
 from lerobot.datasets.utils import build_dataset_frame
-
 from lerobot.robots import Robot, make_robot_from_config
 from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.utils.robot_utils import busy_wait
@@ -14,6 +13,7 @@ from lerobot.utils.robot_utils import busy_wait
 from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.gen.gcode import make_gcode_strokes
+from tatbot.mcp.gpu_proxy import GPUProxy, check_local_gpu
 from tatbot.ops.record import RecordOp, RecordOpConfig
 from tatbot.utils.log import LOG_FORMAT, TIME_FORMAT, get_logger
 
@@ -85,7 +85,10 @@ class StrokeOp(RecordOp):
         logging.getLogger().addHandler(episode_handler)
 
         if self.config.enable_joystick:
-            from lerobot.teleoperators.gamepad import AtariTeleoperator, AtariTeleoperatorConfig
+            from lerobot.teleoperators.gamepad import (
+                AtariTeleoperator,
+                AtariTeleoperatorConfig,
+            )
 
             _msg = "Connecting to joystick..."
             log.info(_msg)
@@ -113,8 +116,38 @@ class StrokeOp(RecordOp):
         else:
             strokes: StrokeList = make_gcode_strokes(self.scene)
             strokes.to_yaml_with_arrays(strokes_path)
-            strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, strokes)
-            strokebatch.save(strokebatch_path)
+            
+            # Check if we need to use remote GPU for conversion
+            if check_local_gpu():
+                log.info("Using local GPU for strokebatch conversion")
+                strokebatch: StrokeBatch = strokebatch_from_strokes(self.scene, strokes)
+                strokebatch.save(strokebatch_path)
+            else:
+                log.info("Using remote GPU node for strokebatch conversion")
+                gpu_proxy = GPUProxy()
+                
+                # Read strokes YAML for remote conversion
+                with open(strokes_path, 'r') as f:
+                    strokes_yaml = f.read()
+                
+                success, strokebatch_bytes = await gpu_proxy.convert_strokelist_remote(
+                    strokes_yaml=strokes_yaml,
+                    scene_name=self.scene.name,
+                    first_last_rest=True,  # Default for stroke op
+                    use_ee_offsets=True
+                )
+                
+                if not success:
+                    raise RuntimeError("Failed to convert strokes to strokebatch on remote GPU node")
+                
+                # Save the converted strokebatch
+                with open(strokebatch_path, 'wb') as f:
+                    f.write(strokebatch_bytes)
+                
+                # Load it for use
+                strokebatch = StrokeBatch.load(strokebatch_path)
+            
+            log.info(f"Strokebatch created with shape: {strokebatch.joints.shape}")
         num_strokes = len(strokes.strokes)
 
         # offset index controls needle depth

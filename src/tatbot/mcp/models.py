@@ -198,4 +198,18 @@ class NodesStatusResponse(BaseResponse):
     online_count: int
 
 
+class ConvertStrokeListInput(BaseModel):
+    """Input model for converting StrokeList to StrokeBatch."""
+    version: str = "1.0"  # Tool versioning
+    strokes_yaml: str  # YAML content of StrokeList
+    scene_name: str  # Scene name for conversion parameters
+    first_last_rest: bool = True  # Apply first/last rest positions
+    use_ee_offsets: bool = True  # Apply end-effector offsets
 
+
+class ConvertStrokeListResponse(BaseResponse):
+    """Response model for StrokeList to StrokeBatch conversion."""
+    version: str = "1.0"  # Tool versioning
+    strokebatch_base64: str  # Base64-encoded safetensors data
+    success: bool
+    message: str
