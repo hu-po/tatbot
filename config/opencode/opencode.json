@@ -25,11 +25,25 @@
         "anthropic": {
             "options": {
               "apiKey": "{env:ANTHROPIC_API_KEY}"
+            },
+            "models": {
+                "claude-sonnet-4-20250514-v1:0": {
+                    "completion": true,
+                    "tools": true,
+                    "thinking": true
+                }
             }
         },
         "google": {
             "options": {
               "apiKey": "{env:GEMINI_API_KEY}"
+            },
+            "models": {
+                "gemini-2.5-pro": {
+                    "completion": true,
+                    "tools": true,
+                    "thinking": true
+                }
             }
         }
     },
