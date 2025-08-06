@@ -8,13 +8,36 @@ from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.ik import batch_ik
 from tatbot.utils.log import get_logger
 
+# Try to import Warp IK solver
+try:
+    from tatbot.gen.ik_warp import batch_warp_ik
+    WARP_AVAILABLE = True
+except ImportError:
+    WARP_AVAILABLE = False
+    batch_warp_ik = None
+
 log = get_logger("gen.batch", "💠")
 
 
-def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: int = 256, first_last_rest: bool = True, use_ee_offsets: bool = True) -> StrokeBatch:
+def strokebatch_from_strokes(
+    scene: Scene, 
+    strokelist: StrokeList, 
+    batch_size: int = 256, 
+    first_last_rest: bool = True, 
+    use_ee_offsets: bool = True,
+    use_warp_ik: bool = False
+) -> StrokeBatch:
     """
     Convert a list of (Stroke, Stroke) tuples into a StrokeBatch, running IK to fill in joint values.
     Each tuple is (left_stroke, right_stroke) for a single stroke step.
+    
+    Args:
+        scene: Scene configuration with robot and workspace info
+        strokelist: List of stroke pairs to process
+        batch_size: IK batch processing size
+        first_last_rest: Whether to keep arms at rest during first/last strokes
+        use_ee_offsets: Whether to apply end-effector offsets
+        use_warp_ik: If True, use Warp-based IK solver instead of JAX
     """
     b = len(strokelist.strokes)
     l = scene.stroke_length
@@ -68,20 +91,43 @@ def strokebatch_from_strokes(scene: Scene, strokelist: StrokeList, batch_size: i
     target_pos = np.stack([ee_pos_l, ee_pos_r], axis=3).reshape(b * l * o, 2, 3)  # (b, l, o, 2, 3)
     target_wxyz = np.stack([ee_rot_l, ee_rot_r], axis=3).reshape(b * l * o, 2, 4)  # (b, l, o, 2, 4)
 
+    # Choose IK solver based on configuration
+    if use_warp_ik:
+        if not WARP_AVAILABLE:
+            log.warning("Warp IK requested but not available, falling back to JAX IK")
+            use_warp_ik = False
+        else:
+            log.info("Using Warp-based IK solver")
+    else:
+        log.info("Using JAX-based IK solver")
+    
     # Run IK in batches
     joints_out = np.zeros((b * l * o, 14), dtype=np.float32)
     for start in range(0, b * l * o, batch_size):
         end = min(start + batch_size, b * l * o)
-        batch_pos = jnp.array(target_pos[start:end])
-        batch_wxyz = jnp.array(target_wxyz[start:end])
-        batch_joints = batch_ik(
-            target_wxyz=batch_wxyz,
-            target_pos=batch_pos,
-            joints=scene.ready_pos_full.joints,
-            urdf_path=scene.urdf.path,
-            link_names=scene.urdf.ee_link_names,
-        )
-        joints_out[start:end] = np.asarray(batch_joints, dtype=np.float32)
+        
+        if use_warp_ik:
+            # Use Warp IK solver
+            batch_joints = batch_warp_ik(
+                target_wxyz=target_wxyz[start:end],
+                target_pos=target_pos[start:end],
+                joints=scene.ready_pos_full.joints,
+                urdf_path=scene.urdf.path,
+                link_names=scene.urdf.ee_link_names,
+            )
+            joints_out[start:end] = batch_joints
+        else:
+            # Use JAX IK solver
+            batch_pos = jnp.array(target_pos[start:end])
+            batch_wxyz = jnp.array(target_wxyz[start:end])
+            batch_joints = batch_ik(
+                target_wxyz=batch_wxyz,
+                target_pos=batch_pos,
+                joints=scene.ready_pos_full.joints,
+                urdf_path=scene.urdf.path,
+                link_names=scene.urdf.ee_link_names,
+            )
+            joints_out[start:end] = np.asarray(batch_joints, dtype=np.float32)
     joints_out = joints_out.reshape(b, l, o, 14)
 
     if first_last_rest:
