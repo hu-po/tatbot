@@ -12,7 +12,7 @@ uv run ruff check --config pyproject.toml --fix
 helpful oneliner to get diff for browser based models:
 
 ```bash
-rm -rf diff.txt && git diff main...configrefactor > diff.txt && xclip -selection clipboard < diff.txt
+rm -rf diff.txt && git diff main...configrefactor > /tmp/diff.txt && xclip -selection clipboard < /tmp/diff.txt
 ```
 
 To run all quality gates, including tests and type checking, use the lint script:
