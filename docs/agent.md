@@ -7,7 +7,10 @@ currently use [ollama](https://github.com/ollama/ollama) to serve agent on `ojo`
 ```bash
 # install ollama
 curl -fsSL https://ollama.com/install.sh | sh
-export OLLAMA_MODELS=/mnt/ollama # put into ~/.bashrc
+
+# put into bashrc
+export OLLAMA_HOST=0.0.0.0 # allows remote access
+export OLLAMA_MODELS=/mnt/ollama # use nvme (faster, more space)
 
 # start ollama server
 ollama serve
