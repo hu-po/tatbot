@@ -4,12 +4,36 @@
     "model": "ollama/gpt-oss:20b",
     "instructions": [".cursor/rules/*.md"],
     "agent": {
+      "code-editor": {
+        "description": "Edits code, writing new code, modifying existing code",
+        "prompt": "You are a code editor. You can edit code, write new code, and modify existing code.",
+        "model": "ollama/gpt-oss:20b",
+        "tools": {
+          "bash": true,
+          "edit": true,
+          "webfetch": true,
+          "glob": true,
+          "grep": true,
+          "list": true,
+          "read": true,
+          "write": true,
+          "task": true
+        }
+      },
       "code-reviewer": {
         "description": "Reviews code for best practices and potential issues",
         "prompt": "You are a code reviewer. Focus on security, performance, and maintainability.",
+        "model": "ollama/gpt-oss:20b",
         "tools": {
+          "bash": false,
+          "edit": false,
+          "webfetch": true,
+          "glob": true,
+          "grep": true,
+          "list": true,
+          "read": true,
           "write": false,
-          "edit": false
+          "task": false
         }
       }
     },
