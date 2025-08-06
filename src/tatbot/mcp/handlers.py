@@ -429,23 +429,42 @@ async def convert_strokelist_to_batch(input_data, ctx: Context):
         # Wait for NFS file synchronization with timeout
         import time
         from pathlib import Path
+        import os
         
         strokes_path = Path(parsed_input.strokes_file_path)
+        parent_dir = strokes_path.parent
         max_wait_time = 10  # seconds
         start_time = time.time()
         
         await ctx.report_progress(0.1, 1.0, "Waiting for NFS file synchronization...")
+        log.info(f"Looking for strokes file: {strokes_path}")
+        log.info(f"Parent directory: {parent_dir}")
+        log.info(f"Parent directory exists: {parent_dir.exists()}")
+        
+        if parent_dir.exists():
+            try:
+                dir_contents = list(parent_dir.iterdir())
+                log.info(f"Parent directory contents: {[f.name for f in dir_contents]}")
+            except Exception as e:
+                log.warning(f"Could not list parent directory contents: {e}")
         
         while not strokes_path.exists():
             if time.time() - start_time > max_wait_time:
+                # Final diagnostic before failing
+                if parent_dir.exists():
+                    try:
+                        final_contents = list(parent_dir.iterdir())
+                        log.error(f"Final directory contents: {[f.name for f in final_contents]}")
+                    except Exception as e:
+                        log.error(f"Could not list final directory contents: {e}")
                 raise FileNotFoundError(f"Strokes file not found after {max_wait_time}s: {strokes_path}")
             
             log.info(f"Waiting for NFS sync of {strokes_path}...")
             time.sleep(0.5)
         
-        # Also check for the array files that should be created by to_yaml_with_arrays
-        base_dir = strokes_path.parent
-        expected_arrays = []
+        # File found! Check its size
+        file_size = strokes_path.stat().st_size
+        log.info(f"Found strokes file: {strokes_path} ({file_size} bytes)")
         
         # Wait a bit more to ensure all array files are synced
         await ctx.report_progress(0.15, 1.0, "Verifying array files are synced...")

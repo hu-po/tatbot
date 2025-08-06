@@ -31,17 +31,32 @@ class AlignOp(RecordOp):
             'progress': 0.2,
             'message': _msg,
         }
-        strokes: StrokeList = make_align_strokes(self.scene)
+        
+        try:
+            strokes: StrokeList = make_align_strokes(self.scene)
+            log.info(f"✅ Generated {len(strokes.strokes)} alignment stroke pairs")
+        except Exception as e:
+            log.error(f"❌ Error generating alignment strokes: {e}")
+            raise
+        
         strokes_path = os.path.join(self.dataset_dir, "strokes.yaml")
         strokebatch_path = os.path.join(self.dataset_dir, "strokebatch.safetensors")
         
         try:
+            log.info(f"💾 Saving strokes to {strokes_path}")
             strokes.to_yaml_with_arrays(strokes_path)
-            log.debug("✅ strokes.to_yaml_with_arrays completed successfully")
+            
+            # Verify the file was actually created
+            import os
+            if os.path.exists(strokes_path):
+                file_size = os.path.getsize(strokes_path)
+                log.info(f"✅ strokes.yaml created successfully ({file_size} bytes)")
+            else:
+                raise FileNotFoundError(f"strokes.yaml was not created at {strokes_path}")
             
             # Give NFS a moment to sync files before remote call
             import time
-            log.debug("⏳ Waiting for NFS sync before remote GPU call...")
+            log.info("⏳ Waiting for NFS sync before remote GPU call...")
             time.sleep(1.0)
         except Exception as e:
             log.error(f"❌ Error in strokes.to_yaml_with_arrays: {e}")
