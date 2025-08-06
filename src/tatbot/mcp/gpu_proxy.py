@@ -299,6 +299,31 @@ class GPUProxy:
             log.error(f"Error calling remote tool: {e}")
             return False, {"error": str(e)}
     
+    def _translate_path_for_node(self, local_path: str, target_node: str) -> str:
+        """Translate a local NFS path to the target node's NFS mount point.
+        
+        Args:
+            local_path: Path on the current node
+            target_node: Target node name
+            
+        Returns:
+            Path as it would appear on the target node
+        """
+        import socket
+        
+        current_hostname = socket.gethostname().lower()
+        
+        # NFS paths have the format: /home/{node}/tatbot/nfs/...
+        # We need to translate between node-specific mount points
+        if "/tatbot/nfs/" in local_path:
+            # Extract the relative path after /tatbot/nfs/
+            nfs_relative = local_path.split("/tatbot/nfs/", 1)[1]
+            # Construct the path for the target node
+            return f"/home/{target_node}/tatbot/nfs/{nfs_relative}"
+        
+        # If it's not an NFS path, return as-is
+        return local_path
+
     async def convert_strokelist_remote(
         self,
         strokes_file_path: str,
@@ -328,17 +353,6 @@ class GPUProxy:
             log.error("No GPU nodes available")
             return False, None
         
-        # Prepare input data with the wrapper format expected by MCP tools
-        input_data = {
-            "input_data": {
-                "strokes_file_path": strokes_file_path,
-                "strokebatch_file_path": strokebatch_file_path,
-                "scene_name": scene_name,
-                "first_last_rest": first_last_rest,
-                "use_ee_offsets": use_ee_offsets
-            }
-        }
-        
         # Try preferred node first, then others
         attempt_nodes = []
         if preferred_node and preferred_node in gpu_nodes:
@@ -350,11 +364,28 @@ class GPUProxy:
             for node_name in attempt_nodes:
                 log.info(f"Attempt {retry + 1}/{max_retries}: Calling convert_strokelist_to_batch on {node_name}")
                 
+                # Translate paths for the target node's NFS mount point
+                target_strokes_path = self._translate_path_for_node(strokes_file_path, node_name)
+                target_strokebatch_path = self._translate_path_for_node(strokebatch_file_path, node_name)
+                
+                log.info(f"Translated paths for {node_name}: {strokes_file_path} -> {target_strokes_path}")
+                
+                # Prepare input data with translated paths
+                node_input_data = {
+                    "input_data": {
+                        "strokes_file_path": target_strokes_path,
+                        "strokebatch_file_path": target_strokebatch_path,
+                        "scene_name": scene_name,
+                        "first_last_rest": first_last_rest,
+                        "use_ee_offsets": use_ee_offsets
+                    }
+                }
+                
                 # Call remote tool
                 success, response = await self._call_remote_tool(
                     node_name,
                     "convert_strokelist_to_batch",
-                    input_data
+                    node_input_data
                 )
                 
                 if success and response.get("success"):
