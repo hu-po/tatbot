@@ -44,7 +44,7 @@ dependencies = [
 
 [project.optional-dependencies]
 bot = [
-    "lerobot[tatbot,smolvla] @ git+https://github.com/hu-po/lerobot.git@main",
+    "lerobot[tatbot] @ git+https://github.com/hu-po/lerobot.git@main",
     "trossen-arm==1.8.5",
     "evdev==1.9.2",
 ]
