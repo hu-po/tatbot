@@ -51,9 +51,10 @@ class AlignOp(RecordOp):
             log.info("Using remote GPU node for strokebatch conversion")
             gpu_proxy = GPUProxy()
             
-            # Read strokes YAML for remote conversion
-            with open(strokes_path, 'r') as f:
-                strokes_yaml = f.read()
+            # Serialize strokes to YAML format that includes all data inline (no external array files)
+            import yaml
+            strokes_yaml = yaml.dump(strokes.model_dump(), default_flow_style=False)
+            log.info(f"Serialized strokes for remote conversion: {len(strokes_yaml)} chars")
             
             success, strokebatch_bytes = await gpu_proxy.convert_strokelist_remote(
                 strokes_yaml=strokes_yaml,

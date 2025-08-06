@@ -425,9 +425,10 @@ async def convert_strokelist_to_batch(input_data, ctx: Context):
         
         await ctx.info(f"Converting StrokeList to StrokeBatch on GPU node {node_name}")
         
-        # Load StrokeList from YAML
+        # Load StrokeList from YAML using model_validate (since we're now using model_dump format)
         strokes_data = yaml.safe_load(parsed_input.strokes_yaml)
         strokes = StrokeList.model_validate(strokes_data)
+        log.info(f"Successfully loaded StrokeList with {len(strokes.strokes)} stroke pairs")
         
         # Load scene configuration
         from tatbot.main import compose_and_validate_scene
