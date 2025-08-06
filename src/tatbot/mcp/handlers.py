@@ -426,6 +426,31 @@ async def convert_strokelist_to_batch(input_data, ctx: Context):
         
         await ctx.info(f"Converting StrokeList to StrokeBatch on GPU node {node_name}")
         
+        # Wait for NFS file synchronization with timeout
+        import time
+        from pathlib import Path
+        
+        strokes_path = Path(parsed_input.strokes_file_path)
+        max_wait_time = 10  # seconds
+        start_time = time.time()
+        
+        await ctx.report_progress(0.1, 1.0, "Waiting for NFS file synchronization...")
+        
+        while not strokes_path.exists():
+            if time.time() - start_time > max_wait_time:
+                raise FileNotFoundError(f"Strokes file not found after {max_wait_time}s: {strokes_path}")
+            
+            log.info(f"Waiting for NFS sync of {strokes_path}...")
+            time.sleep(0.5)
+        
+        # Also check for the array files that should be created by to_yaml_with_arrays
+        base_dir = strokes_path.parent
+        expected_arrays = []
+        
+        # Wait a bit more to ensure all array files are synced
+        await ctx.report_progress(0.15, 1.0, "Verifying array files are synced...")
+        time.sleep(1.0)
+        
         # Load StrokeList from file path using the proper method
         from tatbot.data.stroke import StrokeList
         strokes = StrokeList.from_yaml_with_arrays(parsed_input.strokes_file_path)

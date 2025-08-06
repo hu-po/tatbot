@@ -38,6 +38,11 @@ class AlignOp(RecordOp):
         try:
             strokes.to_yaml_with_arrays(strokes_path)
             log.debug("✅ strokes.to_yaml_with_arrays completed successfully")
+            
+            # Give NFS a moment to sync files before remote call
+            import time
+            log.debug("⏳ Waiting for NFS sync before remote GPU call...")
+            time.sleep(1.0)
         except Exception as e:
             log.error(f"❌ Error in strokes.to_yaml_with_arrays: {e}")
             raise
