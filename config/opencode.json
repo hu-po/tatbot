@@ -2,7 +2,7 @@
     "$schema": "https://opencode.ai/config.json",
     "keybinds": {},
     "model": "ollama/qwen3:30b",
-    "instructions": ["~/tatbot/.cursor/rules/*.md", "~/tatbot/config/opencode/AGENTS.md"],
+    "instructions": ["~/tatbot/.cursor/rules/*.md", "~/tatbot/config/CLAUDE.md"],
     "provider": {
         "ollama": {
             "npm": "@ai-sdk/openai-compatible",
