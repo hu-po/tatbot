@@ -32,12 +32,12 @@
         }
     },
     "mcp": {
-        "tatbot.ook": {
+        "tatbot_ook": {
           "type": "remote",
           "url": "http://192.168.1.90:8000/mcp",
           "enabled": true
         },
-        "tatbot.trossen-ai": {
+        "tatbot_trossen-ai": {
           "type": "remote",
           "url": "http://192.168.1.97:8000/mcp",
           "enabled": true
