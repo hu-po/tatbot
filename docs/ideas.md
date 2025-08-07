@@ -23,7 +23,7 @@
 - write local, sync later for robot recordings to save trossen-ai compute
 - affine heat method for design wrapping on skin mesh
 - ee calibration using square
-- replace JAX ik with Nvidia warp ik
+- replace JAX ik with Nvidia warp ik (https://github.com/NVIDIA/warp/blob/main/warp/examples/sim/example_jacobian_ik.py)
 - build the new hardware and switch to the 3d print workflow and single arm queues and behavior trees and base mounted ink palettes
 - Lerobot tatbot can take any number/subset of these three abstractions: ip_cameras, wxai_arms, rs_cameras
 - colmap/Xm2 use AprilTag to construct scene graph
