@@ -10,15 +10,13 @@
             },
             "models": {
                 "gpt-oss:20b": {
-                    "completion": true,
-                    "tools": true,
+                    "tool_call": true,
                     "reasoning": true
                 },
                 "qwen3:30b": {
-                  "completion": true,
-                  "tools": true,
-                  "thinking": true
-              }
+                    "tool_call": true,
+                    "reasoning": true
+                }
             }
         },
         "anthropic": {
@@ -27,9 +25,8 @@
             },
             "models": {
                 "claude-sonnet-4-20250514-v1:0": {
-                    "completion": true,
-                    "tools": true,
-                    "thinking": true
+                    "tool_call": true,
+                    "reasoning": true
                 }
             }
         },
@@ -39,9 +36,8 @@
             },
             "models": {
                 "gemini-2.5-pro": {
-                    "completion": true,
-                    "tools": true,
-                    "thinking": true
+                    "tool_call": true,
+                    "reasoning": true
                 }
             }
         }
