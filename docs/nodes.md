@@ -61,7 +61,7 @@ to setup the network:
 ```bash
 cd ~/tatbot
 source scripts/setup_env.sh
-uv run -m tatbot.utils.net --debug
+uv run python -m tatbot.utils.net --debug
 ```
 
 # NFS Setup

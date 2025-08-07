@@ -6,7 +6,7 @@
 
 see:
 
-- `~/tatbot/config/trossen/arm_{l|r}.yaml`: Low-level arm and motor parameters.
+- `config/trossen/arm_{l|r}.yaml`: Low-level arm and motor parameters.
 - `src/conf/arms/default.yaml`: High-level configuration, including IP addresses and end-effector offsets.
 - `src/tatbot/data/arms.py`: The Pydantic data model that loads these configurations.
 

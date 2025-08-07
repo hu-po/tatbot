@@ -29,7 +29,6 @@ set -a; source .env; set +a
 # Or manually:
 uv run isort .
 uv run ruff check --config pyproject.toml --fix
-uv run ruff format --config pyproject.toml
 ```
 
 ### MCP Server Operations
@@ -70,7 +69,6 @@ uv run python -m tatbot.viz.map --scene=default
 
 2. **Configuration System** (`src/conf/`)
    - Hydra-based configuration with defaults and overrides
-   - Node-specific configurations in `mcp/` directory
    - Scene configurations combine arms, cameras, inks, poses
    - All configs validate through Pydantic schemas
 
@@ -121,12 +119,19 @@ uv run python -m tatbot.viz.map --scene=default
 - **Pydantic Validation**: Strong typing and validation throughout
 - **Virtual Environment**: Uses `uv` for fast, deterministic dependency management
 - **Modular Extras**: Optional dependencies grouped by functionality
+- **Configuration Constants**: Centralized constant classes replace magic numbers (AppConstants, ServerConstants, MCPConstants, CalibrationConstants)
+- **Specific Exception Handling**: Custom exception types (ConfigurationError, NetworkError, CalibrationError, etc.) replace generic Exception catching
+- **Descriptive Naming**: Variables use meaningful names instead of cryptic abbreviations
 
 ## Critical Files
 
-- `src/tatbot/main.py`: Entry point with Hydra initialization
-- `src/tatbot/mcp/server.py`: MCP server implementation
-- `src/tatbot/config_schema.py`: Pydantic schemas for configuration
+- `src/tatbot/main.py`: Entry point with Hydra initialization (enhanced with AppConstants and improved exception handling)
+- `src/tatbot/mcp/server.py`: MCP server implementation (enhanced with ServerConstants and type hints)
+- `src/tatbot/mcp/handlers.py`: MCP tool implementations (enhanced with specific exception handling)
+- `src/tatbot/mcp/models.py`: MCP request/response models (enhanced with MCPConstants)
+- `src/tatbot/config_schema.py`: Pydantic schemas for configuration (enhanced with proper type annotations)
+- `src/tatbot/bot/trossen_homing.py`: Arm calibration (enhanced with CalibrationConstants)
+- `src/tatbot/gen/batch.py`: Stroke batch processing (enhanced with descriptive variable names)
 - `src/conf/config.yaml`: Root Hydra configuration
 - `pyproject.toml`: Project dependencies and metadata
 

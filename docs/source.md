@@ -35,17 +35,20 @@ This document describes the main entry points and configuration schema files loc
     -   It receives the composed `cfg: DictConfig` object from Hydra.
     -   Its main job is to call `load_scene_from_config` to parse and validate this configuration.
     -   It then prints a summary of the loaded scene to confirm that everything was loaded correctly.
+    -   Now includes specific exception handling for `ConfigurationError` with descriptive error messages.
 -   **`compose_and_validate_scene`**:
     -   This is a crucial utility function used by many other modules (like `ops` and `viz`) to load a specific `Scene` configuration by name.
     -   It handles the complexity of initializing Hydra if it hasn't been started yet (e.g., when running a visualization script) or using the existing Hydra context if it has (e.g., when called from an MCP server).
     -   It uses Hydra's `compose` API to load the base configuration and then apply an override to select a specific scene (e.g., `scenes=tatbotlogo`).
+-   **Configuration**: Uses `AppConstants` class for centralized management of configuration paths and default values.
 
 #### `config_schema.py`
 
 -   **Purpose**: Defines the top-level Pydantic model for the entire application configuration.
 -   **`AppConfig`**:
     -   This Pydantic model mirrors the structure of the composed Hydra configuration (`config.yaml`). It expects fields like `arms`, `cams`, `scenes`, etc., which correspond to the different configuration groups.
-    -   **`create_scene` validator**: This is the most important part of the file. It's a `@model_validator` that runs after the initial fields have been parsed. Its job is to take the raw dictionary configurations for each component (e.g., `self.arms`, which is a `dict`) and instantiate them into their corresponding Pydantic objects (e.g., `Arms(**self.arms)`).
+    -   **Type Safety**: All configuration fields now use proper type hints (`Dict[str, Any]`) for better validation and development experience.
+    -   **`create_scene` validator**: This is the most important part of the file. It's a `@model_validator` that runs after the initial fields have been parsed. Its job is to take the raw dictionary configurations for each component (e.g., `self.arms`, which is a `Dict[str, Any]`) and instantiate them into their corresponding Pydantic objects (e.g., `Arms(**self.arms)`).
     -   Finally, it assembles all these component objects into a single, fully-validated `Scene` object.
 
 ### How It Works and How to Use It
@@ -288,15 +291,17 @@ This module implements the server for the **M**ulti-agent **C**ommand **P**latfo
 -   **Purpose**: Contains the implementation of the actual tool functions that the server exposes.
 -   **`@mcp_handler`**: A decorator used to register a function as an available tool in a central registry.
 -   **Key Tools**:
-    -   `run_op`: The most important tool. It executes a high-level operation (from the `tatbot.ops` module), such as `stroke` or `align`. It's an `async` generator, allowing it to stream progress and log messages back to the client as the operation runs.
+    -   `run_op`: The most important tool. It executes a high-level operation (from the `tatbot.ops` module), such as `stroke` or `align`. It's an `async` generator, allowing it to stream progress and log messages back to the client as the operation runs. Now includes robust error handling with specific exception types.
     -   `ping_nodes`: Checks the network connectivity of other nodes.
     -   `list_scenes`, `list_nodes`, `list_ops`: Tools for discovering available scenes, nodes, and operations, which is very useful for UIs and command-line clients.
+-   **Error Handling**: Implements specific exception handling for different failure modes (configuration errors, network issues, file operations, etc.) with appropriate error messages and recovery strategies.
 
 #### `models.py`
 
 -   **Purpose**: Defines all the Pydantic models for the requests and responses of the tools in `handlers.py`.
 -   **Input Models** (e.g., `RunOpInput`): Define the expected parameters for a tool call. They include validators to ensure, for example, that a requested scene or operation actually exists before the handler logic is even run.
 -   **Response Models** (e.g., `RunOpResult`): Define the structure of the data that a tool will return.
+-   **Configuration Constants**: Uses `MCPConstants` class for default values (host, port, transport, etc.) instead of hardcoded values, improving maintainability.
 -   **`NumpyEncoder`**: A custom JSON encoder is provided to handle the serialization of `numpy` arrays, which are common in the data structures but not natively supported by JSON.
 
 #### `__init__.py`
