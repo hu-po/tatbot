@@ -172,8 +172,8 @@ async def ping_nodes(input_data, ctx: Context):
     - nodes (list, optional): List of node names to ping. If not provided, pings all nodes.
     
     Example usage:
-    {"nodes": ["ook", "eek"]}
-    {} (pings all nodes)
+    {"nodes": ["ook", "trossen-ai"]}
+    {}
     """
     from tatbot.mcp.models import PingNodesInput, PingNodesResponse
     from tatbot.utils.net import NetworkManager
@@ -283,7 +283,7 @@ async def list_scenes(input_data, ctx: Context):
 
 @mcp_handler
 async def list_nodes(input_data, ctx: Context):
-    """List available network nodes.
+    """List available tatbot nodes.
     
     No parameters required. Returns list of available node names.
     
@@ -310,14 +310,14 @@ async def list_nodes(input_data, ctx: Context):
 
 @mcp_handler
 async def list_ops(input_data, ctx: Context):
-    """List available operations, optionally filtered by node.
+    """List available operations (ops) for a given tatbot node.
     
     Parameters (JSON format):
     - node_name (str, optional): Filter operations by specific node. If not provided, lists all operations.
     
     Example usage:
     {"node_name": "ook"}
-    {} (lists all operations)
+    {}
     """
     from tatbot.mcp.models import ListOpsInput, ListOpsResponse
     from tatbot.ops import NODE_AVAILABLE_OPS
