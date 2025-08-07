@@ -13,6 +13,7 @@ from paramiko.client import SSHClient
 from paramiko.sftp_client import SFTPClient
 
 from tatbot.data.node import Node
+from tatbot.utils.exceptions import NetworkConnectionError, ConfigurationError
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger("net", "🌐")
@@ -135,9 +136,12 @@ class NetworkManager:
             )
             log.debug(f"🌐 🔑 SSH connection established to {username}@{hostname}")
             return client
-        except Exception as e:
-            log.error(f"🌐 ❌ Failed to connect to {username}@{hostname}: {str(e)}")
-            raise
+        except paramiko.AuthenticationException as e:
+            log.error(f"🌐 ❌ Authentication failed for {username}@{hostname}: {str(e)}")
+            raise NetworkConnectionError(f"SSH authentication failed for {username}@{hostname}") from e
+        except (paramiko.SSHException, socket.timeout, ConnectionError) as e:
+            log.error(f"🌐 ❌ Connection failed to {username}@{hostname}: {str(e)}")
+            raise NetworkConnectionError(f"SSH connection failed to {username}@{hostname}: {e}") from e
 
     def setup_network(self):
         """Runs the full network setup process."""
@@ -183,49 +187,78 @@ class NetworkManager:
         else:
             log.debug(f"🌐 SSH key already exists at {self.config.key_path}. Skipping generation.")
 
-    def _distribute_keys(self):
+    def _distribute_keys(self, password_cache: Optional[dict[str, str]] = None):
         """Distributes the public key to all remote nodes."""
-        password_cache: dict[str, str] = {}
+        if password_cache is None:
+            password_cache = {}
+        
         for node in self.nodes:
             if self.is_local_node(node):
                 log.debug(f"🌐 🛑 Skipping key distribution for local node {node.name}")
                 continue
-
-            log.info(f"{node.emoji} Setting up {node.name} ({node.ip})")
-
-            try:
-                client = self.get_ssh_client(node.ip, node.user)
-                log.debug(f"{node.emoji} Connected with existing key – no password needed 🎉")
-            except Exception:
-                pw = password_cache.get(node.user)
-                if pw is None:
-                    pw = getpass.getpass(prompt=f"🔑 Enter password for {node.user}@{node.ip}: ")
-                    password_cache[node.user] = pw
-                client = paramiko.SSHClient()
-                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                client.connect(node.ip, username=node.user, password=pw, timeout=5.0)
-
-            # Ensure ~/.ssh exists and has correct permissions
-            client.exec_command("mkdir -p ~/.ssh && chmod 700 ~/.ssh")
-
-            # Upload keys via SFTP
-            sftp: SFTPClient = client.open_sftp()
+            
+            self._distribute_key_to_node(node, password_cache)
+    
+    def _distribute_key_to_node(self, node: Node, password_cache: dict[str, str]) -> None:
+        """Distribute SSH key to a single node."""
+        log.info(f"{node.emoji} Setting up {node.name} ({node.ip})")
+        
+        client = self._get_ssh_client_with_fallback(node, password_cache)
+        
+        try:
+            self._setup_remote_ssh_directory(client)
+            self._upload_keys_to_node(client, node)
+            self._configure_authorized_keys(client)
+            
+            log.debug(f"{node.emoji} Keys distributed for {node.name}")
+        finally:
+            client.close()
+    
+    def _get_ssh_client_with_fallback(self, node: Node, password_cache: dict[str, str]) -> SSHClient:
+        """Get SSH client, falling back to password auth if key auth fails."""
+        try:
+            return self.get_ssh_client(node.ip, node.user)
+        except NetworkConnectionError:
+            log.debug(f"{node.emoji} Key auth failed, trying password auth")
+            pw = password_cache.get(node.user)
+            if pw is None:
+                pw = getpass.getpass(prompt=f"🔑 Enter password for {node.user}@{node.ip}: ")
+                password_cache[node.user] = pw
+            
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(node.ip, username=node.user, password=pw, timeout=5.0)
+            return client
+    
+    def _setup_remote_ssh_directory(self, client: SSHClient) -> None:
+        """Ensure remote ~/.ssh directory exists with correct permissions."""
+        client.exec_command("mkdir -p ~/.ssh && chmod 700 ~/.ssh")
+    
+    def _upload_keys_to_node(self, client: SSHClient, node: Node) -> None:
+        """Upload SSH keys to remote node via SFTP."""
+        sftp: SFTPClient = client.open_sftp()
+        try:
             remote_priv = f".ssh/{self.config.shared_key_name}"
             remote_pub = f".ssh/{self.config.shared_key_name}.pub"
+            
             log.debug(f"{node.emoji} Uploading private key → {remote_priv}")
             sftp.put(self.config.key_path, remote_priv)
+            
             log.debug(f"{node.emoji} Uploading public key → {remote_pub}")
             sftp.put(self.config.pub_key_path, remote_pub)
+        finally:
             sftp.close()
-
-            # Add key to authorized_keys and set file permissions
-            chmod_cmd = (
-                f"cat $HOME/{remote_pub} >> $HOME/.ssh/authorized_keys && "
-                f"chmod 600 $HOME/.ssh/authorized_keys $HOME/{remote_priv}"
-            )
-            self._run_remote_command(client, chmod_cmd)
-            client.close()
-            log.debug(f"{node.emoji} Keys distributed for {node.name}")
+    
+    def _configure_authorized_keys(self, client: SSHClient) -> None:
+        """Add key to authorized_keys and set correct permissions."""
+        remote_priv = f".ssh/{self.config.shared_key_name}"
+        remote_pub = f".ssh/{self.config.shared_key_name}.pub"
+        
+        chmod_cmd = (
+            f"cat $HOME/{remote_pub} >> $HOME/.ssh/authorized_keys && "
+            f"chmod 600 $HOME/.ssh/authorized_keys $HOME/{remote_priv}"
+        )
+        self._run_remote_command(client, chmod_cmd)
 
     def _write_ssh_config(self):
         """Writes the SSH config file for all nodes."""
@@ -289,7 +322,7 @@ class NetworkManager:
         try:
             self.get_ssh_client(node.ip, node.user)
             return node.name, True, f"✅ {node.emoji} {node.name} ({node.ip}): SSH connection successful."
-        except Exception as e:
+        except NetworkConnectionError as e:
             return node.name, False, f"❌ {node.emoji} {node.name} ({node.ip}): SSH connection failed - {e}"
 
 

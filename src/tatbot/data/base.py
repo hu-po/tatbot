@@ -2,33 +2,38 @@
 
 import reprlib
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import yaml
 from pydantic import BaseModel
 
+from tatbot.utils.log import get_logger
+
+log = get_logger("data.base", "📄")
+
+
+def _numpy_representer(dumper, data):
+    """Custom representer for numpy arrays."""
+    if isinstance(data, np.ndarray):
+        return dumper.represent_list(data.tolist())
+    return dumper.represent_data(data)
+
+if not hasattr(yaml, '_numpy_representer_registered'):
+    yaml.add_representer(np.ndarray, _numpy_representer)
+    yaml._numpy_representer_registered = True
+
 
 class BaseCfg(BaseModel):
     """Base configuration class with utility methods."""
     
-
-    
-    def to_yaml(self, filepath: str = None) -> str:
+    def to_yaml(self, filepath: Optional[str] = None) -> str:
         """Convert model to YAML string or save to file."""
-        def numpy_representer(dumper, data):
-            """Custom representer for numpy arrays."""
-            if isinstance(data, np.ndarray):
-                return dumper.represent_list(data.tolist())
-            return dumper.represent_data(data)
         
-        # Add custom representer for numpy arrays
-        yaml.add_representer(np.ndarray, numpy_representer)
-        
-        # Use model_dump without mode='json' to avoid JSON serialization issues with numpy
         try:
             data = self.model_dump()
-        except Exception:
-            # If direct model_dump fails, try converting numpy arrays to lists first
+        except (ValueError, TypeError) as e:
+            log.debug(f"model_dump failed with {e}, trying numpy conversion")
             data = self._model_dump_with_numpy_conversion()
         
         yaml_str = yaml.dump(data, default_flow_style=False, sort_keys=False)

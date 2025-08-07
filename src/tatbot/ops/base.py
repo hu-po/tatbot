@@ -1,5 +1,5 @@
+import asyncio
 import logging
-import time
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator
 
@@ -43,12 +43,12 @@ class BaseOp:
                 - 'progress': float (0.0 to 1.0)
                 - 'message': str (status message)
         """
-        time.sleep(1)
+        await asyncio.sleep(1)
         yield {
             'progress': 0.5,
             'message': 'Starting dummy base operation...',
         }
-        time.sleep(1)
+        await asyncio.sleep(1)
         yield {
             'progress': 1.0,
             'message': 'Completed dummy base operation...',

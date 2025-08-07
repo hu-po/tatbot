@@ -14,18 +14,16 @@ from tatbot.data.urdf import URDF
 class AppConfig(BaseModel):
     model_config = {'arbitrary_types_allowed': True}
     
-    # Keep raw config data (pure data, no object instances)
     arms: dict
     cams: dict
     inks: dict
-    poses: Optional[Dict[str, Any]] = None  # Poses are loaded individually by Scene
-    scenes: dict  # Raw scene config data
+    poses: Optional[Dict[str, Any]] = None
+    scenes: dict
     skins: dict
     tags: dict
     urdf: dict
     
-    # Computed objects (instantiated in model_validator)
-    scene: Scene = None
+    scene: Optional[Scene] = None
     
     @model_validator(mode='after')
     def create_scene(self) -> 'AppConfig':

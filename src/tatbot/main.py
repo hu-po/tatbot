@@ -4,6 +4,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from tatbot.config_schema import AppConfig
 from tatbot.data.scene import Scene
+from tatbot.utils.exceptions import ConfigurationError
 
 
 def load_scene_from_config(cfg: DictConfig) -> Scene:
@@ -16,13 +17,10 @@ def compose_and_validate_scene(name: str = "default") -> Scene:
     """Compose a scene configuration and validate it."""
     from hydra.core.global_hydra import GlobalHydra
 
-    # Check if Hydra is already initialized (e.g., by MCP server)
     if GlobalHydra().is_initialized():
-        # Use the existing Hydra instance and compose with overrides
         cfg = compose(config_name="config", overrides=[f"scenes={name}"])
         return load_scene_from_config(cfg)
     else:
-        # Initialize Hydra if not already done
         with initialize(
             config_path="../conf", 
             version_base=None
@@ -41,7 +39,6 @@ def main(cfg: DictConfig) -> None:
     print("🚀 Tatbot starting with Hydra configuration")
     print("Configuration keys:", list(cfg.keys()))
     
-    # Validate the configuration using Pydantic
     try:
         scene = load_scene_from_config(cfg)
         print(f"✅ Scene loaded: {scene.name}")
@@ -49,9 +46,9 @@ def main(cfg: DictConfig) -> None:
         print(f"📷 Cameras: {len(scene.cams.realsenses)} RealSense, {len(scene.cams.ipcameras)} IP")
         print(f"🎨 Inks: {len(scene.inks.inkcaps)} inkcaps")
         print("✅ Configuration validated successfully!")
-    except Exception as e:
+    except (ValueError, TypeError, KeyError) as e:
         print(f"❌ Configuration validation failed: {e}")
-        raise
+        raise ConfigurationError(f"Failed to load scene configuration: {e}") from e
 
 
 if __name__ == "__main__":
