@@ -14,14 +14,14 @@ from tatbot.data.urdf import URDF
 class AppConfig(BaseModel):
     model_config = {'arbitrary_types_allowed': True}
     
-    arms: dict
-    cams: dict
-    inks: dict
+    arms: Dict[str, Any]
+    cams: Dict[str, Any]
+    inks: Dict[str, Any]
     poses: Optional[Dict[str, Any]] = None
-    scenes: dict
-    skins: dict
-    tags: dict
-    urdf: dict
+    scenes: Dict[str, Any]
+    skins: Dict[str, Any]
+    tags: Dict[str, Any]
+    urdf: Dict[str, Any]
     
     scene: Optional[Scene] = None
     

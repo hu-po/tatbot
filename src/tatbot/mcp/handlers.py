@@ -5,10 +5,18 @@ import concurrent.futures
 import json
 import os
 from pathlib import Path
-from typing import Callable, Dict
+from typing import Any, Callable, Dict, Optional, Union
 
 from mcp.server.fastmcp import Context
 
+from tatbot.utils.exceptions import (
+    ConfigurationError,
+    FileOperationError,
+    HardwareError,
+    NetworkConnectionError,
+    SerializationError,
+    TatbotError,
+)
 from tatbot.utils.log import get_logger
 
 log = get_logger("mcp.handlers", "🔌🛠️")
@@ -28,16 +36,15 @@ def get_available_tools() -> Dict[str, Callable]:
     return _REGISTRY.copy()
 
 
-def _parse_input_data(input_data, model_class):
+def _parse_input_data(input_data: Union[str, dict, Any], model_class: type) -> Any:
     """Parse input_data string or dict into the specified model class."""
     if isinstance(input_data, str):
         try:
-            # Parse JSON string into dict
             data_dict = json.loads(input_data) if input_data.strip() else {}
-        except json.JSONDecodeError as e:
-            log.error(f"Failed to parse JSON input_data: {e}")
+        except json.JSONDecodeError as json_error:
+            log.error(f"Failed to parse JSON input_data: {json_error}")
             log.error(f"Input was: {repr(input_data)}")
-            return model_class()
+            raise SerializationError(f"Invalid JSON input: {json_error}") from json_error
     elif isinstance(input_data, dict):
         data_dict = input_data.copy()
     elif isinstance(input_data, model_class):
@@ -55,15 +62,17 @@ def _parse_input_data(input_data, model_class):
     try:
         # Create model instance
         return model_class(**data_dict)
-    except (ValueError, TypeError) as e:
-        log.error(f"Failed to create {model_class.__name__} from data: {e}")
+    except (ValueError, TypeError) as validation_error:
+        log.error(f"Failed to create {model_class.__name__} from data: {validation_error}")
         log.error(f"Data was: {data_dict}")
         log.error(f"Expected fields: {list(model_class.model_fields.keys())}")
-        return model_class()
+        raise ConfigurationError(
+            f"Invalid configuration for {model_class.__name__}: {validation_error}"
+        ) from validation_error
 
 
 @mcp_handler
-async def run_op(input_data, ctx: Context):
+async def run_op(input_data: Union[str, dict], ctx: Context) -> dict:
     """Runs an operation, yields intermediate results, see available ops in tatbot.ops module.
     
     Parameters (JSON format):
@@ -109,7 +118,7 @@ async def run_op(input_data, ctx: Context):
                     total=1.0, 
                     message=str(serialized_result.get('message', 'Processing...'))
                 )
-            except Exception as serialize_error:
+            except (json.JSONEncodeError, TypeError, AttributeError) as serialize_error:
                 log.warning(f"Failed to serialize intermediate result: {serialize_error}")
                 # Extract only basic info for logging and reporting
                 progress = result.get('progress', 0.0) if isinstance(result, dict) else 0.0
@@ -144,8 +153,48 @@ async def run_op(input_data, ctx: Context):
         )
         # Use custom JSON encoder to handle any numpy arrays
         return json.loads(result.model_dump_json())
-    except Exception as e:
-        message = f"❌ Exception when running op: {str(e)}"
+    except ConfigurationError as config_error:
+        message = f"❌ Configuration error: {config_error}"
+        log.error(message)
+        result = RunOpResult(
+            message=message,
+            success=False,
+            op_name=parsed_input.op_name,
+            scene_name=parsed_input.scene_name
+        )
+        return json.loads(result.model_dump_json())
+    except (NetworkConnectionError, HardwareError) as hardware_error:
+        message = f"❌ Hardware/Network error: {hardware_error}"
+        log.error(message)
+        result = RunOpResult(
+            message=message,
+            success=False,
+            op_name=parsed_input.op_name,
+            scene_name=parsed_input.scene_name
+        )
+        return json.loads(result.model_dump_json())
+    except FileOperationError as file_error:
+        message = f"❌ File operation error: {file_error}"
+        log.error(message)
+        result = RunOpResult(
+            message=message,
+            success=False,
+            op_name=parsed_input.op_name,
+            scene_name=parsed_input.scene_name
+        )
+        return json.loads(result.model_dump_json())
+    except TatbotError as tatbot_error:
+        message = f"❌ Tatbot error: {tatbot_error}"
+        log.error(message)
+        result = RunOpResult(
+            message=message,
+            success=False,
+            op_name=parsed_input.op_name,
+            scene_name=parsed_input.scene_name
+        )
+        return json.loads(result.model_dump_json())
+    except Exception as unexpected_error:
+        message = f"❌ Unexpected error: {unexpected_error}"
         log.error(message)
         result = RunOpResult(
             message=message,
@@ -162,6 +211,7 @@ async def run_op(input_data, ctx: Context):
                 op.cleanup()
             except Exception as cleanup_error:
                 log.error(f"Error during op cleanup: {cleanup_error}")
+                # Don't re-raise cleanup errors as they shouldn't mask the main operation result
 
 
 @mcp_handler
@@ -490,12 +540,44 @@ async def convert_strokelist_to_batch(input_data, ctx: Context):
         )
         return json.loads(result.model_dump_json())
         
-    except Exception as e:
-        log.error(f"Error converting strokelist to batch: {e}")
+    except FileNotFoundError as file_error:
+        log.error(f"File not found during conversion: {file_error}")
         result = ConvertStrokeListResponse(
             strokebatch_base64="",
             success=False,
-            message=f"Conversion failed: {str(e)}"
+            message=f"File not found: {file_error}"
+        )
+        return json.loads(result.model_dump_json())
+    except PermissionError as perm_error:
+        log.error(f"Permission error during conversion: {perm_error}")
+        result = ConvertStrokeListResponse(
+            strokebatch_base64="",
+            success=False,
+            message=f"Permission error: {perm_error}"
+        )
+        return json.loads(result.model_dump_json())
+    except SerializationError as yaml_error:
+        log.error(f"YAML parsing error during conversion: {yaml_error}")
+        result = ConvertStrokeListResponse(
+            strokebatch_base64="",
+            success=False,
+            message=f"YAML parsing failed: {yaml_error}"
+        )
+        return json.loads(result.model_dump_json())
+    except TatbotError as tatbot_error:
+        log.error(f"Tatbot error during conversion: {tatbot_error}")
+        result = ConvertStrokeListResponse(
+            strokebatch_base64="",
+            success=False,
+            message=f"Tatbot error: {tatbot_error}"
+        )
+        return json.loads(result.model_dump_json())
+    except Exception as unexpected_error:
+        log.error(f"Unexpected error converting strokelist to batch: {unexpected_error}")
+        result = ConvertStrokeListResponse(
+            strokebatch_base64="",
+            success=False,
+            message=f"Unexpected conversion error: {unexpected_error}"
         )
         return json.loads(result.model_dump_json())
 

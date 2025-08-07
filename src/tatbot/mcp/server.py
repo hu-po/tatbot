@@ -1,5 +1,8 @@
 """Generic MCP server with Hydra configuration support."""
 
+import socket
+import types
+from typing import List, Optional
 
 import hydra
 from mcp.server.fastmcp import FastMCP
@@ -7,12 +10,19 @@ from omegaconf import DictConfig, OmegaConf
 
 from tatbot.mcp import handlers
 from tatbot.mcp.models import MCPSettings
+from tatbot.utils.exceptions import NetworkConnectionError
 from tatbot.utils.log import get_logger
+
+
+class ServerConstants:
+    """Configuration constants for MCP server."""
+    CONFIG_PATH: str = "../../conf"
+    DEFAULT_CONFIG_NAME: str = "config"
 
 log = get_logger("mcp.server", "🔌")
 
 
-def _register_tools(mcp: FastMCP, tool_names: list[str] | None, node_name: str, namespace_tools: bool = True):
+def _register_tools(mcp: FastMCP, tool_names: Optional[List[str]], node_name: str, namespace_tools: bool = True) -> None:
     """Register tools dynamically based on configuration."""
     available_tools = handlers.get_available_tools()
     tools_to_register = tool_names or list(available_tools.keys())
@@ -28,7 +38,6 @@ def _register_tools(mcp: FastMCP, tool_names: list[str] | None, node_name: str, 
                 registered_name = f"{node_name}_{tool_name}"
                 
                 # Create a new function with the namespaced name but same signature
-                import types
                 wrapper_fn = types.FunctionType(
                     tool_fn.__code__,
                     tool_fn.__globals__,
@@ -52,17 +61,16 @@ def _register_tools(mcp: FastMCP, tool_names: list[str] | None, node_name: str, 
 
 @hydra.main(
     version_base=None, 
-    config_path="../../conf", 
-    config_name="config"
+    config_path=ServerConstants.CONFIG_PATH, 
+    config_name=ServerConstants.DEFAULT_CONFIG_NAME
 )
-def main(cfg: DictConfig):
+def main(cfg: DictConfig) -> None:
     """Main server entry point with Hydra configuration."""
     # Extract MCP settings from Hydra config
     mcp_config = OmegaConf.to_object(cfg.mcp)
     settings = MCPSettings(**mcp_config)
     
     # Get node name from Hydra config, fallback to hostname
-    import socket
     node_name = cfg.get("node", socket.gethostname())
     
     log.info(f"Starting MCP server for node: {node_name}")
@@ -87,9 +95,15 @@ def main(cfg: DictConfig):
             from tatbot.utils.net import NetworkManager
             net = NetworkManager()
             return "\n".join(f"{node.emoji} {node.name}" for node in net.nodes)
-        except Exception as e:
-            log.error(f"Failed to get nodes: {e}")
-            return f"Error getting nodes: {e}"
+        except ImportError as import_error:
+            log.error(f"Failed to import NetworkManager: {import_error}")
+            return f"NetworkManager not available: {import_error}"
+        except NetworkConnectionError as network_error:
+            log.error(f"Network connection error: {network_error}")
+            return f"Network error: {network_error}"
+        except Exception as unexpected_error:
+            log.error(f"Unexpected error getting nodes: {unexpected_error}")
+            return f"Unexpected error: {unexpected_error}"
     
 
     

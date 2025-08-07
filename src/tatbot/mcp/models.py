@@ -1,6 +1,7 @@
 """Pydantic models for MCP requests and responses."""
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, List, Optional
@@ -8,6 +9,16 @@ from typing import Any, List, Optional
 import numpy as np
 from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings
+
+
+class MCPConstants:
+    """Configuration constants for MCP models."""
+    DEFAULT_HOST: str = "0.0.0.0"
+    DEFAULT_PORT: int = 8000
+    DEFAULT_TRANSPORT: str = "streamable-http"
+    DEFAULT_ALLOWED_IPS: List[str] = ["127.0.0.1", "::1"]
+    DEFAULT_VERSION: str = "1.0"
+    SCENES_CONFIG_PATH: str = "~/tatbot/src/conf/scenes"
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -31,9 +42,9 @@ class NumpyEncoder(json.JSONEncoder):
 
 class MCPSettings(BaseSettings):
     """MCP server settings with environment variable overrides."""
-    host: str = "0.0.0.0"
-    port: int = 8000
-    transport: str = "streamable-http"
+    host: str = MCPConstants.DEFAULT_HOST
+    port: int = MCPConstants.DEFAULT_PORT
+    transport: str = MCPConstants.DEFAULT_TRANSPORT
     debug: bool = False
     extras: List[str] = []
     tools: List[str] = []
@@ -43,7 +54,7 @@ class MCPSettings(BaseSettings):
     
     # Security settings
     auth_token: Optional[str] = None
-    ip_allowlist: List[str] = ["127.0.0.1", "::1"]  # localhost by default
+    ip_allowlist: List[str] = MCPConstants.DEFAULT_ALLOWED_IPS
     require_auth: bool = True
 
     class Config:
