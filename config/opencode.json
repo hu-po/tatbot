@@ -29,28 +29,12 @@
                     "reasoning": true
                 }
             }
-        },
-        "google": {
-            "options": {
-              "apiKey": "{env:GEMINI_API_KEY}"
-            },
-            "models": {
-                "gemini-2.5-pro": {
-                    "tool_call": true,
-                    "reasoning": true
-                }
-            }
         }
     },
     "mcp": {
         "tatbot.ook": {
           "type": "remote",
           "url": "http://192.168.1.90:8000/mcp",
-          "enabled": true
-        },
-        "tatbot.oop": {
-          "type": "remote",
-          "url": "http://192.168.1.51:8000/mcp",
           "enabled": true
         },
         "tatbot.ojo": {
@@ -61,16 +45,6 @@
         "tatbot.trossen-ai": {
           "type": "remote",
           "url": "http://192.168.1.97:8000/mcp",
-          "enabled": true
-        },
-        "tatbot.rpi1": {
-          "type": "remote",
-          "url": "http://192.168.1.98:8000/mcp",
-          "enabled": true
-        },
-        "tatbot.rpi2": {
-          "type": "remote",
-          "url": "http://192.168.1.99:8000/mcp",
           "enabled": true
         }
       }
