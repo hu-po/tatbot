@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import yaml
+from mcp.server.fastmcp import Context
 from pydantic import ValidationError
 
 from tatbot.tools.base import (
@@ -78,7 +79,7 @@ def tool(
         @wraps(func)
         async def wrapper(
             input_data: Union[str, dict, Any] = None,
-            mcp_context=None,
+            ctx: Context = None,
             **_extra_kwargs,
         ):
             """Wrapper that provides unified input parsing and error handling.
@@ -90,11 +91,11 @@ def tool(
             """
             
             # Extract node name from MCP context
-            server_name = mcp_context.fastmcp.name
+            server_name = ctx.fastmcp.name
             node_name = server_name.split(".", 1)[1] if "." in server_name else server_name
             
             # Create unified context
-            ctx = ToolContext(node_name=node_name, mcp_context=mcp_context)
+            tool_ctx = ToolContext(node_name=node_name, mcp_context=ctx)
             
             try:
                 # Parse input data
@@ -104,7 +105,7 @@ def tool(
                 if hasattr(parsed_input, 'debug') and parsed_input.debug:
                     log.setLevel(logging.DEBUG)
                 
-                await ctx.info(f"Running tool: {tool_name} on {node_name}")
+                await tool_ctx.info(f"Running tool: {tool_name} on {node_name}")
                 
                 # Check node availability
                 if not definition.is_available_on_node(node_name):
@@ -123,12 +124,12 @@ def tool(
                 
                 # Execute the tool
                 result = None
-                async for progress_data in func(parsed_input, ctx):
+                async for progress_data in func(parsed_input, tool_ctx):
                     if isinstance(progress_data, dict):
                         # Handle progress reports
                         progress = progress_data.get('progress', 0.0)
                         message = str(progress_data.get('message', 'Processing...'))
-                        await ctx.report_progress(progress, message)
+                        await tool_ctx.report_progress(progress, message)
                     else:
                         # Final result
                         result = progress_data
@@ -155,14 +156,14 @@ def tool(
             except ConfigurationError as e:
                 error_msg = f"❌ Configuration error in {tool_name}: {e}"
                 log.error(error_msg)
-                await ctx.error(error_msg)
+                await tool_ctx.error(error_msg)
                 error_result = output_model(success=False, message=error_msg)
                 return json.loads(error_result.model_dump_json())
                 
             except Exception as e:
                 error_msg = f"❌ Unexpected error in {tool_name}: {e}"
                 log.error(error_msg)
-                await ctx.error(error_msg)
+                await tool_ctx.error(error_msg)
                 error_result = output_model(success=False, message=error_msg)
                 return json.loads(error_result.model_dump_json())
         
