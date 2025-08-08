@@ -42,7 +42,9 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "conf", "nodes.yaml")
-META_PATH = os.path.join(BASE_DIR, "conf", "nodes_meta.yaml")
+# Use metadata file that lives alongside this TUI implementation so users
+# don't need to modify their existing config directory.
+META_PATH = os.path.join(os.path.dirname(__file__), "nodes_meta.yaml")
 REFRESH_SECS = 2.0
 
 

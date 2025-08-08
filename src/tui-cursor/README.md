@@ -44,7 +44,7 @@ nodes:
     user: oop
 ```
 
-Optionally provide hardware metadata in `src/conf/nodes_meta.yaml` to enrich the UI (totals shown even if remote queries fail):
+Optionally provide hardware metadata in `src/tui-cursor/nodes_meta.yaml` (this repo folder) to enrich the UI (totals shown even if remote queries fail). This file is used automatically; you do not need to modify `src/conf`:
 
 ```yaml
 nodes_meta:
@@ -58,7 +58,7 @@ nodes_meta:
     gpu_count: 0
 ```
 
-You can start from the template at `src/tui-cursor/nodes_meta.yaml` by copying it to `src/conf/nodes_meta.yaml` and editing values per your hardware.
+Edit `src/tui-cursor/nodes_meta.yaml` directly to match your hardware.
 
 ### Notes
 - Nodes without GPUs or without `nvidia-smi` installed show GPU as `n/a`.
