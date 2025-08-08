@@ -91,8 +91,13 @@ def tool(
             """
             
             # Extract node name from MCP context
-            server_name = ctx.fastmcp.name
-            node_name = server_name.split(".", 1)[1] if "." in server_name else server_name
+            if ctx and hasattr(ctx, 'fastmcp') and ctx.fastmcp:
+                server_name = ctx.fastmcp.name
+                node_name = server_name.split(".", 1)[1] if "." in server_name else server_name
+            else:
+                # Fallback to hostname if context is not available
+                import socket
+                node_name = socket.gethostname()
             
             # Create unified context
             tool_ctx = ToolContext(node_name=node_name, mcp_context=ctx)
