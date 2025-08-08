@@ -16,6 +16,7 @@ class CpuStats:
 class GpuStats:
     mem_used_mb: int
     mem_total_mb: int
+    gpu_count: int = 1
 
 
 @dataclass
@@ -82,16 +83,18 @@ def get_remote_gpu_stats(host: str, user: str) -> Optional[GpuStats]:
         if result.returncode == 0 and result.stdout.strip():
             used_sum = 0
             total_sum = 0
+            count = 0
             for line in result.stdout.strip().splitlines():
                 parts = [p.strip() for p in line.split(",")]
                 if len(parts) >= 2:
                     try:
                         used_sum += int(parts[0])
                         total_sum += int(parts[1])
+                        count += 1
                     except ValueError:
                         continue
             if total_sum > 0:
-                return GpuStats(mem_used_mb=used_sum, mem_total_mb=total_sum)
+                return GpuStats(mem_used_mb=used_sum, mem_total_mb=total_sum, gpu_count=max(1, count))
     except Exception:
         pass
     return None

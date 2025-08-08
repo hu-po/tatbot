@@ -44,6 +44,22 @@ nodes:
     user: oop
 ```
 
+Optionally provide hardware metadata in `src/conf/nodes_meta.yaml` to enrich the UI (totals shown even if remote queries fail):
+
+```yaml
+nodes_meta:
+  ook:
+    cpu_cores: 16
+    gpu_total_mb: 24576
+    gpu_count: 1
+  rpi1:
+    cpu_cores: 4
+    gpu_total_mb: 0
+    gpu_count: 0
+```
+
+You can start from the template at `src/tui-cursor/nodes_meta.yaml` by copying it to `src/conf/nodes_meta.yaml` and editing values per your hardware.
+
 ### Notes
 - Nodes without GPUs or without `nvidia-smi` installed show GPU as `n/a`.
 - Offline nodes show `-` for metrics and are colored red.

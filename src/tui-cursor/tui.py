@@ -8,6 +8,7 @@ from typing import List
 try:  # when executed as a package (if the folder name were importable)
     from .nodes_config import Node, parse_nodes_config  # type: ignore
     from .remote_stats import NodeStats, get_node_stats  # type: ignore
+    from .nodes_meta import NodeMeta, parse_nodes_meta  # type: ignore
 except Exception:
     # When run directly as: python src/tui-cursor/tui.py
     import importlib.util
@@ -28,32 +29,48 @@ except Exception:
 
     nodes_config = _import_by_path("nodes_config", "nodes_config.py")
     remote_stats = _import_by_path("remote_stats", "remote_stats.py")
+    nodes_meta = _import_by_path("nodes_meta", "nodes_meta.py")
 
     parse_nodes_config = nodes_config.parse_nodes_config
     Node = nodes_config.Node
     get_node_stats = remote_stats.get_node_stats
     NodeStats = remote_stats.NodeStats
+    parse_nodes_meta = nodes_meta.parse_nodes_meta
+    NodeMeta = nodes_meta.NodeMeta
 
 import os
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "conf", "nodes.yaml")
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+CONFIG_PATH = os.path.join(BASE_DIR, "conf", "nodes.yaml")
+META_PATH = os.path.join(BASE_DIR, "conf", "nodes_meta.yaml")
 REFRESH_SECS = 2.0
 
 
-def format_cpu(stats: NodeStats) -> str:
+def format_cpu(stats: NodeStats, meta: 'NodeMeta | None') -> str:
     if not stats.online:
-        return "-"
+        return f"- ({meta.cpu_cores} cores)" if meta and meta.cpu_cores else "-"
     if not stats.cpu:
-        return "n/a"
-    return f"{stats.cpu.load_1:.2f} {stats.cpu.load_5:.2f} {stats.cpu.load_15:.2f}"
+        return f"n/a ({meta.cpu_cores} cores)" if meta and meta.cpu_cores else "n/a"
+    suffix = f" ({meta.cpu_cores} cores)" if meta and meta.cpu_cores else ""
+    return f"{stats.cpu.load_1:.2f} {stats.cpu.load_5:.2f} {stats.cpu.load_15:.2f}{suffix}"
 
 
-def format_gpu(stats: NodeStats) -> str:
+def format_gpu(stats: NodeStats, meta: 'NodeMeta | None') -> str:
     if not stats.online:
+        if meta and meta.gpu_total_mb:
+            gcount = f"/{meta.gpu_count}g" if (meta.gpu_count and meta.gpu_count > 1) else ""
+            return f"-/{meta.gpu_total_mb} MB{gcount}"
         return "-"
     if not stats.gpu:
+        if meta and meta.gpu_total_mb:
+            gcount = f"/{meta.gpu_count}g" if (meta.gpu_count and meta.gpu_count > 1) else ""
+            return f"n/a/{meta.gpu_total_mb} MB{gcount}"
         return "n/a"
-    return f"{stats.gpu.mem_used_mb}/{stats.gpu.mem_total_mb} MB"
+    gcount = f"/{stats.gpu.gpu_count}g" if (stats.gpu.gpu_count and stats.gpu.gpu_count > 1) else ""
+    total = stats.gpu.mem_total_mb or (meta.gpu_total_mb if meta else None)
+    if total is None:
+        return f"{stats.gpu.mem_used_mb}/? MB"
+    return f"{stats.gpu.mem_used_mb}/{total} MB{gcount}"
 
 
 def draw_header(stdscr, title: str) -> None:
@@ -65,29 +82,34 @@ def draw_header(stdscr, title: str) -> None:
     stdscr.attroff(curses.color_pair(2))
 
 
-def draw_table(stdscr, nodes: List[Node], node_stats: dict[str, NodeStats], last_updated: float) -> None:
+def draw_table(stdscr, nodes: List[Node], node_stats: dict[str, NodeStats], metas: dict[str, NodeMeta], last_updated: float) -> None:
     height, width = stdscr.getmaxyx()
 
     # Column widths
     col_name = 16
     col_ip = 16
     col_status = 8
-    col_cpu = 20
-    col_gpu = 16
+    col_cpu = 26
+    col_gpu = 22
 
     header_y = 2
     stdscr.attron(curses.A_BOLD)
-    stdscr.addstr(header_y, 1, f"{'Node':<{col_name}} {'IP':<{col_ip}} {'On?':<{col_status}} {'CPU load (1/5/15)':<{col_cpu}} {'GPU mem':<{col_gpu}}")
+    stdscr.addstr(header_y, 1, f"{'Node':<{col_name}} {'IP':<{col_ip}} {'On?':<{col_status}} {'CPU load (1/5/15)':<{col_cpu}} {'GPU mem (used/total)':<{col_gpu}}")
     stdscr.attroff(curses.A_BOLD)
 
     row_y = header_y + 2
     for node in nodes:
         stats = node_stats.get(node.name)
+        meta = metas.get(node.name)
         status_txt = "on" if (stats and stats.online) else "off"
         color = curses.color_pair(3) if status_txt == "on" else curses.color_pair(1)
 
         stdscr.attron(color)
-        stdscr.addstr(row_y, 1, f"{node.emoji} {node.name:<{col_name-2}} {node.ip:<{col_ip}} {status_txt:<{col_status}} {format_cpu(stats) if stats else '-':<{col_cpu}} {format_gpu(stats) if stats else '-':<{col_gpu}}")
+        stdscr.addstr(
+            row_y,
+            1,
+            f"{node.emoji} {node.name:<{col_name-2}} {node.ip:<{col_ip}} {status_txt:<{col_status}} {format_cpu(stats, meta) if stats else (format_cpu(NodeStats(False, None, None), meta) if meta else '-'):<{col_cpu}} {format_gpu(stats, meta) if stats else (format_gpu(NodeStats(False, None, None), meta) if meta else '-'):<{col_gpu}}",
+        )
         stdscr.attroff(color)
         row_y += 1
         if row_y >= height - 2:
@@ -110,13 +132,14 @@ def main(stdscr):
     curses.init_pair(3, curses.COLOR_GREEN, -1)
 
     nodes = parse_nodes_config(CONFIG_PATH)
+    metas = parse_nodes_meta(META_PATH)
     node_stats: dict[str, NodeStats] = {n.name: get_node_stats(n.ip, n.user) for n in nodes}
     last_updated = time.time()
 
     while True:
         stdscr.erase()
         draw_header(stdscr, "Tatbot Nodes")
-        draw_table(stdscr, nodes, node_stats, last_updated)
+        draw_table(stdscr, nodes, node_stats, metas, last_updated)
         stdscr.refresh()
 
         # Non-blocking key read with timeout for refresh

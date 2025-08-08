@@ -1,0 +1,31 @@
+# Optional metadata to enrich the TUI when remote queries are unavailable
+# and to display totals like CPU core count and GPU VRAM.
+#
+# Place this file at src/conf/nodes_meta.yaml (this copy is a template).
+# You can copy it there and customize per your setup.
+
+nodes_meta:
+  ook:
+    cpu_cores: 16
+    gpu_total_mb: 24576
+    gpu_count: 1
+  oop:
+    cpu_cores: 12
+    gpu_total_mb: 0
+    gpu_count: 0
+  ojo:
+    cpu_cores: 8
+    gpu_total_mb: 12288
+    gpu_count: 1
+  rpi1:
+    cpu_cores: 4
+    gpu_total_mb: 0
+    gpu_count: 0
+  rpi2:
+    cpu_cores: 4
+    gpu_total_mb: 0
+    gpu_count: 0
+  trossen-ai:
+    cpu_cores: 24
+    gpu_total_mb: 24576
+    gpu_count: 1
