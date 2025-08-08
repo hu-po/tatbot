@@ -49,9 +49,6 @@ class MCPSettings(BaseSettings):
     extras: List[str] = []
     tools: List[str] = []
     
-    # Tool naming settings
-    namespace_tools: bool = True  # Prefix tools with node name to avoid conflicts
-    
     # Security settings
     auth_token: Optional[str] = None
     ip_allowlist: List[str] = MCPConstants.DEFAULT_ALLOWED_IPS

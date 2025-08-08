@@ -284,7 +284,7 @@ This module implements the server for the **M**ulti-agent **C**ommand **P**latfo
 
 -   **Purpose**: The main entry point for the MCP server.
 -   **`main`**: The Hydra-decorated main function. It parses the configuration, creates a `FastMCP` instance, registers the appropriate tools, and starts the server.
--   **`_register_tools`**: A helper function that dynamically registers tool functions from `handlers.py` with the MCP instance. It supports "namespacing" tools, where a tool's name is prefixed with the node's name (e.g., `ook_run_op`). This is crucial for avoiding name collisions in a multi-node system where different nodes might expose a tool with the same base name.
+-   **`_register_tools`**: A helper function that dynamically registers tool functions from `handlers.py` with the MCP instance. Tools are registered with their original names, and node differentiation is handled through the MCP server configuration where each node has a unique server name.
 
 #### `handlers.py`
 
@@ -314,7 +314,7 @@ This module implements the server for the **M**ulti-agent **C**ommand **P**latfo
 2.  **Configuration**: The behavior of the server is controlled by `conf/mcp/default.yaml`. You can specify the host, port, and, most importantly, which `tools` should be enabled for this specific server instance.
 3.  **Client Interaction**: A client (like a UI or a script) connects to the server's host and port. It can then call the registered tools by name, passing parameters as a JSON object that conforms to the corresponding input model in `models.py`.
 4.  **Running an Operation**: To run a robot task, a client would call the `run_op` tool, specifying an `op_name` and a `scene_name`. The server then instantiates the appropriate `Op` from the `tatbot.ops` module and executes it, streaming back progress.
-5.  **Distributed System**: In a typical setup, you would run an MCP server on each node of the `tatbot` system (e.g., one on the main "head" computer, one on each arm controller). The `namespace_tools` feature ensures that you can, for example, call `ook_run_op` to run a stroke on the "ook" arm and `eek_run_op` to run one on the "eek" arm, even though both are handled by the same underlying `run_op` function on their respective nodes.
+5.  **Distributed System**: In a typical setup, you would run an MCP server on each node of the `tatbot` system (e.g., one on the main "head" computer, one on each arm controller). Tools are registered with their original names (e.g., `run_op`) and nodes are distinguished by their MCP server names in the client configuration (e.g., `tatbot.ook`, `tatbot.oop`), allowing you to call the same tool on different nodes through their respective servers.
 
 ---
 

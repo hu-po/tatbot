@@ -1,7 +1,6 @@
 """Generic MCP server with Hydra configuration support."""
 
 import socket
-import types
 from typing import List, Optional
 
 import hydra
@@ -22,39 +21,18 @@ class ServerConstants:
 log = get_logger("mcp.server", "🔌")
 
 
-def _register_tools(mcp: FastMCP, tool_names: Optional[List[str]], node_name: str, namespace_tools: bool = True) -> None:
+def _register_tools(mcp: FastMCP, tool_names: Optional[List[str]], node_name: str) -> None:
     """Register tools dynamically based on configuration."""
     available_tools = handlers.get_available_tools()
     tools_to_register = tool_names or list(available_tools.keys())
     
-    log.info(f"Registering tools for {node_name}: {tools_to_register} (namespace_tools={namespace_tools})")
+    log.info(f"Registering tools for {node_name}: {tools_to_register}")
     
     for tool_name in tools_to_register:
         if tool_name in available_tools:
             tool_fn = available_tools[tool_name]
-            
-            if namespace_tools:
-                # Create namespaced tool name: node_name_tool_name
-                registered_name = f"{node_name}_{tool_name}"
-                
-                # Create a new function with the namespaced name but same signature
-                wrapper_fn = types.FunctionType(
-                    tool_fn.__code__,
-                    tool_fn.__globals__,
-                    registered_name,
-                    tool_fn.__defaults__,
-                    tool_fn.__closure__
-                )
-                wrapper_fn.__annotations__ = tool_fn.__annotations__
-                wrapper_fn.__doc__ = tool_fn.__doc__
-                
-                # Register tool with namespaced name
-                mcp.tool()(wrapper_fn)
-                log.info(f"✅ Registered tool: {registered_name} (was {tool_name})")
-            else:
-                # Register tool with original name
-                mcp.tool()(tool_fn)
-                log.info(f"✅ Registered tool: {tool_name}")
+            mcp.tool()(tool_fn)
+            log.info(f"✅ Registered tool: {tool_name}")
         else:
             log.warning(f"⚠️ Tool {tool_name} not found in handlers")
 
@@ -85,7 +63,7 @@ def main(cfg: DictConfig) -> None:
     # FastMCP doesn't use HTTP middleware like FastAPI
     
     # Register tools
-    _register_tools(mcp, settings.tools, node_name, settings.namespace_tools)
+    _register_tools(mcp, settings.tools, node_name)
     
     # Add resource for listing nodes
     @mcp.resource("nodes://all")

@@ -57,7 +57,7 @@ The MCP system enables transparent cross-node GPU acceleration for stroke trajec
 **MCP Protocol Communication**
 - Cross-node requests use JSON-RPC 2.0 over StreamableHTTP transport
 - Proper session establishment with `initialize` → `notifications/initialized` handshake
-- Tool namespacing: `{node_name}_{tool_name}` (e.g., `ook_convert_strokelist_to_batch`)
+- Nodes are distinguished by their MCP server names (e.g., `ook`) with tools using original names
 - Retry logic with exponential backoff for fault tolerance
 
 ### Workflow Example
@@ -66,7 +66,7 @@ The MCP system enables transparent cross-node GPU acceleration for stroke trajec
 2. **GPU Detection**: `check_local_gpu()` returns `False` on `trossen-ai`
 3. **File Creation**: Strokes saved to `/home/trossen-ai/tatbot/nfs/recordings/align-*/strokes.yaml`
 4. **Path Translation**: GPUProxy translates to `/home/ook/tatbot/nfs/recordings/align-*/strokes.yaml`
-5. **Remote Conversion**: MCP call to `ook_convert_strokelist_to_batch` with translated paths
+5. **Remote Conversion**: MCP call to `convert_strokelist_to_batch` on `ook` server with translated paths
 6. **GPU Processing**: `ook` performs JAX-accelerated inverse kinematics solving
 7. **Result Storage**: Strokebatch saved to shared NFS at translated output path
 8. **Operation Continue**: `trossen-ai` loads strokebatch and continues robot operation

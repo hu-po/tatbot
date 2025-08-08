@@ -1,26 +1,26 @@
 {
   "mcpServers": {
-    "tatbot.ook": {
+    "ook": {
       "url": "http://192.168.1.90:8000/mcp",
       "transport": "streamable-http"
     },
-    "tatbot.oop": {
+    "oop": {
       "url": "http://192.168.1.51:8000/mcp",
       "transport": "streamable-http"
     },
-    "tatbot.ojo": {
+    "ojo": {
       "url": "http://192.168.1.96:8000/mcp",
       "transport": "streamable-http"
     },
-    "tatbot.trossen-ai": {
+    "trossen-ai": {
       "url": "http://192.168.1.97:8000/mcp",
       "transport": "streamable-http"
     },
-    "tatbot.rpi1": {
+    "rpi1": {
       "url": "http://192.168.1.98:8000/mcp",
       "transport": "streamable-http"
     },
-    "tatbot.rpi2": {
+    "rpi2": {
       "url": "http://192.168.1.99:8000/mcp",
       "transport": "streamable-http"
     }
