@@ -70,5 +70,11 @@ Edit `src/tui-cursor/nodes_meta.yaml` directly to match your hardware.
   ```bash
   ssh <user>@<ip> true
   ```
+- If you use a non-default SSH key or port, set environment variables before running the TUI:
+  ```bash
+  export TATBOT_TUI_SSH_KEY=~/.ssh/your_key
+  export TATBOT_TUI_SSH_PORT=22
+  python src/tui-cursor/tui.py
+  ```
 - Allow ICMP echo replies on nodes if online status always shows off.
 - For NVIDIA GPUs, install `nvidia-smi` (part of NVIDIA drivers).

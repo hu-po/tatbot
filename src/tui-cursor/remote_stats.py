@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -37,17 +38,35 @@ def run_local(command: list[str], timeout: float = 3.0) -> subprocess.CompletedP
     )
 
 
-def run_ssh(host: str, user: str, remote_cmd: str, timeout: float = 3.5) -> subprocess.CompletedProcess:
+def _ssh_base_cmd(host: str, user: str) -> list[str]:
     ssh_cmd = [
         "ssh",
         "-o", "BatchMode=yes",
         "-o", "StrictHostKeyChecking=accept-new",
         "-o", "UserKnownHostsFile=/dev/null",
-        "-o", "ConnectTimeout=2",
-        f"{user}@{host}",
-        remote_cmd,
+        "-o", "ConnectTimeout=3",
     ]
+    identity = os.environ.get("TATBOT_TUI_SSH_KEY")
+    if identity:
+        ssh_cmd += ["-i", identity]
+    port = os.environ.get("TATBOT_TUI_SSH_PORT")
+    if port:
+        ssh_cmd += ["-p", port]
+    ssh_cmd += [f"{user}@{host}"]
+    return ssh_cmd
+
+
+def run_ssh(host: str, user: str, remote_cmd: str, timeout: float = 4.0) -> subprocess.CompletedProcess:
+    ssh_cmd = _ssh_base_cmd(host, user) + [remote_cmd]
     return run_local(ssh_cmd, timeout=timeout)
+
+
+def check_ssh_online(host: str, user: str) -> bool:
+    try:
+        result = run_ssh(host, user, "true", timeout=2.5)
+        return result.returncode == 0
+    except Exception:
+        return False
 
 
 def ping_host(host: str, count: int = 1, timeout: float = 1.0) -> bool:
@@ -123,9 +142,10 @@ def get_remote_gpu_stats(host: str, user: str) -> Optional[GpuStats]:
 
 
 def get_node_stats(host: str, user: str) -> NodeStats:
-    online = ping_host(host)
-    if not online:
-        return NodeStats(online=False, cpu=None, gpu=None)
+    # Attempt remote probes regardless of ICMP reachability (some networks block ping)
     cpu = get_remote_cpu_stats(host, user)
     gpu = get_remote_gpu_stats(host, user)
-    return NodeStats(online=True, cpu=cpu, gpu=gpu)
+    online = (cpu is not None) or (gpu is not None)
+    if not online:
+        online = check_ssh_online(host, user) or ping_host(host)
+    return NodeStats(online=online, cpu=cpu, gpu=gpu)
