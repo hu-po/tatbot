@@ -16,5 +16,6 @@
 - (✅ **07/14/2025**) [software 0.4](https://x.com/tatbots/status/1944786516217057413)
 - (✅ **07/28/2025**) [hardware 0.4](https://x.com/tatbots/status/1949917412226453599) ([✨view in 3D](https://poly.cam/capture/745155c3-e251-4b7e-8b70-78574a7a19b6))
 - (✅ **07/30/2025**) [software 0.5.4](https://x.com/tatbots/status/1950637268039086507)
+- (✅ **08/07/2025**) [hardware 0.5](https://x.com/tatbots/status/1953555799005180407) ([✨view in 3D](https://poly.cam/capture/ad7c1544-fca2-48d8-acf8-a94d328fc5c4))
 - (🚧 **Q3 2025**) first human tattoo
 - (🚧 **Q4 2025**) paper
