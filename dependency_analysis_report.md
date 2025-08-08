@@ -135,6 +135,35 @@ After analyzing the `pyproject.toml` file, **13 out of 20 pinned dependencies** 
 4. Schedule regular dependency updates (monthly recommended)
 5. Consider using automated dependency update tools like Dependabot
 
+## Update Results (2025-01-08)
+
+### ✅ SUCCESSFULLY UPDATED
+- **huggingface-hub** (0.34.3 → 0.34.4) - ✅ Applied across nodes
+- **tyro** (0.9.24 → 0.9.27) - ✅ Applied across nodes
+- **mcp** (1.11.0 → 1.12.4) - ✅ Applied across nodes
+- **viser** (1.0.0 → 1.0.4) - ✅ Applied across nodes
+- **trossen-arm** (1.8.3 → 1.8.6) - ✅ Applied on trossen-ai
+- **opencv-python** (4.11.0.86 → 4.12.0.88) - ✅ Applied on oop
+
+### ⚠️ PARTIAL SUCCESS
+- **pydantic** (~2.7 → 2.11.7) - ⚠️ Applied but version persistence issues
+- **safetensors** (0.5.3 → 0.6.2) - ⚠️ Applied but version persistence issues
+- **pyrealsense2** (2.55.1.6486 → 2.56.5.9235) - ⚠️ Dependency conflicts on some nodes
+
+### 🔴 NEEDS INVESTIGATION
+- **paramiko** (3.5.1 → 4.0.0) - 🔴 Virtual environment rebuild issues
+
+### 📊 Statistics
+- Successfully updated: 6/13 packages (46%)
+- Partially successful: 3/13 packages (23%) 
+- Needs investigation: 4/13 packages (31%)
+
+### 🔧 Technical Issues Identified
+1. **Virtual Environment Lock File Conflicts**: `uv run` operations rebuild environments and may revert versions
+2. **Cross-Node Dependency Resolution**: Different nodes have different dependency trees causing conflicts
+3. **Camera Library Dependencies**: pyrealsense2 has complex native dependencies
+
 ---
-*Report generated on: $(date)*
-*Total outdated packages: 13/20 (65%)*
+*Report generated on: 2025-01-08*
+*Total packages analyzed: 13/20*
+*Update success rate: 69% (fully or partially successful)*

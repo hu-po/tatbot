@@ -20,11 +20,11 @@ from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.gen.gcode import make_gcode_strokes
 from tatbot.main import compose_and_validate_scene
-from tatbot.utils.gpu_conversion import GPUConversionService
-from tatbot.utils.gpu import check_local_gpu
 from tatbot.tools.base import ToolContext
 from tatbot.tools.registry import tool
 from tatbot.tools.robot.models import StrokeInput, StrokeOutput
+from tatbot.utils.gpu import check_local_gpu
+from tatbot.utils.gpu_conversion import GPUConversionService
 from tatbot.utils.log import LOG_FORMAT, TIME_FORMAT, get_logger
 
 log = get_logger("tools.stroke", "🖌️")

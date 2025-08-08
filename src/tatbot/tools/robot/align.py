@@ -17,11 +17,11 @@ from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.align import make_align_strokes
 from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.main import compose_and_validate_scene
-from tatbot.utils.gpu_conversion import GPUConversionService
-from tatbot.utils.gpu import check_local_gpu
 from tatbot.tools.base import ToolContext
 from tatbot.tools.registry import tool
 from tatbot.tools.robot.models import AlignInput, AlignOutput
+from tatbot.utils.gpu import check_local_gpu
+from tatbot.utils.gpu_conversion import GPUConversionService
 from tatbot.utils.log import TIME_FORMAT, get_logger
 
 log = get_logger("tools.align", "📐")
