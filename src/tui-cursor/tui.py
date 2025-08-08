@@ -50,30 +50,37 @@ REFRESH_SECS = 2.0
 
 def format_cpu(stats: NodeStats, meta: 'NodeMeta | None') -> str:
     if not stats.online:
-        return f"- ({meta.cpu_cores} cores)" if meta and meta.cpu_cores else "-"
+        return f"- ({meta.cpu_cores} cores) [M]" if meta and meta.cpu_cores else "-"
     if not stats.cpu:
-        return f"n/a ({meta.cpu_cores} cores)" if meta and meta.cpu_cores else "n/a"
+        return f"n/a ({meta.cpu_cores} cores) [M]" if meta and meta.cpu_cores else "n/a"
     cores = stats.cpu.cores or (meta.cpu_cores if meta else None)
     suffix = f" ({cores} cores)" if cores else ""
-    return f"{stats.cpu.load_1:.2f} {stats.cpu.load_5:.2f} {stats.cpu.load_15:.2f}{suffix}"
+    source = "[R]" if stats.cpu.cores is not None else ("[M]" if (cores and meta and meta.cpu_cores == cores) else "")
+    return f"{stats.cpu.load_1:.2f} {stats.cpu.load_5:.2f} {stats.cpu.load_15:.2f}{suffix} {source}".strip()
 
 
 def format_gpu(stats: NodeStats, meta: 'NodeMeta | None') -> str:
     if not stats.online:
         if meta and meta.gpu_total_mb:
             gcount = f"/{meta.gpu_count}g" if (meta.gpu_count and meta.gpu_count > 1) else ""
-            return f"-/{meta.gpu_total_mb} MB{gcount}"
+            total_gib = meta.gpu_total_mb / 1024.0
+            return f"-/ {total_gib:.1f} GiB{gcount} [M]"
         return "-"
     if not stats.gpu:
         if meta and meta.gpu_total_mb:
             gcount = f"/{meta.gpu_count}g" if (meta.gpu_count and meta.gpu_count > 1) else ""
-            return f"n/a/{meta.gpu_total_mb} MB{gcount}"
+            total_gib = meta.gpu_total_mb / 1024.0
+            return f"n/a/ {total_gib:.1f} GiB{gcount} [M]"
         return "n/a"
     gcount = f"/{stats.gpu.gpu_count}g" if (stats.gpu.gpu_count and stats.gpu.gpu_count > 1) else ""
     total = stats.gpu.mem_total_mb or (meta.gpu_total_mb if meta else None)
     if total is None:
-        return f"{stats.gpu.mem_used_mb}/? MB"
-    return f"{stats.gpu.mem_used_mb}/{total} MB{gcount}"
+        used_gib = stats.gpu.mem_used_mb / 1024.0
+        return f"{used_gib:.1f}/ ? GiB"
+    used_gib = stats.gpu.mem_used_mb / 1024.0
+    total_gib = total / 1024.0
+    source = "[R]" if stats.gpu.mem_total_mb else ("[M]" if (meta and meta.gpu_total_mb) else "")
+    return f"{used_gib:.1f}/ {total_gib:.1f} GiB{gcount} {source}".strip()
 
 
 def draw_header(stdscr, title: str) -> None:
@@ -97,7 +104,7 @@ def draw_table(stdscr, nodes: List[Node], node_stats: dict[str, NodeStats], meta
 
     header_y = 2
     stdscr.attron(curses.A_BOLD)
-    stdscr.addstr(header_y, 1, f"{'Node':<{col_name}} {'IP':<{col_ip}} {'On?':<{col_status}} {'CPU load (1/5/15)':<{col_cpu}} {'GPU mem (used/total)':<{col_gpu}}")
+    stdscr.addstr(header_y, 1, f"{'Node':<{col_name}} {'IP':<{col_ip}} {'On?':<{col_status}} {'CPU load (1/5/15)':<{col_cpu}} {'GPU (used/total)':<{col_gpu}}")
     stdscr.attroff(curses.A_BOLD)
 
     row_y = header_y + 2
