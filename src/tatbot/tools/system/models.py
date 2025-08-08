@@ -38,13 +38,3 @@ class ListNodesOutput(ToolOutput):
     count: int
 
 
-class ListOpsInput(ToolInput):
-    """Input for list_ops tool."""
-    node_name: Optional[str] = None
-
-
-class ListOpsOutput(ToolOutput):
-    """Output for list_ops tool."""
-    ops: List[str]
-    count: int
-    node_name: Optional[str] = None
