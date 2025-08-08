@@ -5,7 +5,21 @@ import os
 from dataclasses import dataclass
 from typing import Optional, List
 
-from .ssh_pool import get_pool
+# Support both package and direct-script imports
+try:
+    from .ssh_pool import get_pool  # type: ignore
+except Exception:
+    import importlib.util
+    import sys
+    _BASE_DIR_RS = os.path.dirname(__file__)
+    _SSH_PATH = os.path.join(_BASE_DIR_RS, "ssh_pool.py")
+    _spec = importlib.util.spec_from_file_location("ssh_pool", _SSH_PATH)
+    if _spec is None or _spec.loader is None:
+        raise ImportError("Cannot import ssh_pool")
+    _mod = importlib.util.module_from_spec(_spec)
+    sys.modules["ssh_pool"] = _mod
+    _spec.loader.exec_module(_mod)
+    get_pool = getattr(_mod, "get_pool")
 
 
 @dataclass

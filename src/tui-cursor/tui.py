@@ -102,8 +102,12 @@ def draw_header(stdscr, title: str) -> None:
     height, width = stdscr.getmaxyx()
     header = f" {title} (q: quit, r: refresh, i: interval) "
     stdscr.attron(curses.color_pair(2))
-    stdscr.addstr(0, 0, header[: max(0, width - 1)])
-    stdscr.addstr(0, len(header), " " * max(0, width - len(header) - 1))
+    try:
+        stdscr.addstr(0, 0, header[: max(0, width - 1)])
+        if len(header) < width:
+            stdscr.addstr(0, len(header), " " * max(0, width - len(header) - 1))
+    except curses.error:
+        pass
     stdscr.attroff(curses.color_pair(2))
 
 
@@ -111,16 +115,20 @@ def draw_table(stdscr, nodes: List[Node], node_stats: dict[str, NodeStats], meta
     height, width = stdscr.getmaxyx()
 
     # Column widths
-    col_name = 16
-    col_ip = 16
-    col_status = 8
-    col_cpu = 30
-    col_mem = 14
-    col_gpu = 28
+    col_name = 14
+    col_ip = 15
+    col_status = 5
+    col_cpu = 26
+    col_mem = 13
+    col_gpu = max(10, width - (1 + col_name + 1 + col_ip + 1 + col_status + 1 + col_cpu + 1 + col_mem + 3))
 
     header_y = 2
     stdscr.attron(curses.A_BOLD)
-    stdscr.addstr(header_y, 1, f"{'Node':<{col_name}} {'IP':<{col_ip}} {'On?':<{col_status}} {'CPU (1/5/15 & %)':<{col_cpu}} {'Mem':<{col_mem}} {'GPU (used/total)':<{col_gpu}}")
+    header_line = f"{'Node':<{col_name}} {'IP':<{col_ip}} {'On?':<{col_status}} {'CPU (1/5/15 & %)':<{col_cpu}} {'Mem':<{col_mem}} {'GPU':<{col_gpu}}"
+    try:
+        stdscr.addstr(header_y, 1, header_line[: max(0, width - 2)])
+    except curses.error:
+        pass
     stdscr.attroff(curses.A_BOLD)
 
     row_y = header_y + 2
@@ -131,15 +139,19 @@ def draw_table(stdscr, nodes: List[Node], node_stats: dict[str, NodeStats], meta
         color = curses.color_pair(3) if status_txt == "on" else curses.color_pair(1)
 
         stdscr.attron(color)
+        # Prepare safe display values
+        s = stats
         mem_txt = "-"
-        if stats and getattr(stats, 'memory', None):
-            m = stats.memory
+        if s and getattr(s, 'memory', None):
+            m = s.memory
             mem_txt = f"{m.used_bytes/1e9:.1f}/{m.total_bytes/1e9:.1f}G ({m.percent:.0f}%)"
-        stdscr.addstr(
-            row_y,
-            1,
-            f"{node.emoji} {node.name:<{col_name-2}} {node.ip:<{col_ip}} {status_txt:<{col_status}} {format_cpu(stats, meta) if stats else (format_cpu(NodeStats(False, None, None), meta) if meta else '-'):<{col_cpu}} {mem_txt:<{col_mem}} {format_gpu(stats, meta) if stats else (format_gpu(NodeStats(False, None, None), meta) if meta else '-'):<{col_gpu}}",
-        )
+        cpu_txt = format_cpu(s, meta) if s else (f"- ({meta.cpu_cores} cores) [M]" if (meta and meta.cpu_cores) else "-")
+        gpu_txt = format_gpu(s, meta) if s else (f"-/ {meta.gpu_total_mb/1024.0:.1f} GiB{'/' + str(meta.gpu_count) + 'g' if (meta and meta.gpu_count and meta.gpu_count>1) else ''} [M]" if (meta and meta.gpu_total_mb) else "-")
+        line = f"{node.emoji} {node.name:<{col_name-2}} {node.ip:<{col_ip}} {status_txt:<{col_status}} {cpu_txt:<{col_cpu}} {mem_txt:<{col_mem}} {gpu_txt:<{col_gpu}}"
+        try:
+            stdscr.addstr(row_y, 1, line[: max(0, width - 2)])
+        except curses.error:
+            pass
         stdscr.attroff(color)
         row_y += 1
         if row_y >= height - 2:
@@ -149,8 +161,12 @@ def draw_table(stdscr, nodes: List[Node], node_stats: dict[str, NodeStats], meta
     ts = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_updated))
     footer = f" Last updated: {ts} | Interval: {interval:.0f}s "
     stdscr.attron(curses.color_pair(2))
-    stdscr.addstr(height - 1, 0, footer[: max(0, width - 1)])
-    stdscr.addstr(height - 1, len(footer), " " * max(0, width - len(footer) - 1))
+    try:
+        stdscr.addstr(height - 1, 0, footer[: max(0, width - 1)])
+        if len(footer) < width:
+            stdscr.addstr(height - 1, len(footer), " " * max(0, width - len(footer) - 1))
+    except curses.error:
+        pass
     stdscr.attroff(curses.color_pair(2))
 
 
