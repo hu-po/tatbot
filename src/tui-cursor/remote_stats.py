@@ -10,6 +10,7 @@ class CpuStats:
     load_1: float
     load_5: float
     load_15: float
+    cores: Optional[int] = None
 
 
 @dataclass
@@ -59,17 +60,38 @@ def ping_host(host: str, count: int = 1, timeout: float = 1.0) -> bool:
 
 
 def get_remote_cpu_stats(host: str, user: str) -> Optional[CpuStats]:
-    # Try reading loadavg for universal availability
-    cmd = "cat /proc/loadavg | awk '{print $1,\"\",$2,\"\",$3}'"
+    # Read load averages
+    load_cmd = "cat /proc/loadavg | awk '{print $1,\"\",$2,\"\",$3}'"
+    load_1 = load_5 = load_15 = None
     try:
-        result = run_ssh(host, user, cmd)
+        result = run_ssh(host, user, load_cmd)
         if result.returncode == 0:
             parts = result.stdout.strip().split()
             if len(parts) >= 3:
-                return CpuStats(load_1=float(parts[0]), load_5=float(parts[1]), load_15=float(parts[2]))
+                load_1 = float(parts[0])
+                load_5 = float(parts[1])
+                load_15 = float(parts[2])
     except Exception:
         pass
-    return None
+
+    if load_1 is None or load_5 is None or load_15 is None:
+        return None
+
+    # Try to fetch core count
+    cores = None
+    try:
+        nproc = run_ssh(host, user, "nproc --all")
+        if nproc.returncode == 0:
+            cores = int(nproc.stdout.strip().splitlines()[0])
+        else:
+            # Fallback: count processors in /proc/cpuinfo
+            cpuinfo = run_ssh(host, user, "grep -c ^processor /proc/cpuinfo || true")
+            if cpuinfo.returncode == 0 and cpuinfo.stdout.strip():
+                cores = int(cpuinfo.stdout.strip().splitlines()[0])
+    except Exception:
+        pass
+
+    return CpuStats(load_1=load_1, load_5=load_5, load_15=load_15, cores=cores)
 
 
 def get_remote_gpu_stats(host: str, user: str) -> Optional[GpuStats]:

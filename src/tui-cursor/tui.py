@@ -53,7 +53,8 @@ def format_cpu(stats: NodeStats, meta: 'NodeMeta | None') -> str:
         return f"- ({meta.cpu_cores} cores)" if meta and meta.cpu_cores else "-"
     if not stats.cpu:
         return f"n/a ({meta.cpu_cores} cores)" if meta and meta.cpu_cores else "n/a"
-    suffix = f" ({meta.cpu_cores} cores)" if meta and meta.cpu_cores else ""
+    cores = stats.cpu.cores or (meta.cpu_cores if meta else None)
+    suffix = f" ({cores} cores)" if cores else ""
     return f"{stats.cpu.load_1:.2f} {stats.cpu.load_5:.2f} {stats.cpu.load_15:.2f}{suffix}"
 
 
