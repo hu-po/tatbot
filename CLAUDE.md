@@ -35,8 +35,10 @@ set -a; source .env; set +a
 # Kill existing MCP processes
 ./scripts/kill.sh
 
-# Restart mcp server on trossen-ai
+# Restart MCP servers on specific nodes (must SSH to each node)
 ssh trossen-ai "bash ~/tatbot/scripts/run_mcp.sh trossen-ai"
+ssh ook "bash ~/tatbot/scripts/run_mcp.sh ook"
+ssh oop "bash ~/tatbot/scripts/run_mcp.sh oop"
 
 # Monitor MCP logs
 tail -f ~/tatbot/nfs/mcp-logs/<node_name>.log
@@ -51,8 +53,8 @@ uv run python -m tatbot.main
 uv run python -m tatbot.main scenes=tatbotlogo
 
 # Run visualization tools
-uv run python -m tatbot.viz.stroke --scene=tatbotlogo
-uv run python -m tatbot.viz.teleop --scene=default
+uv run python -m tatbot.viz.stroke tatbotlogo
+uv run python -m tatbot.viz.teleop default
 ```
 
 ## Architecture
@@ -87,10 +89,12 @@ uv run python -m tatbot.viz.teleop --scene=default
    - Stroke batch processing for GPU acceleration (`batch.py`)
    - Ink dipping trajectory generation (`inkdip.py`)
 
-6. **Operations** (`src/tatbot/ops/`)
-   - Recording and playback workflows
-   - Stroke execution
-   - System reset procedures
+6. **Tools System** (`src/tatbot/tools/`)
+   - Unified decorator-based tool registration
+   - Robot operations: align, reset, sense, stroke
+   - System utilities: list_nodes, ping_nodes, list_scenes, list_recordings  
+   - GPU acceleration: convert_strokelist_to_batch
+   - Cross-node operation execution via MCP
 
 ### Node Topology
 
@@ -104,11 +108,13 @@ uv run python -m tatbot.viz.teleop --scene=default
 
 ### Data Flow
 
-1. **Design Generation**: Image → DrawingBotV3 → G-code files
-2. **Stroke Processing**: G-code → `make_gcode_strokes` → `StrokeList`
-3. **Surface Mapping**: __optional__ `StrokeList` → `map_strokes_to_mesh` → 3D mapped strokes → `StrokeList`
-4. **IK Solving**: `StrokeList` → `batch_ik` → `StrokeBatch` with joint angles
-5. **Execution**: `StrokeBatch` → `stroke_tool` → Robot arms via LeRobot interface
+1. **Design Generation**: Image → DrawingBotV3 → G-code files (stored in `nfs/designs/`)
+2. **Stroke Processing**: G-code → `make_gcode_strokes` → `StrokeList` 
+3. **Surface Mapping**: (optional) `StrokeList` → `map_strokes_to_mesh` → 3D mapped strokes → `StrokeList`
+4. **IK Solving**: `StrokeList` → `strokebatch_from_strokes` → `StrokeBatch` with joint angles
+   - Uses GPU acceleration via `convert_strokelist_to_batch` MCP tool 
+   - Automatic cross-node GPU routing when local GPU unavailable
+5. **Execution**: `StrokeBatch` → MCP `stroke` tool → Robot arms via Trossen control
 
 ## Key Design Patterns
 
@@ -124,19 +130,49 @@ uv run python -m tatbot.viz.teleop --scene=default
 ## Critical Files
 
 - `src/tatbot/main.py`: Entry point with Hydra initialization
-- `src/tatbot/mcp/server.py`: MCP server implementation
-- `src/tatbot/gen/batch.py`: Stroke batch processing
+- `src/tatbot/mcp/server.py`: MCP server implementation with dynamic tool registration
+- `src/tatbot/tools/`: Unified tools system with decorator-based registration
+  - `src/tatbot/tools/registry.py`: Tool registration and discovery
+  - `src/tatbot/tools/robot/`: Robot control tools (align, reset, sense, stroke)
+  - `src/tatbot/tools/gpu/`: GPU acceleration tools (convert_strokelist_to_batch) 
+  - `src/tatbot/tools/system/`: System utilities (list_nodes, ping_nodes)
+- `src/tatbot/gen/batch.py`: Stroke batch processing with JAX/GPU acceleration
 - `src/conf/config.yaml`: Root Hydra configuration
-- `pyproject.toml`: Project dependencies and metadata
+- `src/conf/mcp/`: Node-specific MCP server configurations
+- `pyproject.toml`: Project dependencies and metadata with optional extras
+
+## Available MCP Tools
+
+The following tools are available via MCP servers on different nodes:
+
+### Robot Control Tools (trossen-ai)
+- **`align_tool`**: Generate and execute alignment strokes for calibration
+- **`reset_tool`**: Reset robot to safe/ready position  
+- **`sense_tool`**: Capture environmental data from cameras and sensors
+- **`stroke_tool`**: Execute artistic strokes with ink on canvas
+
+### GPU Processing Tools (ook, oop when available)
+- **`convert_strokelist_to_batch`**: GPU-accelerated stroke trajectory conversion using JAX
+- **`reset_tool`**: Emergency robot reset capability
+
+### System Management Tools (oop, rpi1)  
+- **`list_nodes`**: List all available tatbot nodes
+- **`ping_nodes`**: Test connectivity to tatbot nodes
+
+### Cross-Node Operations
+- Robot operations automatically detect GPU availability and route conversion tasks
+- Uses NFS shared storage for seamless file access across nodes
+- JSON-RPC 2.0 over HTTP for reliable cross-node communication
 
 ## Important Notes
 
 - Always use `uv` for Python package management
-- MCP server changes require manual restart in Cursor UI (Ctrl+Shift+P > "View: OpenMCP Settings")
+- MCP server changes require restarting servers on each node via SSH (see commands above)
+- Cursor IDE MCP integration may require restart: Ctrl+Shift+P > "View: OpenMCP Settings"  
 - Distributed system - ensure network connectivity between nodes
 - Camera passwords and API keys stored in `.env` file
 - NFS mount required: `~/tatbot/nfs` shared across all nodes (served by rpi2)
-- Designs stored in `tatbot/nfs/designs/` directory
+- Designs stored in `nfs/designs/` directory with DrawingBotV3 project files
 - DrawingBotV3 configs in `config/dbv3/` for pen settings and G-code generation
 - Both RealSense cameras connected to trossen-ai via USB3
-- `tatbot/nfs/recordings/` directory for recordings of robot tools
+- `nfs/recordings/` directory contains timestamped robot operation recordings
