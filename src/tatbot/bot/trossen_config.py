@@ -42,13 +42,13 @@ class TrossenConfig:
     """IP address of the left arm."""
     arm_l_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen/arm_l.yaml")
     """YAML file containing left arm config."""
-    test_pose_name_l: str = "left/rest"
+    test_pose_name_l: str = "left/ready"
     """Test pose for the left arm (ArmPose)."""
     arm_r_ip: str = "192.168.1.2"
     """IP address of the right arm."""
     arm_r_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen/arm_r.yaml")
     """YAML file containing right arm config."""
-    test_pose_name_r: str = "right/rest"
+    test_pose_name_r: str = "right/ready"
     """Test pose for the right arm (ArmPose)."""
     test_tolerance: float = 0.1
     """Tolerance for the test pose."""
