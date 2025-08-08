@@ -5,7 +5,11 @@ host: "192.168.1.90"
 port: 8000
 extras: [bot, dev, gen, img, viz, gpu]
 tools:
-  - run_op
+  - reset
+  - align
+  - sense
+  - stroke
   - ping_nodes
   - list_nodes
+  - list_scenes
   - convert_strokelist_to_batch

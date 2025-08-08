@@ -13,7 +13,7 @@ from paramiko.client import SSHClient
 from paramiko.sftp_client import SFTPClient
 
 from tatbot.data.node import Node
-from tatbot.utils.exceptions import NetworkConnectionError, ConfigurationError
+from tatbot.utils.exceptions import NetworkConnectionError
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger("net", "🌐")

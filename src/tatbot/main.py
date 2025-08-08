@@ -1,4 +1,3 @@
-from typing import Union
 
 import hydra
 from hydra import compose, initialize

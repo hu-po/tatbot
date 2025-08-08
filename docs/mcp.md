@@ -2,7 +2,7 @@
 
 - **Unified Server**: A single `tatbot.mcp.server` now runs on all nodes.
 - **Hydra Configuration**: Node-specific behavior (host, port, tools) is defined in YAML files under `conf/mcp/`.
-- **Dynamic Tools**: Tools are now dynamically registered handlers, enabled/disabled via config.
+- **Unified Tools Architecture**: Tools are now in `tatbot.tools` with decorator-based registration (see [Tools Documentation](tools.md)).
 - **Pydantic Models**: All requests and responses are strongly typed with Pydantic for validation and clarity.
 
 ## Starting Servers
@@ -23,18 +23,28 @@ The behavior of each MCP server is defined by a corresponding YAML file in `src/
 
 These files control:
 - **`host` and `port`**: Network settings for the server.
-- **`tools`**: A list of which tools (from `tatbot.mcp.handlers`) are enabled on this node.
+- **`tools`**: A list of which tools are enabled on this node (tools auto-register from `tatbot.tools`).
 - **`extras`**: A list of optional dependency groups (from `pyproject.toml`) that should be installed on this node. The `run_mcp.sh` script automatically reads this list and uses `uv pip install` to ensure the correct dependencies are present before starting the server.
 
 ## Available Tools
-The available tools are defined as handlers in `tatbot.mcp.handlers` and enabled per-node in the `conf/mcp/` YAML files.
 
-- `run_op`: Executes a robot operation.
-- `ping_nodes`: Pings network nodes to check connectivity.
-- `list_scenes`: Lists available scenes from the config.
-- `list_nodes`: Lists all configured network nodes.
-- `list_ops`: Lists available operations, which can vary by node.
-- `convert_strokelist_to_batch`: GPU-accelerated stroke trajectory conversion (GPU nodes only).
+Tools are now defined in the unified `tatbot.tools` module using decorator-based registration. See the [Tools Documentation](tools.md) for detailed information.
+
+**System Tools** (available on all nodes):
+- `ping_nodes`: Test connectivity to tatbot nodes
+- `list_scenes`: List available scene configurations  
+- `list_nodes`: List all configured tatbot nodes
+
+**Robot Tools** (available on robot nodes):
+- `align`: Generate and execute alignment strokes for calibration
+- `stroke`: Execute artistic strokes on paper/canvas
+- `sense`: Capture environmental data (cameras, sensors)
+- `reset`: Reset robot to safe/ready position
+
+**GPU Tools** (available on GPU-enabled nodes only):
+- `convert_strokelist_to_batch`: GPU-accelerated stroke trajectory conversion
+
+Tools specify their node availability and requirements directly in their decorator, eliminating the need for separate mapping files.
 
 ## Cross-Node GPU Processing
 

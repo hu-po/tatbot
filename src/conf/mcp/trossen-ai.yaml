@@ -5,5 +5,10 @@ host: "192.168.1.97"
 port: 8000
 extras: [bot, cam, gen, img]
 tools:
-  - run_op
+  - reset
+  - align
+  - sense
+  - stroke
   - ping_nodes
+  - list_nodes
+  - list_scenes

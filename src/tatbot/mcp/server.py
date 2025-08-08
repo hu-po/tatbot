@@ -7,8 +7,8 @@ import hydra
 from mcp.server.fastmcp import FastMCP
 from omegaconf import DictConfig, OmegaConf
 
-from tatbot.mcp import handlers
 from tatbot.mcp.models import MCPSettings
+from tatbot.tools import get_tools_for_node
 from tatbot.utils.exceptions import NetworkConnectionError
 from tatbot.utils.log import get_logger
 
@@ -23,7 +23,7 @@ log = get_logger("mcp.server", "🔌")
 
 def _register_tools(mcp: FastMCP, tool_names: Optional[List[str]], node_name: str) -> None:
     """Register tools dynamically based on configuration."""
-    available_tools = handlers.get_available_tools()
+    available_tools = get_tools_for_node(node_name)
     tools_to_register = tool_names or list(available_tools.keys())
     
     log.info(f"Registering tools for {node_name}: {tools_to_register}")
@@ -34,7 +34,7 @@ def _register_tools(mcp: FastMCP, tool_names: Optional[List[str]], node_name: st
             mcp.tool()(tool_fn)
             log.info(f"✅ Registered tool: {tool_name}")
         else:
-            log.warning(f"⚠️ Tool {tool_name} not found in handlers")
+            log.warning(f"⚠️ Tool {tool_name} not found for node {node_name}")
 
 
 @hydra.main(

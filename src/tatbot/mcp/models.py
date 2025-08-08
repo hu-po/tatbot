@@ -1,7 +1,6 @@
 """Pydantic models for MCP requests and responses."""
 
 import json
-import logging
 import os
 from pathlib import Path
 from typing import Any, List, Optional
@@ -59,46 +58,6 @@ class MCPSettings(BaseSettings):
 
 
 # Request Models
-class RunOpInput(BaseModel):
-    """Input model for running robot operations."""
-    version: str = "1.0"  # Tool versioning
-    op_name: str
-    scene_name: str = "default"
-    debug: bool = False
-
-    @field_validator('op_name')
-    @classmethod
-    def validate_op_name(cls, v: str) -> str:
-        """Validate that the operation name exists in available operations."""
-        # Import here to avoid circular imports
-        from tatbot.ops import NODE_AVAILABLE_OPS
-
-        # Get all available operations across all nodes
-        all_ops = set()
-        for ops in NODE_AVAILABLE_OPS.values():
-            all_ops.update(ops)
-        
-        if v not in all_ops:
-            available_ops = sorted(list(all_ops))
-            raise ValueError(f"Invalid op_name: {v}. Available: {available_ops}")
-        return v
-
-    @field_validator('scene_name')
-    @classmethod
-    def validate_scene_name(cls, v: str) -> str:
-        """Validate that the scene name exists in the scenes directory."""
-        # Use the same logic as the list_scenes function
-        scenes_dir = Path("~/tatbot/src/conf/scenes").expanduser().resolve()
-        try:
-            available_scenes = [f.replace(".yaml", "") for f in os.listdir(str(scenes_dir)) if f.endswith(".yaml")]
-            if v not in available_scenes:
-                raise ValueError(f"Invalid scene_name: {v}. Available scenes: {available_scenes}")
-        except FileNotFoundError:
-            # If scenes directory doesn't exist, allow any scene name
-            pass
-        return v
-
-
 class PingNodesInput(BaseModel):
     """Input model for pinging network nodes."""
     version: str = "1.0"  # Tool versioning
@@ -137,10 +96,7 @@ class ListNodesInput(BaseModel):
     version: str = "1.0"  # Tool versioning
 
 
-class ListOpsInput(BaseModel):
-    """Input model for listing available operations."""
-    version: str = "1.0"  # Tool versioning
-    node_name: Optional[str] = None  # If provided, list ops for specific node only
+# ListOpsInput removed - no longer needed with unified tools system
 
 
 # Response Models
@@ -150,15 +106,6 @@ class BaseResponse(BaseModel):
     def model_dump_json(self, **kwargs) -> str:
         """Override to use custom JSON encoder for numpy arrays."""
         return json.dumps(self.model_dump(**kwargs), cls=NumpyEncoder, ensure_ascii=False)
-
-
-class RunOpResult(BaseResponse):
-    """Response model for robot operation execution."""
-    version: str = "1.0"  # Tool versioning
-    message: str
-    success: bool
-    op_name: str
-    scene_name: str
 
 
 class PingNodesResponse(BaseResponse):
@@ -183,12 +130,7 @@ class ListNodesResponse(BaseResponse):
     count: int
 
 
-class ListOpsResponse(BaseResponse):
-    """Response model for available operations listing."""
-    version: str = "1.0"  # Tool versioning
-    ops: List[str]
-    count: int
-    node_name: Optional[str] = None  # If filtered by node
+# ListOpsResponse removed - no longer needed with unified tools system
 
 
 class NodeInfo(BaseModel):
