@@ -260,7 +260,7 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
         
         log.info(f"✅ Sensing operation completed successfully. Captured {len(captured_files)} files.")
         
-        return SenseOutput(
+        yield SenseOutput(
             success=True,
             message=f"✅ Sensing completed successfully. Captured {len(captured_files)} files.",
             captured_files=captured_files
@@ -269,7 +269,7 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
     except Exception as e:
         error_msg = f"❌ Sensing operation failed: {e}"
         log.error(error_msg)
-        return SenseOutput(
+        yield SenseOutput(
             success=False,
             message=error_msg,
             captured_files=captured_files

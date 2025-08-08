@@ -247,7 +247,7 @@ async def align_tool(input_data: AlignInput, ctx: ToolContext):
         
         log.info("✅ Alignment operation completed successfully")
         
-        return AlignOutput(
+        yield AlignOutput(
             success=True,
             message=f"✅ Alignment completed successfully. Executed {len(strokes.strokes)} stroke pairs.",
             stroke_count=len(strokes.strokes)
@@ -256,7 +256,7 @@ async def align_tool(input_data: AlignInput, ctx: ToolContext):
     except Exception as e:
         error_msg = f"❌ Alignment operation failed: {e}"
         log.error(error_msg)
-        return AlignOutput(
+        yield AlignOutput(
             success=False,
             message=error_msg,
             stroke_count=0

@@ -83,11 +83,12 @@ async def convert_strokes(input_data: ConvertStrokesInput, ctx: ToolContext):
         node_cfg = cfg.mcp
     
     if "gpu" not in node_cfg.get("extras", []):
-        return ConvertStrokesOutput(
+        yield ConvertStrokesOutput(
             success=False,
             message=f"Node {ctx.node_name} does not have GPU support",
             strokebatch_base64=""
         )
+        return
     
     await ctx.info(f"Converting StrokeList to StrokeBatch on GPU node {ctx.node_name}")
     
@@ -131,7 +132,7 @@ async def convert_strokes(input_data: ConvertStrokesInput, ctx: ToolContext):
         
         yield {"progress": 1.0, "message": "GPU conversion successful"}
         
-        return ConvertStrokesOutput(
+        yield ConvertStrokesOutput(
             success=True,
             message=f"Successfully converted StrokeList to StrokeBatch at {input_data.strokebatch_file_path}",
             strokebatch_base64=""
@@ -139,28 +140,28 @@ async def convert_strokes(input_data: ConvertStrokesInput, ctx: ToolContext):
         
     except FileNotFoundError as e:
         log.error(f"File not found during conversion: {e}")
-        return ConvertStrokesOutput(
+        yield ConvertStrokesOutput(
             success=False,
             message=f"File not found: {e}",
             strokebatch_base64=""
         )
     except PermissionError as e:
         log.error(f"Permission error during conversion: {e}")
-        return ConvertStrokesOutput(
+        yield ConvertStrokesOutput(
             success=False,
             message=f"Permission error: {e}",
             strokebatch_base64=""
         )
     except TatbotError as e:
         log.error(f"Tatbot error during conversion: {e}")
-        return ConvertStrokesOutput(
+        yield ConvertStrokesOutput(
             success=False,
             message=f"Tatbot error: {e}",
             strokebatch_base64=""
         )
     except Exception as e:
         log.error(f"Unexpected error converting strokelist to batch: {e}")
-        return ConvertStrokesOutput(
+        yield ConvertStrokesOutput(
             success=False,
             message=f"Unexpected conversion error: {e}",
             strokebatch_base64=""

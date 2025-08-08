@@ -35,7 +35,7 @@ async def list_nodes(input_data: ListNodesInput, ctx: ToolContext):
         node_names = [node.name for node in net.nodes]
         log.info(f"Found {len(node_names)} nodes")
         
-        return ListNodesOutput(
+        yield ListNodesOutput(
             success=True,
             message=f"Found {len(node_names)} available nodes",
             nodes=node_names,
@@ -44,7 +44,7 @@ async def list_nodes(input_data: ListNodesInput, ctx: ToolContext):
         
     except Exception as e:
         log.error(f"Error listing nodes: {e}")
-        return ListNodesOutput(
+        yield ListNodesOutput(
             success=False,
             message=f"❌ Error listing nodes: {e}",
             nodes=[],

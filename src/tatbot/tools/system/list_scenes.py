@@ -33,12 +33,13 @@ async def list_scenes(input_data: ListScenesInput, ctx: ToolContext):
         scenes_dir = Path("~/tatbot/src/conf/scenes").expanduser().resolve()
         if not scenes_dir.exists():
             log.warning(f"Scenes directory not found: {scenes_dir}")
-            return ListScenesOutput(
+            yield ListScenesOutput(
                 success=True,
                 message="No scenes directory found",
                 scenes=[],
                 count=0
             )
+            return
         
         yield {"progress": 0.5, "message": "Reading scene files..."}
         
@@ -51,7 +52,7 @@ async def list_scenes(input_data: ListScenesInput, ctx: ToolContext):
         
         log.info(f"Found {len(scenes)} scenes")
         
-        return ListScenesOutput(
+        yield ListScenesOutput(
             success=True,
             message=f"Found {len(scenes)} available scenes",
             scenes=scenes,
@@ -60,7 +61,7 @@ async def list_scenes(input_data: ListScenesInput, ctx: ToolContext):
         
     except Exception as e:
         log.error(f"Error listing scenes: {e}")
-        return ListScenesOutput(
+        yield ListScenesOutput(
             success=False,
             message=f"❌ Error listing scenes: {e}",
             scenes=[],

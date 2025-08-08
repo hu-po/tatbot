@@ -42,20 +42,22 @@ async def ping_nodes(input_data: PingNodesInput, ctx: ToolContext):
         log.info(f"get_target_nodes returned: {len(target_nodes)} nodes, error: {error}")
         
         if error:
-            return PingNodesOutput(
+            yield PingNodesOutput(
                 success=False,
                 message=error,
                 details=[],
                 all_success=False
             )
+            return
         
         if not target_nodes:
-            return PingNodesOutput(
+            yield PingNodesOutput(
                 success=True,
                 message="No nodes to ping.",
                 details=[],
                 all_success=True
             )
+            return
 
         yield {"progress": 0.3, "message": f"Testing connectivity to {len(target_nodes)} nodes..."}
 
@@ -91,7 +93,7 @@ async def ping_nodes(input_data: PingNodesInput, ctx: ToolContext):
                 else "❌ Some nodes are not responding"
             )
 
-        return PingNodesOutput(
+        yield PingNodesOutput(
             success=True,
             message=header,
             details=sorted(messages),
@@ -100,7 +102,7 @@ async def ping_nodes(input_data: PingNodesInput, ctx: ToolContext):
         
     except Exception as e:
         log.error(f"Error pinging nodes: {e}")
-        return PingNodesOutput(
+        yield PingNodesOutput(
             success=False,
             message=f"❌ Error pinging nodes: {str(e)}",
             details=[],

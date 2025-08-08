@@ -397,7 +397,7 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
         
         log.info("✅ Stroke operation completed successfully")
         
-        return StrokeOutput(
+        yield StrokeOutput(
             success=True,
             message=f"✅ Stroke execution completed successfully. Executed {num_strokes} strokes.",
             stroke_count=num_strokes
@@ -405,15 +405,16 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
         
     except KeyboardInterrupt:
         log.info("🛑 Stroke operation interrupted by user")
-        return StrokeOutput(
+        yield StrokeOutput(
             success=False,
             message="🛑 Stroke operation interrupted by user",
             stroke_count=0
         )
+        return
     except Exception as e:
         error_msg = f"❌ Stroke operation failed: {e}"
         log.error(error_msg)
-        return StrokeOutput(
+        yield StrokeOutput(
             success=False,
             message=error_msg,
             stroke_count=0

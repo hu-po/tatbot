@@ -75,7 +75,7 @@ async def reset_tool(input_data: ResetInput, ctx: ToolContext):
         
         log.info("✅ Robot reset completed successfully")
         
-        return ResetOutput(
+        yield ResetOutput(
             success=True,
             message="✅ Robot reset to safe position completed"
         )
@@ -83,7 +83,7 @@ async def reset_tool(input_data: ResetInput, ctx: ToolContext):
     except Exception as e:
         error_msg = f"❌ Robot reset failed: {e}"
         log.error(error_msg)
-        return ResetOutput(
+        yield ResetOutput(
             success=False,
             message=error_msg
         )
