@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 import os
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 
 
 @dataclass
@@ -15,10 +15,18 @@ class CpuStats:
 
 
 @dataclass
-class GpuStats:
+class GpuDeviceStats:
+    index: int
     mem_used_mb: int
     mem_total_mb: int
-    gpu_count: int = 1
+
+
+@dataclass
+class GpuStats:
+    devices: List[GpuDeviceStats]
+    mem_used_mb: int
+    mem_total_mb: int
+    gpu_count: int
 
 
 @dataclass
@@ -96,14 +104,24 @@ def get_remote_cpu_stats(host: str, user: str) -> Optional[CpuStats]:
     if load_1 is None or load_5 is None or load_15 is None:
         return None
 
-    # Try to fetch core count
+    # Try to fetch physical core count via lscpu; fall back to nproc
     cores = None
     try:
-        nproc = run_ssh(host, user, "nproc --all")
-        if nproc.returncode == 0:
-            cores = int(nproc.stdout.strip().splitlines()[0])
-        else:
-            # Fallback: count processors in /proc/cpuinfo
+        # Count unique (core,socket) pairs for physical cores
+        lscpu = run_ssh(
+            host,
+            user,
+            "lscpu -p=CORE,SOCKET 2>/dev/null | egrep -v '^#' | awk -F, '{print $1 "-" $2}' | sort -u | wc -l",
+        )
+        if lscpu.returncode == 0 and lscpu.stdout.strip():
+            cores = int(lscpu.stdout.strip())
+        if not cores:
+            # Fallback: nproc (logical CPUs)
+            nproc = run_ssh(host, user, "nproc --all")
+            if nproc.returncode == 0:
+                cores = int(nproc.stdout.strip().splitlines()[0])
+        if not cores:
+            # Last resort: count processors entries
             cpuinfo = run_ssh(host, user, "grep -c ^processor /proc/cpuinfo || true")
             if cpuinfo.returncode == 0 and cpuinfo.stdout.strip():
                 cores = int(cpuinfo.stdout.strip().splitlines()[0])
@@ -114,28 +132,31 @@ def get_remote_cpu_stats(host: str, user: str) -> Optional[CpuStats]:
 
 
 def get_remote_gpu_stats(host: str, user: str) -> Optional[GpuStats]:
-    # Use nvidia-smi if available; otherwise None. Sum all GPUs if multiple.
+    # Use nvidia-smi if available; collect per-GPU used/total in MiB
     cmd = (
-        "nvidia-smi --query-gpu=memory.used,memory.total "
+        "nvidia-smi --query-gpu=index,memory.used,memory.total "
         "--format=csv,noheader,nounits 2>/dev/null"
     )
     try:
         result = run_ssh(host, user, cmd)
         if result.returncode == 0 and result.stdout.strip():
+            devices: List[GpuDeviceStats] = []
             used_sum = 0
             total_sum = 0
-            count = 0
             for line in result.stdout.strip().splitlines():
                 parts = [p.strip() for p in line.split(",")]
-                if len(parts) >= 2:
+                if len(parts) >= 3:
                     try:
-                        used_sum += int(parts[0])
-                        total_sum += int(parts[1])
-                        count += 1
+                        idx = int(parts[0])
+                        used = int(parts[1])
+                        total = int(parts[2])
+                        devices.append(GpuDeviceStats(index=idx, mem_used_mb=used, mem_total_mb=total))
+                        used_sum += used
+                        total_sum += total
                     except ValueError:
                         continue
-            if total_sum > 0:
-                return GpuStats(mem_used_mb=used_sum, mem_total_mb=total_sum, gpu_count=max(1, count))
+            if devices:
+                return GpuStats(devices=devices, mem_used_mb=used_sum, mem_total_mb=total_sum, gpu_count=len(devices))
     except Exception:
         pass
     return None

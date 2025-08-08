@@ -80,7 +80,18 @@ def format_gpu(stats: NodeStats, meta: 'NodeMeta | None') -> str:
     used_gib = stats.gpu.mem_used_mb / 1024.0
     total_gib = total / 1024.0
     source = "[R]" if stats.gpu.mem_total_mb else ("[M]" if (meta and meta.gpu_total_mb) else "")
-    return f"{used_gib:.1f}/ {total_gib:.1f} GiB{gcount} {source}".strip()
+    # If there are multiple GPUs, show a compact per-GPU suffix like [0:12/24,1:0/24] GiB
+    per_gpu = ""
+    try:
+        devices = getattr(stats.gpu, 'devices', None)
+        if devices and len(devices) > 1:
+            parts = []
+            for dev in devices:
+                parts.append(f"{dev.index}:{dev.mem_used_mb/1024.0:.0f}/{dev.mem_total_mb/1024.0:.0f}")
+            per_gpu = f" [{','.join(parts)}]"
+    except Exception:
+        per_gpu = ""
+    return f"{used_gib:.1f}/ {total_gib:.1f} GiB{gcount}{per_gpu} {source}".strip()
 
 
 def draw_header(stdscr, title: str) -> None:

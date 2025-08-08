@@ -63,7 +63,7 @@ Edit `src/tui-cursor/nodes_meta.yaml` directly to match your hardware.
 ### Notes
 - Nodes without GPUs or without `nvidia-smi` installed show GPU as `n/a`.
 - Offline nodes show `-` for metrics and are colored red.
-- SSH failures degrade gracefully; only the failed metric shows `n/a`.
+- Labels: `[R]` means value was obtained remotely via SSH; `[M]` means the value comes from local metadata fallback (`src/tui-cursor/nodes_meta.yaml`). Prefer [R] for accuracy.
 
 ### Troubleshooting
 - Ensure passwordless SSH works:
