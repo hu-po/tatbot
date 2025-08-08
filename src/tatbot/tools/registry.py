@@ -239,17 +239,33 @@ def get_all_tools() -> Dict[str, ToolDefinition]:
 
 def register_all_tools() -> None:
     """Auto-register all tools by importing tool modules."""
+    initial_count = len(_REGISTRY)
+    
+    # Import GPU tools
     try:
-        # Import all tool modules to trigger registration
         from tatbot.tools.gpu import convert_strokes  # noqa: F401
+        log.debug("Imported GPU tools")
+    except ImportError as e:
+        log.debug(f"GPU tools not available: {e}")
+    
+    # Import robot tools
+    try:
         from tatbot.tools.robot import align, reset, sense, stroke  # noqa: F401
+        log.debug("Imported robot tools")
+    except ImportError as e:
+        log.debug(f"Robot tools not available: {e}")
+    
+    # Import system tools
+    try:
         from tatbot.tools.system import (  # noqa: F401
             list_nodes,
             list_recordings,
             list_scenes,
             ping_nodes,
         )
-        
-        log.info(f"Auto-registered {len(_REGISTRY)} tools")
+        log.debug("Imported system tools")
     except ImportError as e:
-        log.debug(f"Some tool modules not yet available: {e}")
+        log.debug(f"System tools not available: {e}")
+    
+    registered_count = len(_REGISTRY) - initial_count
+    log.info(f"Auto-registered {registered_count} new tools (total: {len(_REGISTRY)})")
