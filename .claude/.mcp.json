@@ -1,0 +1,29 @@
+{
+    "mcp": {
+        "ook": {
+            "type": "remote",
+            "url": "http://192.168.1.90:8000/mcp",
+            "enabled": true
+        },
+        "trossen-ai": {
+            "type": "remote", 
+            "url": "http://192.168.1.97:8000/mcp",
+            "enabled": true
+        },
+        "oop": {
+            "type": "remote",
+            "url": "http://192.168.1.51:8000/mcp", 
+            "enabled": true
+        },
+        "rpi1": {
+            "type": "remote",
+            "url": "http://192.168.1.98:8000/mcp",
+            "enabled": true
+        },
+        "rpi2": {
+            "type": "remote",
+            "url": "http://192.168.1.99:8000/mcp",
+            "enabled": true
+        }
+    }
+}
