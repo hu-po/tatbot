@@ -36,7 +36,7 @@ set -a; source .env; set +a
 ./scripts/kill.sh
 
 # Restart mcp server on trossen-ai
-ssh trossen-ai "bash scripts/run_mcp.sh trossen-ai"
+ssh trossen-ai "bash ~/tatbot/scripts/run_mcp.sh trossen-ai"
 
 # Monitor MCP logs
 tail -f ~/tatbot/nfs/mcp-logs/<node_name>.log
