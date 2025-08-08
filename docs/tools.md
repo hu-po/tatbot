@@ -77,22 +77,23 @@ async def my_tool(input_data: MyToolInput, ctx: ToolContext):
 
 ## Tool Categories
 
-### System Tools (Available on All Nodes)
+### System Tools
 
-- **`ping_nodes`**: Test connectivity to tatbot nodes
-- **`list_scenes`**: Discover available scene configurations
-- **`list_nodes`**: List all configured tatbot nodes
+- **`list_nodes`** (rpi1, ook, oop): List all configured tatbot nodes
+- **`ping_nodes`** (rpi1): Test connectivity to tatbot nodes  
+- **`list_scenes`** (rpi2): Discover available scene configurations
+- **`list_recordings`** (rpi2): List available recordings from the recordings directory
 
 ### GPU Tools (GPU Nodes Only)
 
-- **`convert_strokelist_to_batch`**: GPU-accelerated inverse kinematics for stroke conversion
+- **`convert_strokelist_to_batch`** (ook, oop): GPU-accelerated inverse kinematics for stroke conversion
 
-### Robot Tools (Robot Nodes)
+### Robot Tools
 
-- **`align`**: Generate and execute alignment strokes for calibration
-- **`stroke`**: Execute artistic strokes on paper/canvas
-- **`sense`**: Capture environmental data (cameras, sensors)  
-- **`reset`**: Reset robot to safe/ready position
+- **`align`** (trossen-ai, oop): Generate and execute alignment strokes for calibration
+- **`reset`** (trossen-ai, ook, oop): Reset robot to safe/ready position
+- **`sense`** (trossen-ai): Capture environmental data (cameras, sensors)
+- **`stroke`** (trossen-ai): Execute artistic strokes on paper/canvas
 
 ## Node Availability
 

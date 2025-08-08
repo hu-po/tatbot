@@ -4,5 +4,4 @@ defaults:
 host: "192.168.1.96"
 port: 8000
 extras: [bot, gen, gpu, img]  # Camera-focused node
-tools:
-  - ping_nodes
+tools: []  # No tools currently assigned to ojo

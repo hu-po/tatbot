@@ -6,4 +6,4 @@ port: 8000
 extras: [viz, img]  # RPi nodes with visualization capabilities
 tools:
   - ping_nodes
-  - list_scenes
+  - list_nodes

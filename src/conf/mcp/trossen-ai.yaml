@@ -6,9 +6,5 @@ port: 8000
 extras: [bot, cam, gen, img]
 tools:
   - reset
-  - align
   - sense
   - stroke
-  - ping_nodes
-  - list_nodes
-  - list_scenes

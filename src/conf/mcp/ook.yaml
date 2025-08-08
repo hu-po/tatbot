@@ -6,10 +6,5 @@ port: 8000
 extras: [bot, dev, gen, img, viz, gpu]
 tools:
   - reset
-  - align
-  - sense
-  - stroke
-  - ping_nodes
   - list_nodes
-  - list_scenes
   - convert_strokelist_to_batch

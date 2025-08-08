@@ -30,19 +30,20 @@ These files control:
 
 Tools are now defined in the unified `tatbot.tools` module using decorator-based registration. See the [Tools Documentation](tools.md) for detailed information.
 
-**System Tools** (available on all nodes):
-- `ping_nodes`: Test connectivity to tatbot nodes
-- `list_scenes`: List available scene configurations  
-- `list_nodes`: List all configured tatbot nodes
+**System Tools:**
+- `list_nodes` (rpi1, ook, oop): List all configured tatbot nodes
+- `ping_nodes` (rpi1): Test connectivity to tatbot nodes  
+- `list_scenes` (rpi2): List available scene configurations
+- `list_recordings` (rpi2): List available recordings from the recordings directory
 
-**Robot Tools** (available on robot nodes):
-- `align`: Generate and execute alignment strokes for calibration
-- `stroke`: Execute artistic strokes on paper/canvas
-- `sense`: Capture environmental data (cameras, sensors)
-- `reset`: Reset robot to safe/ready position
+**Robot Tools:**
+- `align` (trossen-ai, oop): Generate and execute alignment strokes for calibration
+- `reset` (trossen-ai, ook, oop): Reset robot to safe/ready position
+- `sense` (trossen-ai): Capture environmental data (cameras, sensors)
+- `stroke` (trossen-ai): Execute artistic strokes on paper/canvas
 
 **GPU Tools** (available on GPU-enabled nodes only):
-- `convert_strokelist_to_batch`: GPU-accelerated stroke trajectory conversion
+- `convert_strokelist_to_batch` (ook, oop): GPU-accelerated stroke trajectory conversion
 
 Tools specify their node availability and requirements directly in their decorator, eliminating the need for separate mapping files.
 
