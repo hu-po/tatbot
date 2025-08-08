@@ -20,7 +20,7 @@ log = get_logger("tools.convert_strokes", "🎨⚡")
 
 @tool(
     name="convert_strokelist_to_batch", 
-    nodes=["ook"],  # Currently only available on ook (GPU node)
+    nodes=["ook", "oop"],
     description="Convert StrokeList to StrokeBatch using GPU-accelerated inverse kinematics",
     input_model=ConvertStrokesInput,
     output_model=ConvertStrokesOutput,

@@ -32,16 +32,16 @@ log = get_logger("tools.stroke", "🖌️")
 
 @tool(
     name="stroke",
-    nodes=["trossen-ai", "ook", "oop"],
-    description="Execute artistic strokes on paper/canvas",
+    nodes=["trossen-ai"],
+    description="Execute a sequence of tattoo strokes",
     input_model=StrokeInput,
     output_model=StrokeOutput,
 )
 async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
     """
-    Execute artistic strokes on paper/canvas.
+    Execute a sequence of tattoo strokes.
     
-    This tool generates artistic stroke patterns from the scene configuration,
+    This tool generates list of strokes (tuple for left and right) from the scene configuration,
     converts them to robot joint paths using GPU-accelerated inverse kinematics,
     and executes them on the physical robot while recording the motion data.
     It supports joystick control for real-time adjustments and can resume

@@ -29,7 +29,7 @@ log = get_logger("tools.sense", "🔍")
 
 @tool(
     name="sense",
-    nodes=["trossen-ai"],  # Only available on robot with sensors
+    nodes=["trossen-ai"],
     description="Capture environmental data from cameras and sensors",
     input_model=SenseInput,
     output_model=SenseOutput,
