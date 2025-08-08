@@ -1,6 +1,5 @@
 """List recordings tool for discovering available recordings."""
 
-import os
 from pathlib import Path
 
 from tatbot.tools.base import ToolContext

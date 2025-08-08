@@ -115,7 +115,7 @@ def print_env_vars(tokens: Dict[str, str]) -> None:
     for node, token in tokens.items():
         print(f"export TATBOT_JWT_TOKEN_{node.upper().replace('-', '_')}={token}")
     
-    print(f"\n# Shared secret (same for all nodes):")
+    print("\n# Shared secret (same for all nodes):")
     auth = TatbotJWTAuth()
     print(f"export TATBOT_JWT_SECRET={auth.secret_key}")
 

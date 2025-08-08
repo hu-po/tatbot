@@ -1,10 +1,9 @@
 """Tool registry and decorator system for unified tools architecture."""
 
-import inspect
 import ast
+import inspect
 import json
 import logging
-from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -66,10 +65,10 @@ def tool(
     def decorator(func: ToolFunction) -> ToolFunction:
         tool_name = name or func.__name__
         
-        # Validate function signature
+        # Validate function signature - must have input_data and ctx parameters
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
-        if len(params) != 2 or params != ['input_data', 'ctx']:
+        if len(params) != 2 or 'input_data' not in params or 'ctx' not in params:
             raise ValueError(
                 f"Tool function {tool_name} must have signature: "
                 "(input_data: {input_model.__name__}, ctx: ToolContext)"
@@ -86,22 +85,27 @@ def tool(
             requires=requires,
         )
         
-        # Create wrapper that handles input parsing and error handling
-        @wraps(func)
-        async def wrapper(
-            input_data: Union[str, dict, Any] = None,
-            ctx: Context = None,
-            **_extra_kwargs,
-        ):
-            """Wrapper that provides unified input parsing and error handling.
+        # Create wrapper that completely hides ctx from MCP schema
+        async def mcp_exposed_wrapper(ctx: Context, **kwargs):
+            """
+            MCP-exposed wrapper with hidden Context parameter.
             
-            Notes:
-            - Some clients may erroneously send an extra 'ctx' argument. We accept
-              and ignore any unexpected kwargs to remain backwards/forwards compatible.
-            - The actual execution context is provided by FastMCP via 'mcp_context'.
+            FastMCP will inject Context automatically but won't expose it in the 
+            client-visible schema. Clients only see the **kwargs parameters.
             """
             
-            # Extract node name from MCP context
+            # Filter out any framework-related fields that clients might send
+            framework_fields = ['ctx', 'context', 'mcp_context', 'tool_context']
+            filtered_kwargs = {k: v for k, v in kwargs.items() 
+                              if k not in framework_fields and not isinstance(v, Context)}
+            
+            # Log and remove any framework fields if present
+            for field in framework_fields:
+                if field in kwargs:
+                    removed_value = kwargs[field]
+                    log.warning(f"🔧 {tool_name}: Client sent '{field}' - ignoring: {removed_value}")
+            
+            # Extract node name from FastMCP context
             if ctx and hasattr(ctx, 'fastmcp') and ctx.fastmcp:
                 server_name = ctx.fastmcp.name
                 node_name = server_name.split(".", 1)[1] if "." in server_name else server_name
@@ -110,12 +114,12 @@ def tool(
                 import socket
                 node_name = socket.gethostname()
             
-            # Create unified context
+            # Create unified ToolContext
             tool_ctx = ToolContext(node_name=node_name, mcp_context=ctx)
             
             try:
-                # Parse input data
-                parsed_input = _parse_input_data(input_data or {}, input_model, tool_name)
+                # Parse input data from kwargs
+                parsed_input = _parse_input_data(filtered_kwargs or {}, input_model, tool_name)
                 
                 # Enable debug logging if requested
                 if hasattr(parsed_input, 'debug') and parsed_input.debug:
@@ -138,7 +142,7 @@ def tool(
                         f"only has {node_config.get('extras', [])}"
                     )
                 
-                # Execute the tool
+                # Execute the original tool function
                 result = None
                 async for progress_data in func(parsed_input, tool_ctx):
                     if isinstance(progress_data, dict):
@@ -183,8 +187,8 @@ def tool(
                 error_result = output_model(success=False, message=error_msg)
                 return json.loads(error_result.model_dump_json())
         
-        # Update tool definition with the wrapper function
-        definition.func = wrapper
+        # Update tool definition with the MCP-exposed wrapper function
+        definition.func = mcp_exposed_wrapper
         
         # Register the tool
         if tool_name in _REGISTRY:
@@ -193,7 +197,7 @@ def tool(
         _REGISTRY[tool_name] = definition
         log.debug(f"Registered tool: {tool_name} (nodes: {nodes})")
         
-        return wrapper
+        return mcp_exposed_wrapper
     
     return decorator
 
@@ -221,6 +225,22 @@ def _parse_input_data(input_data: Union[str, dict, Any], model_class: type, tool
     else:
         log.warning(f"Unexpected input type {type(input_data)} for {tool_name}, using empty dict")
         data_dict = {}
+    
+    # Filter out 'ctx' field that some clients erroneously include in input_data
+    if 'ctx' in data_dict:
+        ctx_value = data_dict.pop('ctx')
+        log.warning(
+            f"🔧 {tool_name}: Removed 'ctx' from input_data. "
+            f"Context should be automatically provided by FastMCP, not sent by client. "
+            f"Removed value: {ctx_value}"
+        )
+    
+    # Also filter out other framework-related fields that shouldn't be in user input
+    framework_fields = ['context', 'mcp_context', 'tool_context']
+    for field in framework_fields:
+        if field in data_dict:
+            removed_value = data_dict.pop(field)
+            log.warning(f"🔧 {tool_name}: Removed framework field '{field}' from input: {removed_value}")
     
     try:
         return model_class(**data_dict)
