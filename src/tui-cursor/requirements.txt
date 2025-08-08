@@ -1,2 +1,2 @@
-# Tatbot TUI (Cursor) Python requirements
-# This TUI is stdlib-only; no PyPI dependencies are required.
+# Requirements for src/tui-cursor TUI only
+paramiko>=3.3

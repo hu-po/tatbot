@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import curses
 import time
-from typing import List
+from typing import List, Optional
 
 # Support both package execution and direct script execution from this folder
 try:  # when executed as a package (if the folder name were importable)
@@ -53,10 +53,14 @@ def format_cpu(stats: NodeStats, meta: 'NodeMeta | None') -> str:
         return f"- ({meta.cpu_cores} cores) [M]" if meta and meta.cpu_cores else "-"
     if not stats.cpu:
         return f"n/a ({meta.cpu_cores} cores) [M]" if meta and meta.cpu_cores else "n/a"
-    cores = stats.cpu.cores or (meta.cpu_cores if meta else None)
-    suffix = f" ({cores} cores)" if cores else ""
-    source = "[R]" if stats.cpu.cores is not None else ("[M]" if (cores and meta and meta.cpu_cores == cores) else "")
-    return f"{stats.cpu.load_1:.2f} {stats.cpu.load_5:.2f} {stats.cpu.load_15:.2f}{suffix} {source}".strip()
+    logical = getattr(stats.cpu, 'logical_cores', None)
+    phys = getattr(stats.cpu, 'physical_cores', None)
+    cores_disp = phys or logical or (meta.cpu_cores if meta else None)
+    suffix = f" ({cores_disp} cores)" if cores_disp else ""
+    pct = getattr(stats.cpu, 'percent_1m', None)
+    pct_txt = f" {pct:.0f}%" if pct is not None else ""
+    source = "[R]" if logical is not None else ("[M]" if (cores_disp and meta and meta.cpu_cores == cores_disp) else "")
+    return f"{stats.cpu.load_1:.2f} {stats.cpu.load_5:.2f} {stats.cpu.load_15:.2f}{pct_txt}{suffix} {source}".strip()
 
 
 def format_gpu(stats: NodeStats, meta: 'NodeMeta | None') -> str:
@@ -96,26 +100,27 @@ def format_gpu(stats: NodeStats, meta: 'NodeMeta | None') -> str:
 
 def draw_header(stdscr, title: str) -> None:
     height, width = stdscr.getmaxyx()
-    header = f" {title} (q to quit, r to refresh now) "
+    header = f" {title} (q: quit, r: refresh, i: interval) "
     stdscr.attron(curses.color_pair(2))
     stdscr.addstr(0, 0, header[: max(0, width - 1)])
     stdscr.addstr(0, len(header), " " * max(0, width - len(header) - 1))
     stdscr.attroff(curses.color_pair(2))
 
 
-def draw_table(stdscr, nodes: List[Node], node_stats: dict[str, NodeStats], metas: dict[str, NodeMeta], last_updated: float) -> None:
+def draw_table(stdscr, nodes: List[Node], node_stats: dict[str, NodeStats], metas: dict[str, NodeMeta], last_updated: float, interval: float) -> None:
     height, width = stdscr.getmaxyx()
 
     # Column widths
     col_name = 16
     col_ip = 16
     col_status = 8
-    col_cpu = 26
-    col_gpu = 22
+    col_cpu = 30
+    col_mem = 14
+    col_gpu = 28
 
     header_y = 2
     stdscr.attron(curses.A_BOLD)
-    stdscr.addstr(header_y, 1, f"{'Node':<{col_name}} {'IP':<{col_ip}} {'On?':<{col_status}} {'CPU load (1/5/15)':<{col_cpu}} {'GPU (used/total)':<{col_gpu}}")
+    stdscr.addstr(header_y, 1, f"{'Node':<{col_name}} {'IP':<{col_ip}} {'On?':<{col_status}} {'CPU (1/5/15 & %)':<{col_cpu}} {'Mem':<{col_mem}} {'GPU (used/total)':<{col_gpu}}")
     stdscr.attroff(curses.A_BOLD)
 
     row_y = header_y + 2
@@ -126,10 +131,14 @@ def draw_table(stdscr, nodes: List[Node], node_stats: dict[str, NodeStats], meta
         color = curses.color_pair(3) if status_txt == "on" else curses.color_pair(1)
 
         stdscr.attron(color)
+        mem_txt = "-"
+        if stats and getattr(stats, 'memory', None):
+            m = stats.memory
+            mem_txt = f"{m.used_bytes/1e9:.1f}/{m.total_bytes/1e9:.1f}G ({m.percent:.0f}%)"
         stdscr.addstr(
             row_y,
             1,
-            f"{node.emoji} {node.name:<{col_name-2}} {node.ip:<{col_ip}} {status_txt:<{col_status}} {format_cpu(stats, meta) if stats else (format_cpu(NodeStats(False, None, None), meta) if meta else '-'):<{col_cpu}} {format_gpu(stats, meta) if stats else (format_gpu(NodeStats(False, None, None), meta) if meta else '-'):<{col_gpu}}",
+            f"{node.emoji} {node.name:<{col_name-2}} {node.ip:<{col_ip}} {status_txt:<{col_status}} {format_cpu(stats, meta) if stats else (format_cpu(NodeStats(False, None, None), meta) if meta else '-'):<{col_cpu}} {mem_txt:<{col_mem}} {format_gpu(stats, meta) if stats else (format_gpu(NodeStats(False, None, None), meta) if meta else '-'):<{col_gpu}}",
         )
         stdscr.attroff(color)
         row_y += 1
@@ -138,14 +147,14 @@ def draw_table(stdscr, nodes: List[Node], node_stats: dict[str, NodeStats], meta
 
     # Footer
     ts = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_updated))
-    footer = f" Last updated: {ts} | Refresh: {REFRESH_SECS:.0f}s "
+    footer = f" Last updated: {ts} | Interval: {interval:.0f}s "
     stdscr.attron(curses.color_pair(2))
     stdscr.addstr(height - 1, 0, footer[: max(0, width - 1)])
     stdscr.addstr(height - 1, len(footer), " " * max(0, width - len(footer) - 1))
     stdscr.attroff(curses.color_pair(2))
 
 
-def main(stdscr):
+def main(stdscr, interval: float = 2.0):
     curses.curs_set(0)
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_RED, -1)
@@ -160,17 +169,20 @@ def main(stdscr):
     while True:
         stdscr.erase()
         draw_header(stdscr, "Tatbot Nodes")
-        draw_table(stdscr, nodes, node_stats, metas, last_updated)
+        draw_table(stdscr, nodes, node_stats, metas, last_updated, interval)
         stdscr.refresh()
 
         # Non-blocking key read with timeout for refresh
-        stdscr.timeout(int(REFRESH_SECS * 1000))
+        stdscr.timeout(int(interval * 1000))
         ch = stdscr.getch()
         if ch in (ord('q'), ord('Q')):
             break
         if ch in (ord('r'), ord('R')):
             # immediate refresh
             pass
+        if ch in (ord('i'), ord('I')):
+            # Decrease interval with 'i' key down to a floor
+            interval = max(1.0, interval - 1.0)
 
         # Refresh stats (basic parallelism using threads for snappier UI)
         import concurrent.futures
@@ -185,4 +197,10 @@ def main(stdscr):
 
 
 if __name__ == "__main__":
-    curses.wrapper(main)
+    # Support optional interval from env var for quick tuning
+    interval_env = os.environ.get("TATBOT_TUI_INTERVAL")
+    try:
+        interval = float(interval_env) if interval_env else 2.0
+    except Exception:
+        interval = 2.0
+    curses.wrapper(lambda scr: main(scr, interval=interval))
