@@ -21,6 +21,22 @@ except Exception:
     _spec.loader.exec_module(_mod)
     get_pool = getattr(_mod, "get_pool")
 
+# Optional logging path via environment
+_LOG_PATH = os.environ.get("TATBOT_TUI_LOG")
+
+
+def _log(msg: str) -> None:
+    path = _LOG_PATH
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            from time import strftime, localtime
+            ts = strftime('%Y-%m-%d %H:%M:%S', localtime())
+            f.write(f"[{ts}] {msg}\n")
+    except Exception:
+        pass
+
 
 @dataclass
 class CpuStats:
@@ -101,10 +117,15 @@ def run_ssh(host: str, user: str, remote_cmd: str, timeout: float = 4.0) -> subp
         code, out, err = pool.exec(host, user, remote_cmd, timeout=timeout)
         # Emulate CompletedProcess
         cp = subprocess.CompletedProcess(args=["paramiko", host, remote_cmd], returncode=code, stdout=out, stderr=err)
+        if code != 0:
+            _log(f"ssh_exec_failed host={host} user={user} code={code} cmd={remote_cmd!r} err={err.strip()[:200]}")
         return cp
     except Exception:
         ssh_cmd = _ssh_base_cmd(host, user) + [remote_cmd]
-        return run_local(ssh_cmd, timeout=timeout)
+        cp = run_local(ssh_cmd, timeout=timeout)
+        if cp.returncode != 0:
+            _log(f"ssh_subprocess_failed host={host} user={user} code={cp.returncode} cmd={remote_cmd!r} err={cp.stderr.strip()[:200]}")
+        return cp
 
 
 def check_ssh_online(host: str, user: str) -> bool:

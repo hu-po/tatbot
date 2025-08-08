@@ -46,6 +46,9 @@ CONFIG_PATH = os.path.join(BASE_DIR, "conf", "nodes.yaml")
 # don't need to modify their existing config directory.
 META_PATH = os.path.join(os.path.dirname(__file__), "nodes_meta.yaml")
 REFRESH_SECS = 2.0
+LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
+LOG_PATH = os.path.join(LOG_DIR, "tui.log")
+os.environ.setdefault("TATBOT_TUI_LOG", LOG_PATH)
 
 
 def format_cpu(stats: NodeStats, meta: 'NodeMeta | None') -> str:
@@ -177,6 +180,12 @@ def main(stdscr, interval: float = 2.0):
     curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_CYAN)
     curses.init_pair(3, curses.COLOR_GREEN, -1)
 
+    # Ensure log directory exists
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+    except Exception:
+        pass
+
     nodes = parse_nodes_config(CONFIG_PATH)
     metas = parse_nodes_meta(META_PATH)
     node_stats: dict[str, NodeStats] = {n.name: get_node_stats(n.ip, n.user) for n in nodes}
@@ -206,9 +215,17 @@ def main(stdscr, interval: float = 2.0):
         def fetch(n: Node):
             return n.name, get_node_stats(n.ip, n.user)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, max(2, len(nodes)))) as pool:
-            for name, stats in pool.map(fetch, nodes):
-                node_stats[name] = stats
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, max(2, len(nodes)))) as pool:
+                for name, stats in pool.map(fetch, nodes):
+                    node_stats[name] = stats
+        except Exception as e:
+            try:
+                with open(LOG_PATH, "a", encoding="utf-8") as lf:
+                    ts = time.strftime('%Y-%m-%d %H:%M:%S')
+                    lf.write(f"[{ts}] refresh_error: {type(e).__name__}: {e}\n")
+            except Exception:
+                pass
         last_updated = time.time()
 
 
@@ -219,4 +236,14 @@ if __name__ == "__main__":
         interval = float(interval_env) if interval_env else 2.0
     except Exception:
         interval = 2.0
-    curses.wrapper(lambda scr: main(scr, interval=interval))
+    try:
+        curses.wrapper(lambda scr: main(scr, interval=interval))
+    except Exception as e:
+        try:
+            os.makedirs(LOG_DIR, exist_ok=True)
+            with open(LOG_PATH, "a", encoding="utf-8") as lf:
+                ts = time.strftime('%Y-%m-%d %H:%M:%S')
+                lf.write(f"[{ts}] fatal: {type(e).__name__}: {e}\n")
+        except Exception:
+            pass
+        raise

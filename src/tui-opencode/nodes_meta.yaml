@@ -1,0 +1,19 @@
+nodes_meta:
+  oop:
+    cpu_cores: 8
+    gpu_total_mb: 24576
+    gpu_count: 1
+  ook:
+    cpu_cores: 16
+    gpu_total_mb: 49152
+    gpu_count: 2
+  ojo:
+    cpu_cores: 4
+    gpu_total_mb: 8192
+    gpu_count: 1
+  rpi1:
+    cpu_cores: 4
+  rpi2:
+    cpu_cores: 4
+  rpi3:
+    cpu_cores: 4

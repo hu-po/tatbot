@@ -51,7 +51,6 @@ class SSHPool:
                 auth_timeout=4,
             )
         except Exception:
-            # Ensure client is closed on failure
             try:
                 client.close()
             except Exception:
@@ -76,7 +75,6 @@ class SSHPool:
             try:
                 transport = client.get_transport()
                 if transport is None or not transport.is_active():
-                    # force reconnect
                     with self._lock:
                         for k, c in list(self._clients.items()):
                             if c is client:
@@ -93,7 +91,6 @@ class SSHPool:
             except Exception as e:
                 return 1, "", str(e)
         except Exception as e:
-            # Connection setup failed (e.g., banner read error). Don't raise; report cleanly.
             return 255, "", str(e)
 
     def close_all(self) -> None:
@@ -106,7 +103,6 @@ class SSHPool:
             self._clients.clear()
 
 
-# Singleton used by callers
 _pool: Optional[SSHPool] = None
 
 
