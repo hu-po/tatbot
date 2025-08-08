@@ -1,34 +1,24 @@
 {
     "mcpServers": {
         "ook": {
-            "transport": {
-                "type": "http",
-                "url": "http://192.168.1.90:8000/mcp"
-            }
+            "type": "http",
+            "url": "http://192.168.1.90:8000/mcp"
         },
         "trossen-ai": {
-            "transport": {
-                "type": "http",
-                "url": "http://192.168.1.97:8000/mcp"
-            }
+            "type": "http",
+            "url": "http://192.168.1.97:8000/mcp"
         },
         "oop": {
-            "transport": {
-                "type": "http",
-                "url": "http://192.168.1.51:8000/mcp"
-            }
+            "type": "http",
+            "url": "http://192.168.1.51:8000/mcp"
         },
         "rpi1": {
-            "transport": {
-                "type": "http",
-                "url": "http://192.168.1.98:8000/mcp"
-            }
+            "type": "http",
+            "url": "http://192.168.1.98:8000/mcp"
         },
         "rpi2": {
-            "transport": {
-                "type": "http",
-                "url": "http://192.168.1.99:8000/mcp"
-            }
+            "type": "http",
+            "url": "http://192.168.1.99:8000/mcp"
         }
     }
 }
