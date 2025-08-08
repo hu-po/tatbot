@@ -187,6 +187,9 @@ def tool(
                 error_result = output_model(success=False, message=error_msg)
                 return json.loads(error_result.model_dump_json())
         
+        # Set the wrapper function name to the tool name for proper MCP registration
+        mcp_exposed_wrapper.__name__ = tool_name
+        
         # Update tool definition with the MCP-exposed wrapper function
         definition.func = mcp_exposed_wrapper
         
