@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Tatbot is a tattoo robot system that uses dual Trossen WidowXAI arms, Intel RealSense D405 depth cameras, Amcrest IP cameras, and AI models for autonomous tattooing. The system is distributed across multiple nodes with MCP (Model Context Protocol) servers for remote control and coordination.
+Tatbot is a tattoo robot system that uses dual Trossen WidowXAI arms, Intel RealSense D405 depth cameras, Amcrest IP cameras, and VLA models for autonomous tattooing. The system is distributed across multiple nodes with MCP (Model Context Protocol) servers for remote control and coordination.
 
 ## Common Development Commands
 
@@ -25,10 +25,6 @@ set -a; source .env; set +a
 ```bash
 # Run linting and formatting
 ./scripts/lint.sh
-
-# Or manually:
-uv run isort .
-uv run ruff check --config pyproject.toml --fix
 ```
 
 ### MCP Server Operations
@@ -38,6 +34,9 @@ uv run ruff check --config pyproject.toml --fix
 
 # Kill existing MCP processes
 ./scripts/kill.sh
+
+# Restart mcp server on trossen-ai
+ssh trossen-ai "bash scripts/run_mcp.sh trossen-ai"
 
 # Monitor MCP logs
 tail -f ~/tatbot/nfs/mcp-logs/<node_name>.log
@@ -54,7 +53,6 @@ uv run python -m tatbot.main scenes=tatbotlogo
 # Run visualization tools
 uv run python -m tatbot.viz.stroke --scene=tatbotlogo
 uv run python -m tatbot.viz.teleop --scene=default
-uv run python -m tatbot.viz.map --scene=default
 ```
 
 ## Architecture
@@ -96,8 +94,8 @@ uv run python -m tatbot.viz.map --scene=default
 
 ### Node Topology
 
-- **ook** (🦧): Acer Nitro V 15 with NVIDIA RTX 4050, primary compute for VLA models
-- **oop** (🦊): Ubuntu PC with NVIDIA RTX 3090 (home mode only)
+- **ook** (🦧): Acer Nitro V 15 with NVIDIA RTX 4050, performs GPU-accelerated batch ik
+- **oop** (🦊): Ubuntu PC with NVIDIA RTX 3090 (only available in "home" mode)
 - **ojo** (🦎): NVIDIA Jetson AGX Orin, runs agent models via Ollama
 - **trossen-ai** (🦾): System76 Meerkat PC, robot arm control and RealSense cameras
 - **rpi1/rpi2** (🍓🍇): Raspberry Pi 5 nodes, rpi2 serves as NFS server
@@ -108,9 +106,9 @@ uv run python -m tatbot.viz.map --scene=default
 
 1. **Design Generation**: Image → DrawingBotV3 → G-code files
 2. **Stroke Processing**: G-code → `make_gcode_strokes` → `StrokeList`
-3. **Surface Mapping**: `StrokeList` → `map_strokes_to_mesh` → 3D mapped strokes
-4. **IK Solving**: Mapped strokes → `batch_ik` → `StrokeBatch` with joint angles
-5. **Execution**: `StrokeBatch` → `StrokeOp` → Robot arms via LeRobot interface
+3. **Surface Mapping**: __optional__ `StrokeList` → `map_strokes_to_mesh` → 3D mapped strokes → `StrokeList`
+4. **IK Solving**: `StrokeList` → `batch_ik` → `StrokeBatch` with joint angles
+5. **Execution**: `StrokeBatch` → `stroke_tool` → Robot arms via LeRobot interface
 
 ## Key Design Patterns
 
@@ -125,13 +123,9 @@ uv run python -m tatbot.viz.map --scene=default
 
 ## Critical Files
 
-- `src/tatbot/main.py`: Entry point with Hydra initialization (enhanced with AppConstants and improved exception handling)
-- `src/tatbot/mcp/server.py`: MCP server implementation (enhanced with ServerConstants and type hints)
-- `src/tatbot/mcp/handlers.py`: MCP tool implementations (enhanced with specific exception handling)
-- `src/tatbot/mcp/models.py`: MCP request/response models (enhanced with MCPConstants)
-- `src/tatbot/config_schema.py`: Pydantic schemas for configuration (enhanced with proper type annotations)
-- `src/tatbot/bot/trossen_homing.py`: Arm calibration (enhanced with CalibrationConstants)
-- `src/tatbot/gen/batch.py`: Stroke batch processing (enhanced with descriptive variable names)
+- `src/tatbot/main.py`: Entry point with Hydra initialization
+- `src/tatbot/mcp/server.py`: MCP server implementation
+- `src/tatbot/gen/batch.py`: Stroke batch processing
 - `src/conf/config.yaml`: Root Hydra configuration
 - `pyproject.toml`: Project dependencies and metadata
 
@@ -139,10 +133,10 @@ uv run python -m tatbot.viz.map --scene=default
 
 - Always use `uv` for Python package management
 - MCP server changes require manual restart in Cursor UI (Ctrl+Shift+P > "View: OpenMCP Settings")
-- System uses Python 3.11.10 (strict requirement)
 - Distributed system - ensure network connectivity between nodes
 - Camera passwords and API keys stored in `.env` file
 - NFS mount required: `~/tatbot/nfs` shared across all nodes (served by rpi2)
 - Designs stored in `tatbot/nfs/designs/` directory
 - DrawingBotV3 configs in `config/dbv3/` for pen settings and G-code generation
 - Both RealSense cameras connected to trossen-ai via USB3
+- `tatbot/nfs/recordings/` directory for recordings of robot tools
