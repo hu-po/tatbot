@@ -1,5 +1,7 @@
 """Pydantic models for robot operation tools."""
 
+from typing import List
+
 from tatbot.tools.base import ToolInput, ToolOutput
 
 
@@ -46,7 +48,7 @@ class SenseInput(RobotOpInput):
 
 class SenseOutput(RobotOpOutput):
     """Output for sense tool."""
-    captured_files: list[str] = []
+    captured_files: List[str] = []
 
 
 class ResetInput(RobotOpInput):

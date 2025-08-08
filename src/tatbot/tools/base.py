@@ -1,7 +1,7 @@
 """Base types and utilities for the unified tools system."""
 
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Dict
+from typing import Any, AsyncGenerator, Callable, Dict, List
 
 from mcp.server.fastmcp import Context
 from pydantic import BaseModel
@@ -47,12 +47,12 @@ class ToolDefinition:
     """Definition of a tool including its metadata and function."""
     
     name: str
-    func: callable
-    nodes: list[str]
+    func: Callable
+    nodes: List[str]
     description: str
     input_model: type[ToolInput]
     output_model: type[ToolOutput]
-    requires: list[str]
+    requires: List[str]
     
     def is_available_on_node(self, node_name: str) -> bool:
         """Check if this tool is available on the given node."""
@@ -69,4 +69,4 @@ class ToolDefinition:
         return required_extras.issubset(node_extras)
 
 
-ToolFunction = callable[[ToolInput, ToolContext], AsyncGenerator[Dict[str, Any], ToolOutput]]
+ToolFunction = Callable[[ToolInput, ToolContext], AsyncGenerator[Dict[str, Any], ToolOutput]]
