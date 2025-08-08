@@ -75,6 +75,17 @@ def tool(
                 "(input_data: {input_model.__name__}, ctx: ToolContext)"
             )
         
+        # Create tool definition first (needed in wrapper)
+        definition = ToolDefinition(
+            name=tool_name,
+            func=func,  # Will be updated with wrapper later
+            nodes=nodes,
+            description=description or func.__doc__ or "",
+            input_model=input_model,
+            output_model=output_model,
+            requires=requires,
+        )
+        
         # Create wrapper that handles input parsing and error handling
         @wraps(func)
         async def wrapper(
@@ -172,16 +183,8 @@ def tool(
                 error_result = output_model(success=False, message=error_msg)
                 return json.loads(error_result.model_dump_json())
         
-        # Create tool definition with the wrapper function
-        definition = ToolDefinition(
-            name=tool_name,
-            func=wrapper,
-            nodes=nodes,
-            description=description or func.__doc__ or "",
-            input_model=input_model,
-            output_model=output_model,
-            requires=requires,
-        )
+        # Update tool definition with the wrapper function
+        definition.func = wrapper
         
         # Register the tool
         if tool_name in _REGISTRY:
