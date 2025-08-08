@@ -293,7 +293,7 @@ This module implements the server for the **M**ulti-agent **C**ommand **P**latfo
 -   **Key Tools**:
     -   `run_op`: The most important tool. It executes a high-level operation (from the `tatbot.ops` module), such as `stroke` or `align`. It's an `async` generator, allowing it to stream progress and log messages back to the client as the operation runs. Now includes robust error handling with specific exception types.
     -   `ping_nodes`: Checks the network connectivity of other nodes.
-    -   `list_scenes`, `list_nodes`, `list_ops`: Tools for discovering available scenes, nodes, and operations, which is very useful for UIs and command-line clients.
+    -   `list_scenes`, `list_nodes`: Tools for discovering available scenes and nodes, which is very useful for UIs and command-line clients.
 -   **Error Handling**: Implements specific exception handling for different failure modes (configuration errors, network issues, file operations, etc.) with appropriate error messages and recovery strategies.
 
 #### `models.py`

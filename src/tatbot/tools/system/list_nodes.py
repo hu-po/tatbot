@@ -11,7 +11,7 @@ log = get_logger("tools.list_nodes", "🔗")
 
 @tool(
     name="list_nodes",
-    nodes=["*"],
+    nodes=["rpi1", "ook", "oop"],
     description="List available tatbot nodes",
     input_model=ListNodesInput,
     output_model=ListNodesOutput,

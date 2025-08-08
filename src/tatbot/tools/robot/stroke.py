@@ -20,7 +20,8 @@ from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.gen.gcode import make_gcode_strokes
 from tatbot.main import compose_and_validate_scene
-from tatbot.mcp.gpu_proxy import GPUProxy, check_local_gpu
+from tatbot.utils.gpu_conversion import GPUConversionService
+from tatbot.utils.gpu import check_local_gpu
 from tatbot.tools.base import ToolContext
 from tatbot.tools.registry import tool
 from tatbot.tools.robot.models import StrokeInput, StrokeOutput
@@ -241,7 +242,7 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
                 strokebatch.save(str(strokebatch_path))
             else:
                 log.info("Using remote GPU node for strokebatch conversion")
-                gpu_proxy = GPUProxy()
+                gpu_proxy = GPUConversionService()
                 
                 success, _ = await gpu_proxy.convert_strokelist_remote(
                     strokes_file_path=str(strokes_path),

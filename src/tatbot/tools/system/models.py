@@ -38,3 +38,14 @@ class ListNodesOutput(ToolOutput):
     count: int
 
 
+class ListRecordingsInput(ToolInput):
+    """Input for list_recordings tool."""
+    pass
+
+
+class ListRecordingsOutput(ToolOutput):
+    """Output for list_recordings tool."""
+    recordings: List[str]
+    count: int
+
+

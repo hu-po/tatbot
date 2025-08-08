@@ -245,6 +245,7 @@ def register_all_tools() -> None:
         from tatbot.tools.robot import align, reset, sense, stroke  # noqa: F401
         from tatbot.tools.system import (  # noqa: F401
             list_nodes,
+            list_recordings,
             list_scenes,
             ping_nodes,
         )
@@ -252,9 +253,3 @@ def register_all_tools() -> None:
         log.info(f"Auto-registered {len(_REGISTRY)} tools")
     except ImportError as e:
         log.debug(f"Some tool modules not yet available: {e}")
-
-
-# Export the registry for backwards compatibility
-def get_available_tools() -> Dict[str, Callable]:
-    """Get all registered tools (backwards compatibility).""" 
-    return {name: definition.func for name, definition in _REGISTRY.items()}

@@ -13,7 +13,7 @@ log = get_logger("tools.list_scenes", "🎬")
 
 @tool(
     name="list_scenes",
-    nodes=["*"],
+    nodes=["rpi2"],
     description="List available scenes from the config directory",
     input_model=ListScenesInput,
     output_model=ListScenesOutput,

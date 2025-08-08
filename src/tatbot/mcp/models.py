@@ -1,10 +1,7 @@
-"""Pydantic models for MCP requests and responses."""
+"""Pydantic models for MCP server settings."""
 
-import json
-from typing import Any, List, Optional
+from typing import List, Optional
 
-import numpy as np
-from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -18,25 +15,6 @@ class MCPConstants:
     SCENES_CONFIG_PATH: str = "~/tatbot/src/conf/scenes"
 
 
-class NumpyEncoder(json.JSONEncoder):
-    """Custom JSON encoder to handle numpy arrays and other non-serializable types."""
-    def default(self, obj: Any) -> Any:
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.bool_):
-            return bool(obj)
-        # For other non-serializable types, convert to string
-        try:
-            json.dumps(obj)
-            return obj
-        except (TypeError, ValueError):
-            return str(obj)
-
-
 class MCPSettings(BaseSettings):
     """MCP server settings with environment variable overrides."""
     host: str = MCPConstants.DEFAULT_HOST
@@ -45,7 +23,7 @@ class MCPSettings(BaseSettings):
     debug: bool = False
     extras: List[str] = []
     tools: List[str] = []
-    
+
     # Security settings
     auth_token: Optional[str] = None
     ip_allowlist: List[str] = MCPConstants.DEFAULT_ALLOWED_IPS
@@ -53,29 +31,3 @@ class MCPSettings(BaseSettings):
 
     class Config:
         env_prefix = "MCP_"
-
-
-# Response Models
-class BaseResponse(BaseModel):
-    """Base response model with custom JSON serialization."""
-    
-    def model_dump_json(self, **kwargs) -> str:
-        """Override to use custom JSON encoder for numpy arrays."""
-        return json.dumps(self.model_dump(**kwargs), cls=NumpyEncoder, ensure_ascii=False)
-
-
-class NodeInfo(BaseModel):
-    """Information about a network node."""
-    name: str
-    emoji: str
-    status: str
-
-
-class NodesStatusResponse(BaseResponse):
-    """Response model for nodes status."""
-    version: str = "1.0"  # Tool versioning
-    nodes: List[NodeInfo]
-    total_count: int
-    online_count: int
-
-

@@ -13,7 +13,7 @@ log = get_logger("tools.ping_nodes", "🏓")
 
 @tool(
     name="ping_nodes",
-    nodes=["*"],
+    nodes=["rpi1"],
     description="Ping nodes and report connectivity status",
     input_model=PingNodesInput,
     output_model=PingNodesOutput,
