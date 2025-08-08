@@ -1,6 +1,7 @@
 """Tool registry and decorator system for unified tools architecture."""
 
 import inspect
+import ast
 import json
 import logging
 from functools import wraps
@@ -93,8 +94,18 @@ def tool(
         
         # Create wrapper that handles input parsing and error handling
         @wraps(func)
-        async def wrapper(input_data: Union[str, dict, Any], mcp_context):
-            """Wrapper that provides unified input parsing and error handling."""
+        async def wrapper(
+            input_data: Union[str, dict, Any] = None,
+            mcp_context=None,
+            **_extra_kwargs,
+        ):
+            """Wrapper that provides unified input parsing and error handling.
+            
+            Notes:
+            - Some clients may erroneously send an extra 'ctx' argument. We accept
+              and ignore any unexpected kwargs to remain backwards/forwards compatible.
+            - The actual execution context is provided by FastMCP via 'mcp_context'.
+            """
             
             # Extract node name from MCP context
             server_name = mcp_context.fastmcp.name
@@ -105,7 +116,7 @@ def tool(
             
             try:
                 # Parse input data
-                parsed_input = _parse_input_data(input_data, input_model, tool_name)
+                parsed_input = _parse_input_data(input_data or {}, input_model, tool_name)
                 
                 # Enable debug logging if requested
                 if hasattr(parsed_input, 'debug') and parsed_input.debug:
@@ -184,8 +195,16 @@ def _parse_input_data(input_data: Union[str, dict, Any], model_class: type, tool
         try:
             data_dict = json.loads(input_data) if input_data.strip() else {}
         except json.JSONDecodeError as e:
-            log.error(f"Failed to parse JSON for {tool_name}: {e}")
-            raise SerializationError(f"Invalid JSON input for {tool_name}: {e}")
+            # Fallback: accept Python-literal style dict strings (from some clients)
+            try:
+                literal = ast.literal_eval(input_data)
+                if isinstance(literal, dict):
+                    data_dict = literal
+                else:
+                    raise ValueError("Parsed literal is not a dict")
+            except Exception as e2:
+                log.error(f"Failed to parse input for {tool_name} as JSON or python-literal dict: {e}; {e2}")
+                raise SerializationError(f"Invalid input for {tool_name}: {e}")
     elif isinstance(input_data, dict):
         data_dict = input_data.copy()
     elif isinstance(input_data, model_class):
