@@ -56,11 +56,12 @@ def main(cfg: DictConfig) -> None:
     log.info(f"Extras: {settings.extras}")
     log.info(f"Tools: {settings.tools}")
     
-    # Create FastMCP server
-    mcp = FastMCP(f"tatbot.{node_name}", host=str(settings.host), port=settings.port)
-    
-    # Note: MCP protocol handles authentication through its own mechanisms
-    # FastMCP doesn't use HTTP middleware like FastAPI
+    # Create FastMCP server (open mode - no authentication)
+    mcp = FastMCP(
+        f"tatbot.{node_name}", 
+        host=str(settings.host), 
+        port=settings.port
+    )
     
     # Register tools
     _register_tools(mcp, settings.tools, node_name)
