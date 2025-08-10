@@ -1,6 +1,6 @@
-## Tatbot network refactor: secure and convenient modes (home vs edge)
+# Tatbot network refactor: secure and convenient modes (home vs edge)
 
-### Context and goals
+## Context and goals
 
 - **Heterogeneous devices**: RPis, Jetson/PCs, Trossen arm controllers, IP cameras. Some run Linux with SSH, others have vendor UIs only. Services (e.g., MCP servers) run across nodes.
 - **Two operating modes**:
@@ -8,14 +8,14 @@
   - **Home mode**: All devices use the home router (DHCP + DNS). Everything should be reachable from the home desktop `oop`. Minimal special infra.
 - **Goals**: One-command toggle, fast, idempotent, safe rollbacks, and secure defaults. No per-device manual edits during toggles.
 
-### Current situation (observations)
+## Current situation (observations)
 
 - SSH orchestration exists via `tatbot.utils.net` to generate and distribute a shared key and build `~/.ssh/config`. The current flow uploads both public and private keys to remote nodes for frictionless inter-node SSH, which is convenient but increases lateral movement risk.
 - DNS toggle script (`tatbot.utils.mode_toggle`) connects to each node over SSH to edit `dhcpcd.conf` and start/stop `dnsmasq` on a chosen DNS node. This is brittle (device variety), slow (per-node SSH), and harder to validate/rollback.
 - Docs indicate in edge mode the DNS server is `rpi1`, while the toggler defaults to `rpi2`. There is potential drift between tooling and documentation.
 - NFS is hosted on `rpi2` with clients mounting by IP. That works but couples mounts to a single IP and requires correct DNS in edge mode for convenience.
 
-### Security vs convenience: guiding principles
+## Security vs convenience: guiding principles
 
 - **Centralize state changes**: Toggling should modify a single, well-understood component (the DNS/DHCP node) rather than touching every device.
 - **Single source of truth**: Maintain host inventory and static IP/MAC/role metadata in `nodes.yaml` and generate network configs from it.
@@ -23,7 +23,7 @@
 - **Defense in depth**: Enforce basic host firewalls (UFW/nftables) to restrict inbound services to the tatbot LAN in edge mode and to trusted subnets in home mode.
 - **Fail fast and rollback**: Validate DNS/DHCP config before reload; perform postflight checks; roll back if validation fails.
 
-### Target design
+## Target design
 
 1) DNS/DHCP anchor node with stable IP
 
@@ -96,7 +96,7 @@
 - Toggle: update symlink, validate, reload; if reload fails, revert symlink.
 - Postflight: parallel resolution checks (e.g., `ook.tatbot.local`, `arm-l.tatbot.local`, cameras), verify DHCP lease (edge), confirm MCP ports are reachable.
 
-### Example dnsmasq snippets
+## Example dnsmasq snippets
 
 Home profile (no DHCP; pure forwarder):
 
@@ -129,7 +129,7 @@ dhcp-range=192.168.1.100,192.168.1.200,12h
 # address=/arm-l.tatbot.local/192.168.1.30
 ```
 
-### Migration plan
+## Migration plan
 
 1) Decide and document the DNS/DHCP anchor node (`rpi1`) and its static IP (e.g., 192.168.1.53).
 2) Collect MAC addresses and intended IPs for all devices; update `nodes.yaml`.
@@ -140,13 +140,13 @@ dhcp-range=192.168.1.100,192.168.1.200,12h
 7) Implement `tatctl mode set|status|check` and `tatctl mcp restart` wrappers using the existing `scripts/` and `uv` environment.
 8) Harden SSH and firewalls, rotate passwords on cameras, and ensure least privilege for services.
 
-### Risks and mitigations
+## Risks and mitigations
 
 - Single point of failure (DNS/DHCP node): mitigate with keepalived (VRRP) to float 192.168.1.53 to `rpi2` when `rpi1` fails.
 - Device DNS stickiness: some devices cache DNS aggressively; use service reloads or power-cycle in worst case. Prefer static leases with short TTLs during transition.
 - Private key replication: default to management key only; keep the “shared key on all nodes” as an optional opt-in.
 
-### What “good” looks like
+## What “good” looks like
 
 - Toggling between home and edge is a single command that completes in seconds.
 - All nodes resolve each other via `*.tatbot.local`; MCP servers are reachable at stable hostnames and ports.

@@ -15,13 +15,30 @@ source scripts/setup_env.sh
 uv pip install -e .
 
 # Install node-specific dependencies
-uv pip install .[bot,cam,dev,gen,gpu,img,viz]
+uv pip install .[bot,cam,gen,gpu,img,viz]
+
+# Development dependencies
+uv pip install .[dev,docs]
 
 # Load environment variables (API keys, passwords)
 set -a; source .env; set +a
 ```
 
-### Code Quality
+### Documentation (build, view, live-reload)
+```bash
+# Build docs
+uv pip install -e .[docs]
+uv run sphinx-build docs docs/_build
+
+# View docs
+xdg-open docs/_build/index.html
+
+# Live-reload docs during edits (serves at http://127.0.0.1:8000)
+uv pip install -e .[dev]  # ensures sphinx-autobuild
+uv run sphinx-autobuild docs docs/_build
+```
+
+### Code Quality, Type Checking, Linting
 ```bash
 # Run linting and formatting
 ./scripts/lint.sh
@@ -46,15 +63,13 @@ tail -f ~/tatbot/nfs/mcp-logs/<node_name>.log
 
 ### Running Operations
 ```bash
-# Run main application with Hydra configuration
-uv run python -m tatbot.main
+# run mcp server on the trossen-ai node
+cd ~/tatbot && ./scripts/run_mcp.sh trossen-ai
 
-# Run with specific scene
-uv run python -m tatbot.main scenes=tatbotlogo
 
 # Run visualization tools
-uv run python -m tatbot.viz.stroke tatbotlogo
-uv run python -m tatbot.viz.teleop default
+ uv run python -m tatbot.viz.stroke --scene=tatbotlogo
+uv run python -m tatbot.viz.teleop --enable-robot --enable-depth
 ```
 
 ## Architecture
@@ -122,7 +137,7 @@ uv run python -m tatbot.viz.teleop default
 - **MCP Distribution**: Tools exposed as MCP endpoints for remote execution
 - **Pydantic Validation**: Strong typing and validation throughout
 - **Virtual Environment**: Uses `uv` for fast, deterministic dependency management
-- **Modular Extras**: Optional dependencies grouped by functionality
+- **Modular Extras**: Optional dependencies grouped by functionality (bot, cam, dev, gen, gpu, img, viz, docs)
 - **Configuration Constants**: Centralized constant classes replace magic numbers (AppConstants, ServerConstants, MCPConstants, CalibrationConstants)
 - **Specific Exception Handling**: Custom exception types (ConfigurationError, NetworkError, CalibrationError, etc.) replace generic Exception catching
 - **Descriptive Naming**: Variables use meaningful names instead of cryptic abbreviations

@@ -13,17 +13,30 @@ uv pip install -e .
 
 ## Optional Dependencies
 Dependencies are separated into optional groups, defined in `pyproject.toml`. Install the groups you need for your task.
+
+### Core Functionality Groups
 - `bot`: Robot-specific dependencies (`lerobot`, `trossen-arm`, etc.)
 - `cam`: Camera-specific dependencies (`pyrealsense2`, `pupil-apriltags`, etc.)
-- `dev`: Development tools (`ruff`, `pytest`)
 - `gen`: Stroke generation and inverse kinematics
-- `gpu`: For GPU-accelerated tasks
+- `gpu`: For GPU-accelerated tasks (`jax[cuda12]`)
 - `img`: Image processing libraries (`opencv`)
-- `viz`: Visualization tools
+- `viz`: Visualization tools (`viser`)
+
+### Development and Quality Groups
+- `dev`: Basic development tools (`ruff`, `isort`, `pytest`)
+- `quality`: Advanced development tools (`mypy`, `pre-commit`, type stubs)
+- `docs`: Documentation generation (`sphinx`, themes)
 
 Install one or more groups like this:
 ```bash
+# Core functionality
 uv pip install .[bot,viz,cam]
+
+# Development environment
+uv pip install .[dev,docs]
+
+# Full installation
+uv pip install .[bot,cam,dev,gen,gpu,img,viz,docs]
 ```
 
 ## Full Environment Setup
@@ -32,12 +45,12 @@ For a clean, from-scratch setup:
 git clone --depth=1 https://github.com/hu-po/tatbot.git && cd ~/tatbot
 source scripts/setup_env.sh
 
-# (Optional) install additional extras
-uv pip install .[bot,cam,dev,gen,gpu,img,viz]
+# Install all dependencies (choose based on your needs)
+uv pip install .[bot,cam,dev,gen,gpu,img,viz,docs]
 
 # Source environment variables (e.g., API keys, camera passwords)
 # Ensure you have a .env file (see .env.example)
-set -a; source .env; set +a
+set -a; source ~/tatbot/nfs/.env; set +a
 ```
 
 ## Starting the System
@@ -54,3 +67,4 @@ set -a; source .env; set +a
    # On trossen-ai
    cd ~/tatbot && ./scripts/run_mcp.sh trossen-ai
    ```
+

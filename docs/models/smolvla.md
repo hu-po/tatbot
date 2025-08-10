@@ -5,7 +5,7 @@
 - [tatbot fork](https://github.com/hu-po/lerobot)
 - smolvla is part of the lerobot repo
 
-#### Train
+## Train
 
 instructions for `oop`
 
@@ -29,7 +29,7 @@ uv run python ~/lerobot/lerobot/scripts/train.py \
   --steps=1000
 ```
 
-#### Eval
+## Eval
 
 instructions for `trossen-ai` performing model inference and running robot
 
