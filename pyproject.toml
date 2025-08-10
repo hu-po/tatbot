@@ -69,10 +69,10 @@ dev = [
     "mypy",
     "types-PyYAML",
     "types-paramiko",
-    "sphinx-autobuild",
 ]
 docs = [
     "sphinx>=7.0",
+    "sphinx-autobuild",
     "myst-parser>=2.0",
     "furo>=2023.9.10",
 ]
