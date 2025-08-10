@@ -145,7 +145,7 @@ For quickest iteration, train directly from local recording directories without 
 lerobot-train \
     --policy.path=lerobot/smolvla_base \
     --dataset.root="$HOME/tatbot/nfs/recordings/stroke-tatbotlogo-2025y-08m-09d-17h-02m-10s" \
-    --output_dir=~/tatbot/output/train/tatbotlogo/smolvla \
+    --output_dir=outputs/train/tatbotlogo/smolvla \
     --batch_size=64 \
     --steps=100000 \
     --wandb.enable=true \
@@ -155,7 +155,7 @@ lerobot-train \
 lerobot-train \
     --policy.type=pi0 \
     --dataset.root="$HOME/tatbot/nfs/recordings/stroke-default-latest" \
-    --output_dir=~/tatbot/output/train/default/pi0 \
+    --output_dir=outputs/train/default/pi0 \
     --batch_size=32 \
     --steps=100000 \
     --wandb.enable=true \
@@ -206,7 +206,7 @@ wandb:
 #### Checkpoint Layout
 Typical training output structure:
 ```
-~/tatbot/output/train/<scene>/<policy>/
+outputs/train/<scene>/<policy>/
 └── checkpoints/
     ├── last/
     │   └── pretrained_model/  # Latest checkpoint
@@ -224,7 +224,7 @@ uv run lerobot-train \
     --dataset.root="$HOME/tatbot/nfs/recordings/stroke-tatbotlogo-latest" \
     --batch_size=8 \
     --steps=100 \
-    --output_dir=~/tatbot/output/train/test_run
+    --output_dir=outputs/train/test_run
 
 # Full training run
 uv run lerobot-train \
@@ -232,7 +232,7 @@ uv run lerobot-train \
     --dataset.root="$HOME/tatbot/nfs/recordings/stroke-tatbotlogo-latest" \
     --batch_size=32 \
     --steps=100000 \
-    --output_dir=~/tatbot/output/train/tatbotlogo/smolvla
+    --output_dir=outputs/train/tatbotlogo/smolvla
 ```
 
 ### Phase 3: Evaluation and Monitoring
@@ -245,7 +245,7 @@ uv run lerobot-train \
        --dataset.root="$HOME/tatbot/nfs/recordings/stroke-tatbotlogo-latest" \
        --batch_size=4 \
        --steps=10 \
-       --output_dir=~/tatbot/output/train/sanity_check
+       --output_dir=outputs/train/sanity_check
    ```
 
 2. **WandB Metrics**:
@@ -259,7 +259,7 @@ uv run lerobot-train \
    # Verify checkpoint loads correctly
    from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
    
-   checkpoint_path = "~/tatbot/output/train/tatbotlogo/smolvla/checkpoints/last/pretrained_model"
+   checkpoint_path = "outputs/train/tatbotlogo/smolvla/checkpoints/last/pretrained_model"
    policy = SmolVLAPolicy.from_pretrained(checkpoint_path)
    print(f"Loaded policy with config: {policy.config}")
    ```
@@ -269,7 +269,7 @@ uv run lerobot-train \
 ### Tool Design: `vla_infer`
 
 ```python
-# src/tatbot/tools/vla/models.py
+# src/tatbot/tools/robot/vla_infer_models.py
 from typing import Literal, Optional
 from tatbot.tools.base import ToolInput, ToolOutput
 
@@ -293,7 +293,7 @@ class VLAInferOutput(ToolOutput):
 ```
 
 ```python
-# src/tatbot/tools/vla/infer.py
+# src/tatbot/tools/robot/vla_infer.py
 import time
 import torch
 from pathlib import Path
@@ -305,7 +305,7 @@ from lerobot.utils.robot_utils import busy_wait
 from tatbot.main import compose_and_validate_scene
 from tatbot.tools.base import ToolContext
 from tatbot.tools.registry import tool
-from tatbot.tools.vla.models import VLAInferInput, VLAInferOutput
+from tatbot.tools.robot.vla_infer_models import VLAInferInput, VLAInferOutput
 from tatbot.utils.log import get_logger
 
 log = get_logger("tools.vla_infer", "🧠")
@@ -430,8 +430,15 @@ async def vla_infer(input_data: VLAInferInput, ctx: ToolContext):
                 with torch.no_grad():
                     action = policy.select_action(observation)
                 
+                # Convert action format if needed (VLA policies may output joint angles)
+                if hasattr(action, 'shape') and len(action.shape) == 1 and len(action) == 14:
+                    # Action is likely joint angles, convert to robot action format
+                    robot_action = robot._urdf_joints_to_action(action)
+                else:
+                    robot_action = action
+                
                 # Send action (use fast goal time for continuous control)
-                sent_action = robot.send_action(action, scene.arms.goal_time_fast)
+                sent_action = robot.send_action(robot_action, scene.arms.goal_time_fast)
                 
                 # Record if evaluation dataset is enabled
                 if dataset is not None:
@@ -493,21 +500,19 @@ tools:
   - vla_infer  # New VLA inference tool (renamed for clarity)
 
 vla:
-  default_checkpoint: "~/tatbot/output/train/tatbotlogo/smolvla/checkpoints/last/pretrained_model"
+  default_checkpoint: "outputs/train/tatbotlogo/smolvla/checkpoints/last/pretrained_model"
   device: "cuda"
   batch_size: 1
 ```
 
-2. **Dynamic Tool Loading**:
+2. **Tool Registration**:
+The tool will be automatically registered when the module is imported during `register_all_tools()`:
 ```python
-# src/tatbot/tools/registry.py in register_all_tools()
-# Import VLA tools
-try:
-    from tatbot.tools.vla import infer  # noqa: F401
-    log.debug("Imported VLA tools")
-except ImportError as e:
-    log.debug(f"VLA tools not available: {e}")
+# src/tatbot/tools/robot/__init__.py (ensure vla_infer.py is imported)
+from . import align, reset, sense, stroke, vla_infer  # Add vla_infer import
 ```
+
+The existing `get_tools_for_node()` function will automatically discover it.
 
 3. **Restart MCP Server**:
 ```bash
@@ -525,7 +530,7 @@ ssh trossen-ai "bash ~/tatbot/scripts/run_mcp.sh trossen-ai"
 ```json
 {
   "policy": "smolvla",
-  "checkpoint_path": "~/tatbot/output/train/tatbotlogo/smolvla/checkpoints/last/pretrained_model",
+  "checkpoint_path": "outputs/train/tatbotlogo/smolvla/checkpoints/last/pretrained_model",
   "scene_name": "tatbotlogo",
   "dry_run": true
 }
@@ -535,7 +540,7 @@ ssh trossen-ai "bash ~/tatbot/scripts/run_mcp.sh trossen-ai"
 ```json
 {
   "policy": "smolvla",
-  "checkpoint_path": "~/tatbot/output/train/tatbotlogo/smolvla/checkpoints/last/pretrained_model",
+  "checkpoint_path": "outputs/train/tatbotlogo/smolvla/checkpoints/last/pretrained_model",
   "scene_name": "tatbotlogo",
   "device": "cuda",
   "max_steps": 500,
@@ -549,7 +554,7 @@ ssh trossen-ai "bash ~/tatbot/scripts/run_mcp.sh trossen-ai"
 ```json
 {
   "policy": "pi0",
-  "checkpoint_path": "~/tatbot/output/train/default/pi0/checkpoints/best/pretrained_model",
+  "checkpoint_path": "outputs/train/default/pi0/checkpoints/best/pretrained_model",
   "device": "cpu",
   "max_steps": 50,
   "fps": 5
@@ -597,19 +602,28 @@ ssh trossen-ai "bash ~/tatbot/scripts/run_mcp.sh trossen-ai"
 - **Storage**: 500GB+ for datasets and checkpoints on NFS
 
 ### Software Dependencies
-Already included in the LeRobot installation:
-- SmolVLA extras: `uv pip install -e .[smolvla]`
-- Pi0 extras: `uv pip install -e .[pi0]`
-- Tatbot robot support: `uv pip install -e .[tatbot]`
-- RealSense cameras: `uv pip install -e .[intelrealsense]`
+LeRobot extras (must be installed in LeRobot repo directory, not tatbot):
+```bash
+# In your LeRobot checkout directory (e.g., ~/lerobot)
+cd ~/lerobot
+uv pip install -e .[smolvla]  # For SmolVLA policy
+uv pip install -e .[pi0]      # For Pi0 policy  
+uv pip install -e .[tatbot]   # For Tatbot robot support
+uv pip install -e .[intelrealsense]  # For RealSense cameras
+```
 
 ### Environment Setup
 ```bash
-# Complete setup for training and inference
+# In tatbot repo
 source scripts/setup_env.sh
 uv pip install -e .
-uv pip install -e .[tatbot,intelrealsense,smolvla,pi0]
-set -a; source .env; set +a  # Load API keys
+uv pip install -e .[gen,gpu,img,viz,dev]  # Tatbot extras
+
+# Install WandB explicitly for experiment tracking
+uv pip install wandb
+
+# Load environment variables
+set -a; source .env; set +a
 ```
 
 ### Network Requirements

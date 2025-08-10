@@ -215,3 +215,107 @@ Operational tips
 - Add telemetry (loop time, policy latency) and optional video logging
 - Implement automatic policy-type detection from checkpoint metadata
 - Provide a safety interlock and emergency stop binding
+
+## Appendix: Corrected MCP tool skeleton (matches Tatbot MCP contract)
+
+```python
+# file: src/tatbot/tools/robot/infer_vla.py
+import asyncio
+import torch
+from pydantic import BaseModel
+from tatbot.tools.registry import tool
+from tatbot.tools.base import ToolContext
+from tatbot.main import compose_and_validate_scene
+from lerobot.robots.tatbot.config_tatbot import TatbotConfig
+from lerobot.robots import make_robot_from_config
+
+class InferVLAInput(BaseModel):
+    checkpoint_path: str
+    scene_name: str = "default"
+    policy_type: str = "smolvla"  # or "pi0"
+    device: str = "cuda"
+    enable_realsense: bool = False
+    fps: int = 10
+    max_steps: int | None = None
+    dry_run: bool = False
+    debug: bool = False
+
+class InferVLAOutput(BaseModel):
+    success: bool
+    message: str
+
+@tool(
+    name="infer_vla",
+    nodes=["trossen-ai"],
+    description="Run VLA policy inference on robot",
+    input_model=InferVLAInput,
+    output_model=InferVLAOutput,
+)
+async def infer_vla(input_data: InferVLAInput, ctx: ToolContext):
+    # Progress: loading scene
+    yield {"progress": 0.01, "message": "Loading scene configuration..."}
+    scene = compose_and_validate_scene(input_data.scene_name)
+
+    # Optional RealSense wiring mirrors stroke.py
+    rs_cameras = {}
+    if input_data.enable_realsense:
+        from lerobot.cameras.realsense import RealSenseCameraConfig
+        rs_cameras = {
+            c.name: RealSenseCameraConfig(
+                fps=c.fps, width=c.width, height=c.height, serial_number_or_name=c.serial_number
+            ) for c in scene.cams.realsenses
+        }
+
+    # Complete robot configuration
+    robot = make_robot_from_config(TatbotConfig(
+        ip_address_l=scene.arms.ip_address_l,
+        ip_address_r=scene.arms.ip_address_r,
+        arm_l_config_filepath=scene.arms.arm_l_config_filepath,
+        arm_r_config_filepath=scene.arms.arm_r_config_filepath,
+        goal_time=scene.arms.goal_time_slow,
+        connection_timeout=scene.arms.connection_timeout,
+        home_pos_l=scene.sleep_pos_l.joints,
+        home_pos_r=scene.sleep_pos_r.joints,
+        rs_cameras=rs_cameras,
+        ip_cameras={},
+    ))
+
+    # Load policy
+    if input_data.policy_type == "smolvla":
+        from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy as Policy
+    elif input_data.policy_type == "pi0":
+        from lerobot.policies.pi0.modeling_pi0 import PI0Policy as Policy
+    else:
+        yield InferVLAOutput(success=False, message=f"Unknown policy_type: {input_data.policy_type}")
+        return
+
+    yield {"progress": 0.05, "message": "Loading policy checkpoint..."}
+    policy = Policy.from_pretrained(input_data.checkpoint_path)
+    policy.to(input_data.device)
+    policy.eval()
+
+    if input_data.dry_run:
+        yield InferVLAOutput(success=True, message="Loaded policy and scene successfully (dry run)")
+        return
+
+    yield {"progress": 0.1, "message": "Connecting to robot..."}
+    robot.connect()
+    try:
+        robot.send_action(robot._urdf_joints_to_action(scene.ready_pos_full.joints), safe=True)
+        step = 0
+        yield {"progress": 0.2, "message": "Starting inference loop..."}
+        while input_data.max_steps is None or step < input_data.max_steps:
+            obs = robot.get_observation()
+            with torch.no_grad():
+                action = policy.select_action(obs)
+            robot.send_action(action)
+            await asyncio.sleep(1 / input_data.fps)
+            step += 1
+            if step % 50 == 0:
+                yield {"progress": 0.2 + 0.7 * (step / (input_data.max_steps or step)),
+                       "message": f"Executed {step} steps"}
+    finally:
+        robot.disconnect()
+
+    yield InferVLAOutput(success=True, message="Inference completed")
+```

@@ -61,18 +61,19 @@ Implication: these datasets are immediately usable by LeRobot training scripts (
 
 ## Training requirements
 
-- Python environment with LeRobot and the selected policy extras. In this repo, always use `uv`:
+- Python environment with Tatbot installed via `uv`. Install LeRobot separately (in its own checkout) if you need policy code/extras:
 
 ```bash
 source scripts/setup_env.sh
 uv pip install -e .
-uv pip install -e .[gen,gpu,img,viz]  # common extras
-uv pip install -e .[smolvla,pi0,docs,dev]  # as needed for VLA training
+uv pip install -e .[bot,cam,gen,gpu,img,viz,dev,docs]
+# If training with LeRobot policies, do this in your LeRobot repo (not here):
+#   cd ~/lerobot && uv pip install -e .[smolvla,pi0]
 set -a; source .env; set +a  # optional secrets for WandB, etc.
 ```
 
 - GPU recommended for training; CPU-only is possible for debugging.
-- Optional: WandB for experiment tracking.
+- WandB optional; install/enable explicitly in your training environment.
 
 ## Preparing datasets for training
 
@@ -114,7 +115,7 @@ Guidance uses the same policy families as in `docs/models/claude_vla_guide.md`.
   - If training on sequences spanning multiple poses, adjust accordingly.
 - Image size and preprocessing: ensure to match camera output (e.g., 512×512 with padding for SmolVLA).
 
-Example commands (adjust flags to your CLI wrapper):
+Example commands (adjust flags to your CLI wrapper; standardize outputs under `outputs/train/`):
 
 SmolVLA finetune from base on a local dataset root:
 ```bash
@@ -141,8 +142,9 @@ lerobot-train \
 ```
 
 Notes:
-- If your CLI requires `--dataset.repo_id`, point it to a Hub repo or use local root + repo-id pairing if supported.
-- Keep evaluation split: either reserve recent episodes for validation or use `--dataset.split.*` flags where available.
+- Prefer `--dataset.root` for local datasets; use `--dataset.repo_id` only if pushing to Hub.
+- Do not assume fixed `chunk_size`/`n_action_steps`; align with actual `scene.stroke_length` and model config.
+- Keep evaluation split: either reserve episodes for validation or use `--dataset.split.*` flags where available.
 
 ## Validating the pipeline
 
@@ -158,9 +160,11 @@ We will add a new MCP tool `vla_infer` that:
 - Builds a `Tatbot` instance from a scene, connects, streams observations, and sends policy actions in a timed loop.
 - Optionally records an evaluation dataset for later analysis.
 
-Suggested file layout:
-- `src/tatbot/tools/vla/models.py`: Pydantic models for input/output
-- `src/tatbot/tools/vla/infer.py`: Tool implementation
+Suggested file layout (choose one and keep consistent):
+- Place under `src/tatbot/tools/robot/` (recommended, like other robot tools):
+  - `src/tatbot/tools/robot/models_vla.py`
+  - `src/tatbot/tools/robot/infer_vla.py`
+- Or create a dedicated package `src/tatbot/tools/vla/` and import it in the registry. This guide shows the robot/ layout.
 
 Input model fields (proposed):
 - `policy`: one of `"smolvla" | "pi0"`
@@ -181,7 +185,7 @@ Output model fields (proposed):
 Code skeleton for the tool:
 
 ```python
-# src/tatbot/tools/vla/models.py
+# src/tatbot/tools/robot/models_vla.py
 from typing import Literal, Optional
 from tatbot.tools.base import ToolInput, ToolOutput
 
@@ -196,6 +200,7 @@ class VLAInferInput(ToolInput):
     debug: bool = False
     record_eval: bool = False
     dry_run: bool = False
+    task_prompt: Optional[str] = None
 
 class VLAInferOutput(ToolOutput):
     success: bool = True
@@ -205,7 +210,7 @@ class VLAInferOutput(ToolOutput):
 ```
 
 ```python
-# src/tatbot/tools/vla/infer.py
+# src/tatbot/tools/robot/infer_vla.py
 import time
 import torch
 from pathlib import Path
@@ -213,10 +218,11 @@ from lerobot.robots import Robot, make_robot_from_config
 from lerobot.robots.tatbot.config_tatbot import TatbotConfig
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
+from lerobot.utils.robot_utils import busy_wait
 from tatbot.main import compose_and_validate_scene
 from tatbot.tools.base import ToolContext
 from tatbot.tools.registry import tool
-from tatbot.tools.vla.models import VLAInferInput, VLAInferOutput
+from tatbot.tools.robot.models_vla import VLAInferInput, VLAInferOutput
 from tatbot.utils.log import get_logger
 
 log = get_logger("tools.vla_infer", "🧠")
@@ -257,11 +263,6 @@ async def vla_infer(input_data: VLAInferInput, ctx: ToolContext):
             ip_cameras={},
         ))
 
-        # Optional dry-run: validate loading without moving hardware
-        if input_data.dry_run:
-            yield VLAInferOutput(success=True, message="Loaded scene and prepared robot config (dry run)", num_steps=0)
-            return
-
         yield {"progress": 0.05, "message": "Connecting to robot..."}
         robot.connect()
 
@@ -276,6 +277,11 @@ async def vla_infer(input_data: VLAInferInput, ctx: ToolContext):
         policy.eval()
         policy.to(input_data.device)
 
+        # Optional dry-run: validate loading without moving hardware
+        if input_data.dry_run:
+            yield VLAInferOutput(success=True, message="Loaded scene and policy (dry run)", num_steps=0)
+            return
+
         # Optional eval recording
         dataset = None
         if input_data.record_eval:
@@ -284,11 +290,17 @@ async def vla_infer(input_data: VLAInferInput, ctx: ToolContext):
             eval_dir.mkdir(parents=True, exist_ok=True)
             action_features = hw_to_dataset_features(robot.action_features, "action", True)
             obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
+            # Align writer threads with stroke.py convention
+            num_camera_threads = 0
+            if hasattr(robot, "rs_cameras") and len(robot.rs_cameras) > 0:
+                num_camera_threads += 4 * len(robot.rs_cameras)
+            if hasattr(robot, "ip_cameras") and len(robot.ip_cameras) > 0:
+                num_camera_threads += 4 * len(robot.ip_cameras)
             dataset = LeRobotDataset.create(
                 repo_id=f"tatbot/{eval_dir.name}", fps=input_data.fps,
                 root=str(eval_dir), robot_type=robot.name,
                 features={**action_features, **obs_features},
-                use_videos=True, image_writer_processes=0, image_writer_threads=0,
+                use_videos=True, image_writer_processes=0, image_writer_threads=num_camera_threads,
             )
 
         # Move to ready
@@ -297,14 +309,28 @@ async def vla_infer(input_data: VLAInferInput, ctx: ToolContext):
         yield {"progress": 0.2, "message": "Starting inference loop..."}
         num_steps = 0
         dt_target = 1.0 / max(1, input_data.fps)
+        
+        def preprocess_observation_for_policy(observation):
+            """Map Tatbot observation to policy-expected dict. Include task text if needed."""
+            # TODO: implement mapping for chosen policy; pass input_data.task_prompt
+            return observation
+
+        def prepare_robot_action(policy_output):
+            """Convert policy output to robot action format if necessary."""
+            try:
+                # If policy outputs 14D URDF joints (left7+right7):
+                return robot._urdf_joints_to_action(policy_output)
+            except Exception:
+                return policy_output
         try:
             while num_steps < input_data.max_steps:
                 t0 = time.perf_counter()
                 observation = robot.get_observation()
+                policy_obs = preprocess_observation_for_policy(observation)
                 with torch.no_grad():
-                    action = policy.select_action(observation)
+                    action = policy.select_action(policy_obs) if hasattr(policy, "select_action") else policy(policy_obs)
                 # Send action (fast time for continuous control)
-                sent_action = robot.send_action(action, scene.arms.goal_time_fast)
+                sent_action = robot.send_action(prepare_robot_action(action), scene.arms.goal_time_fast)
 
                 if dataset is not None:
                     obs_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
@@ -312,10 +338,9 @@ async def vla_infer(input_data: VLAInferInput, ctx: ToolContext):
                     dataset.add_frame({**obs_frame, **act_frame})
 
                 num_steps += 1
-                # FPS pacing
+                # FPS pacing (busy-wait for precision)
                 dt = time.perf_counter() - t0
-                if dt < dt_target:
-                    time.sleep(dt_target - dt)
+                busy_wait(dt_target - dt)
 
             if dataset is not None:
                 dataset.save_episode()
@@ -361,7 +386,7 @@ except ImportError as e:
 ```json
 {
   "policy": "smolvla",
-  "checkpoint_path": "~/tatbot/outputs/train/smolvla_tatbot/checkpoints/last/pretrained_model",
+  "checkpoint_path": "outputs/train/smolvla_tatbot/checkpoints/last/pretrained_model",
   "scene_name": "tatbotlogo",
   "device": "cuda",
   "max_steps": 500,
