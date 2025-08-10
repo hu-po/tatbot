@@ -6,6 +6,7 @@
 data
 gr00t
 smolvla
+claude_vla_guide
 ```
 
 
