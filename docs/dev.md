@@ -34,3 +34,9 @@ uv run sphinx-build docs docs/_build
 ## General Tips
 - Always work within the `uv` virtual environment (`source .venv/bin/activate`)
 - Use `uv pip install` and `uv run` for consistency
+
+## Prompts
+
+```
+ You have the opportunity of looking at another agent's attempt at the task you just completed. Read it carefully and use it to better understand the decisions you made in your document. Make any small edits to your document that fix anything you believe was done better in the alternate task attempts. The other task attempts have the name format of vla_plan_*.md
+ ```

@@ -6,7 +6,10 @@
 data
 gr00t
 smolvla
-claude_vla_guide
+vla_plan_0_lerobot
+vla_plan_1
+vla_plan_2
+vla_plan_lerobot
 ```
 
 
