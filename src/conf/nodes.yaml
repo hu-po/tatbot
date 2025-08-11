@@ -28,3 +28,8 @@ nodes:
     emoji: 🦾
     ip: 192.168.1.97
     user: trossen-ai
+    
+  - name: hog
+    emoji: 🦔
+    ip: 192.168.1.88
+    user: hog

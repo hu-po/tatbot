@@ -33,7 +33,8 @@ class GPUConversionService:
         return local_path
 
     def _load_node_host_port(self, node_name: str) -> Tuple[str, int]:
-        config_dir = Path(__file__).resolve().parent.parent / "conf" / "mcp"
+        # Config files live under tatbot/src/conf/mcp, not tatbot/src/tatbot/conf/mcp
+        config_dir = Path(__file__).resolve().parents[2] / "conf" / "mcp"
         node_config_file = config_dir / f"{node_name}.yaml"
         if not node_config_file.exists():
             raise FileNotFoundError(f"Node config file not found: {node_config_file}")

@@ -1,8 +1,8 @@
 """Generic MCP server with Hydra configuration support."""
 
+import logging
 import socket
 from typing import List, Optional
-import logging
 
 import hydra
 from mcp.server.fastmcp import FastMCP
@@ -11,7 +11,7 @@ from omegaconf import DictConfig, OmegaConf
 from tatbot.mcp.models import MCPSettings
 from tatbot.tools import get_tools_for_node
 from tatbot.utils.exceptions import NetworkConnectionError
-from tatbot.utils.log import get_logger, SUBMODULES
+from tatbot.utils.log import SUBMODULES, get_logger
 
 
 class ServerConstants:
