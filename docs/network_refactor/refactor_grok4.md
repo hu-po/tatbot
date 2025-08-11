@@ -4,7 +4,7 @@
 
 This design combines the strengths of both proposed refactor plans to create a clean, baseline implementation for the tatbot prototype robotic system. It's not mission-critical, so we prioritize simplicity, reliability, and basic security over enterprise-grade features like full mTLS or complex VLANs. From Plan 1, we adopt automated service discovery elements (simplified), device abstraction ideas, and health monitoring. From Plan 2, we take centralized DNS/DHCP management, inventory via nodes.yaml, fast idempotent toggles, and practical hardening like limited key distribution and firewalls.
 
-- **Heterogeneous Devices**: RPis (e.g., rpi1, rpi2), Jetsons/PCs (e.g., ook, ojo), Trossen arm controllers (e.g., trossen-ai, arm-l/r), IP cameras (camera1-5). Linux devices support SSH; others use vendor UIs/APIs.
+- **Heterogeneous Devices**: RPis (e.g., rpi1, rpi2), Jetsons/PCs (e.g., ook, ojo), Trossen arm controllers (e.g., eek, arm-l/r), IP cameras (camera1-5). Linux devices support SSH; others use vendor UIs/APIs.
 - **Operating Modes**:
   - **Edge Mode**: Self-contained isolated network for standalone operation. All devices resolve and reach each other (e.g., MCP servers) without external connectivity.
   - **Home Mode**: Integrated with home network (192.168.1.0/24) for developer access from oop (e.g., 192.168.1.51). Devices use home router for DHCP/DNS; minimal special infra.
@@ -41,7 +41,7 @@ Uses a dedicated subnet (192.168.100.0/24) to avoid home network conflicts. All 
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  rpi1 (100.1) ─┐                                          │
-│  DNS/DHCP      │ ┌─ trossen-ai (100.10) ─ arm-l (100.11) │
+│  DNS/DHCP      │ ┌─ eek (100.10) ─ arm-l (100.11) │
 │  Anchor/Node    │ │               └─ arm-r (100.12)      │
 │                 ├─┤                                        │
 │  rpi2 (100.2) ──┘ ├─ ojo (100.20) ─ realsense1/2         │
@@ -75,7 +75,7 @@ Devices join the home network (192.168.1.0/24) via the home router. Use a simple
 │  │                  │                                    │   │
 │  │  rpi1 (1.53) ────┤  ook (dynamic)                     │   │
 │  │  rpi2 (dynamic) ─┤  ojo (dynamic)                     │   │
-│  │  trossen-ai ─────┤  cameras (dynamic/static)          │   │
+│  │  eek ─────┤  cameras (dynamic/static)          │   │
 │  │  (dynamic)       │  arms (dynamic)                    │   │
 │  └──────────────────┼─────────────────────────────────────┘   │
 │                     │                                         │

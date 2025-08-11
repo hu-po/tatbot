@@ -21,7 +21,7 @@ This guide specifies what’s needed to train Vision-Language-Action (VLA) polic
 
 ## Dataset recorded by stroke_tool
 
-`stroke_tool` writes LeRobot-compatible episodic datasets into `~/tatbot/nfs/recordings/` with names like `stroke-<scene>-<timestamp>`. Within each dataset directory:
+`stroke_tool` writes LeRobot-compatible episodic datasets into `/nfs/tatbot/recordings/` with names like `stroke-<scene>-<timestamp>`. Within each dataset directory:
 
 - `scene.yaml`: Scene definition saved at recording start.
 - `strokes.yaml`: Stroke list with metadata; large arrays are in `arrays/*.npy` (see `tatbot.data.stroke`).
@@ -32,7 +32,7 @@ This guide specifies what’s needed to train Vision-Language-Action (VLA) polic
 Example directory structure (may vary slightly by LeRobot version/settings):
 
 ```
-~/tatbot/nfs/recordings/
+/nfs/tatbot/recordings/
 └── stroke-{scene_name}-{timestamp}/
     ├── meta_data/
     │   ├── data.parquet
@@ -80,7 +80,7 @@ set -a; source .env; set +a  # optional secrets for WandB, etc.
 You can train directly from a locally recorded dataset directory. Two common options:
 
 - Local path training (recommended initially):
-  - Use the full path to a recording directory, e.g. `~/tatbot/nfs/recordings/stroke-tatbotlogo-2025y-08m-09d-17h-02m-10s`.
+  - Use the full path to a recording directory, e.g. `/nfs/tatbot/recordings/stroke-tatbotlogo-2025y-08m-09d-17h-02m-10s`.
   - Many LeRobot CLIs accept `--dataset.root` or a `repo_id` that points locally; prefer `--dataset.root` where available.
 
 - Pushing to Hub (optional):
@@ -97,7 +97,7 @@ Aggregating multiple recordings (optional):
 from pathlib import Path
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-recordings_dir = Path("~/tatbot/nfs/recordings").expanduser()
+recordings_dir = Path("/nfs/tatbot/recordings")
 datasets = []
 for dataset_dir in recordings_dir.glob("stroke-*"):
     repo_id = f"tatbot/{dataset_dir.name}"
@@ -121,7 +121,7 @@ SmolVLA finetune from base on a local dataset root:
 ```bash
 lerobot-train \
   --policy.type=smolvla \
-  --dataset.root="/home/USER/tatbot/nfs/recordings/stroke-tatbotlogo-..." \
+  --dataset.root="/nfs/tatbot/recordings/stroke-tatbotlogo-..." \
   --batch_size=32 \
   --steps=100000 \
   --wandb.enable=true \
@@ -133,7 +133,7 @@ Pi0 finetune from base:
 ```bash
 lerobot-train \
   --policy.type=pi0 \
-  --dataset.root="/home/USER/tatbot/nfs/recordings/stroke-tatbotlogo-..." \
+  --dataset.root="/nfs/tatbot/recordings/stroke-tatbotlogo-..." \
   --batch_size=32 \
   --steps=100000 \
   --wandb.enable=true \
@@ -229,7 +229,7 @@ log = get_logger("tools.vla_infer", "🧠")
 
 @tool(
     name="vla_infer",
-    nodes=["trossen-ai"],  # add GPU nodes if you want remote-only
+    nodes=["eek"],  # add GPU nodes if you want remote-only
     description="Run VLA policy inference on Tatbot from a checkpoint",
     input_model=VLAInferInput,
     output_model=VLAInferOutput,
@@ -285,7 +285,7 @@ async def vla_infer(input_data: VLAInferInput, ctx: ToolContext):
         # Optional eval recording
         dataset = None
         if input_data.record_eval:
-            output_dir = Path("~/tatbot/nfs/recordings").expanduser()
+            output_dir = Path("/nfs/tatbot/recordings")
             eval_dir = output_dir / f"vla-eval-{scene.name}-{int(time.time())}"
             eval_dir.mkdir(parents=True, exist_ok=True)
             action_features = hw_to_dataset_features(robot.action_features, "action", True)
@@ -372,13 +372,13 @@ except ImportError as e:
 ```
 
 2) Ensure the node config includes this tool (or allow wildcard):
-- Edit `conf/mcp/trossen-ai.yaml` and/or GPU nodes to include `vla_infer` in `mcp.tools`.
+- Edit `conf/mcp/eek.yaml` and/or GPU nodes to include `vla_infer` in `mcp.tools`.
 - If the tool requires GPU, add `requires=["gpu"]` to the decorator and ensure the node has `extras: [gpu]`.
 
 3) Restart the MCP server on the node:
 
 ```bash
-./scripts/run_mcp.sh trossen-ai
+./scripts/run_mcp.sh eek
 ```
 
 4) Invoke the tool from your MCP client with input JSON like:

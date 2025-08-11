@@ -1,5 +1,9 @@
 {
     "mcpServers": {
+        "eek": {
+            "type": "http",
+            "url": "http://192.168.1.97:8000/mcp"
+        },
         "hog": {
             "url": "http://192.168.1.88:8000/mcp",
             "transport": "streamable-http"
@@ -7,10 +11,6 @@
         "ook": {
             "type": "http",
             "url": "http://192.168.1.90:8000/mcp"
-        },
-        "trossen-ai": {
-            "type": "http",
-            "url": "http://192.168.1.97:8000/mcp"
         },
         "oop": {
             "type": "http",

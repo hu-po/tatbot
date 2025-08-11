@@ -30,7 +30,7 @@ the cameras are currently set at:
 tatbot uses two [D405 Intel Realsense cameras](https://www.intelrealsense.com/depth-camera-d405/).
 
 - [`pyrealsense2`](https://github.com/IntelRealSense/librealsense)
-- both realsense cameras are connected to `trossen-ai` via usb3 port
+- both realsense cameras are connected to `hog` via usb3 port
 - Follow the [calibration guide](https://dev.intelrealsense.com/docs/self-calibration-for-depth-cameras).
 - Use the `rs-enumerate-devices` command to verify that both realsenses are connected. If this doesn't work, unplug and replug the realsense cameras.
 - Should be calibrated out of the box, but can be recalibrated

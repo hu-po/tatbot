@@ -77,7 +77,7 @@ docker run -it --gpus all --rm \
     --denoising-steps 4"
 ```
 
-instructions for `trossen-ai` acting as the robot client
+instructions for `eek` acting as the robot client
 
 ```bash
 git clone https://github.com/hu-po/Isaac-GR00T.git && \

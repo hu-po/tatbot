@@ -37,7 +37,7 @@
 2) IP plan and inventory
 
 - Define a flat subnet (e.g., 192.168.1.0/24) with static reservations for critical nodes:
-  - Core nodes: `ook`, `ojo`, `trossen-ai`, `rpi1`, `rpi2`, arms (`arm-l`, `arm-r`), cameras (`camera1..5`).
+  - Core nodes: `ook`, `ojo`, `eek`, `rpi1`, `rpi2`, arms (`arm-l`, `arm-r`), cameras (`camera1..5`).
 - Store MAC addresses and desired IPs/hostnames in `nodes.yaml`. Generate `dnsmasq` static DHCP mappings and `address=` records from this file.
 - Keep hostnames consistent across modes, e.g., `ook.tatbot.local`, `arm-l.tatbot.local`.
 
@@ -122,7 +122,7 @@ server=1.1.1.1
 dhcp-range=192.168.1.100,192.168.1.200,12h
 # Examples (generated):
 # dhcp-host=AA:BB:CC:DD:EE:FF,ook,192.168.1.10
-# dhcp-host=11:22:33:44:55:66,trossen-ai,192.168.1.20
+# dhcp-host=11:22:33:44:55:66,eek,192.168.1.20
 
 # A records (generated):
 # address=/ook.tatbot.local/192.168.1.10

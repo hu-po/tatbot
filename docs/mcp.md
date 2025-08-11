@@ -11,12 +11,12 @@ To start an MCP server on a specific node, use the unified launcher script:
 # Start the server on the 'ook' node
 ./scripts/run_mcp.sh ook
 
-# Start on 'trossen-ai' with debug mode enabled
-./scripts/run_mcp.sh trossen-ai mcp.debug=true
+# Start on 'eek' with debug mode enabled
+./scripts/run_mcp.sh eek mcp.debug=true
 ```
 
 ## Server Logs
-Logs are written to `~/tatbot/nfs/mcp-logs/<node_name>.log`. For example, the `ook` server's log is at `~/tatbot/nfs/mcp-logs/ook.log`.
+Logs are written to `/nfs/tatbot/mcp-logs/<node_name>.log`. For example, the `ook` server's log is at `/nfs/tatbot/mcp-logs/ook.log`.
 
 ## Node Configuration
 The behavior of each MCP server is defined by a corresponding YAML file in `src/conf/mcp/`. For example, the `ook` node is configured by `src/conf/mcp/ook.yaml`.
@@ -31,16 +31,16 @@ These files control:
 Tools are now defined in the unified `tatbot.tools` module using decorator-based registration. See the [Tools Documentation](tools.md) for detailed information.
 
 **System Tools:**
-- `list_nodes` (rpi1, ook, oop): List all configured tatbot nodes
-- `ping_nodes` (rpi1): Test connectivity to tatbot nodes  
-- `list_scenes` (rpi2): List available scene configurations
-- `list_recordings` (rpi2): List available recordings from the recordings directory
+- `list_nodes` (rpi1, rpi2, eek, ook, oop): List all configured tatbot nodes
+- `ping_nodes` (rpi1, rpi2, eek, ook, oop): Test connectivity to tatbot nodes  
+- `list_scenes` (eek): List available scene configurations
+- `list_recordings` (eek): List available recordings from the recordings directory
 
 **Robot Tools:**
-- `align` (trossen-ai, oop): Generate and execute alignment strokes for calibration
-- `reset` (trossen-ai, ook, oop): Reset robot to safe/ready position
-- `sense` (trossen-ai): Capture environmental data (cameras, sensors)
-- `stroke` (trossen-ai): Execute artistic strokes on paper/canvas
+- `align` (hog, oop): Generate and execute alignment strokes for calibration
+- `reset` (hog, oop): Reset robot to safe/ready position
+- `sense` (hog): Capture environmental data (cameras, sensors)
+- `stroke` (hog): Execute artistic strokes on paper/canvas
 
 **GPU Tools** (available on GPU-enabled nodes only):
 - `convert_strokelist_to_batch` (ook, oop): GPU-accelerated stroke trajectory conversion
@@ -49,7 +49,7 @@ Tools specify their node availability and requirements directly in their decorat
 
 ## Cross-Node GPU Processing
 
-The MCP system enables transparent cross-node GPU acceleration for stroke trajectory conversion. This allows robot operations on non-GPU nodes (like `trossen-ai`) to automatically leverage GPU-accelerated inverse kinematics solving on GPU-enabled nodes (like `ook`).
+The MCP system enables transparent cross-node GPU acceleration for stroke trajectory conversion. This allows robot operations on non-GPU nodes (like `hog`) to automatically leverage GPU-accelerated inverse kinematics solving on GPU-enabled nodes (like `ook`).
 
 ### Architecture
 
@@ -59,10 +59,7 @@ The MCP system enables transparent cross-node GPU acceleration for stroke trajec
 - `GPUProxy` handles node discovery, load balancing, and communication with GPU-enabled nodes
 
 **NFS Path Translation**
-- All nodes share NFS storage but mount at different local paths:
-  - `ook`: `/home/ook/tatbot/nfs/`
-  - `trossen-ai`: `/home/trossen-ai/tatbot/nfs/`
-- `GPUProxy._translate_path_for_node()` converts paths between node-specific mount points
+- All nodes share NFS storage mounted at the canonical path `/nfs/tatbot/`
 - Files remain on shared NFS throughout the entire process - no data transfer required
 
 **MCP Protocol Communication**
@@ -73,14 +70,13 @@ The MCP system enables transparent cross-node GPU acceleration for stroke trajec
 
 ### Workflow Example
 
-1. **Operation Start**: User runs `align` operation on `trossen-ai`
-2. **GPU Detection**: `check_local_gpu()` returns `False` on `trossen-ai`
-3. **File Creation**: Strokes saved to `/home/trossen-ai/tatbot/nfs/recordings/align-*/strokes.yaml`
-4. **Path Translation**: GPUProxy translates to `/home/ook/tatbot/nfs/recordings/align-*/strokes.yaml`
-5. **Remote Conversion**: MCP call to `convert_strokelist_to_batch` on `ook` server with translated paths
-6. **GPU Processing**: `ook` performs JAX-accelerated inverse kinematics solving
-7. **Result Storage**: Strokebatch saved to shared NFS at translated output path
-8. **Operation Continue**: `trossen-ai` loads strokebatch and continues robot operation
+1. **Operation Start**: User runs `align` operation on `hog`
+2. **GPU Detection**: `check_local_gpu()` returns `False` on `hog`
+3. **File Creation**: Strokes saved to `/nfs/tatbot/recordings/align-*/strokes.yaml`
+4. **Remote Conversion**: MCP call to `convert_strokelist_to_batch` on `ook` server with translated paths
+5. **GPU Processing**: `ook` performs JAX-accelerated inverse kinematics solving
+6. **Result Storage**: Strokebatch saved to shared NFS at translated output path
+7. **Operation Continue**: `hog` loads strokebatch and continues robot operation
 
 ### Configuration
 
@@ -97,7 +93,7 @@ tools:
 
 **Non-GPU Node Setup**
 ```yaml  
-# conf/mcp/trossen-ai.yaml
+# conf/mcp/hog.yaml
 host: "0.0.0.0"
 port: 8000
 extras: []  # No GPU dependencies

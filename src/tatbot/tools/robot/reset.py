@@ -16,7 +16,7 @@ log = get_logger("tools.reset", "🔄")
 
 @tool(
     name="reset",
-    nodes=["trossen-ai", "ook", "oop"],
+    nodes=["hog", "ook", "oop"],
     description="Reset robot to safe/ready position",
     input_model=ResetInput,
     output_model=ResetOutput,

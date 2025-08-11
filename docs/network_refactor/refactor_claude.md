@@ -59,7 +59,7 @@ The tatbot system currently operates in two distinct modes:
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  rpi2 (100.1) ─┐                                          │
-│  DNS/DHCP/CA    │ ┌─ trossen-ai (100.10) ─ arm-l/arm-r    │
+│  DNS/DHCP/CA    │ ┌─ eek (100.10) ─ arm-l/arm-r    │
 │                 ├─┤                                        │
 │  rpi1 (100.2) ──┘ ├─ ojo (100.20) ─ realsense1/2         │
 │  mTLS Gateway      │                                        │
@@ -86,7 +86,7 @@ The tatbot system currently operates in two distinct modes:
 │  │                  │                                    │   │
 │  │  rpi2 (1.99) ────┤  ook (1.90)                       │   │
 │  │  rpi1 (1.98) ────┤  ojo (1.96)                       │   │
-│  │  trossen-ai ─────┤  cameras (1.101-105)              │   │
+│  │  eek ─────┤  cameras (1.101-105)              │   │
 │  │  (1.97)          │                                    │   │
 │  └──────────────────┼─────────────────────────────────────┘   │
 │                     │                                         │
@@ -103,7 +103,7 @@ intermediate_ca: rpi1  # For device certificates
 client_certs:
   - ook.tatbot.local
   - ojo.tatbot.local
-  - trossen-ai.tatbot.local
+  - eek.tatbot.local
 service_certs:
   - mcp.tatbot.local
   - camera-api.tatbot.local
@@ -156,7 +156,7 @@ tatbot network-mode edge --verify --timeout 30s
 tatbot network-status --all-services --security-check
 
 # Emergency access (bypasses normal auth for troubleshooting)
-tatbot emergency-access --node trossen-ai --reason "arm-stuck"
+tatbot emergency-access --node eek --reason "arm-stuck"
 ```
 
 #### 2. Automatic Service Discovery
@@ -251,7 +251,7 @@ In edge mode, the system creates a complete isolated network:
 │ • Service Discovery: Automatic MCP server registration     │
 │                                                             │
 │ Node Communication:                                         │
-│ • ook ↔ trossen-ai: GPU batch processing requests         │
+│ • ook ↔ eek: GPU batch processing requests         │
 │ • ojo ↔ cameras: Vision processing streams                │
 │ • All nodes ↔ MCP registry: Service coordination          │
 │                                                             │

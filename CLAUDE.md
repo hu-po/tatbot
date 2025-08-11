@@ -47,24 +47,23 @@ uv run sphinx-autobuild docs docs/_build
 ### MCP Server Operations
 ```bash
 # Start MCP server for a specific node
-./scripts/run_mcp.sh <node_name>  # ook, oop, ojo, trossen-ai, rpi1, rpi2
+./scripts/run_mcp.sh <node_name>  # ook, oop, ojo, eek, rpi1, rpi2
 
 # Kill existing MCP processes
 ./scripts/kill.sh
 
 # Restart MCP servers on specific nodes (must SSH to each node)
-ssh trossen-ai "bash ~/tatbot/scripts/run_mcp.sh trossen-ai"
+ssh eek "bash ~/tatbot/scripts/run_mcp.sh eek"
 ssh ook "bash ~/tatbot/scripts/run_mcp.sh ook"
-ssh oop "bash ~/tatbot/scripts/run_mcp.sh oop"
 
 # Monitor MCP logs
-tail -f ~/tatbot/nfs/mcp-logs/<node_name>.log
+tail -f /nfs/tatbot/mcp-logs/<node_name>.log
 ```
 
 ### Running Operations
 ```bash
-# run mcp server on the trossen-ai node
-cd ~/tatbot && ./scripts/run_mcp.sh trossen-ai
+# run mcp server on the eek node
+cd ~/tatbot && ./scripts/run_mcp.sh eek
 
 
 # Run visualization tools
@@ -111,20 +110,10 @@ uv run python -m tatbot.viz.teleop --enable-robot --enable-depth
    - GPU acceleration: convert_strokelist_to_batch
    - Cross-node operation execution via MCP
 
-### Node Topology
-
-- **ook** (🦧): Acer Nitro V 15 with NVIDIA RTX 4050, performs GPU-accelerated batch ik
-- **oop** (🦊): Ubuntu PC with NVIDIA RTX 3090 (only available in "home" mode)
-- **ojo** (🦎): NVIDIA Jetson AGX Orin, runs agent models via Ollama
-- **trossen-ai** (🦾): System76 Meerkat PC, robot arm control and RealSense cameras
-- **hog** (🦔): Additional compute node for distributed processing
-- **rpi1/rpi2** (🍓🍇): Raspberry Pi 5 nodes, rpi2 serves as NFS server
-- **camera1-5** (📷): Amcrest IP PoE cameras for scene coverage
-- **realsense1-2** (📷): Intel RealSense D405 depth cameras mounted on arms
 
 ### Data Flow
 
-1. **Design Generation**: Image → DrawingBotV3 → G-code files (stored in `nfs/designs/`)
+1. **Design Generation**: Image → DrawingBotV3 → G-code files (stored in `/nfs/tatbot/designs/`)
 2. **Stroke Processing**: G-code → `make_gcode_strokes` → `StrokeList` 
 3. **Surface Mapping**: (optional) `StrokeList` → `map_strokes_to_mesh` → 3D mapped strokes → `StrokeList`
 4. **IK Solving**: `StrokeList` → `strokebatch_from_strokes` → `StrokeBatch` with joint angles
@@ -161,7 +150,7 @@ uv run python -m tatbot.viz.teleop --enable-robot --enable-depth
 
 The following tools are available via MCP servers on different nodes:
 
-### Robot Control Tools (trossen-ai)
+### Robot Control Tools (eek, hog)
 - **`align_tool`**: Generate and execute alignment strokes for calibration
 - **`reset_tool`**: Reset robot to safe/ready position  
 - **`sense_tool`**: Capture environmental data from cameras and sensors
@@ -187,8 +176,8 @@ The following tools are available via MCP servers on different nodes:
 - Cursor IDE MCP integration may require restart: Ctrl+Shift+P > "View: OpenMCP Settings"  
 - Distributed system - ensure network connectivity between nodes
 - Camera passwords and API keys stored in `.env` file
-- NFS mount required: `~/tatbot/nfs` shared across all nodes (served by rpi2)
-- Designs stored in `nfs/designs/` directory with DrawingBotV3 project files
+- NFS mount required: `/nfs/tatbot` shared across all nodes (served by eek)
+- Designs stored in `/nfs/tatbot/designs/` directory with DrawingBotV3 project files
 - DrawingBotV3 configs in `config/dbv3/` for pen settings and G-code generation
-- Both RealSense cameras connected to trossen-ai via USB3
-- `nfs/recordings/` directory contains timestamped robot operation recordings
+- Both RealSense cameras connected to eek via USB3
+- `/nfs/tatbot/recordings/` directory contains timestamped robot operation recordings

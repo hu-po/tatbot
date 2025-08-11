@@ -338,7 +338,7 @@ This module defines high-level, stateful operations that the robot can perform. 
 #### `__init__.py`
 
 -   **Purpose**: Acts as a factory and registry for all available operations.
--   **`NODE_AVAILABLE_OPS`**: A dictionary that maps a node name (e.g., "ook", "trossen-ai") to a list of operation names that are permitted to run on that node. This provides a simple but effective way to control which hardware can perform which tasks.
+-   **`NODE_AVAILABLE_OPS`**: A dictionary that maps a node name (e.g., "ook", "eek") to a list of operation names that are permitted to run on that node. This provides a simple but effective way to control which hardware can perform which tasks.
 -   **`get_op`**: A factory function that takes an `op_name` and `node_name`, validates that the operation is allowed on that node, and returns the corresponding `Op` class and its configuration class.
 
 #### `base.py`

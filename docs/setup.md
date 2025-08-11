@@ -9,8 +9,6 @@ This project uses [`uv`](https://docs.astral.sh/uv/getting-started/installation/
 - Python 3.11+
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/) package manager
 - Git
-
-**Hardware:** One or more tatbot nodes ({{ook}}, {{oop}}, {{trossen-ai}}, etc.)
 ```
 
 ## 🚀 Quick Install
@@ -108,21 +106,18 @@ uv pip install .[bot,cam,dev,gen,gpu,img,viz,docs]
 
 # Source environment variables (e.g., API keys, camera passwords)
 # Ensure you have a .env file (see .env.example)
-set -a; source ~/tatbot/nfs/.env; set +a
+set -a; source /nfs/tatbot/.env; set +a
 ```
 
 ## Starting the System
 1. **Power On**: Flip the main power strip on.
-2. **`trossen-ai` PC**: Press the power button; it will glow blue.
+2. **`hog` and `eek` PCs**: Press the power button.
 3. **Robot Arms**: Flip the rocker switches on the `arm-r` and `arm-l` control boxes to "ON".
 4. **Lighting**: Turn on the light bar via its rocker switch.
 5. **Pens**: Turn on the tattoo pen batteries.
-6. **MCP Servers**: SSH into each required node (`ook`, `oop`, `trossen-ai`, etc.) and run the appropriate MCP server command.
+6. **MCP Servers**: SSH into each required node (`ook`, `oop`, `eek`, etc.) and run the appropriate MCP server command.
    ```bash
    # On ook
    cd ~/tatbot && ./scripts/run_mcp.sh ook
-
-   # On trossen-ai
-   cd ~/tatbot && ./scripts/run_mcp.sh trossen-ai
    ```
 

@@ -5,5 +5,5 @@ alwaysApply: true
 you can ssh into individual nodes to restart the mcp server
 
 ```bash
-ssh trossen-ai "bash scripts/run_mcp.sh trossen-ai"
+ssh eek "bash scripts/run_mcp.sh eek"
 ```

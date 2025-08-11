@@ -2,7 +2,6 @@
 
 import logging
 import time
-from pathlib import Path
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import build_dataset_frame, hw_to_dataset_features
@@ -20,6 +19,7 @@ from tatbot.main import compose_and_validate_scene
 from tatbot.tools.base import ToolContext
 from tatbot.tools.registry import tool
 from tatbot.tools.robot.models import AlignInput, AlignOutput
+from tatbot.utils.constants import NFS_RECORDINGS_DIR
 from tatbot.utils.gpu import check_local_gpu
 from tatbot.utils.gpu_conversion import GPUConversionService
 from tatbot.utils.log import TIME_FORMAT, get_logger
@@ -29,7 +29,7 @@ log = get_logger("tools.align", "📐")
 
 @tool(
     name="align",
-    nodes=["trossen-ai", "oop"],
+    nodes=["hog", "oop"],
     description="Generate and execute alignment strokes for robot calibration",
     input_model=AlignInput,
     output_model=AlignOutput,
@@ -71,7 +71,7 @@ async def align_tool(input_data: AlignInput, ctx: ToolContext):
         scene = compose_and_validate_scene(input_data.scene_name)
         
         # Create output directory
-        output_dir = Path("~/tatbot/nfs/recordings").expanduser()
+        output_dir = NFS_RECORDINGS_DIR
         output_dir.mkdir(parents=True, exist_ok=True)
         
         yield {"progress": 0.02, "message": f"Creating output directory at {output_dir}..."}

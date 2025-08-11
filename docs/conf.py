@@ -75,12 +75,11 @@ copybutton_prompt_is_regexp = True
 
 # MyST substitutions for reusable content
 myst_substitutions = {
+    "eek": "🦦 eek",
+    "hog": "🦔 hog",
     "ook": "🦧 ook",
     "oop": "🦊 oop", 
     "ojo": "🦎 ojo",
-    "trossen-ai": "🦾 trossen-ai",
-    "trossen": "🦾 trossen-ai",
-    "hog": "🦔 hog",
     "rpi1": "🍓 rpi1",
     "rpi2": "🍇 rpi2",
 }

@@ -1,11 +1,11 @@
 """List recordings tool for discovering available recordings."""
 
-from pathlib import Path
 
 from tatbot.tools.base import ToolContext
 from tatbot.tools.registry import tool
 from tatbot.tools.system.models import ListRecordingsInput, ListRecordingsOutput
 from tatbot.utils.log import get_logger
+from tatbot.utils.constants import NFS_RECORDINGS_DIR
 
 log = get_logger("tools.list_recordings", "📼")
 
@@ -29,7 +29,7 @@ async def list_recordings(input_data: ListRecordingsInput, ctx: ToolContext):
     yield {"progress": 0.1, "message": "Scanning for recording directories..."}
     
     try:
-        recordings_dir = Path("~/tatbot/nfs/recordings").expanduser().resolve()
+        recordings_dir = NFS_RECORDINGS_DIR.resolve()
         if not recordings_dir.exists():
             log.warning(f"Recordings directory not found: {recordings_dir}")
             yield ListRecordingsOutput(

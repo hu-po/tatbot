@@ -17,7 +17,7 @@ This document outlines the complete pipeline for training Vision-Language-Action
 ### Current Capabilities
 The `stroke.py` tool already implements comprehensive recording functionality:
 
-- **LeRobot Dataset Creation**: Creates LeRobotDataset instances at `~/tatbot/nfs/recordings/stroke-{scene}-{timestamp}/`
+- **LeRobot Dataset Creation**: Creates LeRobotDataset instances at `/nfs/tatbot/recordings/stroke-{scene}-{timestamp}/`
 - **Multi-modal Recording**: 
   - Robot joint states and actions (10 Hz default, configurable)
   - Optional RealSense depth cameras
@@ -34,25 +34,25 @@ The `stroke.py` tool already implements comprehensive recording functionality:
 1. **Human Demonstrations**:
    ```bash
    # Record expert demonstrations with joystick corrections
-   mcp__trossen-ai__stroke '{"scene_name": "tatbotlogo", "enable_joystick": true, "enable_realsense": true, "fps": 30}'
+   mcp__eek__stroke '{"scene_name": "tatbotlogo", "enable_joystick": true, "enable_realsense": true, "fps": 30}'
    ```
 
 2. **Automated Collection**:
    ```bash
    # Record autonomous executions for data augmentation
-   mcp__trossen-ai__stroke '{"scene_name": "default", "enable_realsense": true}'
+   mcp__eek__stroke '{"scene_name": "default", "enable_realsense": true}'
    ```
 
 3. **Resume Capability**: Continue interrupted recordings:
    ```bash
-   mcp__trossen-ai__stroke '{"scene_name": "tatbotlogo", "resume": true}'
+   mcp__eek__stroke '{"scene_name": "tatbotlogo", "resume": true}'
    ```
 
 ## Dataset Format and Structure
 
 ### Directory Structure
 ```
-~/tatbot/nfs/recordings/
+/nfs/tatbot/recordings/
 └── stroke-{scene_name}-{timestamp}/
     ├── meta_data/
     │   ├── data.parquet          # Episode metadata
@@ -103,7 +103,7 @@ episode_cond = {
    from pathlib import Path
    
    # Aggregate multiple recording sessions
-   recordings_dir = Path("~/tatbot/nfs/recordings").expanduser()
+   recordings_dir = Path("/nfs/tatbot/recordings")
    datasets = []
    
    for dataset_dir in recordings_dir.glob("stroke-*"):
@@ -187,7 +187,7 @@ training:
   
 dataset:
   # Option 1: Local dataset root
-  root: "~/tatbot/nfs/recordings/stroke-tatbotlogo-latest"
+  root: "/nfs/tatbot/recordings/stroke-tatbotlogo-latest"
   # Option 2: Hub repo ID (if pushed)
   # repo_id: "tatbot/stroke-aggregated"
   
@@ -312,7 +312,7 @@ log = get_logger("tools.vla_infer", "🧠")
 
 @tool(
     name="vla_infer",
-    nodes=["trossen-ai"],
+    nodes=["eek"],
     description="Run VLA policy inference on Tatbot from a checkpoint",
     input_model=VLAInferInput,
     output_model=VLAInferOutput,
@@ -395,7 +395,7 @@ async def vla_infer(input_data: VLAInferInput, ctx: ToolContext):
         dataset = None
         eval_dir = None
         if input_data.record_eval:
-            output_dir = Path("~/tatbot/nfs/recordings").expanduser()
+            output_dir = Path("/nfs/tatbot/recordings")
             eval_dir = output_dir / f"vla-eval-{scene.name}-{int(time.time())}"
             eval_dir.mkdir(parents=True, exist_ok=True)
             
@@ -491,7 +491,7 @@ async def vla_infer(input_data: VLAInferInput, ctx: ToolContext):
 
 1. **Register Tool in Config**:
 ```yaml
-# src/conf/mcp/trossen-ai.yaml
+# src/conf/mcp/eek.yaml
 tools:
   - align
   - reset
@@ -518,10 +518,10 @@ The existing `get_tools_for_node()` function will automatically discover it.
 ```bash
 # Kill existing processes and restart
 ./scripts/kill.sh
-./scripts/run_mcp.sh trossen-ai
+./scripts/run_mcp.sh eek
 
 # Or restart on remote node
-ssh trossen-ai "bash ~/tatbot/scripts/run_mcp.sh trossen-ai"
+ssh eek "bash ~/tatbot/scripts/run_mcp.sh eek"
 ```
 
 ### Inference Modes
@@ -583,7 +583,7 @@ ssh trossen-ai "bash ~/tatbot/scripts/run_mcp.sh trossen-ai"
 - [ ] Test inference pipeline
 
 ### Phase 4: Deployment and Optimization (Week 6)
-- [ ] Deploy model to trossen-ai node
+- [ ] Deploy model to eek node
 - [ ] Optimize inference speed (quantization, caching)
 - [ ] Implement safety checks and fallbacks
 - [ ] Create monitoring dashboard

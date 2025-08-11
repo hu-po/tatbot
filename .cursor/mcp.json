@@ -1,5 +1,9 @@
 {
   "mcpServers": {
+    "eek": {
+      "url": "http://192.168.1.97:8000/mcp",
+      "transport": "streamable-http"
+    },
     "hog": {
       "url": "http://192.168.1.88:8000/mcp",
       "transport": "streamable-http"
@@ -14,10 +18,6 @@
     },
     "ojo": {
       "url": "http://192.168.1.96:8000/mcp",
-      "transport": "streamable-http"
-    },
-    "trossen-ai": {
-      "url": "http://192.168.1.97:8000/mcp",
       "transport": "streamable-http"
     },
     "rpi1": {

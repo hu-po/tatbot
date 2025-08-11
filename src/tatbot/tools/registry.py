@@ -49,7 +49,7 @@ def tool(
     Example:
         @tool(
             name="align",
-            nodes=["trossen-ai", "ook", "oop"],
+            nodes=["hog", "ook", "oop"],
             description="Generate alignment strokes for robot calibration",
             input_model=AlignInput,
             output_model=AlignOutput

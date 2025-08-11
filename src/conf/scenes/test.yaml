@@ -15,4 +15,4 @@ pen_names_r:
   - snow_white
 pens_config_path: "~/tatbot/config/dbv3/pens/full.json"
 stroke_length: 80
-design_dir_path: "~/tatbot/nfs/designs/default"
+design_dir_path: "/nfs/tatbot/designs/default"

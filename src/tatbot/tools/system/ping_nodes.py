@@ -24,10 +24,6 @@ async def ping_nodes(input_data: PingNodesInput, ctx: ToolContext):
     
     Parameters:
     - nodes (list, optional): List of node names to ping. If not provided, pings all nodes.
-    
-    Example usage:
-    {"nodes": ["ook", "trossen-ai"]}
-    {}
     """
     yield {"progress": 0.1, "message": f"Pinging nodes: {input_data.nodes or 'all'}"}
     

@@ -50,7 +50,7 @@ class MyToolOutput(ToolOutput):
 
 @tool(
     name="my_tool",
-    nodes=["trossen-ai", "ook"],  # Available on these nodes
+    nodes=["eek", "ook"],  # Available on these nodes
     description="Example tool that does something useful",
     input_model=MyToolInput,
     output_model=MyToolOutput,
@@ -90,10 +90,10 @@ async def my_tool(input_data: MyToolInput, ctx: ToolContext):
 
 ### Robot Tools
 
-- **`align`** (trossen-ai, oop): Generate and execute alignment strokes for calibration
-- **`reset`** (trossen-ai, ook, oop): Reset robot to safe/ready position
-- **`sense`** (trossen-ai): Capture environmental data (cameras, sensors)
-- **`stroke`** (trossen-ai): Execute artistic strokes on paper/canvas
+- **`align`** (hog, oop): Generate and execute alignment strokes for calibration
+- **`reset`** (hog, ook, oop): Reset robot to safe/ready position
+- **`sense`** (hog): Capture environmental data (cameras, sensors)
+- **`stroke`** (hog): Execute artistic strokes on paper/canvas
 
 ## Node Availability
 
@@ -101,7 +101,7 @@ Tools specify node availability in their decorator:
 
 ```python
 @tool(nodes=["*"])              # All nodes
-@tool(nodes=["trossen-ai"])     # Specific node only
+@tool(nodes=["eek"])     # Specific node only
 @tool(nodes=["ook", "oop"])     # Multiple specific nodes
 ```
 
@@ -188,7 +188,7 @@ async def run_op(input_data, ctx):
 ### After (Clean Decorator)
 ```python
 # tools/robot/align.py
-@tool(name="align", nodes=["trossen-ai", "ook", "oop"])
+@tool(name="align", nodes=["hog", "ook", "oop"])
 async def align_tool(input_data: AlignInput, ctx: ToolContext):
     # Clean, self-contained implementation
     yield {"progress": 0.1, "message": "Starting alignment..."}

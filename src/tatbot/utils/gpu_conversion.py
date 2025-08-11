@@ -14,6 +14,7 @@ import yaml
 
 from tatbot.mcp.client import MCPClient
 from tatbot.utils.log import get_logger
+from tatbot.utils.constants import NFS_DIR
 
 log = get_logger("services.gpu_conversion", "🎯")
 
@@ -25,12 +26,6 @@ class GPUConversionService:
     def _get_gpu_nodes(self) -> List[str]:
         # TODO: make dynamic by reading from conf/nodes.yaml or pinging
         return ["ook"]
-
-    def _translate_path_for_node(self, local_path: str, target_node: str) -> str:
-        if "/tatbot/nfs/" in local_path:
-            nfs_relative = local_path.split("/tatbot/nfs/", 1)[1]
-            return f"/home/{target_node}/tatbot/nfs/{nfs_relative}"
-        return local_path
 
     def _load_node_host_port(self, node_name: str) -> Tuple[str, int]:
         # Config files live under tatbot/src/conf/mcp, not tatbot/src/tatbot/conf/mcp
@@ -65,6 +60,12 @@ class GPUConversionService:
             gpu_nodes.remove(preferred_node)
         attempt_nodes.extend(gpu_nodes)
 
+        # Validate that provided paths are canonical NFS paths
+        if not strokes_file_path.startswith(str(NFS_DIR)):
+            raise ValueError(f"strokes_file_path must be under {NFS_DIR}: {strokes_file_path}")
+        if not strokebatch_file_path.startswith(str(NFS_DIR)):
+            raise ValueError(f"strokebatch_file_path must be under {NFS_DIR}: {strokebatch_file_path}")
+
         for retry in range(max_retries):
             for node_name in attempt_nodes:
                 try:
@@ -78,8 +79,8 @@ class GPUConversionService:
                     log.error(f"Failed to establish MCP session with {node_name}")
                     continue
 
-                target_strokes_path = self._translate_path_for_node(strokes_file_path, node_name)
-                target_strokebatch_path = self._translate_path_for_node(strokebatch_file_path, node_name)
+                target_strokes_path = strokes_file_path
+                target_strokebatch_path = strokebatch_file_path
 
                 tool_name = "convert_strokelist_to_batch"
                 arguments: Dict[str, Any] = {

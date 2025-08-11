@@ -15,4 +15,4 @@ pen_names_r:
   - bright_red
 pens_config_path: "~/tatbot/config/dbv3/pens/full.json"
 stroke_length: 80
-design_dir_path: "~/tatbot/nfs/designs/flower"
+design_dir_path: "/nfs/tatbot/designs/flower"

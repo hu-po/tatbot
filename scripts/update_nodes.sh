@@ -1,8 +1,8 @@
 #!/bin/bash
 CMD="cd ~/tatbot && git pull"
 
-nodes=(rpi2 rpi1 trossen-ai ojo ook oop)
-emojis=("🍇" "🍓" "🦾" "🦎" "🦧" "🦊")
+nodes=(rpi2 rpi1 eek hog ojo ook oop)
+emojis=("🍇" "🍓" "🦦" "🦔" "🦎" "🦧" "🦊")
 
 updated=()
 failed=()

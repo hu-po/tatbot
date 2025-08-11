@@ -4,7 +4,7 @@ This guide outlines how to train a VLA policy on datasets recorded by `tatbot/to
 
 ## 1) Dataset produced by stroke.py
 
-Datasets are written to `~/tatbot/nfs/recordings/stroke-<scene>-<timestamp>` and registered with repo id `tatbot/<dataset_dir_name>` using LeRobot's `LeRobotDataset`.
+Datasets are written to `/nfs/tatbot/recordings/stroke-<scene>-<timestamp>` and registered with repo id `tatbot/<dataset_dir_name>` using LeRobot's `LeRobotDataset`.
 
 - Frame schema is built from `robot.observation_features` and `robot.action_features`
 - FPS is configurable (default 10)
@@ -32,7 +32,7 @@ Choose a policy (SmolVLA or Pi0) based on compute and task complexity.
 
 - Dataset selection
   - Use repo id like `tatbot/stroke-<scene>-<timestamp>` (or pass an explicit dataset path)
-  - Where supported by your training CLI, you can also use a local `--dataset.root="/home/USER/tatbot/nfs/recordings/stroke-..."`
+  - Where supported by your training CLI, you can also use a local `--dataset.root="/nfs/tatbot/recordings/stroke-..."`
 
 - Example: finetune SmolVLA from base
   ```bash
@@ -77,7 +77,7 @@ Goal: Run on robot from a chosen checkpoint via an MCP tool call; stream progres
 
 Proposed tool
 - Name: `infer_vla`
-- Node: `trossen-ai`
+- Node: `eek`
 
 Input model (Pydantic)
 - `checkpoint_path: str` — local path or Hugging Face repo id
@@ -117,7 +117,7 @@ class InferVLAOutput(BaseModel):
     success: bool
     message: str
 
-@tool(name="infer_vla", nodes=["trossen-ai"], description="Run VLA policy inference on robot")
+@tool(name="infer_vla", nodes=["eek"], description="Run VLA policy inference on robot")
 async def infer_vla(input_data: InferVLAInput, ctx: ToolContext) -> InferVLAOutput:
     scene = compose_and_validate_scene(input_data.scene_name)
 
@@ -180,7 +180,7 @@ Wiring
 - Ensure it is imported on server start (decorator-based registry picks it up upon import). If needed, add an import in `tatbot/tools/robot/__init__.py`
 - Restart the MCP server on the target node:
   ```bash
-  ssh trossen-ai "bash ~/tatbot/scripts/run_mcp.sh trossen-ai"
+  ssh eek "bash ~/tatbot/scripts/run_mcp.sh eek"
   ```
 
 Example call payload
@@ -246,7 +246,7 @@ class InferVLAOutput(BaseModel):
 
 @tool(
     name="infer_vla",
-    nodes=["trossen-ai"],
+    nodes=["hog"],
     description="Run VLA policy inference on robot",
     input_model=InferVLAInput,
     output_model=InferVLAOutput,

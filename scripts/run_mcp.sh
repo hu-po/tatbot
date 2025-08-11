@@ -9,7 +9,7 @@ set -euo pipefail
 
 if [ $# -lt 1 ]; then
     echo "Usage: $0 <node_name> [additional_hydra_args...]"
-    echo "Available nodes: ook, oop, rpi1, rpi2, ojo, trossen-ai"
+    echo "Available nodes: ook, oop, rpi1, rpi2, ojo, eek, hog"
     exit 1
 fi
 
@@ -29,8 +29,8 @@ source ~/tatbot/scripts/setup_env.sh
 cd ~/tatbot
 
 # Create log directory if it doesn't exist
-mkdir -p ~/tatbot/nfs/mcp-logs
-rm -f ~/tatbot/nfs/mcp-logs/${NODE}.log
+mkdir -p /nfs/tatbot/mcp-logs
+rm -f /nfs/tatbot/mcp-logs/${NODE}.log
 
 # Get extras from Hydra config using a temporary Python script
 echo "📦 Determining required extras for node $NODE..."
@@ -86,7 +86,7 @@ fi
 
 # Start the MCP server with Hydra
 echo "🚀 Starting MCP server for $NODE..."
-echo "📝 Logs will be written to ~/tatbot/nfs/mcp-logs/${NODE}.log"
+echo "📝 Logs will be written to /nfs/tatbot/mcp-logs/${NODE}.log"
 
 # Convert --mcp.xxx=yyy arguments to mcp.xxx=yyy for Hydra
 HYDRA_ARGS=()
@@ -100,9 +100,9 @@ for arg in "$@"; do
 done
 
 nohup uv run python3 -m tatbot.mcp.server node=${NODE} "${HYDRA_ARGS[@]}" \
-    > ~/tatbot/nfs/mcp-logs/${NODE}.log 2>&1 &
+    > /nfs/tatbot/mcp-logs/${NODE}.log 2>&1 &
 
 SERVER_PID=$!
 echo "✅ MCP server started with PID: $SERVER_PID"
-echo "📊 To monitor logs: tail -f ~/tatbot/nfs/mcp-logs/${NODE}.log"
+echo "📊 To monitor logs: tail -f /nfs/tatbot/mcp-logs/${NODE}.log"
 echo "🛑 To stop server: kill $SERVER_PID"

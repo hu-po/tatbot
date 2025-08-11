@@ -52,7 +52,7 @@ Development workflow, coding standards, and how to contribute.
 - `uv pip install .[bot,viz,cam]` - Install dependencies
 - `uv run python -m tatbot.viz.teleop --enable-robot` - Launch teleop interface
 
-**Key Nodes:** {{ook}} • {{oop}} • {{ojo}} • {{trossen-ai}} • {{hog}} • {{rpi1}} • {{rpi2}}
+**Key Nodes:** {{ook}} • {{oop}} • {{ojo}} • {{eek}} • {{hog}} • {{rpi1}} • {{rpi2}}
 ```
 
 ## 🔧 Core Systems

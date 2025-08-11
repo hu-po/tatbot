@@ -20,7 +20,7 @@
 - JAX on ojo via jetson-containers https://github.com/dusty-nv/jetson-containers/tree/master/packages/ml/jax
 - red sharpie cross with laser line leveler
 - mcp server for strokebatch job
-- write local, sync later for robot recordings to save trossen-ai compute
+- write local, sync later for robot recordings to save eek compute
 - affine heat method for design wrapping on skin mesh
 - ee calibration using square
 - replace JAX ik with Nvidia warp ik (https://github.com/NVIDIA/warp/blob/main/warp/examples/sim/example_jacobian_ik.py)

@@ -15,4 +15,4 @@ source .venv/bin/activate
 uv pip install .
 
 echo "🔑  Source environment variables (keys, tokens, etc.)"
-source ~/tatbot/nfs/.env || true
+source /nfs/tatbot/.env || true

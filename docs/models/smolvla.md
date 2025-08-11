@@ -31,7 +31,7 @@ uv run python ~/lerobot/lerobot/scripts/train.py \
 
 ## Eval
 
-instructions for `trossen-ai` performing model inference and running robot
+instructions for `eek` performing model inference and running robot
 
 ```bash
 # TODO

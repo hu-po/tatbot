@@ -34,7 +34,7 @@ Acer Nitro V 15
 :::{grid-item-card}
 :class-header: bg-light
 
-{{trossen-ai}} **trossen-ai**
+{{eek}} **eek**
 ^^^
 System76 Meerkat PC
 - Intel i5-1340P, 16-core @ 4.6 GHz  
@@ -119,12 +119,12 @@ see:
 tatbot uses shared ssh keys for easy communication
 
 - `switch-lan`:
-    - (1) short black ethernet cable to `trossen-ai`
+    - (1) short black ethernet cable to `hog`
     - (2) short black ethernet cable to `ojo`
     - (3) blue ethernet cable to `arm-l` controller box
     - (4) blue ethernet cable to `arm-r` controller box
     - (5) long black ethernet cable to `ook`
-    - (6) 
+    - (6) short black ethernet cable to `eek`
     - (7) *home mode* long ethernet cable to `oop`
     - (8) short black ethernet cable to `switch-poe`
 - `switch-poe`:
@@ -149,15 +149,15 @@ uv run python -m tatbot.utils.net --debug
 
 # NFS Setup
 
-currently the `rpi2` node serves as the NFS server for all other nodes:
+currently the `eek` node serves as the NFS server for all other nodes:
 
 ```bash
 sudo apt install nfs-kernel-server
-sudo mkdir -p /home/rpi2/tatbot/nfs
-sudo chmod 777 /home/rpi2/tatbot/nfs
+sudo mkdir -p /nfs/tatbot
+sudo chmod 777 /nfs/tatbot
 sudo nano /etc/exports
 # add this line:
-> /home/rpi2/tatbot/nfs 192.168.1.0/24(rw,sync,no_subtree_check)
+> /nfs/tatbot 192.168.1.0/24(rw,sync,no_subtree_check)
 sudo exportfs -ra
 sudo systemctl restart nfs-server
 sudo exportfs -v
@@ -165,17 +165,17 @@ sudo exportfs -v
 sudo systemctl enable nfs-server
 ```
 
-rest of the nodes `rpi1`, `trossen-ai`, `ook`, `ojo`, `hog`, and `oop`:
+rest of the nodes:
 
 ```bash
 sudo apt install nfs-common
-showmount -e 192.168.1.99
-mkdir -p ~/tatbot/nfs
-sudo mount -t nfs 192.168.1.99:/home/rpi2/tatbot/nfs ~/tatbot/nfs
+showmount -e 192.168.1.88
+sudo mkdir -p /nfs/tatbot
+sudo mount -t nfs 192.168.1.88:/nfs/tatbot /nfs/tatbot
 # enable on startup
 sudo nano /etc/fstab
 # add this line:
-> 192.168.1.99:/home/rpi2/tatbot/nfs /home/<USERNAME>/tatbot/nfs nfs defaults,nolock,vers=3,_netdev 0 0
+> 192.168.1.88:/nfs/tatbot /nfs/tatbot nfs defaults,_netdev 0 0
 sudo systemctl daemon-reload
 sudo mount -a
 ```

@@ -22,6 +22,7 @@ from tatbot.main import compose_and_validate_scene
 from tatbot.tools.base import ToolContext
 from tatbot.tools.registry import tool
 from tatbot.tools.robot.models import SenseInput, SenseOutput
+from tatbot.utils.constants import NFS_RECORDINGS_DIR
 from tatbot.utils.log import TIME_FORMAT, get_logger
 
 log = get_logger("tools.sense", "🔍")
@@ -29,7 +30,7 @@ log = get_logger("tools.sense", "🔍")
 
 @tool(
     name="sense",
-    nodes=["trossen-ai"],
+    nodes=["hog"],
     description="Capture environmental data from cameras and sensors",
     input_model=SenseInput,
     output_model=SenseOutput,
@@ -75,7 +76,7 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
         scene = compose_and_validate_scene(input_data.scene_name)
         
         # Create output directory
-        output_dir = Path("~/tatbot/nfs/recordings").expanduser()
+        output_dir = NFS_RECORDINGS_DIR
         output_dir.mkdir(parents=True, exist_ok=True)
         
         yield {"progress": 0.02, "message": f"Creating output directory at {output_dir}..."}

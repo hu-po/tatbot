@@ -9,4 +9,4 @@ design_pose:
 zone_depth_m: 0.06
 zone_width_m: 0.06
 zone_height_m: 0.01
-plymesh_dir: "~/tatbot/nfs/3d/fakeskin_sponge"
+plymesh_dir: "/nfs/tatbot/3d/fakeskin_sponge"
