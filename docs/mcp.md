@@ -125,3 +125,9 @@ The workflow in Cursor remains similar:
 - Use `ctrl-shift-p` > "View: OpenMCP Settings" to toggle servers.
 - If you change the server config (e.g., enable a new tool), you must restart the server and re-toggle it in Cursor.
 - If you encounter "Bad Request" errors, a restart of the server and a re-toggle in Cursor usually resolves it.
+
+## Inspector
+
+```bash
+npx @modelcontextprotocol/inspector
+```
