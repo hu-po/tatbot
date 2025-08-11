@@ -89,7 +89,7 @@ def tool(
         async def mcp_exposed_wrapper(
             ctx: Context,
             input_data: Union[str, dict, Any] | None = None,
-            **_ignored_kwargs,
+            **ignored_kwargs,
         ):
             # Start from input_data only; ignore unexpected extras to avoid schema confusion
             filtered_kwargs = {}
@@ -98,6 +98,9 @@ def tool(
             elif isinstance(input_data, str):
                 # Let _parse_input_data handle JSON or python-literal strings
                 filtered_kwargs = input_data
+            
+            # ignored_kwargs contains any extra parameters that clients might send
+            # We filter them out to avoid schema confusion
             
             # Extract node name from FastMCP context
             if ctx and hasattr(ctx, 'fastmcp') and ctx.fastmcp:
