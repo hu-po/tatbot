@@ -8,7 +8,7 @@ project = "tatbot"
 copyright = "2025, Hugo Ponte"
 author = "Hugo Ponte"
 version = "1.0"
-release = "1.0.0"
+release = "0.6.2"
 
 extensions = [
     "myst_parser",

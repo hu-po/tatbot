@@ -160,10 +160,6 @@ progress
 ideas
 
 models/index
-models/data
-models/gr00t
-models/smolvla
-
 network_refactor/index
 paper/index
 ```

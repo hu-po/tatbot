@@ -3,7 +3,9 @@ defaults:
 
 host: "192.168.1.88"
 port: 8000
-extras: [bot, dev, gen, img, viz]
+extras: [bot, cam, gen, img]
 tools:
+  - align
   - reset
-  - list_nodes
+  - sense
+  - stroke
