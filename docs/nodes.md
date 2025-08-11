@@ -1,13 +1,89 @@
-# Nodes
+# 🖥️ Nodes
 
-tatbot consists of several computers, cameras, and robots connected via ethernet:
+Tatbot consists of several computers, cameras, and robots connected via ethernet in a distributed computing architecture.
 
-- `ojo` 🦎: NVIDIA Jetson AGX Orin (ARM Cortex-A78AE, 12-core @ 2.2 GHz) (32GB Unified RAM) (200 TOPS)
-- `ook` 🦧: Acer Nitro V 15 w/ NVIDIA RTX 4050 (Intel i7-13620H, 16-core @ 3.6 GHz) (16GB RAM) (6GB VRAM) (194 TOPS)
-- `trossen-ai` 🦾: System76 Meerkat PC (Intel i5-1340P, 16-core @ 4.6 GHz) (15GB RAM)
-- `hog` 🦔: Additional compute node (192.168.1.88)
-- `rpi1` 🍓: Raspberry Pi 5 (ARM Cortex-A76, 4-core @ 2.4 GHz) (8GB RAM)
-- `rpi2` 🍇: Raspberry Pi 5 (ARM Cortex-A76, 4-core @ 2.4 GHz) (8GB RAM)
+## 💻 Compute Nodes
+
+::::{grid} 1 1 2 3
+:gutter: 3
+
+:::{grid-item-card}
+:class-header: bg-light
+
+{{ojo}} **NVIDIA Jetson AGX Orin**
+^^^
+- ARM Cortex-A78AE, 12-core @ 2.2 GHz
+- 32GB Unified RAM
+- 200 TOPS AI performance
+- Agent model inference
+:::
+
+:::{grid-item-card}
+:class-header: bg-light
+
+{{ook}} **Acer Nitro V 15**
+^^^  
+- Intel i7-13620H, 16-core @ 3.6 GHz
+- 16GB RAM + 6GB VRAM (RTX 4050)
+- 194 TOPS AI performance
+- GPU-accelerated batch IK
+:::
+
+:::{grid-item-card}
+:class-header: bg-light
+
+{{trossen-ai}} **System76 Meerkat PC**
+^^^
+- Intel i5-1340P, 16-core @ 4.6 GHz  
+- 15GB RAM
+- Robot arm control & RealSense cameras
+- Main control node
+:::
+
+:::{grid-item-card}
+:class-header: bg-light
+
+{{hog}} **GEEKOM GT1 Mega**
+^^^
+- Intel Core Ultra 9 185H, 16-core @ 5.1 GHz
+- 32GB RAM + Intel Arc graphics
+- IP: 192.168.1.88
+- Additional compute node
+:::
+
+:::{grid-item-card}
+:class-header: bg-light
+
+{{rpi1}} **Raspberry Pi 5**
+^^^
+- ARM Cortex-A76, 4-core @ 2.4 GHz
+- 8GB RAM
+- DNS server (edge mode)
+- System management
+:::
+
+:::{grid-item-card}
+:class-header: bg-light
+
+{{rpi2}} **Raspberry Pi 5**
+^^^
+- ARM Cortex-A76, 4-core @ 2.4 GHz
+- 8GB RAM
+- NFS server
+- Shared storage
+:::
+
+::::
+
+```{admonition} Home vs Edge Mode
+:class: tip
+
+**Home Mode:** All nodes connected to local home network, including {{oop}} development machine.
+
+**Edge Mode:** {{rpi1}} acts as DNS server, {{oop}} not available, fully autonomous operation.
+```
+
+## 📷 Camera System
 - `camera1` 📷: Amcrest IP PoE camera (5MP, 30fps)
 - `camera2` 📷: Amcrest IP PoE camera (5MP, 30fps)
 - `camera3` 📷: Amcrest IP PoE camera (5MP, 30fps)

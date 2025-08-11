@@ -1,43 +1,101 @@
-# Setup
+# ⚡ Setup
 
 This project uses [`uv`](https://docs.astral.sh/uv/getting-started/installation/) for Python dependency and virtual environment management.
 
-## Quick Install
+```{admonition} Prerequisites
+:class: important
+
+**Required:**
+- Python 3.11+
+- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) package manager
+- Git
+
+**Hardware:** One or more tatbot nodes ({{ook}}, {{oop}}, {{trossen-ai}}, etc.)
+```
+
+## 🚀 Quick Install
+
+::::{tab-set}
+
+:::{tab-item} Basic Installation
 This command clones the repository and sets up the basic environment.
+
 ```bash
 git clone --depth=1 https://github.com/hu-po/tatbot.git && cd tatbot
 uv venv
 source .venv/bin/activate
 uv pip install -e .
 ```
+:::
 
-## Optional Dependencies
+:::{tab-item} One-liner Setup
+For experienced users who want everything at once:
+
+```bash
+git clone --depth=1 https://github.com/hu-po/tatbot.git && cd tatbot && source scripts/setup_env.sh
+```
+:::
+
+::::
+
+## 📦 Optional Dependencies
+
 Dependencies are separated into optional groups, defined in `pyproject.toml`. Install the groups you need for your task.
 
-### Core Functionality Groups
+::::{grid} 1 1 2 2
+:gutter: 3
+
+:::{grid-item-card}
+:class-header: bg-light
+
+🤖 **Core Functionality Groups**
+^^^
 - `bot`: Robot-specific dependencies (`lerobot`, `trossen-arm`, etc.)
-- `cam`: Camera-specific dependencies (`pyrealsense2`, `pupil-apriltags`, etc.)
+- `cam`: Camera-specific dependencies (`pyrealsense2`, `pupil-apriltags`, etc.)  
 - `gen`: Stroke generation and inverse kinematics
 - `gpu`: For GPU-accelerated tasks (`jax[cuda12]`)
 - `img`: Image processing libraries (`opencv`)
 - `viz`: Visualization tools (`viser`)
+:::
 
-### Development and Quality Groups
+:::{grid-item-card}
+:class-header: bg-light
+
+🛠️ **Development and Quality Groups**
+^^^
 - `dev`: Basic development tools (`ruff`, `isort`, `pytest`)
 - `quality`: Advanced development tools (`mypy`, `pre-commit`, type stubs)
 - `docs`: Documentation generation (`sphinx`, themes)
+:::
 
-Install one or more groups like this:
+::::
+
+**Installation Examples:**
+
+::::{tab-set}
+
+:::{tab-item} Robot Control
 ```bash
-# Core functionality
+# For robot operations
 uv pip install .[bot,viz,cam]
+```
+:::
 
+:::{tab-item} Development
+```bash
 # Development environment
 uv pip install .[dev,docs]
+```
+:::
 
-# Full installation
+:::{tab-item} Full Install
+```bash
+# Everything (recommended for main development)
 uv pip install .[bot,cam,dev,gen,gpu,img,viz,docs]
 ```
+:::
+
+::::
 
 ## Full Environment Setup
 For a clean, from-scratch setup:
