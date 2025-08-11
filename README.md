@@ -24,40 +24,12 @@
 
 # **tatbot**: tattoo robot
 
-Want a tattoo? Join the [waitlist](https://forms.gle/Zys6f5iLEtYCG8VW7) 🙋‍♂️
+🙋‍♂️ Want a tattoo? Join the [waitlist](https://forms.gle/Zys6f5iLEtYCG8VW7)
 
-Follow the [progress](docs/progress.md) 🚀
+🚀 Follow the [progress](docs/progress.md)
 
-## Documentation
-
-technical stack:
-
-- [Agent](docs/agent.md)
-- [AprilTags](docs/apriltags.md)
-- [Artwork](docs/artwork.md)
-- [Cameras](docs/cameras.md)
-- [Development](docs/dev.md)
-- [Tattoo Gear](docs/gear.md)
-- [Inverse Kinematics](docs/kinematics.md)
-- [2D to 3D Mapping](docs/mapping.md)
-- [Model Context Protocol](docs/mcp.md)
-- [Nodes](docs/nodes.md)
-- [Setup](docs/setup.md)
-- [Source Code](docs/source.md)
-- [Trossen Robot Arms](docs/trossen.md)
-- [URDF](docs/urdf.md)
-- [Visualization](docs/viz.md)
-
-models and training instructions:
-
-- [Datasets](docs/models/data.md)
-- [Gr00t](docs/models/gr00t.md)
-- [SmolVLA](docs/models/smolvla.md)
-
-more:
-
-- [ideas dump](docs/ideas.md)
-- [academic paper](docs/paper)
+📚 Read the [documentation](https://hu-po.github.io/tatbot/)
+ <!-- View the [paper](docs/paper/main.pdf) -->
 
 ## Citation
 

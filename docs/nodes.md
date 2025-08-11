@@ -5,6 +5,7 @@ tatbot consists of several computers, cameras, and robots connected via ethernet
 - `ojo` 🦎: NVIDIA Jetson AGX Orin (ARM Cortex-A78AE, 12-core @ 2.2 GHz) (32GB Unified RAM) (200 TOPS)
 - `ook` 🦧: Acer Nitro V 15 w/ NVIDIA RTX 4050 (Intel i7-13620H, 16-core @ 3.6 GHz) (16GB RAM) (6GB VRAM) (194 TOPS)
 - `trossen-ai` 🦾: System76 Meerkat PC (Intel i5-1340P, 16-core @ 4.6 GHz) (15GB RAM)
+- `hog` 🦔: Additional compute node (192.168.1.88)
 - `rpi1` 🍓: Raspberry Pi 5 (ARM Cortex-A76, 4-core @ 2.4 GHz) (8GB RAM)
 - `rpi2` 🍇: Raspberry Pi 5 (ARM Cortex-A76, 4-core @ 2.4 GHz) (8GB RAM)
 - `camera1` 📷: Amcrest IP PoE camera (5MP, 30fps)
@@ -82,7 +83,7 @@ sudo exportfs -v
 sudo systemctl enable nfs-server
 ```
 
-rest of the nodes `rpi1`, `trossen-ai`, `ook`, `ojo`, and `oop`:
+rest of the nodes `rpi1`, `trossen-ai`, `ook`, `ojo`, `hog`, and `oop`:
 
 ```bash
 sudo apt install nfs-common

@@ -117,6 +117,7 @@ uv run python -m tatbot.viz.teleop --enable-robot --enable-depth
 - **oop** (🦊): Ubuntu PC with NVIDIA RTX 3090 (only available in "home" mode)
 - **ojo** (🦎): NVIDIA Jetson AGX Orin, runs agent models via Ollama
 - **trossen-ai** (🦾): System76 Meerkat PC, robot arm control and RealSense cameras
+- **hog** (🦔): Additional compute node for distributed processing
 - **rpi1/rpi2** (🍓🍇): Raspberry Pi 5 nodes, rpi2 serves as NFS server
 - **camera1-5** (📷): Amcrest IP PoE cameras for scene coverage
 - **realsense1-2** (📷): Intel RealSense D405 depth cameras mounted on arms
