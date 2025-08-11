@@ -88,7 +88,9 @@ class GPUConversionService:
                         "scene_name": scene_name,
                         "first_last_rest": first_last_rest,
                         "use_ee_offsets": use_ee_offsets,
-                    }
+                    },
+                    # FastMCP wrapper requires this placeholder field
+                    "ignored_kwargs": "{}",
                 }
 
                 ok, response = await self.client.call_tool(url, session_id, tool_name, arguments)
