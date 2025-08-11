@@ -20,6 +20,7 @@ import os
 import stat as statlib
 import time
 from pathlib import Path
+import glob
 from typing import Optional
 
 import evdev
@@ -42,7 +43,11 @@ def print_header(title: str) -> None:
 
 def list_devices() -> list[str]:
     # Sort for stability
-    return sorted(evdev.list_devices())
+    paths = sorted(evdev.list_devices())
+    if not paths:
+        # Fallback: plain glob on /dev/input/event*
+        paths = sorted(glob.glob("/dev/input/event*"))
+    return paths
 
 
 def describe_device(path: str) -> dict:
@@ -61,13 +66,36 @@ def describe_device(path: str) -> dict:
 
 def enumerate_evdev(expected_name: str, contains: Optional[str]) -> list[dict]:
     print_header("Evdev devices")
+    try:
+        import evdev as _ev  # noqa: F401
+        print(f"evdev module: {evdev.__file__}")
+    except Exception:
+        pass
     infos: list[dict] = []
     for path in list_devices():
         try:
             info = describe_device(path)
         except Exception as exc:  # Permission or hotplug errors
-            print(f"{path} -> <error: {exc}>")
-            continue
+            # Try to read sysfs name without opening the device
+            sys_name = None
+            try:
+                ev = Path(path).name  # eventX
+                sys_name_path = Path(f"/sys/class/input/{ev}/device/name")
+                if sys_name_path.exists():
+                    sys_name = sys_name_path.read_text(errors="ignore").strip()
+            except Exception:
+                pass
+            info = {
+                "path": path,
+                "name": sys_name or "<unavailable>",
+                "name_stripped": (sys_name or "").strip() if sys_name else None,
+                "phys": None,
+                "vendor": None,
+                "product": None,
+                "version": None,
+                "error": str(exc),
+            }
+            print(f"{path}: name={info['name']!r} <error opening device: {exc}>")
         infos.append(info)
         print(
             f"{path}: name={info['name']!r} strip={info['name_stripped']!r} "
@@ -130,6 +158,17 @@ def show_permissions(infos: list[dict]) -> None:
             print(f"{symlink} -> {target}")
 
 
+def resolve_by_id_symlink() -> Optional[str]:
+    # Prefer an explicit -event-joystick symlink if available
+    for p in sorted(Path("/dev/input/by-id").glob("*-event-joystick")):
+        try:
+            target = str(p.resolve())
+            return target
+        except Exception:
+            continue
+    return None
+
+
 def try_connect_via_teleop(name: str, read_seconds: float) -> None:
     print_header("Teleoperator connection test")
     cfg = AtariTeleoperatorConfig(device_name=name)
@@ -183,11 +222,20 @@ def main() -> None:
     parser.add_argument("--connect", action="store_true", help="Attempt teleoperator connect using detected name")
     parser.add_argument("--read-seconds", type=float, default=0.0, help="Read actions or events for N seconds")
     parser.add_argument("--device-path", help="Direct /dev/input/eventX path to read events from")
+    parser.add_argument("--dump-proc", action="store_true", help="Print /proc/bus/input/devices if available")
+    parser.add_argument("--prefer-by-id", action="store_true", help="Resolve and use by-id *-event-joystick path for direct reading")
     args = parser.parse_args()
 
     expected_name = args.name or AtariTeleoperatorConfig().device_name
     infos = enumerate_evdev(expected_name, args.contains)
     show_permissions(infos)
+
+    if args.dump_proc:
+        print_header("/proc/bus/input/devices")
+        try:
+            print(Path("/proc/bus/input/devices").read_text())
+        except Exception as exc:
+            print(f"<error reading proc devices: {exc}>")
 
     # Pick a candidate name by substring match first
     candidate_name: Optional[str] = None
@@ -208,6 +256,13 @@ def main() -> None:
 
     if args.connect and candidate_name:
         try_connect_via_teleop(candidate_name, read_seconds=max(0.0, args.read_seconds))
+
+    if args.prefer_by_id and args.read_seconds > 0 and not args.device_path:
+        by_id = resolve_by_id_symlink()
+        if by_id:
+            print_header("by-id direct read")
+            print(f"Resolved by-id event device: {by_id}")
+            read_events_direct(by_id, seconds=args.read_seconds)
 
     if args.device_path and args.read_seconds > 0:
         read_events_direct(args.device_path, seconds=args.read_seconds)
