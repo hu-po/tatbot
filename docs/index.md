@@ -1,6 +1,6 @@
 # Tatbot Documentation
 
-Autonomous tattoo robot system with dual Trossen arms and distributed compute.
+Welcome to tatbot - an autonomous tattoo robot system with dual Trossen arms and distributed compute.
 
 ## Quick Start
 - [Setup & Installation](setup.md) - Get tatbot running
