@@ -80,7 +80,7 @@ class GPUConversionService:
                 target_strokes_path = self._translate_path_for_node(strokes_file_path, node_name)
                 target_strokebatch_path = self._translate_path_for_node(strokebatch_file_path, node_name)
 
-                tool_name = f"{node_name}_convert_strokelist_to_batch"
+                tool_name = "convert_strokelist_to_batch"
                 arguments: Dict[str, Any] = {
                     "input_data": {
                         "strokes_file_path": target_strokes_path,
