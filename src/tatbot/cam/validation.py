@@ -49,7 +49,11 @@ def compare_extrinsics_with_urdf(
         )
         
         # Compare each calibrated camera with URDF position
-        for cam_name in calibrated_cams.camera_configs:
+        # Iterate across known camera names based on configs
+        cam_names: list[str] = []
+        cam_names.extend([cam.name for cam in calibrated_cams.ipcameras])
+        cam_names.extend([cam.name for cam in calibrated_cams.realsenses])
+        for cam_name in cam_names:
             cam_config = calibrated_cams.get_camera(cam_name)
             calibrated_pos = np.array(cam_config.extrinsics.pos.xyz)
             

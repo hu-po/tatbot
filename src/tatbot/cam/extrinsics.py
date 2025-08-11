@@ -1,6 +1,5 @@
 import os
 from collections import defaultdict
-from dataclasses import replace
 
 import jax.numpy as jnp
 import jaxlie
@@ -124,7 +123,8 @@ def get_extrinsics(
             log.info(f"Converged after {it + 1} iterations")
             break
 
-    updated_cams = replace(cams)
+    # Create a deep copy of the Pydantic model (dataclasses.replace does not apply)
+    updated_cams = cams.model_copy(deep=True)
     # populate new camera extrinsics
     for camera_name in current_extrinsics:
         T = current_extrinsics[camera_name]
