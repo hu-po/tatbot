@@ -51,8 +51,7 @@ def get_link_poses(
     if link_indices.size == 0:
         log.warning("No valid URDF links provided; returning empty poses map")
         return {}
-    # Ensure correct dtype and memory layout for FK computation
-    joint_positions = np.asarray(joint_positions, dtype=np.float64).copy()
+    joint_positions = np.asarray(joint_positions, dtype=np.float32).copy()
     all_link_poses = np.asarray(robot.forward_kinematics(joint_positions))
     # Copy out to avoid referencing underlying C buffers
     wxyz = np.ascontiguousarray(all_link_poses[link_indices, :4]).copy()

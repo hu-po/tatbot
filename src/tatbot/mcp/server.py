@@ -2,6 +2,7 @@
 
 import socket
 from typing import List, Optional
+import logging
 
 import hydra
 from mcp.server.fastmcp import FastMCP
@@ -10,7 +11,7 @@ from omegaconf import DictConfig, OmegaConf
 from tatbot.mcp.models import MCPSettings
 from tatbot.tools import get_tools_for_node
 from tatbot.utils.exceptions import NetworkConnectionError
-from tatbot.utils.log import get_logger
+from tatbot.utils.log import get_logger, SUBMODULES
 
 
 class ServerConstants:
@@ -47,6 +48,12 @@ def main(cfg: DictConfig) -> None:
     # Extract MCP settings from Hydra config
     mcp_config = OmegaConf.to_object(cfg.mcp)
     settings = MCPSettings(**mcp_config)
+    
+    if settings.debug:    
+        logging.getLogger().setLevel(logging.DEBUG)
+        for submodule in SUBMODULES:
+            logging.getLogger(f"tatbot.{submodule}").setLevel(logging.DEBUG)
+        log.debug("🐛 MCP debug mode enabled (mcp.debug=true)")
     
     # Get node name from Hydra config, fallback to hostname
     node_name = cfg.get("node", socket.gethostname())
