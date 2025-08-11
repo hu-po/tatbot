@@ -25,20 +25,12 @@ def compare_extrinsics_with_urdf(
     """
     log.info("📊 Comparing calibrated extrinsics with URDF positions...")
     
-    # Get URDF camera positions from optical frame links
-    urdf_cam_links = []
-    
-    # Add IP camera optical frames
-    for cam in scene.cams.ipcameras:
-        urdf_cam_links.append(f"{cam.name}_optical_frame")
-        
-    # Add RealSense camera optical frames  
-    for cam in scene.cams.realsenses:
-        # Convert realsense_link to color_optical_frame
-        base_name = cam.urdf_link_name.replace("_link", "")
-        urdf_cam_links.append(f"{base_name}_color_optical_frame")
-    
-    urdf_cam_links = tuple(urdf_cam_links)
+    # Get URDF camera link names directly from scene configs
+    urdf_cam_links = tuple([
+        cam.urdf_link_name for cam in scene.cams.ipcameras
+    ] + [
+        cam.urdf_link_name for cam in scene.cams.realsenses
+    ])
     deviations = {}
     
     try:
@@ -57,21 +49,8 @@ def compare_extrinsics_with_urdf(
             cam_config = calibrated_cams.get_camera(cam_name)
             calibrated_pos = np.array(cam_config.extrinsics.pos.xyz)
             
-            # Find corresponding URDF link
-            urdf_link_name = None
-            
-            # Check IP cameras
-            for cam in scene.cams.ipcameras:
-                if cam.name == cam_name:
-                    urdf_link_name = f"{cam.name}_optical_frame"
-                    break
-                    
-            # Check RealSense cameras
-            for cam in scene.cams.realsenses:
-                if cam.name == cam_name:
-                    base_name = cam.urdf_link_name.replace("_link", "")
-                    urdf_link_name = f"{base_name}_color_optical_frame"
-                    break
+            # Find corresponding URDF link directly from the config
+            urdf_link_name = scene.cams.get_camera(cam_name).urdf_link_name
             
             if urdf_link_name and urdf_link_name in urdf_link_poses:
                 urdf_pos = np.array(urdf_link_poses[urdf_link_name].pos.xyz)

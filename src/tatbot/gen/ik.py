@@ -89,7 +89,7 @@ def batch_ik(
     if ik_config is None:
         ik_config = IKConfig()
     _, robot = load_robot(urdf_path)
-    link_indices = get_link_indices(urdf_path, link_names)
+    link_indices, _ = get_link_indices(urdf_path, link_names)
     log.debug(f"performing batch ik on batch of size {target_pos.shape[0]}")
     start_time = time.time()
     _ik_vmap = jax.vmap(
