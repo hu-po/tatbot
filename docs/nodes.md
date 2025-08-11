@@ -10,8 +10,9 @@ Tatbot consists of several computers, cameras, and robots connected via ethernet
 :::{grid-item-card}
 :class-header: bg-light
 
-{{ojo}} **NVIDIA Jetson AGX Orin**
+{{ojo}} **ojo**
 ^^^
+NVIDIA Jetson AGX Orin
 - ARM Cortex-A78AE, 12-core @ 2.2 GHz
 - 32GB Unified RAM
 - 200 TOPS AI performance
@@ -21,8 +22,9 @@ Tatbot consists of several computers, cameras, and robots connected via ethernet
 :::{grid-item-card}
 :class-header: bg-light
 
-{{ook}} **Acer Nitro V 15**
-^^^  
+{{ook}} **ook**
+^^^
+Acer Nitro V 15
 - Intel i7-13620H, 16-core @ 3.6 GHz
 - 16GB RAM + 6GB VRAM (RTX 4050)
 - 194 TOPS AI performance
@@ -32,8 +34,9 @@ Tatbot consists of several computers, cameras, and robots connected via ethernet
 :::{grid-item-card}
 :class-header: bg-light
 
-{{trossen-ai}} **System76 Meerkat PC**
+{{trossen-ai}} **trossen-ai**
 ^^^
+System76 Meerkat PC
 - Intel i5-1340P, 16-core @ 4.6 GHz  
 - 15GB RAM
 - Robot arm control & RealSense cameras
@@ -43,8 +46,9 @@ Tatbot consists of several computers, cameras, and robots connected via ethernet
 :::{grid-item-card}
 :class-header: bg-light
 
-{{hog}} **GEEKOM GT1 Mega**
+{{hog}} **hog**
 ^^^
+GEEKOM GT1 Mega
 - Intel Core Ultra 9 185H, 16-core @ 5.1 GHz
 - 32GB RAM + Intel Arc graphics
 - IP: 192.168.1.88
@@ -54,8 +58,9 @@ Tatbot consists of several computers, cameras, and robots connected via ethernet
 :::{grid-item-card}
 :class-header: bg-light
 
-{{rpi1}} **Raspberry Pi 5**
+{{rpi1}} **rpi1**
 ^^^
+Raspberry Pi 5
 - ARM Cortex-A76, 4-core @ 2.4 GHz
 - 8GB RAM
 - DNS server (edge mode)
@@ -65,8 +70,9 @@ Tatbot consists of several computers, cameras, and robots connected via ethernet
 :::{grid-item-card}
 :class-header: bg-light
 
-{{rpi2}} **Raspberry Pi 5**
+{{rpi2}} **rpi2**
 ^^^
+Raspberry Pi 5
 - ARM Cortex-A76, 4-core @ 2.4 GHz
 - 8GB RAM
 - NFS server
