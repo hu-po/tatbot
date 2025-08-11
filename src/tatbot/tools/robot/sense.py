@@ -246,10 +246,11 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
         
         for ply_idx in range(num_plys):
             log.info(f"Capturing pointcloud {ply_idx + 1}/{num_plys}...")
-            for depth_cam_name, depth_cam in depth_cameras.items():
-                ply_file = depth_cam.get_pointcloud(save=True)
-                if ply_file:
-                    captured_files.append(ply_file)
+            for _, depth_cam in depth_cameras.items():
+                expected_ply_path = Path(depth_cam.save_dir) / f"{depth_cam.save_prefix}{depth_cam.frame_idx:06d}.ply"
+                depth_cam.get_pointcloud(save=True)
+                if expected_ply_path.exists():
+                    captured_files.append(str(expected_ply_path))
             
             progress = 0.6 + (0.3 * (ply_idx + 1) / num_plys)
             yield {"progress": progress, "message": f"Captured pointcloud {ply_idx + 1}/{num_plys}"}
