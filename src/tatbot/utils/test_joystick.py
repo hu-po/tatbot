@@ -97,9 +97,14 @@ def enumerate_evdev(expected_name: str, contains: Optional[str]) -> list[dict]:
             }
             print(f"{path}: name={info['name']!r} <error opening device: {exc}>")
         infos.append(info)
+        name_stripped = info.get("name_stripped")
+        vendor = info.get("vendor")
+        product = info.get("product")
+        vendor_str = f"0x{vendor:04x}" if isinstance(vendor, int) else "N/A"
+        product_str = f"0x{product:04x}" if isinstance(product, int) else "N/A"
         print(
-            f"{path}: name={info['name']!r} strip={info['name_stripped']!r} "
-            f"phys={info['phys']!r} id=({info['vendor']:#06x},{info['product']:#06x})"
+            f"{path}: name={info['name']!r} strip={name_stripped!r} "
+            f"phys={info['phys']!r} id=({vendor_str},{product_str})"
         )
 
     exact_exists = any(i["name_stripped"] == expected_name for i in infos)
