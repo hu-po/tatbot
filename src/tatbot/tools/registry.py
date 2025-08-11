@@ -86,24 +86,18 @@ def tool(
         )
         
         # Create wrapper that completely hides ctx from MCP schema
-        async def mcp_exposed_wrapper(ctx: Context, **kwargs):
-            """
-            MCP-exposed wrapper with hidden Context parameter.
-            
-            FastMCP will inject Context automatically but won't expose it in the 
-            client-visible schema. Clients only see the **kwargs parameters.
-            """
-            
-            # Filter out any framework-related fields that clients might send
-            framework_fields = ['ctx', 'context', 'mcp_context', 'tool_context']
-            filtered_kwargs = {k: v for k, v in kwargs.items() 
-                              if k not in framework_fields and not isinstance(v, Context)}
-            
-            # Log and remove any framework fields if present
-            for field in framework_fields:
-                if field in kwargs:
-                    removed_value = kwargs[field]
-                    log.warning(f"🔧 {tool_name}: Client sent '{field}' - ignoring: {removed_value}")
+        async def mcp_exposed_wrapper(
+            ctx: Context,
+            input_data: Union[str, dict, Any] | None = None,
+            **_ignored_kwargs,
+        ):
+            # Start from input_data only; ignore unexpected extras to avoid schema confusion
+            filtered_kwargs = {}
+            if isinstance(input_data, dict):
+                filtered_kwargs = input_data.copy()
+            elif isinstance(input_data, str):
+                # Let _parse_input_data handle JSON or python-literal strings
+                filtered_kwargs = input_data
             
             # Extract node name from FastMCP context
             if ctx and hasattr(ctx, 'fastmcp') and ctx.fastmcp:
@@ -189,6 +183,9 @@ def tool(
         
         # Set the wrapper function name to the tool name for proper MCP registration
         mcp_exposed_wrapper.__name__ = tool_name
+        
+        # Copy the original function's docstring to preserve the tool description
+        mcp_exposed_wrapper.__doc__ = func.__doc__ or description or ""
         
         # Update tool definition with the MCP-exposed wrapper function
         definition.func = mcp_exposed_wrapper
