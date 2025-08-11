@@ -169,13 +169,13 @@ rest of the nodes:
 
 ```bash
 sudo apt install nfs-common
-showmount -e 192.168.1.88
+showmount -e 192.168.1.97
 sudo mkdir -p /nfs/tatbot
-sudo mount -t nfs 192.168.1.88:/nfs/tatbot /nfs/tatbot
+sudo mount -t nfs 192.168.1.97:/nfs/tatbot /nfs/tatbot
 # enable on startup
 sudo nano /etc/fstab
 # add this line:
-> 192.168.1.88:/nfs/tatbot /nfs/tatbot nfs defaults,_netdev 0 0
+> 192.168.1.97:/nfs/tatbot /nfs/tatbot nfs defaults,_netdev 0 0
 sudo systemctl daemon-reload
 sudo mount -a
 ```

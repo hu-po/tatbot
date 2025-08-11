@@ -1,6 +1,8 @@
 {
     "folders": [
       { "name": "tatbot", "path": "../../tatbot" }, // https://github.com/hu-po/tatbot
+      // NFS mount point
+      { "name": "nfs", "path": "/nfs/tatbot" },
       // Documentation
       { "name": "tatbot-logs", "path": "../../tatbot-logs" }, // https://github.com/hu-po/tatbot-logs
       // { "name": "infra", "path": "../../infra" }, // https://github.com/hu-po/infra
@@ -14,8 +16,6 @@
       { "name": "trossen_arm", "path": "../../trossen_arm" }, // https://github.com/TrossenRobotics/trossen_arm
       { "name": "trossen_arm_description", "path": "../../trossen_arm_description" }, // https://github.com/TrossenRobotics/trossen_arm_description
       { "name": "apriltags", "path": "../../apriltags" }, // https://github.com/pupil-labs/apriltags
-      { "name": "potpourri3d", "path": "../../potpourri3d" }, // https://github.com/nmwsharp/potpourri3d
-      { "name": "polyscope", "path": "../../polyscope" }, // https://github.com/nmwsharp/polyscope
     ],
     "settings": {}
   }
