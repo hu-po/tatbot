@@ -133,7 +133,7 @@ class Scene(BaseCfg):
             else:
                 updated_inkcaps.append(inkcap)
         
-        self.inks = self.inks.model_copy(update={'inkcaps': updated_inkcaps})
+        self.inks = self.inks.model_copy(update={'inkcaps': tuple(updated_inkcaps)})
         self.calibrator_pos = link_poses[self.urdf.calibrator_link_name].pos
         return self
 
