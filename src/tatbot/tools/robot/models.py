@@ -27,8 +27,8 @@ class AlignOutput(RobotOpOutput):
 
 class StrokeInput(RobotOpInput):
     """Input for stroke tool."""
-    enable_joystick: bool = False
-    enable_realsense: bool = False
+    enable_joystick: bool = True
+    enable_realsense: bool = True
     resume: bool = False
     fps: int = 10
 
