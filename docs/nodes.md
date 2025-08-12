@@ -214,6 +214,8 @@ sudo systemctl status dnsmasq
 **Configure All Nodes to Use rpi2 as DNS**
 
 ```bash
+# install dependencies
+sudo apt install dnsutils
 # First, check which network management system is active:
 systemctl list-units --type=service --state=active | grep -E '(NetworkManager|dhcpcd)'
 # Check active connections
@@ -229,17 +231,16 @@ For IP cameras and arm controllers, configure DNS via web interface to `192.168.
 #### Usage
 
 ```bash
+# Check current status
+cd ~/tatbot && source scripts/setup_env.sh
+uv run python src/tatbot/utils/mode_toggle.py --mode status
 # Switch to home mode (DNS forwarder)
 uv run python src/tatbot/utils/mode_toggle.py --mode home
-
 # Switch to edge mode (authoritative DNS + DHCP)
 uv run python src/tatbot/utils/mode_toggle.py --mode edge
-
 # Toggle between modes
 uv run python src/tatbot/utils/mode_toggle.py --mode toggle
 
-# Check current status
-uv run python src/tatbot/utils/mode_toggle.py --mode status
 ```
 
 #### Configuration
