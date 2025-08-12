@@ -226,7 +226,7 @@ class BaseViz:
     def run(self):
         # Mark server as ready after initialization
         self._server_ready = True
-        log.info(f"Viser server ready on port {self.server.port}")
+        log.info(f"Viser server ready on port {self.server.get_port()}")
         
         while not self._stop_flag:
             start_time = time.time()

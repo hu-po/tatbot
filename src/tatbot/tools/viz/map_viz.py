@@ -112,7 +112,7 @@ async def start_map_viz(input_data: MapVizInput, ctx: ToolContext):
         from tatbot.tools.registry import _load_node_config
         node_config = _load_node_config(ctx.node_name)
         host = node_config.get("host", "localhost")
-        server_url = f"http://{host}:{viz.server.port}"
+        server_url = f"http://{host}:{viz.server.get_port()}"
         
         yield {"progress": 0.9, "message": f"Server ready at {server_url}..."}
         

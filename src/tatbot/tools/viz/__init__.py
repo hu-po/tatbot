@@ -83,7 +83,7 @@ def get_server_url(name: str, node_name: str) -> Optional[str]:
     node_config = _load_node_config(node_name)
     host = node_config.get("host", "localhost")
     
-    return f"http://{host}:{viz_instance.server.port}"
+    return f"http://{host}:{viz_instance.server.get_port()}"
 
 
 def get_server_status(name: str, node_name: str) -> dict:
@@ -108,7 +108,7 @@ def get_server_status(name: str, node_name: str) -> dict:
     host = node_config.get("host", "localhost")
     
     # Get server details
-    port = viz_instance.server.port if hasattr(viz_instance, 'server') else None
+    port = viz_instance.server.get_port() if hasattr(viz_instance, 'server') else None
     server_url = f"http://{host}:{port}" if port else None
     thread_alive = thread.is_alive() if thread else None
     
