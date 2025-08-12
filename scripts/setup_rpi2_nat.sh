@@ -1,5 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Backward-compatible wrapper to enable NAT/routing on rpi2
+# Delegates to the maintained script name
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+exec "${SCRIPT_DIR}/mode_setup_rpi2.sh" "$@"
+
 #!/bin/bash
-# Configure rpi2 for true isolation mode with NAT routing
+# Configure rpi2 for NAT routing to provide internet access in edge mode
+# Optional setup - only needed if you want internet access in edge mode
 
 set -e
 
@@ -9,7 +19,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}🌐 Setting up rpi2 for true isolation mode...${NC}"
+echo -e "${GREEN}🌐 Setting up NAT routing on rpi2 for edge mode internet access...${NC}"
 
 # Enable IP forwarding
 echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
@@ -49,9 +59,8 @@ if ! dpkg -l | grep -q iptables-persistent; then
     sudo apt update && sudo apt install -y iptables-persistent
 fi
 
-echo -e "${GREEN}🎯 True isolation mode setup complete!${NC}"
-echo -e "${YELLOW}📋 To test:${NC}"
-echo "  1. Disconnect ethernet cable from home router"
-echo "  2. Restart all nodes"
-echo "  3. rpi2 will serve as gateway for tatbot network"
-echo "  4. Nodes should get DHCP from rpi2 and use it as gateway"
+echo -e "${GREEN}🎯 NAT routing setup complete!${NC}"
+echo -e "${YELLOW}📋 Usage:${NC}"
+echo "  - Edge mode now provides internet access via rpi2"
+echo "  - Nodes get routing through rpi2 (192.168.1.99)"
+echo "  - Internet connectivity depends on rpi2's upstream connection"

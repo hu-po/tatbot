@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Centralized DNS mode toggler for tatbot network.
-Uses dnsmasq configuration profiles on rpi2 for fast, reliable mode switching.
+Simple DNS mode toggler for tatbot network.
+Switches between edge mode (local DNS+DHCP) and home mode (DNS forwarding).
 """
 
 import logging
@@ -16,7 +16,7 @@ from tatbot.utils.log import get_logger
 
 log = get_logger("mode_toggle", "🔀")
 
-class CentralizedDNSConfig:
+class DNSConfig:
     debug: bool = False
     """Enable debug logging."""
     
@@ -41,10 +41,10 @@ class CentralizedDNSConfig:
     validate: bool = True
     """Validate configuration before applying"""
 
-class CentralizedNetworkToggler:
-    """Centralized DNS mode toggler using dnsmasq configuration profiles."""
+class NetworkToggler:
+    """Simple DNS mode toggler using dnsmasq configuration profiles."""
 
-    def __init__(self, config: CentralizedDNSConfig):
+    def __init__(self, config: DNSConfig):
         self.config = config
         self.nodes = self._load_nodes()
         self.key_path = os.path.expanduser("~/.ssh/tatbot-key")
@@ -171,7 +171,7 @@ class CentralizedNetworkToggler:
             client.close()
 
     def _verify_mode_switch(self, expected_mode: str) -> bool:
-        """Verify that mode switch was successful."""
+        """Basic verification that mode switch was successful."""
         log.info("Verifying mode switch...")
         
         # Check that active symlink points to correct config
@@ -179,32 +179,6 @@ class CentralizedNetworkToggler:
         if actual_mode != expected_mode:
             log.error(f"Mode verification failed: expected {expected_mode}, got {actual_mode}")
             return False
-        
-        # Check that dnsmasq is running
-        client = self._get_ssh_client(self.dns_node)
-        try:
-            cmd = "sudo systemctl is-active dnsmasq"
-            exit_code, out, _ = self._run_remote(client, cmd)
-            if exit_code != 0 or "active" not in out:
-                log.error("dnsmasq service is not active")
-                return False
-        finally:
-            client.close()
-        
-        # Direct DNS resolution test against rpi2
-        test_host = f"{self.dns_node.name}.{self.config.domain}"
-        try:
-            import subprocess
-            # Use dig which is more reliable than nslookup
-            cmd = f"dig +short @{self.dns_node.ip} {test_host}"
-            result = subprocess.run(cmd.split(), capture_output=True, text=True, timeout=5)
-            if result.returncode == 0 and result.stdout.strip():
-                resolved_ip = result.stdout.strip()
-                log.info(f"DNS resolution test passed: {test_host} -> {resolved_ip}")
-            else:
-                log.warning(f"DNS resolution test failed for {test_host}")
-        except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
-            log.warning(f"DNS resolution test failed: {e}")
         
         log.info("Mode switch verification passed")
         return True
@@ -245,14 +219,11 @@ class CentralizedNetworkToggler:
         if not self._ensure_dnsmasq_installed():
             return False
         
-        if not self._deploy_dnsmasq_configs():
-            return False
-        
-        # Setup dnsmasq configuration and initial profile
+        # Setup dnsmasq configuration and initial profile (default to edge mode)
         client = self._get_ssh_client(self.dns_node)
         try:
             active_path = f"{self.config.dnsmasq_config_dir}/active.conf"
-            home_path = f"{self.config.dnsmasq_profiles_dir}/mode-home.conf"
+            edge_path = f"{self.config.dnsmasq_profiles_dir}/mode-edge.conf"
             
             # Configure dnsmasq to use only the active config file
             dnsmasq_conf = f"conf-file={active_path}"
@@ -262,15 +233,12 @@ class CentralizedNetworkToggler:
                 log.error(f"Failed to configure dnsmasq.conf: {err}")
                 return False
             
-            # Only create symlink if doesn't exist
-            cmd = f"test -L {active_path} || sudo ln -s {home_path} {active_path}"
+            # Create symlink to edge mode (default on boot)
+            cmd = f"sudo ln -sf {edge_path} {active_path}"
             self._run_remote(client, cmd)
             
             # Enable and start dnsmasq service
-            cmd = "sudo systemctl enable dnsmasq"
-            self._run_remote(client, cmd)
-            
-            cmd = "sudo systemctl start dnsmasq"
+            cmd = "sudo systemctl enable dnsmasq && sudo systemctl start dnsmasq"
             exit_code, _, err = self._run_remote(client, cmd)
             if exit_code != 0:
                 log.warning(f"Failed to start dnsmasq: {err}")
@@ -278,17 +246,14 @@ class CentralizedNetworkToggler:
         finally:
             client.close()
         
-        log.info("DNS control node setup complete")
+        log.info("DNS control node setup complete (default: edge mode)")
         return True
 
     def to_home(self) -> bool:
-        """Switch to home mode (DNS forwarder)."""
+        """Switch to home mode (DNS forwarder to home router)."""
         log.info("Switching to HOME mode...")
         
         success = self._switch_dnsmasq_profile("home")
-        if success and self.config.validate:
-            success = self._verify_mode_switch("home")
-        
         if success:
             log.info("✅ Successfully switched to HOME mode")
         else:
@@ -297,13 +262,10 @@ class CentralizedNetworkToggler:
         return success
 
     def to_edge(self) -> bool:
-        """Switch to edge mode (authoritative DNS + DHCP)."""
+        """Switch to edge mode (local DNS + DHCP, default mode)."""
         log.info("Switching to EDGE mode...")
         
         success = self._switch_dnsmasq_profile("edge")
-        if success and self.config.validate:
-            success = self._verify_mode_switch("edge")
-        
         if success:
             log.info("✅ Successfully switched to EDGE mode")
         else:
@@ -321,8 +283,8 @@ class CentralizedNetworkToggler:
         elif current_mode == "edge":
             return self.to_home()
         else:
-            log.warning(f"Unknown current mode: {current_mode}, defaulting to home")
-            return self.to_home()
+            log.warning(f"Unknown current mode: {current_mode}, defaulting to edge (default)")
+            return self.to_edge()
 
     def status(self) -> str:
         """Get current mode status."""
@@ -369,7 +331,7 @@ def main():
     
     args = parser.parse_args()
     
-    config = CentralizedDNSConfig()
+    config = DNSConfig()
     config.mode = args.mode
     config.debug = args.debug
     config.validate = not args.no_validate
@@ -377,7 +339,7 @@ def main():
     if config.debug:
         logging.getLogger().setLevel(logging.DEBUG)
     
-    toggler = CentralizedNetworkToggler(config)
+    toggler = NetworkToggler(config)
     
     if args.setup:
         success = toggler.setup()

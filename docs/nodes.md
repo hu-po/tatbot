@@ -176,10 +176,13 @@ sudo systemctl daemon-reload
 sudo mount -a
 ```
 
-## Modes
+## Network Modes
 
-- **Home**: Nodes on home network. `rpi2` runs dnsmasq as a DNS forwarder (no DHCP). Internet via home router.
-- **Edge**: Local-only by default. `rpi2` runs dnsmasq as authoritative DNS for `tatbot.lan`. DHCP may be enabled in `mode-edge.conf`. Internet can be provided either by the home router or optionally via NAT on `rpi2`.
+tatbot operates in two simple modes:
+
+- **Edge Mode (Default)**: Local-first operation. `rpi2` provides DNS and DHCP for the `tatbot.lan` network. Nodes boot to this mode by default and fall back to it when WiFi is unavailable. Internet access is optional via NAT.
+
+- **Home Mode**: Integration with home network. `rpi2` forwards DNS queries to the home router while maintaining `tatbot.lan` hostname resolution. Used when WiFi is available and home integration is desired.
 
 #### Setup Instructions
 
@@ -193,7 +196,7 @@ cp ~/tatbot/config/dnsmasq/mode-*.conf /tmp/
 # Create profiles directory and move configs there
 sudo mkdir -p /etc/dnsmasq-profiles
 sudo mv /tmp/mode-*.conf /etc/dnsmasq-profiles/
-# Create active config symlink (default to EDGE on boot)
+# Create active config symlink (default to EDGE mode on boot)
 sudo ln -sf /etc/dnsmasq-profiles/mode-edge.conf /etc/dnsmasq.d/active.conf
 # Override systemd service to use our configuration method
 sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
@@ -208,9 +211,8 @@ sudo systemctl enable dnsmasq && sudo systemctl restart dnsmasq
 # Verify it's using our configuration (should show interface binding and our forwarding rules)
 sudo systemctl status dnsmasq
 
-# Optional: enable NAT on rpi2 if no home router is present and you want internet in Edge
-# (not a separate mode, just an option)
-~/tatbot/scripts/mode_setup_rpi2.sh
+# Optional: enable NAT on rpi2 for internet access in Edge mode
+~/tatbot/scripts/setup_rpi2_nat.sh
 ```
 
 **Configure All Nodes to Use rpi2 as DNS (one-time)**
@@ -222,7 +224,7 @@ sudo apt install dnsutils
 systemctl list-units --type=service --state=active | grep -E '(NetworkManager|dhcpcd)'
 # Check active connections
 nmcli connection show --active
-# Apply sane defaults for DNS and routes
+# Apply edge-first configuration for DNS and routes
 ~/tatbot/scripts/mode_setup_node.sh
 ```
 
@@ -234,9 +236,9 @@ For IP cameras and arm controllers, configure DNS via web interface to `192.168.
 # Check current status
 cd ~/tatbot && source scripts/setup_env.sh
 uv run python src/tatbot/utils/mode_toggle.py --mode status
-# Switch to Home (DNS forwarder)
+# Switch to Home mode (DNS forwarder to home router)
 uv run python src/tatbot/utils/mode_toggle.py --mode home
-# Switch to Edge (authoritative DNS; DHCP if enabled in config)
+# Switch to Edge mode (local DNS + DHCP, default mode)
 uv run python src/tatbot/utils/mode_toggle.py --mode edge
 ```
 
@@ -249,10 +251,11 @@ uv run python src/tatbot/utils/mode_toggle.py --mode edge
 - ⚠️ **Important**: Ensure your home router has DHCP reservations matching the static A records
 
 **Edge Mode** (`config/dnsmasq/mode-edge.conf`):
-- Authoritative DNS for `tatbot.lan`
-- DHCP static reservations for devices (if enabled)
-- Upstream DNS (1.1.1.1, 8.8.8.8) for external lookups
-- Optional NAT on `rpi2` via `scripts/mode_setup_rpi2.sh` when home router is absent (not a separate mode)
+- **Default mode** - boots to edge mode by default
+- Authoritative DNS for `tatbot.lan` domain
+- DHCP static reservations for all tatbot devices
+- Upstream DNS (1.1.1.1, 8.8.8.8) for internet lookups
+- Optional NAT routing via `scripts/setup_rpi2_nat.sh` for internet access
 
 #### Troubleshooting
 

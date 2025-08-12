@@ -3,11 +3,10 @@ set -euo pipefail
 
 # Centralized mode toggle runner.
 # Usage:
-#   scripts/toggle_mode.sh status|home|edge|edge-isolated
+#   scripts/toggle_mode.sh status|home|edge
 # - status: show rpi2 dnsmasq active profile and basic checks
 # - home:   switch rpi2 to home mode (DNS forwarder), no DHCP
-# - edge:   switch to edge mode (authoritative DNS + DHCP), hybrid routing
-# - edge-isolated: edge + enable NAT/forwarding on rpi2 via setup_isolation_mode.sh
+# - edge:   switch to edge mode (authoritative DNS + DHCP)
 
 MODE=${1:-status}
 RPI2_HOST=${RPI2_HOST:-rpi2}
@@ -30,12 +29,8 @@ case "${MODE}" in
     uv run -q -m tatbot.utils.mode_toggle --mode edge || { echo "Failed to switch to edge" >&2; exit 1; }
     run_on_rpi2 "sudo systemctl reload dnsmasq || sudo systemctl restart dnsmasq" || true
     ;;
-  edge-isolated)
-    uv run -q -m tatbot.utils.mode_toggle --mode edge || { echo "Failed to switch to edge" >&2; exit 1; }
-    run_on_rpi2 "~/tatbot/scripts/setup_isolation_mode.sh" || true
-    ;;
   *)
-    echo "Unknown mode: ${MODE}" >&2; exit 2
+    echo "Unknown mode: ${MODE} (valid: status, home, edge)" >&2; exit 2
     ;;
 esac
 

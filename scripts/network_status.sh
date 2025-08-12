@@ -88,12 +88,11 @@ fi
 
 echo ""
 
-# Determine current mode
-echo "🎭 Current Mode Detection:"
-echo "-------------------------"
-CURRENT_CONNECTION=$(nmcli connection show --active | grep -E 'tatbot-demo|wifi' | head -1 | awk '{print $1}')
+# Determine current network state
+echo "🎭 Network State:"
+echo "-----------------"
 
-# Detect if DNS is pointing at rpi2 (hybrid edge mode)
+# Detect if DNS is pointing at rpi2
 DNS_USES_RPI2=false
 if command -v resolvectl >/dev/null 2>&1; then
     if resolvectl status 2>/dev/null | grep -q "DNS Servers: .*192.168.1.99"; then
@@ -105,21 +104,23 @@ else
     fi
 fi
 
-if [[ "$CURRENT_CONNECTION" == "tatbot-demo" ]]; then
-    echo "  🎪 EDGE MODE - Connected to tatbot network"
-elif [[ "$DNS_USES_RPI2" == true ]]; then
-    echo "  🎪 EDGE MODE (hybrid) - Using rpi2 (192.168.1.99) for DNS"
-elif nmcli connection show --active | grep -q wifi; then
+if [[ "$DNS_USES_RPI2" == true ]]; then
+    echo "  🧭 Tatbot DNS: rpi2 (192.168.1.99)"
+fi
+
+if nmcli connection show --active | grep -q wifi; then
     WIFI_SSID=$(nmcli connection show --active | grep wifi | head -1 | awk '{print $1}')
-    echo "  📶 Connected to wifi ($WIFI_SSID)"
-else
-    echo "  ❓ UNKNOWN MODE - No recognized connection active"
+    echo "  📶 Wi‑Fi: $WIFI_SSID"
+fi
+
+if ! nmcli connection show --active | grep -q wifi && [[ "$DNS_USES_RPI2" != true ]]; then
+    echo "  ❓ No Wi‑Fi detected and tatbot DNS not in use"
 fi
 
 echo ""
 
-# MCP services check if in demo mode
-if [[ "$CURRENT_CONNECTION" == "tatbot-demo" ]] && ping -c 1 -W 2 192.168.1.99 &>/dev/null; then
+# MCP services check when rpi2 is reachable
+if ping -c 1 -W 2 192.168.1.99 &>/dev/null; then
     echo "🔧 MCP Services Check:"
     echo "---------------------"
     

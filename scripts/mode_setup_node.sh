@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# One-time per-node setup to make hybrid toggling easy:
-# - Force DNS to rpi2 (192.168.1.99) on active Wi‑Fi and Ethernet
-# - Prefer Wi‑Fi for default route; prevent Ethernet from adding a default route
-# - Keep changes persistent via NetworkManager connection profiles
+# One-time per-node setup for edge-first operation:
+# - Configure DNS to rpi2 (192.168.1.99) on all connections
+# - Prefer Wi-Fi for internet when available (home mode)
+# - Fall back to edge mode when Wi-Fi unavailable
 
 RPI2_DNS_IP=${RPI2_DNS_IP:-192.168.1.99}
 
-echo "🔧 Node bootstrap for hybrid mode (DNS -> ${RPI2_DNS_IP})"
+echo "🔧 Node bootstrap for edge-first operation (DNS -> ${RPI2_DNS_IP})"
 
 if ! command -v nmcli >/dev/null 2>&1; then
   echo "nmcli not found; please install NetworkManager and re-run" >&2
@@ -32,7 +32,7 @@ if [[ $(id -u) -eq 0 ]]; then SUDO=""; fi
 changed=false
 
 if [[ -n "${WIFI_CONN}" ]]; then
-  echo "Configuring Wi‑Fi connection '${WIFI_CONN}'"
+  echo "Configuring Wi‑Fi connection '${WIFI_CONN}' (home mode when available)"
   $SUDO nmcli connection modify "${WIFI_CONN}" \
     ipv4.dns "${RPI2_DNS_IP}" ipv4.ignore-auto-dns yes \
     ipv4.never-default no ipv4.route-metric 600 || true
@@ -40,7 +40,7 @@ if [[ -n "${WIFI_CONN}" ]]; then
 fi
 
 if [[ -n "${ETH_CONN}" ]]; then
-  echo "Configuring Ethernet connection '${ETH_CONN}'"
+  echo "Configuring Ethernet connection '${ETH_CONN}' (edge mode fallback)"
   $SUDO nmcli connection modify "${ETH_CONN}" \
     ipv4.dns "${RPI2_DNS_IP}" ipv4.ignore-auto-dns yes \
     ipv4.never-default yes || true
