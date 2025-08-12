@@ -229,7 +229,7 @@ log = get_logger("tools.vla_infer", "🧠")
 
 @tool(
     name="vla_infer",
-    nodes=["eek"],  # add GPU nodes if you want remote-only
+    nodes=["hog"],  # add GPU nodes if you want remote-only
     description="Run VLA policy inference on Tatbot from a checkpoint",
     input_model=VLAInferInput,
     output_model=VLAInferOutput,
@@ -372,13 +372,13 @@ except ImportError as e:
 ```
 
 2) Ensure the node config includes this tool (or allow wildcard):
-- Edit `conf/mcp/eek.yaml` and/or GPU nodes to include `vla_infer` in `mcp.tools`.
+- Edit `conf/mcp/hog.yaml` and/or GPU nodes to include `vla_infer` in `mcp.tools`.
 - If the tool requires GPU, add `requires=["gpu"]` to the decorator and ensure the node has `extras: [gpu]`.
 
 3) Restart the MCP server on the node:
 
 ```bash
-./scripts/run_mcp.sh eek
+./scripts/run_mcp.sh hog
 ```
 
 4) Invoke the tool from your MCP client with input JSON like:

@@ -103,9 +103,7 @@ Raspberry Pi 5
 - `arm-r` 🦾: Trossen Arm Controller box (front) connected to WidowXAI arm
 - `display` 🖥️: touchscreen monitor w/ speakers
 
-during development *home mode*, the following pc is also available:
 
-- `oop` 🦊: Ubuntu PC w/ NVIDIA RTX 3090 (AMD Ryzen 9 5900X, 24-core @ 4.95 GHz) (66GB RAM) (24GB VRAM) (TOPS)
 
 see:
 
@@ -147,7 +145,7 @@ source scripts/setup_env.sh
 uv run python -m tatbot.utils.net --debug
 ```
 
-# NFS Setup
+## NFS Setup
 
 currently the `eek` node serves as the NFS server for all other nodes:
 
@@ -183,10 +181,7 @@ sudo mount -a
 ## Home vs Edge Mode
 
 In *home mode*, tatbot nodes are connected to the local home network.
-In *edge mode*, the `rpi1` node acts as the DNS server for the network, `oop` node is no longer available.
+In *edge mode*, the `rpi2` node acts as the DNS server for the network, `oop` node is no longer available.
+During development *home mode*, the following pc is also available:
 
-on `rpi1`:
-
-```bash
-sudo apt install dnsmasq -y
-```
+- `oop` 🦊: Ubuntu PC w/ NVIDIA RTX 3090 (AMD Ryzen 9 5900X, 24-core @ 4.95 GHz) (66GB RAM) (24GB VRAM) (TOPS)

@@ -75,9 +75,9 @@ These folders should be loadable with the policy class `from_pretrained` method.
 
 Goal: Run on robot from a chosen checkpoint via an MCP tool call; stream progress and allow safe shutdown.
 
-Proposed tool
-- Name: `infer_vla`
-- Node: `eek`
+ Proposed tool
+ - Name: `infer_vla`
+ - Node: `hog`
 
 Input model (Pydantic)
 - `checkpoint_path: str` — local path or Hugging Face repo id
@@ -117,7 +117,7 @@ class InferVLAOutput(BaseModel):
     success: bool
     message: str
 
-@tool(name="infer_vla", nodes=["eek"], description="Run VLA policy inference on robot")
+@tool(name="infer_vla", nodes=["hog"], description="Run VLA policy inference on robot")
 async def infer_vla(input_data: InferVLAInput, ctx: ToolContext) -> InferVLAOutput:
     scene = compose_and_validate_scene(input_data.scene_name)
 
@@ -180,7 +180,7 @@ Wiring
 - Ensure it is imported on server start (decorator-based registry picks it up upon import). If needed, add an import in `tatbot/tools/robot/__init__.py`
 - Restart the MCP server on the target node:
   ```bash
-  ssh eek "bash ~/tatbot/scripts/run_mcp.sh eek"
+  ssh hog "bash ~/tatbot/scripts/run_mcp.sh hog"
   ```
 
 Example call payload

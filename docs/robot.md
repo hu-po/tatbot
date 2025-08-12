@@ -1,4 +1,6 @@
-# Trossen Robot Arms
+# Robot System
+
+## Trossen Robot Arms
 
 - [`trossen_arm`](https://github.com/TrossenRobotics/trossen_arm)
 - [Trossen WidowXAI arms](https://docs.trossenrobotics.com/trossen_arm/main/specifications.html)
@@ -10,7 +12,7 @@ see:
 - `src/conf/arms/default.yaml`: High-level configuration, including IP addresses and end-effector offsets.
 - `src/tatbot/data/arms.py`: The Pydantic data model that loads these configurations.
 
-## Update Firmware
+### Update Firmware
 
 First update the firmware to the latest version:
 
@@ -32,6 +34,24 @@ TODO: Edit end effector parameters for tattoo ee
 https://docs.trossenrobotics.com/trossen_arm/main/api/structtrossen__arm_1_1EndEffector.html#struct-documentation
 TODO: Create trossen_arm.StandardEndEffector.wxai_v0_tatbot_l and trossen_arm.StandardEndEffector.wxai_v0_tatbot_r
 
-# Home the arms
+### Home the arms
 
 https://docs.trossenrobotics.com/trossen_arm/main/service.html#arm-homing
+
+## URDF
+
+- tatbot is defined using URDF at `tatbot/urdf/tatbot.urdf`
+- based off the [official URDF](https://github.com/TrossenRobotics/trossen_arm_description)
+
+## Inverse Kinematics
+
+- [`jax`](https://github.com/jax-ml/jax)
+- [`pyroki`](https://github.com/chungmin99/pyroki)
+- every stroke tatbot executes is a sequence of joint angles
+- joint angles are computed using inverse kinematics (ik)
+- ik is computed on the GPU in parallel
+
+see:
+
+- `src/tatbot/data/stroke.py`
+- `src/tatbot/gen/batch.py`

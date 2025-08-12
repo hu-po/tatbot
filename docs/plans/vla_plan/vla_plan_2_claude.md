@@ -312,7 +312,7 @@ log = get_logger("tools.vla_infer", "🧠")
 
 @tool(
     name="vla_infer",
-    nodes=["eek"],
+    nodes=["hog"],
     description="Run VLA policy inference on Tatbot from a checkpoint",
     input_model=VLAInferInput,
     output_model=VLAInferOutput,
@@ -491,7 +491,7 @@ async def vla_infer(input_data: VLAInferInput, ctx: ToolContext):
 
 1. **Register Tool in Config**:
 ```yaml
-# src/conf/mcp/eek.yaml
+# src/conf/mcp/hog.yaml
 tools:
   - align
   - reset
@@ -518,10 +518,10 @@ The existing `get_tools_for_node()` function will automatically discover it.
 ```bash
 # Kill existing processes and restart
 ./scripts/kill.sh
-./scripts/run_mcp.sh eek
+./scripts/run_mcp.sh hog
 
 # Or restart on remote node
-ssh eek "bash ~/tatbot/scripts/run_mcp.sh eek"
+ssh hog "bash ~/tatbot/scripts/run_mcp.sh hog"
 ```
 
 ### Inference Modes
@@ -583,7 +583,7 @@ ssh eek "bash ~/tatbot/scripts/run_mcp.sh eek"
 - [ ] Test inference pipeline
 
 ### Phase 4: Deployment and Optimization (Week 6)
-- [ ] Deploy model to eek node
+- [ ] Deploy model to hog node
 - [ ] Optimize inference speed (quantization, caching)
 - [ ] Implement safety checks and fallbacks
 - [ ] Create monitoring dashboard
