@@ -124,6 +124,9 @@ The workflow in Cursor remains similar:
 
 ## Inspector
 
+manually call tools on `hog` node:
+
 ```bash
-npx @modelcontextprotocol/inspector
+cd ~/tatbot
+npx @modelcontextprotocol/inspector --config .cursor/mcp.json --server hog
 ```
