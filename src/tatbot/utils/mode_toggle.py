@@ -195,10 +195,12 @@ class CentralizedNetworkToggler:
         test_host = f"{self.dns_node.name}.{self.config.domain}"
         try:
             import subprocess
-            cmd = f"nslookup {test_host} {self.dns_node.ip}"
+            # Use dig which is more reliable than nslookup
+            cmd = f"dig +short @{self.dns_node.ip} {test_host}"
             result = subprocess.run(cmd.split(), capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                log.info(f"DNS resolution test passed: {test_host}")
+            if result.returncode == 0 and result.stdout.strip():
+                resolved_ip = result.stdout.strip()
+                log.info(f"DNS resolution test passed: {test_host} -> {resolved_ip}")
             else:
                 log.warning(f"DNS resolution test failed for {test_host}")
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:

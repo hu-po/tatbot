@@ -180,8 +180,7 @@ sudo mount -a
 
 **Mode Behavior:**
 - **Home Mode**: tatbot nodes are connected to the local home network. `rpi2` forwards DNS queries to home router (192.168.1.1), no DHCP
-- **Edge Mode**: tatbot is deployed, nodes are isolated to their own network. `rpi2` serves authoritative DNS + DHCP for `tatbot.lan` domain
-- **Wifi Mode**: tatbot is deployed, nodes are isolated to their own network. `ook` is connected to external wifi.
+- **Edge Mode**: tatbot is deployed, nodes are isolated to their own network. `rpi2` serves authoritative DNS + DHCP + routing/NAT for `tatbot.lan` domain
 
 #### Setup Instructions
 
@@ -209,6 +208,9 @@ sudo systemctl daemon-reload
 sudo systemctl enable dnsmasq && sudo systemctl restart dnsmasq
 # Verify it's using our configuration (should show interface binding and our forwarding rules)
 sudo systemctl status dnsmasq
+
+# Setup routing/NAT for true isolation mode
+~/tatbot/scripts/setup_isolation_mode.sh
 ```
 
 **Configure All Nodes to Use rpi2 as DNS**
@@ -240,7 +242,6 @@ uv run python src/tatbot/utils/mode_toggle.py --mode home
 uv run python src/tatbot/utils/mode_toggle.py --mode edge
 # Toggle between modes
 uv run python src/tatbot/utils/mode_toggle.py --mode toggle
-
 ```
 
 #### Configuration
@@ -252,13 +253,15 @@ uv run python src/tatbot/utils/mode_toggle.py --mode toggle
 - ⚠️ **Important**: Ensure your home router has DHCP reservations matching the static A records
 
 **Edge Mode** (`config/dnsmasq/mode-edge.conf`):
-- Authoritative DNS for `tatbot.lan` domain
+- Authoritative DNS for `tatbot.lan` domain  
 - DHCP server with static reservations for all devices:
   - Compute nodes: ook, oop, ojo, eek, hog, rpi1, rpi2
   - Robot arms: trossen-arm-leader, trossen-arm-follower
   - IP cameras: camera1-5
 - Upstream DNS (1.1.1.1, 8.8.8.8) for internet access
-- ⚠️ **Note**: Isolated network mode (no gateway advertised) - add NAT on rpi2 if internet access needed
+- ⚠️ **Hybrid mode** (default): DNS queries go to rpi2, but nodes remain on home network for routing/internet access
+- ⚠️ **True isolation mode**: Nodes get DHCP, routing, and NAT from rpi2. Requires setup_isolation_mode.sh on rpi2
+- ⚠️ **Physical isolation**: For complete separation, connect nodes to dedicated switch with rpi2 as only gateway
 
 #### Troubleshooting
 
@@ -284,70 +287,10 @@ nslookup ook.tatbot.lan 192.168.1.99
 nslookup camera1.tatbot.lan 192.168.1.99
 ```
 
-### Setup on Ook
-
-**Install Network Profiles**
-```bash
-cd ~/tatbot
-# Copy profile templates
-sudo cp config/network/tatbot-demo.nmconnection /etc/NetworkManager/system-connections/
-sudo cp config/network/wifi-update.nmconnection /etc/NetworkManager/system-connections/
-
-# Set correct permissions
-sudo chmod 600 /etc/NetworkManager/system-connections/*.nmconnection
-sudo chown root:root /etc/NetworkManager/system-connections/*.nmconnection
-
-# Reload NetworkManager
-sudo nmcli connection reload
-```
-
-**Verify Installation**
-```bash
-# Check profiles are available
-nmcli connection show
-
-# Test network status script
-./scripts/network_status.sh
-```
-
-**Switch to Edge Mode** (tatbot network):
-```bash
-# Connect ethernet cable to tatbot network
-./scripts/ook/edge.sh
-```
-
-**Switch to Wifi Mode** (external wifi):
-```bash
-# Unplug ethernet cable
-./scripts/ook/wifi.sh
-```
-
 **Check Current Status**:
 ```bash
 ./scripts/network_status.sh
 ```
-
-### Demo Scripts
-
-**`scripts/ook/edge.sh`**:
-- Disables wifi to avoid conflicts
-- Activates tatbot-demo NetworkManager profile
-- Sets static IP 192.168.1.90 with rpi2 as DNS
-- Verifies connectivity to tatbot network
-- Tests DNS resolution for tatbot.lan domains
-
-**`scripts/ook/wifi.sh`**:
-- Disconnects from tatbot network
-- Enables wifi and scans for networks
-- Interactive wifi connection (saved or new networks)
-- Verifies internet connectivity
-- Uses automatic DNS with fallback servers
-
-**`scripts/network_status.sh`**:
-- Shows all network interfaces and connections
-- Tests connectivity to tatbot network and internet
-- Displays current mode (home vs edge)
-- Checks MCP service accessibility in edge mode
 
 ### Troubleshooting
 
