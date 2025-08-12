@@ -197,41 +197,31 @@ sudo mkdir -p /etc/dnsmasq-profiles
 sudo mv /tmp/mode-*.conf /etc/dnsmasq-profiles/
 # Create active config symlink (start in home mode)
 sudo ln -sf /etc/dnsmasq-profiles/mode-home.conf /etc/dnsmasq.d/active.conf
-# Configure dnsmasq to use only the active config
-echo 'conf-file=/etc/dnsmasq.d/active.conf' | sudo tee /etc/dnsmasq.conf
-# Test the config
-sudo dnsmasq --test --conf-file=/etc/dnsmasq.d/active.conf
-# Enable and start dnsmasq
-sudo systemctl enable dnsmasq && sudo systemctl start dnsmasq
+# Override systemd service to use our configuration method
+sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
+cat <<EOF | sudo tee /etc/systemd/system/dnsmasq.service.d/override.conf
+[Service]
+ExecStart=
+ExecStart=/usr/sbin/dnsmasq -x /run/dnsmasq/dnsmasq.pid -u dnsmasq --conf-file=/etc/dnsmasq.d/active.conf --local-service
+EOF
+# Reload systemd and restart dnsmasq
+sudo systemctl daemon-reload
+sudo systemctl enable dnsmasq && sudo systemctl restart dnsmasq
+# Verify it's using our configuration (should show interface binding and our forwarding rules)
+sudo systemctl status dnsmasq
 ```
 
 **Configure All Nodes to Use rpi2 as DNS**
 
-First, check which network management system is active:
 ```bash
+# First, check which network management system is active:
 systemctl list-units --type=service --state=active | grep -E '(NetworkManager|dhcpcd)'
-```
-
-**For NetworkManager nodes (most common - ook, ojo, eek, hog, rpi1):**
-```bash
 # Check active connections
 nmcli connection show --active
-
 # Configure primary connection to use rpi2 as DNS
-# Replace 'CONNECTION_NAME' with the active connection name (e.g., 'Wired connection 1')
-sudo nmcli connection modify 'CONNECTION_NAME' ipv4.dns '192.168.1.99' ipv4.ignore-auto-dns yes
-
+sudo nmcli connection modify 'Wired connection 1' ipv4.dns '192.168.1.99' ipv4.ignore-auto-dns yes
 # Restart the connection to apply changes
-sudo nmcli connection down 'CONNECTION_NAME' && sudo nmcli connection up 'CONNECTION_NAME'
-```
-
-**For dhcpcd nodes (if any):**
-```bash
-sudo nano /etc/dhcpcd.conf
-# Add or update:
-static domain_name_servers=192.168.1.99
-# Restart networking
-sudo systemctl restart dhcpcd
+sudo nmcli connection down 'Wired connection 1' && sudo nmcli connection up 'Wired connection 1'
 ```
 
 For IP cameras and arm controllers, configure DNS via web interface to `192.168.1.99`.

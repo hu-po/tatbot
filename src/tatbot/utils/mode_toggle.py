@@ -6,17 +6,13 @@ Uses dnsmasq configuration profiles on rpi2 for fast, reliable mode switching.
 
 import logging
 import os
-import time
-from pathlib import Path
 from typing import List, Literal, Tuple
-import tempfile
 
 import paramiko
 import yaml
 
 from tatbot.data.node import Node
-from tatbot.utils.log import get_logger, setup_log_with_config
-from tatbot.utils.network_config import NetworkConfig
+from tatbot.utils.log import get_logger
 
 log = get_logger("mode_toggle", "🔀")
 
@@ -55,10 +51,6 @@ class CentralizedNetworkToggler:
         self.dns_node = next((n for n in self.nodes if n.name == self.config.dns_node_name), None)
         if not self.dns_node:
             raise ValueError(f"{self.config.dns_node_name} not found in nodes config")
-        
-        # Initialize network config generator (lazy loading)
-        self.network_config = NetworkConfig()
-        self._configs_loaded = False
 
     def _load_nodes(self) -> List[Node]:
         with open(self.config.config_path, "r") as f:
@@ -85,71 +77,6 @@ class CentralizedNetworkToggler:
         _, stdout, stderr = client.exec_command(cmd)
         exit_code = stdout.channel.recv_exit_status()
         return exit_code, stdout.read().decode().strip(), stderr.read().decode().strip()
-
-    def _ensure_configs_loaded(self):
-        """Ensure network configs are loaded from ip_addresses_dump.md."""
-        if not self._configs_loaded:
-            try:
-                self.network_config.parse_ip_dump()
-                self._configs_loaded = True
-            except FileNotFoundError:
-                log.error("ip_addresses_dump.md not found. Run network_config.py first to generate it.")
-                raise
-    
-    def _deploy_dnsmasq_configs(self) -> bool:
-        """Deploy dnsmasq configuration files to DNS node."""
-        log.info(f"Deploying dnsmasq configs to {self.config.dns_node_name}...")
-        
-        # Ensure configs are loaded
-        self._ensure_configs_loaded()
-        
-        client = self._get_ssh_client(self.dns_node)
-        
-        try:
-            # Create dnsmasq directories if they don't exist
-            for directory in [self.config.dnsmasq_config_dir, self.config.dnsmasq_profiles_dir]:
-                cmd = f"sudo mkdir -p {directory}"
-                exit_code, _, err = self._run_remote(client, cmd)
-                if exit_code != 0:
-                    log.error(f"Failed to create directory {directory}: {err}")
-                    return False
-            
-            # Generate and upload configurations
-            configs = {
-                "mode-home.conf": self.network_config.generate_dnsmasq_home_config(),
-                "mode-edge.conf": self.network_config.generate_dnsmasq_edge_config()
-            }
-            
-            for filename, content in configs.items():
-                # Create temporary file
-                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.conf') as tmp:
-                    tmp.write(content)
-                    tmp_path = tmp.name
-                
-                try:
-                    # Copy to remote host
-                    sftp = client.open_sftp()
-                    remote_tmp = f"/tmp/{filename}"
-                    sftp.put(tmp_path, remote_tmp)
-                    sftp.close()
-                    
-                    # Move to profiles directory with sudo
-                    cmd = f"sudo mv {remote_tmp} {self.config.dnsmasq_profiles_dir}/{filename}"
-                    exit_code, _, err = self._run_remote(client, cmd)
-                    if exit_code != 0:
-                        log.error(f"Failed to deploy {filename}: {err}")
-                        return False
-                    
-                    log.info(f"Deployed {filename} to profiles directory")
-                    
-                finally:
-                    # Clean up local temp file
-                    os.unlink(tmp_path)
-            
-            return True
-            
-        finally:
-            client.close()
 
     def _validate_dnsmasq_config(self, config_file: str) -> bool:
         """Validate dnsmasq configuration file."""
