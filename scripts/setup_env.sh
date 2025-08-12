@@ -1,6 +1,7 @@
 #!/bin/bash
 echo "🚀  Go to project directory and update"
-cd ~/tatbot && git pull
+cd ~/tatbot
+git pull || true
 
 echo "🧹  Clean old environment (ignore errors)"
 if [[ -n "${VIRTUAL_ENV:-}" ]]; then

@@ -47,12 +47,20 @@ echo "---------------------"
 echo "  Testing tatbot network..."
 if ping -c 1 -W 2 192.168.1.99 &>/dev/null; then
     echo "    ✅ rpi2 (192.168.1.99) - reachable"
-    
-    # Test DNS resolution in tatbot network
-    if nslookup eek.tatbot.lan 192.168.1.99 &>/dev/null 2>&1; then
-        echo "    ✅ tatbot DNS resolution - working"
+
+    # Test DNS resolution in tatbot network (prefer dig A record, fallback to getent)
+    if command -v dig >/dev/null 2>&1; then
+        if dig +short A eek.tatbot.lan @192.168.1.99 | grep -qE '^[0-9.]+'; then
+            echo "    ✅ tatbot DNS resolution - working"
+        else
+            echo "    ❌ tatbot DNS resolution - failed"
+        fi
     else
-        echo "    ❌ tatbot DNS resolution - failed"
+        if getent hosts eek.tatbot.lan >/dev/null 2>&1; then
+            echo "    ✅ tatbot DNS resolution - working"
+        else
+            echo "    ❌ tatbot DNS resolution - failed"
+        fi
     fi
 else
     echo "    ❌ rpi2 (192.168.1.99) - unreachable"
@@ -85,8 +93,22 @@ echo "🎭 Current Mode Detection:"
 echo "-------------------------"
 CURRENT_CONNECTION=$(nmcli connection show --active | grep -E 'tatbot-demo|wifi' | head -1 | awk '{print $1}')
 
+# Detect if DNS is pointing at rpi2 (hybrid edge mode)
+DNS_USES_RPI2=false
+if command -v resolvectl >/dev/null 2>&1; then
+    if resolvectl status 2>/dev/null | grep -q "DNS Servers: .*192.168.1.99"; then
+        DNS_USES_RPI2=true
+    fi
+else
+    if grep -q "^nameserver[[:space:]]\+192.168.1.99" /etc/resolv.conf 2>/dev/null; then
+        DNS_USES_RPI2=true
+    fi
+fi
+
 if [[ "$CURRENT_CONNECTION" == "tatbot-demo" ]]; then
     echo "  🎪 EDGE MODE - Connected to tatbot network"
+elif [[ "$DNS_USES_RPI2" == true ]]; then
+    echo "  🎪 EDGE MODE (hybrid) - Using rpi2 (192.168.1.99) for DNS"
 elif nmcli connection show --active | grep -q wifi; then
     WIFI_SSID=$(nmcli connection show --active | grep wifi | head -1 | awk '{print $1}')
     echo "  📶 UPDATE MODE - Connected to wifi ($WIFI_SSID)"
