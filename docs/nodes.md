@@ -190,35 +190,46 @@ sudo mount -a
 ssh rpi2
 sudo apt update && sudo apt install -y dnsmasq
 sudo mkdir -p /etc/dnsmasq.d
-
 # copy configs to rpi2
 cp ~/tatbot/config/dnsmasq/mode-*.conf /tmp/
-
 # Create profiles directory and move configs there
 sudo mkdir -p /etc/dnsmasq-profiles
 sudo mv /tmp/mode-*.conf /etc/dnsmasq-profiles/
-
 # Create active config symlink (start in home mode)
 sudo ln -sf /etc/dnsmasq-profiles/mode-home.conf /etc/dnsmasq.d/active.conf
-
 # Configure dnsmasq to use only the active config
 echo 'conf-file=/etc/dnsmasq.d/active.conf' | sudo tee /etc/dnsmasq.conf
-
 # Test the config
 sudo dnsmasq --test --conf-file=/etc/dnsmasq.d/active.conf
-
 # Enable and start dnsmasq
 sudo systemctl enable dnsmasq && sudo systemctl start dnsmasq
 ```
 
 **Configure All Nodes to Use rpi2 as DNS**
-For each node, update DNS configuration to permanently point to rpi2:
+
+First, check which network management system is active:
 ```bash
-# On each node (ook, ojo, eek, hog, rpi1):
+systemctl list-units --type=service --state=active | grep -E '(NetworkManager|dhcpcd)'
+```
+
+**For NetworkManager nodes (most common - ook, ojo, eek, hog, rpi1):**
+```bash
+# Check active connections
+nmcli connection show --active
+
+# Configure primary connection to use rpi2 as DNS
+# Replace 'CONNECTION_NAME' with the active connection name (e.g., 'Wired connection 1')
+sudo nmcli connection modify 'CONNECTION_NAME' ipv4.dns '192.168.1.99' ipv4.ignore-auto-dns yes
+
+# Restart the connection to apply changes
+sudo nmcli connection down 'CONNECTION_NAME' && sudo nmcli connection up 'CONNECTION_NAME'
+```
+
+**For dhcpcd nodes (if any):**
+```bash
 sudo nano /etc/dhcpcd.conf
 # Add or update:
 static domain_name_servers=192.168.1.99
-
 # Restart networking
 sudo systemctl restart dhcpcd
 ```
@@ -371,9 +382,16 @@ nmcli device wifi connect SSID_NAME password PASSWORD
 ```bash
 # Check current DNS settings
 cat /etc/resolv.conf
+
+# For NetworkManager - check connection DNS settings
+nmcli connection show 'CONNECTION_NAME' | grep ipv4.dns
+
 # Test specific DNS servers
 nslookup google.com 8.8.8.8
 nslookup eek.tatbot.lan 192.168.1.99
+
+# Verify DNS configuration is applied
+systemd-resolve --status | grep "DNS Servers"
 ```
 
 **Profile activation fails:**
