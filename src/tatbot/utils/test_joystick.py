@@ -16,16 +16,14 @@ Usage examples:
 from __future__ import annotations
 
 import argparse
-import os
+import glob
 import stat as statlib
 import time
 from pathlib import Path
-import glob
 from typing import Optional
 
 import evdev
 from evdev import InputDevice
-
 from lerobot.teleoperators.gamepad import (
     AtariTeleoperator,
     AtariTeleoperatorConfig,
@@ -127,7 +125,8 @@ def print_permissions_for(path: Path) -> None:
         return
     mode = format_mode(st.st_mode)
     try:
-        import pwd, grp  # noqa: PLC0415
+        import grp
+        import pwd  # noqa: PLC0415
 
         owner = pwd.getpwuid(st.st_uid).pw_name
         group = grp.getgrgid(st.st_gid).gr_name

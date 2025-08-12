@@ -164,6 +164,13 @@ The following tools are available via MCP servers on different nodes:
 - **`list_nodes`**: List all available tatbot nodes
 - **`ping_nodes`**: Test connectivity to tatbot nodes
 
+### Visualization Tools (oop, ook)
+- **`start_stroke_viz`**: Start interactive stroke execution visualization server
+- **`start_teleop_viz`**: Start teleoperation server for interactive robot control
+- **`start_map_viz`**: Start surface mapping visualization for 2D-to-3D debugging
+- **`stop_viz_server`**: Stop a running visualization server
+- **`list_viz_servers`**: List all running visualization servers
+
 ### Cross-Node Operations
 - Robot operations automatically detect GPU availability and route conversion tasks
 - Uses NFS shared storage for seamless file access across nodes

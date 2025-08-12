@@ -50,15 +50,23 @@ class BaseVizConfig:
     enable_depth: bool = False
     """Enable the depth visualization."""
 
+    fps: float = 30.0
+    """Frame rate for visualization loop."""
+    
+    bind_host: str = "0.0.0.0"
+    """Host interface to bind viser server to (0.0.0.0 for all interfaces)."""
+
 
 class BaseViz:
     def __init__(self, config: BaseVizConfig):
         self.config = config
         self.scene = compose_and_validate_scene(config.scene)
         self.global_step = 0
+        self._stop_flag = False
+        self._server_ready = False
 
         log.info("Starting viser server")
-        self.server: viser.ViserServer = viser.ViserServer()
+        self.server: viser.ViserServer = viser.ViserServer(host=config.bind_host)
         self.server.scene.set_environment_map(hdri=config.env_map_hdri, background=True)
 
         @self.server.on_client_connect
@@ -184,8 +192,43 @@ class BaseViz:
         log.debug("Empty step function, implement in subclass")
         pass
 
+    def stop(self):
+        """Stop the visualization server and clean up resources."""
+        log.info("Stopping visualization server")
+        self._stop_flag = True
+        
+        # Clean up depth cameras if enabled
+        if hasattr(self, 'depth_cameras'):
+            for camera in self.depth_cameras.values():
+                try:
+                    if hasattr(camera, 'stop') or hasattr(camera, 'close'):
+                        if hasattr(camera, 'stop'):
+                            camera.stop()
+                        if hasattr(camera, 'close'):
+                            camera.close()
+                except Exception as e:
+                    log.warning(f"Error closing depth camera: {e}")
+        
+        # Stop the viser server
+        try:
+            self.server.stop()
+        except Exception as e:
+            log.warning(f"Error stopping viser server: {e}")
+
+    def wait_for_ready(self, timeout: float = 10.0) -> bool:
+        """Wait for the server to be ready."""
+        import time
+        start_time = time.time()
+        while not self._server_ready and time.time() - start_time < timeout:
+            time.sleep(0.1)
+        return self._server_ready
+
     def run(self):
-        while True:
+        # Mark server as ready after initialization
+        self._server_ready = True
+        log.info(f"Viser server ready on port {self.server.port}")
+        
+        while not self._stop_flag:
             start_time = time.time()
             if self.viser_urdf is not None:
                 log.debug("Updating viser robot")
@@ -217,7 +260,14 @@ class BaseViz:
                 tb.value = str(self.joints[i + 7])
             self.global_step += 1
             self.global_step_textbox.value = str(self.global_step)
-            log.debug(f"Step time: {time.time() - start_time:.4f}s")
+            
+            # Frame rate limiting
+            step_time = time.time() - start_time
+            target_time = 1.0 / self.config.fps
+            if step_time < target_time:
+                time.sleep(target_time - step_time)
+            
+            log.debug(f"Step time: {step_time:.4f}s")
 
 
 if __name__ == "__main__":

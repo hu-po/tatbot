@@ -77,6 +77,11 @@ class TeleopViz(BaseViz):
                 right_sleep_button = self.server.gui.add_button("Go to Sleep")
                 right_calibrator_button = self.server.gui.add_button("Go to Calibrator")
                 right_save_offset_button = self.server.gui.add_button("Save EE Offset")
+            
+            # Add emergency stop for robot safety
+            if config.enable_robot:
+                with self.server.gui.add_folder("🚨 Safety Controls"):
+                    emergency_stop_button = self.server.gui.add_button("🛑 EMERGENCY STOP", color="red")
 
         @arm_l_button_group.on_click
         def _(_):
@@ -145,6 +150,13 @@ class TeleopViz(BaseViz):
         def _(_):
             log.debug("💾 Saving right arm EE offset")
             self.save_ee_offset("right")
+        
+        # Emergency stop handler for robot safety
+        if config.enable_robot:
+            @emergency_stop_button.on_click
+            def _(_):
+                log.warning("🛑 EMERGENCY STOP activated!")
+                self.emergency_stop()
 
     def save_pose(self, arm: str, joints: np.ndarray, name: str):
         pose_path = os.path.join(ArmPose.get_yaml_dir(), arm, f"{name}.yaml")
@@ -282,6 +294,35 @@ class TeleopViz(BaseViz):
         log.debug(f"🎯 left joints: {solution[:7]}")
         log.debug(f"🎯 right joints: {solution[7:]}")
         self.joints = np.array(solution, dtype=np.float32)
+
+    def emergency_stop(self):
+        """Emergency stop - immediately halt robot arms and disable IK updates."""
+        log.warning("🛑 Emergency stop activated - disabling arms and IK updates")
+        
+        # Stop both arms immediately
+        self.arm_l_ik_toggle = False
+        self.arm_r_ik_toggle = False
+        
+        # If robot hardware is connected, send stop commands
+        if hasattr(self, 'arm_l') and self.arm_l is not None:
+            try:
+                log.warning("🛑 Stopping left arm")
+                # Stop arm movement immediately
+                current_joints_l = self.arm_l.get_joint_positions()
+                self.arm_l.set_joint_positions(current_joints_l)
+            except Exception as e:
+                log.error(f"Failed to stop left arm: {e}")
+        
+        if hasattr(self, 'arm_r') and self.arm_r is not None:
+            try:
+                log.warning("🛑 Stopping right arm")
+                # Stop arm movement immediately  
+                current_joints_r = self.arm_r.get_joint_positions()
+                self.arm_r.set_joint_positions(current_joints_r)
+            except Exception as e:
+                log.error(f"Failed to stop right arm: {e}")
+        
+        log.warning("🛑 Emergency stop complete - manually re-enable arms using ▶️ buttons if safe")
 
 
 if __name__ == "__main__":

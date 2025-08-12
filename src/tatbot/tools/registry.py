@@ -318,5 +318,17 @@ def register_all_tools() -> None:
     except ImportError as e:
         log.debug(f"System tools not available: {e}")
     
+    # Import viz tools
+    try:
+        from tatbot.tools.viz import (  # noqa: F401
+            control,
+            map_viz,
+            stroke_viz,
+            teleop_viz,
+        )
+        log.debug("Imported viz tools")
+    except ImportError as e:
+        log.debug(f"Viz tools not available: {e}")
+    
     registered_count = len(_REGISTRY) - initial_count
     log.info(f"Auto-registered {registered_count} new tools (total: {len(_REGISTRY)})")
