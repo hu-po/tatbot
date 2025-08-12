@@ -39,8 +39,7 @@ Acer Nitro V 15
 System76 Meerkat PC
 - Intel i5-1340P, 16-core @ 4.6 GHz  
 - 15GB RAM
-- Robot arm control & RealSense cameras
-- Main control node
+- NFS server & shared storage
 :::
 
 :::{grid-item-card}
@@ -52,7 +51,7 @@ GEEKOM GT1 Mega
 - Intel Core Ultra 9 185H, 16-core @ 5.1 GHz
 - 32GB RAM + Intel Arc graphics
 - IP: 192.168.1.88
-- Additional compute node
+- Robot arm control & RealSense cameras
 :::
 
 :::{grid-item-card}
@@ -63,8 +62,8 @@ GEEKOM GT1 Mega
 Raspberry Pi 5
 - ARM Cortex-A76, 4-core @ 2.4 GHz
 - 8GB RAM
-- DNS server (edge mode)
-- System management
+- Visualization
+- Opencode Agent Frontend
 :::
 
 :::{grid-item-card}
@@ -75,8 +74,7 @@ Raspberry Pi 5
 Raspberry Pi 5
 - ARM Cortex-A76, 4-core @ 2.4 GHz
 - 8GB RAM
-- NFS server
-- Shared storage
+- DNS control server (centralized mode switching)
 :::
 
 ::::
@@ -178,10 +176,212 @@ sudo systemctl daemon-reload
 sudo mount -a
 ```
 
-## Home vs Edge Mode
+## Home vs Edge vs Wifi Mode
 
-In *home mode*, tatbot nodes are connected to the local home network.
-In *edge mode*, the `rpi2` node acts as the DNS server for the network, `oop` node is no longer available.
-During development *home mode*, the following pc is also available:
+**Mode Behavior:**
+- **Home Mode**: tatbot nodes are connected to the local home network. `rpi2` forwards DNS queries to home router (192.168.1.1), no DHCP
+- **Edge Mode**: tatbot is deployed, nodes are isolated to their own network. `rpi2` serves authoritative DNS + DHCP for `tatbot.lan` domain
+- **Wifi Mode**: tatbot is deployed, nodes are isolated to their own network. `ook` is connected to external wifi.
 
-- `oop` 🦊: Ubuntu PC w/ NVIDIA RTX 3090 (AMD Ryzen 9 5900X, 24-core @ 4.95 GHz) (66GB RAM) (24GB VRAM) (TOPS)
+#### Setup Instructions
+
+1. **Setup DNS Control Node (rpi2)**
+   ```bash
+   ssh rpi2
+   sudo apt update && sudo apt install -y dnsmasq
+   sudo mkdir -p /etc/dnsmasq.d
+
+   # copy configs to rpi2
+   cp ~/tatbot/config/dnsmasq/mode-*.conf rpi2:/tmp/
+   
+   # Create profiles directory and move configs there
+   sudo mkdir -p /etc/dnsmasq-profiles
+   sudo mv /tmp/mode-*.conf /etc/dnsmasq-profiles/
+   
+   # Create active config symlink (start in home mode)
+   sudo ln -sf /etc/dnsmasq-profiles/mode-home.conf /etc/dnsmasq.d/active.conf
+   
+   # Configure dnsmasq to use only the active config
+   echo 'conf-file=/etc/dnsmasq.d/active.conf' | sudo tee /etc/dnsmasq.conf
+
+   ## Test the config
+   sudo dnsmasq --test --conf-file=/etc/dnsmasq.d/active.conf
+   
+   # Enable and start dnsmasq
+   sudo systemctl enable dnsmasq && sudo systemctl start dnsmasq
+   ```
+
+2. **Configure All Nodes to Use rpi2 as DNS**
+   For each node, update DNS configuration to permanently point to rpi2:
+   ```bash
+   # On each node (ook, ojo, eek, hog, rpi1):
+   sudo nano /etc/dhcpcd.conf
+   # Add or update:
+   static domain_name_servers=192.168.1.99
+   
+   # Restart networking
+   sudo systemctl restart dhcpcd
+   ```
+
+   For IP cameras and arm controllers, configure DNS via web interface to `192.168.1.99`.
+
+#### Usage
+
+```bash
+# Switch to home mode (DNS forwarder)
+uv run python src/tatbot/utils/mode_toggle.py --mode home
+
+# Switch to edge mode (authoritative DNS + DHCP)
+uv run python src/tatbot/utils/mode_toggle.py --mode edge
+
+# Toggle between modes
+uv run python src/tatbot/utils/mode_toggle.py --mode toggle
+
+# Check current status
+uv run python src/tatbot/utils/mode_toggle.py --mode status
+```
+
+#### Configuration
+
+**Home Mode** (`config/dnsmasq/mode-home.conf`):
+- DNS forwarder to home router (192.168.1.1)
+- Static hostname resolution for tatbot devices
+- No DHCP service
+- ⚠️ **Important**: Ensure your home router has DHCP reservations matching the static A records
+
+**Edge Mode** (`config/dnsmasq/mode-edge.conf`):
+- Authoritative DNS for `tatbot.lan` domain
+- DHCP server with static reservations for all devices:
+  - Compute nodes: ook, oop, ojo, eek, hog, rpi1, rpi2
+  - Robot arms: trossen-arm-leader, trossen-arm-follower
+  - IP cameras: camera1-5
+- Upstream DNS (1.1.1.1, 8.8.8.8) for internet access
+- ⚠️ **Note**: Isolated network mode (no gateway advertised) - add NAT on rpi2 if internet access needed
+
+#### Troubleshooting
+
+**Validate dnsmasq configuration:**
+```bash
+ssh rpi2 "sudo dnsmasq --test --conf-file=/etc/dnsmasq.d/active.conf"
+```
+
+**Check dnsmasq status:**
+```bash
+ssh rpi2 "sudo systemctl status dnsmasq"
+```
+
+**View dnsmasq logs:**
+```bash
+ssh rpi2 "sudo journalctl -u dnsmasq -f"
+```
+
+**Test DNS resolution:**
+```bash
+# From any node, test tatbot.lan resolution
+nslookup ook.tatbot.lan 192.168.1.99
+nslookup camera1.tatbot.lan 192.168.1.99
+```
+
+### Setup on Ook
+
+**Install Network Profiles**
+```bash
+cd ~/tatbot
+# Copy profile templates
+sudo cp config/network/tatbot-demo.nmconnection /etc/NetworkManager/system-connections/
+sudo cp config/network/wifi-update.nmconnection /etc/NetworkManager/system-connections/
+
+# Set correct permissions
+sudo chmod 600 /etc/NetworkManager/system-connections/*.nmconnection
+sudo chown root:root /etc/NetworkManager/system-connections/*.nmconnection
+
+# Reload NetworkManager
+sudo nmcli connection reload
+```
+
+**Verify Installation**
+```bash
+# Check profiles are available
+nmcli connection show
+
+# Test network status script
+./scripts/network_status.sh
+```
+
+**Switch to Edge Mode** (tatbot network):
+```bash
+# Connect ethernet cable to tatbot network
+./scripts/ook/edge.sh
+```
+
+**Switch to Wifi Mode** (external wifi):
+```bash
+# Unplug ethernet cable
+./scripts/ook/wifi.sh
+```
+
+**Check Current Status**:
+```bash
+./scripts/network_status.sh
+```
+
+### Demo Scripts
+
+**`scripts/ook/edge.sh`**:
+- Disables wifi to avoid conflicts
+- Activates tatbot-demo NetworkManager profile
+- Sets static IP 192.168.1.90 with rpi2 as DNS
+- Verifies connectivity to tatbot network
+- Tests DNS resolution for tatbot.lan domains
+
+**`scripts/ook/wifi.sh`**:
+- Disconnects from tatbot network
+- Enables wifi and scans for networks
+- Interactive wifi connection (saved or new networks)
+- Verifies internet connectivity
+- Uses automatic DNS with fallback servers
+
+**`scripts/network_status.sh`**:
+- Shows all network interfaces and connections
+- Tests connectivity to tatbot network and internet
+- Displays current mode (home vs edge)
+- Checks MCP service accessibility in edge mode
+
+### Troubleshooting
+
+**Cannot reach tatbot network in demo mode:**
+```bash
+# Check ethernet cable connection
+# Verify rpi2 is running and accessible
+ping 192.168.1.99
+ssh rpi2 "sudo systemctl status dnsmasq"
+```
+
+**Wifi connection fails in update mode:**
+```bash
+# Check wifi is enabled
+nmcli radio wifi
+# Scan for networks
+nmcli device wifi list
+# Try connecting manually
+nmcli device wifi connect SSID_NAME password PASSWORD
+```
+
+**DNS resolution issues:**
+```bash
+# Check current DNS settings
+cat /etc/resolv.conf
+# Test specific DNS servers
+nslookup google.com 8.8.8.8
+nslookup eek.tatbot.lan 192.168.1.99
+```
+
+**Profile activation fails:**
+```bash
+# Reload NetworkManager
+sudo nmcli connection reload
+# Check for conflicting connections
+nmcli connection show --active
+# Manually deactivate conflicting connections
+sudo nmcli connection down CONNECTION_NAME
+```

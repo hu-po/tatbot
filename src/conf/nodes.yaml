@@ -1,35 +1,36 @@
 nodes:
-  - name: ook
-    emoji: 🦧
-    ip: 192.168.1.90
-    user: ook
-    
-  - name: oop
-    emoji: 🦊
-    ip: 192.168.1.51
-    user: oop
-    
-  - name: ojo
-    emoji: 🦎
-    ip: 192.168.1.96
-    user: ojo
-    
-  - name: rpi1
-    emoji: 🍓
-    ip: 192.168.1.98
-    user: rpi1
-    
-  - name: rpi2
-    emoji: 🍇
-    ip: 192.168.1.99
-    user: rpi2
-    
-  - name: eek
-    emoji: 🦦
-    ip: 192.168.1.97
-    user: eek
-    
-  - name: hog
-    emoji: 🦔
-    ip: 192.168.1.88
-    user: hog
+- name: ook
+  emoji: 🦧
+  ip: 192.168.1.90
+  user: ook
+  mac: 70:08:94:EF:7A:F9
+- name: oop
+  emoji: 🦊
+  ip: 192.168.1.51
+  user: oop
+  mac: 24:4B:FE:99:4D:16
+- name: ojo
+  emoji: 🦎
+  ip: 192.168.1.96
+  user: ojo
+  mac: 48:B0:2D:A5:08:C6
+- name: rpi1
+  emoji: 🍓
+  ip: 192.168.1.98
+  user: rpi1
+  mac: 2C:CF:67:25:58:7C
+- name: rpi2
+  emoji: 🍇
+  ip: 192.168.1.99
+  user: rpi2
+  mac: 2C:CF:67:25:9A:7C
+- name: eek
+  emoji: 🦦
+  ip: 192.168.1.97
+  user: eek
+  mac: F8:FE:5E:85:9A:76
+- name: hog
+  emoji: 🦔
+  ip: 192.168.1.88
+  user: hog
+  mac: 5C:B4:7E:C5:38:11

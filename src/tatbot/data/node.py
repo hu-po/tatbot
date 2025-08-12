@@ -1,4 +1,5 @@
 import ipaddress
+from typing import Optional
 
 from pydantic import field_validator
 
@@ -16,6 +17,8 @@ class Node(BaseCfg):
     """Username for SSH connection."""
     emoji: str = "🌐"
     """Emoji to use for logging."""
+    mac: Optional[str] = None
+    """Optional MAC address for DHCP reservations and tooling."""
 
     @field_validator('ip')
     def validate_ip(cls, v):
