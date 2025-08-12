@@ -38,6 +38,7 @@ fi
 
 # Save iptables rules (method varies by distribution)
 if command -v iptables-save >/dev/null; then
+    sudo mkdir -p /etc/iptables
     sudo iptables-save | sudo tee /etc/iptables/rules.v4 >/dev/null
     echo -e "${GREEN}✅ iptables rules saved${NC}"
 fi
