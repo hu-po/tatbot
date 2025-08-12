@@ -185,45 +185,45 @@ sudo mount -a
 
 #### Setup Instructions
 
-1. **Setup DNS Control Node (rpi2)**
-   ```bash
-   ssh rpi2
-   sudo apt update && sudo apt install -y dnsmasq
-   sudo mkdir -p /etc/dnsmasq.d
+**Setup DNS Control Node (rpi2)**
+```bash
+ssh rpi2
+sudo apt update && sudo apt install -y dnsmasq
+sudo mkdir -p /etc/dnsmasq.d
 
-   # copy configs to rpi2
-   cp ~/tatbot/config/dnsmasq/mode-*.conf rpi2:/tmp/
-   
-   # Create profiles directory and move configs there
-   sudo mkdir -p /etc/dnsmasq-profiles
-   sudo mv /tmp/mode-*.conf /etc/dnsmasq-profiles/
-   
-   # Create active config symlink (start in home mode)
-   sudo ln -sf /etc/dnsmasq-profiles/mode-home.conf /etc/dnsmasq.d/active.conf
-   
-   # Configure dnsmasq to use only the active config
-   echo 'conf-file=/etc/dnsmasq.d/active.conf' | sudo tee /etc/dnsmasq.conf
+# copy configs to rpi2
+cp ~/tatbot/config/dnsmasq/mode-*.conf /tmp/
 
-   ## Test the config
-   sudo dnsmasq --test --conf-file=/etc/dnsmasq.d/active.conf
-   
-   # Enable and start dnsmasq
-   sudo systemctl enable dnsmasq && sudo systemctl start dnsmasq
-   ```
+# Create profiles directory and move configs there
+sudo mkdir -p /etc/dnsmasq-profiles
+sudo mv /tmp/mode-*.conf /etc/dnsmasq-profiles/
 
-2. **Configure All Nodes to Use rpi2 as DNS**
-   For each node, update DNS configuration to permanently point to rpi2:
-   ```bash
-   # On each node (ook, ojo, eek, hog, rpi1):
-   sudo nano /etc/dhcpcd.conf
-   # Add or update:
-   static domain_name_servers=192.168.1.99
-   
-   # Restart networking
-   sudo systemctl restart dhcpcd
-   ```
+# Create active config symlink (start in home mode)
+sudo ln -sf /etc/dnsmasq-profiles/mode-home.conf /etc/dnsmasq.d/active.conf
 
-   For IP cameras and arm controllers, configure DNS via web interface to `192.168.1.99`.
+# Configure dnsmasq to use only the active config
+echo 'conf-file=/etc/dnsmasq.d/active.conf' | sudo tee /etc/dnsmasq.conf
+
+# Test the config
+sudo dnsmasq --test --conf-file=/etc/dnsmasq.d/active.conf
+
+# Enable and start dnsmasq
+sudo systemctl enable dnsmasq && sudo systemctl start dnsmasq
+```
+
+**Configure All Nodes to Use rpi2 as DNS**
+For each node, update DNS configuration to permanently point to rpi2:
+```bash
+# On each node (ook, ojo, eek, hog, rpi1):
+sudo nano /etc/dhcpcd.conf
+# Add or update:
+static domain_name_servers=192.168.1.99
+
+# Restart networking
+sudo systemctl restart dhcpcd
+```
+
+For IP cameras and arm controllers, configure DNS via web interface to `192.168.1.99`.
 
 #### Usage
 
