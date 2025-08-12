@@ -79,12 +79,12 @@ Raspberry Pi 5
 
 ::::
 
-```{admonition} Home vs Edge Mode
+```{admonition} Modes: Edge and Home
 :class: tip
 
-**Home Mode:** All nodes connected to local home network, including {{oop}} development machine.
+**Home:** Nodes are on the home network. {{rpi2}} forwards DNS to the home router for `tatbot.lan`.
 
-**Edge Mode:** {{rpi1}} acts as DNS server, {{oop}} not available, fully autonomous operation.
+**Edge:** Local-first operation. {{rpi2}} is authoritative DNS for `tatbot.lan` (and can provide DHCP if enabled). Internet is optional.
 ```
 
 ## 📷 Camera System
@@ -176,11 +176,10 @@ sudo systemctl daemon-reload
 sudo mount -a
 ```
 
-## Home vs Edge vs Wifi Mode
+## Modes
 
-**Mode Behavior:**
-- **Home Mode**: tatbot nodes are connected to the local home network. `rpi2` forwards DNS queries to home router (192.168.1.1), no DHCP
-- **Edge Mode**: tatbot is deployed, nodes are isolated to their own network. `rpi2` serves authoritative DNS + DHCP + routing/NAT for `tatbot.lan` domain
+- **Home**: Nodes on home network. `rpi2` runs dnsmasq as a DNS forwarder (no DHCP). Internet via home router.
+- **Edge**: Local-only by default. `rpi2` runs dnsmasq as authoritative DNS for `tatbot.lan`. DHCP may be enabled in `mode-edge.conf`. Internet can be provided either by the home router or optionally via NAT on `rpi2`.
 
 #### Setup Instructions
 
@@ -194,8 +193,8 @@ cp ~/tatbot/config/dnsmasq/mode-*.conf /tmp/
 # Create profiles directory and move configs there
 sudo mkdir -p /etc/dnsmasq-profiles
 sudo mv /tmp/mode-*.conf /etc/dnsmasq-profiles/
-# Create active config symlink (start in home mode)
-sudo ln -sf /etc/dnsmasq-profiles/mode-home.conf /etc/dnsmasq.d/active.conf
+# Create active config symlink (default to EDGE on boot)
+sudo ln -sf /etc/dnsmasq-profiles/mode-edge.conf /etc/dnsmasq.d/active.conf
 # Override systemd service to use our configuration method
 sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
 cat <<EOF | sudo tee /etc/systemd/system/dnsmasq.service.d/override.conf
@@ -209,11 +208,12 @@ sudo systemctl enable dnsmasq && sudo systemctl restart dnsmasq
 # Verify it's using our configuration (should show interface binding and our forwarding rules)
 sudo systemctl status dnsmasq
 
-# Setup routing/NAT for true isolation mode
-~/tatbot/scripts/setup_isolation_mode.sh
+# Optional: enable NAT on rpi2 if no home router is present and you want internet in Edge
+# (not a separate mode, just an option)
+~/tatbot/scripts/mode_setup_rpi2.sh
 ```
 
-**Configure All Nodes to Use rpi2 as DNS**
+**Configure All Nodes to Use rpi2 as DNS (one-time)**
 
 ```bash
 # install dependencies
@@ -222,10 +222,8 @@ sudo apt install dnsutils
 systemctl list-units --type=service --state=active | grep -E '(NetworkManager|dhcpcd)'
 # Check active connections
 nmcli connection show --active
-# Configure primary connection to use rpi2 as DNS
-sudo nmcli connection modify 'Wired connection 1' ipv4.dns '192.168.1.99' ipv4.ignore-auto-dns yes
-# Restart the connection to apply changes
-sudo nmcli connection down 'Wired connection 1' && sudo nmcli connection up 'Wired connection 1'
+# Apply sane defaults for DNS and routes
+~/tatbot/scripts/mode_setup_node.sh
 ```
 
 For IP cameras and arm controllers, configure DNS via web interface to `192.168.1.99`.
@@ -236,12 +234,10 @@ For IP cameras and arm controllers, configure DNS via web interface to `192.168.
 # Check current status
 cd ~/tatbot && source scripts/setup_env.sh
 uv run python src/tatbot/utils/mode_toggle.py --mode status
-# Switch to home mode (DNS forwarder)
+# Switch to Home (DNS forwarder)
 uv run python src/tatbot/utils/mode_toggle.py --mode home
-# Switch to edge mode (authoritative DNS + DHCP)
+# Switch to Edge (authoritative DNS; DHCP if enabled in config)
 uv run python src/tatbot/utils/mode_toggle.py --mode edge
-# Toggle between modes
-uv run python src/tatbot/utils/mode_toggle.py --mode toggle
 ```
 
 #### Configuration
@@ -253,15 +249,10 @@ uv run python src/tatbot/utils/mode_toggle.py --mode toggle
 - ⚠️ **Important**: Ensure your home router has DHCP reservations matching the static A records
 
 **Edge Mode** (`config/dnsmasq/mode-edge.conf`):
-- Authoritative DNS for `tatbot.lan` domain  
-- DHCP server with static reservations for all devices:
-  - Compute nodes: ook, oop, ojo, eek, hog, rpi1, rpi2
-  - Robot arms: trossen-arm-leader, trossen-arm-follower
-  - IP cameras: camera1-5
-- Upstream DNS (1.1.1.1, 8.8.8.8) for internet access
-- ⚠️ **Hybrid mode** (default): DNS queries go to rpi2, but nodes remain on home network for routing/internet access
-- ⚠️ **True isolation mode**: Nodes get DHCP, routing, and NAT from rpi2. Requires setup_isolation_mode.sh on rpi2
-- ⚠️ **Physical isolation**: For complete separation, connect nodes to dedicated switch with rpi2 as only gateway
+- Authoritative DNS for `tatbot.lan`
+- DHCP static reservations for devices (if enabled)
+- Upstream DNS (1.1.1.1, 8.8.8.8) for external lookups
+- Optional NAT on `rpi2` via `scripts/mode_setup_rpi2.sh` when home router is absent (not a separate mode)
 
 #### Troubleshooting
 
