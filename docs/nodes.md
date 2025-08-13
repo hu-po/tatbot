@@ -180,13 +180,12 @@ sudo mount -a
 
 tatbot operates in two simple modes:
 
-- **Edge Mode (Default)**: Local-first operation. `rpi2` provides DNS and DHCP for the `tatbot.lan` network. Nodes boot to this mode by default and fall back to it when WiFi is unavailable. Internet access is optional via NAT.
+- **Edge Mode (Default)**: Local-first operation. `rpi2` provides DNS and DHCP for the `tatbot.lan` network. Nodes boot to this mode by default and fall back to it when WiFi is unavailable. Internet access is optional for `ook` via NAT using Wifi.
 
 - **Home Mode**: Integration with home network. `rpi2` forwards DNS queries to the home router while maintaining `tatbot.lan` hostname resolution. Used when WiFi is available and home integration is desired.
 
-#### Setup Instructions
-
 **Setup DNS Control Node (rpi2)**
+
 ```bash
 ssh rpi2
 sudo apt update && sudo apt install -y dnsmasq
@@ -210,12 +209,23 @@ sudo systemctl daemon-reload
 sudo systemctl enable dnsmasq && sudo systemctl restart dnsmasq
 # Verify it's using our configuration (should show interface binding and our forwarding rules)
 sudo systemctl status dnsmasq
-
-# Optional: enable NAT on rpi2 for internet access in Edge mode
-~/tatbot/scripts/setup_rpi2_nat.sh
+# Enable NAT on rpi2 for internet access in Edge mode via wifi
+# Enable IP forwarding and basic NAT (replace OUT_IFACE if needed)
+echo 'net.ipv4.ip_forward=1' | sudo tee -a /etc/sysctl.conf
+sudo sysctl -w net.ipv4.ip_forward=1
+OUT_IFACE=$(ip route | awk '/default/ {print $5; exit}')
+sudo iptables -t nat -F
+sudo iptables -t filter -F
+sudo iptables -A FORWARD -i eth0 -j ACCEPT
+sudo iptables -A FORWARD -o eth0 -j ACCEPT
+sudo iptables -t nat -A POSTROUTING -o "$OUT_IFACE" -j MASQUERADE
+if command -v iptables-save >/dev/null; then
+  sudo mkdir -p /etc/iptables
+  sudo iptables-save | sudo tee /etc/iptables/rules.v4 >/dev/null
+fi
 ```
 
-**Configure All Nodes to Use rpi2 as DNS (one-time)**
+**Setup Other Nodes (eek, hog, ook, ojo, rpi1)**
 
 ```bash
 # install dependencies
@@ -224,16 +234,23 @@ sudo apt install dnsutils
 systemctl list-units --type=service --state=active | grep -E '(NetworkManager|dhcpcd)'
 # Check active connections
 nmcli connection show --active
-# Apply edge-first configuration for DNS and routes
-~/tatbot/scripts/mode_setup_node.sh
+# Configure Wi‑Fi to use rpi2 for DNS and keep default route preferred
+# Replace SSID_CONN_NAME with your Wi‑Fi connection name
+sudo nmcli connection modify 'SSID_CONN_NAME' ipv4.dns '192.168.1.99' ipv4.ignore-auto-dns yes ipv4.never-default no ipv4.route-metric 600
+sudo nmcli connection down 'SSID_CONN_NAME' && sudo nmcli connection up 'SSID_CONN_NAME'
+# Configure Ethernet to use rpi2 for DNS but avoid adding a competing default route
+sudo nmcli connection modify 'Wired connection 1' ipv4.dns '192.168.1.99' ipv4.ignore-auto-dns yes ipv4.never-default yes
+sudo nmcli device reapply $(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1; exit}') || true
 ```
 
 For IP cameras and arm controllers, configure DNS via web interface to `192.168.1.99`.
 
-#### Usage
+**Toggle Mode and Check Status**
 
 ```bash
 # Check current status
+./scripts/network_status.sh
+# Determine current mode
 cd ~/tatbot && source scripts/setup_env.sh
 uv run python src/tatbot/utils/mode_toggle.py --mode status
 # Switch to Home mode (DNS forwarder to home router)
@@ -242,46 +259,25 @@ uv run python src/tatbot/utils/mode_toggle.py --mode home
 uv run python src/tatbot/utils/mode_toggle.py --mode edge
 ```
 
-#### Configuration
+#### Scenarios
 
-**Home Mode** (`config/dnsmasq/mode-home.conf`):
-- DNS forwarder to home router (192.168.1.1)
-- Static hostname resolution for tatbot devices
-- No DHCP service
-- ⚠️ **Important**: Ensure your home router has DHCP reservations matching the static A records
+**Power on tatbot nodes with no external internet**
+- DESIRED BEHAVIOR: All nodes can see and access each other, no external internet access. Nodes can run mcp servers and use each other as clients.
+- All nodes powered off, turning on one-by-one, no internet
+- rpi2 boots → starts dnsmasq in edge mode (default symlink)
+- rpi2 provides DHCP (192.168.1.100-200) and DNS for tatbot.lan
+- Each node boots → gets IP from rpi2's DHCP
+- Nodes can resolve each other (ook.tatbot.lan → 192.168.1.90)
 
-**Edge Mode** (`config/dnsmasq/mode-edge.conf`):
-- **Default mode** - boots to edge mode by default
-- Authoritative DNS for `tatbot.lan` domain
-- DHCP static reservations for all tatbot devices
-- Upstream DNS (1.1.1.1, 8.8.8.8) for internet lookups
-- Optional NAT routing via `scripts/setup_rpi2_nat.sh` for internet access
+**In Edge Mode and WiFi becomes available**
+- DESIRED BEHAVIOR: `ook` can still see and access all other nodes, but it can now also access the outside internet. From the perspective of the other nodes the system is still effectively in edge mode.
+- On `ook`, NAT is enabled to allow internet access via WiFi
 
-#### Troubleshooting
+**In Edge Mode and we attach home LAN cable to switch-lan**
+- DESIRED BEHAVIOR: All nodes switch to the home network, they can now access the outisde internet and talk to home computers such as `oop`.
 
-**Validate dnsmasq configuration:**
-```bash
-ssh rpi2 "sudo dnsmasq --test --conf-file=/etc/dnsmasq.d/active.conf"
-```
+**Power on tatbot nodes with attached home LAN cable to switch-lan**
+- DESIRED BEHAVIOR: All nodes connect to the home network, they can access the outisde internet and talk to home computers such as `oop`.
 
-**Check dnsmasq status:**
-```bash
-ssh rpi2 "sudo systemctl status dnsmasq"
-```
-
-**View dnsmasq logs:**
-```bash
-ssh rpi2 "sudo journalctl -u dnsmasq -f"
-```
-
-**Test DNS resolution:**
-```bash
-# From any node, test tatbot.lan resolution
-nslookup ook.tatbot.lan 192.168.1.99
-nslookup camera1.tatbot.lan 192.168.1.99
-```
-
-**Check Current Status**:
-```bash
-./scripts/network_status.sh
-```
+**In Home Mode and we detach home LAN cable from switch-lan**
+- DESIRED BEHAVIOR: All nodes switch to the edge mode, they can no longer access the outisde internet and talk to home computers such as `oop`, but they can still see and access each other. Ideally MCP servers are unaffected and still running.
