@@ -7,6 +7,7 @@ import pyrealsense2 as rs
 import yaml
 
 from tatbot.data.cams import Cams, RealSenseCameraConfig
+from tatbot.utils.constants import CONF_CAMS_DIR
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger("cam.intrinsics_rs", "📷")
@@ -17,7 +18,7 @@ class RealSenseConfig:
     debug: bool = False
     camera_name: Optional[str] = None
     serial_number: Optional[str] = None
-    cams_yaml: str = "~/tatbot/src/conf/cams/fast.yaml"
+    cams_yaml: str = str(CONF_CAMS_DIR / "fast.yaml")
     """Path to the camera config YAML file."""
 
 

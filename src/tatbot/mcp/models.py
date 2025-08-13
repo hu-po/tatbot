@@ -4,6 +4,8 @@ from typing import List, Optional
 
 from pydantic_settings import BaseSettings
 
+from tatbot.utils.constants import CONF_SCENES_DIR
+
 
 class MCPConstants:
     """Configuration constants for MCP models."""
@@ -12,7 +14,7 @@ class MCPConstants:
     DEFAULT_TRANSPORT: str = "streamable-http"
     DEFAULT_ALLOWED_IPS: List[str] = ["127.0.0.1", "::1"]
     DEFAULT_VERSION: str = "1.0"
-    SCENES_CONFIG_PATH: str = "~/tatbot/src/conf/scenes"
+    SCENES_CONFIG_PATH: str = str(CONF_SCENES_DIR)
 
 
 class MCPSettings(BaseSettings):

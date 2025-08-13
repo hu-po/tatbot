@@ -7,7 +7,6 @@ https://github.com/TrossenRobotics/trossen_arm/blob/main/demos/python/configurat
 import logging
 import os
 from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 import trossen_arm
@@ -15,6 +14,7 @@ import yaml
 
 from tatbot.data.arms import Arms
 from tatbot.data.pose import ArmPose
+from tatbot.utils.constants import CONF_POSES_DIR, TROSSEN_CONFIG_DIR
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
 log = get_logger("bot.trossen", "🎛️")
@@ -22,7 +22,7 @@ log = get_logger("bot.trossen", "🎛️")
 
 def load_pose_from_yaml(pose_name: str) -> ArmPose:
     """Load an ArmPose from a YAML file in the poses directory."""
-    poses_dir = Path("~/tatbot/src/conf/poses").expanduser()
+    poses_dir = CONF_POSES_DIR
     pose_path = poses_dir / f"{pose_name}.yaml"
     
     if not pose_path.exists():
@@ -40,13 +40,13 @@ class TrossenConfig:
     """Enable debug logging."""
     arm_l_ip: str = "192.168.1.3"
     """IP address of the left arm."""
-    arm_l_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen/arm_l.yaml")
+    arm_l_config_filepath: str = str(TROSSEN_CONFIG_DIR / 'arm_l.yaml')
     """YAML file containing left arm config."""
     test_pose_name_l: str = "left/ready"
     """Test pose for the left arm (ArmPose)."""
     arm_r_ip: str = "192.168.1.2"
     """IP address of the right arm."""
-    arm_r_config_filepath: str = os.path.expanduser("~/tatbot/config/trossen/arm_r.yaml")
+    arm_r_config_filepath: str = str(TROSSEN_CONFIG_DIR / 'arm_r.yaml')
     """YAML file containing right arm config."""
     test_pose_name_r: str = "right/ready"
     """Test pose for the right arm (ArmPose)."""

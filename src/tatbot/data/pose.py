@@ -1,10 +1,10 @@
-from pathlib import Path
 
 import numpy as np
 from pydantic import field_validator
 from pydantic_numpy.typing import NpNDArray
 
 from tatbot.data.base import BaseCfg
+from tatbot.utils.constants import CONF_POSES_DIR
 
 
 class Pos(BaseCfg):
@@ -111,4 +111,4 @@ class ArmPose(BaseCfg):
     @staticmethod
     def get_yaml_dir() -> str:
         """Get the directory containing pose YAML files."""
-        return str(Path("~/tatbot/src/conf/poses").expanduser())
+        return str(CONF_POSES_DIR)

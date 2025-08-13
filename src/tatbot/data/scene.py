@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import yaml
-from pydantic import field_validator, model_validator
+from pydantic import model_validator
 
 from tatbot.bot.urdf import get_link_poses
 from tatbot.data.arms import Arms
@@ -15,7 +15,11 @@ from tatbot.data.pose import ArmPose, Pos
 from tatbot.data.skin import Skin
 from tatbot.data.tags import Tags
 from tatbot.data.urdf import URDF
-from tatbot.utils.validation import expand_user_path
+from tatbot.utils.constants import (
+    CONF_POSES_DIR,
+    resolve_design_dir,
+    resolve_pens_config_path,
+)
 
 
 class Scene(BaseCfg):
@@ -47,14 +51,14 @@ class Scene(BaseCfg):
     """Name of pens that will be drawn using left arm."""
     pen_names_r: List[str]
     """Name of pens that will be drawn using right arm."""
-    pens_config_path: Path
-    """Path to the DrawingBotV3 Pens config file."""
+    pens_config_name: str
+    """Name of the DrawingBotV3 pens config (JSON) under the pens configs directory."""
 
     stroke_length: int
     """All strokes will be resampled to this length."""
 
-    design_dir_path: Optional[Path] = None
-    """Path to the design directory."""
+    design_name: Optional[str] = None
+    """Name of the design directory under NFS designs."""
     design_img_path: Optional[Path] = None
     """Path to the design image."""
 
@@ -71,9 +75,7 @@ class Scene(BaseCfg):
     calibrator_pos: Optional[Pos] = None
     design_dir: Optional[Path] = None
 
-    @field_validator('pens_config_path', 'design_dir_path', mode='before')
-    def expand_user_path_validator(cls, v):
-        return expand_user_path(v)
+    # No path expansion needed; pens config is resolved by name
 
     @model_validator(mode='after')
     def load_poses(self) -> 'Scene':
@@ -95,7 +97,7 @@ class Scene(BaseCfg):
     @functools.lru_cache(maxsize=32)
     def _load_poses_cached(sleep_l_name: str, sleep_r_name: str, ready_l_name: str, ready_r_name: str) -> dict:
         """Cache pose loading to avoid repeated file I/O."""
-        poses_dir = Path.home() / "tatbot/src/conf/poses"
+        poses_dir = CONF_POSES_DIR
         
         # Load poses
         with open(poses_dir / f"{sleep_l_name}.yaml") as f:
@@ -139,8 +141,11 @@ class Scene(BaseCfg):
 
     @model_validator(mode='after')
     def check_pens_and_inks(self) -> 'Scene':        
-        if self.pens_config_path:
-            with self.pens_config_path.open('r') as f:
+        if self.pens_config_name:
+            pens_config_path = resolve_pens_config_path(self.pens_config_name)
+            if not pens_config_path.exists():
+                raise ValueError(f"Pens config does not exist: {pens_config_path}")
+            with pens_config_path.open('r') as f:
                 pens_config = json.load(f)
             pens_config_dict = {pen["name"]: pen for pen in pens_config["data"]["pens"]}
             self.pens_config = pens_config_dict
@@ -176,9 +181,11 @@ class Scene(BaseCfg):
 
     @model_validator(mode='after')
     def find_design_image(self) -> 'Scene':        
-        if self.design_dir_path:
-            design_dir = self.design_dir_path
+        if self.design_name:
+            design_dir = resolve_design_dir(self.design_name)
             self.design_dir = design_dir
+            if not design_dir.exists():
+                raise ValueError(f"Design directory does not exist: {design_dir}")
             
             if not self.design_img_path:
                 design_img_path = None

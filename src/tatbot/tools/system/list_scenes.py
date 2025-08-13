@@ -1,11 +1,11 @@
 """List scenes tool for discovering available scene configurations."""
 
 import os
-from pathlib import Path
 
 from tatbot.tools.base import ToolContext
 from tatbot.tools.registry import tool
 from tatbot.tools.system.models import ListScenesInput, ListScenesOutput
+from tatbot.utils.constants import CONF_SCENES_DIR
 from tatbot.utils.log import get_logger
 
 log = get_logger("tools.list_scenes", "🎬")
@@ -30,7 +30,7 @@ async def list_scenes(input_data: ListScenesInput, ctx: ToolContext):
     yield {"progress": 0.1, "message": "Scanning for scene configurations..."}
     
     try:
-        scenes_dir = Path("~/tatbot/src/conf/scenes").expanduser().resolve()
+        scenes_dir = CONF_SCENES_DIR.resolve()
         if not scenes_dir.exists():
             log.warning(f"Scenes directory not found: {scenes_dir}")
             yield ListScenesOutput(

@@ -21,6 +21,6 @@ pen_names_r:
   - fuchsia
   - nighthawk_black
   - lime_green
-pens_config_path: "~/tatbot/config/dbv3/pens/full.json"
+pens_config_name: "full"
 stroke_length: 80
-design_dir_path: "/nfs/tatbot/designs/default"
+design_name: "default"

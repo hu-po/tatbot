@@ -13,6 +13,7 @@ from paramiko.client import SSHClient
 from paramiko.sftp_client import SFTPClient
 
 from tatbot.data.node import Node
+from tatbot.utils.constants import CONF_NODES_PATH
 from tatbot.utils.exceptions import NetworkConnectionError
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 
@@ -23,7 +24,7 @@ log = get_logger("net", "🌐")
 class NetworkManagerConfig:
     debug: bool = False
     """Enable debug logging."""
-    yaml_file: str = os.path.expanduser("~/tatbot/src/conf/nodes.yaml")
+    yaml_file: str = str(CONF_NODES_PATH)
     """Path to node config with all node information."""
     shared_key_name: str = "tatbot-key"
     """Name of the shared SSH key."""

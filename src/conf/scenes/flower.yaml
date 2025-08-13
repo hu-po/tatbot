@@ -13,6 +13,6 @@ pen_names_l:
   - true_blue
 pen_names_r:
   - bright_red
-pens_config_path: "~/tatbot/config/dbv3/pens/full.json"
+pens_config_name: "full"
 stroke_length: 80
-design_dir_path: "/nfs/tatbot/designs/flower"
+design_name: "flower"

@@ -3,6 +3,8 @@
 from pathlib import Path
 from typing import Optional
 
+from tatbot.utils.constants import resolve_design_dir, resolve_pens_config_path
+
 
 def expand_user_path(path_str: Optional[str]) -> Optional[Path]:
     """Centralized path expansion utility."""
@@ -25,14 +27,14 @@ def validate_files_exist(scene_config: dict, runtime_validate: bool = True) -> N
     if not runtime_validate:
         return
         
-    # Check pens config path
-    if 'pens_config_path' in scene_config and scene_config['pens_config_path']:
-        pens_path = Path(scene_config['pens_config_path']).expanduser()
+    # Check pens config by name
+    if 'pens_config_name' in scene_config and scene_config['pens_config_name']:
+        pens_path = resolve_pens_config_path(scene_config['pens_config_name'])
         if not pens_path.exists():
-            raise ValueError(f"Pens config path does not exist: {pens_path}")
+            raise ValueError(f"Pens config does not exist: {pens_path}")
     
-    # Check design directory path
-    if 'design_dir_path' in scene_config and scene_config['design_dir_path']:
-        design_path = Path(scene_config['design_dir_path']).expanduser()
+    # Check design directory by name
+    if 'design_name' in scene_config and scene_config['design_name']:
+        design_path = resolve_design_dir(scene_config['design_name'])
         if not design_path.exists():
-            raise ValueError(f"Design directory path does not exist: {design_path}")
+            raise ValueError(f"Design directory does not exist: {design_path}")
