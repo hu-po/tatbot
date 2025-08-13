@@ -333,8 +333,7 @@ ssh rpi2 "sudo journalctl -u tatbot-mode-auto.service -n 20"
 # Shows recent mode switches and home router detection status
 
 # Check current mode programmatically
-cd ~/tatbot && source scripts/setup_env.sh
-uv run python src/tatbot/utils/mode_toggle.py --mode status
+cd ~/tatbot && source scripts/setup_env.sh && uv run python src/tatbot/utils/mode_toggle.py --mode status
 ```
 
 **Manual Mode Override (if needed)**

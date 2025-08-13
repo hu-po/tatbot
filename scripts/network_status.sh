@@ -125,7 +125,7 @@ if ping -c 1 -W 2 192.168.1.99 &>/dev/null; then
     echo "---------------------"
     
     # Check if we can reach other nodes' MCP servers
-    for node in eek:5173 hog:5173 ook:5173 oop:5173 ojo:5173 rpi1:5190 rpi2:5190; do
+    for node in eek:8000 hog:8000 ook:8000 ojo:8000 rpi1:8000; do
         NODE_NAME=$(echo $node | cut -d: -f1)
         NODE_PORT=$(echo $node | cut -d: -f2)
         NODE_IP=$(nslookup $NODE_NAME.tatbot.lan 192.168.1.99 2>/dev/null | grep -A1 "Name:" | tail -1 | awk '{print $2}')
