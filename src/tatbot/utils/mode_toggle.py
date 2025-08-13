@@ -142,6 +142,18 @@ class NetworkToggler:
         finally:
             client.close()
 
+    def _check_home_router(self) -> bool:
+        """Check if home router is reachable from DNS node."""
+        client = self._get_ssh_client(self.dns_node)
+        
+        try:
+            # Ping home router with short timeout
+            cmd = "ping -c 1 -W 2 192.168.1.1"
+            exit_code, _, _ = self._run_remote(client, cmd)
+            return exit_code == 0
+        finally:
+            client.close()
+    
     def _get_current_mode(self) -> str:
         """Detect current mode by checking active dnsmasq configuration."""
         client = self._get_ssh_client(self.dns_node)
@@ -262,11 +274,36 @@ class NetworkToggler:
         return success
 
     def to_edge(self) -> bool:
-        """Switch to edge mode (local DNS + DHCP, default mode)."""
+        """Switch to edge mode (local DNS + conditional DHCP)."""
         log.info("Switching to EDGE mode...")
         
         success = self._switch_dnsmasq_profile("edge")
+        
         if success:
+            # Check if home router is present and conditionally disable DHCP
+            if self._check_home_router():
+                log.info("Home router detected - disabling DHCP in edge mode to prevent conflicts")
+                client = self._get_ssh_client(self.dns_node)
+                try:
+                    # Comment out dhcp-range to disable DHCP
+                    cmd = "sudo sed -i 's/^dhcp-range=/#dhcp-range=/' /etc/dnsmasq-profiles/mode-edge.conf"
+                    self._run_remote(client, cmd)
+                    # Reload dnsmasq
+                    self._run_remote(client, "sudo systemctl reload dnsmasq")
+                finally:
+                    client.close()
+            else:
+                log.info("No home router detected - DHCP enabled in edge mode")
+                client = self._get_ssh_client(self.dns_node)
+                try:
+                    # Uncomment dhcp-range to enable DHCP
+                    cmd = "sudo sed -i 's/^#dhcp-range=/dhcp-range=/' /etc/dnsmasq-profiles/mode-edge.conf"
+                    self._run_remote(client, cmd)
+                    # Reload dnsmasq
+                    self._run_remote(client, "sudo systemctl reload dnsmasq")
+                finally:
+                    client.close()
+            
             log.info("✅ Successfully switched to EDGE mode")
         else:
             log.error("❌ Failed to switch to EDGE mode")
@@ -289,6 +326,7 @@ class NetworkToggler:
     def status(self) -> str:
         """Get current mode status."""
         current_mode = self._get_current_mode()
+        home_router_reachable = self._check_home_router()
         
         # Get additional status info
         client = self._get_ssh_client(self.dns_node)
@@ -303,11 +341,20 @@ class NetworkToggler:
             cmd = f"readlink {active_path} 2>/dev/null || echo 'no symlink'"
             _, config_link, _ = self._run_remote(client, cmd)
             
+            # Check if DHCP is enabled in edge mode
+            dhcp_enabled = "unknown"
+            if current_mode == "edge":
+                cmd = "grep '^dhcp-range=' /etc/dnsmasq-profiles/mode-edge.conf"
+                exit_code, _, _ = self._run_remote(client, cmd)
+                dhcp_enabled = "yes" if exit_code == 0 else "no"
+            
         finally:
             client.close()
         
         status_info = {
             "mode": current_mode,
+            "home_router_reachable": home_router_reachable,
+            "dhcp_enabled": dhcp_enabled if current_mode == "edge" else "n/a",
             "dnsmasq_status": dnsmasq_status,
             "active_config": config_link,
             "dns_node": self.config.dns_node_name,

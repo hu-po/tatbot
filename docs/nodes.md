@@ -178,100 +178,232 @@ sudo mount -a
 
 ## Network Modes
 
-tatbot operates in two simple modes:
+tatbot operates in two modes that **automatically switch** based on home network availability:
 
-- **Edge Mode (Default)**: Local-first operation. `rpi2` provides DNS and DHCP for the `tatbot.lan` network. Nodes boot to this mode by default and fall back to it when WiFi is unavailable. Internet access is optional for `ook` via NAT using Wifi.
+- **Edge Mode**: Local-first operation when home LAN cable is disconnected. `rpi2` provides DNS and conditionally provides DHCP for the `tatbot.lan` network. Internet access is optional for other nodes via `ook`'s WiFi NAT.
 
-- **Home Mode**: Integration with home network. `rpi2` forwards DNS queries to the home router while maintaining `tatbot.lan` hostname resolution. Used when WiFi is available and home integration is desired.
+- **Home Mode**: Integration with home network when home LAN cable is connected. `rpi2` forwards DNS queries to the home router while maintaining `tatbot.lan` hostname resolution. All nodes get DHCP from home router.
 
-**Setup DNS Control Node (rpi2)**
+### Setup Instructions
+
+**1. Setup DNS Control Node (rpi2) with Auto-Detection**
 
 ```bash
+# SSH into rpi2
 ssh rpi2
+
+# Install dnsmasq for DNS/DHCP services
 sudo apt update && sudo apt install -y dnsmasq
-sudo mkdir -p /etc/dnsmasq.d
-# copy configs to rpi2
+
+# Create configuration directories
+sudo mkdir -p /etc/dnsmasq.d          # Active config directory
+sudo mkdir -p /etc/dnsmasq-profiles   # Mode profile storage
+
+# Copy mode configuration files to rpi2
 cp ~/tatbot/config/dnsmasq/mode-*.conf /tmp/
-# Create profiles directory and move configs there
-sudo mkdir -p /etc/dnsmasq-profiles
 sudo mv /tmp/mode-*.conf /etc/dnsmasq-profiles/
-# Create active config symlink (default to EDGE mode on boot)
+
+# Create initial symlink (will be managed by auto-detect service)
+# Edge mode is safer default - won't conflict if home router present
 sudo ln -sf /etc/dnsmasq-profiles/mode-edge.conf /etc/dnsmasq.d/active.conf
-# Override systemd service to use our configuration method
+
+# Configure dnsmasq to use our active config file
+# This override makes dnsmasq follow our symlink switching
 sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
 cat <<EOF | sudo tee /etc/systemd/system/dnsmasq.service.d/override.conf
 [Service]
 ExecStart=
 ExecStart=/usr/sbin/dnsmasq -x /run/dnsmasq/dnsmasq.pid -u dnsmasq --conf-file=/etc/dnsmasq.d/active.conf --local-service
 EOF
-# Reload systemd and restart dnsmasq
+
+# Enable and start dnsmasq
 sudo systemctl daemon-reload
-sudo systemctl enable dnsmasq && sudo systemctl restart dnsmasq
-# Verify it's using our configuration (should show interface binding and our forwarding rules)
-sudo systemctl status dnsmasq
-# Enable NAT on rpi2 for internet access in Edge mode via wifi
-# Enable IP forwarding and basic NAT (replace OUT_IFACE if needed)
+sudo systemctl enable dnsmasq
+sudo systemctl restart dnsmasq
+
+# Verify dnsmasq is running with our config
+sudo systemctl status dnsmasq  # Should show "active (running)"
+
+# Install the auto-detection service that switches modes automatically
+# This service monitors home router (192.168.1.1) availability
+cat <<'AUTODETECT' | sudo tee /etc/systemd/system/tatbot-mode-auto.service
+[Unit]
+Description=Tatbot Auto Mode Detection (Edge/Home)
+After=network-online.target dnsmasq.service
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=rpi2
+WorkingDirectory=/home/rpi2/tatbot
+ExecStart=/home/rpi2/tatbot/scripts/mode_auto_detect.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+AUTODETECT
+
+# Enable and start the auto-detection service
+sudo systemctl daemon-reload
+sudo systemctl enable tatbot-mode-auto.service
+sudo systemctl start tatbot-mode-auto.service
+
+# Verify auto-detection is running
+sudo systemctl status tatbot-mode-auto.service  # Should show "active (running)"
+# Watch the logs to see mode detection in action
+sudo journalctl -u tatbot-mode-auto.service -f  # Ctrl+C to exit
+```
+
+**2. Setup WiFi Internet Sharing on ook (Edge Mode Internet Access)**
+
+```bash
+# SSH into ook - this node has WiFi that can provide internet in edge mode
+ssh ook
+
+# Enable IP forwarding to allow packet routing between interfaces
 echo 'net.ipv4.ip_forward=1' | sudo tee -a /etc/sysctl.conf
-sudo sysctl -w net.ipv4.ip_forward=1
-OUT_IFACE=$(ip route | awk '/default/ {print $5; exit}')
+sudo sysctl -w net.ipv4.ip_forward=1  # Apply immediately
+
+# Setup NAT from WiFi to Ethernet so ook can share internet with other nodes
+# Find the WiFi interface name (usually wlan0 or similar)
+WIFI_IFACE=$(ip route | grep default | grep -v eth | awk '{print $5}' | head -1)
+echo "WiFi interface detected: $WIFI_IFACE"
+
+# Clear any existing NAT rules to start fresh
 sudo iptables -t nat -F
 sudo iptables -t filter -F
-sudo iptables -A FORWARD -i eth0 -j ACCEPT
-sudo iptables -A FORWARD -o eth0 -j ACCEPT
-sudo iptables -t nat -A POSTROUTING -o "$OUT_IFACE" -j MASQUERADE
-if command -v iptables-save >/dev/null; then
-  sudo mkdir -p /etc/iptables
-  sudo iptables-save | sudo tee /etc/iptables/rules.v4 >/dev/null
-fi
+
+# Allow forwarding between Ethernet and WiFi interfaces
+sudo iptables -A FORWARD -i eth0 -o $WIFI_IFACE -j ACCEPT  # LAN to WiFi
+sudo iptables -A FORWARD -i $WIFI_IFACE -o eth0 -j ACCEPT  # WiFi to LAN
+
+# Enable NAT masquerading on WiFi interface for outbound traffic
+sudo iptables -t nat -A POSTROUTING -o $WIFI_IFACE -j MASQUERADE
+
+# Save iptables rules to persist across reboots
+sudo apt install -y iptables-persistent  # Will prompt to save current rules
+# Or manually save:
+sudo mkdir -p /etc/iptables
+sudo iptables-save | sudo tee /etc/iptables/rules.v4
+
+# Verify NAT is configured
+sudo iptables -t nat -L -n -v  # Should show MASQUERADE rule
 ```
 
-**Setup Other Nodes (eek, hog, ook, ojo, rpi1)**
+**3. Configure Other Nodes (eek, hog, ojo, rpi1)**
 
 ```bash
-# install dependencies
-sudo apt install dnsutils
-# First, check which network management system is active:
+# Install DNS utilities for testing
+sudo apt install -y dnsutils
+
+# Check which network manager is in use
 systemctl list-units --type=service --state=active | grep -E '(NetworkManager|dhcpcd)'
-# Check active connections
-nmcli connection show --active
-# Configure Wi‑Fi to use rpi2 for DNS and keep default route preferred
-# Replace SSID_CONN_NAME with your Wi‑Fi connection name
-sudo nmcli connection modify 'SSID_CONN_NAME' ipv4.dns '192.168.1.99' ipv4.ignore-auto-dns yes ipv4.never-default no ipv4.route-metric 600
-sudo nmcli connection down 'SSID_CONN_NAME' && sudo nmcli connection up 'SSID_CONN_NAME'
-# Configure Ethernet to use rpi2 for DNS but avoid adding a competing default route
-sudo nmcli connection modify 'Wired connection 1' ipv4.dns '192.168.1.99' ipv4.ignore-auto-dns yes ipv4.never-default yes
-sudo nmcli device reapply $(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1; exit}') || true
+
+# Configure all network connections to use rpi2 for DNS
+# This ensures tatbot.lan resolution works in both modes
+
+# For WiFi connections (if present):
+# Find your WiFi connection name
+nmcli connection show | grep wifi
+# Configure it (replace WIFI_NAME with actual connection name)
+sudo nmcli connection modify 'WIFI_NAME' \
+  ipv4.dns '192.168.1.99' \
+  ipv4.ignore-auto-dns yes \
+  ipv4.never-default no \
+  ipv4.route-metric 600
+
+# For Ethernet connections:
+# Configure to use rpi2 DNS and accept DHCP from either rpi2 or home router
+sudo nmcli connection modify 'Wired connection 1' \
+  ipv4.dns '192.168.1.99' \
+  ipv4.ignore-auto-dns yes \
+  ipv4.method auto  # Use DHCP from whatever server responds
+
+# Apply the changes
+sudo nmcli connection reload
+sudo nmcli device reapply eth0
+
+# Test DNS resolution
+nslookup ook.tatbot.lan 192.168.1.99  # Should resolve to 192.168.1.90
 ```
 
-For IP cameras and arm controllers, configure DNS via web interface to `192.168.1.99`.
+**4. Configure IP Cameras and Arm Controllers**
 
-**Toggle Mode and Check Status**
+For devices with web interfaces (cameras, arm controllers):
+1. Access device web interface (e.g., http://192.168.1.91 for camera1)
+2. Navigate to Network Settings
+3. Set Primary DNS: `192.168.1.99`
+4. Keep DHCP enabled (will use home router or rpi2 automatically)
+5. Save and reboot device
+
+### Operation and Monitoring
+
+**Check Current Status**
 
 ```bash
-# Check current status
+# From any tatbot node, check network status
 ./scripts/network_status.sh
-# Determine current mode
+
+# Check which mode is currently active on rpi2
+ssh rpi2 "readlink /etc/dnsmasq.d/active.conf"
+# Output: /etc/dnsmasq-profiles/mode-edge.conf (or mode-home.conf)
+
+# Monitor auto-detection service logs on rpi2
+ssh rpi2 "sudo journalctl -u tatbot-mode-auto.service -n 20"
+# Shows recent mode switches and home router detection status
+
+# Check current mode programmatically
 cd ~/tatbot && source scripts/setup_env.sh
 uv run python src/tatbot/utils/mode_toggle.py --mode status
-# Switch to Home mode (DNS forwarder to home router)
+```
+
+**Manual Mode Override (if needed)**
+
+```bash
+# The auto-detection service normally handles this, but you can override:
+
+# Force switch to Home mode
 uv run python src/tatbot/utils/mode_toggle.py --mode home
-# Switch to Edge mode (local DNS + DHCP, default mode)
+
+# Force switch to Edge mode  
 uv run python src/tatbot/utils/mode_toggle.py --mode edge
+
+# Note: Auto-detection will switch back within 20 seconds based on cable status
+# To permanently override, stop the auto-detection service first:
+ssh rpi2 "sudo systemctl stop tatbot-mode-auto.service"
+```
+
+**Troubleshooting**
+
+```bash
+# If modes aren't switching automatically:
+ssh rpi2 "sudo systemctl status tatbot-mode-auto.service"
+ssh rpi2 "ping -c 1 192.168.1.1"  # Test if home router is reachable
+
+# If DHCP conflicts occur:
+# Check which DHCP servers are active
+sudo nmap --script broadcast-dhcp-discover
+
+# If DNS isn't working:
+nslookup ook.tatbot.lan 192.168.1.99  # Should always work
+dig @192.168.1.99 ook.tatbot.lan      # More detailed DNS query
+
+# Reset everything to clean state:
+ssh rpi2 "sudo systemctl restart dnsmasq tatbot-mode-auto.service"
 ```
 
 #### Scenarios
 
 **Power on tatbot nodes with no external internet**
 - DESIRED BEHAVIOR: All nodes can see and access each other, no external internet access. Nodes can run mcp servers and use each other as clients.
-- All nodes powered off, turning on one-by-one, no internet
-- rpi2 boots → starts dnsmasq in edge mode (default symlink)
-- rpi2 provides DHCP (192.168.1.100-200) and DNS for tatbot.lan
-- Each node boots → gets IP from rpi2's DHCP
-- Nodes can resolve each other (ook.tatbot.lan → 192.168.1.90)
 
 **In Edge Mode and WiFi becomes available**
-- DESIRED BEHAVIOR: `ook` can still see and access all other nodes, but it can now also access the outside internet. From the perspective of the other nodes the system is still effectively in edge mode.
-- On `ook`, NAT is enabled to allow internet access via WiFi
+- DESIRED BEHAVIOR: `ook` can still see and access all other nodes, but it can now also access the outside internet via WiFi. From the perspective of the other nodes the system is still effectively in edge mode.
 
 **In Edge Mode and we attach home LAN cable to switch-lan**
 - DESIRED BEHAVIOR: All nodes switch to the home network, they can now access the outisde internet and talk to home computers such as `oop`.
