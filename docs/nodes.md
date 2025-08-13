@@ -200,21 +200,19 @@ sudo mkdir -p /etc/dnsmasq.d          # Active config directory
 sudo mkdir -p /etc/dnsmasq-profiles   # Mode profile storage
 
 # Copy mode configuration files to rpi2
-cp ~/tatbot/config/dnsmasq/mode-*.conf /tmp/
+cp ~/tatbot/config/network/dnsmasq/mode-*.conf /tmp/
 sudo mv /tmp/mode-*.conf /etc/dnsmasq-profiles/
 
 # Create initial symlink (will be managed by auto-detect service)
 # Edge mode is safer default - won't conflict if home router present
 sudo ln -sf /etc/dnsmasq-profiles/mode-edge.conf /etc/dnsmasq.d/active.conf
 
-# Configure dnsmasq to use our active config file
-# This override makes dnsmasq follow our symlink switching
+# Configure dnsmasq systemd override to follow active symlink
 sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
-cat <<EOF | sudo tee /etc/systemd/system/dnsmasq.service.d/override.conf
-[Service]
-ExecStart=
-ExecStart=/usr/sbin/dnsmasq -x /run/dnsmasq/dnsmasq.pid -u dnsmasq --conf-file=/etc/dnsmasq.d/active.conf --local-service
-EOF
+sudo cp ~/tatbot/config/network/systemd/dnsmasq.service.d/override.conf /etc/systemd/system/dnsmasq.service.d/override.conf
+
+# Autoselect mode at start based on home router reachability (avoid DHCP conflict on boot)
+sudo cp ~/tatbot/config/network/systemd/dnsmasq.service.d/edge-home-autoselect.conf /etc/systemd/system/dnsmasq.service.d/edge-home-autoselect.conf
 
 # Enable and start dnsmasq
 sudo systemctl daemon-reload
@@ -407,9 +405,31 @@ ssh rpi2 "sudo systemctl restart dnsmasq tatbot-mode-auto.service"
 
 **In Edge Mode and we attach home LAN cable to switch-lan**
 - DESIRED BEHAVIOR: All nodes switch to the home network, they can now access the outisde internet and talk to home computers such as `oop`.
+  
+  Steps to switch immediately (no wait for DHCP renewal):
+  
+  ```bash
+  # On rpi2: ensure Home mode (disables DHCP, forwards DNS)
+  cd ~/tatbot && source scripts/setup_env.sh
+  uv run python src/tatbot/utils/mode_toggle.py --mode home
+
+  # On each node: renew Ethernet to pick up home DHCP right away
+  sudo nmcli connection down 'Wired connection 1' && sudo nmcli connection up 'Wired connection 1'
+  ```
 
 **Power on tatbot nodes with attached home LAN cable to switch-lan**
 - DESIRED BEHAVIOR: All nodes connect to the home network, they can access the outisde internet and talk to home computers such as `oop`.
 
 **In Home Mode and we detach home LAN cable from switch-lan**
 - DESIRED BEHAVIOR: All nodes switch to the edge mode, they can no longer access the outisde internet and talk to home computers such as `oop`, but they can still see and access each other. Ideally MCP servers are unaffected and still running.
+  
+  Steps to switch immediately:
+  
+  ```bash
+  # On rpi2: switch to Edge (enables DHCP)
+  cd ~/tatbot && source scripts/setup_env.sh
+  uv run python src/tatbot/utils/mode_toggle.py --mode edge
+
+  # On each node: renew Ethernet to get a DHCP lease from rpi2 now
+  sudo nmcli connection down 'Wired connection 1' && sudo nmcli connection up 'Wired connection 1'
+  ```
