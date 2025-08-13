@@ -7,9 +7,8 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-User=rpi2
-WorkingDirectory=/home/rpi2/tatbot
-ExecStart=/home/rpi2/tatbot/scripts/mode_auto_detect.sh
+User=root
+ExecStart=/home/rpi2/tatbot/scripts/mode_auto_switcher.sh
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

@@ -108,7 +108,6 @@ see:
 - `src/tatbot/data/node.py`
 - `src/conf/nodes.yaml`
 - `src/tatbot/utils/net.py`
-- [`paramiko`](https://github.com/paramiko/paramiko)
 
 ## Network
 
@@ -140,7 +139,8 @@ to setup the network:
 ```bash
 cd ~/tatbot
 source scripts/setup_env.sh
-uv run python -m tatbot.utils.net --debug
+# Optional helper to inspect network state with Python (not required for mode switching)
+uv run python -m tatbot.utils.net --debug || true
 ```
 
 ## NFS Setup
@@ -222,6 +222,9 @@ sudo systemctl restart dnsmasq
 # Verify dnsmasq is running with our config
 sudo systemctl status dnsmasq  # Should show "active (running)"
 
+# The auto-detection script is bash-only and already in the repo at scripts/mode_auto_switcher.sh
+# The systemd service references it directly (no Python dependencies)
+
 # Install the auto-detection service that switches modes automatically
 # This service monitors home router (192.168.1.1) availability
 sudo cp ~/tatbot/config/network/systemd/tatbot-mode-auto.service /etc/systemd/system/tatbot-mode-auto.service
@@ -248,20 +251,21 @@ echo 'net.ipv4.ip_forward=1' | sudo tee -a /etc/sysctl.conf
 sudo sysctl -w net.ipv4.ip_forward=1  # Apply immediately
 
 # Setup NAT from WiFi to Ethernet so ook can share internet with other nodes
-# Find the WiFi interface name (usually wlan0 or similar)
-WIFI_IFACE=$(ip route | grep default | grep -v eth | awk '{print $5}' | head -1)
-echo "WiFi interface detected: $WIFI_IFACE"
+# Detect interfaces robustly: Wi‑Fi starts with 'wl', LAN typically 'en*' or 'eth*'
+WIFI_IFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -E '^wl' | head -1)
+LAN_IFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -E '^(en|eth)' | head -1)
+echo "WiFi=$WIFI_IFACE  LAN=$LAN_IFACE"
 
 # Clear any existing NAT rules to start fresh
 sudo iptables -t nat -F
 sudo iptables -t filter -F
 
 # Allow forwarding between Ethernet and WiFi interfaces
-sudo iptables -A FORWARD -i eth0 -o $WIFI_IFACE -j ACCEPT  # LAN to WiFi
-sudo iptables -A FORWARD -i $WIFI_IFACE -o eth0 -j ACCEPT  # WiFi to LAN
+sudo iptables -A FORWARD -i "$LAN_IFACE" -o "$WIFI_IFACE" -j ACCEPT  # LAN to WiFi
+sudo iptables -A FORWARD -i "$WIFI_IFACE" -o "$LAN_IFACE" -m state --state ESTABLISHED,RELATED -j ACCEPT  # WiFi to LAN
 
 # Enable NAT masquerading on WiFi interface for outbound traffic
-sudo iptables -t nat -A POSTROUTING -o $WIFI_IFACE -j MASQUERADE
+sudo iptables -t nat -A POSTROUTING -o "$WIFI_IFACE" -j MASQUERADE
 
 # Save iptables rules to persist across reboots
 sudo apt install -y iptables-persistent  # Will prompt to save current rules
@@ -325,27 +329,28 @@ For Arm Control Boxes:
 ./scripts/network_status.sh
 
 # Check which mode is currently active on rpi2
-ssh rpi2 "readlink /etc/dnsmasq.d/active.conf"
+ssh rpi2 "readlink -f /etc/dnsmasq.d/active.conf"
 # Output: /etc/dnsmasq-profiles/mode-edge.conf (or mode-home.conf)
 
 # Monitor auto-detection service logs on rpi2
 ssh rpi2 "sudo journalctl -u tatbot-mode-auto.service -n 20"
 # Shows recent mode switches and home router detection status
 
-# Check current mode programmatically
-cd ~/tatbot && source scripts/setup_env.sh && uv run python src/tatbot/utils/mode_toggle.py --mode status
+# Check current mode (simple check)
+ssh rpi2 "sudo systemctl status tatbot-mode-auto.service | tail -5"
 ```
 
 **Manual Mode Override (if needed)**
 
 ```bash
-# The auto-detection service normally handles this, but you can override:
+# The auto-detection service normally handles this automatically
+# To manually override, you can directly change the symlink on rpi2:
 
 # Force switch to Home mode
-uv run python src/tatbot/utils/mode_toggle.py --mode home
+ssh rpi2 "sudo ln -sf /etc/dnsmasq-profiles/mode-home.conf /etc/dnsmasq.d/active.conf && sudo systemctl reload dnsmasq"
 
 # Force switch to Edge mode  
-uv run python src/tatbot/utils/mode_toggle.py --mode edge
+ssh rpi2 "sudo ln -sf /etc/dnsmasq-profiles/mode-edge.conf /etc/dnsmasq.d/active.conf && sudo systemctl reload dnsmasq"
 
 # Note: Auto-detection will switch back within 20 seconds based on cable status
 # To permanently override, stop the auto-detection service first:
@@ -382,13 +387,11 @@ ssh rpi2 "sudo systemctl restart dnsmasq tatbot-mode-auto.service"
 **In Edge Mode and we attach home LAN cable to switch-lan**
 - DESIRED BEHAVIOR: All nodes switch to the home network, they can now access the outisde internet and talk to home computers such as `oop`.
   
-  Steps to switch immediately (no wait for DHCP renewal):
+  The auto-detection service should handle this automatically within 20 seconds.
+  
+  To force immediate switching:
   
   ```bash
-  # On rpi2: ensure Home mode (disables DHCP, forwards DNS)
-  cd ~/tatbot && source scripts/setup_env.sh
-  uv run python src/tatbot/utils/mode_toggle.py --mode home
-
   # On each node: renew Ethernet to pick up home DHCP right away
   sudo nmcli connection down 'Wired connection 1' && sudo nmcli connection up 'Wired connection 1'
   ```
@@ -399,13 +402,11 @@ ssh rpi2 "sudo systemctl restart dnsmasq tatbot-mode-auto.service"
 **In Home Mode and we detach home LAN cable from switch-lan**
 - DESIRED BEHAVIOR: All nodes switch to the edge mode, they can no longer access the outisde internet and talk to home computers such as `oop`, but they can still see and access each other. Ideally MCP servers are unaffected and still running.
   
-  Steps to switch immediately:
+  The auto-detection service should handle this automatically within 20 seconds.
+  
+  To force immediate switching:
   
   ```bash
-  # On rpi2: switch to Edge (enables DHCP)
-  cd ~/tatbot && source scripts/setup_env.sh
-  uv run python src/tatbot/utils/mode_toggle.py --mode edge
-
   # On each node: renew Ethernet to get a DHCP lease from rpi2 now
   sudo nmcli connection down 'Wired connection 1' && sudo nmcli connection up 'Wired connection 1'
   ```
