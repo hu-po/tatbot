@@ -115,8 +115,8 @@ class NetworkToggler:
             if not self._validate_dnsmasq_config(config_path):
                 return False
             
-            # Create backup of current active config
-            backup_cmd = f"sudo cp {active_path} {active_path}.backup 2>/dev/null || true"
+            # Create backup of current active config (in /tmp to avoid dnsmasq reading it)
+            backup_cmd = f"sudo cp {active_path} /tmp/dnsmasq-active.backup 2>/dev/null || true"
             self._run_remote(client, backup_cmd)
             
             # Switch symlink
@@ -132,7 +132,7 @@ class NetworkToggler:
             if exit_code != 0:
                 log.error(f"Failed to reload dnsmasq: {err}")
                 # Try to restore backup
-                restore_cmd = f"sudo mv {active_path}.backup {active_path} 2>/dev/null || true"
+                restore_cmd = f"sudo mv /tmp/dnsmasq-active.backup {active_path} 2>/dev/null || true"
                 self._run_remote(client, restore_cmd)
                 return False
             
