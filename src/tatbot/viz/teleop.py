@@ -193,6 +193,10 @@ class TeleopViz(BaseViz):
             self.ik_target_r.position = self.ee_r_pose.pos.xyz
             self.ik_target_r.wxyz = self.ee_r_pose.rot.wxyz
 
+        # Re-enable and show both IK targets when returning to ready/sleep poses
+        self.ik_target_l.visible = True
+        self.ik_target_r.visible = True
+
     def move_arm_to_calibrator(self, arm: str):
         """Move a specific arm to the calibrator position using IK (without ee_offsets)."""
         # Target position is the calibrator position
@@ -232,11 +236,19 @@ class TeleopViz(BaseViz):
             self.ee_l_pose.rot.wxyz = target_rot
             self.ik_target_l.position = target_pos
             self.ik_target_l.wxyz = target_rot
+            # Ensure active arm control is visible and disable opposite arm control
+            self.ik_target_l.visible = True
+            self.ik_target_r.visible = False
+            self.arm_r_ik_toggle = False
         elif arm == "right":
             self.ee_r_pose.pos.xyz = target_pos
             self.ee_r_pose.rot.wxyz = target_rot
             self.ik_target_r.position = target_pos
             self.ik_target_r.wxyz = target_rot
+            # Ensure active arm control is visible and disable opposite arm control
+            self.ik_target_r.visible = True
+            self.ik_target_l.visible = False
+            self.arm_l_ik_toggle = False
 
     def save_ee_offset(self, arm: str):
         """Calculate and save the EE offset for the specified arm to default.yaml."""
