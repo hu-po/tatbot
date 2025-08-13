@@ -1,0 +1,21 @@
+[Unit]
+Description=Tatbot Auto Mode Detection (Edge/Home)
+After=network-online.target dnsmasq.service
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=rpi2
+WorkingDirectory=/home/rpi2/tatbot
+ExecStart=/home/rpi2/tatbot/scripts/mode_auto_detect.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+
+

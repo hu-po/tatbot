@@ -224,27 +224,7 @@ sudo systemctl status dnsmasq  # Should show "active (running)"
 
 # Install the auto-detection service that switches modes automatically
 # This service monitors home router (192.168.1.1) availability
-cat <<'AUTODETECT' | sudo tee /etc/systemd/system/tatbot-mode-auto.service
-[Unit]
-Description=Tatbot Auto Mode Detection (Edge/Home)
-After=network-online.target dnsmasq.service
-Wants=network-online.target
-StartLimitIntervalSec=60
-StartLimitBurst=5
-
-[Service]
-Type=simple
-User=rpi2
-WorkingDirectory=/home/rpi2/tatbot
-ExecStart=/home/rpi2/tatbot/scripts/mode_auto_detect.sh
-Restart=on-failure
-RestartSec=10
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-AUTODETECT
+sudo cp ~/tatbot/config/network/systemd/tatbot-mode-auto.service /etc/systemd/system/tatbot-mode-auto.service
 
 # Enable and start the auto-detection service
 sudo systemctl daemon-reload
@@ -302,29 +282,21 @@ sudo apt install -y dnsutils
 # Check which network manager is in use
 systemctl list-units --type=service --state=active | grep -E '(NetworkManager|dhcpcd)'
 
-# Configure all network connections to use rpi2 for DNS
 # This ensures tatbot.lan resolution works in both modes
-
-# For WiFi connections (if present):
-# Find your WiFi connection name
-nmcli connection show | grep wifi
-# Configure it (replace WIFI_NAME with actual connection name)
-sudo nmcli connection modify 'WIFI_NAME' \
-  ipv4.dns '192.168.1.99' \
-  ipv4.ignore-auto-dns yes \
-  ipv4.never-default no \
-  ipv4.route-metric 600
-
-# For Ethernet connections:
 # Configure to use rpi2 DNS and accept DHCP from either rpi2 or home router
+nmcli connection show --active
 sudo nmcli connection modify 'Wired connection 1' \
   ipv4.dns '192.168.1.99' \
   ipv4.ignore-auto-dns yes \
-  ipv4.method auto  # Use DHCP from whatever server responds
+  ipv4.method auto
 
 # Apply the changes
 sudo nmcli connection reload
-sudo nmcli device reapply eth0
+sudo nmcli device reapply enp63s0 # on ook
+sudo nmcli device reapply enp86s0 # on eek
+sudo nmcli device reapply enp172s0 # on hog
+sudo nmcli device reapply eno1 # on ojo
+sudo nmcli device reapply eth0 # on rpi1, rpi2
 
 # Test DNS resolution
 nslookup ook.tatbot.lan 192.168.1.99  # Should resolve to 192.168.1.90
@@ -332,12 +304,17 @@ nslookup ook.tatbot.lan 192.168.1.99  # Should resolve to 192.168.1.90
 
 **4. Configure IP Cameras and Arm Controllers**
 
-For devices with web interfaces (cameras, arm controllers):
+For IP Cameras:
 1. Access device web interface (e.g., http://192.168.1.91 for camera1)
 2. Navigate to Network Settings
 3. Set Primary DNS: `192.168.1.99`
 4. Keep DHCP enabled (will use home router or rpi2 automatically)
 5. Save and reboot device
+
+For Arm Control Boxes:
+1. Set DNS in `config/trossen/arm-l.yaml` and `config/trossen/arm-r.yaml` to `192.168.1.99`
+2. Push configs to arm controller boxes with `src/tatbot/bot/trossen_config.py`
+3. Reboot arm controller boxes
 
 ### Operation and Monitoring
 
