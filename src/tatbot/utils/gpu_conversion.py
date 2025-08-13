@@ -7,6 +7,7 @@ without exposing MCP protocol details to tool code.
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -20,7 +21,7 @@ log = get_logger("services.gpu_conversion", "🎯")
 
 
 class GPUConversionService:
-    def __init__(self, request_timeout_s: int = 60) -> None:
+    def __init__(self, request_timeout_s: int = 200) -> None:
         self.client = MCPClient(request_timeout_s)
 
     def _get_gpu_nodes(self) -> List[str]:
