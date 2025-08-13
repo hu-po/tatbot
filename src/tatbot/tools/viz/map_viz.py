@@ -14,7 +14,7 @@ log = get_logger("tools.viz.map", "🗺️")
 
 @tool(
     name="start_map_viz",
-    nodes=["oop", "ook"],
+    nodes=["oop", "ook", "eek"],
     description="Start a surface mapping visualization server for 2D-to-3D debugging",
     input_model=MapVizInput,
     output_model=MapVizOutput,

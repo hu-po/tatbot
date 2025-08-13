@@ -18,7 +18,7 @@ log = get_logger("tools.viz.control", "🎛️")
 
 @tool(
     name="stop_viz_server",
-    nodes=["oop", "ook"],
+    nodes=["oop", "ook", "eek"],
     description="Stop a running visualization server",
     input_model=StopVizInput,
     output_model=StopVizOutput,
@@ -57,7 +57,7 @@ async def stop_viz_server(input_data: StopVizInput, ctx: ToolContext):
 
 @tool(
     name="list_viz_servers",
-    nodes=["oop", "ook"],
+    nodes=["oop", "ook", "eek"],
     description="List all running visualization servers",
     input_model=ListVizServersInput,
     output_model=ListVizServersOutput,
@@ -85,7 +85,7 @@ async def list_viz_servers_tool(input_data: ListVizServersInput, ctx: ToolContex
 
 @tool(
     name="status_viz_server",
-    nodes=["oop", "ook"],
+    nodes=["oop", "ook", "eek"],
     description="Get detailed status information for a visualization server",
     input_model=StatusVizInput,
     output_model=StatusVizOutput,
