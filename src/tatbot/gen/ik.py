@@ -17,27 +17,31 @@ log = get_logger("gen.ik", "🧮")
 
 @jdc.pytree_dataclass
 class IKConfig:
-    pos_weight: float = 16.0
+    pos_weight: float = 50.0
     """Weight for the position part of the IK cost function."""
-    ori_weight: float = 4.0
+    ori_weight: float = 10.0
     """Weight for the orientation part of the IK cost function."""
-    rest_weight: float = 0.1
+    rest_weight: float = 1.0
     """Weight for the rest pose cost function."""
-    limit_weight: float = 32.0
+    limit_weight: float = 100.0
     """Weight for the limit cost function."""
     lambda_initial: float = 1.0
     """Initial lambda value for the IK trust region solver."""
-    max_iterations: int = 32
-    """Maximum iterations for IK solver."""
 
-def _ik(
+
+@jdc.jit
+def ik(
     robot: pk.Robot,
     target_link_indices: Int[Array, "n"],  # n=2 for bimanual
     target_wxyz: Float[Array, "n 4"],
     target_position: Float[Array, "n 3"],
     rest_pose: Float[Array, "14"],
-    config: IKConfig,
+    config: Optional[IKConfig] = None,
 ) -> Float[Array, "14"]:
+    if config is None:
+        config = IKConfig()
+    log.debug(f"performing ik on {target_link_indices.shape[0]} targets")
+    start_time = time.time()
     joint_var = robot.joint_var_cls(0)
     factors = [
         pk.costs.pose_cost(
@@ -51,7 +55,7 @@ def _ik(
         pk.costs.limit_cost(
             robot,
             joint_var,
-            weight=config.limit_weight,
+            jnp.array([config.limit_weight] * robot.joints.num_joints),
         ),
         pk.costs.rest_cost(
             joint_var,
@@ -63,51 +67,15 @@ def _ik(
         jaxls.LeastSquaresProblem(factors, [joint_var])
         .analyze()
         .solve(
-            initial_vals=jaxls.VarValues.make([joint_var.with_value(rest_pose)]),
             verbose=False,
-            linear_solver="dense_cholesky",
+            linear_solver="dense_cholesky",  # TODO: try other solvers
             trust_region=jaxls.TrustRegionConfig(lambda_initial=config.lambda_initial),
-            termination=jaxls.TerminationConfig(max_iterations=config.max_iterations, early_termination=False),
         )
     )
-    return sol[joint_var].astype(jnp.float32)
-
-
-# Create JIT-compiled version with static config
-_ik_jit = jax.jit(_ik, static_argnums=(5,))
-
-def ik(
-    robot: pk.Robot,
-    target_link_indices: Int[Array, "n"],  # n=2 for bimanual
-    target_wxyz: Float[Array, "n 4"],
-    target_position: Float[Array, "n 3"],
-    rest_pose: Float[Array, "14"],
-    config: Optional[IKConfig] = None,
-) -> Float[Array, "14"]:
-    if config is None:
-        config = IKConfig()
-    
-    # Ensure inputs are JAX arrays with proper types
-    target_link_indices = jnp.array(target_link_indices, dtype=jnp.int32)
-    target_wxyz = jnp.array(target_wxyz, dtype=jnp.float32)
-    target_position = jnp.array(target_position, dtype=jnp.float32)
-    rest_pose = jnp.array(rest_pose, dtype=jnp.float32)
-    
-    log.debug(f"performing ik on {target_link_indices.shape[0]} targets")
-    start_time = time.time()
-    
-    solution = _ik_jit(
-        robot,
-        target_link_indices,
-        target_wxyz,
-        target_position,
-        rest_pose,
-        config,
-    )
-    
-    log.debug(f"ik solution: {solution}")
+    _solution = sol[joint_var]
+    log.debug(f"ik solution: {_solution}")
     log.debug(f"ik time: {time.time() - start_time:.2f}s")
-    return solution
+    return _solution
 
 
 def batch_ik(
@@ -130,4 +98,4 @@ def batch_ik(
     )
     solutions = _ik_vmap(target_wxyz, target_pos, joints)
     log.debug(f"batch ik time: {time.time() - start_time:.4f}s")
-    return solutions.astype(jnp.float32)
+    return solutions
