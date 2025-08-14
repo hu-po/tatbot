@@ -1,0 +1,17 @@
+# @package _global_
+# Meta config: Quick test settings for rapid iteration
+
+# Reduced stroke precision and faster movements
+arms:
+  offset_num: 16
+  goal_time_fast: 0.06
+  goal_time_slow: 0.8
+
+# Lower resolution for faster processing  
+skins:
+  image_width_m: 0.03
+  image_height_m: 0.03
+
+# Shorter stroke length
+scenes:
+  stroke_length: 20

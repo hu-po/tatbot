@@ -9,6 +9,7 @@ defaults:
   - tags: default
   - urdf: default
   - mcp: default
+  - optional meta: _skip_
 
 # Node identifier (can be overridden via command line with node=<name>)
 node: default

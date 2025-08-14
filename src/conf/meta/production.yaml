@@ -1,0 +1,17 @@
+# @package _global_
+# Meta config: Production settings for actual tattooing
+
+# High precision and balanced speed settings
+arms:
+  offset_num: 96
+  goal_time_fast: 0.08
+  goal_time_slow: 1.2
+
+# Standard resolution
+skins:
+  image_width_m: 0.05
+  image_height_m: 0.05
+
+# Full stroke length
+scenes:
+  stroke_length: 80

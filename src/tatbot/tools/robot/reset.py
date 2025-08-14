@@ -31,6 +31,7 @@ async def reset_tool(input_data: ResetInput, ctx: ToolContext):
     Parameters:
     - scene (str, optional): Scene configuration to use. Default: "default"
     - debug (bool, optional): Enable debug logging. Default: false
+    - meta (str, optional): Meta config to apply (e.g. "tatbotlogo"). Default: null
     
     Returns:
     - success (bool): Whether reset completed successfully
@@ -43,8 +44,11 @@ async def reset_tool(input_data: ResetInput, ctx: ToolContext):
     yield {"progress": 0.1, "message": "Loading scene configuration..."}
     
     try:
-        # Load scene configuration
-        scene = compose_and_validate_scene(input_data.scene)
+        # Load scene configuration (with optional meta)
+        scene = compose_and_validate_scene(
+            name=input_data.scene,
+            meta=input_data.meta,
+        )
         
         yield {"progress": 0.3, "message": "🤖 Resetting robot..."}
         

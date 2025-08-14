@@ -35,6 +35,7 @@ async def start_map_viz(input_data: MapVizInput, ctx: ToolContext):
     
     Parameters:
     - scene: Scene configuration name (default: "default")
+    - meta: Optional meta config to apply (default: null)
     - stroke_point_size: Size of stroke points in visualization
     - skin_ply_point_size: Size of PLY point cloud points
     - transform_control_scale: Scale of the design pose transform control
@@ -51,6 +52,7 @@ async def start_map_viz(input_data: MapVizInput, ctx: ToolContext):
         # Convert input to VizMapConfig
         config = VizMapConfig(
             scene=input_data.scene,
+            meta=input_data.meta,
             env_map_hdri=input_data.env_map_hdri,
             view_camera_position=input_data.view_camera_position,
             view_camera_look_at=input_data.view_camera_look_at,

@@ -1,0 +1,13 @@
+# @package _global_
+# Meta config: High resolution settings for detailed work
+
+# Increase stroke precision and slower movements
+arms:
+  offset_num: 128
+  goal_time_fast: 0.12
+  goal_time_slow: 1.8
+
+# Higher resolution imaging
+skins:
+  image_width_m: 0.08
+  image_height_m: 0.08

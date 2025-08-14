@@ -1,0 +1,26 @@
+# @package _global_
+# Meta config: High resolution settings for detailed work
+
+# thick offset
+arms:
+  offset_range:
+    - -0.005
+    - 0.005
+  offset_num: 16
+
+# long strokes
+scenes:
+  stroke_length: 164
+  design_name: "zorya"
+  inks_config_name: "black"
+  pen_names_l:
+    - nighthawk_black
+  pen_names_r:
+    - nighthawk_black
+
+skins:
+  description: "100mm x 70mm square on sponge fake skin"
+  image_width_m: 0.1
+  image_height_m: 0.07
+  zone_depth_m: 0.1
+  zone_width_m: 0.07

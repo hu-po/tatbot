@@ -71,6 +71,10 @@ cd ~/tatbot && ./scripts/run_mcp.sh eek
 uv run python -m tatbot.viz.teleop --enable-robot --enable-depth
 ```
 
+## Meta Configuration System
+
+The system supports **meta configs** for easy parameter overrides across scenes. All MCP tools now accept a `meta` parameter to apply predefined configuration templates.
+
 ## Architecture
 
 ### Core Components
@@ -151,10 +155,10 @@ uv run python -m tatbot.viz.teleop --enable-robot --enable-depth
 The following tools are available via MCP servers on different nodes:
 
 ### Robot Control Tools (eek, hog)
-- **`align_tool`**: Generate and execute alignment strokes for calibration
-- **`reset_tool`**: Reset robot to safe/ready position  
-- **`sense_tool`**: Capture environmental data from cameras and sensors
-- **`stroke_tool`**: Execute artistic strokes with ink on canvas
+- **`align_tool`**: Generate and execute alignment strokes for calibration (supports `meta` parameter)
+- **`reset_tool`**: Reset robot to safe/ready position (supports `meta` parameter)
+- **`sense_tool`**: Capture environmental data from cameras and sensors (supports `meta` parameter)  
+- **`stroke_tool`**: Execute artistic strokes with ink on canvas (supports `meta` parameter)
 
 ### GPU Processing Tools (ook, oop when available)
 - **`convert_strokelist_to_batch`**: GPU-accelerated stroke trajectory conversion using JAX
@@ -165,9 +169,9 @@ The following tools are available via MCP servers on different nodes:
 - **`ping_nodes`**: Test connectivity to tatbot nodes
 
 ### Visualization Tools (oop, ook)
-- **`start_stroke_viz`**: Start interactive stroke execution visualization server
-- **`start_teleop_viz`**: Start teleoperation server for interactive robot control
-- **`start_map_viz`**: Start surface mapping visualization for 2D-to-3D debugging
+- **`start_stroke_viz`**: Start interactive stroke execution visualization server (supports `meta` parameter)
+- **`start_teleop_viz`**: Start teleoperation server for interactive robot control (supports `meta` parameter)
+- **`start_map_viz`**: Start surface mapping visualization for 2D-to-3D debugging (supports `meta` parameter)
 - **`stop_viz_server`**: Stop a running visualization server
 - **`list_viz_servers`**: List all running visualization servers
 

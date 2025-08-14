@@ -46,6 +46,7 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
     Parameters:
     - scene (str, optional): Scene configuration to use. Default: "default"
     - debug (bool, optional): Enable debug logging. Default: false
+    - meta (str, optional): Meta config to apply (e.g. "tatbotlogo"). Default: null
     - num_plys (int, optional): Number of PLY pointcloud files to capture. Default: 2
     - calibrate_extrinsics (bool, optional): Whether to calibrate camera extrinsics using AprilTags. Default: true
     - reference_tag_id (int, optional): Reference AprilTag ID for extrinsics calibration. Default: 0
@@ -68,8 +69,11 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
     try:
         yield {"progress": 0.01, "message": "Loading scene configuration..."}
         
-        # Load scene configuration
-        scene = compose_and_validate_scene(input_data.scene)
+        # Load scene configuration (with optional meta)
+        scene = compose_and_validate_scene(
+            name=input_data.scene,
+            meta=input_data.meta,
+        )
         
         # Create output directory
         output_dir = NFS_RECORDINGS_DIR

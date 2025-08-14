@@ -15,6 +15,7 @@ class ToolInput(BaseModel):
     """Base class for all tool input models."""
     model_config = ConfigDict(extra="ignore")
     debug: bool = False
+    meta: str | None = None
 
 
 class ToolOutput(BaseModel):

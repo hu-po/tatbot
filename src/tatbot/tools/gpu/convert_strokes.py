@@ -110,7 +110,10 @@ async def convert_strokes(input_data: ConvertStrokesInput, ctx: ToolContext):
         yield {"progress": 0.2, "message": "Loading strokes and scene configuration..."}
         
         strokes = StrokeList.from_yaml_with_arrays(input_data.strokes_file_path)
-        scene = compose_and_validate_scene(input_data.scene)
+        scene = compose_and_validate_scene(
+            name=input_data.scene,
+            meta=input_data.meta,
+        )
         
         yield {"progress": 0.3, "message": f"Loaded {len(strokes.strokes)} strokes for scene '{input_data.scene}'"}
         

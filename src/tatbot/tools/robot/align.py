@@ -46,6 +46,7 @@ async def align_tool(input_data: AlignInput, ctx: ToolContext):
     Parameters:
     - scene (str, optional): Scene configuration to use. Default: "default"  
     - debug (bool, optional): Enable debug logging. Default: false
+    - meta (str, optional): Meta config to apply (e.g. "tatbotlogo"). Default: null
     
     Returns:
     - success (bool): Whether alignment completed successfully
@@ -63,8 +64,11 @@ async def align_tool(input_data: AlignInput, ctx: ToolContext):
     try:
         yield {"progress": 0.01, "message": "Loading scene configuration..."}
         
-        # Load scene configuration
-        scene = compose_and_validate_scene(input_data.scene)
+        # Load scene configuration (with optional meta)
+        scene = compose_and_validate_scene(
+            name=input_data.scene,
+            meta=input_data.meta,
+        )
         
         # Create output directory
         output_dir = NFS_RECORDINGS_DIR

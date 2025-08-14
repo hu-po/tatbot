@@ -222,3 +222,45 @@ tools:
 - ✅ **Clean Migration Path**: Incremental adoption possible
 
 This architecture maintains all the features you liked (async progress reporting, multi-node support) while dramatically simplifying the codebase and eliminating confusing abstractions.
+
+## Configuration Overrides (Meta)
+
+All robot tools and the GPU conversion tool support optional meta configuration overlays via Hydra:
+
+- Add meta files under `src/conf/meta/`.
+- Select a meta at call time with `meta=<name>`.
+- Only specified subfields are overridden; other config remains unchanged.
+
+Example meta file `src/conf/meta/tatbotlogo.yaml`:
+
+```yaml
+# @package _global_
+arms:
+  offset_range: [-0.01, 0.01]
+  offset_num: 32
+scenes:
+  stroke_length: 128
+  design_name: "tatbotlogo"
+  inks_config_name: "red_blue"
+  pen_names_l: [true_blue]
+  pen_names_r: [bright_red]
+skins:
+  description: "100mm x 70mm square on sponge fake skin"
+  image_width_m: 0.1
+  image_height_m: 0.07
+```
+
+Usage across tools (JSON payloads):
+
+```json
+{ "scene": "flower", "meta": "tatbotlogo" }
+```
+
+Works for:
+- `stroke`
+- `align`
+- `sense`
+- `reset`
+- `convert_strokelist_to_batch` (GPU)
+
+Hydra defaults already include the optional group. See `src/conf/config.yaml` for the `defaults:` list with `- optional meta: _skip_`.

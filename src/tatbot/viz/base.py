@@ -23,6 +23,9 @@ class BaseVizConfig:
     scene: str = "default"
     """Name of the scene (Scene)."""
 
+    meta: str | None = None
+    """Optional meta config to apply."""
+
     env_map_hdri: str = "forest"
     """HDRI for the environment map."""
     view_camera_position: tuple[float, float, float] = (0.3, 0.3, 0.3)
@@ -60,7 +63,7 @@ class BaseVizConfig:
 class BaseViz:
     def __init__(self, config: BaseVizConfig):
         self.config = config
-        self.scene = compose_and_validate_scene(config.scene)
+        self.scene = compose_and_validate_scene(config.scene, meta=config.meta)
         self.global_step = 0
         self._stop_flag = False
         self._server_ready = False

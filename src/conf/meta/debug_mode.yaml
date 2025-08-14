@@ -1,0 +1,12 @@
+# @package _global_
+# Meta config: Debug mode with slower, more observable settings
+
+# Very slow movements and higher timeout for debugging
+arms:
+  goal_time_fast: 0.5
+  goal_time_slow: 3.0
+  connection_timeout: 15.0
+
+# Shorter strokes for testing
+scenes:
+  stroke_length: 10

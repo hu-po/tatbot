@@ -1,4 +1,6 @@
 
+from typing import List, Optional
+
 import hydra
 from hydra import compose, initialize
 from omegaconf import DictConfig, OmegaConf
@@ -21,19 +23,33 @@ def load_scene_from_config(cfg: DictConfig) -> Scene:
     return app_config.scene
 
 
-def compose_and_validate_scene(name: str = AppConstants.DEFAULT_SCENE_NAME) -> Scene:
-    """Compose a scene configuration and validate it."""
+
+
+def compose_and_validate_scene(
+    name: str = AppConstants.DEFAULT_SCENE_NAME,
+    meta: Optional[str] = None,
+) -> Scene:
+    """Compose a scene configuration and validate it.
+
+    Parameters:
+    - name: scene config name under `conf/scenes`
+    - meta: optional meta config name under `conf/meta` to merge
+    """
     from hydra.core.global_hydra import GlobalHydra
 
+    override_list: List[str] = [f"scenes={name}"]
+    if meta:
+        override_list.append(f"meta={meta}")
+
     if GlobalHydra().is_initialized():
-        cfg = compose(config_name=AppConstants.DEFAULT_CONFIG_NAME, overrides=[f"scenes={name}"])
+        cfg = compose(config_name=AppConstants.DEFAULT_CONFIG_NAME, overrides=override_list)
         return load_scene_from_config(cfg)
     else:
         with initialize(
             config_path=AppConstants.CONFIG_PATH, 
             version_base=None
         ):
-            cfg = compose(config_name=AppConstants.DEFAULT_CONFIG_NAME, overrides=[f"scenes={name}"])
+            cfg = compose(config_name=AppConstants.DEFAULT_CONFIG_NAME, overrides=override_list)
             return load_scene_from_config(cfg)
 
 

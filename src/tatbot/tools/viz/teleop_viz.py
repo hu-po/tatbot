@@ -36,6 +36,7 @@ async def start_teleop_viz(input_data: TeleopVizInput, ctx: ToolContext):
     
     Parameters:
     - scene: Scene configuration name (default: "default")
+    - meta: Optional meta config to apply (default: null)
     - enable_robot: Connect to and control real robot hardware
     - enable_depth: Enable depth camera visualization
     - transform_control_scale: Scale of the interactive transform controls
@@ -51,6 +52,7 @@ async def start_teleop_viz(input_data: TeleopVizInput, ctx: ToolContext):
         # Convert input to TeleopVizConfig
         config = TeleopVizConfig(
             scene=input_data.scene,
+            meta=input_data.meta,
             env_map_hdri=input_data.env_map_hdri,
             view_camera_position=input_data.view_camera_position,
             view_camera_look_at=input_data.view_camera_look_at,
