@@ -43,7 +43,7 @@ This matches clients sending the literal string "[object Object]" (typical when 
 
 3. Add aliasing and extra-key handling in models:
    - On `ToolInput` (base), set `model_config = ConfigDict(extra="ignore")` to ignore unknown extras.
-   - In `RobotOpInput`, add `scene: str = Field("default", alias="scene_name")` and `populate_by_name=True` so both `scene` and `scene_name` work.
+   - In `RobotToolInput`, add `scene: str = Field("default", alias="scene_name")` and `populate_by_name=True` so both `scene` and `scene_name` work.
 
 4. Enrich errors with actionable usage hints:
    - When parse fails or validation fails, include a short hint like: "Send `{}` to use defaults" and "Do not send `ctx`".
@@ -116,7 +116,7 @@ class ToolInput(BaseModel):
 # tatbot/src/tatbot/tools/robot/models.py
 from pydantic import Field, ConfigDict
 
-class RobotOpInput(ToolInput):
+class RobotToolInput(ToolInput):
     model_config = ConfigDict(populate_by_name=True)
     scene_name: str = Field("default", description="Scene config name", alias="scene")
 ```

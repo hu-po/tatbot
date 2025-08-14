@@ -5,27 +5,27 @@ from typing import List
 from tatbot.tools.base import ToolInput, ToolOutput
 
 
-class RobotOpInput(ToolInput):
+class RobotToolInput(ToolInput):
     """Base input for robot operation tools."""
     scene_name: str = "default"
 
 
-class RobotOpOutput(ToolOutput):
+class RobotToolOutput(ToolOutput):
     """Base output for robot operation tools."""
     pass
 
 
-class AlignInput(RobotOpInput):
+class AlignInput(RobotToolInput):
     """Input for align tool."""
     pass
 
 
-class AlignOutput(RobotOpOutput):
+class AlignOutput(RobotToolOutput):
     """Output for align tool."""
     stroke_count: int = 0
 
 
-class StrokeInput(RobotOpInput):
+class StrokeInput(RobotToolInput):
     """Input for stroke tool."""
     enable_joystick: bool = True
     enable_realsense: bool = True
@@ -33,12 +33,12 @@ class StrokeInput(RobotOpInput):
     fps: int = 10
 
 
-class StrokeOutput(RobotOpOutput):
+class StrokeOutput(RobotToolOutput):
     """Output for stroke tool."""
     stroke_count: int = 0
 
 
-class SenseInput(RobotOpInput):
+class SenseInput(RobotToolInput):
     """Input for sense tool."""
     num_plys: int = 2
     calibrate_extrinsics: bool = True
@@ -46,16 +46,16 @@ class SenseInput(RobotOpInput):
     max_deviation_warning: float = 0.05
 
 
-class SenseOutput(RobotOpOutput):
+class SenseOutput(RobotToolOutput):
     """Output for sense tool."""
     captured_files: List[str] = []
 
 
-class ResetInput(RobotOpInput):
+class ResetInput(RobotToolInput):
     """Input for reset tool."""
     pass
 
 
-class ResetOutput(RobotOpOutput):
+class ResetOutput(RobotToolOutput):
     """Output for reset tool."""
     pass
