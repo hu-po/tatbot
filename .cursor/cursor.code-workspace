@@ -4,7 +4,7 @@
       // NFS mount point
       { "name": "nfs", "path": "/nfs/tatbot" },
       // Documentation
-      { "name": "tatbot-logs", "path": "../../tatbot-logs" }, // https://github.com/hu-po/tatbot-logs
+      // { "name": "tatbot-logs", "path": "../../tatbot-logs" }, // https://github.com/hu-po/tatbot-logs
       // { "name": "infra", "path": "../../infra" }, // https://github.com/hu-po/infra
       // { "name": "docs", "path": "../../docs" }, // https://github.com/hu-po/docs
       // Dependencies are useful to provide context for AI coding agents (e.g. Cursor)
