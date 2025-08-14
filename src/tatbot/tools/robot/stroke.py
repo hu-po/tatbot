@@ -48,7 +48,7 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
     from previous executions.
     
     Parameters:
-    - scene_name (str, optional): Scene configuration to use. Default: "default"  
+    - scene (str, optional): Scene configuration to use. Default: "default"  
     - debug (bool, optional): Enable debug logging. Default: false
     - enable_joystick (bool, optional): Enable joystick for recording. Default: true
     - enable_realsense (bool, optional): Enable Intel RealSense cameras for recording. Default: true
@@ -74,7 +74,7 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
         yield {"progress": 0.01, "message": "Loading scene configuration..."}
         
         # Load scene configuration
-        scene = compose_and_validate_scene(input_data.scene_name)
+        scene = compose_and_validate_scene(input_data.scene)
         
         # Create output directory
         output_dir = NFS_RECORDINGS_DIR
@@ -242,7 +242,7 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
                 success, _ = await gpu_proxy.convert_strokelist_remote(
                     strokes_file_path=str(strokes_path),
                     strokebatch_file_path=str(strokebatch_path),
-                    scene_name=scene.name,
+                    scene=scene.name,
                     first_last_rest=True,
                     use_ee_offsets=True
                 )

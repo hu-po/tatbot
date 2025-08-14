@@ -81,7 +81,7 @@ Goal: Run on robot from a chosen checkpoint via an MCP tool call; stream progres
 
 Input model (Pydantic)
 - `checkpoint_path: str` — local path or Hugging Face repo id
-- `scene_name: str = "default"`
+- `scene: str = "default"`
 - `policy_type: {"smolvla","pi0"} = "smolvla"`
 - `device: {"cpu","cuda"} = "cuda"`
 - `enable_realsense: bool = False`
@@ -104,7 +104,7 @@ from lerobot.robots import make_robot_from_config
 
 class InferVLAInput(BaseModel):
     checkpoint_path: str
-    scene_name: str = "default"
+    scene: str = "default"
     policy_type: str = "smolvla"  # or "pi0"
     device: str = "cuda"
     enable_realsense: bool = False
@@ -119,7 +119,7 @@ class InferVLAOutput(BaseModel):
 
 @tool(name="infer_vla", nodes=["hog"], description="Run VLA policy inference on robot")
 async def infer_vla(input_data: InferVLAInput, ctx: ToolContext) -> InferVLAOutput:
-    scene = compose_and_validate_scene(input_data.scene_name)
+    scene = compose_and_validate_scene(input_data.scene)
 
     rs_cameras = {}
     if input_data.enable_realsense:
@@ -189,7 +189,7 @@ Example call payload
   "tool": "infer_vla",
   "params": {
     "checkpoint_path": "/home/oop/tatbot/output/train/<scene>/smolvla/checkpoints/last/pretrained_model",
-    "scene_name": "tatbotlogo",
+    "scene": "tatbotlogo",
     "policy_type": "smolvla",
     "device": "cuda",
     "enable_realsense": true,
@@ -231,7 +231,7 @@ from lerobot.robots import make_robot_from_config
 
 class InferVLAInput(BaseModel):
     checkpoint_path: str
-    scene_name: str = "default"
+    scene: str = "default"
     policy_type: str = "smolvla"  # or "pi0"
     device: str = "cuda"
     enable_realsense: bool = False
@@ -254,7 +254,7 @@ class InferVLAOutput(BaseModel):
 async def infer_vla(input_data: InferVLAInput, ctx: ToolContext):
     # Progress: loading scene
     yield {"progress": 0.01, "message": "Loading scene configuration..."}
-    scene = compose_and_validate_scene(input_data.scene_name)
+    scene = compose_and_validate_scene(input_data.scene)
 
     # Optional RealSense wiring mirrors stroke.py
     rs_cameras = {}

@@ -34,18 +34,18 @@ The `stroke.py` tool already implements comprehensive recording functionality:
 1. **Human Demonstrations**:
    ```bash
    # Record expert demonstrations with joystick corrections
-   mcp__eek__stroke '{"scene_name": "tatbotlogo", "enable_joystick": true, "enable_realsense": true, "fps": 30}'
+   mcp__eek__stroke '{"scene": "tatbotlogo", "enable_joystick": true, "enable_realsense": true, "fps": 30}'
    ```
 
 2. **Automated Collection**:
    ```bash
    # Record autonomous executions for data augmentation
-   mcp__eek__stroke '{"scene_name": "default", "enable_realsense": true}'
+   mcp__eek__stroke '{"scene": "default", "enable_realsense": true}'
    ```
 
 3. **Resume Capability**: Continue interrupted recordings:
    ```bash
-   mcp__eek__stroke '{"scene_name": "tatbotlogo", "resume": true}'
+   mcp__eek__stroke '{"scene": "tatbotlogo", "resume": true}'
    ```
 
 ## Dataset Format and Structure
@@ -53,7 +53,7 @@ The `stroke.py` tool already implements comprehensive recording functionality:
 ### Directory Structure
 ```
 /nfs/tatbot/recordings/
-└── stroke-{scene_name}-{timestamp}/
+└── stroke-{scene}-{timestamp}/
     ├── meta_data/
     │   ├── data.parquet          # Episode metadata
     │   ├── stats.json             # Dataset statistics
@@ -276,7 +276,7 @@ from tatbot.tools.base import ToolInput, ToolOutput
 class VLAInferInput(ToolInput):
     policy: Literal["smolvla", "pi0"]
     checkpoint_path: str
-    scene_name: str = "default"
+    scene: str = "default"
     device: Literal["cuda", "cpu"] = "cuda"
     max_steps: int = 500
     enable_realsense: bool = False
@@ -324,7 +324,7 @@ async def vla_infer(input_data: VLAInferInput, ctx: ToolContext):
     Parameters:
     - policy (str): Policy type ("smolvla" or "pi0")
     - checkpoint_path (str): Path to model checkpoint
-    - scene_name (str): Scene configuration name
+    - scene (str): Scene configuration name
     - device (str): Device for inference ("cuda" or "cpu")
     - max_steps (int): Maximum steps to execute
     - enable_realsense (bool): Use RealSense cameras
@@ -341,7 +341,7 @@ async def vla_infer(input_data: VLAInferInput, ctx: ToolContext):
     
     try:
         yield {"progress": 0.01, "message": "Loading scene configuration..."}
-        scene = compose_and_validate_scene(input_data.scene_name)
+        scene = compose_and_validate_scene(input_data.scene)
         
         # Configure cameras if enabled
         rs_cameras = {}
@@ -531,7 +531,7 @@ ssh hog "bash ~/tatbot/scripts/run_mcp.sh hog"
 {
   "policy": "smolvla",
   "checkpoint_path": "outputs/train/tatbotlogo/smolvla/checkpoints/last/pretrained_model",
-  "scene_name": "tatbotlogo",
+  "scene": "tatbotlogo",
   "dry_run": true
 }
 ```
@@ -541,7 +541,7 @@ ssh hog "bash ~/tatbot/scripts/run_mcp.sh hog"
 {
   "policy": "smolvla",
   "checkpoint_path": "outputs/train/tatbotlogo/smolvla/checkpoints/last/pretrained_model",
-  "scene_name": "tatbotlogo",
+  "scene": "tatbotlogo",
   "device": "cuda",
   "max_steps": 500,
   "enable_realsense": true,

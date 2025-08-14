@@ -2,15 +2,15 @@
 
 from typing import List
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict
 
 from tatbot.tools.base import ToolInput, ToolOutput
 
 
 class RobotToolInput(ToolInput):
     """Base input for robot operation tools."""
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
-    scene_name: str = Field("default", description="Scene config name", alias="scene")
+    model_config = ConfigDict(extra="ignore")
+    scene: str = "default"
 
 
 class RobotToolOutput(ToolOutput):

@@ -44,7 +44,7 @@ async def align_tool(input_data: AlignInput, ctx: ToolContext):
     on the physical robot while recording the motion data.
     
     Parameters:
-    - scene_name (str, optional): Scene configuration to use. Default: "default"  
+    - scene (str, optional): Scene configuration to use. Default: "default"  
     - debug (bool, optional): Enable debug logging. Default: false
     
     Returns:
@@ -64,7 +64,7 @@ async def align_tool(input_data: AlignInput, ctx: ToolContext):
         yield {"progress": 0.01, "message": "Loading scene configuration..."}
         
         # Load scene configuration
-        scene = compose_and_validate_scene(input_data.scene_name)
+        scene = compose_and_validate_scene(input_data.scene)
         
         # Create output directory
         output_dir = NFS_RECORDINGS_DIR
@@ -174,7 +174,7 @@ async def align_tool(input_data: AlignInput, ctx: ToolContext):
             success, _ = await gpu_proxy.convert_strokelist_remote(
                 strokes_file_path=str(strokes_path),
                 strokebatch_file_path=str(strokebatch_path),
-                scene_name=scene.name,
+                scene=scene.name,
                 first_last_rest=False,
                 use_ee_offsets=True
             )

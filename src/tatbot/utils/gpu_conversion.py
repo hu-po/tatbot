@@ -43,7 +43,7 @@ class GPUConversionService:
         self,
         strokes_file_path: str,
         strokebatch_file_path: str,
-        scene_name: str,
+        scene: str,
         first_last_rest: bool = True,
         use_ee_offsets: bool = True,
         preferred_node: Optional[str] = None,
@@ -87,7 +87,7 @@ class GPUConversionService:
                     "input_data": {
                         "strokes_file_path": target_strokes_path,
                         "strokebatch_file_path": target_strokebatch_path,
-                        "scene_name": scene_name,
+                        "scene": scene,
                         "first_last_rest": first_last_rest,
                         "use_ee_offsets": use_ee_offsets,
                     }

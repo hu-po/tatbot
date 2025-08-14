@@ -33,7 +33,7 @@ Example directory structure (may vary slightly by LeRobot version/settings):
 
 ```
 /nfs/tatbot/recordings/
-└── stroke-{scene_name}-{timestamp}/
+└── stroke-{scene}-{timestamp}/
     ├── meta_data/
     │   ├── data.parquet
     │   ├── stats.json
@@ -169,7 +169,7 @@ Suggested file layout (choose one and keep consistent):
 Input model fields (proposed):
 - `policy`: one of `"smolvla" | "pi0"`
 - `checkpoint_path`: local path to policy checkpoint (e.g., `outputs/train/smolvla_tatbot/checkpoints/last/pretrained_model`)
-- `scene_name`: optional scene to connect the robot (default `"default"`)
+- `scene`: optional scene to connect the robot (default `"default"`)
 - `device`: `"cuda" | "cpu"` (default `"cuda"`)
 - `max_steps`: integer safety cap on loop iterations (default `500`)
 - `enable_realsense`, `fps`, `debug`: same semantics as `stroke_tool`
@@ -192,7 +192,7 @@ from tatbot.tools.base import ToolInput, ToolOutput
 class VLAInferInput(ToolInput):
     policy: Literal["smolvla", "pi0"]
     checkpoint_path: str
-    scene_name: str = "default"
+    scene: str = "default"
     device: Literal["cuda", "cpu"] = "cuda"
     max_steps: int = 500
     enable_realsense: bool = False
@@ -237,7 +237,7 @@ log = get_logger("tools.vla_infer", "🧠")
 async def vla_infer(input_data: VLAInferInput, ctx: ToolContext):
     try:
         yield {"progress": 0.01, "message": "Loading scene..."}
-        scene = compose_and_validate_scene(input_data.scene_name)
+        scene = compose_and_validate_scene(input_data.scene)
 
         # Configure cameras if enabled
         rs_cameras = {}
@@ -387,7 +387,7 @@ except ImportError as e:
 {
   "policy": "smolvla",
   "checkpoint_path": "outputs/train/smolvla_tatbot/checkpoints/last/pretrained_model",
-  "scene_name": "tatbotlogo",
+  "scene": "tatbotlogo",
   "device": "cuda",
   "max_steps": 500,
   "enable_realsense": true,

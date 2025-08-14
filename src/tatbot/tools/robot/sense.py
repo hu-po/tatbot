@@ -44,7 +44,7 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
     cameras. It's used for environmental sensing and robot workspace mapping.
     
     Parameters:
-    - scene_name (str, optional): Scene configuration to use. Default: "default"
+    - scene (str, optional): Scene configuration to use. Default: "default"
     - debug (bool, optional): Enable debug logging. Default: false
     - num_plys (int, optional): Number of PLY pointcloud files to capture. Default: 2
     - calibrate_extrinsics (bool, optional): Whether to calibrate camera extrinsics using AprilTags. Default: true
@@ -69,7 +69,7 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
         yield {"progress": 0.01, "message": "Loading scene configuration..."}
         
         # Load scene configuration
-        scene = compose_and_validate_scene(input_data.scene_name)
+        scene = compose_and_validate_scene(input_data.scene)
         
         # Create output directory
         output_dir = NFS_RECORDINGS_DIR

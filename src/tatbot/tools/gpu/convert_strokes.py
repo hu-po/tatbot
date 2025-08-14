@@ -48,7 +48,7 @@ async def convert_strokes(input_data: ConvertStrokesInput, ctx: ToolContext):
     Parameters:
     - strokes_file_path (str, required): Path to strokes YAML file on shared NFS
     - strokebatch_file_path (str, required): Output path for strokebatch on shared NFS  
-    - scene_name (str, required): Scene configuration name for IK parameters
+    - scene (str, required): Scene configuration name for IK parameters
     - first_last_rest (bool, optional): Apply rest positions at stroke endpoints. Default: true
     - use_ee_offsets (bool, optional): Apply end-effector offset corrections. Default: true
     
@@ -110,9 +110,9 @@ async def convert_strokes(input_data: ConvertStrokesInput, ctx: ToolContext):
         yield {"progress": 0.2, "message": "Loading strokes and scene configuration..."}
         
         strokes = StrokeList.from_yaml_with_arrays(input_data.strokes_file_path)
-        scene = compose_and_validate_scene(input_data.scene_name)
+        scene = compose_and_validate_scene(input_data.scene)
         
-        yield {"progress": 0.3, "message": f"Loaded {len(strokes.strokes)} strokes for scene '{input_data.scene_name}'"}
+        yield {"progress": 0.3, "message": f"Loaded {len(strokes.strokes)} strokes for scene '{input_data.scene}'"}
         
         # Perform GPU-accelerated conversion
         yield {"progress": 0.4, "message": "Starting GPU-accelerated inverse kinematics..."}

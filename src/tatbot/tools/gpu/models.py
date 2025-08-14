@@ -7,7 +7,7 @@ class ConvertStrokesInput(ToolInput):
     """Input for convert_strokes tool."""
     strokes_file_path: str
     strokebatch_file_path: str
-    scene_name: str
+    scene: str
     first_last_rest: bool = True
     use_ee_offsets: bool = True
 

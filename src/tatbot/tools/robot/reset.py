@@ -29,7 +29,7 @@ async def reset_tool(input_data: ResetInput, ctx: ToolContext):
     It's useful for recovering from error states or preparing for new operations.
     
     Parameters:
-    - scene_name (str, optional): Scene configuration to use. Default: "default"
+    - scene (str, optional): Scene configuration to use. Default: "default"
     - debug (bool, optional): Enable debug logging. Default: false
     
     Returns:
@@ -44,7 +44,7 @@ async def reset_tool(input_data: ResetInput, ctx: ToolContext):
     
     try:
         # Load scene configuration
-        scene = compose_and_validate_scene(input_data.scene_name)
+        scene = compose_and_validate_scene(input_data.scene)
         
         yield {"progress": 0.3, "message": "🤖 Resetting robot..."}
         
