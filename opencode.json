@@ -16,6 +16,12 @@
                 "qwen3:30b": {
                     "tool_call": true,
                     "reasoning": true
+                },
+                "gemma3:12b": {
+                  "vision": true
+                },
+                "devstral:24b": {
+                  "tool_call": true
                 }
             }
         },
