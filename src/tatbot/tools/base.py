@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Callable, Dict, List
 
 from mcp.server.fastmcp import Context
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from tatbot.utils.log import get_logger
 
@@ -13,6 +13,7 @@ log = get_logger("tools.base", "🔧")
 
 class ToolInput(BaseModel):
     """Base class for all tool input models."""
+    model_config = ConfigDict(extra="ignore")
     debug: bool = False
 
 

@@ -51,10 +51,6 @@ async def align_tool(input_data: AlignInput, ctx: ToolContext):
     - success (bool): Whether alignment completed successfully
     - message (str): Status message
     - stroke_count (int): Number of alignment strokes executed
-    
-    Example usage:
-    {"scene_name": "default"}
-    {}
     """
     
     if input_data.debug:

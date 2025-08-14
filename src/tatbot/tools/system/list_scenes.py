@@ -23,9 +23,6 @@ async def list_scenes(input_data: ListScenesInput, ctx: ToolContext):
     List available scenes from the config directory.
     
     No parameters required. Returns list of available scene names.
-    
-    Example usage:
-    {}
     """
     yield {"progress": 0.1, "message": "Scanning for scene configurations..."}
     

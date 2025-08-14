@@ -65,8 +65,6 @@ async def convert_strokes(input_data: ConvertStrokesInput, ctx: ToolContext):
     4. Remote MCP session established with proper JSON-RPC protocol
     5. Conversion performed on GPU node, file saved to shared NFS
     
-    Example usage:
-    {"strokes_file_path": "/nfs/tatbot/recordings/align-default-2025y-08m-06d-14h-43m-14s/strokes.yaml", "strokebatch_file_path": "/nfs/tatbot/recordings/align-default-2025y-08m-06d-14h-43m-14s/strokebatch.safetensors", "scene_name": "default"}
     """
     
     # Verify GPU support on this node

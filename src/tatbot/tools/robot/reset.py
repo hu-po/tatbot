@@ -35,10 +35,6 @@ async def reset_tool(input_data: ResetInput, ctx: ToolContext):
     Returns:
     - success (bool): Whether reset completed successfully
     - message (str): Status message
-    
-    Example usage:
-    {"scene_name": "default"}
-    {}
     """
     
     if input_data.debug:

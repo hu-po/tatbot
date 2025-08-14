@@ -55,10 +55,6 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
     - success (bool): Whether sensing completed successfully
     - message (str): Status message
     - captured_files (list[str]): List of captured file paths
-    
-    Example usage:
-    {"scene_name": "default", "num_plys": 4}
-    {}
     """
     
     if input_data.debug:

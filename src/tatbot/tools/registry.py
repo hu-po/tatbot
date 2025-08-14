@@ -18,7 +18,7 @@ from tatbot.tools.base import (
     ToolInput,
     ToolOutput,
 )
-from tatbot.utils.exceptions import ConfigurationError, SerializationError
+from tatbot.utils.exceptions import ConfigurationError
 from tatbot.utils.log import get_logger
 
 log = get_logger("tools.registry", "📋")
@@ -161,7 +161,10 @@ def tool(
                 return json.loads(result.model_dump_json())
                 
             except ValidationError as e:
-                error_msg = f"❌ Input validation failed for {tool_name}: {e}"
+                error_msg = (
+                    f"❌ Input validation failed for {tool_name}: {e}\n"
+                    f"Tip: call with {{}} for defaults; send a JSON object; do not include 'ctx'."
+                )
                 log.error(error_msg)
                 error_result = output_model(success=False, message=error_msg)
                 return json.loads(error_result.model_dump_json())
@@ -204,25 +207,33 @@ def tool(
 def _parse_input_data(input_data: Union[str, dict, Any], model_class: type, tool_name: str) -> Any:
     """Parse input_data into the specified model class."""
     if isinstance(input_data, str):
-        try:
-            data_dict = json.loads(input_data) if input_data.strip() else {}
-        except json.JSONDecodeError as e:
-            # Fallback: accept Python-literal style dict strings (from some clients)
+        s = input_data.strip()
+        # Common placeholder strings from smaller models or JS stringification errors
+        placeholder_strings = {"", "null", "None", "undefined", "[object Object]", "[object]"}
+        if s in placeholder_strings or s.startswith("[object"):
+            log.warning(f"{tool_name}: received placeholder string '{s}', defaulting to {{}}")
+            data_dict = {}
+        else:
             try:
-                literal = ast.literal_eval(input_data)
-                if isinstance(literal, dict):
-                    data_dict = literal
-                else:
-                    raise ValueError("Parsed literal is not a dict")
-            except Exception as e2:
-                log.error(f"Failed to parse input for {tool_name} as JSON or python-literal dict: {e}; {e2}")
-                raise SerializationError(f"Invalid input for {tool_name}: {e}")
+                data_dict = json.loads(s)
+            except json.JSONDecodeError as e:
+                # Fallback: accept Python-literal style dict strings (from some clients)
+                try:
+                    literal = ast.literal_eval(s)
+                    if isinstance(literal, dict):
+                        data_dict = literal
+                    else:
+                        log.warning(f"{tool_name}: parsed literal is not a dict, defaulting to {{}}")
+                        data_dict = {}
+                except Exception:
+                    log.warning(f"{tool_name}: could not parse string input, defaulting to {{}}: {e}")
+                    data_dict = {}
     elif isinstance(input_data, dict):
         data_dict = input_data.copy()
     elif isinstance(input_data, model_class):
         return input_data
     else:
-        log.warning(f"Unexpected input type {type(input_data)} for {tool_name}, using empty dict")
+        log.warning(f"{tool_name}: unexpected input type {type(input_data)}, defaulting to {{}}")
         data_dict = {}
     
     # Filter out 'ctx' field that some clients erroneously include in input_data

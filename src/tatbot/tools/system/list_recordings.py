@@ -22,9 +22,6 @@ async def list_recordings(input_data: ListRecordingsInput, ctx: ToolContext):
     List available recordings from the recordings directory.
     
     No parameters required. Returns list of available recording directory names.
-    
-    Example usage:
-    {}
     """
     yield {"progress": 0.1, "message": "Scanning for recording directories..."}
     

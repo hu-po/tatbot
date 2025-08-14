@@ -50,8 +50,8 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
     Parameters:
     - scene_name (str, optional): Scene configuration to use. Default: "default"  
     - debug (bool, optional): Enable debug logging. Default: false
-    - enable_joystick (bool, optional): Enable joystick for recording. Default: false
-    - enable_realsense (bool, optional): Enable Intel RealSense cameras for recording. Default: false
+    - enable_joystick (bool, optional): Enable joystick for recording. Default: true
+    - enable_realsense (bool, optional): Enable Intel RealSense cameras for recording. Default: true
     - resume (bool, optional): Resume from previous execution. Default: false
     - fps (int, optional): Frames per second for recording. Default: 10
     
@@ -59,11 +59,6 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
     - success (bool): Whether stroke execution completed successfully
     - message (str): Status message
     - stroke_count (int): Number of strokes executed
-    
-    Example usage:
-    {"scene_name": "tatbotlogo", "enable_joystick": true}
-    {"scene_name": "default", "resume": true}
-    {}
     """
     
     if input_data.debug:

@@ -21,9 +21,6 @@ async def list_nodes(input_data: ListNodesInput, ctx: ToolContext):
     List available tatbot nodes.
     
     No parameters required. Returns list of available node names.
-    
-    Example usage:
-    {}
     """
     yield {"progress": 0.1, "message": "Loading network configuration..."}
     

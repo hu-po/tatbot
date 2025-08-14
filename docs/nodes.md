@@ -176,6 +176,13 @@ sudo systemctl daemon-reload
 sudo mount -a
 ```
 
+sometimes on reboot the NFS mount is not mounted, make sure to:
+
+```bash
+sudo systemctl daemon-reload
+sudo mount -a
+```
+
 ## Network Modes
 
 tatbot operates in two modes that **automatically switch** based on home network availability:
