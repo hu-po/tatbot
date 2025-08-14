@@ -1,5 +1,6 @@
 # Ideas
 
+- cite pyroki paper https://arxiv.org/pdf/2505.03728
 - add to https://github.com/mjyc/awesome-robotics-projects?tab=readme-ov-file
 - Nvidia cosmos to augment small lerobot datasets
 - ollama mcp https://github.com/jonigl/mcp-client-for-ollama
