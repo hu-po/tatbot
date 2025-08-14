@@ -1,20 +1,29 @@
 #!/usr/bin/env bash
 
 # Unified MCP server launcher with Hydra configuration
-# Usage: ./run_mcp.sh <node_name> [additional_hydra_args...]
+# Usage: ./run_mcp.sh [<node_name>] [additional_hydra_args...]
+# - If <node_name> is omitted, the current username ($USER) will be used if a matching config exists
 # Example: ./run_mcp.sh ook
 # Example: ./run_mcp.sh ook mcp.debug=true mcp.port=9000
 
 set -euo pipefail
 
 if [ $# -lt 1 ]; then
-    echo "Usage: $0 <node_name> [additional_hydra_args...]"
-    echo "Available nodes: ook, oop, rpi1, rpi2, ojo, eek, hog"
-    exit 1
+    # Default to username if a matching node config exists
+    DEFAULT_NODE=${USER:-}
+    if [ -n "$DEFAULT_NODE" ] && [ -f "$HOME/tatbot/src/conf/mcp/${DEFAULT_NODE}.yaml" ]; then
+        NODE="$DEFAULT_NODE"
+        echo "ℹ️  No node provided. Assuming node from username: $NODE"
+    else
+        echo "Usage: $0 <node_name> [additional_hydra_args...]"
+        echo "Available nodes: ook, oop, rpi1, rpi2, ojo, eek, hog"
+        echo "You can also omit <node_name> if your username matches a node config (e.g., '$USER')."
+        exit 1
+    fi
+else
+    NODE=$1
+    shift
 fi
-
-NODE=$1
-shift
 
 # Kill any existing MCP server processes
 bash ~/tatbot/scripts/kill.sh
