@@ -180,7 +180,8 @@ async def align_tool(input_data: AlignInput, ctx: ToolContext):
                 strokebatch_file_path=str(strokebatch_path),
                 scene=scene.name,
                 first_last_rest=False,
-                use_ee_offsets=True
+                use_ee_offsets=True,
+                meta=input_data.meta
             )
             
             if not success:

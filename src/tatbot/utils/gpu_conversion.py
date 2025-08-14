@@ -46,6 +46,7 @@ class GPUConversionService:
         scene: str,
         first_last_rest: bool = True,
         use_ee_offsets: bool = True,
+        meta: Optional[str] = None,
         preferred_node: Optional[str] = None,
         max_retries: int = 2,
     ) -> Tuple[bool, Optional[bytes]]:
@@ -90,6 +91,7 @@ class GPUConversionService:
                         "scene": scene,
                         "first_last_rest": first_last_rest,
                         "use_ee_offsets": use_ee_offsets,
+                        "meta": meta,
                     }
                 }
 
