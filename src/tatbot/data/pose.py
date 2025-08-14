@@ -1,4 +1,6 @@
 
+from typing import Any
+
 import numpy as np
 from pydantic import field_validator
 from pydantic_numpy.typing import NpNDArray
@@ -13,7 +15,7 @@ class Pos(BaseCfg):
     xyz: NpNDArray
 
     @field_validator('xyz', mode='before')
-    def convert_to_array(cls, v):
+    def convert_to_array(cls, v: Any) -> np.ndarray:
         # Handle pydantic-numpy serialized format
         if isinstance(v, dict) and 'data' in v:
             return np.array(v['data'], dtype=np.float32)
@@ -24,7 +26,7 @@ class Pos(BaseCfg):
             v = np.asarray(v, dtype=np.float32)
         return v
     
-    def model_dump(self, **kwargs):
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         """Override model_dump to convert small arrays to lists for YAML."""
         data = super().model_dump(**kwargs)
         # Convert small arrays to lists for YAML storage
@@ -55,7 +57,7 @@ class Rot(BaseCfg):
             v = np.asarray(v, dtype=np.float32)
         return v
     
-    def model_dump(self, **kwargs):
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         """Override model_dump to convert small arrays to lists for YAML."""
         data = super().model_dump(**kwargs)
         # Convert small arrays to lists for YAML storage
@@ -94,7 +96,7 @@ class ArmPose(BaseCfg):
             v = np.asarray(v, dtype=np.float32)
         return v
     
-    def model_dump(self, **kwargs):
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         """Override model_dump to convert small arrays to lists for YAML."""
         data = super().model_dump(**kwargs)
         # Convert small arrays to lists for YAML storage

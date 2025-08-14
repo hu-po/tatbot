@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import os
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import jax_dataclasses as jdc
 import numpy as np
@@ -64,13 +66,13 @@ class Stroke(BaseCfg):
     """Color of the stroke."""
     
     @field_validator('arm')
-    def validate_arm(cls, v):
+    def validate_arm(cls, v: str) -> str:  # noqa: N805
         if v not in ['left', 'right']:
             raise ValueError("arm must be 'left' or 'right'")
         return v
     
     @field_validator('meter_coords', 'pixel_coords', 'ee_pos', 'ee_rot', 'normals', mode='before')
-    def convert_numpy_arrays(cls, v):
+    def convert_numpy_arrays(cls, v: Any) -> Any:  # noqa: N805
         """Convert lists to numpy arrays for validation, keep arrays as-is."""
         if isinstance(v, list):
             return np.array(v, dtype=np.float32)
@@ -190,15 +192,15 @@ class StrokeBatch:
     o = offset num
     """
 
-    ee_pos_l: Float[Array, "b l o 3"]
+    ee_pos_l: Float[Array, "b l o 3"]  # type: ignore[misc]
     """End effector frame position in meters (x, y, z) for left arm."""
-    ee_pos_r: Float[Array, "b l o 3"]
+    ee_pos_r: Float[Array, "b l o 3"]  # type: ignore[misc]
     """End effector frame position in meters (x, y, z) for right arm."""
-    ee_rot_l: Float[Array, "b l o 4"]
+    ee_rot_l: Float[Array, "b l o 4"]  # type: ignore[misc]
     """End effector frame orientation as quaternion (w, x, y, z) for left arm."""
-    ee_rot_r: Float[Array, "b l o 4"]
+    ee_rot_r: Float[Array, "b l o 4"]  # type: ignore[misc]
     """End effector frame orientation as quaternion (w, x, y, z) for right arm."""
-    joints: Float[Array, "b l o 14"]
+    joints: Float[Array, "b l o 14"]  # type: ignore[misc]
     """Joint positions in radians (URDF convention)."""
 
     def save(self, filepath: str) -> None:
@@ -215,7 +217,7 @@ class StrokeBatch:
 
     def offset_joints(
         self, stroke_idx: int, pose_idx: int, offset_idx_l: int, offset_idx_r: int
-    ) -> Float[Array, "14"]:
+    ) -> Float[Array, "14"]:  # type: ignore[misc]
         left_joints = self.joints[stroke_idx, pose_idx, offset_idx_l][:7]
         right_joints = self.joints[stroke_idx, pose_idx, offset_idx_r][7:]
         return np.concatenate([left_joints, right_joints])

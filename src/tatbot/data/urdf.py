@@ -24,11 +24,11 @@ class URDF(BaseCfg):
     """Name of the origin/root link in the URDF."""
 
     @field_validator('path', mode='before')
-    def expand_user_path(cls, v):
+    def expand_user_path(cls, v: str) -> Path:
         return Path(v).expanduser()
 
     @field_validator('path')
-    def path_must_exist(cls, v: Path):
+    def path_must_exist(cls, v: Path) -> Path:
         if not v.exists():
             raise ValueError(f"Path does not exist: {v}")
         return v

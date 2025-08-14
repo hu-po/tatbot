@@ -26,7 +26,7 @@ def get_logger(name: str, emoji: str = "❓") -> logging.Logger:
 log = get_logger("utils.log", "📝")
 
 
-def print_config(args: Any, log: logging.Logger = log):
+def print_config(args: Any, log: logging.Logger = log) -> None:
     log.debug(f"🛠️ Full Config of type {type(args)}:")
     log.debug(pformat(asdict(args)))
 

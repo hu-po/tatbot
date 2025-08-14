@@ -1,9 +1,11 @@
+from typing import Any, Optional
+
 import jax
 import jaxlib.xla_extension as xla_ext
 import numpy as np
 
 
-def ensure_numpy_array(obj):
+def ensure_numpy_array(obj: Any) -> Optional[np.ndarray]:
     """Convert JAX arrays to NumPy arrays, leave other types unchanged."""
     if obj is None:
         return None

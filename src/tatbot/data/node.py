@@ -21,7 +21,7 @@ class Node(BaseCfg):
     """Optional MAC address for DHCP reservations and tooling."""
 
     @field_validator('ip')
-    def validate_ip(cls, v):
+    def validate_ip(cls, v: str) -> str:
         try:
             ipaddress.ip_address(v)
         except ValueError:

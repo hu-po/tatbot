@@ -2,7 +2,7 @@
 
 import reprlib
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import yaml
@@ -13,7 +13,7 @@ from tatbot.utils.log import get_logger
 log = get_logger("data.base", "📄")
 
 
-def _numpy_representer(dumper, data):
+def _numpy_representer(dumper: Any, data: Any) -> Any:
     """Custom representer for numpy arrays."""
     if isinstance(data, np.ndarray):
         return dumper.represent_list(data.tolist())
@@ -48,7 +48,7 @@ class BaseCfg(BaseModel):
     def _model_dump_with_numpy_conversion(self) -> dict:
         """Helper method to dump model with numpy arrays converted to lists."""
         
-        def convert_numpy_to_lists(obj):
+        def convert_numpy_to_lists(obj: Any) -> Any:
             """Recursively convert numpy arrays to lists."""
             if isinstance(obj, np.ndarray):
                 return obj.tolist()

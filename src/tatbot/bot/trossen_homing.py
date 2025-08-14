@@ -48,11 +48,12 @@ POSITION_NEAR_ZERO_GRIPPER = 1e-5  # m
 
 
 def run(args):
-    arm_model: str = args.model
+    arm_model_str: str = args.model
+    arm_model = ArmModel(arm_model_str)
     ip_address = args.ip
 
     # Prompt the user to confirm that they are ready to configure this model arm
-    print(f"Configuring and calibrating arm with model: '{arm_model}'.")
+    print(f"Configuring and calibrating arm with model: '{arm_model_str}'.")
     print(f"Expected current IP address of the controller: '{ip_address}'")
     print("WARNING: This will calibrate the joint positions to their current positions.")
     print(

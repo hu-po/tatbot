@@ -131,8 +131,8 @@ def print_permissions_for(path: Path) -> None:
         owner = pwd.getpwuid(st.st_uid).pw_name
         group = grp.getgrgid(st.st_gid).gr_name
     except Exception:
-        owner = st.st_uid
-        group = st.st_gid
+        owner = str(st.st_uid)
+        group = str(st.st_gid)
     print(f"{path} -> {owner}:{group} {mode}")
 
 
@@ -156,7 +156,7 @@ def show_permissions(infos: list[dict]) -> None:
             continue
         for symlink in sorted(root_path.iterdir()):
             try:
-                target = symlink.resolve()
+                target = str(symlink.resolve())
             except Exception:
                 target = "<unresolved>"
             print(f"{symlink} -> {target}")
@@ -208,7 +208,7 @@ def read_events_direct(path: str, seconds: float) -> None:
         print(f"Open failed: {exc}")
         return
     end = time.time() + seconds
-    dev.grab = getattr(dev, "grab", None)  # type: ignore[attr-defined]
+    dev.grab = getattr(dev, "grab", None)
     try:
         while time.time() < end:
             event = dev.read_one()
