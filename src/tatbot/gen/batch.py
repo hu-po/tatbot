@@ -41,19 +41,22 @@ def strokebatch_from_strokes(
     ee_rot_l = np.tile(scene.arms.ee_rot_l.wxyz, (b, l, o, 1))
     ee_rot_r = np.tile(scene.arms.ee_rot_r.wxyz, (b, l, o, 1))
 
+    design_tf = jaxlie.SE3.from_rotation_and_translation(
+        jaxlie.SO3(scene.skin.design_pose.rot.wxyz), 
+        scene.skin.design_pose.pos.xyz
+    )
+
     for i, (stroke_l, stroke_r) in enumerate(strokelist.strokes):
         if not stroke_l.is_inkdip:
-            tf = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(scene.skin.design_pose.rot.wxyz), scene.skin.design_pose.pos.xyz)
-            base_l = jax.vmap(lambda pos: tf @ pos)(stroke_l.meter_coords)
-            base_l = base_l.reshape(l, 3)
+            base_l = jax.vmap(lambda pos: design_tf @ pos)(stroke_l.meter_coords)
+            base_l = base_l.reshape(l, 3).astype(np.float32)
             ee_pos_l[i] = np.repeat(base_l[:, None, :], o, axis=1)
         else:
             # inkdips do not have meter_coords, only ee_pos
             ee_pos_l[i] = np.repeat(stroke_l.ee_pos.reshape(l, 1, 3), o, 1)
         if not stroke_r.is_inkdip:
-            tf = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(scene.skin.design_pose.rot.wxyz), scene.skin.design_pose.pos.xyz)
-            base_r = jax.vmap(lambda pos: tf @ pos)(stroke_r.meter_coords)
-            base_r = base_r.reshape(l, 3)
+            base_r = jax.vmap(lambda pos: design_tf @ pos)(stroke_r.meter_coords)
+            base_r = base_r.reshape(l, 3).astype(np.float32)
             ee_pos_r[i] = np.repeat(base_r[:, None, :], o, 1)
         else:
             # inkdips do not have meter_coords, only ee_pos
