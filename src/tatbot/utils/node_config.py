@@ -3,9 +3,10 @@
 
 import os
 import sys
-import yaml
 from pathlib import Path
 from typing import List, Optional
+
+import yaml
 
 
 def get_node_extras(node: str, config_root: Optional[Path] = None) -> List[str]:

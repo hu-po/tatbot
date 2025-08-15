@@ -89,6 +89,7 @@ class TeleopViz(BaseViz):
             
             # Add lasercross controls
             with self.server.gui.add_folder("Lasercross"):
+                lasercross_move_button = self.server.gui.add_button("Move Arms to Lasercross")
                 lasercross_save_button = self.server.gui.add_button("Save Lasercross to URDF")
                 lasercross_text = self.server.gui.add_text(
                     "lasercross",
@@ -173,6 +174,12 @@ class TeleopViz(BaseViz):
         @self.lasercross_tf.on_update
         def _(_):
             lasercross_text.value = self.get_lasercross_text()
+        
+        # Lasercross move handler
+        @lasercross_move_button.on_click
+        def _(_):
+            log.debug("🎯 Moving arms to lasercross position")
+            self.move_arms_to_lasercross()
         
         # Lasercross save handler
         @lasercross_save_button.on_click
@@ -335,6 +342,57 @@ class TeleopViz(BaseViz):
         log.debug(f"🎯 left joints: {solution[:7]}")
         log.debug(f"🎯 right joints: {solution[7:]}")
         self.joints = np.array(solution, dtype=np.float32)
+
+    def move_arms_to_lasercross(self):
+        """Move both arms to lasercross position with +/- Y offset similar to align.py."""
+        # Calculate half length from lasercross_len_mm (convert mm to meters and divide by 2)
+        lasercross_halflen_m = self.scene.arms.lasercross_len_mm / 2000
+        
+        # Get the current lasercross position from the transform control
+        lasercross_pos = self.lasercross_tf.position.copy()
+        
+        # Calculate target positions: left arm gets +Y offset, right arm gets -Y offset
+        left_target_pos = lasercross_pos + np.array([0, lasercross_halflen_m, 0])
+        right_target_pos = lasercross_pos + np.array([0, -lasercross_halflen_m, 0])
+        
+        # Use the same end-effector rotations as configured for the arms
+        left_target_rot = self.scene.arms.ee_rot_l.wxyz.copy()
+        right_target_rot = self.scene.arms.ee_rot_r.wxyz.copy()
+        
+        # Set up IK targets for both arms
+        target_positions = np.array([left_target_pos, right_target_pos])
+        target_rotations = np.array([left_target_rot, right_target_rot])
+        
+        # Run IK to get joint positions
+        solution = ik(
+            self.robot,
+            self.ee_link_indices,
+            target_rotations,
+            target_positions,
+            self.scene.ready_pos_full.joints,
+        )
+        
+        # Update joints
+        self.joints = np.array(solution, dtype=np.float32)
+        
+        # Update the pose objects and IK targets for both arms
+        self.ee_l_pose.pos.xyz = left_target_pos
+        self.ee_l_pose.rot.wxyz = left_target_rot
+        self.ik_target_l.position = left_target_pos
+        self.ik_target_l.wxyz = left_target_rot
+        
+        self.ee_r_pose.pos.xyz = right_target_pos
+        self.ee_r_pose.rot.wxyz = right_target_rot
+        self.ik_target_r.position = right_target_pos
+        self.ik_target_r.wxyz = right_target_rot
+        
+        # Turn off IK target visibility and disable IK updates
+        self.ik_target_l.visible = False
+        self.ik_target_r.visible = False
+        self.arm_l_ik_toggle = False
+        self.arm_r_ik_toggle = False
+        
+        log.info(f"🎯 Moved arms to lasercross: left at {left_target_pos}, right at {right_target_pos}")
 
     def emergency_stop(self):
         """Emergency stop - immediately halt robot arms and disable IK updates."""
