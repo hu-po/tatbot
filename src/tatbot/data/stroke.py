@@ -28,9 +28,9 @@ class Stroke(BaseCfg):
 
     # Large numpy arrays - stored as separate files
     meter_coords: Optional[np.ndarray] = None  # (N, 3)
-    """Numpy array of meter coordinates for each pose in path <x, y, z> (design frame)."""
+    """Numpy array of meter coordinates for each pose in path <x, y, z> (lasercross frame)."""
     pixel_coords: Optional[np.ndarray] = None  # (N, 2)
-    """Numpy array of pixel coordinates for each pose in path <x (0-width), y (0-height)> (design frame)."""
+    """Numpy array of pixel coordinates for each pose in path <x (0-width), y (0-height)> (lasercross frame)."""
     ee_pos: Optional[np.ndarray] = None  # (N, 3)
     """End effector position in meters <x, y, z> (world frame)."""
     ee_rot: Optional[np.ndarray] = None  # (N, 4)

@@ -24,4 +24,5 @@ ink_link_names:
   - "inkcap_right_medium_0"
   - "inkcap_right_medium_1"
 calibrator_link_name: "palette_calibrator"
+lasercross_link_name: "lasercross"
 root_link_name: "root"

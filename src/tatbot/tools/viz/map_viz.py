@@ -36,9 +36,6 @@ async def start_map_viz(input_data: MapVizInput, ctx: ToolContext):
     Parameters:
     - scene: Scene configuration name (default: "default")
     - meta: Optional meta config to apply (default: null)
-    - stroke_point_size: Size of stroke points in visualization
-    - skin_ply_point_size: Size of PLY point cloud points
-    - transform_control_scale: Scale of the design pose transform control
     - enable_robot: Connect to and control real robot hardware
     - enable_depth: Enable depth camera visualization
     """

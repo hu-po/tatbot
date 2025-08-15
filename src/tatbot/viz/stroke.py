@@ -128,15 +128,6 @@ class VizStrokes(BaseViz):
             self.design_img_np = cv2.imread(self.scene.design_img_path)
             self.design_img_gui = self.server.gui.add_image(image=self.design_img_np, format="png")
             self.frame_img_gui = self.server.gui.add_image(image=self.design_img_np, format="png")
-            # # 2d image plane of design image in 3d space
-            # self.server.scene.add_image(
-            #     name="/design",
-            #     image=self.design_img_np,
-            #     wxyz=self.scene.skin.design_pose.rot.wxyz,
-            #     position=self.scene.skin.design_pose.pos.xyz,
-            #     render_width=self.scene.skin.image_width_m,
-            #     render_height=self.scene.skin.image_height_m,
-            # )
 
         log.debug("Adding pointcloud")
         points_l = []  # pointcloud for left arm stroke

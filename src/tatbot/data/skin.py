@@ -3,7 +3,6 @@ from pathlib import Path
 from pydantic import field_validator
 
 from tatbot.data.base import BaseCfg
-from tatbot.data.pose import Pose
 
 
 class Skin(BaseCfg):
@@ -17,12 +16,9 @@ class Skin(BaseCfg):
     image_height_m: float
     """Height of the image in meters."""
 
-    design_pose: Pose
-    """Pose of the design in the global frame."""
-
     """
     Zone is a rectangular voxel with a 6D pose.
-    The zone is centered at the design pose and used to crop pointclouds.
+    The zone is centered at the lasercross pose and used to crop pointclouds.
     """
     zone_depth_m: float
     """Depth of the zone in meters. (x)"""

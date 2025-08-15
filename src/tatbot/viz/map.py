@@ -33,19 +33,19 @@ class VizMapConfig(BaseVizConfig):
     """Shape of skin ply points in the visualization."""
     
     transform_control_scale: float = 0.1
-    """Scale of the transform control frame for design pose visualization."""
+    """Scale of the transform control frame for lasercross pose visualization."""
     transform_control_opacity: float = 0.8
-    """Opacity of the transform control frame for design pose visualization."""
+    """Opacity of the transform control frame for lasercross pose visualization."""
 
 
 class VizMap(BaseViz):
     def __init__(self, config: VizMapConfig):
         super().__init__(config)
 
-        self.design_pose_tf = self.server.scene.add_transform_controls(
-            "/design_pose",
-            position=self.scene.skin.design_pose.pos.xyz,
-            wxyz=self.scene.skin.design_pose.rot.wxyz,
+        self.lasercross_tf = self.server.scene.add_transform_controls(
+            "/lasercross",
+            position=self.scene.lasercross_pose.pos.xyz,
+            wxyz=self.scene.lasercross_pose.rot.wxyz,
             scale=config.transform_control_scale,
             opacity=config.transform_control_opacity,
         )
@@ -58,17 +58,17 @@ class VizMap(BaseViz):
                 self.scene.skin.zone_width_m,
                 self.scene.skin.zone_height_m,
             ),
-            position=self.scene.skin.design_pose.pos.xyz,
-            wxyz=self.scene.skin.design_pose.rot.wxyz,
+            position=self.scene.lasercross_pose.pos.xyz,
+            wxyz=self.scene.lasercross_pose.rot.wxyz,
             opacity=0.2,
             visible=True,
         )
         
-        @self.design_pose_tf.on_update
+        @self.lasercross_tf.on_update
         def _(_):
-            self.skin_zone.position = self.design_pose_tf.position
-            self.skin_zone.wxyz = self.design_pose_tf.wxyz
-            self.design_pose_textbox.value = self.design_pose_text()
+            self.skin_zone.position = self.lasercross_tf.position
+            self.skin_zone.wxyz = self.lasercross_tf.wxyz
+            self.lasercross_textbox.value = self.lasercross_text()
         
         self.strokes: StrokeList = make_gcode_strokes(self.scene)
         self.stroke_pointclouds = {"l": {}, "r": {}}
@@ -76,8 +76,8 @@ class VizMap(BaseViz):
         for i, (stroke_l, stroke_r) in enumerate(self.strokes.strokes):
             if not stroke_l.is_inkdip and not stroke_l.is_rest:
                 pointcloud = self.server.scene.add_point_cloud(
-                    # By making this a child of design_pose, meter_coords are correctly transformed
-                    name=f"/design_pose/stroke_l_{i:03d}",
+                    # By making this a child of lasercross, meter_coords are correctly transformed
+                    name=f"/lasercross/stroke_l_{i:03d}",
                     points=stroke_l.meter_coords,
                     colors=np.zeros((len(stroke_l.meter_coords), 3), dtype=np.uint8),
                     point_size=config.stroke_point_size,
@@ -95,7 +95,7 @@ class VizMap(BaseViz):
                 self.mapped_stroke_pointclouds["l"][i] = mapped_pointcloud
             if not stroke_r.is_inkdip and not stroke_r.is_rest:
                 pointcloud = self.server.scene.add_point_cloud(
-                    name=f"/design_pose/stroke_r_{i:03d}",
+                    name=f"/lasercross/stroke_r_{i:03d}",
                     points=stroke_r.meter_coords,
                     colors=np.zeros((len(stroke_r.meter_coords), 3), dtype=np.uint8),
                     point_size=config.stroke_point_size,
@@ -153,10 +153,10 @@ class VizMap(BaseViz):
                 "Show Skin Zone",
                 initial_value=True,
             )
-            self.design_pose_textbox = self.server.gui.add_text(
-                "Design Pose",
-                initial_value=self.design_pose_text(),
-                hint="Current design pose position and rotation"
+            self.lasercross_textbox = self.server.gui.add_text(
+                "Lasercross Pose",
+                initial_value=self.lasercross_text(),
+                hint="Current lasercross position and rotation"
             )
             
             with self.server.gui.add_folder("Skin PLY Files", expand_by_default=False):
@@ -218,7 +218,7 @@ class VizMap(BaseViz):
                     vertices=self.skin_mesh_vertices,
                     faces=self.skin_mesh_faces,
                     strokes=self.strokes,
-                    design_origin=Pose.from_wxyz_xyz(self.design_pose_tf.wxyz, self.design_pose_tf.position),
+                    design_origin=Pose.from_wxyz_xyz(self.lasercross_tf.wxyz, self.lasercross_tf.position),
                     stroke_length=self.scene.stroke_length,
                 )
                 
@@ -255,9 +255,9 @@ class VizMap(BaseViz):
         def _(_):
             self.skin_zone.visible = self.show_skin_zone.value
 
-    def design_pose_text(self) -> str:
-        pos = self.design_pose_tf.position
-        rot = self.design_pose_tf.wxyz
+    def lasercross_text(self) -> str:
+        pos = self.lasercross_tf.position
+        rot = self.lasercross_tf.wxyz
         return f"x{pos[0]:.3f}, y{pos[1]:.3f}, z{pos[2]:.3f}\nqw{rot[0]:.3f}, qx{rot[1]:.3f}, qy{rot[2]:.3f}, qz{rot[3]:.3f}"
 
     def step(self):

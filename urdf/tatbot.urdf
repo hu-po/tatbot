@@ -30,6 +30,14 @@
     <child link="palette_calibrator"/>
   </joint>
 
+  <!-- lasercross -->
+  <link name="lasercross" />
+  <joint name="lasercross_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 0" xyz="0.22 0 0.08"/>
+    <parent link="root"/>
+    <child link="lasercross"/>
+  </joint>
+
   <!-- apriltag 0  -->
   <link name="tag0">
     <visual>

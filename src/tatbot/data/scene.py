@@ -11,7 +11,7 @@ from tatbot.data.arms import Arms
 from tatbot.data.base import BaseCfg
 from tatbot.data.cams import Cams
 from tatbot.data.inks import InkCap, Inks
-from tatbot.data.pose import ArmPose, Pos
+from tatbot.data.pose import ArmPose, Pos, Pose
 from tatbot.data.skin import Skin
 from tatbot.data.tags import Tags
 from tatbot.data.urdf import URDF
@@ -73,6 +73,7 @@ class Scene(BaseCfg):
     inkcaps_l: Optional[dict[str, InkCap]] = None
     inkcaps_r: Optional[dict[str, InkCap]] = None
     calibrator_pos: Optional[Pos] = None
+    lasercross_pose: Optional[Pose] = None
     design_dir: Optional[Path] = None
 
     # No path expansion needed; pens config is resolved by name
@@ -123,7 +124,7 @@ class Scene(BaseCfg):
 
     @model_validator(mode='after')
     def load_urdf_poses(self) -> 'Scene':
-        link_names = self.urdf.ink_link_names + (self.urdf.calibrator_link_name,)
+        link_names = self.urdf.ink_link_names + (self.urdf.calibrator_link_name, self.urdf.lasercross_link_name)
         link_poses = get_link_poses(self.urdf.path, link_names, self.ready_pos_full.joints)
 
         # Update inkcap poses without mutating existing objects
@@ -137,6 +138,7 @@ class Scene(BaseCfg):
         
         self.inks = self.inks.model_copy(update={'inkcaps': tuple(updated_inkcaps)})
         self.calibrator_pos = link_poses[self.urdf.calibrator_link_name].pos
+        self.lasercross_pose = link_poses[self.urdf.lasercross_link_name]
         return self
 
     @model_validator(mode='after')

@@ -37,6 +37,15 @@ class TeleopViz(BaseViz):
         )
         self.ee_l_pose: Pose = link_poses[self.scene.urdf.ee_link_names[0]]
         self.ee_r_pose: Pose = link_poses[self.scene.urdf.ee_link_names[1]]
+        
+        # Add lasercross transform control
+        self.lasercross_tf = self.server.scene.add_transform_controls(
+            "/lasercross",
+            position=self.scene.lasercross_pose.pos.xyz,
+            wxyz=self.scene.lasercross_pose.rot.wxyz,
+            scale=config.transform_control_scale * 0.5,  # Make it slightly smaller than EE controls
+            opacity=config.transform_control_opacity,
+        )
         self.ik_target_l = self.server.scene.add_transform_controls(
             "/ik_target_l",
             position=self.ee_l_pose.pos.xyz,
@@ -77,6 +86,15 @@ class TeleopViz(BaseViz):
                 right_sleep_button = self.server.gui.add_button("Go to Sleep")
                 right_calibrator_button = self.server.gui.add_button("Go to Calibrator")
                 right_save_offset_button = self.server.gui.add_button("Save EE Offset")
+            
+            # Add lasercross controls
+            with self.server.gui.add_folder("Lasercross"):
+                lasercross_save_button = self.server.gui.add_button("Save Lasercross to URDF")
+                lasercross_text = self.server.gui.add_text(
+                    "lasercross",
+                    initial_value=self.get_lasercross_text(),
+                    disabled=True,
+                )
             
             # Add emergency stop for robot safety
             if config.enable_robot:
@@ -150,6 +168,17 @@ class TeleopViz(BaseViz):
         def _(_):
             log.debug("💾 Saving right arm EE offset")
             self.save_ee_offset("right")
+        
+        # Lasercross update handler
+        @self.lasercross_tf.on_update
+        def _(_):
+            lasercross_text.value = self.get_lasercross_text()
+        
+        # Lasercross save handler
+        @lasercross_save_button.on_click
+        def _(_):
+            log.debug("💾 Saving lasercross to URDF")
+            self.save_lasercross_to_urdf()
         
         # Emergency stop handler for robot safety
         if config.enable_robot:
@@ -335,6 +364,62 @@ class TeleopViz(BaseViz):
                 log.error(f"Failed to stop right arm: {e}")
         
         log.warning("🛑 Emergency stop complete - manually re-enable arms using ▶️ buttons if safe")
+
+    def get_lasercross_text(self) -> str:
+        """Get the current lasercross pose as formatted text."""
+        pos = self.lasercross_tf.position
+        rot = self.lasercross_tf.wxyz
+        return f"xyz: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]\nwxyz: [{rot[0]:.3f}, {rot[1]:.3f}, {rot[2]:.3f}, {rot[3]:.3f}]"
+    
+    def save_lasercross_to_urdf(self):
+        """Save the current lasercross pose back to the URDF file."""
+        import math
+        import xml.etree.ElementTree as ET
+
+        # Get current position and rotation from the transform control
+        pos = self.lasercross_tf.position
+        wxyz = self.lasercross_tf.wxyz
+        
+        # Convert quaternion to RPY (roll, pitch, yaw)
+        # Using the conversion formula for wxyz quaternion to euler angles
+        w, x, y, z = wxyz
+        
+        # Roll (x-axis rotation)
+        sinr_cosp = 2.0 * (w * x + y * z)
+        cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+        roll = math.atan2(sinr_cosp, cosr_cosp)
+        
+        # Pitch (y-axis rotation)
+        sinp = 2.0 * (w * y - z * x)
+        if abs(sinp) >= 1:
+            pitch = math.copysign(math.pi / 2, sinp)  # use 90 degrees if out of range
+        else:
+            pitch = math.asin(sinp)
+        
+        # Yaw (z-axis rotation)
+        siny_cosp = 2.0 * (w * z + x * y)
+        cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+        yaw = math.atan2(siny_cosp, cosy_cosp)
+        
+        # Parse the URDF file
+        urdf_path = Path(__file__).parent.parent.parent.parent / "urdf" / "tatbot.urdf"
+        tree = ET.parse(urdf_path)
+        root = tree.getroot()
+        
+        # Find the lasercross_joint element
+        for joint in root.findall(".//joint[@name='lasercross_joint']"):
+            origin = joint.find("origin")
+            if origin is not None:
+                # Update the origin attributes
+                origin.set("xyz", f"{pos[0]} {pos[1]} {pos[2]}")
+                origin.set("rpy", f"{roll} {pitch} {yaw}")
+                
+                # Write the updated URDF back to file
+                tree.write(urdf_path, encoding="UTF-8", xml_declaration=True)
+                log.info(f"💾 Saved lasercross to URDF: xyz=[{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}], rpy=[{roll:.3f}, {pitch:.3f}, {yaw:.3f}]")
+                return
+        
+        log.error("Could not find lasercross_joint in URDF file")
 
 
 if __name__ == "__main__":

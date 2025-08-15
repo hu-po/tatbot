@@ -20,6 +20,8 @@ class URDF(BaseCfg):
     """Names of the inkcap links in the URDF."""
     calibrator_link_name: str
     """Name of the calibrator link in the URDF."""
+    lasercross_link_name: str
+    """Name of the lasercross link in the URDF."""
     root_link_name: str
     """Name of the origin/root link in the URDF."""
 
