@@ -11,7 +11,7 @@ from tatbot.data.arms import Arms
 from tatbot.data.base import BaseCfg
 from tatbot.data.cams import Cams
 from tatbot.data.inks import InkCap, Inks
-from tatbot.data.pose import ArmPose, Pos, Pose
+from tatbot.data.pose import ArmPose, Pose
 from tatbot.data.skin import Skin
 from tatbot.data.tags import Tags
 from tatbot.data.urdf import URDF

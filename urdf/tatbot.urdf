@@ -31,19 +31,13 @@
   </joint>
 
   <!-- lasercross -->
-  <!-- <link name="lasercross" />
+  <link name="lasercross" />
   <joint name="lasercross_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0.22 0 0.08"/>
     <parent link="root"/>
     <child link="lasercross"/>
-  </joint> -->
-  <link name="lasercross" />
-  <joint name="lasercross_joint" type="fixed">
-    <origin rpy="1.500268805451172e-17 0.3897078645738488 -0.37438698854230174" xyz="0.2199999988079071 -2.7755582233073814e-18 0.07999999821186066" />
-    <parent link="root" />
-    <child link="lasercross" />
   </joint>
-
+  
   <!-- apriltag 0  -->
   <link name="tag0">
     <visual>

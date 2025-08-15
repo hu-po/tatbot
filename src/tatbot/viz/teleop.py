@@ -466,53 +466,46 @@ class TeleopViz(BaseViz):
     
     def save_lasercross_to_urdf(self):
         """Save the current lasercross pose back to the URDF file."""
-        import math
-        import xml.etree.ElementTree as ET
-
         # Get current position and rotation from the transform control
         pos = self.lasercross_tf.position
         wxyz = self.lasercross_tf.wxyz
         
-        # Convert quaternion to RPY (roll, pitch, yaw)
-        # Using the conversion formula for wxyz quaternion to euler angles
-        w, x, y, z = wxyz
+        # Convert quaternion to RPY using jaxlie
+        quat = jaxlie.SO3(wxyz=wxyz)
+        roll, pitch, yaw = quat.as_rpy_radians()
         
-        # Roll (x-axis rotation)
-        sinr_cosp = 2.0 * (w * x + y * z)
-        cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
-        roll = math.atan2(sinr_cosp, cosr_cosp)
-        
-        # Pitch (y-axis rotation)
-        sinp = 2.0 * (w * y - z * x)
-        if abs(sinp) >= 1:
-            pitch = math.copysign(math.pi / 2, sinp)  # use 90 degrees if out of range
-        else:
-            pitch = math.asin(sinp)
-        
-        # Yaw (z-axis rotation)
-        siny_cosp = 2.0 * (w * z + x * y)
-        cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
-        yaw = math.atan2(siny_cosp, cosy_cosp)
-        
-        # Parse the URDF file
+        # Read the URDF file as text to preserve formatting
         urdf_path = Path(__file__).parent.parent.parent.parent / "urdf" / "tatbot.urdf"
-        tree = ET.parse(urdf_path)
-        root = tree.getroot()
+        urdf_content = urdf_path.read_text()
         
-        # Find the lasercross_joint element
-        for joint in root.findall(".//joint[@name='lasercross_joint']"):
-            origin = joint.find("origin")
-            if origin is not None:
-                # Update the origin attributes
-                origin.set("xyz", f"{pos[0]} {pos[1]} {pos[2]}")
-                origin.set("rpy", f"{roll} {pitch} {yaw}")
+        # Find the lasercross_joint section and locate its origin line
+        lines = urdf_content.split('\n')
+        in_lasercross_joint = False
+        found_origin = False
+        
+        for i, line in enumerate(lines):
+            if 'name="lasercross_joint"' in line:
+                in_lasercross_joint = True
+                continue
+            
+            if in_lasercross_joint and '</joint>' in line:
+                in_lasercross_joint = False
+                break
                 
-                # Write the updated URDF back to file
-                tree.write(urdf_path, encoding="UTF-8", xml_declaration=True)
-                log.info(f"💾 Saved lasercross to URDF: xyz=[{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}], rpy=[{roll:.3f}, {pitch:.3f}, {yaw:.3f}]")
-                return
+            if in_lasercross_joint and '<origin' in line and 'rpy=' in line and 'xyz=' in line:
+                # Found the origin line - replace it while preserving indentation
+                indent = line[:len(line) - len(line.lstrip())]
+                new_origin = f'{indent}<origin rpy="{roll:.6f} {pitch:.6f} {yaw:.6f}" xyz="{pos[0]:.6f} {pos[1]:.6f} {pos[2]:.6f}" />'
+                lines[i] = new_origin
+                found_origin = True
+                break
         
-        log.error("Could not find lasercross_joint in URDF file")
+        if found_origin:
+            new_content = '\n'.join(lines)
+            urdf_path.write_text(new_content)
+            log.info(f"💾 Saved lasercross to URDF: xyz=[{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}], rpy=[{roll:.3f}, {pitch:.3f}, {yaw:.3f}]")
+        else:
+            log.error("Could not find lasercross_joint origin in URDF file")
 
 
 if __name__ == "__main__":
