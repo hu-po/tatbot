@@ -36,17 +36,18 @@ def make_align_strokes(scene: Scene) -> StrokeList:
     for inkcap_l, inkcap_r in zip(scene.inkcaps_l.values(), scene.inkcaps_r.values(), strict=False):
         strokelist.strokes.append((inkdip_func(inkcap_l.ink.name, "left"), inkdip_func(inkcap_r.ink.name, "right")))
     
-    # Finally hover over the "alignment X", which is a red cross centered on the lasercross pose
+    # Finally hover over the lasercross: a red cross which acts as the origin of the tattoo design
+    lasercross_halflen_mm = scene.arms.lasercross_len_mm / 2
     strokelist.strokes.append((
         Stroke(
-            description=f"left arm hovering over lasercross pose, -{scene.arms.lasercross_len_m}cm in X axis",
+            description=f"left arm hovering over lasercross pose, -{lasercross_halflen_mm}mm in Y axis",
             arm="left",
-            meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([-scene.arms.lasercross_len_m, 0, 0]), (scene.stroke_length, 1)),
+            meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([0, -lasercross_halflen_mm, 0]), (scene.stroke_length, 1)),
         ), 
         Stroke(
-            description=f"right arm hovering over lasercross pose, +{scene.arms.lasercross_len_m}cm in X axis",
+            description=f"right arm hovering over lasercross pose, +{lasercross_halflen_mm}mm in Y axis",
             arm="right",
-            meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([scene.arms.lasercross_len_m, 0, 0]), (scene.stroke_length, 1)),
+            meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([0, lasercross_halflen_mm, 0]), (scene.stroke_length, 1)),
         ),
     ))
     return strokelist

@@ -43,8 +43,8 @@ class Arms(BaseCfg):
     ee_offset_r: Pos
     """<x, y, z> offset for right end effector to account for arm slop."""
 
-    lasercross_len_m: float
-    """Length of each axis ofthe lasercross in meters."""
+    lasercross_len_mm: float
+    """Length of each axis of the lasercross in millimeters."""
 
     @field_validator('ip_address_l', 'ip_address_r')
     def validate_ip(cls, v):

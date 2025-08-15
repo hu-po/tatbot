@@ -41,57 +41,6 @@ cd ~/tatbot
 mkdir -p /nfs/tatbot/mcp-logs
 rm -f /nfs/tatbot/mcp-logs/${NODE}.log
 
-# Get extras from Hydra config using a temporary Python script
-echo "📦 Determining required extras for node $NODE..."
-EXTRAS=$(python3 - <<EOF
-import yaml
-import os
-from pathlib import Path
-
-config_path = Path("src/conf/mcp/${NODE}.yaml")
-if not config_path.exists():
-    print("Error: Configuration file for node '$NODE' not found")
-    exit(1)
-
-with open(config_path) as f:
-    config = yaml.safe_load(f)
-
-# Handle defaults inheritance
-if 'defaults' in config:
-    # Load default config first
-    with open('src/conf/mcp/default.yaml') as f:
-        default_config = yaml.safe_load(f)
-    # Merge configs (node config overrides defaults)
-    extras = default_config.get('extras', [])
-    extras.extend(config.get('extras', []))
-    # Remove duplicates while preserving order
-    seen = set()
-    final_extras = []
-    for extra in extras:
-        if extra not in seen:
-            seen.add(extra)
-            final_extras.append(extra)
-    print(','.join(final_extras))
-else:
-    print(','.join(config.get('extras', [])))
-EOF
-)
-
-if [ $? -ne 0 ]; then
-    echo "❌ Failed to determine extras for node $NODE"
-    exit 1
-fi
-
-# Install required extras
-# Trim whitespace and check if EXTRAS is non-empty
-EXTRAS_TRIMMED=$(echo "$EXTRAS" | tr -d '[:space:]')
-if [ -n "$EXTRAS_TRIMMED" ] && [ "$EXTRAS_TRIMMED" != "" ]; then
-    echo "📦 Installing extras: [$EXTRAS]"
-    uv pip install ".[$EXTRAS]"
-else
-    echo "📦 No extras required for node $NODE"
-    uv pip install "."
-fi
 
 # Start the MCP server with Hydra
 echo "🚀 Starting MCP server for $NODE..."
