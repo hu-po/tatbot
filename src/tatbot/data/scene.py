@@ -72,7 +72,7 @@ class Scene(BaseCfg):
     pens_config: Optional[dict] = None
     inkcaps_l: Optional[dict[str, InkCap]] = None
     inkcaps_r: Optional[dict[str, InkCap]] = None
-    calibrator_pos: Optional[Pos] = None
+    calibrator_pose: Optional[Pose] = None
     lasercross_pose: Optional[Pose] = None
     design_dir: Optional[Path] = None
 
@@ -137,7 +137,7 @@ class Scene(BaseCfg):
                 updated_inkcaps.append(inkcap)
         
         self.inks = self.inks.model_copy(update={'inkcaps': tuple(updated_inkcaps)})
-        self.calibrator_pos = link_poses[self.urdf.calibrator_link_name].pos
+        self.calibrator_pose = link_poses[self.urdf.calibrator_link_name]
         self.lasercross_pose = link_poses[self.urdf.lasercross_link_name]
         return self
 

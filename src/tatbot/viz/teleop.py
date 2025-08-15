@@ -3,6 +3,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+import jaxlie
 import numpy as np
 import yaml
 
@@ -236,17 +237,27 @@ class TeleopViz(BaseViz):
     def move_arm_to_calibrator(self, arm: str):
         """Move a specific arm to the calibrator position using IK (without ee_offsets)."""
         # Target position is the calibrator position
-        target_pos = self.scene.calibrator_pos.xyz.copy()
+        target_pos = self.scene.calibrator_pose.pos.xyz.copy()
+        
+        # Get calibrator transformation for orientation calculations
+        calibrator_tf = jaxlie.SE3.from_rotation_and_translation(
+            jaxlie.SO3(self.scene.calibrator_pose.rot.wxyz), 
+            self.scene.calibrator_pose.pos.xyz
+        )
         
         if arm == "left":
-            # Use left arm end-effector rotation
-            target_rot = self.scene.arms.ee_rot_l.wxyz.copy()
+            # Use calibrator-relative left arm end-effector rotation
+            base_ee_rot_l = jaxlie.SO3(self.scene.arms.ee_rot_l.wxyz)
+            calibrator_relative_ee_rot_l = calibrator_tf.rotation() @ base_ee_rot_l
+            target_rot = calibrator_relative_ee_rot_l.wxyz.copy()
             # Set up IK targets - left arm goes to calibrator, right arm stays where it is
             target_positions = np.array([target_pos, self.ee_r_pose.pos.xyz])
             target_rotations = np.array([target_rot, self.ee_r_pose.rot.wxyz])
         elif arm == "right":
-            # Use right arm end-effector rotation  
-            target_rot = self.scene.arms.ee_rot_r.wxyz.copy()
+            # Use calibrator-relative right arm end-effector rotation  
+            base_ee_rot_r = jaxlie.SO3(self.scene.arms.ee_rot_r.wxyz)
+            calibrator_relative_ee_rot_r = calibrator_tf.rotation() @ base_ee_rot_r
+            target_rot = calibrator_relative_ee_rot_r.wxyz.copy()
             # Set up IK targets - left arm stays where it is, right arm goes to calibrator
             target_positions = np.array([self.ee_l_pose.pos.xyz, target_pos])
             target_rotations = np.array([self.ee_l_pose.rot.wxyz, target_rot])
@@ -298,7 +309,7 @@ class TeleopViz(BaseViz):
             return
             
         # Calculate offset
-        offset = current_pos - self.scene.calibrator_pos.xyz
+        offset = current_pos - self.scene.calibrator_pose.pos.xyz
         log.info(f"Calculated {arm} arm EE offset: {offset}")
         
         # Load current default.yaml
@@ -352,12 +363,36 @@ class TeleopViz(BaseViz):
         lasercross_pos = self.lasercross_tf.position.copy()
         
         # Calculate target positions: left arm gets +Y offset, right arm gets -Y offset
-        left_target_pos = lasercross_pos + np.array([0, lasercross_halflen_m, 0])
-        right_target_pos = lasercross_pos + np.array([0, -lasercross_halflen_m, 0])
+        # Transform the Y-axis offsets according to lasercross orientation
+        lasercross_rotation = jaxlie.SO3(self.lasercross_tf.wxyz)
         
-        # Use the same end-effector rotations as configured for the arms
-        left_target_rot = self.scene.arms.ee_rot_l.wxyz.copy()
-        right_target_rot = self.scene.arms.ee_rot_r.wxyz.copy()
+        # Define offsets in lasercross local frame (Y-axis)
+        left_offset_local = np.array([0, lasercross_halflen_m, 0])
+        right_offset_local = np.array([0, -lasercross_halflen_m, 0])
+        
+        # Transform offsets to world frame using lasercross rotation
+        left_offset_world = lasercross_rotation @ left_offset_local
+        right_offset_world = lasercross_rotation @ right_offset_local
+        
+        # Apply transformed offsets to lasercross position
+        left_target_pos = lasercross_pos + left_offset_world
+        right_target_pos = lasercross_pos + right_offset_world
+        
+        # Get lasercross transformation for orientation calculations
+        lasercross_tf_obj = jaxlie.SE3.from_rotation_and_translation(
+            jaxlie.SO3(self.lasercross_tf.wxyz), 
+            self.lasercross_tf.position
+        )
+        
+        # Use lasercross-relative end-effector rotations
+        base_ee_rot_l = jaxlie.SO3(self.scene.arms.ee_rot_l.wxyz)
+        base_ee_rot_r = jaxlie.SO3(self.scene.arms.ee_rot_r.wxyz)
+        
+        lasercross_relative_ee_rot_l = lasercross_tf_obj.rotation() @ base_ee_rot_l
+        lasercross_relative_ee_rot_r = lasercross_tf_obj.rotation() @ base_ee_rot_r
+        
+        left_target_rot = lasercross_relative_ee_rot_l.wxyz.copy()
+        right_target_rot = lasercross_relative_ee_rot_r.wxyz.copy()
         
         # Set up IK targets for both arms
         target_positions = np.array([left_target_pos, right_target_pos])

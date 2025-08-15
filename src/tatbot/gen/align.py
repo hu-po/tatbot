@@ -17,7 +17,7 @@ def make_align_strokes(scene: Scene) -> StrokeList:
         Stroke(
             description="left arm hovering over calibrator",
             arm="left",
-            ee_pos=np.tile(scene.calibrator_pos.xyz, (scene.stroke_length, 1)),
+            ee_pos=np.tile(scene.calibrator_pose.pos.xyz, (scene.stroke_length, 1)),
             is_inkdip=True, # inkdip strokes are in final ee_pos
         ),
         inkdip_func(list(scene.inkcaps_r.values())[0].ink.name, "right"),
@@ -27,7 +27,7 @@ def make_align_strokes(scene: Scene) -> StrokeList:
         Stroke(
             description="right arm hovering over calibrator",
             arm="right",
-            ee_pos=np.tile(scene.calibrator_pos.xyz, (scene.stroke_length, 1)),
+            ee_pos=np.tile(scene.calibrator_pose.pos.xyz, (scene.stroke_length, 1)),
             is_inkdip=True, # inkdip strokes are in final ee_pos
         ),
     ))

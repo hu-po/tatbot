@@ -43,7 +43,7 @@ tatbot uses two [D405 Intel Realsense cameras](https://www.intelrealsense.com/de
 
 ## AprilTags
 
-AprilTags are used to track objects (i.e. ink palette) in the scene and for camera calibration.
+AprilTags are used to track objects (i.e. palette) in the scene and for camera calibration.
 
 - [`pupil-apriltags`](https://github.com/pupil-labs/apriltags)
 - [png generator](https://chaitanyantr.github.io/apriltag.html).
