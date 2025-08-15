@@ -34,7 +34,7 @@ the main agent interface is via [opencode](https://github.com/sst/opencode)
 curl -fsSL https://opencode.ai/install | bash
 
 # add to bashrc
-export OPENCODE_CONFIG=~/tatbot/config/opencode.json
+export OPENCODE_CONFIG=~/tatbot/opencode.json
 
 opencode
 ```

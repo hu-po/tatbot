@@ -31,19 +31,27 @@ These files control:
 Tools are now defined in the unified `tatbot.tools` module using decorator-based registration. See the [Tools Documentation](tools.md) for detailed information.
 
 **System Tools:**
-- `list_nodes` (rpi1, rpi2, eek, ook, oop): List all configured tatbot nodes
-- `ping_nodes` (rpi1, rpi2, eek, ook, oop): Test connectivity to tatbot nodes  
-- `list_scenes` (eek): List available scene configurations
-- `list_recordings` (eek): List available recordings from the recordings directory
+- `list_nodes` (rpi1, ook, oop): List all configured tatbot nodes
+- `ping_nodes` (rpi1): Test connectivity to tatbot nodes  
+- `list_scenes` (rpi2): List available scene configurations
+- `list_recordings` (rpi2): List available recordings from the recordings directory
 
 **Robot Tools:**
 - `align` (hog, oop): Generate and execute alignment strokes for calibration
-- `reset` (hog, oop): Reset robot to safe/ready position
+- `reset` (hog, ook, oop): Reset robot to safe/ready position
 - `sense` (hog): Capture environmental data (cameras, sensors)
 - `stroke` (hog): Execute artistic strokes on paper/canvas
 
 **GPU Tools** (available on GPU-enabled nodes only):
 - `convert_strokelist_to_batch` (ook, oop): GPU-accelerated stroke trajectory conversion
+
+**Visualization Tools:**
+- `start_stroke_viz` (ook, eek, oop): Start stroke visualization server
+- `start_teleop_viz` (ook, eek, oop): Start teleoperation visualization server
+- `start_map_viz` (ook, eek, oop): Start surface mapping visualization server
+- `stop_viz_server` (ook, eek, oop): Stop running visualization servers
+- `list_viz_servers` (ook, eek, oop): List running visualization servers
+- `status_viz_server` (ook, eek, oop): Get status of visualization servers
 
 Tools specify their node availability and requirements directly in their decorator, eliminating the need for separate mapping files.
 
@@ -83,22 +91,32 @@ The MCP system enables transparent cross-node GPU acceleration for stroke trajec
 **GPU Node Setup**
 ```yaml
 # conf/mcp/ook.yaml
-host: "0.0.0.0"
+host: "192.168.1.90"
 port: 8000
-extras: ["gpu"]  # Enables GPU dependencies
+extras: [bot, dev, gen, img, viz, gpu]  # Enables GPU dependencies
 tools:
-  - run_op
+  - reset
+  - list_nodes
   - convert_strokelist_to_batch  # GPU conversion tool
+  - start_stroke_viz
+  - start_teleop_viz
+  - start_map_viz
+  - stop_viz_server
+  - list_viz_servers
+  - status_viz_server
 ```
 
 **Non-GPU Node Setup**
 ```yaml  
 # conf/mcp/hog.yaml
-host: "0.0.0.0"
+host: "192.168.1.88"
 port: 8000
-extras: []  # No GPU dependencies
+extras: [bot, cam, gen, img]  # No GPU dependencies
 tools:
-  - run_op  # Will use GPUProxy for remote conversion
+  - align  # Will use GPUProxy for remote conversion
+  - reset
+  - sense
+  - stroke
 ```
 
 ### Error Handling

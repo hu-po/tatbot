@@ -6,7 +6,7 @@ Basic art workflow is:
 2. vectorize into strokes (gcode)
 3. convert gcode to IK poses (batched using GPU)
 
-designs are stored in `tatbot/nfs/designs`
+designs are stored in `nfs/designs`
 
 ## Image generation
 
@@ -20,9 +20,9 @@ designs are stored in `tatbot/nfs/designs`
 
 custom `dbv3` config files:
 
-- pens: `tatbot/config/dbv3/pens/full.json`
-- gcode: `tatbot/config/dbv3/gcode/tatbot.json`
-- areas: `tatbot/config/dbv3/areas/fakeskin-landscape.json`
+- pens: `config/dbv3/pens/full.json`
+- gcode: `config/dbv3/gcode/tatbot.json`
+- areas: `config/dbv3/areas/fakeskin-landscape.json`
 
 instructions to scrape docs for model context:
 

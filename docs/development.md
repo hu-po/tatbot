@@ -259,22 +259,33 @@ Implements the Multi-agent Command Platform (MCP) server as the primary API endp
 
 **Key Files:**
 - `server.py`: Main MCP server entry point
-- `handlers.py`: Tool function implementations
 - `models.py`: Pydantic models for requests/responses
 
-### Operations Module (`src/tatbot/ops`)
+### Tools Module (`src/tatbot/tools`)
 
-Defines high-level, stateful operations that the robot can perform.
+Provides a unified, decorator-based approach to defining operations and utilities that can be executed via MCP across multiple nodes.
 
 **Core Abstractions:**
-- `BaseOp`: Abstract base class for all operations
-- `RecordOp`: Specialized base for operations that record LeRobotDatasets
+- **Unified Module**: All tools are in `src/tatbot/tools/` with a clean architecture
+- **Decorator-Based**: Clean `@tool` decorator system eliminates complex inheritance hierarchies
+- **Type-Safe**: Full Pydantic validation for inputs and outputs
+- **Node-Aware**: Tools specify which nodes they're available on and requirements
+- **Async Generators**: Maintains progress reporting via async generators
+- **Auto-Discovery**: Tools register themselves automatically on import
 
-**Key Operations:**
-- `ResetOp`: Reset robot to home position
-- `AlignOp`: Run predefined alignment sequence
-- `SenseOp`: Capture sensory data
-- `StrokeOp`: Execute drawing/stroking task
+**Key Tool Categories:**
+- **System Tools**: `list_nodes`, `ping_nodes`, `list_scenes`, `list_recordings`
+- **Robot Tools**: `align`, `reset`, `sense`, `stroke`
+- **GPU Tools**: `convert_strokelist_to_batch` (GPU-accelerated IK)
+- **Visualization Tools**: `start_stroke_viz`, `start_teleop_viz`, `start_map_viz`
+
+**Key Files:**
+- `base.py`: Base types and ToolContext
+- `registry.py`: Tool registration and management
+- `robot/`: Robot operation tools
+- `system/`: System/utility tools
+- `gpu/`: GPU-specific tools
+- `viz/`: Visualization tools
 
 ### Utilities Module (`src/tatbot/utils`)
 
@@ -305,6 +316,6 @@ Interactive 3D visualization tools built on the `viser` library.
 
 1. **Configuration**: Start by understanding the Hydra configuration system in `main.py`
 2. **Data Flow**: Follow the pipeline from G-code → StrokeList → StrokeBatch → Execution
-3. **Operations**: Use the MCP server to run high-level operations
+3. **Tools**: Use the MCP server to run high-level operations via the tools system
 4. **Visualization**: Use the viz tools for debugging and calibration
 5. **Development**: Extend existing modules following established patterns

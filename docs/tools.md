@@ -4,7 +4,7 @@ The Tatbot tools system provides a unified, decorator-based approach to defining
 
 ## Overview
 
-- **Unified Module**: All tools are now in `src/tatbot/tools/` replacing the previous split between `mcp/handlers` and `ops` modules
+- **Unified Module**: All tools are now in `src/tatbot/tools/` with a clean architecture
 - **Decorator-Based**: Clean `@tool` decorator system eliminates complex inheritance hierarchies
 - **Type-Safe**: Full Pydantic validation for inputs and outputs
 - **Node-Aware**: Tools specify which nodes they're available on and requirements
@@ -95,6 +95,15 @@ async def my_tool(input_data: MyToolInput, ctx: ToolContext):
 - **`sense`** (hog): Capture environmental data (cameras, sensors)
 - **`stroke`** (hog): Execute artistic strokes on paper/canvas
 
+### Visualization Tools
+
+- **`start_stroke_viz`** (ook, eek, oop): Start stroke visualization server
+- **`start_teleop_viz`** (ook, eek, oop): Start teleoperation visualization server
+- **`start_map_viz`** (ook, eek, oop): Start surface mapping visualization server
+- **`stop_viz_server`** (ook, eek, oop): Stop running visualization servers
+- **`list_viz_servers`** (ook, eek, oop): List running visualization servers
+- **`status_viz_server`** (ook, eek, oop): Get status of visualization servers
+
 ## Node Availability
 
 Tools specify node availability in their decorator:
@@ -167,28 +176,13 @@ Tools integrate seamlessly with the existing MCP server:
 3. Tool execution is handled by the registry wrapper
 4. Progress reports flow through MCP protocol to clients
 
-## Migration from Old System
+## Current Architecture
 
-### Before (Complex Inheritance)
-```python
-# ops/record_align.py
-class AlignOp(RecordOp):
-    op_name = "align"
-    
-    async def _run(self):
-        # Implementation buried in inheritance
-        
-# mcp/handlers.py  
-@mcp_handler
-async def run_op(input_data, ctx):
-    # Generic handler with factory pattern
-    op_class, op_config = get_op(op_name, node_name)
-```
+The tools system provides a clean, modern approach to robotic operations:
 
-### After (Clean Decorator)
 ```python
 # tools/robot/align.py
-@tool(name="align", nodes=["hog", "ook", "oop"])
+@tool(name="align", nodes=["hog", "oop"])
 async def align_tool(input_data: AlignInput, ctx: ToolContext):
     # Clean, self-contained implementation
     yield {"progress": 0.1, "message": "Starting alignment..."}
@@ -206,22 +200,16 @@ host: "0.0.0.0"
 port: 8000
 extras: ["gpu"]  # Enables GPU tools
 tools:
-  - align
+  - reset
+  - list_nodes
   - convert_strokelist_to_batch
+  - start_stroke_viz
+  - start_teleop_viz
+  - start_map_viz
+  - stop_viz_server
+  - list_viz_servers
+  - status_viz_server
 ```
-
-## Benefits
-
-- ✅ **No More Split Architecture**: Everything in one logical place
-- ✅ **No Complex Inheritance**: Simple functions with decorators
-- ✅ **Type Safety**: Full Pydantic validation throughout
-- ✅ **Better Discoverability**: Tools organized by purpose
-- ✅ **Async Generators Preserved**: Progress reporting you love
-- ✅ **Multi-Node Support**: Maintained and improved
-- ✅ **Auto-Discovery**: No manual registration needed
-- ✅ **Clean Migration Path**: Incremental adoption possible
-
-This architecture maintains all the features you liked (async progress reporting, multi-node support) while dramatically simplifying the codebase and eliminating confusing abstractions.
 
 ## Configuration Overrides (Meta)
 
