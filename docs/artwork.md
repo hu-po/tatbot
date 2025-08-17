@@ -6,7 +6,7 @@ Basic art workflow is:
 2. vectorize into strokes (gcode)
 3. convert gcode to IK poses (batched using GPU)
 
-designs are stored in `nfs/designs`
+designs are stored in `/nfs/tatbot/designs/`
 
 ## Image generation
 

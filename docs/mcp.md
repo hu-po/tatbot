@@ -1,7 +1,7 @@
 # MCP (Model Context Protocol)
 
 - **Unified Server**: A single `tatbot.mcp.server` now runs on all nodes.
-- **Hydra Configuration**: Node-specific behavior (host, port, tools) is defined in YAML files under `conf/mcp/`.
+- **Hydra Configuration**: Node-specific behavior (host, port, tools) is defined in YAML files under `src/conf/mcp/`.
 - **Unified Tools Architecture**: Tools are now in `tatbot.tools` with decorator-based registration (see [Tools Documentation](tools.md)).
 - **Pydantic Models**: All requests and responses are strongly typed with Pydantic for validation and clarity.
 
@@ -9,10 +9,10 @@
 To start an MCP server on a specific node, use the unified launcher script:
 ```bash
 # Start the server on the 'ook' node
-./scripts/run_mcp.sh ook
+./scripts/mcp_run.sh ook
 
 # Start on 'eek' with debug mode enabled
-./scripts/run_mcp.sh eek mcp.debug=true
+./scripts/mcp_run.sh eek mcp.debug=true
 ```
 
 ## Server Logs
@@ -24,7 +24,7 @@ The behavior of each MCP server is defined by a corresponding YAML file in `src/
 These files control:
 - **`host` and `port`**: Network settings for the server.
 - **`tools`**: A list of which tools are enabled on this node (tools auto-register from `tatbot.tools`).
-- **`extras`**: A list of optional dependency groups (from `pyproject.toml`) that should be installed on this node. The `run_mcp.sh` script automatically reads this list and uses `uv pip install` to ensure the correct dependencies are present before starting the server.
+- **`extras`**: A list of optional dependency groups (from `pyproject.toml`) that should be installed on this node. The `mcp_run.sh` script invokes `scripts/setup_env.sh`, which installs these extras before starting the server.
 
 ## Available Tools
 
@@ -53,7 +53,7 @@ Tools are now defined in the unified `tatbot.tools` module using decorator-based
 - `list_viz_servers` (ook, eek, oop): List running visualization servers
 - `status_viz_server` (ook, eek, oop): Get status of visualization servers
 
-Tools specify their node availability and requirements directly in their decorator, eliminating the need for separate mapping files.
+Tools specify their node availability and requirements directly in their decorator, eliminating the need for separate mapping files. For the authoritative list and details, see the Tools documentation (`docs/tools.md`).
 
 ## Cross-Node GPU Processing
 
@@ -64,14 +64,14 @@ The MCP system enables transparent cross-node GPU acceleration for stroke trajec
 **GPU Detection & Routing**
 - Robot operations (`align`, `stroke`) automatically detect local GPU availability via `check_local_gpu()`
 - When no local GPU is available, operations route conversion requests to remote GPU nodes
-- `GPUProxy` handles node discovery, load balancing, and communication with GPU-enabled nodes
+- `GPUConversionService` handles node discovery and communication with GPU-enabled nodes
 
 **NFS Path Translation**
 - All nodes share NFS storage mounted at the canonical path `/nfs/tatbot/`
 - Files remain on shared NFS throughout the entire process - no data transfer required
 
 **MCP Protocol Communication**
-- Cross-node requests use JSON-RPC 2.0 over StreamableHTTP transport
+- Cross-node requests use HTTP JSON (JSON-RPC 2.0) with optional Server-Sent Events (SSE)
 - Proper session establishment with `initialize` → `notifications/initialized` handshake
 - Nodes are distinguished by their MCP server names (e.g., `ook`) with tools using original names
 - Retry logic with exponential backoff for fault tolerance
@@ -90,7 +90,7 @@ The MCP system enables transparent cross-node GPU acceleration for stroke trajec
 
 **GPU Node Setup**
 ```yaml
-# conf/mcp/ook.yaml
+# src/conf/mcp/ook.yaml
 host: "192.168.1.90"
 port: 8000
 extras: [bot, dev, gen, img, viz, gpu]  # Enables GPU dependencies
@@ -108,12 +108,12 @@ tools:
 
 **Non-GPU Node Setup**
 ```yaml  
-# conf/mcp/hog.yaml
+# src/conf/mcp/hog.yaml
 host: "192.168.1.88"
 port: 8000
 extras: [bot, cam, gen, img]  # No GPU dependencies
 tools:
-  - align  # Will use GPUProxy for remote conversion
+  - align  # Will use GPUConversionService for remote conversion
   - reset
   - sense
   - stroke

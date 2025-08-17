@@ -195,7 +195,7 @@ async def align_tool(input_data: AlignInput, ctx: ToolContext):
 Node configurations in `src/conf/mcp/` control tool availability:
 
 ```yaml
-# conf/mcp/ook.yaml
+# src/conf/mcp/ook.yaml
 host: "0.0.0.0"
 port: 8000
 extras: ["gpu"]  # Enables GPU tools

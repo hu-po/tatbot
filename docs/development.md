@@ -61,10 +61,9 @@ Dependencies are separated into optional groups, defined in `pyproject.toml`. In
 :::{grid-item-card}
 :class-header: bg-light
 
-🛠️ **Development and Quality Groups**
+🛠️ **Development and Docs**
 ^^^
-- `dev`: Basic development tools (`ruff`, `isort`, `pytest`)
-- `quality`: Advanced development tools (`mypy`, `pre-commit`, type stubs)
+- `dev`: Development tools (`ruff`, `isort`, `pytest`, `mypy`, `pre-commit`)
 - `docs`: Documentation generation (`sphinx`, themes)
 :::
 
@@ -120,7 +119,7 @@ set -a; source /nfs/tatbot/.env; set +a
 6. **MCP Servers**: SSH into each required node (`ook`, `oop`, `eek`, etc.) and run the appropriate MCP server command.
    ```bash
    # On ook
-   cd ~/tatbot && ./scripts/run_mcp.sh ook
+   cd ~/tatbot && ./scripts/mcp_run.sh ook
    ```
 
 ## 🛠️ Development Workflow

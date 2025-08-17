@@ -61,7 +61,7 @@
 
 - Standardize MCP ports per role (e.g., arms on 5173, vision on 5180, coordinator on 5190), or publish DNS-SD SRV records in `dnsmasq` if clients support it.
 - At minimum, include `A` records for all nodes and a simple static `services.yaml` mapping hostname -> MCP port per service.
-- Provide a `tatctl mcp restart --all` command to use `ssh <node> "bash scripts/run_mcp.sh <node>"` for farm-wide restarts.
+- Provide a `tatctl mcp restart --all` command to use `ssh <node> "bash scripts/mcp_run.sh <node>"` for farm-wide restarts.
 
 5) Security hardening
 
@@ -82,7 +82,7 @@
   - `tatctl mode set home|edge` → SSH into `rpi1`, run `sudo tatbot-mode <mode>`.
   - `tatctl mode status` → Resolve a set of hostnames and verify port 53 on `rpi1`.
   - `tatctl check` → Parallel health checks: DHCP lease present (edge), DNS resolves, MCP ports open per node.
-  - `tatctl mcp restart --all|<role>|<node>` → Farm-wide restart via the provided `scripts/run_mcp.sh`.
+  - `tatctl mcp restart --all|<role>|<node>` → Farm-wide restart via the provided `scripts/mcp_run.sh`.
 - DNS/DHCP config generation:
   - `tatctl net render` → Read `nodes.yaml` and write `/etc/dnsmasq.d/mode-edge.conf` with `dhcp-host=` lines (MAC, IP, hostname) and `address=` records.
   - Include preflight validation (`dnsmasq --test`) and dry-run.
@@ -153,5 +153,4 @@ dhcp-range=192.168.1.100,192.168.1.200,12h
 - Home mode: devices integrate with the home network and are accessible from `oop`.
 - Edge mode: the system forms a complete, isolated network that continues to operate without the home router.
 - Security posture improved: fewer secrets spread, restricted inbound surfaces, validated changes, and simple rollback.
-
 

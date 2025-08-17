@@ -518,10 +518,10 @@ The existing `get_tools_for_node()` function will automatically discover it.
 ```bash
 # Kill existing processes and restart
 ./scripts/kill.sh
-./scripts/run_mcp.sh hog
+./scripts/mcp_run.sh hog
 
 # Or restart on remote node
-ssh hog "bash ~/tatbot/scripts/run_mcp.sh hog"
+ssh hog "bash ~/tatbot/scripts/mcp_run.sh hog"
 ```
 
 ### Inference Modes

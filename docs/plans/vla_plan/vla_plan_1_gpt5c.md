@@ -180,7 +180,7 @@ Wiring
 - Ensure it is imported on server start (decorator-based registry picks it up upon import). If needed, add an import in `tatbot/tools/robot/__init__.py`
 - Restart the MCP server on the target node:
   ```bash
-  ssh hog "bash ~/tatbot/scripts/run_mcp.sh hog"
+  ssh hog "bash ~/tatbot/scripts/mcp_run.sh hog"
   ```
 
 Example call payload

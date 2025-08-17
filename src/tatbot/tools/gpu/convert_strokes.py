@@ -38,7 +38,7 @@ async def convert_strokes(input_data: ConvertStrokesInput, ctx: ToolContext):
     GPU Requirements:
     - Only available on nodes with 'gpu' in their extras configuration
     - Uses JAX with GPU acceleration for inverse kinematics solving
-    - Automatically selected by GPUProxy when local GPU unavailable
+    - Automatically selected by GPUConversionService when local GPU unavailable
     
     NFS Integration:
     - Files are shared via NFS mount points specific to each node
@@ -60,7 +60,7 @@ async def convert_strokes(input_data: ConvertStrokesInput, ctx: ToolContext):
     Cross-Node Usage:
     This tool is automatically called by robot operations (align, stroke) when:
     1. Local node lacks GPU support (check_local_gpu() returns False)
-    2. GPUProxy routes request to available GPU node (currently 'ook')
+    2. GPUConversionService routes request to available GPU node (currently 'ook')
     3. Paths are translated to target node's NFS mount point
     4. Remote MCP session established with proper JSON-RPC protocol
     5. Conversion performed on GPU node, file saved to shared NFS

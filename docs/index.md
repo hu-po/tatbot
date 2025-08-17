@@ -34,7 +34,7 @@ Understand the distributed system architecture and node capabilities.
 :class: tip
 
 **Essential Commands:**
-- `./scripts/run_mcp.sh <node>` - Start MCP server
+- `./scripts/mcp_run.sh <node>` - Start MCP server
 - `uv pip install .[bot,viz,cam]` - Install dependencies
 - `uv run python -m tatbot.viz.teleop --enable-robot` - Launch teleop interface
 ```
@@ -98,5 +98,3 @@ plans/network_refactor/index
 plans/vla_plan/index
 paper/index
 ```
-
-
