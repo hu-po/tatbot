@@ -1,14 +1,12 @@
 # @package _global_
 # Meta config: High resolution settings for detailed work
 
-# thick offset
 arms:
   offset_range:
     - -0.005
     - 0.005
   offset_num: 16
 
-# long strokes
 scenes:
   stroke_length: 164
   design_name: "zorya"
