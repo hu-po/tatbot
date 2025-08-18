@@ -84,7 +84,7 @@ requirepass CHANGE_ME_REDIS_PASSWORD
 maxclients 10000
 
 # Networking optimizations for robotics
-tcp-nodelay yes
+tcp-no-delay yes
 repl-disable-tcp-nodelay no
 
 # Pub/Sub optimizations
