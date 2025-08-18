@@ -91,7 +91,7 @@ agent
 artwork
 gear
 progress
-redis
+state_server
 ideas
 
 models/index
