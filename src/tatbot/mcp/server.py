@@ -1,5 +1,6 @@
 """Generic MCP server with Hydra configuration support."""
 
+import asyncio
 import logging
 import socket
 from typing import List, Optional
@@ -9,6 +10,7 @@ from mcp.server.fastmcp import FastMCP
 from omegaconf import DictConfig, OmegaConf
 
 from tatbot.mcp.models import MCPSettings
+from tatbot.state.manager import StateManager
 from tatbot.tools import get_tools_for_node
 from tatbot.utils.exceptions import NetworkConnectionError
 from tatbot.utils.log import SUBMODULES, get_logger
@@ -73,6 +75,9 @@ def main(cfg: DictConfig) -> None:
     # Register tools
     _register_tools(mcp, settings.tools, node_name)
     
+    # Initialize StateManager
+    state_manager = StateManager(node_id=node_name)
+    
     # Add resource for listing nodes
     @mcp.resource("nodes://all")
     def get_nodes() -> str:
@@ -90,6 +95,54 @@ def main(cfg: DictConfig) -> None:
         except Exception as unexpected_error:
             log.error(f"Unexpected error getting nodes: {unexpected_error}")
             return f"Unexpected error: {unexpected_error}"
+    
+    # Add resource for global state status
+    @mcp.resource("state://status")
+    async def get_state_status() -> str:
+        """Get global state status."""
+        try:
+            async with state_manager:
+                status = await state_manager.get_system_status()
+                return f"Redis Connected: {status['redis_connected']}\n" \
+                       f"Active Sessions: {status['active_stroke_sessions']}\n" \
+                       f"Nodes Online: {status['nodes_online']}/{status['total_nodes']}"
+        except Exception as e:
+            log.error(f"Failed to get state status: {e}")
+            return f"State status unavailable: {e}"
+    
+    # Add resource for stroke progress
+    @mcp.resource("state://stroke/progress")
+    async def get_stroke_progress() -> str:
+        """Get current stroke progress."""
+        try:
+            async with state_manager:
+                progress = await state_manager.get_stroke_progress()
+                if progress:
+                    return f"Stroke: {progress.stroke_idx}/{progress.total_strokes}\n" \
+                           f"Pose: {progress.pose_idx}/{progress.stroke_length}\n" \
+                           f"Scene: {progress.scene_name}\n" \
+                           f"Executing: {progress.is_executing}"
+                return "No active stroke session"
+        except Exception as e:
+            log.error(f"Failed to get stroke progress: {e}")
+            return f"Stroke progress unavailable: {e}"
+    
+    # Add resource for node health
+    @mcp.resource("state://health/{node_id}")
+    async def get_node_health(node_id: str) -> str:
+        """Get health status for specific node."""
+        try:
+            async with state_manager:
+                health = await state_manager.get_node_health(node_id)
+                if health:
+                    return f"Node: {health.node_id}\n" \
+                           f"Reachable: {health.is_reachable}\n" \
+                           f"MCP Server: {health.mcp_server_running}\n" \
+                           f"Last Heartbeat: {health.last_heartbeat}"
+                return f"No health data for node: {node_id}"
+        except Exception as e:
+            log.error(f"Failed to get node health: {e}")
+            return f"Node health unavailable: {e}"
     
 
     

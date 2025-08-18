@@ -28,6 +28,7 @@ class BaseVizOutput(ToolOutput):
 class StrokeVizInput(BaseVizInput):
     """Input for stroke visualization tool."""
     align: bool = False
+    enable_state_sync: bool = False
     design_pointcloud_point_size: float = 0.001
     design_pointcloud_point_shape: str = "rounded"
     path_highlight_radius: int = 3

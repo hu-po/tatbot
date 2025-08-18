@@ -336,6 +336,13 @@ def register_all_tools() -> None:
         log.debug("Imported viz tools")
     except ImportError as e:
         log.debug(f"Viz tools not available: {e}")
+
+    # Import state tools (Redis-backed parameter server helpers)
+    try:
+        from tatbot.tools.state import state_tools  # noqa: F401
+        log.debug("Imported state tools")
+    except ImportError as e:
+        log.debug(f"State tools not available: {e}")
     
     registered_count = len(_REGISTRY) - initial_count
     log.info(f"Auto-registered {registered_count} new tools (total: {len(_REGISTRY)})")
