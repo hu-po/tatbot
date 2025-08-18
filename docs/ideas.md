@@ -1,5 +1,6 @@
 # Ideas
 
+- try out https://github.com/abey79/vpype
 - try out https://github.com/allenai/MolmoAct
 - cite pyroki paper https://arxiv.org/pdf/2505.03728
 - add to https://github.com/mjyc/awesome-robotics-projects?tab=readme-ov-file
