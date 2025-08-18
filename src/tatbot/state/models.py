@@ -3,9 +3,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import numpy as np
 from pydantic import BaseModel, Field
-from pydantic_numpy import NumpyDtypeConfig, NumpyNdarray
 
 
 class BaseStateModel(BaseModel):
@@ -22,19 +20,19 @@ class RobotState(BaseStateModel):
     is_connected_l: bool = Field(default=False, description="Left arm connection status")
     is_connected_r: bool = Field(default=False, description="Right arm connection status")
     
-    # Joint positions (11 joints per arm as per URDF)
-    joints_l: Optional[NumpyNdarray[np.float64]] = Field(
+    # Joint positions (serialize as simple lists for compatibility)
+    joints_l: Optional[List[float]] = Field(
         default=None, description="Left arm joint positions (radians)"
     )
-    joints_r: Optional[NumpyNdarray[np.float64]] = Field(
+    joints_r: Optional[List[float]] = Field(
         default=None, description="Right arm joint positions (radians)"
     )
     
     # Joint velocities
-    velocities_l: Optional[NumpyNdarray[np.float64]] = Field(
+    velocities_l: Optional[List[float]] = Field(
         default=None, description="Left arm joint velocities (rad/s)"
     )
-    velocities_r: Optional[NumpyNdarray[np.float64]] = Field(
+    velocities_r: Optional[List[float]] = Field(
         default=None, description="Right arm joint velocities (rad/s)"
     )
     
@@ -45,7 +43,7 @@ class RobotState(BaseStateModel):
     goal_time_slow: float = Field(default=2.0, description="Slow movement goal time")
     goal_time_fast: float = Field(default=0.5, description="Fast movement goal time")
 
-    model_config = NumpyDtypeConfig
+    # No special numpy config required (we serialize as lists)
 
 
 class StrokeProgress(BaseStateModel):
@@ -97,7 +95,6 @@ class NodeHealth(BaseStateModel):
     
     # Last heartbeat
     last_heartbeat: datetime = Field(default_factory=datetime.utcnow)
-
 
 
 
