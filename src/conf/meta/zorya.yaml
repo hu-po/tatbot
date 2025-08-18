@@ -3,12 +3,12 @@
 
 arms:
   offset_range:
-    - -0.005
-    - 0.005
-  offset_num: 16
+    - -0.002
+    - 0.002
+  offset_num: 8
 
 scenes:
-  stroke_length: 164
+  stroke_length: 132
   design_name: "zorya"
   inks_config_name: "black"
   pen_names_l:
