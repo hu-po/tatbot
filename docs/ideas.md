@@ -1,88 +1,55 @@
 # Ideas
 
-- try out https://github.com/abey79/vpype
+#### Agents
+
+#### Models
 - try out https://github.com/allenai/MolmoAct
-- cite pyroki paper https://arxiv.org/pdf/2505.03728
-- add to https://github.com/mjyc/awesome-robotics-projects?tab=readme-ov-file
-- Nvidia cosmos to augment small lerobot datasets
-- ollama mcp https://github.com/jonigl/mcp-client-for-ollama
-- submit to https://devpost.com/submit-to/25802-openai-open-model-hackathon/manage/submissions
-- Teleop viz behavior used to calibrate arm end effectors. Go-to pose button
-- Ojo runs small reasoner using ollama exposed through mcp
-- Outdoors first tattoo. Working on making the current pipeline work in edge mode.
-- bolt panels on outside for rpi1 mounts
-- Strokes don't need to be the same size because the batch size is already arbitrary and coming from concatenation
-- rpi1 as dns server, viz network chatter
-- Parallel claude codes as a stream. Multi vibe coding
-- The stroke MCP tool calls the batch creation MCP tool using file paths to coordinate. Other one waits until file is available to continue. Mcp tool calls MCP tool. Viz tool is also called, pulling up the latest viz on the rpi screen.
-- Alignment and calib should be optional add ons to any recording session. 
-- Add origin as alignment points, undergrid with sticking up points to get alignment
-- GUI used by webui agent
-- Medieval engraving tattoo https://youtube.com/shorts/lAyhxgaxQdc
-- Use the white amcrest to observe the 3d printer.
-- Plug 3d printer into other battery
-- async policy server/client on https://github.com/hu-po/lerobot/blob/main/docs/source/async.mdx
-- JAX on ojo via jetson-containers https://github.com/dusty-nv/jetson-containers/tree/master/packages/ml/jax
-- red sharpie cross with laser line leveler
-- mcp server for strokebatch job
-- write local, sync later for robot recordings to save eek compute
-- affine heat method for design wrapping on skin mesh
-- ee calibration using square
-- replace JAX ik with Nvidia warp ik (https://github.com/NVIDIA/warp/blob/main/warp/examples/sim/example_jacobian_ik.py)
-- build the new hardware and switch to the 3d print workflow and single arm queues and behavior trees and base mounted ink palettes
-- Lerobot tatbot can take any number/subset of these three abstractions: ip_cameras, wxai_arms, rs_cameras
-- colmap/Xm2 use AprilTag to construct scene graph
-- Realsense incorporated with scissor lift pen adaptable, circular section of skin pressed softly on with barrier for sanitation
-- use the jaws for scissor lift for height on the needle for depth. removes the need for batch ik, saving computation, giving the perfect angle and solves the safety problem too, since the strength can be tuned 
-- tatbot logo with https://youtube.com/@mrupsidedownshorts
-- use VLM call with horizontal lines to ask if tips are close or not
-- calculate multiple points along the needle offset normal vector for every pose, this can be done in a batch before each episode. then the user has full control in realtime where they can move up and down that needle offset normal vector. the red safety button instantly sets the next pose to the most retracted point in the normal vector
-- Points in image space used to get points in mesh using affine map. Points on ply/mesh are used to sample dense points using geodesic. Geodesic is used to create evenly spaced batch of vector offset 6d ee poses, with retraction and penetration vectors calculated effectively per position.
-Viser gizmo controls design position, ply is saved per episode, mapping is done relative to a red sharpie cross drawn on
-- Needle offset as part of stroke information so it can be updated in real time with human feedback
-- Plan is the behavior tree abstraction
-- Inks in the conditioning dataset
-- StrokeQueue where you can push in StrokeLists and pause then push in a StrokeList generated from calibration, Display StrokeQueue on Vizer UI and have pause, play, delete from queue, etc. 
-- Randomly sample strokes from a StrokeList, order can be random and you can do multiple epochs over the same tattoo. Cumulative with gradient rather than something you raster and complete once. 
-- Batch ik on ojo per episode gives him a job and brings familiarity to the policy server abstraction, ik server 
-- Simplify point resampling by using meter positions in svg
-- crop the pointcloud and vgg output to the workspace of tatbot, it is quite small. this can be fed into the polyscope map workflow easier than polycam meshes.
-- Red sharpie cross of specific lengths, used to calibrate mesh/ply
-- use natural rhythm of the computation, weave sequence of scan, plan, act
-- queue as a primitive for stroke execution, idle while waiting for queue
-- editable behavior trees, use same functions as mcp
-- batch ik every episode
-- camera poses in lerobot dataset 
-- pointclouds in lerobot dataset
-- better svg path to stroke conversion
-- audio text input for ook
-- replicate playground in touchscreen
-- calibrate camera extrinsics using conditioning images
-- floating joint for apriltags in urdf
-- floating joint for cameras in urdf
-- gui buttons: loop path, loop time, pause
-- vizer teleop in lerobot branch
-- bimanual using ik collision
-- three color pattern with prompted needle switch
-- initialize gsplat with pointcloud
-- iterative apriltag tracking to determine camera extrinsics
-- increase ip camera resolution for better skin reconstruction
-- rpi2 screen is on tatbot tower, 2 screens, put sound bar screen on top and non sound screen underneath connected to trossen.
-- apriltags on back of robot in view of cameras
+- lerobot async policy server/client pattern
+- containers on ojo via jetson-containers https://github.com/dusty-nv/jetson-containers/tree/master/packages/ml/jax
+- ink dipping as policy, random position start for domain randomization in episode recording
+- host fintuned tatbot policy on replicate, use cloud compute for inference
+
+#### Dataset
+- data augmentation via nvidia cosmos
+- maniskill synthetic data
+- ink information as text conditioning
+- camera poses and pointclouds in dataset
 - isaacsim (https://www.youtube.com/live/z7KdHGkUTNE)
-- compare fake skin and real skin calibration pattern
-- squeeze bottle reveal ASMR
-- random start spawn for design and inkcap for domain randomization in episode recording
-- train splats on lerobot style data
-- crop wrist pointcloud using cone from left hand, combine with cropped head pointcloud for skin mesh
-- swiftsketch pattern
-- etymology section in paper
-- tatbot website
-- host policy on replicate
-- policy switching and composition into longer behaviors
-- use ik solver for extrinsic camera calibration using apriltags
-- rust apriltag rtsp synced image and video mcp server
-- rcam runs on raspberry pis, provides synced camera images and apriltag poses. meerkat runs lerobot controlling arms and realsenses. ojo runs policy server, skin reconstruction.
-- VR teleop using pyroki ik
-- inkdip as policy
-- wrist camera orbiting movement for optimal skin reconstruction
+- gsplat from multiview conditioning images
+
+#### Quality, Debugging
+- visualization of cpu, memory, disk usage on nodes to check for bottlenecks
+- visualization of network traffic between nodes to see if there is a bottleneck with mcp or nfs
+- do strokes need to be the same size because the batch size is already arbitrary and coming from concatenation
+- teleop calibration, visualization server as optional add ons to any stroke tool call
+- compare JAX ik with Nvidia warp ik (https://github.com/NVIDIA/warp/blob/main/warp/examples/sim/example_jacobian_ik.py)
+- compare current camera extrinsic calibration with colmap/Xm2
+- tune camera resolution for multiview reconstruction
+
+#### Features
+- strokes are randomly sampled from strokelist, so order can be random and you can do repeated passes
+- queues as core abstractions, arms operate async in their own behavior tree, coordinate centrally.
+- queueu UI showing each arm's queue, ability to edit, remove, add to queue. pause arm. see time remaining.
+- VLM via API tool to ask if scene is correctly set up (ee alignment, arms in sleep pose, etc)
+- batch ik occurs in batches throughout stroke execution rather than all at once in beginning
+- STT for agent interaction in ook, eek, rpi1
+- pause to request operator needle switch
+- sensor fusion for realsense pointcloud and ip camera gsplat
+- sync camera images via rust on rpi1/rpi2
+
+#### Social media, SEO, Marketing
+- improve tatbot website currently built off of docs
+- create PR to add to https://github.com/mjyc/awesome-robotics-projects
+- submit to https://devpost.com/submit-to/25802-openai-open-model-hackathon/manage/submissions
+- Tattoo outdoors to show off edge compute capability
+
+#### Artwork
+- potential improvement in gcode/stroke generation with https://github.com/abey79/vpype
+- Medieval engraving tattoo https://youtube.com/shorts/lAyhxgaxQdc
+- replicate playground on touchscreen
+
+#### Hardware
+- gather feedback on red sharpie cross with laser line leveler workflow
+- end effector redesign: suspension, scissor lift, needle guard, sanitation barrier
+- better joystick: smoother feedback, seperate joystick for each arm
+- apriltags on robot ee to auto determine offsets
