@@ -23,9 +23,9 @@ hover_offset:
   - 0.0
   - 0.005
 offset_range:
-- -0.001
-- 0.001
-offset_num: 3
+- -0.002
+- 0.002
+offset_num: 6
 ee_offset_l:
   xyz:
   - -0.0030608311825801593

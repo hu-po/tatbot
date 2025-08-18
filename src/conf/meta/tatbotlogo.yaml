@@ -3,12 +3,12 @@
 
 arms:
   offset_range:
-    - -0.01
-    - 0.01
-  offset_num: 32
+    - -0.005
+    - 0.005
+  offset_num: 16
 
 scenes:
-  stroke_length: 128
+  stroke_length: 180
   design_name: "tatbotlogo"
   inks_config_name: "red_blue"
   pen_names_l:
