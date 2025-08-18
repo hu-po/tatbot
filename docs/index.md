@@ -91,6 +91,7 @@ agent
 artwork
 gear
 progress
+redis
 ideas
 
 models/index
