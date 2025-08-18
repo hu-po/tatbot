@@ -10,11 +10,11 @@ arms:
 scenes:
   stroke_length: 132
   design_name: "zorya"
-  inks_config_name: "black"
+  inks_config_name: "red_blue"
   pen_names_l:
-    - nighthawk_black
+    - true_blue
   pen_names_r:
-    - nighthawk_black
+    - bright_red
 
 skins:
   description: "100mm x 70mm square on sponge fake skin"
