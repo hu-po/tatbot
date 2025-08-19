@@ -194,13 +194,13 @@ class TatbotMonitor:
         
         # Node roles mapping
         node_roles = {
-            "eek": "Redis+Cams",
-            "hog": "Robot",
-            "ook": "GPU+Monitor", 
-            "oop": "GPU+Monitor",
-            "ojo": "Vision",
-            "rpi1": "Monitor",
-            "rpi2": "Monitor"
+            "eek": "redis",
+            "hog": "robot",
+            "ook": "ik,viz", 
+            "ojo": "agent,policy",
+            "rpi1": "tui",
+            "rpi2": "dns"
+            "oop": "dev",
         }
         
         for node_id in ["eek", "hog", "ook", "oop", "ojo", "rpi1", "rpi2"]:
