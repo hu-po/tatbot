@@ -4,8 +4,22 @@
   "presetSubType": "System",
   "presetName": "tatbot",
   "enabled": true,
-  "userCreated": false,
+  "userCreated": true,
   "data": {
-    "settings": {}
+    "settings": {
+      "gcodeCommentType": "None",
+      "gcodePenDownCode": "",
+      "gcodeStartLayerCode": "",
+      "gcodeStartCode": "",
+      "gcodeEndCode": "",
+      "gcodeOffsetY": "0.0",
+      "gcodeOffsetX": "0.0",
+      "gcodeEnableFlattening": "false",
+      "gcodeEndLayerCode": "",
+      "gcodeUnits": "mm",
+      "gcodePenUpCode": "",
+      "gcodeCenterZeroPoint": "true",
+      "gcodeCurveFlatness": "0.1"
+    }
   }
 }

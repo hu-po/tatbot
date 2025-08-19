@@ -178,6 +178,7 @@ class StateManager:
             {
                 "type": "progress_update",
                 "session_id": session_id,
+                "node_id": self.node_id,
                 "stroke_idx": stroke_idx,
                 "pose_idx": pose_idx,
                 "total_strokes": current_progress.total_strokes,

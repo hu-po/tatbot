@@ -44,9 +44,12 @@ async def start_tui_monitor_tool(input_data: StartTUIMonitorInput, ctx: ToolCont
     - Node health and connectivity status
     - Recent system events and errors
     
+    The monitor refreshes every 2 seconds automatically.
+    
     Parameters:
-    - refresh_rate: Update frequency in seconds (0.5-10.0)
     - background: Run in background as detached process
+    - redis_host: Redis server host (defaults to eek with IP fallback)
+    - no_active_health_check: Disable active node health checking
     
     Returns:
     - success: Whether the monitor started successfully
@@ -71,9 +74,11 @@ async def start_tui_monitor_tool(input_data: StartTUIMonitorInput, ctx: ToolCont
             # Build command arguments
             cmd_args = [
                 python_path, "-m", module_path,
-                "--refresh-rate", str(input_data.refresh_rate),
                 "--redis-host", input_data.redis_host
             ]
+            
+            if input_data.no_active_health_check:
+                cmd_args.append("--no-active-health-check")
             
             # Start process
             process = subprocess.Popen(
@@ -106,7 +111,10 @@ async def start_tui_monitor_tool(input_data: StartTUIMonitorInput, ctx: ToolCont
             
             from tatbot.tui.monitor import TatbotMonitor
             
-            monitor = TatbotMonitor(refresh_rate=input_data.refresh_rate, redis_host=input_data.redis_host)
+            monitor = TatbotMonitor(
+                redis_host=input_data.redis_host,
+                active_health_check=not input_data.no_active_health_check
+            )
             
             yield {"progress": 0.5, "message": "Monitor initialized, starting display..."}
             

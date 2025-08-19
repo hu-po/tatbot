@@ -8,12 +8,6 @@ from pydantic import BaseModel, Field
 class StartTUIMonitorInput(BaseModel):
     """Input for starting TUI system monitor."""
     
-    refresh_rate: float = Field(
-        default=2.0,
-        description="Refresh rate in seconds",
-        ge=0.5,
-        le=10.0
-    )
     background: bool = Field(
         default=False,
         description="Run monitor in background (detached)"
@@ -21,6 +15,10 @@ class StartTUIMonitorInput(BaseModel):
     redis_host: str = Field(
         default="eek",
         description="Redis server host (default: eek, auto-falls back to 192.168.1.97)"
+    )
+    no_active_health_check: bool = Field(
+        default=False,
+        description="Disable active node health checking (only use Redis data)"
     )
 
 

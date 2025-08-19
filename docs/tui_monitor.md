@@ -27,11 +27,11 @@ uv pip install -e .[tui]
 # Start monitor on rpi1 (default)
 tatbot-monitor
 
-# Custom refresh rate and node ID
-tatbot-monitor --refresh-rate 1.5 --node-id rpi2
+# Custom node ID and Redis host
+tatbot-monitor --node-id rpi2 --redis-host 192.168.1.97
 
 # Python module
-python -m tatbot.tui.monitor --refresh-rate 2.0
+python -m tatbot.tui.monitor
 ```
 
 ### MCP Tools
@@ -42,12 +42,12 @@ The monitor can be controlled via MCP tools on monitoring nodes:
 # Start monitor in foreground (blocks until Ctrl+C)
 curl -sS "http://rpi1:8000/mcp/" \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":"start","method":"tools/call","params":{"name":"start_tui_monitor","arguments":{"refresh_rate":2.0,"background":false}}}'
+  -d '{"jsonrpc":"2.0","id":"start","method":"tools/call","params":{"name":"start_tui_monitor","arguments":{"background":false}}}'
 
 # Start monitor in background
 curl -sS "http://rpi1:8000/mcp/" \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":"start","method":"tools/call","params":{"name":"start_tui_monitor","arguments":{"refresh_rate":1.0,"background":true}}}'
+  -d '{"jsonrpc":"2.0","id":"start","method":"tools/call","params":{"name":"start_tui_monitor","arguments":{"background":true}}}'
 
 # List running monitors
 curl -sS "http://rpi1:8000/mcp/" \

@@ -107,8 +107,15 @@ def tool(
                 import socket
                 node_name = socket.gethostname()
             
-            # Create unified ToolContext
-            tool_ctx = ToolContext(node_name=node_name, mcp_context=ctx)
+            # Create unified ToolContext with state manager
+            from tatbot.state.manager import StateManager
+            state_manager = StateManager(node_id=node_name)
+            try:
+                await state_manager.connect()
+                tool_ctx = ToolContext(node_name=node_name, mcp_context=ctx, state_manager=state_manager)
+            except Exception as e:
+                log.warning(f"Failed to connect state manager for {tool_name}: {e}")
+                tool_ctx = ToolContext(node_name=node_name, mcp_context=ctx, state_manager=None)
             
             try:
                 # Parse input data from kwargs
@@ -182,6 +189,13 @@ def tool(
                 await tool_ctx.error(error_msg)
                 error_result = output_model(success=False, message=error_msg)
                 return json.loads(error_result.model_dump_json())
+            finally:
+                # Clean up state manager
+                if tool_ctx.state_manager:
+                    try:
+                        await tool_ctx.state_manager.disconnect()
+                    except Exception as e:
+                        log.debug(f"Failed to disconnect state manager: {e}")
         
         # Set the wrapper function name to the tool name for proper MCP registration
         mcp_exposed_wrapper.__name__ = tool_name

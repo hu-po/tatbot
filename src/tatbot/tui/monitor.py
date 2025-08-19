@@ -14,6 +14,7 @@ from rich.table import Table
 from rich.text import Text
 
 from tatbot.state.manager import StateManager
+from tatbot.tui.constants import DEFAULT_REFRESH_RATE, MCP_HEALTH_CHECK_TIMEOUT, SSH_HEALTH_CHECK_TIMEOUT, NODE_IPS, NODE_ROLES
 from tatbot.utils.log import get_logger
 
 log = get_logger("tui.monitor", "📺")
@@ -22,8 +23,10 @@ log = get_logger("tui.monitor", "📺")
 class TatbotMonitor:
     """Real-time TUI monitor for tatbot system state."""
     
-    def __init__(self, refresh_rate: float = 1.0, redis_host: str = "eek"):
+    def __init__(self, redis_host: str = "eek", active_health_check: bool = True):
         self.console = Console()
+        self.active_health_check = active_health_check
+        self.refresh_rate = DEFAULT_REFRESH_RATE
         
         # Try to resolve hostname, fall back to IP if DNS fails
         if redis_host == "eek":
@@ -39,7 +42,6 @@ class TatbotMonitor:
             resolved_host = redis_host
             
         self.state_manager = StateManager(redis_host=resolved_host, node_id="rpi1")
-        self.refresh_rate = refresh_rate
         self.running = False
         
         # Data storage
@@ -193,15 +195,7 @@ class TatbotMonitor:
         nodes_health = self.system_status.get("nodes_health", {})
         
         # Node roles mapping
-        node_roles = {
-            "eek": "redis",
-            "hog": "robot",
-            "ook": "ik,viz", 
-            "ojo": "agent,policy",
-            "rpi1": "tui",
-            "rpi2": "dns"
-            "oop": "dev",
-        }
+        node_roles = NODE_ROLES
         
         for node_id in ["eek", "hog", "ook", "oop", "ojo", "rpi1", "rpi2"]:
             health_data = nodes_health.get(node_id)
@@ -292,18 +286,85 @@ class TatbotMonitor:
         controls = Text()
         controls.append("Controls: ", style="bold")
         controls.append("Ctrl+C", style="bold red")
-        controls.append(" - Exit  ", style="white")
-        controls.append("R", style="bold yellow")
-        controls.append(" - Refresh Rate  ", style="white")
-        controls.append(f"Refresh: {self.refresh_rate:.1f}s", style="dim")
+        controls.append(" - Exit", style="white")
         
         return Panel(controls, box=box.SIMPLE, style="blue")
     
+    async def check_node_health(self) -> Dict[str, Any]:
+        """Actively check node health by pinging MCP servers."""
+        import socket
+
+        import aiohttp
+        
+        nodes_health = {}
+        node_ips = NODE_IPS
+        
+        current_time = datetime.now().isoformat()
+        
+        for node_id, ip in node_ips.items():
+            node_health = {
+                "node_id": node_id,
+                "is_reachable": False,
+                "timestamp": current_time,
+                "check_method": "ping"
+            }
+            
+            try:
+                # Try to connect to MCP server first
+                timeout = aiohttp.ClientTimeout(total=MCP_HEALTH_CHECK_TIMEOUT)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    try:
+                        async with session.get(f"http://{ip}:8000/mcp") as response:
+                            if response.status in [200, 405, 406]:  # MCP server responding
+                                node_health["is_reachable"] = True
+                                node_health["check_method"] = "mcp"
+                    except:
+                        # Fall back to basic ping
+                        try:
+                            # Simple socket connection test
+                            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            sock.settimeout(SSH_HEALTH_CHECK_TIMEOUT)
+                            result = sock.connect_ex((ip, 22))  # SSH port
+                            if result == 0:
+                                node_health["is_reachable"] = True
+                                node_health["check_method"] = "ssh"
+                            sock.close()
+                        except:
+                            pass
+                            
+            except Exception:
+                pass
+                
+            nodes_health[node_id] = node_health
+        
+        return nodes_health
+
     async def update_data(self) -> None:
         """Update all monitoring data from Redis."""
         try:
-            # Get system status
+            # Get system status from Redis
             self.system_status = await self.state_manager.get_system_status()
+            
+            if self.active_health_check:
+                # Get active node health by actively checking nodes
+                active_health = await self.check_node_health()
+                
+                # Merge Redis health data with active checks
+                redis_health = self.system_status.get("nodes_health", {})
+                for node_id, health in active_health.items():
+                    if node_id in redis_health and redis_health[node_id]:
+                        # Use Redis data if available (more detailed)
+                        continue
+                    else:
+                        # Use our active check
+                        redis_health[node_id] = health
+                
+                self.system_status["nodes_health"] = redis_health
+                
+                # Update node counts based on active checks
+                online_count = sum(1 for h in active_health.values() if h["is_reachable"])
+                self.system_status["nodes_online"] = online_count
+                self.system_status["total_nodes"] = len(active_health)
             
             # Get active stroke sessions
             stroke_keys = await self.state_manager.redis.keys("stroke:progress:*")
@@ -413,8 +474,8 @@ class TatbotMonitor:
             if "Name or service not known" in str(e) or "Connection refused" in str(e):
                 self.console.print(f"❌ Cannot connect to Redis server at {self.state_manager.redis.host}:{self.state_manager.redis.port}")
                 self.console.print("💡 Ensure Redis is running on eek node or try:")
-                self.console.print(f"   tatbot-monitor --redis-host 192.168.1.97")
-                self.console.print(f"   ssh eek 'sudo redis-server /etc/redis/tatbot-redis.conf --daemonize yes'")
+                self.console.print("   tatbot-monitor --redis-host 192.168.1.97")
+                self.console.print("   ssh eek 'sudo redis-server /etc/redis/tatbot-redis.conf --daemonize yes'")
             else:
                 log.error(f"Monitor error: {e}")
                 raise
@@ -439,12 +500,6 @@ async def main() -> None:
     
     parser = argparse.ArgumentParser(description="Tatbot System Monitor TUI")
     parser.add_argument(
-        "--refresh-rate", 
-        type=float, 
-        default=2.0,
-        help="Refresh rate in seconds (default: 2.0)"
-    )
-    parser.add_argument(
         "--node-id",
         type=str,
         default="rpi1",
@@ -456,16 +511,18 @@ async def main() -> None:
         default="eek",
         help="Redis server host (default: eek, falls back to 192.168.1.97)"
     )
+    parser.add_argument(
+        "--no-active-health-check",
+        action="store_true",
+        help="Disable active node health checking (only use Redis data)"
+    )
     
     args = parser.parse_args()
     
-    # Validate refresh rate
-    if args.refresh_rate < 0.5:
-        args.refresh_rate = 0.5
-    elif args.refresh_rate > 10.0:
-        args.refresh_rate = 10.0
-    
-    monitor = TatbotMonitor(refresh_rate=args.refresh_rate, redis_host=args.redis_host)
+    monitor = TatbotMonitor(
+        redis_host=args.redis_host,
+        active_health_check=not args.no_active_health_check
+    )
     monitor.state_manager.node_id = args.node_id
     
     await monitor.run()
