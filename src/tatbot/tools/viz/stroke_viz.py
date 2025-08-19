@@ -14,7 +14,7 @@ log = get_logger("tools.viz.stroke", "🎨")
 
 @tool(
     name="start_stroke_viz",
-    nodes=["oop", "ook", "eek"],
+    nodes=["oop", "ook"],
     description="Start a stroke visualization server using viser",
     input_model=StrokeVizInput,
     output_model=StrokeVizOutput,

@@ -46,12 +46,12 @@ Tools are now defined in the unified `tatbot.tools` module using decorator-based
 - `convert_strokelist_to_batch` (ook, oop): GPU-accelerated stroke trajectory conversion
 
 **Visualization Tools:**
-- `start_stroke_viz` (ook, eek, oop): Start stroke visualization server
-- `start_teleop_viz` (ook, eek, oop): Start teleoperation visualization server
-- `start_map_viz` (ook, eek, oop): Start surface mapping visualization server
-- `stop_viz_server` (ook, eek, oop): Stop running visualization servers
-- `list_viz_servers` (ook, eek, oop): List running visualization servers
-- `status_viz_server` (ook, eek, oop): Get status of visualization servers
+- `start_stroke_viz` (ook, oop): Start stroke visualization server
+- `start_teleop_viz` (ook, oop): Start teleoperation visualization server
+- `start_map_viz` (ook, oop): Start surface mapping visualization server
+- `stop_viz_server` (ook, oop): Stop running visualization servers
+- `list_viz_servers` (ook, oop): List running visualization servers
+- `status_viz_server` (ook, oop): Get status of visualization servers
 
 Tools specify their node availability and requirements directly in their decorator, eliminating the need for separate mapping files. For the authoritative list and details, see the Tools documentation (`docs/tools.md`).
 

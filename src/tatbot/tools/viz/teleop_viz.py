@@ -14,8 +14,8 @@ log = get_logger("tools.viz.teleop", "🎮")
 
 @tool(
     name="start_teleop_viz",
-    nodes=["oop", "ook", "eek"],
-    description="Start a teleoperation visualization server for interactive robot control",
+    nodes=["oop", "ook"],
+    description="Start a teleoperation visualization server using viser",
     input_model=TeleopVizInput,
     output_model=TeleopVizOutput,
     requires=["viz"],

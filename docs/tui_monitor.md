@@ -34,30 +34,15 @@ tatbot-monitor --node-id rpi2 --redis-host 192.168.1.97
 python -m tatbot.tui.monitor
 ```
 
-### MCP Tools
+### Running the Monitor
 
-The monitor can be controlled via MCP tools on monitoring nodes:
+The TUI monitor is designed to run directly on rpi1 using the terminal command. Simply SSH to rpi1 and start it:
 
 ```bash
-# Start monitor in foreground (blocks until Ctrl+C)
-curl -sS "http://rpi1:8000/mcp/" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":"start","method":"tools/call","params":{"name":"start_tui_monitor","arguments":{"background":false}}}'
-
-# Start monitor in background
-curl -sS "http://rpi1:8000/mcp/" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":"start","method":"tools/call","params":{"name":"start_tui_monitor","arguments":{"background":true}}}'
-
-# List running monitors
-curl -sS "http://rpi1:8000/mcp/" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":"list","method":"tools/call","params":{"name":"list_tui_monitors","arguments":{}}}'
-
-# Stop all monitors
-curl -sS "http://rpi1:8000/mcp/" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":"stop","method":"tools/call","params":{"name":"stop_tui_monitor","arguments":{}}}'
+# SSH to rpi1 and start the monitor
+ssh rpi1@192.168.1.98
+source scripts/setup_env.sh
+uv run tatbot-monitor
 ```
 
 ## Display Layout
@@ -70,13 +55,13 @@ curl -sS "http://rpi1:8000/mcp/" \
 ┌─────────────────────┬─────────────────────────────────────────────────┐
 │   📊 System Status  │              🖥️  Node Health                    │
 │ ┌─────────────────┐ │ ┌─────────────────────────────────────────────┐ │
-│ │Redis Server  🟢 │ │ │eek     🟢 UP    Redis+Cams     Active      │ │
-│ │Stroke Sessions🟡│ │ │hog     🟢 UP    Robot          Active      │ │  
-│ │Nodes Online  🟡 │ │ │ook     🟢 UP    GPU+Monitor    Active      │ │
-│ └─────────────────┘ │ │oop     🔴 DOWN  GPU+Monitor    2m ago      │ │
-├─────────────────────┤ │ojo     🟢 UP    Vision         Active      │ │
-│   🎨 Stroke Progress│ │rpi1    🟢 UP    Monitor        Active      │ │
-│ Session: logo@hog   │ │rpi2    ⚪ UNKNOWN Monitor       Never       │ │
+│ │Redis Server  🟢 │ │ │eek        🟢 UP                            │ │
+│ │Stroke Sessions🟡│ │ │hog        🟢 UP                            │ │  
+│ │Nodes Online  🟡 │ │ │ojo        🟢 UP                            │ │
+│ └─────────────────┘ │ │ook        🟢 UP                            │ │
+├─────────────────────┤ │oop        🔴 DOWN                          │ │
+│   🎨 Stroke Progress│ │rpi1       🟢 UP                            │ │
+│ Session: logo@hog   │ │rpi2       ⚪ UNKNOWN                       │ │
 │ ████████████░░░░░░░░│ │ └─────────────────────────────────────────────┘ │
 │ 67/100 (67.0%)     │ ├─────────────────────────────────────────────────┤
 │ Pose: 23/50 (46%)  │ │              📡 Recent Events                   │
@@ -86,7 +71,7 @@ curl -sS "http://rpi1:8000/mcp/" \
                         │ [14:30:12] rpi1: System Start                   │ │
                         └─────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────────────┐
-│     Controls: Ctrl+C - Exit  R - Refresh Rate  Refresh: 2.0s       │
+│                    Controls: Ctrl+C - Exit                          │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 

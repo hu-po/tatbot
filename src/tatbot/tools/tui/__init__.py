@@ -1,1 +1,0 @@
-"""TUI monitoring tools for MCP integration."""
