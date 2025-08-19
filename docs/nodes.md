@@ -29,6 +29,7 @@ Acer Nitro V 15
 - 16GB RAM + 6GB VRAM (RTX 4050)
 - 194 TOPS AI performance
 - GPU-accelerated batch IK
+- WiFi NAT gateway in EDGE mode
 :::
 
 :::{grid-item-card}
@@ -74,7 +75,8 @@ Raspberry Pi 5
 Raspberry Pi 5
 - ARM Cortex-A76, 4-core @ 2.4 GHz
 - 8GB RAM
-- DNS control server (centralized mode switching)
+- DNS/DHCP server with auto mode switching
+- Automatic DHCP renewal coordination
 :::
 
 ::::

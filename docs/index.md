@@ -53,6 +53,7 @@ Understand the distributed system architecture and node capabilities.
 :::{grid-item}
 **🌐 Distributed Architecture** 
 - [Nodes](nodes.md) - Network topology & compute nodes
+- [Network Architecture](network_architecture.md) - Automatic dual-mode networking
 - [MCP Protocol](mcp.md) - Model Context Protocol for distributed control
 - [Tools System](tools.md) - Unified operation framework
 - [Agent Interface](agent.md) - LLM-based control system
