@@ -82,9 +82,11 @@ Raspberry Pi 5
 ```{admonition} Modes: Edge and Home
 :class: tip
 
-**Home:** Nodes are on the home network. {{rpi2}} forwards DNS to the home router for `tatbot.lan`.
+**Home Mode:** Nodes are on the home network. {{rpi2}} forwards DNS to the home router for `tatbot.lan`. Gateway: 192.168.1.1 (home router).
 
-**Edge:** Local-first operation. {{rpi2}} is authoritative DNS for `tatbot.lan` (and can provide DHCP if enabled). Internet is optional.
+**Edge Mode:** Local-first operation. {{rpi2}} provides DNS and DHCP for `tatbot.lan`. Gateway: 192.168.1.90 ({{ook}} via WiFi NAT). Internet access available through {{ook}}.
+
+**Automatic Switching:** Mode changes are detected within 20 seconds and all nodes automatically get new DHCP leases with correct settings.
 ```
 
 ## 📷 Camera System
@@ -185,11 +187,13 @@ sudo mount -a
 
 ## Network Modes
 
-tatbot operates in two modes that **automatically switch** based on home network availability:
+tatbot operates in two modes that **automatically switch** based on home network availability with **automatic DHCP renewal** on all nodes:
 
-- **Edge Mode**: Local-first operation when home LAN cable is disconnected. `rpi2` provides DNS and conditionally provides DHCP for the `tatbot.lan` network. Internet access is optional for other nodes via `ook`'s WiFi NAT.
+- **Edge Mode**: Local-first operation when home LAN cable is disconnected. `rpi2` provides DNS and DHCP for the `tatbot.lan` network. `ook` provides internet access via WiFi NAT (gateway: 192.168.1.90).
 
-- **Home Mode**: Integration with home network when home LAN cable is connected. `rpi2` forwards DNS queries to the home router while maintaining `tatbot.lan` hostname resolution. All nodes get DHCP from home router.
+- **Home Mode**: Integration with home network when home LAN cable is connected. `rpi2` forwards DNS queries to the home router while maintaining `tatbot.lan` hostname resolution. All nodes get DHCP from home router (gateway: 192.168.1.1).
+
+**Automatic DHCP Renewal**: When modes switch, all nodes automatically get new DHCP leases with correct gateway/DNS settings within 20 seconds.
 
 ### Setup Instructions
 
@@ -229,10 +233,10 @@ sudo systemctl restart dnsmasq
 # Verify dnsmasq is running with our config
 sudo systemctl status dnsmasq  # Should show "active (running)"
 
-# The auto-detection script is bash-only and already in the repo at scripts/mode_auto_switcher.sh
-# The systemd service references it directly (no Python dependencies)
+# The auto-detection script with DHCP triggers is at scripts/mode_auto_switcher_with_dhcp.sh
+# This script automatically triggers DHCP renewal on all nodes when switching modes
 
-# Install the auto-detection service that switches modes automatically
+# Install the auto-detection service that switches modes and triggers DHCP renewals
 # This service monitors home router (192.168.1.1) availability
 sudo cp ~/tatbot/config/network/systemd/tatbot-mode-auto.service /etc/systemd/system/tatbot-mode-auto.service
 
@@ -253,35 +257,15 @@ sudo journalctl -u tatbot-mode-auto.service -f  # Ctrl+C to exit
 # SSH into ook - this node has WiFi that can provide internet in edge mode
 ssh ook
 
-# Enable IP forwarding to allow packet routing between interfaces
-echo 'net.ipv4.ip_forward=1' | sudo tee -a /etc/sysctl.conf
-sudo sysctl -w net.ipv4.ip_forward=1  # Apply immediately
+# Run the NAT setup script (handles all configuration automatically)
+cd ~/tatbot
+sudo bash scripts/setup_nat_ook.sh
 
-# Setup NAT from WiFi to Ethernet so ook can share internet with other nodes
-# Detect interfaces robustly: Wi‑Fi starts with 'wl', LAN typically 'en*' or 'eth*'
-WIFI_IFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -E '^wl' | head -1)
-LAN_IFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -E '^(en|eth)' | head -1)
-echo "WiFi=$WIFI_IFACE  LAN=$LAN_IFACE"
-
-# Clear any existing NAT rules to start fresh
-sudo iptables -t nat -F
-sudo iptables -t filter -F
-
-# Allow forwarding between Ethernet and WiFi interfaces
-sudo iptables -A FORWARD -i "$LAN_IFACE" -o "$WIFI_IFACE" -j ACCEPT  # LAN to WiFi
-sudo iptables -A FORWARD -i "$WIFI_IFACE" -o "$LAN_IFACE" -m state --state ESTABLISHED,RELATED -j ACCEPT  # WiFi to LAN
-
-# Enable NAT masquerading on WiFi interface for outbound traffic
-sudo iptables -t nat -A POSTROUTING -o "$WIFI_IFACE" -j MASQUERADE
-
-# Save iptables rules to persist across reboots
-sudo apt install -y iptables-persistent  # Will prompt to save current rules
-# Or manually save:
-sudo mkdir -p /etc/iptables
-sudo iptables-save | sudo tee /etc/iptables/rules.v4
-
-# Verify NAT is configured
-sudo iptables -t nat -L -n -v  # Should show MASQUERADE rule
+# The script will:
+# - Enable IP forwarding
+# - Configure NAT rules for WiFi → Ethernet sharing
+# - Save rules to persist across reboots
+# - Verify the configuration
 ```
 
 **3. Configure Other Nodes (eek, hog, ojo, rpi1)**
@@ -408,28 +392,14 @@ ssh rpi2 "sudo systemctl restart dnsmasq tatbot-mode-auto.service"
 - DESIRED BEHAVIOR: `ook` can still see and access all other nodes, but it can now also access the outside internet via WiFi. From the perspective of the other nodes the system is still effectively in edge mode.
 
 **In Edge Mode and we attach home LAN cable to switch-lan**
-- DESIRED BEHAVIOR: All nodes switch to the home network, they can now access the outisde internet and talk to home computers such as `oop`.
+- DESIRED BEHAVIOR: All nodes switch to the home network, they can now access the outside internet and talk to home computers such as `oop`.
   
-  The auto-detection service should handle this automatically within 20 seconds.
-  
-  To force immediate switching:
-  
-  ```bash
-  # On each node: renew Ethernet to pick up home DHCP right away
-  sudo nmcli connection down 'Wired connection 1' && sudo nmcli connection up 'Wired connection 1'
-  ```
+  The auto-detection service handles this automatically within 20 seconds, including triggering DHCP renewal on all nodes.
 
 **Power on tatbot nodes with attached home LAN cable to switch-lan**
 - DESIRED BEHAVIOR: All nodes connect to the home network, they can access the outisde internet and talk to home computers such as `oop`.
 
 **In Home Mode and we detach home LAN cable from switch-lan**
-- DESIRED BEHAVIOR: All nodes switch to the edge mode, they can no longer access the outisde internet and talk to home computers such as `oop`, but they can still see and access each other. Ideally MCP servers are unaffected and still running.
+- DESIRED BEHAVIOR: All nodes switch to the edge mode, they can access the internet through ook's WiFi (if available) but cannot talk to home computers such as `oop`. They can still see and access each other. MCP servers remain unaffected and continue running.
   
-  The auto-detection service should handle this automatically within 20 seconds.
-  
-  To force immediate switching:
-  
-  ```bash
-  # On each node: renew Ethernet to get a DHCP lease from rpi2 now
-  sudo nmcli connection down 'Wired connection 1' && sudo nmcli connection up 'Wired connection 1'
-  ```
+  The auto-detection service handles this automatically within 20 seconds, including triggering DHCP renewal on all nodes to use ook as gateway.
