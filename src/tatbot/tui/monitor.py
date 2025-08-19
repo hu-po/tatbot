@@ -14,8 +14,8 @@ from rich.table import Table
 from rich.text import Text
 
 from tatbot.state.manager import StateManager
-from tatbot.tui.constants import DEFAULT_REFRESH_RATE, MCP_HEALTH_CHECK_TIMEOUT, SSH_HEALTH_CHECK_TIMEOUT, NODE_IPS, NODE_ROLES
 from tatbot.utils.log import get_logger
+from tatbot.utils.node_config import load_node_ips, load_tui_config
 
 log = get_logger("tui.monitor", "📺")
 
@@ -26,7 +26,11 @@ class TatbotMonitor:
     def __init__(self, redis_host: str = "eek", active_health_check: bool = True):
         self.console = Console()
         self.active_health_check = active_health_check
-        self.refresh_rate = DEFAULT_REFRESH_RATE
+        
+        # Load configuration
+        self.tui_config = load_tui_config()
+        self.refresh_rate = self.tui_config['refresh_rate']
+        self.node_ips = load_node_ips()
         
         # Try to resolve hostname, fall back to IP if DNS fails
         if redis_host == "eek":
@@ -36,8 +40,9 @@ class TatbotMonitor:
                 socket.gethostbyname("eek")
                 resolved_host = "eek"
             except socket.gaierror:
-                log.warning("DNS resolution for 'eek' failed, using IP 192.168.1.97")
-                resolved_host = "192.168.1.97"
+                eek_ip = self.node_ips.get("eek", "192.168.1.97")
+                log.warning(f"DNS resolution for 'eek' failed, using IP {eek_ip}")
+                resolved_host = eek_ip
         else:
             resolved_host = redis_host
             
@@ -187,45 +192,23 @@ class TatbotMonitor:
     def create_nodes_panel(self) -> Panel:
         """Create node health panel."""
         table = Table(show_header=True, header_style="bold blue", box=box.SIMPLE)
-        table.add_column("Node", style="cyan", width=8)
-        table.add_column("Status", justify="center", width=8)
-        table.add_column("Role", style="white", width=12)
-        table.add_column("Last Seen", style="dim", width=12)
+        table.add_column("Node", style="cyan", width=12)
+        table.add_column("Status", justify="center", width=12)
         
         nodes_health = self.system_status.get("nodes_health", {})
         
-        # Node roles mapping
-        node_roles = NODE_ROLES
-        
-        for node_id in ["eek", "hog", "ook", "oop", "ojo", "rpi1", "rpi2"]:
+        # Use configured nodes in order
+        for node_id in sorted(self.node_ips.keys()):
             health_data = nodes_health.get(node_id)
             
             if health_data and health_data.get("is_reachable", False):
                 status = "🟢 UP"
-                last_seen = "Active"
             elif health_data:
                 status = "🔴 DOWN"
-                timestamp = health_data.get("timestamp", "")
-                if timestamp:
-                    try:
-                        last_dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-                        ago = datetime.now() - last_dt.replace(tzinfo=None)
-                        if ago < timedelta(minutes=1):
-                            last_seen = "Now"
-                        elif ago < timedelta(hours=1):
-                            last_seen = f"{int(ago.total_seconds() // 60)}m ago"
-                        else:
-                            last_seen = f"{int(ago.total_seconds() // 3600)}h ago"
-                    except:
-                        last_seen = "Unknown"
-                else:
-                    last_seen = "Unknown"
             else:
                 status = "⚪ UNKNOWN"
-                last_seen = "Never"
             
-            role = node_roles.get(node_id, "Unknown")
-            table.add_row(node_id, status, role, last_seen)
+            table.add_row(node_id, status)
         
         return Panel(table, title="🖥️  Node Health", box=box.ROUNDED)
     
@@ -297,7 +280,7 @@ class TatbotMonitor:
         import aiohttp
         
         nodes_health = {}
-        node_ips = NODE_IPS
+        node_ips = self.node_ips
         
         current_time = datetime.now().isoformat()
         
@@ -311,7 +294,8 @@ class TatbotMonitor:
             
             try:
                 # Try to connect to MCP server first
-                timeout = aiohttp.ClientTimeout(total=MCP_HEALTH_CHECK_TIMEOUT)
+                mcp_timeout = self.tui_config['health_check']['mcp_timeout']
+                timeout = aiohttp.ClientTimeout(total=mcp_timeout)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     try:
                         async with session.get(f"http://{ip}:8000/mcp") as response:
@@ -323,7 +307,8 @@ class TatbotMonitor:
                         try:
                             # Simple socket connection test
                             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                            sock.settimeout(SSH_HEALTH_CHECK_TIMEOUT)
+                            ssh_timeout = self.tui_config['health_check']['ssh_timeout']
+                            sock.settimeout(ssh_timeout)
                             result = sock.connect_ex((ip, 22))  # SSH port
                             if result == 0:
                                 node_health["is_reachable"] = True
@@ -423,9 +408,10 @@ class TatbotMonitor:
                         # Add to recent events
                         self.recent_events.append(event_data)
                         
-                        # Keep only last 50 events
-                        if len(self.recent_events) > 50:
-                            self.recent_events = self.recent_events[-50:]
+                        # Keep only configured number of events
+                        max_events = self.tui_config['display']['max_recent_events']
+                        if len(self.recent_events) > max_events:
+                            self.recent_events = self.recent_events[-max_events:]
                             
                     except (json.JSONDecodeError, TypeError) as e:
                         log.warning(f"Failed to parse event: {e}")

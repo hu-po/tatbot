@@ -4,7 +4,7 @@
 import os
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import yaml
 
@@ -93,6 +93,90 @@ def get_current_node() -> Optional[str]:
         pass
     
     return None
+
+
+def load_node_ips(config_root: Optional[Path] = None) -> Dict[str, str]:
+    """Load node IP addresses from nodes.yaml configuration.
+    
+    Args:
+        config_root: Root path to config directory. If None, attempts to find it automatically.
+        
+    Returns:
+        Dictionary mapping node names to IP addresses
+        
+    Raises:
+        FileNotFoundError: If nodes.yaml doesn't exist
+    """
+    if config_root is None:
+        # Try to find config directory relative to this file
+        current_dir = Path(__file__).parent
+        # Go up to tatbot/src/tatbot/utils -> tatbot/src -> tatbot -> tatbot/src/conf
+        config_root = current_dir.parent.parent / "conf"
+        
+        # If that doesn't work, try from current working directory
+        if not config_root.exists():
+            config_root = Path.cwd() / "src" / "conf"
+            
+        # Last resort: relative to home
+        if not config_root.exists():
+            config_root = Path.home() / "tatbot" / "src" / "conf"
+    
+    nodes_path = config_root / "nodes.yaml"
+    
+    if not nodes_path.exists():
+        raise FileNotFoundError(f"Nodes configuration not found at {nodes_path}")
+    
+    with open(nodes_path) as f:
+        config = yaml.safe_load(f)
+    
+    node_ips = {}
+    for node in config.get('nodes', []):
+        node_ips[node['name']] = node['ip']
+    
+    return node_ips
+
+
+def load_tui_config(config_root: Optional[Path] = None) -> Dict:
+    """Load TUI configuration from tui/default.yaml.
+    
+    Args:
+        config_root: Root path to config directory. If None, attempts to find it automatically.
+        
+    Returns:
+        TUI configuration dictionary
+        
+    Raises:
+        FileNotFoundError: If tui config doesn't exist
+    """
+    if config_root is None:
+        # Try to find config directory relative to this file
+        current_dir = Path(__file__).parent
+        config_root = current_dir.parent.parent / "conf"
+        
+        if not config_root.exists():
+            config_root = Path.cwd() / "src" / "conf"
+            
+        if not config_root.exists():
+            config_root = Path.home() / "tatbot" / "src" / "conf"
+    
+    tui_path = config_root / "tui" / "default.yaml"
+    
+    if not tui_path.exists():
+        # Return sensible defaults if config doesn't exist
+        return {
+            'refresh_rate': 2.0,
+            'health_check': {
+                'mcp_timeout': 2.0,
+                'ssh_timeout': 1.0
+            },
+            'display': {
+                'max_recent_events': 50,
+                'progress_bar_width': 20
+            }
+        }
+    
+    with open(tui_path) as f:
+        return yaml.safe_load(f)
 
 
 def main():

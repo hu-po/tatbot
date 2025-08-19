@@ -1,0 +1,14 @@
+# TUI Monitor Configuration
+
+# Default refresh rate for TUI updates (in seconds)
+refresh_rate: 2.0
+
+# Network timeouts for health checks
+health_check:
+  mcp_timeout: 2.0      # Timeout for MCP server health checks
+  ssh_timeout: 1.0      # Timeout for SSH port checks
+
+# Display settings
+display:
+  max_recent_events: 50   # Maximum number of recent events to keep
+  progress_bar_width: 20  # Width of progress bars in characters
