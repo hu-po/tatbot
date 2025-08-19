@@ -9,15 +9,16 @@
 #
 # Usage:
 #   bash scripts/verify_state_server.sh
-#   EEK_HOST=eek HOG_HOST=hog OOK_HOST=ook MCP_PORT=8000 REDIS_HOST=eek REDIS_PORT=6379 bash scripts/verify_state_server.sh
+#   EEK_HOST=192.168.1.97 HOG_HOST=192.168.1.88 OOK_HOST=192.168.1.90 MCP_PORT=8000 REDIS_HOST=192.168.1.97 REDIS_PORT=6379 bash scripts/verify_state_server.sh
 
 set -euo pipefail
 
-EEK_HOST=${EEK_HOST:-eek}
-HOG_HOST=${HOG_HOST:-hog}
-OOK_HOST=${OOK_HOST:-ook}
+# Default to static IPs from Hydra configs to avoid DNS issues.
+EEK_HOST=${EEK_HOST:-192.168.1.97}
+HOG_HOST=${HOG_HOST:-192.168.1.88}
+OOK_HOST=${OOK_HOST:-192.168.1.90}
 MCP_PORT=${MCP_PORT:-8000}
-REDIS_HOST=${REDIS_HOST:-eek}
+REDIS_HOST=${REDIS_HOST:-$EEK_HOST}
 REDIS_PORT=${REDIS_PORT:-6379}
 VIZ_CHECK=${VIZ_CHECK:-false}
 VIZ_NODE=${VIZ_NODE:-$OOK_HOST}
@@ -27,15 +28,34 @@ VIZ_SERVER_NAME=${VIZ_SERVER_NAME:-stroke_viz}
 PASS_COUNT=0
 FAIL_COUNT=0
 
+# Curl behavior tuning
+CURL_CONNECT_TIMEOUT=${CURL_CONNECT_TIMEOUT:-2}
+CURL_MAX_TIME=${CURL_MAX_TIME:-5}
+
 pass() { echo "✅ $1"; PASS_COUNT=$((PASS_COUNT+1)); }
 fail() { echo "❌ $1"; FAIL_COUNT=$((FAIL_COUNT+1)); }
 
 req() {
   local host="$1"; shift
   local payload="$1"; shift
-  curl -sS "http://${host}:${MCP_PORT}/mcp/" \
+  curl -sS \
+    --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+    --max-time "$CURL_MAX_TIME" \
+    "http://${host}:${MCP_PORT}/mcp/" \
     -H "Content-Type: application/json" \
     -d "$payload"
+}
+
+check_mcp_reachable() {
+  local host="$1"
+  # Probe endpoint without caring about response body; just detect connectivity
+  if ! curl -sS -o /dev/null \
+      --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+      --max-time "$CURL_MAX_TIME" \
+      "http://${host}:${MCP_PORT}/mcp/"; then
+    return 1
+  fi
+  return 0
 }
 
 echo "--- Verifying Redis (${REDIS_HOST}:${REDIS_PORT}) ---"
@@ -51,6 +71,10 @@ fi
 
 echo "--- Checking MCP state status resource on nodes ---"
 for NODE in "$EEK_HOST" "$HOG_HOST" "$OOK_HOST"; do
+  if ! check_mcp_reachable "$NODE"; then
+    fail "${NODE}: MCP not reachable on port ${MCP_PORT} (Hint: run ./scripts/mcp_run.sh <node> on that machine)"
+    continue
+  fi
   RESP=$(req "$NODE" '{"jsonrpc":"2.0","id":"sys","method":"resources/read","params":{"uri":"state://status"}}') || RESP=""
   if echo "$RESP" | grep -qi 'redis connected: true'; then
     pass "${NODE}: state://status -> redis_connected=true"
@@ -78,14 +102,7 @@ else
   echo "ℹ️ redis-cli not found; skipping direct set/get"
 fi
 
-echo "--- Read MCP resource state://status (via eek) ---"
-RES_RESP=$(req "$EEK_HOST" '{"jsonrpc":"2.0","id":"r1","method":"resources/read","params":{"uri":"state://status"}}') || RES_RESP=""
-if echo "$RES_RESP" | grep -qi 'redis connected'; then
-  pass "resources/read state://status responded"
-else
-  echo "$RES_RESP" | sed 's/.\{0,0\}/  /'
-  fail "resources/read state://status failed"
-fi
+# No duplicate single-node read; covered above
 
 if [ "$VIZ_CHECK" = "true" ]; then
   echo "--- Viz server start/status/stop on ${VIZ_NODE} ---"

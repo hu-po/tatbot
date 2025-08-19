@@ -22,9 +22,23 @@ log = get_logger("tui.monitor", "📺")
 class TatbotMonitor:
     """Real-time TUI monitor for tatbot system state."""
     
-    def __init__(self, refresh_rate: float = 1.0):
+    def __init__(self, refresh_rate: float = 1.0, redis_host: str = "eek"):
         self.console = Console()
-        self.state_manager = StateManager(node_id="rpi1")
+        
+        # Try to resolve hostname, fall back to IP if DNS fails
+        if redis_host == "eek":
+            # Try DNS first, fall back to known IP
+            try:
+                import socket
+                socket.gethostbyname("eek")
+                resolved_host = "eek"
+            except socket.gaierror:
+                log.warning("DNS resolution for 'eek' failed, using IP 192.168.1.97")
+                resolved_host = "192.168.1.97"
+        else:
+            resolved_host = redis_host
+            
+        self.state_manager = StateManager(redis_host=resolved_host, node_id="rpi1")
         self.refresh_rate = refresh_rate
         self.running = False
         
@@ -377,6 +391,7 @@ class TatbotMonitor:
     async def run(self) -> None:
         """Run the monitoring TUI."""
         self.running = True
+        event_task = None
         
         try:
             async with self.state_manager:
@@ -394,12 +409,19 @@ class TatbotMonitor:
         except KeyboardInterrupt:
             log.info("Monitor stopped by user")
         except Exception as e:
-            log.error(f"Monitor error: {e}")
-            raise
+            # Check if it's a connection error
+            if "Name or service not known" in str(e) or "Connection refused" in str(e):
+                self.console.print(f"❌ Cannot connect to Redis server at {self.state_manager.redis.host}:{self.state_manager.redis.port}")
+                self.console.print("💡 Ensure Redis is running on eek node or try:")
+                self.console.print(f"   tatbot-monitor --redis-host 192.168.1.97")
+                self.console.print(f"   ssh eek 'sudo redis-server /etc/redis/tatbot-redis.conf --daemonize yes'")
+            else:
+                log.error(f"Monitor error: {e}")
+                raise
         finally:
             self.running = False
             # Cancel event listener
-            if 'event_task' in locals():
+            if event_task:
                 event_task.cancel()
                 try:
                     await event_task
@@ -428,6 +450,12 @@ async def main() -> None:
         default="rpi1",
         help="Node ID for this monitor (default: rpi1)"
     )
+    parser.add_argument(
+        "--redis-host",
+        type=str,
+        default="eek",
+        help="Redis server host (default: eek, falls back to 192.168.1.97)"
+    )
     
     args = parser.parse_args()
     
@@ -437,11 +465,16 @@ async def main() -> None:
     elif args.refresh_rate > 10.0:
         args.refresh_rate = 10.0
     
-    monitor = TatbotMonitor(refresh_rate=args.refresh_rate)
+    monitor = TatbotMonitor(refresh_rate=args.refresh_rate, redis_host=args.redis_host)
     monitor.state_manager.node_id = args.node_id
     
     await monitor.run()
 
 
-if __name__ == "__main__":
+def main_sync() -> None:
+    """Synchronous entry point for script execution."""
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    main_sync()

@@ -42,6 +42,7 @@
 - create PR to add to https://github.com/mjyc/awesome-robotics-projects
 - submit to https://devpost.com/submit-to/25802-openai-open-model-hackathon/manage/submissions
 - Tattoo outdoors to show off edge compute capability
+- Paper flyers to put up in random places around ATX
 
 #### Artwork
 - potential improvement in gcode/stroke generation with https://github.com/abey79/vpype

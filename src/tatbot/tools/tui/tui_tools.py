@@ -68,9 +68,16 @@ async def start_tui_monitor_tool(input_data: StartTUIMonitorInput, ctx: ToolCont
             env = os.environ.copy()
             env["PYTHONPATH"] = ":".join(sys.path)
             
+            # Build command arguments
+            cmd_args = [
+                python_path, "-m", module_path,
+                "--refresh-rate", str(input_data.refresh_rate),
+                "--redis-host", input_data.redis_host
+            ]
+            
             # Start process
             process = subprocess.Popen(
-                [python_path, "-m", module_path, "--refresh-rate", str(input_data.refresh_rate)],
+                cmd_args,
                 env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -99,7 +106,7 @@ async def start_tui_monitor_tool(input_data: StartTUIMonitorInput, ctx: ToolCont
             
             from tatbot.tui.monitor import TatbotMonitor
             
-            monitor = TatbotMonitor(refresh_rate=input_data.refresh_rate)
+            monitor = TatbotMonitor(refresh_rate=input_data.refresh_rate, redis_host=input_data.redis_host)
             
             yield {"progress": 0.5, "message": "Monitor initialized, starting display..."}
             

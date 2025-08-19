@@ -51,7 +51,7 @@ dependencies = [
 [project.scripts]
 tatbot = "tatbot.main:main"
 tatbot-mcp = "tatbot.mcp.server:main"
-tatbot-monitor = "tatbot.tui.monitor:main"
+tatbot-monitor = "tatbot.tui.monitor:main_sync"
 
 [project.optional-dependencies]
 bot = [

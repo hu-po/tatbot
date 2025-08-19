@@ -18,6 +18,10 @@ class StartTUIMonitorInput(BaseModel):
         default=False,
         description="Run monitor in background (detached)"
     )
+    redis_host: str = Field(
+        default="eek",
+        description="Redis server host (default: eek, auto-falls back to 192.168.1.97)"
+    )
 
 
 class StartTUIMonitorOutput(BaseModel):
