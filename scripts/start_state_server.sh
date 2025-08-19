@@ -1,0 +1,1 @@
+sudo redis-server /etc/redis/tatbot-redis.conf --daemonize yes
