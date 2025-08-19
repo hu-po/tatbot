@@ -7,6 +7,11 @@ This doc covers the Redis-based parameter server: architecture, setup on eek, us
 - Clients use `StateManager` (src/tatbot/state) for snapshots, events, and streams.
 - Viz can subscribe to stroke progress and update UI live.
 
+## Design Notes: Redis vs MCP
+- Redis is the system’s parameter/state server. Producers and consumers (robot, viz, services) should publish/subscribe and read/write state directly to Redis.
+- MCP is for orchestration and read-only summaries (e.g., `state://status`), not real-time pub/sub during strokes.
+- We do not expose Redis state tools over MCP anymore. Use direct Redis for live flows. MCP still provides read-only resources (e.g., `state://status`).
+
 ## Setup (eek node)
 ```bash
 ssh eek
@@ -37,6 +42,8 @@ redis-cli -h eek -p 6379 keys "*"
 redis-cli -h eek -p 6379 psubscribe "stroke:events:*"
 ```
 
+MCP exposes only read-only resources relevant to state. For example, see `state://status` below.
+
 ## Using StateManager
 See src/tatbot/state/ for full APIs. Typical flow:
 ```python
@@ -49,7 +56,7 @@ async with state:
 ```
 
 ## MCP integration
-- Tools: get_state, set_state, publish_event, subscribe_events, system_status
+- Tools: none (state tools removed; use Redis directly)
 - Resources: state://status, state://stroke/progress, state://health/{node_id}
 
 ## Viz integration
@@ -59,7 +66,8 @@ async with state:
 - Connection refused: redis running? `redis-cli -h eek -p 6379 ping`; network OK? `ping eek`.
 - No updates: check process; subscribe via `redis-cli psubscribe "stroke:events:*"`.
 
+MCP timeouts during strokes on robot nodes are expected; use direct Redis for pub/sub and state access.
+
 ## Security & Performance
 - LAN-restricted bind (127.0.0.1 and 192.168.1.97), protected-mode yes, no password.
 - AOF everysec; light CPU/memory footprint for typical loads.
-

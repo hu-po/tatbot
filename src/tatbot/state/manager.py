@@ -1,10 +1,10 @@
 """StateManager - Singleton class for managing distributed tatbot state."""
 
-import asyncio
-import json
 import socket
 from datetime import datetime
-from typing import Any, AsyncGenerator, Dict, List, Optional, Union
+from typing import Any, AsyncGenerator, Dict, Optional
+
+from tatbot.utils.log import get_logger
 
 from .client import RedisClient
 from .models import (
@@ -13,7 +13,6 @@ from .models import (
     StrokeProgress,
 )
 from .schemas import RedisKeySchema, TTLConstants
-from tatbot.utils.log import get_logger
 
 log = get_logger("state.manager", "🎯")
 

@@ -4,9 +4,8 @@
 #
 # Checks:
 # 1) Redis ping
-# 2) MCP system_status on eek/hog/ook (redis_connected=true)
-# 3) set_state / get_state round-trip on eek
-# 4) resources/read for state://status
+# 2) MCP resource state://status on eek/hog/ook (redis connected)
+# 3) Direct Redis set/get round-trip (no MCP state tools)
 #
 # Usage:
 #   bash scripts/verify_state_server.sh
@@ -50,33 +49,33 @@ else
   echo "ℹ️ redis-cli not found; skipping direct Redis ping"
 fi
 
-echo "--- Checking MCP system_status on nodes ---"
+echo "--- Checking MCP state status resource on nodes ---"
 for NODE in "$EEK_HOST" "$HOG_HOST" "$OOK_HOST"; do
-  RESP=$(req "$NODE" '{"jsonrpc":"2.0","id":"sys","method":"tools/call","params":{"name":"system_status","arguments":{}}}') || RESP=""
-  if echo "$RESP" | grep -q '"success"\s*:\s*true' && echo "$RESP" | grep -q '"redis_connected"\s*:\s*true'; then
-    pass "${NODE}: system_status -> redis_connected=true"
+  RESP=$(req "$NODE" '{"jsonrpc":"2.0","id":"sys","method":"resources/read","params":{"uri":"state://status"}}') || RESP=""
+  if echo "$RESP" | grep -qi 'redis connected: true'; then
+    pass "${NODE}: state://status -> redis_connected=true"
   else
     echo "$RESP" | sed 's/.\{0,0\}/  /'
-    fail "${NODE}: system_status failed or redis_connected!=true"
+    fail "${NODE}: state://status failed or redis_connected!=true"
   fi
 done
 
-echo "--- set_state / get_state round-trip (via eek MCP) ---"
+echo "--- Skipping MCP set_state/get_state (removed); verifying Redis directly if available ---"
 KEY="tatbot:test:$(date +%s)"
-SET_RESP=$(req "$EEK_HOST" "{\"jsonrpc\":\"2.0\",\"id\":\"set\",\"method\":\"tools/call\",\"params\":{\"name\":\"set_state\",\"arguments\":{\"key\":\"$KEY\",\"data\":{\"hello\":\"world\"},\"ttl\":60}}}") || SET_RESP=""
-if echo "$SET_RESP" | grep -q '"success"\s*:\s*true'; then
-  pass "set_state succeeded"
+if command -v redis-cli >/dev/null 2>&1; then
+  if redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" set "$KEY" '{"hello":"world"}' EX 60 >/dev/null; then
+    pass "redis-cli set succeeded"
+    VALUE=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" get "$KEY" || true)
+    if echo "$VALUE" | grep -q 'hello' && echo "$VALUE" | grep -q 'world'; then
+      pass "redis-cli get returned expected payload"
+    else
+      fail "redis-cli get unexpected payload: $VALUE"
+    fi
+  else
+    fail "redis-cli set failed"
+  fi
 else
-  echo "$SET_RESP" | sed 's/.\{0,0\}/  /'
-  fail "set_state failed"
-fi
-
-GET_RESP=$(req "$EEK_HOST" "{\"jsonrpc\":\"2.0\",\"id\":\"get\",\"method\":\"tools/call\",\"params\":{\"name\":\"get_state\",\"arguments\":{\"key\":\"$KEY\"}}}") || GET_RESP=""
-if echo "$GET_RESP" | grep -q '"success"\s*:\s*true' && echo "$GET_RESP" | grep -q 'hello' && echo "$GET_RESP" | grep -q 'world'; then
-  pass "get_state returned expected payload"
-else
-  echo "$GET_RESP" | sed 's/.\{0,0\}/  /'
-  fail "get_state failed or unexpected payload"
+  echo "ℹ️ redis-cli not found; skipping direct set/get"
 fi
 
 echo "--- Read MCP resource state://status (via eek) ---"

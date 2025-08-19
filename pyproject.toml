@@ -51,6 +51,7 @@ dependencies = [
 [project.scripts]
 tatbot = "tatbot.main:main"
 tatbot-mcp = "tatbot.mcp.server:main"
+tatbot-monitor = "tatbot.tui.monitor:main"
 
 [project.optional-dependencies]
 bot = [
@@ -94,6 +95,10 @@ img = [
 viz = [
     "viser==1.0.4",
     "pyliblzfse>=0.4.1",
+]
+tui = [
+    "rich>=13.0.0",
+    "textual>=0.47.0",
 ]
 
 [tool.setuptools.packages.find]

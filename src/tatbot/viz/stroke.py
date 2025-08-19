@@ -2,8 +2,8 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
+from queue import Empty, Queue
 from threading import Thread
-from queue import Queue, Empty
 
 import cv2
 import numpy as np

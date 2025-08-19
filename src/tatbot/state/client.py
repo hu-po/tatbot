@@ -3,7 +3,7 @@
 import asyncio
 import json
 import os
-from typing import Any, AsyncGenerator, Dict, List, Optional, Union
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import redis.asyncio as aioredis
 from redis.asyncio import ConnectionPool
