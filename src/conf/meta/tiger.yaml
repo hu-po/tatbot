@@ -21,4 +21,4 @@ skins:
   image_width_m: 0.1
   image_height_m: 0.1
   zone_depth_m: 0.1
-  zone_width_m: 0.07
+  zone_width_m: 0.1
