@@ -379,6 +379,22 @@ sudo nmap --script broadcast-dhcp-discover
 nslookup ook.tatbot.lan 192.168.1.99  # Should always work
 dig @192.168.1.99 ook.tatbot.lan      # More detailed DNS query
 
+# If systemd-resolved is interfering with DNS resolution:
+# Check if systemd-resolved is preventing proper domain routing
+resolvectl status  # Shows DNS servers per interface
+# If tatbot.lan queries are failing, disable systemd-resolved:
+sudo systemctl stop systemd-resolved
+sudo systemctl disable systemd-resolved
+sudo rm /etc/resolv.conf
+echo "nameserver 192.168.1.99" | sudo tee /etc/resolv.conf
+echo "nameserver 192.168.1.1" | sudo tee -a /etc/resolv.conf
+
+# If nodes have both WiFi and Ethernet active:
+# Disable WiFi to prevent routing conflicts in edge mode
+sudo nmcli radio wifi off
+# Or set ethernet priority higher than WiFi
+sudo nmcli connection modify 'Wired connection 1' connection.autoconnect-priority 100
+
 # Reset everything to clean state:
 ssh rpi2 "sudo systemctl restart dnsmasq tatbot-mode-auto.service"
 ```
