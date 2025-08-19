@@ -1,6 +1,7 @@
 """Generic MCP server with Hydra configuration support."""
 
 import logging
+import os
 import socket
 from typing import List, Optional
 
@@ -64,6 +65,13 @@ def main(cfg: DictConfig) -> None:
     log.info(f"Extras: {settings.extras}")
     log.info(f"Tools: {settings.tools}")
     
+    # Configure Redis from Hydra (single source of truth)
+    redis_host = str(cfg.redis.get("host", "eek"))
+    redis_port = int(cfg.redis.get("port", 6379))
+    os.environ.setdefault("REDIS_HOST", redis_host)
+    os.environ.setdefault("REDIS_PORT", str(redis_port))
+    log.info(f"Redis target: {redis_host}:{redis_port}")
+    
     # Create FastMCP server (open mode - no authentication)
     mcp = FastMCP(
         f"tatbot.{node_name}", 
@@ -74,8 +82,8 @@ def main(cfg: DictConfig) -> None:
     # Register tools
     _register_tools(mcp, settings.tools, node_name)
     
-    # Initialize StateManager
-    state_manager = StateManager(node_id=node_name)
+    # Initialize StateManager with configured Redis host/port
+    state_manager = StateManager(node_id=node_name, redis_host=redis_host, redis_port=redis_port)
     
     # Add resource for listing nodes
     @mcp.resource("nodes://all")

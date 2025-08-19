@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
 # Unified MCP server launcher with Hydra configuration
-# Usage: ./run_mcp.sh [<node_name>] [additional_hydra_args...]
+# Usage: ./mcp_run.sh [<node_name>] [additional_hydra_args...]
 # - If <node_name> is omitted, the current username ($USER) will be used if a matching config exists
-# Example: ./run_mcp.sh ook
-# Example: ./run_mcp.sh ook mcp.debug=true mcp.port=9000
+# Example: ./mcp_run.sh ook
+# Example: ./mcp_run.sh ook mcp.debug=true mcp.port=9000
 
 set -euo pipefail
 

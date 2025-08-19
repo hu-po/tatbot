@@ -47,14 +47,14 @@ uv run sphinx-autobuild docs docs/_build
 ### MCP Server Operations
 ```bash
 # Start MCP server for a specific node
-./scripts/run_mcp.sh <node_name>  # ook, oop, ojo, eek, rpi1, rpi2
+./scripts/mcp_run.sh <node_name>  # ook, oop, ojo, eek, rpi1, rpi2
 
 # Kill existing MCP processes
 ./scripts/kill.sh
 
 # Restart MCP servers on specific nodes (must SSH to each node)
-ssh eek "bash ~/tatbot/scripts/run_mcp.sh eek"
-ssh ook "bash ~/tatbot/scripts/run_mcp.sh ook"
+ssh eek "bash ~/tatbot/scripts/mcp_run.sh eek"
+ssh ook "bash ~/tatbot/scripts/mcp_run.sh ook"
 
 # Monitor MCP logs
 tail -f /nfs/tatbot/mcp-logs/<node_name>.log
@@ -63,7 +63,7 @@ tail -f /nfs/tatbot/mcp-logs/<node_name>.log
 ### Running Operations
 ```bash
 # run mcp server on the eek node
-cd ~/tatbot && ./scripts/run_mcp.sh eek
+cd ~/tatbot && ./scripts/mcp_run.sh eek
 
 
 # Run visualization tools

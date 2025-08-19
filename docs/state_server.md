@@ -7,10 +7,23 @@ This doc covers the Redis-based parameter server: architecture, setup on eek, us
 - Clients use `StateManager` (src/tatbot/state) for snapshots, events, and streams.
 - Viz can subscribe to stroke progress and update UI live.
 
+## Network Modes (HOME vs EDGE)
+- In EDGE mode, hosts like `eek` may be resolvable by name on the robot LAN.
+- In HOME mode, hostnames might not resolve. Ensure components use the Redis IP address.
+- Recommended:
+  - Set `REDIS_HOST` and `REDIS_PORT` in `/nfs/tatbot/.env` (sourced by scripts) or in your shell before launching.
+  - Example: `export REDIS_HOST=192.168.1.97; export REDIS_PORT=6379`
+  - Optionally add `/etc/hosts` entries mapping `eek` to the Redis IP on each node.
+
 ## Design Notes: Redis vs MCP
 - Redis is the system’s parameter/state server. Producers and consumers (robot, viz, services) should publish/subscribe and read/write state directly to Redis.
 - MCP is for orchestration and read-only summaries (e.g., `state://status`), not real-time pub/sub during strokes.
 - We do not expose Redis state tools over MCP anymore. Use direct Redis for live flows. MCP still provides read-only resources (e.g., `state://status`).
+
+## Redis Configuration (Single Source of Truth)
+- Redis host/port are configured via Hydra: `src/conf/redis/default.yaml`.
+- The MCP server reads this config and also sets `REDIS_HOST`/`REDIS_PORT` environment variables in-process so any internal components using `StateManager()` pick the same target automatically.
+- Adjust `host` or `port` in the Hydra file if your Redis location changes.
 
 ## Setup (eek node)
 ```bash
@@ -58,6 +71,12 @@ async with state:
 ## MCP integration
 - Tools: none (state tools removed; use Redis directly)
 - Resources: state://status, state://stroke/progress, state://health/{node_id}
+
+To launch the MCP server with the correct Redis target in HOME mode:
+```bash
+export REDIS_HOST=192.168.1.97  # your eek IP
+./scripts/mcp_run.sh eek
+```
 
 ## Viz integration
 - Start stroke viz and enable "Sync with Robot" in the GUI, or pass enable_state_sync=true via the viz MCP tool.
