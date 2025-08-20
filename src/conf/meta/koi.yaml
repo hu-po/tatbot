@@ -10,11 +10,11 @@ arms:
 scenes:
   stroke_length: 144
   design_name: "koi"
-  inks_config_name: "black_orange"
+  inks_config_name: "red_blue"
   pen_names_l:
-    - bright_orange
+    - true_blue
   pen_names_r:
-    - nighthawk_black
+    - bright_red
 
 skins:
   description: "100mm x 100mm square on fake skin"
