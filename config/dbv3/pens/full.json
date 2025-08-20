@@ -15,7 +15,7 @@
         "argb": -16777216,
         "distributionWeight": 100,
         "strokeSize": 1.0,
-        "isEnabled": false
+        "isEnabled": true
       },
       {
         "type": "tatbot",
@@ -55,7 +55,7 @@
         "argb": -29696,
         "distributionWeight": 100,
         "strokeSize": 1.0,
-        "isEnabled": false
+        "isEnabled": true
       },
       {
         "type": "tatbot",
