@@ -1,0 +1,22 @@
+# @package _global_
+# Meta config: Koi fish
+
+arms:
+  offset_range:
+    - -0.002
+    - 0.002
+  offset_num: 8
+
+scenes:
+  stroke_length: 144
+  design_name: "koi"
+  inks_config_name: "black_orange"
+  pen_names_l:
+    - bright_orange
+  pen_names_r:
+    - nighthawk_black
+
+skins:
+  description: "100mm x 100mm square on fake skin"
+  image_width_m: 0.1
+  image_height_m: 0.1

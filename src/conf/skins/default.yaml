@@ -1,7 +1,7 @@
 description: "5cm x 5cm x 5cm volume directly in front of the palette"
 image_width_m: 0.05
 image_height_m: 0.05
-zone_depth_m: 0.05
-zone_width_m: 0.05
-zone_height_m: 0.05
+zone_depth_m: 0.1
+zone_width_m: 0.1
+zone_height_m: 0.1
 plymesh_dir: "/nfs/tatbot/3d/default"
