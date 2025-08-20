@@ -18,7 +18,9 @@
 - gsplat from multiview conditioning images
 
 #### Quality, Debugging
-- visualization of cpu, memory, disk usage on nodes to check for bottlenecks
+- check for arm error before episode big moves
+- method of filtering through strokelist to see if any strokes have a large delta/error and thus filter.
+- upgrade TUI to show cpu, memory, disk usage on nodes to check for bottlenecks (one single graph?)
 - visualization of network traffic between nodes to see if there is a bottleneck with mcp or nfs
 - do strokes need to be the same size because the batch size is already arbitrary and coming from concatenation
 - teleop calibration, visualization server as optional add ons to any stroke tool call
@@ -50,6 +52,7 @@
 - replicate playground on touchscreen
 
 #### Hardware
+- ee redesign: more natural angle, two piece screws for tightening wand foam padding
 - gather feedback on red sharpie cross with laser line leveler workflow
 - end effector redesign: suspension, scissor lift, needle guard, sanitation barrier
 - better joystick: smoother feedback, seperate joystick for each arm
