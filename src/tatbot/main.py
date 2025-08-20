@@ -41,16 +41,16 @@ def compose_and_validate_scene(
     if meta:
         override_list.append(f"meta={meta}")
 
+    # Always clear and reinitialize GlobalHydra to avoid caching issues
     if GlobalHydra().is_initialized():
+        GlobalHydra.instance().clear()
+    
+    with initialize(
+        config_path=AppConstants.CONFIG_PATH, 
+        version_base=None
+    ):
         cfg = compose(config_name=AppConstants.DEFAULT_CONFIG_NAME, overrides=override_list)
         return load_scene_from_config(cfg)
-    else:
-        with initialize(
-            config_path=AppConstants.CONFIG_PATH, 
-            version_base=None
-        ):
-            cfg = compose(config_name=AppConstants.DEFAULT_CONFIG_NAME, overrides=override_list)
-            return load_scene_from_config(cfg)
 
 
 @hydra.main(
