@@ -33,7 +33,7 @@
   <!-- lasercross -->
   <link name="lasercross" />
   <joint name="lasercross_joint" type="fixed">
-    <origin rpy="0.000000 0.000000 0.000000" xyz="0.250450 0.000000 0.036" />
+    <origin rpy="0.000000 0.000000 0.000000" xyz="0.250450 0.000000 0.038" />
     <parent link="root"/>
     <child link="lasercross"/>
   </joint>
