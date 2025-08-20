@@ -30,3 +30,6 @@ fi
 
 echo "🔑  Source environment variables (keys, tokens, etc.)"
 source /nfs/tatbot/.env || true
+
+echo "🧹  Delete old outputs"
+rm -rf outputs/* || true
