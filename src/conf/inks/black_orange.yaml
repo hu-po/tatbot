@@ -2,7 +2,7 @@ inkcaps:
   - name: inkcap_left_large
     ink:
       name: bright_orange
-      rgb: [255, 165, 0]
+      rgb: [255, 140, 0]
     diameter_m: 0.014
     depth_m: 0.014
   - name: inkcap_left_small_0
