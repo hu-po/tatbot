@@ -10,11 +10,11 @@
 - host fintuned tatbot policy on replicate, use cloud compute for inference
 
 #### Dataset
+- image generation to gcode pipeline (imagedir w/ manual batch mode)
 - data augmentation via nvidia cosmos
-- maniskill synthetic data
 - ink information as text conditioning
 - camera poses and pointclouds in dataset
-- isaacsim (https://www.youtube.com/live/z7KdHGkUTNE)
+- maniskill vs isaacsim (https://www.youtube.com/live/z7KdHGkUTNE)
 - gsplat from multiview conditioning images
 
 #### Quality, Debugging
