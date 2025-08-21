@@ -33,3 +33,6 @@ Compare the current diff to our plan. Create a new feedback document that review
 # Sixth Prompt
 
 Perform another round of feedback on the current diff. This time focus on making sure that the code is correct and that it contains no errors. Put your feedback in @docs/plans/vggt/diff_feedback_2.md
+---
+orphan: true
+---

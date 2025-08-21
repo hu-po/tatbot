@@ -1,3 +1,10 @@
+---
+summary: Robot arms, URDF models, and kinematics
+tags: [robot, arms]
+updated: 2025-08-21
+audience: [dev, operator]
+---
+
 # Robot System
 
 ## Trossen Robot Arms

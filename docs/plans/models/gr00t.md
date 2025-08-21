@@ -1,3 +1,10 @@
+---
+summary: Gr00t model links, training, and evaluation steps
+tags: [models, gr00t]
+updated: 2025-08-21
+audience: [dev]
+---
+
 # Gr00t
 
 - [blog](https://huggingface.co/blog/nvidia/gr00t-n1-5-so101-tuning)
@@ -5,7 +12,7 @@
 - [repo](https://github.com/NVIDIA/Isaac-GR00T)
 - [tatbot fork](https://github.com/hu-po/Isaac-GR00T)
 
-## Train
+## ⚡ Train
 
 instructions for `oop`
 
@@ -53,7 +60,7 @@ docker run -it --gpus all --shm-size=8g --rm \
     --video-backend torchvision_av"
 ```
 
-## Eval
+## 🖥️ Eval
 
 instructions for `ojo`, acting as the policy server
 

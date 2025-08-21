@@ -1,3 +1,10 @@
+---
+summary: VLA plan 3 — training on stroke_tool datasets and MCP inference
+tags: [plans, vla]
+updated: 2025-08-21
+audience: [dev]
+---
+
 # Tatbot VLA Plan 3 — Training on stroke_tool datasets and MCP inference tool
 
 This guide specifies what’s needed to train Vision-Language-Action (VLA) policies on datasets recorded via `src/tatbot/tools/robot/stroke.py`, and how to add an MCP tool to run inference from a specific model checkpoint.

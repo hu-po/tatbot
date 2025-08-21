@@ -1,8 +1,22 @@
+---
+summary: Setup, install, and developer workflows
+tags: [setup, dev]
+updated: 2025-08-21
+audience: [dev]
+---
+
 # Development Guide
 
 ## ⚡ Quick Setup
 
 This project uses [`uv`](https://docs.astral.sh/uv/getting-started/installation/) for Python dependency and virtual environment management.
+
+```{admonition} Quick Reference
+:class: tip
+- Setup: `source scripts/setup_env.sh`
+- Lint code: `bash scripts/lint_code.sh`
+- Lint docs: `bash scripts/lint_docs.sh`
+```
 
 ```{admonition} Prerequisites
 :class: important
@@ -13,7 +27,7 @@ This project uses [`uv`](https://docs.astral.sh/uv/getting-started/installation/
 - Git
 ```
 
-### 🚀 Quick Install
+### Quick Install
 
 ::::{tab-set}
 
@@ -38,7 +52,7 @@ git clone --depth=1 https://github.com/hu-po/tatbot.git && cd tatbot && source s
 
 ::::
 
-### 📦 Optional Dependencies
+### Optional Dependencies
 
 Dependencies are separated into optional groups, defined in `pyproject.toml`. Install the groups you need for your task.
 
@@ -48,7 +62,7 @@ Dependencies are separated into optional groups, defined in `pyproject.toml`. In
 :::{grid-item-card}
 :class-header: bg-light
 
-🤖 **Core Functionality Groups**
+⚙️ **Core Functionality Groups**
 ^^^
 - `bot`: Robot-specific dependencies (`lerobot`, `trossen-arm`, etc.)
 - `cam`: Camera-specific dependencies (`pyrealsense2`, `pupil-apriltags`, etc.)  
@@ -61,7 +75,7 @@ Dependencies are separated into optional groups, defined in `pyproject.toml`. In
 :::{grid-item-card}
 :class-header: bg-light
 
-🛠️ **Development and Docs**
+📝 **Development and Docs**
 ^^^
 - `dev`: Development tools (`ruff`, `isort`, `pytest`, `mypy`, `pre-commit`)
 - `docs`: Documentation generation (`sphinx`, themes)
@@ -96,7 +110,7 @@ uv pip install .[bot,cam,dev,gen,gpu,img,viz,docs]
 
 ::::
 
-### Full Environment Setup
+### Complete Setup
 For a clean, from-scratch setup:
 ```bash
 git clone --depth=1 https://github.com/hu-po/tatbot.git && cd ~/tatbot
@@ -110,7 +124,7 @@ uv pip install .[bot,cam,dev,gen,gpu,img,viz,docs]
 set -a; source /nfs/tatbot/.env; set +a
 ```
 
-### Starting the System
+### System Startup
 1. **Power On**: Flip the main power strip on.
 2. **`hog` and `eek` PCs**: Press the power button.
 3. **Robot Arms**: Flip the rocker switches on the `arm-r` and `arm-l` control boxes to "ON".
@@ -122,9 +136,9 @@ set -a; source /nfs/tatbot/.env; set +a
    cd ~/tatbot && ./scripts/mcp_run.sh ook
    ```
 
-## 🛠️ Development Workflow
+## 🔄 Workflow
 
-### Linting and Formatting
+### Code Quality
 This project uses `ruff` for both linting and formatting, plus `isort` for import sorting.
 
 To run all code quality checks, use the lint script:
@@ -139,7 +153,7 @@ Generate and validate documentation minimally during linting. The main lint scri
 ```
 This runs `sphinx-build -W docs docs/_build` after code checks.
 
-### Helpful Commands
+### Commands
 
 oneliner to get diff for browser-based models:
 ```bash
@@ -159,13 +173,9 @@ git push origin main
 - Always work within the `uv` virtual environment (`source .venv/bin/activate`)
 - Use `uv pip install` and `uv run` for consistency
 
-### Prompts
+ 
 
-```
-You have the opportunity of looking at another agent's attempt at the task you just completed. Read it carefully and use it to better understand the decisions you made in your document. Make any small edits to your document that fix anything you believe was done better in the alternate task attempts. The other task attempts have the name format of vla_plan_*.md
-```
-
-## 📚 Source Code Architecture
+## 🏢 Architecture
 
 This section provides a comprehensive overview of the `tatbot` source code structure, organized by module. Each module serves a specific purpose in the robotic tattoo system, from hardware control to data generation and visualization.
 

@@ -174,3 +174,6 @@ Next Steps
 - Confirm constraints (GPU availability, weight caching location, tolerance thresholds) and desired operating mode (offline vs online).
 - Implement `tatbot/cam/vggt_runner.py` with a minimal feedforward path; add a small script or tool hook to run on existing recordings.
 - Run M0/M1 on a calibration scene; review metrics and decide whether to proceed with M2+.
+---
+orphan: true
+---

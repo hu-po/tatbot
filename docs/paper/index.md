@@ -1,11 +1,15 @@
-# Paper
+# 📄 Paper
 
 Project paper materials.
 
-```{toctree}
-:maxdepth: 1
+<!-- Removed toctree to avoid missing README warning -->
 
-README
+🚧 **work in progress** 🚧
+
+```bash
+# Install LaTeX (Ubuntu/Debian)
+sudo apt install texlive-full
+./build.sh
 ```
 
-
+The compiled PDF will be available at `paper/tatbot2025.pdf`

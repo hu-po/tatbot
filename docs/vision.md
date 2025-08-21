@@ -1,8 +1,15 @@
+---
+summary: Cameras, calibration, and vision pipelines
+tags: [vision, cameras]
+updated: 2025-08-21
+audience: [dev, operator]
+---
+
 # Vision System
 
 The `tatbot` system uses a combination of Amcrest IP cameras for wide-angle scene coverage and Intel Realsense depth cameras mounted on the robot arms for precise 3D sensing. AprilTags are used for object tracking and calibration. The system is enhanced with VGGT (Visual Geometry Grounded Tracking) for dense 3D reconstruction and markerless pose estimation.
 
-## Cameras
+## 📷 Cameras
 
 - `src/conf/cams/default.yaml`: The main configuration file for all cameras.
 - `src/tatbot/data/cams.py`: The Pydantic data model for camera configurations.
@@ -41,7 +48,7 @@ tatbot uses two [D405 Intel Realsense cameras](https://www.intelrealsense.com/de
 - [FOV differs for depth and rgb cameras](https://www.intel.com/content/www/us/en/support/articles/000030385/emerging-technologies/intel-realsense-technology.html)
 - TODO: these will somewhat randomly fail, need to create robust exception handling
 
-## AprilTags
+## 🏷️ AprilTags
 
 AprilTags are used to track objects (i.e. palette) in the scene and for camera calibration.
 

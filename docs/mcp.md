@@ -1,3 +1,10 @@
+---
+summary: Unified MCP server architecture and usage
+tags: [mcp, nodes, tools]
+updated: 2025-08-21
+audience: [dev, operator]
+---
+
 # MCP (Model Context Protocol)
 
 - **Unified Server**: A single `tatbot.mcp.server` now runs on all nodes.
@@ -5,7 +12,7 @@
 - **Unified Tools Architecture**: Tools are now in `tatbot.tools` with decorator-based registration (see [Tools Documentation](tools.md)).
 - **Pydantic Models**: All requests and responses are strongly typed with Pydantic for validation and clarity.
 
-## Starting Servers
+## 🚀 Setup
 To start an MCP server on a specific node, use the unified launcher script:
 ```bash
 # Start the server on the 'ook' node
@@ -15,10 +22,10 @@ To start an MCP server on a specific node, use the unified launcher script:
 ./scripts/mcp_run.sh eek mcp.debug=true
 ```
 
-## Server Logs
+## 📄 Server Logs
 Logs are written to `/nfs/tatbot/mcp-logs/<node_name>.log`. For example, the `ook` server's log is at `/nfs/tatbot/mcp-logs/ook.log`.
 
-## Node Configuration
+## ⚙️ Node Configuration
 The behavior of each MCP server is defined by a corresponding YAML file in `src/conf/mcp/`. For example, the `ook` node is configured by `src/conf/mcp/ook.yaml`.
 
 These files control:
@@ -26,7 +33,7 @@ These files control:
 - **`tools`**: A list of which tools are enabled on this node (tools auto-register from `tatbot.tools`).
 - **`extras`**: A list of optional dependency groups (from `pyproject.toml`) that should be installed on this node. The `mcp_run.sh` script invokes `scripts/setup_env.sh`, which installs these extras before starting the server.
 
-## Available Tools
+## 🧰 Tools
 
 Tools are now defined in the unified `tatbot.tools` module using decorator-based registration. See the [Tools Documentation](tools.md) for detailed information.
 
@@ -55,7 +62,7 @@ Tools are now defined in the unified `tatbot.tools` module using decorator-based
 
 Tools specify their node availability and requirements directly in their decorator, eliminating the need for separate mapping files. For the authoritative list and details, see the Tools documentation (`docs/tools.md`).
 
-## Cross-Node GPU Processing
+## 💬 GPU Processing
 
 The MCP system enables transparent cross-node GPU acceleration for stroke trajectory conversion. This allows robot operations on non-GPU nodes (like `hog`) to automatically leverage GPU-accelerated inverse kinematics solving on GPU-enabled nodes (like `ook`).
 

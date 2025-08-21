@@ -1,3 +1,10 @@
+---
+summary: VLA plan 2 — training and inference on tatbot stroke datasets
+tags: [plans, vla]
+updated: 2025-08-21
+audience: [dev]
+---
+
 # VLA Training and Inference Plan for Tatbot Stroke Datasets
 
 ## Executive Summary

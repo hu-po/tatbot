@@ -1,4 +1,4 @@
-# Logos
+# 🎨 Logos
 
 Below are the available logo assets.
 

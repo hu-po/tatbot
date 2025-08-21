@@ -16,7 +16,7 @@ Short, minimal rules for writing docs that are easy to scan by humans and predic
 - **Scannable:** H2 with emojis; use code blocks, short admonitions, and sparse grids.
 - **Agent-friendly:** Include commands, paths, and config near the top; use anchors and cross-refs.
 
-## 🧩 Page Template
+## 📝 Page Template
 
 Use this template as the default structure.
 
@@ -63,13 +63,13 @@ uv run python -m tatbot.viz.teleop --enable-robot
 - :ref:`Internal Anchor`
 ````
 
-## 🧭 Headings & Emojis
+## 🏷️ Headings
 
 - **H1:** Page title only (one per page).
 - **H2:** Major sections prefixed with a small emoji set: ⚡, 🛠️, 🖥️, 🦾, 📷, 🌐, 📚.
 - **H3:** Subsections, no emoji. Avoid H4+; prefer lists or additional pages.
 
-## 🎨 Visual Elements
+## 🔍 Visual Elements
 
 - **Grids:** Use only for overviews/landing pages. Keep items concise.
 - **Tabs:** Use for true alternatives (e.g., Method A vs B). Don’t tab trivial variations.
@@ -84,20 +84,20 @@ Examples of fenced content inside examples must use four backticks:
 ```
 ````
 
-## 🤖 Agent Optimization
+## 🎩 Agent Optimization
 
 - Put a “Quick Reference” block near the top (commands, paths, config).
 - Use consistent H2 anchors: “Quick Start”, “Configuration”, “Usage”, “Troubleshooting”, “Reference”.
 - Prefer structured lists over long paragraphs; avoid screenshots of text.
 - Include real paths and commands; minimize interactive prompts and long outputs.
 
-## 🔗 Linking & Reuse
+## 🔄 Linking
 
 - Prefer `:doc:` and `:ref:` for internal links; avoid raw file/line mentions.
 - Use `literalinclude` to pull config/code from `src/` or `config/` to prevent drift.
 - Use node substitutions defined in `conf.py` (e.g., `{{eek}}`) for consistent labels.
 
-## ✅ Quality Checklist (keep it short)
+## ✓ Checklist
 
 - H1 once; H2 with approved emojis; H3 only as needed.
 - Intro + Quick Reference present and accurate.
@@ -105,12 +105,12 @@ Examples of fenced content inside examples must use four backticks:
 - Links resolve; cross-refs use `:doc:`/`:ref:`.
 - Page stays focused (< ~800 words). Split if needed.
 
-## 🚫 Do / Don’t
+## ⚠️ Do / Don't
 
 - Do: Lists, short admonitions, stable anchors, `literalinclude`, minimal grids.
 - Don’t: Emoji on H3+, decorative grids for simple lists, long terminal dumps, duplicate admonition styles.
 
-## 🔧 Implementation Notes
+## ⚙️ Implementation Notes
 
 - Theme: Furo with copy buttons and `sphinx_design`.
 - MyST: `colon_fence`, `substitution`, anchors up to H3 as configured in `conf.py`.

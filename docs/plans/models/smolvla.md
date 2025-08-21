@@ -1,3 +1,10 @@
+---
+summary: SmolVLA model references, training, and evaluation
+tags: [models, smolvla]
+updated: 2025-08-21
+audience: [dev]
+---
+
 # SmolVLA
 
 - [blog](https://huggingface.co/blog/smolvla)
@@ -5,7 +12,7 @@
 - [tatbot fork](https://github.com/hu-po/lerobot)
 - smolvla is part of the lerobot repo
 
-## Train
+## ⚡ Train
 
 instructions for `oop`
 
@@ -29,7 +36,7 @@ uv run python ~/lerobot/lerobot/scripts/train.py \
   --steps=1000
 ```
 
-## Eval
+## 🖥️ Eval
 
 instructions for `eek` performing model inference and running robot
 

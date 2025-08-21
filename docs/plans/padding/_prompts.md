@@ -3,3 +3,6 @@ modify the tatbot source code to use padded strokes based around a configurable 
 other agents have created their own plans for this feature. Browse the other plans in the /tatbot/docs/plans/ directory and make any fixes or improvements to your own plan that you think are necessary given the other plans.
 
 review the current code changes and verify that there are no bugs or mistakes. Use the /tatbot/docs/plans/final_plan.md file as the reference.
+---
+orphan: true
+---

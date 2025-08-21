@@ -1,8 +1,15 @@
+---
+summary: VGGT (Visual Geometry Grounded Tracking) integration and usage
+tags: [vision, vggt]
+updated: 2025-08-21
+audience: [dev]
+---
+
 # VGGT Integration
 
 VGGT (Visual Geometry Grounded Tracking) is integrated into Tatbot to provide dense 3D reconstruction and automatic camera pose estimation from multi-view RGB images. This complements the existing AprilTag-based calibration and RealSense depth sensing.
 
-## Overview
+## 🔍 Overview
 
 VGGT enhances the vision system by:
 - **Dense 3D Reconstruction**: Generates high-quality point clouds from RGB-only images
@@ -11,11 +18,11 @@ VGGT enhances the vision system by:
 - **Scale Alignment**: Automatically aligns VGGT outputs with metric measurements using AprilTag references
 - **COLMAP Integration**: Exports standard COLMAP format for compatibility with external tools
 
-## Architecture
+## 🛠️ Architecture
 
 ### Components
 
-```
+```text
 src/tatbot/
 ├── cam/vggt_runner.py           # Core VGGT processing utilities
 ├── tools/gpu/vggt_recon.py      # Remote GPU reconstruction tool
@@ -31,7 +38,7 @@ src/tatbot/
 4. **File Storage** (NFS): Results saved in COLMAP + PLY formats
 5. **Visualization** (any): Compare VGGT vs RealSense reconstructions
 
-## Usage
+## ⚡ Usage
 
 ### Enable VGGT in Sense Tool
 
@@ -96,11 +103,11 @@ Or via MCP tool:
 }
 ```
 
-## Output Data Structure
+## 📋 Output Data Structure
 
 VGGT integration generates the following files in sense datasets:
 
-```
+```text
 /nfs/tatbot/recordings/sense-{scene}-{timestamp}/
 ├── images/                      # RGB images for VGGT processing
 │   ├── realsense1.png
@@ -121,7 +128,7 @@ VGGT integration generates the following files in sense datasets:
     └── metrics.json             # Reconstruction metrics
 ```
 
-## Technical Details
+## ⚙️ Implementation
 
 ### Model Management
 
@@ -155,7 +162,7 @@ VGGT outputs are scale-ambiguous and require metric alignment:
 - **Retry**: 2 attempts with exponential backoff
 - **Fallback**: Graceful degradation if VGGT fails
 
-## Configuration
+## 🛠️ Configuration
 
 ### Node Requirements
 
@@ -163,7 +170,7 @@ VGGT outputs are scale-ambiguous and require metric alignment:
 - **Sensor Node** (`hog`): Camera connections (RealSense + IP cameras)
 - **Storage**: NFS mount for cross-node file access
 
-### Camera Configuration
+### Cameras
 
 VGGT works with any RGB cameras defined in the scene:
 - **IP Cameras**: Full resolution RGB frames
@@ -171,7 +178,7 @@ VGGT works with any RGB cameras defined in the scene:
 - **Format**: PNG images saved to `images/` subdirectory
 - **Naming**: `{camera_name}.png` format for consistent processing
 
-### GPU Node Configuration
+### GPU Nodes
 
 Enable VGGT capability in `src/conf/mcp/ook.yaml`:
 
@@ -182,7 +189,7 @@ tools:
   - convert_strokelist_to_batch
 ```
 
-### VGGT Configuration
+### VGGT Settings
 
 Optional VGGT-specific settings in `src/conf/cam/vggt.yaml`:
 
@@ -195,26 +202,26 @@ use_ba: false     # Bundle adjustment
 return_point_map: true
 ```
 
-## Performance
+## 📈 Performance
 
-### Processing Time
+### Timing
 - **Image Loading**: ~2-5 seconds for typical multi-camera setup
 - **VGGT Inference**: ~30-60 seconds on RTX-class GPU
 - **Scale Alignment**: ~1 second
 - **File I/O**: ~5-10 seconds for PLY/COLMAP export
 - **Total**: ~1-2 minutes for complete reconstruction
 
-### Resource Usage
+### Resources
 - **GPU Memory**: ~8GB VRAM during inference
 - **Storage**: ~50-100MB per reconstruction (dense point cloud)
 - **Network**: Minimal (<1KB MCP payloads)
 
-### Quality Metrics
+### Quality
 - **Point Density**: 10x+ more points than RealSense depth
 - **Pose Accuracy**: Typically within 2-5mm of AprilTag calibration
 - **Coverage**: Full 360° reconstruction from multi-view images
 
-## Integration Points
+## 🔗 Integration
 
 ### Existing Vision Pipeline
 - **Complementary**: Works alongside AprilTag calibration and RealSense depth
@@ -231,9 +238,9 @@ return_point_map: true
 - **Camera Poses**: Visual comparison of AprilTag vs VGGT camera frustums
 - **Quality Assessment**: Real-time pose accuracy and point density metrics
 
-## Troubleshooting
+## ⚠️ Troubleshooting
 
-### Common Issues
+### Issues
 
 **VGGT Processing Fails:**
 - Check GPU memory availability (`nvidia-smi`)
@@ -256,7 +263,7 @@ return_point_map: true
 - Adjust confidence threshold for point filtering
 - Consider bundle adjustment for pose refinement
 
-### Debug Information
+### Debugging
 
 Monitor VGGT processing via logs:
 ```bash
@@ -272,7 +279,7 @@ Key metrics to check:
 - `vggt_point_count`: Higher is generally better
 - `mean_cam_center_err_m`: Pose accuracy vs AprilTag reference
 
-## Future Enhancements
+## 🚀 Roadmap
 
 - **Bundle Adjustment**: Integration with pycolmap for pose refinement
 - **Multi-Scale Processing**: Support for different VGGT resolution settings

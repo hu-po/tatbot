@@ -1,3 +1,10 @@
+---
+summary: Tatbot datasets, format, and resources
+tags: [models, datasets]
+updated: 2025-08-21
+audience: [dev]
+---
+
 # Datasets
 
 - foundation VLA models must be finetuned on tatbot datasets

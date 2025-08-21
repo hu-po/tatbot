@@ -1,3 +1,10 @@
+---
+summary: VLA plan 0 — training with LeRobot for tatbot
+tags: [plans, vla]
+updated: 2025-08-21
+audience: [dev]
+---
+
 # VLA Policy Training Guide for Tatbot Robot
 
 This guide provides comprehensive documentation for finetuning Vision-Language-Action (VLA) policies, evaluating training with WandB, and performing inference on the Tatbot robot with RealSense cameras using the LeRobot framework.

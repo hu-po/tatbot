@@ -71,3 +71,6 @@ Goal: Adopt distance-based resampling with padding so each stroke’s point spac
 - Masked compute: optional mask for IK/execution to reduce compute on padded indices.
 - Velocity profile based on per-step distance to bound EE velocity.
 - Persist chosen spacing and caps in outputs if needed.
+---
+orphan: true
+---

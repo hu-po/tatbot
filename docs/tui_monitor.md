@@ -1,8 +1,15 @@
+---
+summary: Terminal UI monitor for nodes and stroke progress
+tags: [tui, monitor, state]
+updated: 2025-08-21
+audience: [dev, operator]
+---
+
 # TUI System Monitor
 
 A real-time terminal-based dashboard for monitoring the distributed tatbot system state via Redis parameter server.
 
-## Overview
+## 🔍 Overview
 
 The TUI monitor provides live visualization of:
 
@@ -11,7 +18,7 @@ The TUI monitor provides live visualization of:
 - **Node Health**: Status and connectivity of all tatbot nodes
 - **Event Stream**: Recent system events and errors
 
-## Installation
+## 🛠️ Installation
 
 Install TUI dependencies:
 
@@ -19,9 +26,9 @@ Install TUI dependencies:
 uv pip install -e .[tui]
 ```
 
-## Usage
+## ⚡ Usage
 
-### Direct Command Line
+### Command Line
 
 ```bash
 # Start monitor on rpi1 (default)
@@ -34,7 +41,7 @@ tatbot-monitor --node-id rpi2 --redis-host 192.168.1.97
 python -m tatbot.tui.monitor
 ```
 
-### Running the Monitor
+### Running
 
 The TUI monitor is designed to run directly on rpi1 using the terminal command. Simply SSH to rpi1 and start it:
 
@@ -45,7 +52,7 @@ source scripts/setup_env.sh
 uv run tatbot-monitor
 ```
 
-## Display Layout
+## 🖥️ Display Layout
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -75,22 +82,22 @@ uv run tatbot-monitor
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Features
+## ✨ Features
 
-### Real-time Data
+### Data
 
 - **Auto-refresh**: Configurable refresh rate (0.5-10.0 seconds)  
 - **Live events**: Subscribes to Redis pub/sub channels for immediate updates
 - **Progress tracking**: Visual progress bars for stroke execution
 - **Health monitoring**: Node connectivity and status updates
 
-### Interactive Display
+### Display
 
 - **Rich formatting**: Colors, icons, and progress bars
 - **Responsive layout**: Adapts to terminal size
 - **Clean interface**: Organized panels with clear information hierarchy
 
-### Background Operation  
+### Background  
 
 - **Detached processes**: Can run monitors in background
 - **Process management**: List, start, and stop multiple monitor instances
@@ -114,7 +121,7 @@ Run monitors on different nodes based on role:
 
 ## Troubleshooting
 
-### Connection Issues
+### Connections
 
 ```bash
 # Test Redis connectivity
@@ -127,7 +134,7 @@ ping eek
 curl -sS "http://rpi1:8000/mcp/health"
 ```
 
-### Display Issues
+### Display Problems
 
 - **Terminal size**: Ensure terminal is at least 80x24 characters
 - **Dependencies**: Install with `uv pip install -e .[tui]`
@@ -141,7 +148,7 @@ curl -sS "http://rpi1:8000/mcp/health"
 
 ## Development
 
-### Adding Display Panels
+### Custom Panels
 
 ```python
 def create_custom_panel(self) -> Panel:
@@ -155,7 +162,7 @@ def setup_layout(self) -> None:
     pass
 ```
 
-### Event Handling
+### Events
 
 ```python
 async def handle_custom_event(self, event_data: Dict[str, Any]) -> None:

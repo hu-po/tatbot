@@ -1,8 +1,15 @@
-# 🖥️ Nodes
+---
+summary: Overview of compute nodes and roles
+tags: [nodes]
+updated: 2025-08-21
+audience: [dev, operator]
+---
+
+# 🌐 Nodes
 
 Tatbot consists of several computers, cameras, and robots connected via ethernet in a distributed computing architecture.
 
-## 💻 Compute Nodes
+## ⚡ Compute Nodes
 
 ::::{grid} 1 1 2 3
 :gutter: 3
@@ -91,19 +98,19 @@ Raspberry Pi 5
 **Automatic Switching:** Mode changes are detected within 20 seconds and all nodes automatically get new DHCP leases with correct settings.
 ```
 
-## 📷 Camera System
-- `camera1` 📷: Amcrest IP PoE camera (5MP, 30fps)
-- `camera2` 📷: Amcrest IP PoE camera (5MP, 30fps)
-- `camera3` 📷: Amcrest IP PoE camera (5MP, 30fps)
-- `camera4` 📷: Amcrest IP PoE camera (5MP, 30fps)
-- `camera5` 📷: Amcrest IP PoE camera (5MP, 30fps)
+## 🔍 Cameras
+- `camera1` 📹: Amcrest IP PoE camera (5MP, 30fps)
+- `camera2` 📸: Amcrest IP PoE camera (5MP, 30fps)
+- `camera3` 🗒️: Amcrest IP PoE camera (5MP, 30fps)
+- `camera4` 🔎: Amcrest IP PoE camera (5MP, 30fps)
+- `camera5` 🎥: Amcrest IP PoE camera (5MP, 30fps)
 - `realsense1` 📷: Intel Realsense D405 (1280x720 RGBD, 90fps)
-- `realsense2` 📷: Intel Realsense D405 (1280x720 RGBD, 90fps)
+- `realsense2` 🔍: Intel Realsense D405 (1280x720 RGBD, 90fps)
 - `switch-lan`: 8-port gigabit ethernet switch
 - `switch-poe`: 8-port gigabit PoE switch
-- `arm-l` 🦾: Trossen Arm Controller box (back) connected to WidowXAI arm
-- `arm-r` 🦾: Trossen Arm Controller box (front) connected to WidowXAI arm
-- `display` 🖥️: touchscreen monitor w/ speakers
+- `arm-l` 🤖: Trossen Arm Controller box (back) connected to WidowXAI arm
+- `arm-r` 🧿: Trossen Arm Controller box (front) connected to WidowXAI arm
+- `display` 📺: touchscreen monitor w/ speakers
 
 
 
@@ -197,7 +204,7 @@ tatbot operates in two modes that **automatically switch** based on home network
 
 **Automatic DHCP Renewal**: When modes switch, all nodes automatically get new DHCP leases with correct gateway/DNS settings within 20 seconds.
 
-### Setup Instructions
+### Setup
 
 **1. Setup DNS Control Node (rpi2) with Auto-Detection**
 
@@ -313,7 +320,7 @@ For Arm Control Boxes:
 2. Push configs to arm controller boxes with `src/tatbot/bot/trossen_config.py`
 3. Reboot arm controller boxes
 
-### Operation and Monitoring
+### Operations
 
 **Check Current Status**
 

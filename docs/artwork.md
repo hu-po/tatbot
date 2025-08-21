@@ -1,3 +1,10 @@
+---
+summary: Artwork pipeline from image to robot strokes
+tags: [artwork, pipeline]
+updated: 2025-08-21
+audience: [dev, operator, agent]
+---
+
 # Artwork
 
 Basic art workflow is:
@@ -8,11 +15,17 @@ Basic art workflow is:
 
 designs are stored in `/nfs/tatbot/designs/`
 
-## Image generation
+```{admonition} Quick Reference
+:class: tip
+- Designs: `/nfs/tatbot/designs/`
+- DBv3 configs: `config/dbv3/{pens,gcode,areas}/...`
+```
+
+## 🎨 Image Generation
 
 - [Replicate Playground](https://replicate.com/playground)
 
-## Vectorization
+## 🔄 Vectorization
 
 - [DrawingBotV3](https://docs.drawingbotv3.com/en/latest/index.html)
 - tatbot uses the premium version
@@ -24,7 +37,8 @@ custom `dbv3` config files:
 - gcode: `config/dbv3/gcode/tatbot.json`
 - areas: `config/dbv3/areas/fakeskin-landscape.json`
 
-instructions to scrape docs for model context:
+### Docs to Markdown (optional)
+Instructions to scrape docs for model context:
 
 ```bash
 cd /tmp
