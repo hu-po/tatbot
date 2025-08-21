@@ -1,0 +1,98 @@
+# markdownlint-cli2 configuration for tatbot documentation
+# Based on the established style patterns in the codebase
+
+# Glob patterns for files to lint
+globs: ["docs/**/*.md"]
+
+# Glob patterns for files to ignore
+ignores:
+  - "**/node_modules/**"
+  - "**/_build/**"
+  - "**/venv/**"
+  - "**/.venv/**"
+
+# Rule configuration
+config:
+  # Line length - allow longer lines for URLs and code
+  MD013:
+    line_length: 120
+    code_blocks: false
+    tables: false
+    headings: false
+    headers: false
+
+  # Trailing spaces - allow 2 spaces for line breaks
+  MD009:
+    br_spaces: 2
+
+  # Multiple consecutive blank lines
+  MD012:
+    maximum: 2
+
+  # Line length in code blocks - disabled since we have long command examples
+  MD013: false
+
+  # Dollar signs in code blocks - disabled for shell examples
+  MD014: false
+
+  # No space after hash on atx style heading - disabled for emoji usage
+  MD018: false
+
+  # Multiple spaces after hash on atx style heading - allow for emoji spacing
+  MD019: false
+
+  # Surrounded by blank lines - allow flexibility for admonitions
+  MD022: false
+
+  # Headers should start at h1 - disabled since we use single h1 per page
+  MD025: false
+
+  # Multiple headings with same content - allow since we have repeated "Installation" etc.
+  MD024:
+    siblings_only: true
+
+  # Multiple top level headers in same document - allow h1 + h2 structure
+  MD025: false
+
+  # Trailing punctuation in headers - allow since we don't enforce this
+  MD026: false
+
+  # Multiple spaces inside emphasis markers - disabled
+  MD037: false
+
+  # Code fence style - enforce consistency
+  MD040:
+    allowed_languages: ["bash", "python", "yaml", "json", "javascript", "css", "html", "xml", "markdown", "text", "console", "shell"]
+
+  # First line in file should be top level header - disabled for flexibility
+  MD041: false
+
+  # No space inside emphasis markers - disabled for flexibility
+  MD037: false
+
+  # Code fence info - require language specification
+  MD040: true
+
+  # First header should be h1 - disabled since we allow flexibility
+  MD043: false
+
+  # Proper names should have correct capitalization - disabled as too restrictive
+  MD044: false
+
+  # Images should have alternate text - enforce for accessibility
+  MD045: true
+
+  # Code block style - enforce fenced code blocks
+  MD046:
+    style: "fenced"
+
+  # Inline code should not have spaces around it
+  MD047: true
+
+  # Code fence should be surrounded by blank lines
+  MD048: true
+
+# Fix mode settings
+fix: false
+outputFormatters:
+  - ["markdownlint-cli2-formatter-default"]

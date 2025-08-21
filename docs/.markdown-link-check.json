@@ -1,0 +1,42 @@
+{
+  "ignorePatterns": [
+    {
+      "pattern": "^#"
+    },
+    {
+      "pattern": "^mailto:"
+    },
+    {
+      "pattern": "localhost"
+    },
+    {
+      "pattern": "127.0.0.1"
+    },
+    {
+      "pattern": "192.168.1."
+    },
+    {
+      "pattern": "tatbot.lan"
+    }
+  ],
+  "replacementPatterns": [
+    {
+      "pattern": "^/",
+      "replacement": "{{BASEURL}}/"
+    }
+  ],
+  "httpHeaders": [
+    {
+      "urls": ["https://github.com/"],
+      "headers": {
+        "User-Agent": "Mozilla/5.0 (compatible; documentation-link-checker)"
+      }
+    }
+  ],
+  "timeout": "10s",
+  "retryOn429": true,
+  "retryCount": 3,
+  "fallbackRetryDelay": "30s",
+  "aliveStatusCodes": [200, 206, 301, 302, 307, 308],
+  "ignoreAnchor": true
+}
