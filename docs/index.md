@@ -46,7 +46,7 @@ Understand the distributed system architecture and node capabilities.
 - `uv run python -m tatbot.viz.teleop --enable-robot` - Launch teleop interface
 ```
 
-## ⚙️ Core Systems
+## 🛠️ Core Systems
 
 ::::{grid} 1 1 2 2
 :gutter: 3
