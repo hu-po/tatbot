@@ -25,7 +25,7 @@ audience: [dev]
 - maniskill vs isaacsim (https://www.youtube.com/live/z7KdHGkUTNE)
 - gsplat from multiview conditioning images
 
-## 🔍 Quality, Debugging
+## 🔍 Quality & Debugging
 - check for arm error before episode big moves
 - method of filtering through strokelist to see if any strokes have a large delta/error and thus filter.
 - upgrade TUI to show cpu, memory, disk usage on nodes to check for bottlenecks (one single graph?)
@@ -47,7 +47,7 @@ audience: [dev]
 - sensor fusion for realsense pointcloud and ip camera gsplat
 - sync camera images via rust on rpi1/rpi2
 
-## 📢 Social media, SEO, Marketing
+## 📢 Outreach
 - improve tatbot website currently built off of docs
 - create PR to add to https://github.com/mjyc/awesome-robotics-projects
 - submit to https://devpost.com/submit-to/25802-openai-open-model-hackathon/manage/submissions

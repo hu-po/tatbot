@@ -5,7 +5,7 @@ updated: 2025-08-21
 audience: [dev, operator]
 ---
 
-# TUI System Monitor
+# TUI Monitor
 
 A real-time terminal-based dashboard for monitoring the distributed tatbot system state via Redis parameter server.
 
@@ -18,7 +18,7 @@ The TUI monitor provides live visualization of:
 - **Node Health**: Status and connectivity of all tatbot nodes
 - **Event Stream**: Recent system events and errors
 
-## 🛠️ Installation
+## 🛠️ Install
 
 Install TUI dependencies:
 
@@ -52,7 +52,7 @@ source scripts/setup_env.sh
 uv run tatbot-monitor
 ```
 
-## 🖥️ Display Layout
+## 🖥️ Layout
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -103,7 +103,7 @@ uv run tatbot-monitor
 - **Process management**: List, start, and stop multiple monitor instances
 - **Resource efficient**: Low CPU/memory footprint
 
-## Configuration
+## Config
 
 ### Refresh Rate
 

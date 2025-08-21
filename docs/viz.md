@@ -13,7 +13,7 @@ Tatbot provides interactive 3D visualization tools using [`viser`](https://githu
 
 The visualization system has two modes of operation:
 
-### 1. Standalone Scripts (Legacy)
+### Standalone Scripts
 Located in `src/tatbot/viz/`:
 - `base.py`: Base class for all visualizations
 - `stroke.py`: Visualizes a full `StrokeBatch` execution
@@ -27,7 +27,7 @@ uv run python -m tatbot.viz.teleop --enable-robot --enable-depth
 uv run python -m tatbot.viz.map --scene=default
 ```
 
-### 2. MCP Tools (Recommended)
+### MCP Tools
 Located in `src/tatbot/tools/viz/`:
 - `stroke_viz.py`: Start stroke visualization server via MCP
 - `teleop_viz.py`: Start teleoperation server via MCP
@@ -36,7 +36,7 @@ Located in `src/tatbot/tools/viz/`:
 
 ## ⚡ Usage
 
-### Start a Stroke Visualization Server
+### Start Stroke Viz
 ```json
 {
   "tool": "start_stroke_viz",
@@ -50,7 +50,7 @@ Located in `src/tatbot/tools/viz/`:
 }
 ```
 
-### Start a Teleoperation Server
+### Start Teleop Viz
 ```json
 {
   "tool": "start_teleop_viz",
@@ -63,7 +63,7 @@ Located in `src/tatbot/tools/viz/`:
 }
 ```
 
-### Start a Surface Mapping Visualization
+### Start Surface Mapping
 ```json
 {
   "tool": "start_map_viz",
@@ -75,7 +75,7 @@ Located in `src/tatbot/tools/viz/`:
 }
 ```
 
-### Server Control
+### Control
 ```json
 // List all running servers
 {

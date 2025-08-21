@@ -5,9 +5,9 @@ updated: 2025-08-21
 audience: [dev, operator]
 ---
 
-# Robot System
+# Robot
 
-## Trossen Robot Arms
+## Arms
 
 - [`trossen_arm`](https://github.com/TrossenRobotics/trossen_arm)
 - [Trossen WidowXAI arms](https://docs.trossenrobotics.com/trossen_arm/main/specifications.html)
@@ -41,7 +41,7 @@ TODO: Edit end effector parameters for tattoo ee
 https://docs.trossenrobotics.com/trossen_arm/main/api/structtrossen__arm_1_1EndEffector.html#struct-documentation
 TODO: Create trossen_arm.StandardEndEffector.wxai_v0_tatbot_l and trossen_arm.StandardEndEffector.wxai_v0_tatbot_r
 
-### Home the arms
+### Home Arms
 
 https://docs.trossenrobotics.com/trossen_arm/main/service.html#arm-homing
 
@@ -50,7 +50,7 @@ https://docs.trossenrobotics.com/trossen_arm/main/service.html#arm-homing
 - tatbot is defined using URDF at `tatbot/urdf/tatbot.urdf`
 - based off the [official URDF](https://github.com/TrossenRobotics/trossen_arm_description)
 
-## Inverse Kinematics
+## IK
 
 - [`jax`](https://github.com/jax-ml/jax)
 - [`pyroki`](https://github.com/chungmin99/pyroki)

@@ -5,7 +5,7 @@ updated: 2025-08-21
 audience: [dev]
 ---
 
-# Development Guide
+# Development
 
 ## ⚡ Quick Setup
 
@@ -110,7 +110,7 @@ uv pip install .[bot,cam,dev,gen,gpu,img,viz,docs]
 
 ::::
 
-### Complete Setup
+### Full Setup
 For a clean, from-scratch setup:
 ```bash
 git clone --depth=1 https://github.com/hu-po/tatbot.git && cd ~/tatbot
@@ -124,7 +124,7 @@ uv pip install .[bot,cam,dev,gen,gpu,img,viz,docs]
 set -a; source /nfs/tatbot/.env; set +a
 ```
 
-### System Startup
+### Startup
 1. **Power On**: Flip the main power strip on.
 2. **`hog` and `eek` PCs**: Press the power button.
 3. **Robot Arms**: Flip the rocker switches on the `arm-r` and `arm-l` control boxes to "ON".
@@ -146,7 +146,7 @@ To run all code quality checks, use the lint script:
 ./scripts/lint.sh
 ```
 
-### Documentation
+### Docs
 Generate and validate documentation minimally during linting. The main lint script now builds docs with warnings-as-errors:
 ```bash
 ./scripts/lint.sh

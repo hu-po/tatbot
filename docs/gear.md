@@ -5,9 +5,9 @@ updated: 2025-08-21
 audience: [dev, operator]
 ---
 
-# Tattoo Gear
+# Gear
 
-## ⚡ Tattoo Machines
+## ⚡ Machines
 
 - 2 x Ambition Lutin Rotary Tattoo Machine
 - 3.8mm straight drive bar stroke cam

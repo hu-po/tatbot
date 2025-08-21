@@ -8,13 +8,13 @@ VGGT is not available at runtime.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
-import json
-import numpy as np
 import jaxlie
+import numpy as np
 
 from tatbot.utils.log import get_logger
 from tatbot.utils.plymesh import save_ply
@@ -98,7 +98,7 @@ def write_colmap_text(
         camera_params_cache[params] = camera_id
         cams_lines.append(f"{camera_id} PINHOLE 0 0 {params[0]} {params[1]} {params[2]} {params[3]}\n")
 
-    for img_id, (name, E) in enumerate(zip(image_names, extrinsic_list), start=1):
+    for img_id, (name, E) in enumerate(zip(image_names, extrinsic_list, strict=False), start=1):
         R = E[:, :3]
         t = E[:, 3]
         # Convert to quaternion in COLMAP order (qw, qx, qy, qz) robustly
@@ -130,7 +130,7 @@ def write_frustums_json(
     Stores camera-from-world (3x4) extrinsics and intrinsics (3x3) per name.
     """
     payload = []
-    for name, E, K in zip(names, extrinsic_list, intrinsic_list):
+    for name, E, K in zip(names, extrinsic_list, intrinsic_list, strict=False):
         payload.append({
             "name": name,
             "extrinsic_3x4": np.asarray(E, dtype=float).tolist(),
@@ -199,7 +199,9 @@ def run_vggt_from_images(
         if depth_conf is not None:
             result.depth_conf = depth_conf.detach().cpu().numpy().squeeze(0)
         if result.depth is not None:
-            from vggt.utils.geometry import unproject_depth_map_to_point_map  # type: ignore
+            from vggt.utils.geometry import (
+                unproject_depth_map_to_point_map,  # type: ignore
+            )
             result.world_points = unproject_depth_map_to_point_map(result.depth, result.extrinsic, result.intrinsic)
     except Exception as e:
         log.warning(f"Failed to compute world points from depth: {e}")

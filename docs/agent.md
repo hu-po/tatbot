@@ -20,7 +20,7 @@ tatbot is controlled by an agent model.
 - Install and serve a model with Ollama on `ojo`.
 - Configure and run the opencode client locally.
 
-## ⚙️ Setup (Ollama on `ojo`)
+## ⚙️ Setup
 
 ```bash
 # Install ollama
@@ -46,7 +46,7 @@ ollama ps
 sudo systemctl restart ollama
 ```
 
-## 🖥️ Usage (opencode)
+## 🖥️ Usage
 
 The main agent interface is via [opencode](https://github.com/sst/opencode).
 

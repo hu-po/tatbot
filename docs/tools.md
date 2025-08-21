@@ -5,7 +5,7 @@ updated: 2025-08-21
 audience: [dev]
 ---
 
-# Tatbot Tools Architecture
+# Tools
 
 The Tatbot tools system provides a unified, decorator-based approach to defining operations and utilities that can be executed via MCP (Model Context Protocol) across multiple nodes.
 
@@ -18,7 +18,7 @@ The Tatbot tools system provides a unified, decorator-based approach to defining
 - **Async Generators**: Maintains beloved progress reporting via async generators
 - **Auto-Discovery**: Tools register themselves automatically on import
 
-## 🏠 Tool Structure
+## 🏠 Structure
 
 ```text
 src/tatbot/tools/
@@ -40,7 +40,7 @@ src/tatbot/tools/
     └── models.py           # Pydantic models for GPU tools
 ```
 
-## 🔨 Creating Tools
+## 🔨 Create Tools
 
 Tools are simple async functions decorated with `@tool`:
 
@@ -82,7 +82,7 @@ async def my_tool(input_data: MyToolInput, ctx: ToolContext):
     )
 ```
 
-## 🏷️ Tool Categories
+## 🏷️ Categories
 
 ### System Tools
 
@@ -133,7 +133,7 @@ Tools can specify requirements (like GPU support):
 
 Requirements are checked against the `extras` field in node MCP configuration files.
 
-## 📈 Progress Reporting
+## 📈 Progress
 
 Tools use async generators to report progress:
 
@@ -183,7 +183,7 @@ Tools integrate seamlessly with the existing MCP server:
 3. Tool execution is handled by the registry wrapper
 4. Progress reports flow through MCP protocol to clients
 
-## 🏢 Architecture
+## 🏢 Example
 
 The tools system provides a clean, modern approach to robotic operations:
 

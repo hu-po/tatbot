@@ -5,7 +5,7 @@ updated: 2025-08-21
 audience: [dev]
 ---
 
-# VGGT Integration
+# VGGT
 
 VGGT (Visual Geometry Grounded Tracking) is integrated into Tatbot to provide dense 3D reconstruction and automatic camera pose estimation from multi-view RGB images. This complements the existing AprilTag-based calibration and RealSense depth sensing.
 
@@ -61,7 +61,7 @@ src/tatbot/
 - `vggt_use_ba`: Enable bundle adjustment refinement (default: false)
 - `vggt_image_count`: Number of images per camera (default: 1)
 
-### Direct VGGT Reconstruction
+### Direct Reconstruction
 
 You can also run VGGT reconstruction directly on GPU nodes:
 
@@ -80,7 +80,7 @@ You can also run VGGT reconstruction directly on GPU nodes:
 }
 ```
 
-### Comparison Visualization
+### Compare Viz
 
 View VGGT reconstruction alongside RealSense data:
 
@@ -103,7 +103,7 @@ Or via MCP tool:
 }
 ```
 
-## 📋 Output Data Structure
+## 📋 Output
 
 VGGT integration generates the following files in sense datasets:
 
@@ -164,7 +164,7 @@ VGGT outputs are scale-ambiguous and require metric alignment:
 
 ## 🛠️ Configuration
 
-### Node Requirements
+### Nodes
 
 - **GPU Node** (`ook`): CUDA-capable GPU with ≥8GB VRAM
 - **Sensor Node** (`hog`): Camera connections (RealSense + IP cameras)
@@ -178,7 +178,7 @@ VGGT works with any RGB cameras defined in the scene:
 - **Format**: PNG images saved to `images/` subdirectory
 - **Naming**: `{camera_name}.png` format for consistent processing
 
-### GPU Nodes
+### GPU
 
 Enable VGGT capability in `src/conf/mcp/ook.yaml`:
 
@@ -189,7 +189,7 @@ tools:
   - convert_strokelist_to_batch
 ```
 
-### VGGT Settings
+### Settings
 
 Optional VGGT-specific settings in `src/conf/cam/vggt.yaml`:
 
@@ -233,7 +233,7 @@ return_point_map: true
 - **Stroke Mapping**: Enhanced 3D surfaces improve 2D→3D stroke mapping accuracy
 - **Geodesic Tracing**: Denser meshes enable more accurate surface path planning
 
-### Visualization System
+### Visualization
 - **Comparison Tool**: Side-by-side VGGT vs RealSense point cloud analysis
 - **Camera Poses**: Visual comparison of AprilTag vs VGGT camera frustums
 - **Quality Assessment**: Real-time pose accuracy and point density metrics

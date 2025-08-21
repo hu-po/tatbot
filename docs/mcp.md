@@ -5,7 +5,7 @@ updated: 2025-08-21
 audience: [dev, operator]
 ---
 
-# MCP (Model Context Protocol)
+# MCP
 
 - **Unified Server**: A single `tatbot.mcp.server` now runs on all nodes.
 - **Hydra Configuration**: Node-specific behavior (host, port, tools) is defined in YAML files under `src/conf/mcp/`.
@@ -22,10 +22,10 @@ To start an MCP server on a specific node, use the unified launcher script:
 ./scripts/mcp_run.sh eek mcp.debug=true
 ```
 
-## 📄 Server Logs
+## 📄 Logs
 Logs are written to `/nfs/tatbot/mcp-logs/<node_name>.log`. For example, the `ook` server's log is at `/nfs/tatbot/mcp-logs/ook.log`.
 
-## ⚙️ Node Configuration
+## ⚙️ Node Config
 The behavior of each MCP server is defined by a corresponding YAML file in `src/conf/mcp/`. For example, the `ook` node is configured by `src/conf/mcp/ook.yaml`.
 
 These files control:
@@ -141,13 +141,13 @@ tools:
 - **Fault Tolerant**: Multiple retry mechanisms and fallback options
 - **Zero Configuration**: Automatic detection and routing based on node capabilities
 
-## Cursor IDE Integration
+## Cursor Integration
 The workflow in Cursor remains similar:
 - Use `ctrl-shift-p` > "View: OpenMCP Settings" to toggle servers.
 - If you change the server config (e.g., enable a new tool), you must restart the server and re-toggle it in Cursor.
 - If you encounter "Bad Request" errors, a restart of the server and a re-toggle in Cursor usually resolves it.
 
-## Inspector
+## MCP Inspector
 
 manually call tools on `hog` node:
 

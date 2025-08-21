@@ -5,17 +5,17 @@ import os
 from pathlib import Path
 
 import hydra
-import yaml
 import numpy as np
+import yaml
 
 from tatbot.cam.vggt_runner import (
     VGGTResult,
+    camera_centers_from_extrinsics,
+    median_baseline_scale,
     run_vggt_from_images,
     save_world_points_as_ply,
     write_colmap_text,
     write_frustums_json,
-    camera_centers_from_extrinsics,
-    median_baseline_scale,
 )
 from tatbot.tools.base import ToolContext
 from tatbot.tools.gpu.models import VGGTReconInput, VGGTReconOutput
