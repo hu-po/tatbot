@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List
 
 from rich import box
@@ -32,21 +32,8 @@ class TatbotMonitor:
         self.refresh_rate = self.tui_config['refresh_rate']
         self.node_ips = load_node_ips()
         
-        # Try to resolve hostname, fall back to IP if DNS fails
-        if redis_host == "eek":
-            # Try DNS first, fall back to known IP
-            try:
-                import socket
-                socket.gethostbyname("eek")
-                resolved_host = "eek"
-            except socket.gaierror:
-                eek_ip = self.node_ips.get("eek", "192.168.1.97")
-                log.warning(f"DNS resolution for 'eek' failed, using IP {eek_ip}")
-                resolved_host = eek_ip
-        else:
-            resolved_host = redis_host
-            
-        self.state_manager = StateManager(redis_host=resolved_host, node_id="rpi1")
+        # StateManager reads Redis target from config; do not use environment.
+        self.state_manager = StateManager(node_id="rpi1")
         self.running = False
         
         # Data storage
@@ -109,7 +96,14 @@ class TatbotMonitor:
         # Redis connection
         redis_connected = self.system_status.get("redis_connected", False)
         redis_icon = "🟢" if redis_connected else "🔴"
-        table.add_row("Redis Server", "eek:6379", redis_icon)
+        # Display the actual target from StateManager (set at init)
+        try:
+            redis_host = getattr(self.state_manager.redis, 'host', 'eek')
+            redis_port = getattr(self.state_manager.redis, 'port', 6379)
+            redis_target = f"{redis_host}:{redis_port}"
+        except Exception:
+            redis_target = "eek:6379"
+        table.add_row("Redis Server", redis_target, redis_icon)
         
         # Active sessions
         active_sessions = self.system_status.get("active_stroke_sessions", 0)

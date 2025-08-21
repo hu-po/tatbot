@@ -1,7 +1,6 @@
 """Generic MCP server with Hydra configuration support."""
 
 import logging
-import os
 import socket
 from typing import List, Optional
 
@@ -68,8 +67,6 @@ def main(cfg: DictConfig) -> None:
     # Configure Redis from Hydra (single source of truth)
     redis_host = str(cfg.redis.get("host", "eek"))
     redis_port = int(cfg.redis.get("port", 6379))
-    os.environ.setdefault("REDIS_HOST", redis_host)
-    os.environ.setdefault("REDIS_PORT", str(redis_port))
     log.info(f"Redis target: {redis_host}:{redis_port}")
     
     # Create FastMCP server (open mode - no authentication)

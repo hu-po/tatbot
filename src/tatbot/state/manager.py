@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, AsyncGenerator, Dict, Optional
 
 from tatbot.utils.log import get_logger
+from tatbot.utils.node_config import load_redis_config
 
 from .client import RedisClient
 from .models import (
@@ -18,11 +19,22 @@ log = get_logger("state.manager", "🎯")
 
 
 class StateManager:
-    """Singleton state manager for distributed tatbot operations."""
-    
+    """Process-wide state manager with safe reconfiguration.
+
+    Historically this was a strict singleton that ignored new constructor
+    parameters after first init. That caused subtle bugs where callers
+    passed a different `node_id` or Redis target but the instance silently
+    kept the original configuration.
+
+    This implementation keeps a single shared instance per process but
+    allows reconfiguration when new parameters differ. It preserves the
+    existing connection lifecycle (connect/disconnect) and defers any
+    reconnection to the usual `connect()` path.
+    """
+
     _instance: Optional["StateManager"] = None
     _initialized = False
-    
+
     def __new__(cls, *args, **kwargs) -> "StateManager":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -30,25 +42,43 @@ class StateManager:
     
     def __init__(
         self,
-        redis_host: str = "eek",
-        redis_port: int = 6379,
+        redis_host: Optional[str] = None,
+        redis_port: Optional[int] = None,
         redis_password: Optional[str] = None,
         node_id: Optional[str] = None,
     ):
-        # Prevent re-initialization
+        # Determine effective configuration once using config files like the rest of the codebase.
+        if redis_host is None or redis_port is None:
+            cfg = load_redis_config()
+            desired_host = cfg["host"] if redis_host is None else redis_host
+            desired_port = cfg["port"] if redis_port is None else int(redis_port)
+            desired_password = cfg.get("password") if redis_password is None else redis_password
+        else:
+            desired_host = redis_host
+            desired_port = int(redis_port)
+            desired_password = redis_password
+        desired_node_id = node_id or socket.gethostname()
+
+        current_cfg = getattr(self, "_config", None)
+        new_cfg = (desired_host, desired_port, desired_password, desired_node_id)
+
         if self._initialized:
+            # Enforce immutability of configuration after first init to avoid silent drift.
+            if current_cfg != new_cfg:
+                old = current_cfg or (None, None, None, None)
+                raise ValueError(
+                    "StateManager is already initialized and immutable. "
+                    f"Existing cfg(host={old[0]}, port={old[1]}, password={'***' if old[2] else None}, node_id={old[3]}) "
+                    f"!= requested cfg(host={desired_host}, port={desired_port}, password={'***' if desired_password else None}, node_id={desired_node_id})."
+                )
             return
-            
-        self.node_id = node_id or socket.gethostname()
-        self.redis = RedisClient(
-            host=redis_host,
-            port=redis_port, 
-            password=redis_password
-        )
-        
+
+        # First-time initialization
+        self.node_id = desired_node_id
+        self.redis = RedisClient(host=desired_host, port=desired_port, password=desired_password)
         self._session_id: Optional[str] = None
         self._initialized = True
-        
+        self._config = new_cfg
         log.info(f"🎯 StateManager initialized for node: {self.node_id}")
     
     async def connect(self) -> None:

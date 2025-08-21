@@ -4,7 +4,7 @@
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -177,6 +177,42 @@ def load_tui_config(config_root: Optional[Path] = None) -> Dict:
     
     with open(tui_path) as f:
         return yaml.safe_load(f)
+
+
+def load_redis_config(config_root: Optional[Path] = None) -> Dict[str, Any]:
+    """Load Redis configuration from conf/redis/default.yaml.
+
+    Args:
+        config_root: Root path to config directory. If None, attempts to find it automatically.
+
+    Returns:
+        Dictionary with keys: host (str), port (int), password (str | None)
+
+    Raises:
+        FileNotFoundError: If the redis config doesn't exist
+        ValueError: If the config file is malformed
+    """
+    if config_root is None:
+        current_dir = Path(__file__).parent
+        config_root = current_dir.parent.parent / "conf"
+        if not config_root.exists():
+            config_root = Path.cwd() / "src" / "conf"
+        if not config_root.exists():
+            config_root = Path.home() / "tatbot" / "src" / "conf"
+
+    redis_path = config_root / "redis" / "default.yaml"
+    if not redis_path.exists():
+        raise FileNotFoundError(f"Redis configuration not found at {redis_path}")
+
+    with open(redis_path) as f:
+        cfg = yaml.safe_load(f) or {}
+
+    host = cfg.get("host")
+    port = cfg.get("port")
+    password = cfg.get("password")
+    if not isinstance(host, str) or not isinstance(port, int):
+        raise ValueError(f"Malformed Redis config at {redis_path}: host={host!r}, port={port!r}")
+    return {"host": host, "port": port, "password": password}
 
 
 def main():

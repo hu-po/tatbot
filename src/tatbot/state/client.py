@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import os
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import redis.asyncio as aioredis
@@ -20,20 +19,17 @@ class RedisClient:
     def __init__(
         self,
         host: str = "eek",
-        port: int = 6379, 
+        port: int = 6379,
         password: Optional[str] = None,
         db: int = 0,
         max_connections: int = 20,
         retry_attempts: int = 3,
         retry_delay: float = 1.0,
     ):
-        # Allow environment overrides
-        self.host = os.environ.get("REDIS_HOST", host)
-        try:
-            self.port = int(os.environ.get("REDIS_PORT", str(port)))
-        except ValueError:
-            self.port = port
-        self.password = password or os.environ.get("REDIS_PASSWORD", None)
+        # Use provided configuration only; do not read environment for host/port/password.
+        self.host = host
+        self.port = port
+        self.password = password
         self.db = db
         self.max_connections = max_connections
         self.retry_attempts = retry_attempts

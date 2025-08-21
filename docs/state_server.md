@@ -9,10 +9,9 @@ This doc covers the Redis-based parameter server: architecture, setup on eek, us
 
 ## Network Modes (HOME vs EDGE)
 - In EDGE mode, hosts like `eek` may be resolvable by name on the robot LAN.
-- In HOME mode, hostnames might not resolve. Ensure components use the Redis IP address.
+- In HOME mode, hostnames might not resolve. Prefer using the Redis IP address in config.
 - Recommended:
-  - Set `REDIS_HOST` and `REDIS_PORT` in `/nfs/tatbot/.env` (sourced by scripts) or in your shell before launching.
-  - Example: `export REDIS_HOST=192.168.1.97; export REDIS_PORT=6379`
+  - Configure the Redis endpoint in `src/conf/redis/default.yaml` (host, port, password).
   - Optionally add `/etc/hosts` entries mapping `eek` to the Redis IP on each node.
 
 ## Design Notes: Redis vs MCP
@@ -21,8 +20,8 @@ This doc covers the Redis-based parameter server: architecture, setup on eek, us
 - We do not expose Redis state tools over MCP anymore. Use direct Redis for live flows. MCP still provides read-only resources (e.g., `state://status`).
 
 ## Redis Configuration (Single Source of Truth)
-- Redis host/port are configured via Hydra: `src/conf/redis/default.yaml`.
-- The MCP server reads this config and also sets `REDIS_HOST`/`REDIS_PORT` environment variables in-process so any internal components using `StateManager()` pick the same target automatically.
+- Redis host/port/password are configured via Hydra: `src/conf/redis/default.yaml`.
+- Components read this config directly; environment variables are not used.
 - Adjust `host` or `port` in the Hydra file if your Redis location changes.
 
 ## Setup (eek node)
@@ -72,9 +71,8 @@ async with state:
 - Tools: none (state tools removed; use Redis directly)
 - Resources: state://status, state://stroke/progress, state://health/{node_id}
 
-To launch the MCP server with the correct Redis target in HOME mode:
+To launch the MCP server with the correct Redis target in HOME mode, ensure `src/conf/redis/default.yaml` points to the correct IP and then run:
 ```bash
-export REDIS_HOST=192.168.1.97  # your eek IP
 ./scripts/mcp_run.sh eek
 ```
 
