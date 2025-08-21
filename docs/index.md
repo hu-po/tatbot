@@ -107,13 +107,4 @@ vggt
 logos/index
 paper/index
 style_guide
-plans/models/index
-plans/vla_plan/index
-plans/vggt/claude_plan
-plans/vggt/codex_plan
-plans/vggt/_prompts
-plans/padding/claude_plan
-plans/padding/codex_plan
-plans/padding/cursor_plan
-plans/padding/_prompts
 ```
