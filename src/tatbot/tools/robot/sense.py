@@ -313,6 +313,7 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
         try:
             from tatbot.cam.vggt_runner import write_colmap_text
             from tatbot.data.cams import Cams
+
             # Prefer calibrated_cams if calibration succeeded, else scene.cams
             cams_to_save: Cams = calibrated_cams if 'calibrated_cams' in locals() else scene.cams
             names: list[str] = []
@@ -325,7 +326,8 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
                               [0, 0, 1]], dtype=float)
                 intrinsics.append(K)
                 # Build camera-from-world 3x4 from world-from-camera (Pose) by inversion
-                import jaxlie, jax.numpy as jnp
+                import jax.numpy as jnp
+                import jaxlie
                 T_wc = jaxlie.SE3.from_rotation_and_translation(
                     jaxlie.SO3(jnp.array(cam.extrinsics.rot.wxyz)),
                     jnp.array(cam.extrinsics.pos.xyz),
@@ -341,7 +343,8 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
                               [0, cam.intrinsics.fy, cam.intrinsics.ppy],
                               [0, 0, 1]], dtype=float)
                 intrinsics.append(K)
-                import jaxlie, jax.numpy as jnp
+                import jax.numpy as jnp
+                import jaxlie
                 T_wc = jaxlie.SE3.from_rotation_and_translation(
                     jaxlie.SO3(jnp.array(cam.extrinsics.rot.wxyz)),
                     jnp.array(cam.extrinsics.pos.xyz),
@@ -363,10 +366,12 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
         # Optionally run VGGT reconstruction remotely on GPU node
         if getattr(input_data, 'enable_vggt', False):
             try:
-                from tatbot.mcp.client import MCPClient
-                import yaml as _yaml
                 import hydra
+                import yaml as _yaml
                 from omegaconf import OmegaConf
+
+                from tatbot.mcp.client import MCPClient
+
                 # Load Hydra config for VGGT
                 cfg = hydra.compose(config_name="config")
                 cfg_dict = OmegaConf.to_container(cfg, resolve=True) or {}

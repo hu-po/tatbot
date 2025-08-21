@@ -38,7 +38,7 @@ class TatbotMonitor:
         
         # Data storage
         self.system_status: Dict[str, Any] = {}
-        self.stroke_sessions: Dict[str, Any] = {}
+        self.current_stroke_session: Dict[str, Any] = {}
         self.recent_events: List[Dict[str, Any]] = []
         self.node_health: Dict[str, Any] = {}
         
@@ -120,67 +120,60 @@ class TatbotMonitor:
     
     def create_stroke_panel(self) -> Panel:
         """Create stroke progress panel."""
-        if not self.stroke_sessions:
-            content = Text("No active stroke sessions", style="dim", justify="center")
+        if not self.current_stroke_session:
+            content = Text("No active stroke session", style="dim", justify="center")
             return Panel(content, title="🎨 Stroke Progress", box=box.ROUNDED)
         
-        # Create progress display for each session
-        content_parts = []
+        progress_data = self.current_stroke_session.get("progress", {})
         
-        for session_id, session_data in self.stroke_sessions.items():
-            progress_data = session_data.get("progress", {})
-            
-            # Session header
-            scene_name = progress_data.get("scene_name", "unknown")
-            node_id = progress_data.get("node_id", "unknown")
-            
-            session_text = Text()
-            session_text.append("Session: ", style="bold")
-            session_text.append(f"{scene_name}@{node_id}", style="cyan")
-            content_parts.append(session_text)
-            
-            # Progress info
-            stroke_idx = progress_data.get("stroke_idx", 0)
-            total_strokes = progress_data.get("total_strokes", 0)
-            pose_idx = progress_data.get("pose_idx", 0)
-            stroke_length = progress_data.get("stroke_length", 0)
-            is_executing = progress_data.get("is_executing", False)
-            
-            # Progress bar representation
-            if total_strokes > 0:
-                progress_pct = (stroke_idx / total_strokes) * 100
-                bar_length = 20
-                filled = int((progress_pct / 100) * bar_length)
-                bar = "█" * filled + "░" * (bar_length - filled)
-                
-                progress_text = Text()
-                progress_text.append(f"  {bar} ", style="green" if is_executing else "dim")
-                progress_text.append(f"{stroke_idx}/{total_strokes} ", style="bold")
-                progress_text.append(f"({progress_pct:.1f}%)", style="dim")
-                content_parts.append(progress_text)
-                
-                # Current pose info
-                if stroke_length > 0 and pose_idx > 0:
-                    pose_pct = (pose_idx / stroke_length) * 100
-                    pose_text = Text()
-                    pose_text.append(f"  Pose: {pose_idx}/{stroke_length} ", style="white")
-                    pose_text.append(f"({pose_pct:.1f}%)", style="dim")
-                    content_parts.append(pose_text)
-            
-            # Status
-            status_text = Text()
-            status_text.append("  Status: ", style="bold")
-            if is_executing:
-                status_text.append("EXECUTING", style="bold green")
-            else:
-                status_text.append("IDLE", style="dim")
-            content_parts.append(status_text)
-            content_parts.append(Text())  # Empty line
+        # Session header
+        scene_name = progress_data.get("scene_name", "unknown")
+        node_id = progress_data.get("node_id", "unknown")
         
-        if content_parts:
-            content_parts.pop()  # Remove last empty line
+        session_text = Text()
+        session_text.append("Session: ", style="bold")
+        session_text.append(f"{scene_name}@{node_id}", style="cyan")
+        
+        # Progress info
+        stroke_idx = progress_data.get("stroke_idx", 0)
+        total_strokes = progress_data.get("total_strokes", 0)
+        pose_idx = progress_data.get("pose_idx", 0)
+        stroke_length = progress_data.get("stroke_length", 0)
+        is_executing = progress_data.get("is_executing", False)
+        
+        content_parts = [session_text]
+        
+        # Progress bar representation
+        if total_strokes > 0:
+            progress_pct = (stroke_idx / total_strokes) * 100
+            bar_length = 20
+            filled = int((progress_pct / 100) * bar_length)
+            bar = "█" * filled + "░" * (bar_length - filled)
             
-        content = Text("\n").join(content_parts) if content_parts else Text("No data", style="dim")
+            progress_text = Text()
+            progress_text.append(f"  {bar} ", style="green" if is_executing else "dim")
+            progress_text.append(f"{stroke_idx}/{total_strokes} ", style="bold")
+            progress_text.append(f"({progress_pct:.1f}%)", style="dim")
+            content_parts.append(progress_text)
+            
+            # Current pose info
+            if stroke_length > 0 and pose_idx > 0:
+                pose_pct = (pose_idx / stroke_length) * 100
+                pose_text = Text()
+                pose_text.append(f"  Pose: {pose_idx}/{stroke_length} ", style="white")
+                pose_text.append(f"({pose_pct:.1f}%)", style="dim")
+                content_parts.append(pose_text)
+        
+        # Status
+        status_text = Text()
+        status_text.append("  Status: ", style="bold")
+        if is_executing:
+            status_text.append("EXECUTING", style="bold green")
+        else:
+            status_text.append("IDLE", style="dim")
+        content_parts.append(status_text)
+            
+        content = Text("\n").join(content_parts)
         return Panel(content, title="🎨 Stroke Progress", box=box.ROUNDED)
     
     def create_nodes_panel(self) -> Panel:
@@ -345,16 +338,17 @@ class TatbotMonitor:
                 self.system_status["nodes_online"] = online_count
                 self.system_status["total_nodes"] = len(active_health)
             
-            # Get active stroke sessions
+            # Get most recent stroke session
             stroke_keys = await self.state_manager.redis.keys("stroke:progress:*")
-            self.stroke_sessions = {}
+            self.current_stroke_session = {}
             
-            for key in stroke_keys:
-                session_id = key.split(":", 2)[-1]  # Extract session_id
-                progress_data = await self.state_manager.redis.hget(key, "progress")
+            if stroke_keys:
+                # Get the most recent session (sessions include timestamps)
+                latest_key = max(stroke_keys)
+                progress_data = await self.state_manager.redis.hget(latest_key, "progress")
                 if progress_data:
                     try:
-                        self.stroke_sessions[session_id] = {
+                        self.current_stroke_session = {
                             "progress": json.loads(progress_data)
                         }
                     except json.JSONDecodeError:
