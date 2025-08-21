@@ -5,11 +5,11 @@ updated: 2025-08-21
 audience: [dev]
 ---
 
-# Tools
+# 🔧 Tools
 
 The Tatbot tools system provides a unified, decorator-based approach to defining operations and utilities that can be executed via MCP (Model Context Protocol) across multiple nodes.
 
-## 🔍 Overview
+## Overview
 
 - **Unified Module**: All tools are now in `src/tatbot/tools/` with a clean architecture
 - **Decorator-Based**: Clean `@tool` decorator system eliminates complex inheritance hierarchies
@@ -18,7 +18,7 @@ The Tatbot tools system provides a unified, decorator-based approach to defining
 - **Async Generators**: Maintains beloved progress reporting via async generators
 - **Auto-Discovery**: Tools register themselves automatically on import
 
-## 🏠 Structure
+## Structure
 
 ```text
 src/tatbot/tools/
@@ -40,7 +40,7 @@ src/tatbot/tools/
     └── models.py           # Pydantic models for GPU tools
 ```
 
-## 🔨 Create Tools
+## Create Tools
 
 Tools are simple async functions decorated with `@tool`:
 
@@ -82,7 +82,7 @@ async def my_tool(input_data: MyToolInput, ctx: ToolContext):
     )
 ```
 
-## 🏷️ Categories
+## Categories
 
 ### System Tools
 
@@ -111,7 +111,7 @@ async def my_tool(input_data: MyToolInput, ctx: ToolContext):
 - **`list_viz_servers`** (ook, oop): List running visualization servers
 - **`status_viz_server`** (ook, oop): Get status of visualization servers
 
-## 🌐 Node Availability
+## Node Availability
 
 Tools specify node availability in their decorator:
 
@@ -121,7 +121,7 @@ Tools specify node availability in their decorator:
 @tool(nodes=["ook", "oop"])     # Multiple specific nodes
 ```
 
-## ✅ Requirements
+## Requirements
 
 Tools can specify requirements (like GPU support):
 
@@ -133,7 +133,7 @@ Tools can specify requirements (like GPU support):
 
 Requirements are checked against the `extras` field in node MCP configuration files.
 
-## 📈 Progress
+## Progress
 
 Tools use async generators to report progress:
 
@@ -148,7 +148,7 @@ async def my_tool(input_data, ctx):
     return MyToolOutput(success=True, message="Done")
 ```
 
-## ⚠️ Error Handling
+## Error Handling
 
 The registry system automatically handles:
 
@@ -158,7 +158,7 @@ The registry system automatically handles:
 - Exception catching and conversion to tool outputs
 - Logging and progress reporting
 
-## 🔧 ToolContext
+## ToolContext
 
 The `ToolContext` provides a unified interface:
 
@@ -174,7 +174,7 @@ async def my_tool(input_data, ctx: ToolContext):
     print(f"Running on node: {ctx.node_name}")
 ```
 
-## 🔗 MCP Integration
+## MCP Integration
 
 Tools integrate seamlessly with the existing MCP server:
 
@@ -183,7 +183,7 @@ Tools integrate seamlessly with the existing MCP server:
 3. Tool execution is handled by the registry wrapper
 4. Progress reports flow through MCP protocol to clients
 
-## 🏢 Example
+## Example
 
 The tools system provides a clean, modern approach to robotic operations:
 
@@ -197,7 +197,7 @@ async def align_tool(input_data: AlignInput, ctx: ToolContext):
     return AlignOutput(success=True)
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 Node configurations in `src/conf/mcp/` control tool availability:
 
@@ -218,7 +218,7 @@ tools:
   - status_viz_server
 ```
 
-## 🎩 Meta Configs
+## Meta Configs
 
 All robot tools and the GPU conversion tool support optional meta configuration overlays via Hydra:
 

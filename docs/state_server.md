@@ -5,33 +5,33 @@ updated: 2025-08-21
 audience: [dev, operator]
 ---
 
-# State Server (Redis)
+# 🗄️ State Server (Redis)
 
 This doc covers the Redis-based parameter server: architecture, setup on eek, usage, and troubleshooting.
 
-## 🏢 Architecture
+## Architecture
 - Redis runs on eek (192.168.1.97), LAN-only, no password.
 - Clients use `StateManager` (src/tatbot/state) for snapshots, events, and streams.
 - Viz can subscribe to stroke progress and update UI live.
 
-## 🔄 Network Modes
+## Network Modes
 - In EDGE mode, hosts like `eek` may be resolvable by name on the robot LAN.
 - In HOME mode, hostnames might not resolve. Prefer using the Redis IP address in config.
 - Recommended:
   - Configure the Redis endpoint in `src/conf/redis/default.yaml` (host, port, password).
   - Optionally add `/etc/hosts` entries mapping `eek` to the Redis IP on each node.
 
-## 📝 Design: Redis vs MCP
+## Design: Redis vs MCP
 - Redis is the system’s parameter/state server. Producers and consumers (robot, viz, services) should publish/subscribe and read/write state directly to Redis.
 - MCP is for orchestration and read-only summaries (e.g., `state://status`), not real-time pub/sub during strokes.
 - We do not expose Redis state tools over MCP anymore. Use direct Redis for live flows. MCP still provides read-only resources (e.g., `state://status`).
 
-## ⚙️ Configuration
+## Configuration
 - Redis host/port/password are configured via Hydra: `src/conf/redis/default.yaml`.
 - Components read this config directly; environment variables are not used.
 - Adjust `host` or `port` in the Hydra file if your Redis location changes.
 
-## 🚀 Setup
+## Setup
 ```bash
 ssh eek
 sudo mkdir -p /etc/redis
@@ -42,7 +42,7 @@ sudo redis-server /etc/redis/tatbot-redis.conf --daemonize yes
 redis-cli -h eek -p 6379 ping
 ```
 
-## 📋 Manage
+## Manage
 ```bash
 # Stop
 redis-cli -h eek -p 6379 shutdown 2>/dev/null || true
@@ -52,7 +52,7 @@ sudo redis-server /etc/redis/tatbot-redis.conf --daemonize yes
 ps aux | grep redis-server | grep -v grep
 ```
 
-## 💱 CLI
+## CLI
 ```bash
 redis-cli -h eek -p 6379
 redis-cli -h eek -p 6379 info clients
@@ -63,7 +63,7 @@ redis-cli -h eek -p 6379 psubscribe "stroke:events:*"
 
 MCP exposes only read-only resources relevant to state. For example, see `state://status` below.
 
-## 🔧 StateManager
+## StateManager
 See src/tatbot/state/ for full APIs. Typical flow:
 ```python
 from tatbot.state.manager import StateManager
@@ -74,7 +74,7 @@ async with state:
     await state.end_stroke_session(session)
 ```
 
-## 🔗 MCP Integration
+## MCP Integration
 - Tools: none (state tools removed; use Redis directly)
 - Resources: state://status, state://stroke/progress, state://health/{node_id}
 
@@ -83,7 +83,7 @@ To launch the MCP server with the correct Redis target in HOME mode, ensure `src
 ./scripts/mcp_run.sh eek
 ```
 
-## 📺 Viz Integration
+## Viz Integration
 - Start stroke viz and enable "Sync with Robot" in the GUI, or pass enable_state_sync=true via the viz MCP tool.
 
 ## Troubleshooting

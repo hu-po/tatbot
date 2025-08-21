@@ -5,7 +5,7 @@ updated: 2025-08-21
 audience: [dev]
 ---
 
-# VLA Training and Inference Plan for Tatbot Stroke Datasets
+# 🎯 VLA Training and Inference Plan for Tatbot Stroke Datasets
 
 ## Executive Summary
 

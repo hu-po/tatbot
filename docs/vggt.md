@@ -5,11 +5,11 @@ updated: 2025-08-21
 audience: [dev]
 ---
 
-# VGGT
+# 🔍 VGGT
 
 VGGT (Visual Geometry Grounded Tracking) is integrated into Tatbot to provide dense 3D reconstruction and automatic camera pose estimation from multi-view RGB images. This complements the existing AprilTag-based calibration and RealSense depth sensing.
 
-## 🔍 Overview
+## Overview
 
 VGGT enhances the vision system by:
 - **Dense 3D Reconstruction**: Generates high-quality point clouds from RGB-only images
@@ -18,7 +18,7 @@ VGGT enhances the vision system by:
 - **Scale Alignment**: Automatically aligns VGGT outputs with metric measurements using AprilTag references
 - **COLMAP Integration**: Exports standard COLMAP format for compatibility with external tools
 
-## 🛠️ Architecture
+## Architecture
 
 ### Components
 
@@ -38,7 +38,7 @@ src/tatbot/
 4. **File Storage** (NFS): Results saved in COLMAP + PLY formats
 5. **Visualization** (any): Compare VGGT vs RealSense reconstructions
 
-## ⚡ Usage
+## Usage
 
 ### Enable VGGT in Sense Tool
 
@@ -103,7 +103,7 @@ Or via MCP tool:
 }
 ```
 
-## 📋 Output
+## Output
 
 VGGT integration generates the following files in sense datasets:
 
@@ -128,7 +128,7 @@ VGGT integration generates the following files in sense datasets:
     └── metrics.json             # Reconstruction metrics
 ```
 
-## ⚙️ Implementation
+## Implementation
 
 ### Model Management
 
@@ -162,7 +162,7 @@ VGGT outputs are scale-ambiguous and require metric alignment:
 - **Retry**: 2 attempts with exponential backoff
 - **Fallback**: Graceful degradation if VGGT fails
 
-## 🛠️ Configuration
+## Configuration
 
 ### Nodes
 
@@ -202,7 +202,7 @@ use_ba: false     # Bundle adjustment
 return_point_map: true
 ```
 
-## 📈 Performance
+## Performance
 
 ### Timing
 - **Image Loading**: ~2-5 seconds for typical multi-camera setup
@@ -221,7 +221,7 @@ return_point_map: true
 - **Pose Accuracy**: Typically within 2-5mm of AprilTag calibration
 - **Coverage**: Full 360° reconstruction from multi-view images
 
-## 🔗 Integration
+## Integration
 
 ### Existing Vision Pipeline
 - **Complementary**: Works alongside AprilTag calibration and RealSense depth
@@ -238,7 +238,7 @@ return_point_map: true
 - **Camera Poses**: Visual comparison of AprilTag vs VGGT camera frustums
 - **Quality Assessment**: Real-time pose accuracy and point density metrics
 
-## ⚠️ Troubleshooting
+## Troubleshooting
 
 ### Issues
 
@@ -279,7 +279,7 @@ Key metrics to check:
 - `vggt_point_count`: Higher is generally better
 - `mean_cam_center_err_m`: Pose accuracy vs AprilTag reference
 
-## 🚀 Roadmap
+## Roadmap
 
 - **Bundle Adjustment**: Integration with pycolmap for pose refinement
 - **Multi-Scale Processing**: Support for different VGGT resolution settings

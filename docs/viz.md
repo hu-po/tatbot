@@ -5,11 +5,11 @@ updated: 2025-08-21
 audience: [dev, operator]
 ---
 
-# Visualization
+# 📱 Visualization
 
 Tatbot provides interactive 3D visualization tools using [`viser`](https://github.com/nerfstudio-project/viser) for debugging, teleoperation, and stroke execution monitoring.
 
-## 🖥️ Architecture
+## Architecture
 
 The visualization system has two modes of operation:
 
@@ -34,7 +34,7 @@ Located in `src/tatbot/tools/viz/`:
 - `map_viz.py`: Start surface mapping visualization via MCP
 - `control.py`: Stop servers and list running servers
 
-## ⚡ Usage
+## Usage
 
 ### Start Stroke Viz
 ```json
@@ -92,7 +92,7 @@ Located in `src/tatbot/tools/viz/`:
 }
 ```
 
-## ✨ Features
+## Features
 
 ### Stroke Visualization
 - Real-time robot arm movement during stroke execution
@@ -116,7 +116,7 @@ Located in `src/tatbot/tools/viz/`:
 - Stroke mapping to 3D surface mesh
 - Design pose adjustment controls
 
-## 🛠️ Configuration
+## Configuration
 
 Visualization tools accept standard configuration parameters:
 - `scene`: Scene configuration name

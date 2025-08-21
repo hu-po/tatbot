@@ -5,7 +5,7 @@ updated: 2025-08-21
 audience: [dev, operator]
 ---
 
-# Robot
+# 🤖 Robot
 
 ## Arms
 

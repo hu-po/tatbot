@@ -5,7 +5,7 @@ updated: 2025-08-21
 audience: [dev]
 ---
 
-# VLA Plan 1: Train on stroke.py datasets and add an MCP inference tool
+# 🤖 VLA Plan 1: Train on stroke.py datasets and add an MCP inference tool
 
 This guide outlines how to train a VLA policy on datasets recorded by `tatbot/tools/robot/stroke.py` and how to expose an MCP tool to run inference from a specific checkpoint.
 

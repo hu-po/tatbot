@@ -5,7 +5,7 @@ updated: 2025-08-21
 audience: [dev, operator, agent]
 ---
 
-# Agent
+# 🤖 Agent
 
 tatbot is controlled by an agent model.
 
@@ -16,11 +16,11 @@ tatbot is controlled by an agent model.
 - Launch: `opencode`
 ```
 
-## 🏃 Quick Start
+## Quick Start
 - Install and serve a model with Ollama on `ojo`.
 - Configure and run the opencode client locally.
 
-## ⚙️ Setup
+## Setup
 
 ```bash
 # Install ollama
@@ -46,7 +46,7 @@ ollama ps
 sudo systemctl restart ollama
 ```
 
-## 🖥️ Usage
+## Usage
 
 The main agent interface is via [opencode](https://github.com/sst/opencode).
 
@@ -59,7 +59,7 @@ export OPENCODE_CONFIG=~/tatbot/opencode.json
 opencode
 ```
 
-## 🔗 Reference
+## Reference
 - https://opencode.ai/docs/mcp-servers/
 - https://opencode.ai/docs/agents/
 - https://modelcontextprotocol.io/legacy/tools/inspector

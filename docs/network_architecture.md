@@ -7,11 +7,11 @@ audience: [dev, operator]
 
 # 🔗 Network Architecture
 
-## 🔍 Overview
+## Overview
 
 Tatbot uses a sophisticated dual-mode networking system that automatically adapts based on network conditions with seamless failover and automatic configuration management.
 
-## 🎨 Principles
+## Principles
 
 - **Automatic Mode Detection**: Zero manual intervention for mode switches
 - **Seamless Failover**: Sub-20 second transitions between modes
@@ -19,7 +19,7 @@ Tatbot uses a sophisticated dual-mode networking system that automatically adapt
 - **DNS Continuity**: `.tatbot.lan` domains work in both modes
 - **Self-Healing**: Automatic DHCP renewal and configuration repair
 
-## 🌐 Network Modes
+## Network Modes
 
 ### Home Mode
 **Triggered when**: Home LAN cable connected to `switch-lan`
@@ -39,7 +39,7 @@ Tatbot uses a sophisticated dual-mode networking system that automatically adapt
 - **Internet**: Available via ook's WiFi connection
 - **Scope**: Isolated tatbot network with optional internet
 
-## 🖥️ Components
+## Components
 
 ### rpi2: DNS/DHCP Controller
 - **Role**: Central network coordination
@@ -58,7 +58,7 @@ Tatbot uses a sophisticated dual-mode networking system that automatically adapt
 - **DHCP Client**: Accept leases from either rpi2 or home router
 - **Auto-Renewal**: Receive new network configuration automatically
 
-## 🛠️ Automation
+## Automation
 
 ### Mode Detection
 - **Trigger**: Home router (192.168.1.1) reachability test
@@ -76,7 +76,7 @@ Tatbot uses a sophisticated dual-mode networking system that automatically adapt
 - **Internet Domains**: Forwarded appropriately per mode
 - **Static Entries**: All tatbot devices have fixed `.tatbot.lan` names
 
-## 🌐 IP Addressing
+## IP Addressing
 
 ### Static Reservations
 ```text
@@ -94,7 +94,7 @@ arms:    192.168.1.2-3
 - **Edge Mode**: 192.168.1.2-254 (covers static reservations)
 - **Home Mode**: Delegated to home router
 
-## 📁 Config Files
+## Config Files
 
 ### Config Files
 - `config/network/dnsmasq/mode-edge.conf` - Edge mode DNS/DHCP
@@ -106,7 +106,7 @@ arms:    192.168.1.2-3
 - `scripts/setup_nat_ook.sh` - NAT configuration for ook
 - `scripts/network_status.sh` - Network diagnostics and status
 
-## 🌐 Network Flow
+## Network Flow
 
 ### Edge Mode Internet Path
 ```text
@@ -123,7 +123,7 @@ Node → Home Router (192.168.1.1) → Internet
 Node → rpi2 (192.168.1.99) → [Home Router | Upstream DNS]
 ```
 
-## 📊 Monitoring
+## Monitoring
 
 ### Status Checking
 ```bash
@@ -143,14 +143,14 @@ ssh rpi2 "sudo journalctl -u tatbot-mode-auto.service -f"
 - **Internet Issues**: Verify ook's WiFi and NAT configuration
 - **DNS Problems**: Test resolution with `nslookup <host>.tatbot.lan 192.168.1.99`
 
-## 🔒 Security
+## Security
 
 - **Network Isolation**: Edge mode isolates tatbot from home network
 - **Minimal Attack Surface**: Only required ports and services exposed
 - **Automatic Updates**: Network configuration stays current without manual intervention
 - **Failsafe Design**: Degrades gracefully when components unavailable
 
-## 🚀 Roadmap
+## Roadmap
 
 - **VLAN Segmentation**: Further isolate device types
 - **Certificate Management**: TLS for inter-node communication

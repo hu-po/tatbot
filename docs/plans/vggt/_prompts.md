@@ -1,4 +1,4 @@
-# Models
+# 🤖 Models
 - gpt5 via codex
 - opus/sonnet 4 via claude code
 

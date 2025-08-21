@@ -1,4 +1,4 @@
-# Distance-Based, Padded Strokes — Consolidated Plan
+# 📐 Distance-Based, Padded Strokes — Consolidated Plan
 
 Goal: Adopt distance-based resampling with padding so each stroke’s point spacing is consistent in meters while preserving GPU batch efficiency. Support only two modes: legacy fixed-count and explicit distance-based sampling.
 

@@ -5,7 +5,7 @@ updated: 2025-08-21
 audience: [dev, operator, agent]
 ---
 
-# Artwork
+# 🎨 Artwork
 
 Basic art workflow is:
 
@@ -21,11 +21,11 @@ designs are stored in `/nfs/tatbot/designs/`
 - DBv3 configs: `config/dbv3/{pens,gcode,areas}/...`
 ```
 
-## 🎨 Image Generation
+## Image Generation
 
 - [Replicate Playground](https://replicate.com/playground)
 
-## 🔄 Vectorization
+## Vectorization
 
 - [DrawingBotV3](https://docs.drawingbotv3.com/en/latest/index.html)
 - tatbot uses the premium version

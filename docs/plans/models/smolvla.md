@@ -5,7 +5,7 @@ updated: 2025-08-21
 audience: [dev]
 ---
 
-# SmolVLA
+# 🧠 SmolVLA
 
 - [blog](https://huggingface.co/blog/smolvla)
 - [model](https://huggingface.co/lerobot/smolvla_base)

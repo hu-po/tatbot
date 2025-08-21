@@ -5,11 +5,11 @@ updated: 2025-08-21
 audience: [dev]
 ---
 
-# Ideas
+# 💡 Ideas
 
-## 🤖 Agents
+## Agents
 
-## 🧠 Models
+## Models
 - waiting for training code for https://github.com/pickxiguapi/Embodied-R1
 - waiting for training code for https://github.com/allenai/MolmoAct
 - lerobot async policy server/client pattern
@@ -17,7 +17,7 @@ audience: [dev]
 - ink dipping as policy, random position start for domain randomization in episode recording
 - host fintuned tatbot policy on replicate, use cloud compute for inference
 
-## 📊 Dataset
+## Dataset
 - image generation to gcode pipeline (imagedir w/ manual batch mode)
 - data augmentation via nvidia cosmos
 - ink information as text conditioning
@@ -25,7 +25,7 @@ audience: [dev]
 - maniskill vs isaacsim (https://www.youtube.com/live/z7KdHGkUTNE)
 - gsplat from multiview conditioning images
 
-## 🔍 Quality & Debugging
+## Quality & Debugging
 - check for arm error before episode big moves
 - method of filtering through strokelist to see if any strokes have a large delta/error and thus filter.
 - upgrade TUI to show cpu, memory, disk usage on nodes to check for bottlenecks (one single graph?)
@@ -36,7 +36,7 @@ audience: [dev]
 - compare current camera extrinsic calibration with colmap/Xm2
 - tune camera resolution for multiview reconstruction
 
-## ✨ Features
+## Features
 - strokes are randomly sampled from strokelist, so order can be random and you can do repeated passes
 - queues as core abstractions, arms operate async in their own behavior tree, coordinate centrally.
 - queueu UI showing each arm's queue, ability to edit, remove, add to queue. pause arm. see time remaining.
@@ -47,19 +47,19 @@ audience: [dev]
 - sensor fusion for realsense pointcloud and ip camera gsplat
 - sync camera images via rust on rpi1/rpi2
 
-## 📢 Outreach
+## Outreach
 - improve tatbot website currently built off of docs
 - create PR to add to https://github.com/mjyc/awesome-robotics-projects
 - submit to https://devpost.com/submit-to/25802-openai-open-model-hackathon/manage/submissions
 - Tattoo outdoors to show off edge compute capability
 - Paper flyers to put up in random places around ATX
 
-## 🎨 Artwork
+## Artwork
 - potential improvement in gcode/stroke generation with https://github.com/abey79/vpype
 - Medieval engraving tattoo https://youtube.com/shorts/lAyhxgaxQdc
 - replicate playground on touchscreen
 
-## 🔧 Hardware
+## Hardware
 - ee redesign: more natural angle, two piece screws for tightening wand foam padding
 - gather feedback on red sharpie cross with laser line leveler workflow
 - end effector redesign: suspension, scissor lift, needle guard, sanitation barrier

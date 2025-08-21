@@ -9,7 +9,7 @@ audience: [dev, operator]
 
 Tatbot consists of several computers, cameras, and robots connected via ethernet in a distributed computing architecture.
 
-## ⚡ Compute Nodes
+## Compute Nodes
 
 ::::{grid} 1 1 2 3
 :gutter: 3
@@ -98,7 +98,7 @@ Raspberry Pi 5
 **Automatic Switching:** Mode changes are detected within 20 seconds and all nodes automatically get new DHCP leases with correct settings.
 ```
 
-## 🔍 Cameras
+## Cameras
 - `camera1` 📹: Amcrest IP PoE camera (5MP, 30fps)
 - `camera2` 📸: Amcrest IP PoE camera (5MP, 30fps)
 - `camera3` 🗒️: Amcrest IP PoE camera (5MP, 30fps)

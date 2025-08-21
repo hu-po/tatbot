@@ -5,7 +5,7 @@ updated: 2025-08-21
 audience: [dev]
 ---
 
-# Datasets
+# 📊 Datasets
 
 - foundation VLA models must be finetuned on tatbot datasets
 - tatbot uses the lerobot dataset format

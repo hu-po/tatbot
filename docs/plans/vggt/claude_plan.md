@@ -1,4 +1,4 @@
-# VGGT Integration Plan for Tatbot (Refined)
+# 🔍 VGGT Integration Plan for Tatbot (Refined)
 
 ## Executive Summary
 

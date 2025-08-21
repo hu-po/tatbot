@@ -5,7 +5,7 @@ updated: 2025-08-21
 audience: [all]
 ---
 
-# tatbot
+# 🤖 tatbot
 
 ::::{grid} 1 1 2 3
 :class-container: text-center

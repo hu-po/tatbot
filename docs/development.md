@@ -5,9 +5,9 @@ updated: 2025-08-21
 audience: [dev]
 ---
 
-# Development
+# 💻 Development
 
-## ⚡ Quick Setup
+## Quick Setup
 
 This project uses [`uv`](https://docs.astral.sh/uv/getting-started/installation/) for Python dependency and virtual environment management.
 
@@ -136,7 +136,7 @@ set -a; source /nfs/tatbot/.env; set +a
    cd ~/tatbot && ./scripts/mcp_run.sh ook
    ```
 
-## 🔄 Workflow
+## Workflow
 
 ### Code Quality
 This project uses `ruff` for both linting and formatting, plus `isort` for import sorting.
@@ -175,7 +175,7 @@ git push origin main
 
  
 
-## 🏢 Architecture
+## Architecture
 
 This section provides a comprehensive overview of the `tatbot` source code structure, organized by module. Each module serves a specific purpose in the robotic tattoo system, from hardware control to data generation and visualization.
 
