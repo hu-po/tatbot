@@ -3,7 +3,8 @@
 #### Agents
 
 #### Models
-- try out https://github.com/allenai/MolmoAct
+- waiting for training code for https://github.com/pickxiguapi/Embodied-R1
+- waiting for training code for https://github.com/allenai/MolmoAct
 - lerobot async policy server/client pattern
 - containers on ojo via jetson-containers https://github.com/dusty-nv/jetson-containers/tree/master/packages/ml/jax
 - ink dipping as policy, random position start for domain randomization in episode recording
