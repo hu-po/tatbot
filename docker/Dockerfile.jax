@@ -1,0 +1,61 @@
+# Base: CUDA 12.1 runtime on Ubuntu 22.04 with cuDNN
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# System deps and Python 3.11
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        software-properties-common \
+        ca-certificates \
+        git \
+        curl \
+        build-essential \
+        ffmpeg \
+        libgl1 \
+        libglib2.0-0 \
+        pkg-config \
+        && add-apt-repository ppa:deadsnakes/ppa -y && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3.11 \
+        python3.11-venv \
+        python3.11-dev \
+        python3-pip \
+        && rm -rf /var/lib/apt/lists/*
+
+# Ensure pip is recent and install uv (fast pip wrapper used by repo)
+RUN python3.11 -m pip install --upgrade pip setuptools wheel uv
+
+ENV PYTHON=python3.11 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    UV_SYSTEM_PYTHON=1 \
+    UV_LINK_MODE=copy \
+    # Prefer GPU; don't pre-allocate entire VRAM
+    JAX_PLATFORM_NAME=gpu \
+    XLA_PYTHON_CLIENT_PREALLOCATE=false \
+    PYTHONUNBUFFERED=1 \
+    HYDRA_FULL_ERROR=1
+
+WORKDIR /workspace/tatbot
+
+# Copy only files needed to resolve/install deps first (better layer caching)
+COPY pyproject.toml uv.lock ./
+COPY src ./src
+COPY config ./config
+COPY scripts ./scripts
+
+# Install project deps WITHOUT the gpu extra (we install JAX GPU explicitly)
+# - gen/img/viz/tui are safe and don't pull torch
+RUN uv pip install --system --no-cache-dir .[gen,img,viz,tui]
+
+# Install JAX GPU wheels for CUDA 12.x
+# Note: jax[cuda12_pip] requires the find-links repo below for GPU wheels
+RUN uv pip install --system --no-cache-dir \
+      --find-links https://storage.googleapis.com/jax-releases/jax_cuda_releases.html \
+      "jax[cuda12_pip]>=0.4.0,<0.5.0" \
+      jaxls
+
+# Default shell
+CMD ["bash"]
+

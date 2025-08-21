@@ -37,6 +37,7 @@ audience: [dev]
 - tune camera resolution for multiview reconstruction
 
 ## Features
+- docker containers for gpu jobs (jax ik and torch vggt)
 - strokes are randomly sampled from strokelist, so order can be random and you can do repeated passes
 - queues as core abstractions, arms operate async in their own behavior tree, coordinate centrally.
 - queueu UI showing each arm's queue, ability to edit, remove, add to queue. pause arm. see time remaining.
