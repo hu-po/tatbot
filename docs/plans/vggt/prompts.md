@@ -25,3 +25,11 @@ You are being evaluated against a competing model. They also created a planning 
 Refine your plan based on these additional details:
 - dont send the full information between nodes. For example, VGGTResult has all the images and pointclouds. Instead, save those to file and instead communicate the file paths instead.
 - VGGT model weights should be stored in the huggingface cache of the node, not the nfs.
+
+# Fifth Prompt
+
+Compare the current diff to our plan. Create a new feedback document that reviews the diff in @docs/plans/vggt/diff_feedback.md make sure to point out missing functionality, incorrect assumptions, sloppy code, etc.
+
+# Sixth Prompt
+
+Perform another round of feedback on the current diff. This time focus on making sure that the code is correct and that it contains no errors. Put your feedback in @docs/plans/vggt/diff_feedback_2.md

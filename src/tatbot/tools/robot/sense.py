@@ -5,6 +5,7 @@ import os
 import time
 from pathlib import Path
 
+import numpy as np
 from lerobot.cameras.opencv import OpenCVCameraConfig
 from lerobot.cameras.realsense import RealSenseCameraConfig
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -24,6 +25,10 @@ from tatbot.tools.registry import tool
 from tatbot.tools.robot.models import SenseInput, SenseOutput
 from tatbot.utils.constants import NFS_RECORDINGS_DIR
 from tatbot.utils.log import TIME_FORMAT, get_logger
+
+# VGGT MCP constants
+MCP_VGGT_TIMEOUT_S = 900
+MCP_VGGT_RETRY_COUNT = 2
 
 log = get_logger("tools.sense", "🔍")
 
@@ -91,6 +96,14 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
         scene_path = dataset_dir / "scene.yaml"
         scene.to_yaml(str(scene_path))
         captured_files.append(str(scene_path))
+        
+        # Create standard subdirectories for artifacts
+        images_dir = dataset_dir / "images"
+        pointclouds_dir = dataset_dir / "pointclouds"
+        colmap_dir = dataset_dir / "colmap"
+        metadata_dir = dataset_dir / "metadata"
+        for d in (images_dir, pointclouds_dir, colmap_dir, metadata_dir):
+            d.mkdir(exist_ok=True)
         
         yield {"progress": 0.05, "message": "Creating robot with cameras..."}
         
@@ -177,6 +190,12 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
                 Image.fromarray(data).save(str(image_path))
                 captured_files.append(str(image_path))
                 log.info(f"✅ Saved frame to {image_path}")
+                # Also save under images/ for downstream VGGT/visualization
+                image_path2 = images_dir / f"{key}.png"
+                try:
+                    Image.fromarray(data).save(str(image_path2))
+                except Exception as e:
+                    log.warning(f"Failed to save image copy to images/: {e}")
         
         yield {"progress": 0.31, "message": "✅ Saved image frames"}
         
@@ -217,6 +236,32 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
                         max_deviation
                     )
                     
+                    # Persist AprilTag calibration for later visualization
+                    try:
+                        import json
+                        frustums = []
+                        cam_names: list[str] = []
+                        cam_names.extend([cam.name for cam in calibrated_cams.ipcameras])
+                        cam_names.extend([cam.name for cam in calibrated_cams.realsenses])
+                        for cam_name in cam_names:
+                            cam_cfg = calibrated_cams.get_camera(cam_name)
+                            frustums.append({
+                                "name": cam_name,
+                                "pose": {
+                                    "position": list(map(float, cam_cfg.extrinsics.pos.xyz)),
+                                    "wxyz": list(map(float, cam_cfg.extrinsics.rot.wxyz)),
+                                },
+                                "intrinsic": {
+                                    "fx": float(cam_cfg.intrinsics.fx),
+                                    "fy": float(cam_cfg.intrinsics.fy),
+                                    "ppx": float(cam_cfg.intrinsics.ppx),
+                                    "ppy": float(cam_cfg.intrinsics.ppy),
+                                }
+                            })
+                        (metadata_dir / "apriltag_frustums.json").write_text(json.dumps(frustums, indent=2))
+                    except Exception:
+                        log.warning("Failed to save AprilTag frustums JSON")
+                    
                     yield {"progress": 0.48, "message": "✅ Camera extrinsics calibration completed"}
                     
                 except Exception as e:
@@ -252,10 +297,118 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
                 depth_cam.get_pointcloud(save=True)
                 if expected_ply_path.exists():
                     captured_files.append(str(expected_ply_path))
+                    # Also copy/link into pointclouds/ for consistency
+                    try:
+                        import shutil
+                        target = pointclouds_dir / expected_ply_path.name
+                        if not target.exists():
+                            shutil.copy2(expected_ply_path, target)
+                    except Exception as e:
+                        log.warning(f"Failed to copy PLY to pointclouds/: {e}")
             
             progress = 0.6 + (0.3 * (ply_idx + 1) / num_plys)
             yield {"progress": progress, "message": f"Captured pointcloud {ply_idx + 1}/{num_plys}"}
+
+        # Save COLMAP intrinsics/extrinsics to config for this scene if available
+        try:
+            from tatbot.cam.vggt_runner import write_colmap_text
+            from tatbot.data.cams import Cams
+            # Prefer calibrated_cams if calibration succeeded, else scene.cams
+            cams_to_save: Cams = calibrated_cams if 'calibrated_cams' in locals() else scene.cams
+            names: list[str] = []
+            intrinsics = []
+            extrinsics = []
+            for cam in cams_to_save.ipcameras:
+                names.append(f"{cam.name}.png")
+                K = np.array([[cam.intrinsics.fx, 0, cam.intrinsics.ppx],
+                              [0, cam.intrinsics.fy, cam.intrinsics.ppy],
+                              [0, 0, 1]], dtype=float)
+                intrinsics.append(K)
+                # Build camera-from-world 3x4 from world-from-camera (Pose) by inversion
+                import jaxlie, jax.numpy as jnp
+                T_wc = jaxlie.SE3.from_rotation_and_translation(
+                    jaxlie.SO3(jnp.array(cam.extrinsics.rot.wxyz)),
+                    jnp.array(cam.extrinsics.pos.xyz),
+                )
+                T_cw = T_wc.inverse()
+                R = np.array(T_cw.rotation().as_matrix())
+                t = np.array(T_cw.translation())
+                E = np.concatenate([R, t.reshape(3, 1)], axis=1)
+                extrinsics.append(E)
+            for cam in cams_to_save.realsenses:
+                names.append(f"{cam.name}.png")
+                K = np.array([[cam.intrinsics.fx, 0, cam.intrinsics.ppx],
+                              [0, cam.intrinsics.fy, cam.intrinsics.ppy],
+                              [0, 0, 1]], dtype=float)
+                intrinsics.append(K)
+                import jaxlie, jax.numpy as jnp
+                T_wc = jaxlie.SE3.from_rotation_and_translation(
+                    jaxlie.SO3(jnp.array(cam.extrinsics.rot.wxyz)),
+                    jnp.array(cam.extrinsics.pos.xyz),
+                )
+                T_cw = T_wc.inverse()
+                R = np.array(T_cw.rotation().as_matrix())
+                t = np.array(T_cw.translation())
+                E = np.concatenate([R, t.reshape(3, 1)], axis=1)
+                extrinsics.append(E)
+            # Write under dataset colmap dir and config/colmap/<scene>
+            write_colmap_text(intrinsics, extrinsics, names, colmap_dir)
+            # Resolve project root reliably (repo_root/src/tatbot/tools/robot/sense.py → repo_root)
+            repo_root = Path(__file__).resolve().parents[4]
+            config_colmap_dir = repo_root / "config" / "colmap" / scene.name
+            write_colmap_text(intrinsics, extrinsics, names, config_colmap_dir)
+        except Exception as e:
+            log.warning(f"Failed to write COLMAP text files: {e}")
         
+        # Optionally run VGGT reconstruction remotely on GPU node
+        if getattr(input_data, 'enable_vggt', False):
+            try:
+                from tatbot.mcp.client import MCPClient
+                import yaml as _yaml
+                import hydra
+                from omegaconf import OmegaConf
+                # Load Hydra config for VGGT
+                cfg = hydra.compose(config_name="config")
+                cfg_dict = OmegaConf.to_container(cfg, resolve=True) or {}
+                preferred_node = cfg_dict.get('cam', {}).get('vggt', {}).get('preferred_gpu_node', 'ook')
+                node_cfg_path = Path(__file__).resolve().parents[3] / "conf" / "mcp" / f"{preferred_node}.yaml"
+                host = "localhost"; port = 8000
+                if node_cfg_path.exists():
+                    node_cfg = _yaml.safe_load(node_cfg_path.read_text())
+                    host = node_cfg.get("host", host)
+                    port = int(node_cfg.get("port", port))
+                client = MCPClient(request_timeout_s=MCP_VGGT_TIMEOUT_S)
+                ok, session_id, url = await client.establish_session(host, port)
+                if ok and session_id and url:
+                    tool_name = "vggt_reconstruct"
+                    out_ply = str(pointclouds_dir / "vggt_dense.ply")
+                    out_json = str(metadata_dir / "vggt_frustums.json")
+                    out_colmap = str(colmap_dir)
+                    arguments = {
+                        "input_data": {
+                            "image_dir": str(images_dir),
+                            "output_pointcloud_path": out_ply,
+                            "output_frustums_path": out_json,
+                            "output_colmap_dir": out_colmap,
+                            "scene": scene.name,
+                            "meta": input_data.meta,
+                            "vggt_conf_threshold": float(input_data.vggt_conf_threshold),
+                            "shared_camera": False,
+                        }
+                    }
+                    # Retry with backoff
+                    for attempt in range(MCP_VGGT_RETRY_COUNT):
+                        ok2, resp = await client.call_tool(url, session_id, tool_name, arguments)
+                        if ok2:
+                            captured_files.extend([out_ply, out_json])
+                            yield {"progress": 0.94, "message": "✅ VGGT reconstruction finished on GPU node"}
+                            break
+                        await ctx.warn(f"VGGT call attempt {attempt + 1} failed; retrying...")
+                else:
+                    log.warning("VGGT GPU node MCP session failed; skipping VGGT run")
+            except Exception as e:
+                log.warning(f"VGGT remote reconstruction failed: {e}")
+
         # Return to ready position
         yield {"progress": 0.95, "message": "Returning robot to ready position..."}
         robot.send_action(robot._urdf_joints_to_action(scene.ready_pos_full.joints), safe=True)

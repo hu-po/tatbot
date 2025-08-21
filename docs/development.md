@@ -133,11 +133,11 @@ To run all code quality checks, use the lint script:
 ```
 
 ### Documentation
-Generate project documentation:
+Generate and validate documentation minimally during linting. The main lint script now builds docs with warnings-as-errors:
 ```bash
-uv pip install .[docs]
-uv run sphinx-build docs docs/_build
+./scripts/lint.sh
 ```
+This runs `sphinx-build -W docs docs/_build` after code checks.
 
 ### Helpful Commands
 

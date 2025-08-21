@@ -1,6 +1,6 @@
 # Vision System
 
-The `tatbot` system uses a combination of Amcrest IP cameras for wide-angle scene coverage and Intel Realsense depth cameras mounted on the robot arms for precise 3D sensing. AprilTags are used for object tracking and calibration.
+The `tatbot` system uses a combination of Amcrest IP cameras for wide-angle scene coverage and Intel Realsense depth cameras mounted on the robot arms for precise 3D sensing. AprilTags are used for object tracking and calibration. The system is enhanced with VGGT (Visual Geometry Grounded Tracking) for dense 3D reconstruction and markerless pose estimation.
 
 ## Cameras
 
@@ -55,9 +55,19 @@ see:
 - `src/tatbot/data/tags.py`
 - `src/tatbot/cam/tracker.py`
 
+## VGGT Integration
+
+VGGT (Visual Geometry Grounded Tracking) enhances the vision system with dense 3D reconstruction and markerless camera pose estimation from RGB images. See the [VGGT documentation](vggt.md) for detailed information on integration, usage, and architecture.
+
+Key capabilities:
+- **Dense 3D Reconstruction**: High-quality point clouds from RGB-only images (10x+ denser than RealSense)
+- **Markerless Pose Estimation**: Camera poses without requiring AprilTags
+- **Scale Alignment**: Automatic metric alignment using AprilTag references
+- **Cross-Node Processing**: GPU processing on dedicated nodes while cameras remain on sensor nodes
+
 ## 2D to 3D Mapping
 
-To tattoo on a non-flat surface like a practice arm, the 2D artwork must be accurately "wrapped" onto the 3D surface. This is a complex geometric problem solved using a technique called geodesic tracing.
+To tattoo on a non-flat surface like a practice arm, the 2D artwork must be accurately "wrapped" onto the 3D surface. This is a complex geometric problem solved using a technique called geodesic tracing. VGGT dense reconstructions can provide enhanced 3D surface data for improved mapping accuracy.
 
 ### Implementation
 

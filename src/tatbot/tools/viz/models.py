@@ -104,3 +104,15 @@ class StatusVizOutput(ToolOutput):
     port: Optional[int] = None
     thread_alive: Optional[bool] = None
     started_at: Optional[str] = None
+
+
+class VGGTCompareVizInput(BaseVizInput):
+    """Input for VGGT vs RealSense comparison viz."""
+    dataset_dir: str
+    vggt_pointcloud_point_size: float = 0.001
+    rs_pointcloud_point_size: float = 0.001
+
+
+class VGGTCompareVizOutput(BaseVizOutput):
+    """Output for VGGT comparison viz tool."""
+    pass

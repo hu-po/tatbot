@@ -44,16 +44,16 @@ html_favicon = "logos/favicon.ico"
 html_theme_options = {
     "sidebar_hide_name": False,
     "light_css_variables": {
-        "color-brand-primary": "#ff6b6b",
-        "color-brand-content": "#4ecdc4",
+        "color-brand-primary": "#000000",
+        "color-brand-content": "#404040",
         "font-stack": "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
         "font-stack--monospace": "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
     },
     "dark_css_variables": {
-        "color-brand-primary": "#ff6b6b",
-        "color-brand-content": "#4ecdc4",
-        "color-sidebar-background": "#2d2d2d",
-        "color-sidebar-brand-text": "#f8f9fa",
+        "color-brand-primary": "#ffffff",
+        "color-brand-content": "#b0b0b0",
+        "color-sidebar-background": "#000000",
+        "color-sidebar-brand-text": "#ffffff",
     },
     "footer_icons": [
         {

@@ -47,6 +47,11 @@ class SenseInput(RobotToolInput):
     calibrate_extrinsics: bool = True
     reference_tag_id: int = 0
     max_deviation_warning: float = 0.05
+    # VGGT integration
+    enable_vggt: bool = False
+    vggt_use_ba: bool = False
+    vggt_conf_threshold: float = 5.0
+    vggt_image_count: int = 1
 
 
 class SenseOutput(RobotToolOutput):

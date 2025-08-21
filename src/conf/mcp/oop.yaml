@@ -9,9 +9,11 @@ tools:
   - reset
   - list_nodes
   - convert_strokelist_to_batch
+  - vggt_reconstruct
   - start_stroke_viz
   - start_teleop_viz
   - start_map_viz
+  - start_vggt_compare_viz
   - stop_viz_server
   - list_viz_servers
   - status_viz_server

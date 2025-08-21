@@ -8,7 +8,7 @@ from tatbot.utils.log import get_logger
 log = get_logger("tools.viz", "🎨")
 
 # Import all viz tools to register them
-__all__ = ["stroke_viz", "teleop_viz", "map_viz", "control"]
+__all__ = ["stroke_viz", "teleop_viz", "map_viz", "control", "vggt_compare_viz"]
 
 # Server registry to track running viser servers
 # Format: {name: (viz_instance, thread)}

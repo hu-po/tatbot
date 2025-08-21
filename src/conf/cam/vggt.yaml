@@ -1,0 +1,6 @@
+cam:
+  vggt:
+    preferred_gpu_node: ook
+    conf_threshold: 5.0
+    use_ba: false
+    model_id: facebook/VGGT-1B
