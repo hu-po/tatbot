@@ -5,83 +5,66 @@ updated: 2025-08-21
 audience: [all]
 ---
 
-# 🤖 tatbot
+# tatbot
 
-::::{grid} 1 1 2 3
-:class-container: text-center
-:gutter: 3
-
-:::{grid-item-card}
-:link: development
-:link-type: doc
-:class-header: bg-light
-
-🚀 Development Guide
-^^^
-Quick setup and development guide
-+++
-Install dependencies, configure nodes, and understand the source code architecture.
-:::
-
-:::{grid-item-card}
-:link: nodes
-:link-type: doc
-:class-header: bg-light
-
-🌐 Distributed Compute
-^^^
-Network topology & compute nodes
-+++
-Understand the distributed system architecture and node capabilities.
-:::
-
-::::
-
-```{admonition} Quick Reference
-:class: tip
-
-**Essential Commands:**
-- `./scripts/mcp_run.sh <node>` - Start MCP server
-- `uv pip install .[bot,viz,cam]` - Install dependencies
-- `uv run python -m tatbot.viz.teleop --enable-robot` - Launch teleop interface
+```{image} logos/dark.svg
+:alt: tatbot logo  
+:class: only-dark
+:align: center
+:width: 200px
 ```
 
-## 🛠️ Core Systems
+<br>
 
-::::{grid} 1 1 2 2
-:gutter: 3
+tattoo robot system composed of 2 robot arms, 7 cameras, and 6 computers controlling 2 tattoo machines. Built in public, all open source, [reserve your tattoo](https://forms.gle/Zys6f5iLEtYCG8VW7), [follow the progress](docs/progress.md)
 
-:::{grid-item}
-**🤖 Robot Arms and Vision**
-- [Robot System](robot.md) - Trossen arms, URDF models, and inverse kinematics
-- [Vision System](vision.md) - Cameras, AprilTag tracking, and 2D to 3D mapping
-:::
+---
 
-:::{grid-item}
-**🔗 Distributed Architecture** 
-- [Nodes](nodes.md) - Network topology & compute nodes
-- [Network Architecture](network_architecture.md) - Automatic dual-mode networking
-- [MCP Protocol](mcp.md) - Model Context Protocol for distributed control
-- [Tools System](tools.md) - Unified operation framework
-- [Agent Interface](agent.md) - LLM-based control system
-:::
+## Quick Start
 
-:::{grid-item}
-**🧠 Models & Training**
-- [Datasets](plans/models/data.md) - Training data collection
-- [Gr00t](plans/models/gr00t.md) - Foundation model
-- [SmolVLA](plans/models/smolvla.md) - Vision-language-action model
-- [VLA Plans](plans/vla_plan/index.md) - Model planning approaches
-:::
+```{admonition} Essential Commands
+:class: tip
 
-:::{grid-item}
-**🖼️ Artwork Generation**
-- [Artwork Pipeline](artwork.md) - From images to tattoo designs
-- [Tattoo Gear](gear.md) - Physical tattoo equipment
-- [3D Visualization](viz.md) - Real-time robot visualization with Viser
-:::
+- `./scripts/mcp_run.sh` - Start MCP server
+- `./scripts/setup_env.sh` - Install dependencies
+```
 
-::::
+
+
+## Documentation Index
+
+### 🤖 Hardware & Control
+- [**Robot System**](robot.md) - Trossen arms, URDF models, inverse kinematics
+- [**Vision System**](vision.md) - Cameras, AprilTag tracking, 2D→3D mapping
+- [**Tattoo Gear**](gear.md) - Physical tattoo equipment and setup
+
+### 🌐 Software Architecture  
+- [**MCP Protocol**](mcp.md) - Model Context Protocol for distributed control
+- [**Tools System**](tools.md) - Unified operation framework and tool registry
+- [**Network Architecture**](network_architecture.md) - Automatic dual-mode networking
+- [**Agent Interface**](agent.md) - LLM-based control system
+
+### 🎨 Art & Visualization
+- [**Artwork Pipeline**](artwork.md) - From images to tattoo designs
+- [**3D Visualization**](viz.md) - Real-time robot visualization with Viser
+- [**VGGT System**](vggt.md) - 3D reconstruction and surface mapping
+
+### 🧠 AI & Models
+- [**Model Plans**](plans/vla_plan/index.md) - Vision-language-action model development
+- [**Training Data**](plans/models/data.md) - Dataset collection and management
+- [**Gr00t Integration**](plans/models/gr00t.md) - Foundation model interface
+- [**SmolVLA**](plans/models/smolvla.md) - Compact vision-language-action model
+
+### 🔧 Operations & Monitoring
+- [**State Server**](state_server.md) - Redis-based state management
+- [**TUI Monitor**](tui_monitor.md) - Real-time system dashboard
+- [**Development Workflows**](development.md) - Coding, testing, and deployment
+
+### 📚 Reference
+- [**Style Guide**](style_guide.md) - Code and documentation standards
+- [**Progress Tracking**](progress.md) - Development milestones and status
+- [**Research Ideas**](ideas.md) - Future development directions
+- [**Academic Paper**](paper/index.md) - Research publication and figures
 
 ```{toctree}
 :maxdepth: 2

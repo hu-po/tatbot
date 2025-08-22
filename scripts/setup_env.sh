@@ -28,8 +28,12 @@ if [ -n "$EXTRAS_TRIMMED" ] && [ "$EXTRAS_TRIMMED" != "" ]; then
     uv pip install ".[$EXTRAS]"
 fi
 
-echo "🔑  Source environment variables (keys, tokens, etc.)"
-source /nfs/tatbot/.env || true
+echo "🔑  Export environment variables (keys, tokens, etc.)"
+if [ -f /nfs/tatbot/.env ]; then
+  set -a  # auto-export all variables defined below
+  source /nfs/tatbot/.env || true
+  set +a
+fi
 
 echo "🧹  Delete old outputs"
 rm -rf outputs/* || true
