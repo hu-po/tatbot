@@ -44,18 +44,20 @@ Tools are now defined in the unified `tatbot.tools` module using decorator-based
 - `list_recordings` (rpi2): List available recordings from the recordings directory
 
 **Robot Tools:**
-- `align` (hog, oop): Generate and execute alignment strokes for calibration
-- `reset` (hog, ook, oop): Reset robot to safe/ready position
-- `sense` (hog): Capture environmental data (cameras, sensors)
-- `stroke` (hog): Execute artistic strokes on paper/canvas
+- `align` (eek, hog, oop): Generate and execute alignment strokes for calibration
+- `reset` (eek, hog, ook, oop): Reset robot to safe/ready position
+- `sense` (eek, hog): Capture environmental data (cameras, sensors)
+- `stroke` (eek, hog): Execute artistic strokes on paper/canvas
 
 **GPU Tools** (available on GPU-enabled nodes only):
 - `convert_strokelist_to_batch` (ook, oop): GPU-accelerated stroke trajectory conversion
+- `vggt_reconstruct` (ook, oop): VGGT-based 3D reconstruction from camera data
 
 **Visualization Tools:**
 - `start_stroke_viz` (ook, oop): Start stroke visualization server
 - `start_teleop_viz` (ook, oop): Start teleoperation visualization server
 - `start_map_viz` (ook, oop): Start surface mapping visualization server
+- `start_vggt_compare_viz` (ook, oop): Start VGGT comparison visualization for reconstruction analysis
 - `stop_viz_server` (ook, oop): Stop running visualization servers
 - `list_viz_servers` (ook, oop): List running visualization servers
 - `status_viz_server` (ook, oop): Get status of visualization servers

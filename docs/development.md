@@ -143,13 +143,13 @@ This project uses `ruff` for both linting and formatting, plus `isort` for impor
 
 To run all code quality checks, use the lint script:
 ```bash
-./scripts/lint.sh
+./scripts/lint_code.sh
 ```
 
 ### Docs
 Generate and validate documentation minimally during linting. The main lint script now builds docs with warnings-as-errors:
 ```bash
-./scripts/lint.sh
+./scripts/lint_code.sh
 ```
 This runs `sphinx-build -W docs docs/_build` after code checks.
 

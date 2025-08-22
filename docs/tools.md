@@ -94,19 +94,21 @@ async def my_tool(input_data: MyToolInput, ctx: ToolContext):
 ### GPU Tools (GPU Nodes Only)
 
 - **`convert_strokelist_to_batch`** (ook, oop): GPU-accelerated inverse kinematics for stroke conversion
+- **`vggt_reconstruct`** (ook, oop): VGGT-based 3D reconstruction from camera data
 
 ### Robot Tools
 
-- **`align`** (hog, oop): Generate and execute alignment strokes for calibration
-- **`reset`** (hog, ook, oop): Reset robot to safe/ready position
-- **`sense`** (hog): Capture environmental data (cameras, sensors)
-- **`stroke`** (hog): Execute artistic strokes on paper/canvas
+- **`align`** (eek, hog, oop): Generate and execute alignment strokes for calibration
+- **`reset`** (eek, hog, ook, oop): Reset robot to safe/ready position
+- **`sense`** (eek, hog): Capture environmental data (cameras, sensors)
+- **`stroke`** (eek, hog): Execute artistic strokes on paper/canvas
 
 ### Visualization Tools
 
 - **`start_stroke_viz`** (ook, oop): Start stroke visualization server
 - **`start_teleop_viz`** (ook, oop): Start teleoperation visualization server
 - **`start_map_viz`** (ook, oop): Start surface mapping visualization server
+- **`start_vggt_compare_viz`** (ook, oop): Start VGGT comparison visualization for reconstruction analysis
 - **`stop_viz_server`** (ook, oop): Stop running visualization servers
 - **`list_viz_servers`** (ook, oop): List running visualization servers
 - **`status_viz_server`** (ook, oop): Get status of visualization servers
@@ -189,8 +191,8 @@ The tools system provides a clean, modern approach to robotic operations:
 
 ```python
 # tools/robot/align.py
-@tool(name="align", nodes=["hog", "oop"])
-async def align_tool(input_data: AlignInput, ctx: ToolContext):
+@tool(name="align", nodes=["eek", "hog", "oop"])
+async def align(input_data: AlignInput, ctx: ToolContext):
     # Clean, self-contained implementation
     yield {"progress": 0.1, "message": "Starting alignment..."}
     # Implementation here

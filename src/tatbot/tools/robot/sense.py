@@ -366,22 +366,43 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
         # Optionally run VGGT reconstruction remotely on GPU node
         if getattr(input_data, 'enable_vggt', False):
             try:
-                import hydra
+                # Compose Hydra config safely outside a Hydra app
+                from hydra import initialize_config_dir, compose
                 import yaml as _yaml
                 from omegaconf import OmegaConf
 
                 from tatbot.mcp.client import MCPClient
 
-                # Load Hydra config for VGGT
-                cfg = hydra.compose(config_name="config")
-                cfg_dict = OmegaConf.to_container(cfg, resolve=True) or {}
-                preferred_node = cfg_dict.get('cam', {}).get('vggt', {}).get('preferred_gpu_node', 'ook')
-                node_cfg_path = Path(__file__).resolve().parents[3] / "conf" / "mcp" / f"{preferred_node}.yaml"
+                # Resolve config directory (repo_root/src/conf)
+                conf_dir = Path(__file__).resolve().parents[3] / "conf"
+
+                cfg_dict = {}
+                preferred_node = "ook"
+                try:
+                    # Initialize Hydra with explicit config directory
+                    with initialize_config_dir(version_base=None, config_dir=str(conf_dir)):
+                        cfg = compose(config_name="config")
+                    cfg_dict = OmegaConf.to_container(cfg, resolve=True) or {}
+                    preferred_node = cfg_dict.get('cam', {}).get('vggt', {}).get('preferred_gpu_node', preferred_node)
+                except Exception as hydra_e:
+                    # Fallback to direct YAML read if Hydra init/composition fails
+                    log.warning(f"Hydra config composition failed, falling back to YAML: {hydra_e}")
+                    try:
+                        cam_vggt_yaml = conf_dir / "cam" / "vggt.yaml"
+                        if cam_vggt_yaml.exists():
+                            y = _yaml.safe_load(cam_vggt_yaml.read_text()) or {}
+                            preferred_node = y.get('preferred_gpu_node', preferred_node)
+                    except Exception:
+                        pass
+
+                # Read MCP host/port for the preferred GPU node
+                node_cfg_path = conf_dir / "mcp" / f"{preferred_node}.yaml"
                 host = "localhost"; port = 8000
                 if node_cfg_path.exists():
                     node_cfg = _yaml.safe_load(node_cfg_path.read_text())
                     host = node_cfg.get("host", host)
                     port = int(node_cfg.get("port", port))
+
                 client = MCPClient(request_timeout_s=MCP_VGGT_TIMEOUT_S)
                 ok, session_id, url = await client.establish_session(host, port)
                 if ok and session_id and url:

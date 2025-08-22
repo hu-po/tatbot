@@ -41,7 +41,7 @@ uv run sphinx-autobuild docs docs/_build
 ### Code Quality, Type Checking, Linting
 ```bash
 # Run linting and formatting
-./scripts/lint.sh
+./scripts/lint_code.sh
 ```
 
 ### System Monitoring (TUI)
@@ -162,15 +162,16 @@ The system supports **meta configs** for easy parameter overrides across scenes.
 
 The following tools are available via MCP servers on different nodes:
 
-### Robot Control Tools (eek, hog)
-- **`align_tool`**: Generate and execute alignment strokes for calibration (supports `meta` parameter)
-- **`reset_tool`**: Reset robot to safe/ready position (supports `meta` parameter)
-- **`sense_tool`**: Capture environmental data from cameras and sensors (supports `meta` parameter)  
-- **`stroke_tool`**: Execute artistic strokes with ink on canvas (supports `meta` parameter)
+### Robot Control Tools (eek, hog, oop)
+- **`align`**: Generate and execute alignment strokes for calibration (supports `meta` parameter)
+- **`reset`**: Reset robot to safe/ready position (supports `meta` parameter)
+- **`sense`**: Capture environmental data from cameras and sensors (supports `meta` parameter)  
+- **`stroke`**: Execute artistic strokes with ink on canvas (supports `meta` parameter)
 
-### GPU Processing Tools (ook, oop when available)
+### GPU Processing Tools (ook, oop)
 - **`convert_strokelist_to_batch`**: GPU-accelerated stroke trajectory conversion using JAX
-- **`reset_tool`**: Emergency robot reset capability
+- **`vggt_reconstruct`**: VGGT-based 3D reconstruction from camera data
+- **`reset`**: Emergency robot reset capability
 
 ### System Management Tools (oop, rpi1)  
 - **`list_nodes`**: List all available tatbot nodes
@@ -180,8 +181,10 @@ The following tools are available via MCP servers on different nodes:
 - **`start_stroke_viz`**: Start interactive stroke execution visualization server (supports `meta` parameter)
 - **`start_teleop_viz`**: Start teleoperation server for interactive robot control (supports `meta` parameter)
 - **`start_map_viz`**: Start surface mapping visualization for 2D-to-3D debugging (supports `meta` parameter)
+- **`start_vggt_compare_viz`**: Start VGGT comparison visualization for reconstruction analysis
 - **`stop_viz_server`**: Stop a running visualization server
 - **`list_viz_servers`**: List all running visualization servers
+- **`status_viz_server`**: Get status of a specific visualization server
 
 ### Cross-Node Operations
 - Robot operations automatically detect GPU availability and route conversion tasks
