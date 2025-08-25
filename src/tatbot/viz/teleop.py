@@ -362,13 +362,13 @@ class TeleopViz(BaseViz):
         # Get the current lasercross position from the transform control
         lasercross_pos = self.lasercross_tf.position.copy()
         
-        # Calculate target positions: left arm gets +Y offset, right arm gets -Y offset
-        # Transform the Y-axis offsets according to lasercross orientation
+        # Calculate target positions: left arm gets +X offset, right arm gets -X offset
+        # Transform the X-axis offsets according to lasercross orientation
         lasercross_rotation = jaxlie.SO3(self.lasercross_tf.wxyz)
         
-        # Define offsets in lasercross local frame (Y-axis)
-        left_offset_local = np.array([0, lasercross_halflen_m, 0])
-        right_offset_local = np.array([0, -lasercross_halflen_m, 0])
+        # Define offsets in lasercross local frame (X-axis)
+        left_offset_local = np.array([lasercross_halflen_m, 0, 0])
+        right_offset_local = np.array([-lasercross_halflen_m, 0, 0])
         
         # Transform offsets to world frame using lasercross rotation
         left_offset_world = lasercross_rotation @ left_offset_local
