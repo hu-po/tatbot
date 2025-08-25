@@ -17,6 +17,6 @@ scenes:
     - bright_red
 
 skins:
-  description: "100mm x 70mm square on sponge fake skin"
+  description: "100mm x 100mm square on sponge fake skin"
   image_width_m: 0.1
   image_height_m: 0.1
