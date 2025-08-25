@@ -202,7 +202,7 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
         
         # Move robot to ready position
         yield {"progress": 0.08, "message": "Sending robot to ready position..."}
-        robot.send_action(robot._urdf_joints_to_action(scene.ready_pos_full.joints), safe=True)
+        robot.send_action(robot._urdf_joints_to_action(scene.ready_pos_full.joints), safe=True, goal_time=2.0)
         
         # Update robot state
         robot_state.current_pose = "ready"

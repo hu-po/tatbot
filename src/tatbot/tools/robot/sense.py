@@ -178,7 +178,7 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
         
         # Move robot to ready position
         yield {"progress": 0.08, "message": "Sending robot to ready position..."}
-        robot.send_action(robot._urdf_joints_to_action(scene.ready_pos_full.joints), safe=True)
+        robot.send_action(robot._urdf_joints_to_action(scene.ready_pos_full.joints), safe=True, goal_time=2.0)
         
         # Capture images from all cameras
         yield {"progress": 0.3, "message": "🤖 Recording observation (png images)"}
