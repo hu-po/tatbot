@@ -49,6 +49,7 @@ async def convert_strokes(input_data: ConvertStrokesInput, ctx: ToolContext):
     - strokes_file_path (str, required): Path to strokes YAML file on shared NFS
     - strokebatch_file_path (str, required): Output path for strokebatch on shared NFS  
     - scene (str, required): Scene configuration name for IK parameters
+    - meta (str, optional): Meta configuration name to pass to compose_and_validate_scene
     - first_last_rest (bool, optional): Apply rest positions at stroke endpoints. Default: true
     - use_ee_offsets (bool, optional): Apply end-effector offset corrections. Default: true
     

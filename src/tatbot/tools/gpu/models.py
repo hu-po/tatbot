@@ -8,6 +8,7 @@ class ConvertStrokesInput(ToolInput):
     strokes_file_path: str
     strokebatch_file_path: str
     scene: str
+    meta: str | None = None
     first_last_rest: bool = True
     use_ee_offsets: bool = True
 
