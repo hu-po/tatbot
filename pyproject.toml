@@ -85,10 +85,8 @@ gen = [
     "potpourri3d==1.3",
 ]
 gpu = [
-    "jax[cuda12]>=0.4.0,<0.5.0",
     "jaxls",
-    # "torch>=2.3,<2.6; platform_system=='Linux' and platform_machine=='x86_64'",
-    # "vggt @ git+https://github.com/facebookresearch/VGGT.git@main",
+    "jax[cuda12]>=0.4.0,<0.5.0",
 ]
 img = [
     "opencv-python==4.12.0.88",
