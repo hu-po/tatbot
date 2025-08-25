@@ -264,7 +264,6 @@ class TatbotMonitor:
         """Actively check node health by pinging MCP servers."""
         import socket
 
-        import aiohttp
         
         nodes_health = {}
         node_ips = self.node_ips
@@ -280,29 +279,31 @@ class TatbotMonitor:
             }
             
             try:
-                # Try to connect to MCP server first
+                # Try to connect to MCP server port first (just check if port is open)
                 mcp_timeout = self.tui_config['health_check']['mcp_timeout']
-                timeout = aiohttp.ClientTimeout(total=mcp_timeout)
-                async with aiohttp.ClientSession(timeout=timeout) as session:
+                try:
+                    # Simple socket connection test for MCP port
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(mcp_timeout)
+                    result = sock.connect_ex((ip, 8000))  # MCP port
+                    if result == 0:
+                        node_health["is_reachable"] = True
+                        node_health["check_method"] = "mcp"
+                    sock.close()
+                except:
+                    # Fall back to SSH port check
                     try:
-                        async with session.get(f"http://{ip}:8000/mcp") as response:
-                            if response.status in [200, 405, 406]:  # MCP server responding
-                                node_health["is_reachable"] = True
-                                node_health["check_method"] = "mcp"
+                        # Simple socket connection test
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        ssh_timeout = self.tui_config['health_check']['ssh_timeout']
+                        sock.settimeout(ssh_timeout)
+                        result = sock.connect_ex((ip, 22))  # SSH port
+                        if result == 0:
+                            node_health["is_reachable"] = True
+                            node_health["check_method"] = "ssh"
+                        sock.close()
                     except:
-                        # Fall back to basic ping
-                        try:
-                            # Simple socket connection test
-                            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                            ssh_timeout = self.tui_config['health_check']['ssh_timeout']
-                            sock.settimeout(ssh_timeout)
-                            result = sock.connect_ex((ip, 22))  # SSH port
-                            if result == 0:
-                                node_health["is_reachable"] = True
-                                node_health["check_method"] = "ssh"
-                            sock.close()
-                        except:
-                            pass
+                        pass
                             
             except Exception:
                 pass
