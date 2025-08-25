@@ -75,6 +75,7 @@ class GPUConversionService:
                     log.error(f"Error loading node config for {node_name}: {e}")
                     continue
 
+                log.info(f"Attempting GPU conversion via node '{node_name}' at {host}:{port}")
                 success, session_id, url = await self.client.establish_session(host, port)
                 if not success or not session_id or not url:
                     log.error(f"Failed to establish MCP session with {node_name}")
@@ -95,6 +96,14 @@ class GPUConversionService:
                     }
                 }
 
+                log.info(
+                    "Calling remote tool '%s' on %s (strokes=%s, out=%s, scene=%s)",
+                    tool_name,
+                    node_name,
+                    target_strokes_path,
+                    target_strokebatch_path,
+                    scene,
+                )
                 ok, response = await self.client.call_tool(url, session_id, tool_name, arguments)
                 if ok and isinstance(response, dict):
                     # The MCP server wraps tool output; look for tool result success
@@ -147,5 +156,4 @@ class GPUConversionService:
         for n, r in zip(target_nodes, responses, strict=False):
             results[n] = False if isinstance(r, Exception) else bool(r)
         return results
-
 

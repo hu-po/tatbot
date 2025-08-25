@@ -263,6 +263,8 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
             else:
                 log.info("Using remote GPU node for strokebatch conversion")
                 gpu_proxy = GPUConversionService()
+                # Inform UI/TUI users that we are routing to a GPU node
+                yield {"progress": 0.24, "message": "Routing stroke conversion to GPU node..."}
                 
                 success, _ = await gpu_proxy.convert_strokelist_remote(
                     strokes_file_path=str(strokes_path),

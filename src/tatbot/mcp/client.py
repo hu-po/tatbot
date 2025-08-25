@@ -29,6 +29,8 @@ class MCPClient:
 
     async def establish_session(self, host: str, port: int) -> Tuple[bool, Optional[str], Optional[str]]:
         """Establish an MCP session and return (success, session_id, base_url)."""
+        # FastMCP servers in our fleet are mounted at '/mcp' (no trailing slash)
+        # Some servers may not accept a POST to '/mcp/' for initialize.
         url = f"http://{host}:{port}/mcp"
         headers = {
             "Content-Type": "application/json",
@@ -42,6 +44,8 @@ class MCPClient:
                     "id": "init",
                     "method": "initialize",
                     "params": {
+                        # Match server protocolVersion advertised by our nodes
+                        # (see server logs: 2025-06-18)
                         "protocolVersion": "2025-06-18",
                         "clientInfo": {"name": "tatbot-mcp-client", "version": "1.0.0"},
                         "capabilities": {},
@@ -140,5 +144,4 @@ class MCPClient:
         except Exception as e:  # pragma: no cover - network errors
             log.error(f"Error calling remote tool: {e}")
             return False, {"error": str(e)}
-
 
