@@ -13,8 +13,8 @@ log = get_logger("gen.batch", "💠")
 
 def strokebatch_from_strokes(
     scene: Scene, 
-    strokelist: StrokeList, 
-    batch_size: int = 256, 
+    strokelist: StrokeList,
+    batch_size: int = 1024, 
     first_last_rest: bool = True, 
     use_ee_offsets: bool = True
 ) -> StrokeBatch:
