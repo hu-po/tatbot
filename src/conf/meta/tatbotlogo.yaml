@@ -8,7 +8,7 @@ arms:
   offset_num: 16
 
 scenes:
-  stroke_length: 180
+  stroke_length: 256
   design_name: "tatbotlogo"
   inks_config_name: "red_blue"
   pen_names_l:
