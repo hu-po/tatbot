@@ -12,7 +12,21 @@ def make_align_strokes(scene: Scene) -> StrokeList:
     inkdip_func = make_inkdip_func(scene)
     strokelist: StrokeList = StrokeList(strokes=[])
 
-    # First hover arms over the calibrator, alternate arm hovers over large inkcap
+    # Create rest strokes, which will be used on alternate arms
+    rest_stroke_l = Stroke(
+        description="left arm at rest",
+        meter_coords=np.zeros((scene.stroke_length, 3)),
+        arm="left",
+        is_rest=True,
+    )
+    rest_stroke_r = Stroke(
+        description="right arm at rest",
+        meter_coords=np.zeros((scene.stroke_length, 3)),
+        arm="right",
+        is_rest=True,
+    )
+
+    # First hover arms over the calibrator
     strokelist.strokes.append((
         Stroke(
             description="left arm hovering over calibrator",
@@ -20,21 +34,23 @@ def make_align_strokes(scene: Scene) -> StrokeList:
             ee_pos=np.tile(scene.calibrator_pose.pos.xyz, (scene.stroke_length, 1)),
             is_inkdip=True, # inkdip strokes are in final ee_pos
         ),
-        inkdip_func(list(scene.inkcaps_r.values())[0].ink.name, "right"),
+        rest_stroke_r
     ))
     strokelist.strokes.append((
-        inkdip_func(list(scene.inkcaps_l.values())[0].ink.name, "left"),
+        rest_stroke_l,
         Stroke(
             description="right arm hovering over calibrator",
             arm="right",
             ee_pos=np.tile(scene.calibrator_pose.pos.xyz, (scene.stroke_length, 1)),
             is_inkdip=True, # inkdip strokes are in final ee_pos
-        ),
+        )
     ))
 
     # Then hover arms over each of the inkcaps
-    for inkcap_l, inkcap_r in zip(scene.inkcaps_l.values(), scene.inkcaps_r.values(), strict=False):
-        strokelist.strokes.append((inkdip_func(inkcap_l.ink.name, "left"), inkdip_func(inkcap_r.ink.name, "right")))
+    for inkcap_l in scene.inkcaps_l.values():
+        strokelist.strokes.append((inkdip_func(inkcap_l.ink.name, "left"), rest_stroke_r))
+    for inkcap_r in scene.inkcaps_r.values():
+        strokelist.strokes.append((rest_stroke_l, inkdip_func(inkcap_r.ink.name, "right")))        
     
     # Finally hover over the lasercross: a red cross which acts as the origin of the tattoo design
     lasercross_halflen_m = scene.arms.lasercross_len_mm / 2000 # convert to meters and divide by 2

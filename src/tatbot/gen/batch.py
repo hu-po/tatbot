@@ -124,6 +124,13 @@ def strokebatch_from_strokes(
         joints_out[start:end] = np.asarray(batch_joints, dtype=np.float32)
     joints_out = joints_out.reshape(b, l, o, 14)
 
+    # Override joints to ready positions for any strokes flagged as rest
+    for i, (stroke_l, stroke_r) in enumerate(strokelist.strokes):
+        if stroke_l.is_rest:
+            joints_out[i, :, :, :7] = np.tile(scene.ready_pos_l.joints, (l, o, 1))
+        if stroke_r.is_rest:
+            joints_out[i, :, :, 7:] = np.tile(scene.ready_pos_r.joints, (l, o, 1))
+
     if first_last_rest:
         log.debug("Using first and last rest")
         # Keep right arm at rest during first stroke (left arm ink dipping)
