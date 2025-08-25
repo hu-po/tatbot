@@ -56,14 +56,14 @@ def make_align_strokes(scene: Scene) -> StrokeList:
     lasercross_halflen_m = scene.arms.lasercross_len_mm / 2000 # convert to meters and divide by 2
     strokelist.strokes.append((
         Stroke(
-            description=f"left arm hovering over lasercross pose, +{lasercross_halflen_m}m in X axis",
+            description=f"left arm hovering over lasercross pose, -{lasercross_halflen_m}m in X axis",
             arm="left",
-            meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([lasercross_halflen_m, 0, 0]), (scene.stroke_length, 1)),
+            meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([-lasercross_halflen_m, 0, 0]), (scene.stroke_length, 1)),
         ), 
         Stroke(
-            description=f"right arm hovering over lasercross pose, -{lasercross_halflen_m}m in X axis",
+            description=f"right arm hovering over lasercross pose, +{lasercross_halflen_m}m in X axis",
             arm="right",
-            meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([-lasercross_halflen_m, 0, 0]), (scene.stroke_length, 1)),
+            meter_coords=np.tile(scene.arms.hover_offset.xyz + np.array([lasercross_halflen_m, 0, 0]), (scene.stroke_length, 1)),
         ),
     ))
     return strokelist

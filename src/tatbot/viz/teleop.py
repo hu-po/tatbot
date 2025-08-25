@@ -367,8 +367,8 @@ class TeleopViz(BaseViz):
         lasercross_rotation = jaxlie.SO3(self.lasercross_tf.wxyz)
         
         # Define offsets in lasercross local frame (X-axis)
-        left_offset_local = np.array([lasercross_halflen_m, 0, 0])
-        right_offset_local = np.array([-lasercross_halflen_m, 0, 0])
+        left_offset_local = np.array([-lasercross_halflen_m, 0, 0])
+        right_offset_local = np.array([lasercross_halflen_m, 0, 0])
         
         # Transform offsets to world frame using lasercross rotation
         left_offset_world = lasercross_rotation @ left_offset_local
@@ -377,26 +377,14 @@ class TeleopViz(BaseViz):
         # Apply transformed offsets to lasercross position
         left_target_pos = lasercross_pos + left_offset_world
         right_target_pos = lasercross_pos + right_offset_world
-        
-        # Get lasercross transformation for orientation calculations
-        lasercross_tf_obj = jaxlie.SE3.from_rotation_and_translation(
-            jaxlie.SO3(self.lasercross_tf.wxyz), 
-            self.lasercross_tf.position
-        )
-        
-        # Use lasercross-relative end-effector rotations
-        base_ee_rot_l = jaxlie.SO3(self.scene.arms.ee_rot_l.wxyz)
-        base_ee_rot_r = jaxlie.SO3(self.scene.arms.ee_rot_r.wxyz)
-        
-        lasercross_relative_ee_rot_l = lasercross_tf_obj.rotation() @ base_ee_rot_l
-        lasercross_relative_ee_rot_r = lasercross_tf_obj.rotation() @ base_ee_rot_r
-        
-        left_target_rot = lasercross_relative_ee_rot_l.wxyz.copy()
-        right_target_rot = lasercross_relative_ee_rot_r.wxyz.copy()
+
+        # orientations based on arm ee_rot_l and ee_rot_r
+        left_ee_rot = self.scene.arms.ee_rot_l.wxyz
+        right_ee_rot = self.scene.arms.ee_rot_r.wxyz
         
         # Set up IK targets for both arms
         target_positions = np.array([left_target_pos, right_target_pos])
-        target_rotations = np.array([left_target_rot, right_target_rot])
+        target_rotations = np.array([left_ee_rot, right_ee_rot])
         
         # Run IK to get joint positions
         solution = ik(
@@ -412,14 +400,14 @@ class TeleopViz(BaseViz):
         
         # Update the pose objects and IK targets for both arms
         self.ee_l_pose.pos.xyz = left_target_pos
-        self.ee_l_pose.rot.wxyz = left_target_rot
+        self.ee_l_pose.rot.wxyz = left_ee_rot
         self.ik_target_l.position = left_target_pos
-        self.ik_target_l.wxyz = left_target_rot
+        self.ik_target_l.wxyz = left_ee_rot
         
         self.ee_r_pose.pos.xyz = right_target_pos
-        self.ee_r_pose.rot.wxyz = right_target_rot
+        self.ee_r_pose.rot.wxyz = right_ee_rot
         self.ik_target_r.position = right_target_pos
-        self.ik_target_r.wxyz = right_target_rot
+        self.ik_target_r.wxyz = right_ee_rot
         
         # Turn off IK target visibility and disable IK updates
         self.ik_target_l.visible = False
