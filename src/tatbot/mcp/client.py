@@ -29,7 +29,7 @@ class MCPClient:
 
     async def establish_session(self, host: str, port: int) -> Tuple[bool, Optional[str], Optional[str]]:
         """Establish an MCP session and return (success, session_id, base_url)."""
-        url = f"http://{host}:{port}/mcp/"
+        url = f"http://{host}:{port}/mcp"
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
@@ -42,7 +42,7 @@ class MCPClient:
                     "id": "init",
                     "method": "initialize",
                     "params": {
-                        "protocolVersion": "2024-11-05",
+                        "protocolVersion": "2025-06-18",
                         "clientInfo": {"name": "tatbot-mcp-client", "version": "1.0.0"},
                         "capabilities": {},
                     },
