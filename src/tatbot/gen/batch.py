@@ -49,21 +49,9 @@ def strokebatch_from_strokes(
         scene.calibrator_pose.pos.xyz
     )
 
-    # Transform end effector orientations to be relative to different frames
-    base_ee_rot_l = jaxlie.SO3(scene.arms.ee_rot_l.wxyz)
-    base_ee_rot_r = jaxlie.SO3(scene.arms.ee_rot_r.wxyz)
-    
-    # Apply lasercross rotation to base EE orientations (for normal strokes)
-    lasercross_relative_ee_rot_l = lasercross_tf.rotation() @ base_ee_rot_l
-    lasercross_relative_ee_rot_r = lasercross_tf.rotation() @ base_ee_rot_r
-    
-    # Apply calibrator rotation to base EE orientations (for inkdip strokes)
-    calibrator_relative_ee_rot_l = calibrator_tf.rotation() @ base_ee_rot_l
-    calibrator_relative_ee_rot_r = calibrator_tf.rotation() @ base_ee_rot_r
-    
-    # Start with lasercross-relative orientations for all strokes (will override inkdip strokes later)
-    ee_rot_l = np.tile(lasercross_relative_ee_rot_l.wxyz, (b, l, o, 1))
-    ee_rot_r = np.tile(lasercross_relative_ee_rot_r.wxyz, (b, l, o, 1))
+    # Start with base orientations for all strokes (will override inkdip strokes later)
+    ee_rot_l = np.tile(scene.arms.ee_rot_l.wxyz, (b, l, o, 1))
+    ee_rot_r = np.tile(scene.arms.ee_rot_r.wxyz, (b, l, o, 1))
 
     for i, (stroke_l, stroke_r) in enumerate(strokelist.strokes):
         if not stroke_l.is_inkdip:
@@ -73,7 +61,6 @@ def strokebatch_from_strokes(
         else:
             # inkdips do not have meter_coords, only ee_pos
             ee_pos_l[i] = np.repeat(stroke_l.ee_pos.reshape(l, 1, 3), o, 1)
-            ee_rot_l[i] = np.tile(calibrator_relative_ee_rot_l.wxyz, (l, o, 1))
         if not stroke_r.is_inkdip:
             base_r = jax.vmap(lambda pos: lasercross_tf @ pos)(stroke_r.meter_coords)
             base_r = base_r.reshape(l, 3).astype(np.float32)
@@ -81,8 +68,7 @@ def strokebatch_from_strokes(
         else:
             # inkdips do not have meter_coords, only ee_pos
             ee_pos_r[i] = np.repeat(stroke_r.ee_pos.reshape(l, 1, 3), o, 1)
-            ee_rot_r[i] = np.tile(calibrator_relative_ee_rot_r.wxyz, (l, o, 1))
-
+            
         # add ee_offset
         if use_ee_offsets:
             log.debug("Using ee offsets")

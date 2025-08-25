@@ -17,9 +17,9 @@ log = get_logger("gen.ik", "🧮")
 
 @jdc.pytree_dataclass
 class IKConfig:
-    pos_weight: float = 16.0
+    pos_weight: float = 32.0
     """Weight for the position part of the IK cost function."""
-    ori_weight: float = 4.0
+    ori_weight: float = 1.0
     """Weight for the orientation part of the IK cost function."""
     rest_weight: float = 0.1
     """Weight for the rest pose cost function."""
