@@ -19,7 +19,17 @@ log = get_logger("cam.tracker", "🏷️")
 class TagTracker:
     def __init__(self, config: Tags):
         self.config = config
-        self.detector = apriltag.Detector(families=config.family)
+        # Use single-threaded detector to avoid occasional heap corruption
+        # from underlying native library when combined with other threaded code.
+        # Also keep parameters explicit for reproducibility.
+        self.detector = apriltag.Detector(
+            families=config.family,
+            nthreads=1,
+            quad_decimate=1.0,
+            quad_sigma=0.0,
+            refine_edges=True,
+            decode_sharpening=0.25,
+        )
 
     def track_tags(
         self,
@@ -36,7 +46,9 @@ class TagTracker:
         log.debug("🏷️ Detecting AprilTags in image...")
         apriltags_start_time = time.time()
         image_np = cv2.imread(str(image_path))
-        gray_image_np = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
+        # Ensure correct channel order (cv2.imread returns BGR) and contiguity
+        gray_image_np = cv2.cvtColor(image_np, cv2.COLOR_BGR2GRAY)
+        gray_image_np = np.ascontiguousarray(gray_image_np, dtype=np.uint8)
         detections: List[apriltag.Detection] = self.detector.detect(
             gray_image_np,
             # TODO: tune these params
