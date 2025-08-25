@@ -596,7 +596,7 @@
     <parent link="left/link_6"/>
     <child link="left/carriage_left"/>
     <axis xyz="0 1 0"/>
-    <limit effort="200.0" lower="0.0" upper="0.04" velocity="0.25"/>
+    <limit effort="200.0" lower="0.0" upper="0.01" velocity="0.25"/>
   </joint>
   <link name="left/ee">
     <visual>
@@ -964,7 +964,7 @@
     <parent link="right/link_6"/>
     <child link="right/carriage_right"/>
     <axis xyz="0 -1 0"/>
-    <limit effort="200.0" lower="0.0" upper="0.04" velocity="0.25"/>
+    <limit effort="200.0" lower="0.0" upper="0.01" velocity="0.25"/>
   </joint>
   <link name="right/ee">
     <visual>
