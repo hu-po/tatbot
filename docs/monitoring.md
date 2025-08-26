@@ -91,19 +91,40 @@ Inventory lives at `~/tatbot/config/monitoring/inventory.yml` (versions, scrape 
 > Replace versions with those from **inventory.yml** if you change them.
 
 ### 6.1 Common host metrics (node_exporter) — eek, ook, hog, rpi1, rpi2
-On each host (repo at `~/tatbot`):
-- Download Node Exporter v{versions.node_exporter} for your OS/arch: https://github.com/prometheus/node_exporter/releases/tag/v{versions.node_exporter}
-- `sudo useradd --no-create-home --shell /usr/sbin/nologin nodeexp || true`
-- `sudo install -o nodeexp -g nodeexp -m 0755 node_exporter /usr/local/bin/node_exporter`
-- `sudo install -o root -g root -m 0644 ~/tatbot/config/monitoring/exporters/<host>/node_exporter.service /etc/systemd/system/`
-- `sudo systemctl daemon-reload && sudo systemctl enable --now node_exporter`
-Verify: `curl http://<host>:9100/metrics`
+On each host (repo at `~/tatbot`), download and install Node Exporter v1.9.1:
+
+**eek, ook, hog** (Intel/AMD x86_64):
+```bash
+cd /tmp
+wget https://github.com/prometheus/node_exporter/releases/download/v1.9.1/node_exporter-1.9.1.linux-amd64.tar.gz
+tar -xzf node_exporter-1.9.1.linux-amd64.tar.gz -C /tmp
+sudo useradd --no-create-home --shell /usr/sbin/nologin nodeexp || true
+sudo install -o nodeexp -g nodeexp -m 0755 /tmp/node_exporter-1.9.1.linux-amd64/node_exporter /usr/local/bin/node_exporter
+sudo install -o root -g root -m 0644 ~/tatbot/config/monitoring/exporters/$(hostname)/node_exporter.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now node_exporter
+curl -sS --no-progress-meter http://$(hostname):9100/metrics | head -n 20
+```
+
+**rpi1, rpi2** (Raspberry Pi 5 ARM64):
+```bash
+cd /tmp
+wget https://github.com/prometheus/node_exporter/releases/download/v1.9.1/node_exporter-1.9.1.linux-arm64.tar.gz
+tar -xzf node_exporter-1.9.1.linux-arm64.tar.gz -C /tmp
+sudo useradd --no-create-home --shell /usr/sbin/nologin nodeexp || true
+sudo install -o nodeexp -g nodeexp -m 0755 /tmp/node_exporter-1.9.1.linux-arm64/node_exporter /usr/local/bin/node_exporter
+sudo install -o root -g root -m 0644 ~/tatbot/config/monitoring/exporters/$(hostname)/node_exporter.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now node_exporter
+curl -sS --no-progress-meter http://$(hostname):9100/metrics | head -n 20
+```
+
+> Do not install node_exporter on `ojo` (Jetson). It runs `jetson-stats-node-exporter` on :9100 (see §6.3).
 
 ### 6.2 NVIDIA dGPU (ook / RTX 4050): DCGM exporter (container, **pinned tag**)
 Install NVIDIA Container Toolkit (see vendor docs). Use the unit or run directly:
 - Unit file: `~/tatbot/config/monitoring/exporters/ook/dcgm-exporter.service`
+- Enable: `sudo systemctl daemon-reload && sudo systemctl enable --now dcgm-exporter`
 - Or: `docker run -d --restart=always --gpus all --cap-add SYS_ADMIN --net host --name dcgm-exporter -e DCGM_EXPORTER_LISTEN=":9400" nvidia/dcgm-exporter:{versions.dcgm_exporter}`
-Verify: `curl http://ook:9400/metrics | head`
+Verify: `curl -sS --no-progress-meter http://ook:9400/metrics | head -n 20`
 
 ### 6.3 Jetson (ojo): jtop/jetson‑stats exporter (**no jtop.service dependency required**)
 `sudo -H pip3 install "jetson-stats=={versions.jetson_stats}"`
@@ -118,8 +139,9 @@ Verify: `curl http://ojo:9100/metrics | head`
 
 **A. Container (simple):**
 Unit file: `~/tatbot/config/monitoring/exporters/hog/intel-gpu-exporter.service`
+Enable: `sudo systemctl daemon-reload && sudo systemctl enable --now intel-gpu-exporter`
 Or container (exposes :8080/metrics): `docker run -d --restart=always --net host --name intel-gpu-exporter --privileged -v /sys:/sys:ro -v /dev/dri:/dev/dri {versions.intel_gpu_exporter_image}:{versions.intel_gpu_exporter_tag}`
-Verify: `curl http://192.168.1.88:8080/metrics | head`
+Verify: `curl -sS --no-progress-meter http://192.168.1.88:8080/metrics | head -n 20`
 
 **B. Go exporter (binary) — alternative:**
 - https://gitlab.com/leandrosansilva/go-intel-gpu-exporter (wraps `intel_gpu_top -J`).
@@ -129,7 +151,7 @@ Verify: `curl http://192.168.1.88:8080/metrics | head`
 `sudo install rpi_exporter /usr/local/bin/rpi_exporter`
 `sudo install -m 0644 ~/tatbot/config/monitoring/exporters/<host>/rpi_exporter.service /etc/systemd/system/`
 `sudo systemctl daemon-reload && sudo systemctl enable --now rpi_exporter`
-Verify: `curl http://rpi1:9110/metrics | head`
+Verify: `curl -sS --no-progress-meter http://rpi1:9110/metrics | head -n 20`
 
 ---
 
@@ -164,7 +186,7 @@ File: `~/tatbot/config/monitoring/grafana/provisioning/dashboards/dashboards.yam
 - **NVIDIA Jetson** — `jetson-14493.json` (ID 14493, alt 21727)  
 - **Intel GPU Metrics** — `intel-gpu-23251.json` (ID 23251)
 
-> The **Fleet Overview** dashboard is the kiosk target and summarizes CPU, Memory, Disk, and GPU across all hosts. You can drill into the detailed dashboards when needed.
+> The **Fleet Overview** dashboard is the kiosk target and summarizes CPU, Memory, Disk, Network, and GPU across all hosts. You can drill into the detailed dashboards when needed.
 
 Use script: `~/tatbot/scripts/fetch_dashboards.sh` to pull community dashboards into `~/tatbot/config/monitoring/grafana/dashboards/`.
 
@@ -185,6 +207,7 @@ http://eek:3000/d/fleet-overview/fleet-overview?kiosk=tv&refresh=5s
 
 **Optional: grafana-kiosk service** (ARM binary pinned separately if desired).
 Unit file: `~/tatbot/config/monitoring/exporters/rpi1/grafana-kiosk.service`.
+Enable: `sudo systemctl daemon-reload && sudo systemctl enable --now grafana-kiosk`
 
 ---
 
@@ -279,7 +302,7 @@ scripts/
   - https://prometheus.io/docs/prometheus/latest/storage/  
   - https://prometheus.io/docs/prometheus/latest/migration/  
 
-- Node Exporter release (v1.9.0)  
+- Node Exporter release (v1.9.1)  
   - https://github.com/prometheus/node_exporter/releases
 
 - NVIDIA DCGM exporter  

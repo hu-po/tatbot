@@ -6,7 +6,7 @@ versions:
   grafana_oss: "12.1.1"
 
   # Exporters
-  node_exporter: "1.9.0"
+  node_exporter: "1.9.1"
   dcgm_exporter: "4.4.0-4.5.0-ubi9"
   jetson_stats: "4.3.2"
   jetson_stats_exporter: "0.1.2"

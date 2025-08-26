@@ -67,7 +67,30 @@
           "legendFormat": "{{instance}}"
         }
       ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Disk Utilization (%) by Instance",
+      "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "100 - (avg by (instance) (node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay|squashfs|aufs|ramfs\", mountpoint!~\"/(run|boot|var/lib/docker|var/lib/containers|snap).*\", instance=~\"$instance\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|overlay|squashfs|aufs|ramfs\", mountpoint!~\"/(run|boot|var/lib/docker|var/lib/containers|snap).*\", instance=~\"$instance\"})) * 100",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Network Throughput (MB/s) by Instance",
+      "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "(sum by (instance) (rate(node_network_receive_bytes_total{device!~\"lo\", instance=~\"$instance\"}[5m]) + rate(node_network_transmit_bytes_total{device!~\"lo\", instance=~\"$instance\"}[5m])))/1048576",
+          "legendFormat": "{{instance}}"
+        }
+      ]
     }
   ]
 }
-
