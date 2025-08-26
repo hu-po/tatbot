@@ -65,22 +65,22 @@ check_grafana() {
 
 check_dashboard() {
     local host="$1"
-    local api_url="http://${host}:3000/api/dashboards/uid/fleet-overview"
+    local api_url="http://${host}:3000/api/dashboards/uid/tatbot-compute"
     
-    echo "🔍 Verifying Fleet Overview dashboard exists..."
+    echo "🔍 Verifying Tatbot Compute dashboard exists..."
     
-    if curl -s --max-time 5 "$api_url" | grep -q '"slug":"fleet-overview"'; then
-        echo "✅ Fleet Overview dashboard accessible"
+    if curl -s --max-time 5 "$api_url" | grep -q '"slug":"tatbot-compute"'; then
+        echo "✅ Tatbot Compute dashboard accessible"
         return 0
     else
-        echo "❌ Fleet Overview dashboard not found"
+        echo "❌ Tatbot Compute dashboard not found"
         echo "💡 Check dashboard is provisioned: http://${host}:3000/dashboards"
         return 1
     fi
 }
 
 HOST="$(resolve_host "${TARGET_NODE}")"
-GRAFANA_URL="http://${HOST}:3000/d/fleet-overview/fleet-overview?kiosk=tv&refresh=${REFRESH_SECONDS}s"
+GRAFANA_URL="http://${HOST}:3000/d/tatbot-compute/tatbot-compute?kiosk=tv&refresh=${REFRESH_SECONDS}s"
 
 # Run pre-flight checks
 echo "🚀 Pre-flight checks for monitoring kiosk..."
@@ -96,11 +96,11 @@ if ! check_dashboard "$HOST"; then
 fi
 
 echo "🖥️  Starting monitoring kiosk -> ${GRAFANA_URL}"
-pkill -9 -f "chromium.*fleet-overview" || true
+pkill -9 -f "chromium.*tatbot-compute" || true
 rm -rf /tmp/monitoring_kiosk.log || true
 export DISPLAY=:0
 setsid chromium-browser --kiosk "${GRAFANA_URL}" --disable-gpu --disable-extensions --no-first-run --no-default-browser-check >> /tmp/monitoring_kiosk.log 2>&1 &
 disown
 echo "✅ Launched monitoring kiosk (refresh every ${REFRESH_SECONDS}s)"
-echo "📊 Dashboard: Fleet Overview"
+echo "📊 Dashboard: Tatbot Compute"
 echo "🔗 URL: ${GRAFANA_URL}"

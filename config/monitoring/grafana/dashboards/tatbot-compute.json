@@ -1,10 +1,14 @@
 {
-  "uid": "fleet-overview",
-  "title": "Fleet Overview",
+  "uid": "tatbot-compute",
+  "title": "Tatbot Compute",
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 1,
   "refresh": "5s",
+  "time": {
+    "from": "now-5m",
+    "to": "now"
+  },
   "templating": {
     "list": [
       {
@@ -28,7 +32,7 @@
         {
           "datasource": "Prometheus",
           "expr": "100 - (avg by (instance)(irate(node_cpu_seconds_total{mode=\"idle\",instance=~\"$instance\"}[5m])) * 100)",
-          "legendFormat": "{{instance}}"
+          "legendFormat": "{{instance}} ({{job}})"
         }
       ]
     },
@@ -40,7 +44,7 @@
         {
           "datasource": "Prometheus",
           "expr": "(1 - (avg by (instance)(node_memory_MemAvailable_bytes{instance=~\"$instance\"}) / avg by (instance)(node_memory_MemTotal_bytes{instance=~\"$instance\"}))) * 100",
-          "legendFormat": "{{instance}}"
+          "legendFormat": "{{instance}} ({{job}})"
         }
       ]
     },
@@ -52,7 +56,7 @@
         {
           "datasource": "Prometheus",
           "expr": "avg by (instance) (DCGM_FI_DEV_GPU_UTIL{instance=~\"$instance\"})",
-          "legendFormat": "{{instance}}"
+          "legendFormat": "{{instance}} ({{job}})"
         }
       ]
     },
@@ -64,7 +68,7 @@
         {
           "datasource": "Prometheus",
           "expr": "avg by (instance) (igpu_engines_render_3d_0_busy{instance=~\"$instance\"})",
-          "legendFormat": "{{instance}}"
+          "legendFormat": "{{instance}} ({{job}})"
         }
       ]
     },
@@ -76,7 +80,7 @@
         {
           "datasource": "Prometheus",
           "expr": "100 - (avg by (instance) (node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay|squashfs|aufs|ramfs\", mountpoint!~\"/(run|boot|var/lib/docker|var/lib/containers|snap).*\", instance=~\"$instance\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|overlay|squashfs|aufs|ramfs\", mountpoint!~\"/(run|boot|var/lib/docker|var/lib/containers|snap).*\", instance=~\"$instance\"})) * 100",
-          "legendFormat": "{{instance}}"
+          "legendFormat": "{{instance}} ({{job}})"
         }
       ]
     },
@@ -88,7 +92,7 @@
         {
           "datasource": "Prometheus",
           "expr": "(sum by (instance) (rate(node_network_receive_bytes_total{device!~\"lo\", instance=~\"$instance\"}[5m]) + rate(node_network_transmit_bytes_total{device!~\"lo\", instance=~\"$instance\"}[5m])))/1048576",
-          "legendFormat": "{{instance}}"
+          "legendFormat": "{{instance}} ({{job}})"
         }
       ]
     }

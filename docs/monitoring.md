@@ -326,8 +326,10 @@ config/monitoring/
    ├─ ojo/jetson-stats-node-exporter.service
    └─ rpi{1,2}/{node_exporter.service,rpi_exporter.service}
 scripts/
-├─ fetch_dashboards.sh
-└─ gen_prom_config.py
+├─ monitoring_server.sh    # Single entry point for monitoring system
+├─ monitoring_kiosk.sh     # Start kiosk display on rpi1
+├─ fetch_dashboards.sh     # Download community dashboards
+└─ gen_prom_config.py      # Generate Prometheus config from inventory
 ```
 
 ## Generate Prometheus Config
@@ -341,16 +343,39 @@ Output: `config/monitoring/prometheus/prometheus.yml`.
 After changes, restart the stack on eek:
 - `make -C config/monitoring restart`
 
-## Verification Checklist
+## Monitoring Server Management
 
-- `curl http://eek:9090/-/ready` → `Prometheus is Ready.`
+### Single Entry Point Script
+
+**Run on eek** to start/verify the complete monitoring system:
+
+```bash
+# Start and verify monitoring system
+cd ~/tatbot && ./scripts/monitoring_server.sh
+
+# Restart services and verify
+cd ~/tatbot && ./scripts/monitoring_server.sh --restart
+```
+
+This script:
+- Verifies it's running on eek (monitoring server host)
+- Optionally restarts Prometheus + Grafana containers
+- Performs comprehensive diagnostics on all nodes
+- Tests connectivity, services, and HTTP endpoints
+- Provides installation commands for missing exporters
+- Shows detailed Prometheus target status
+
+### Manual Verification Checklist
+
+If running manual verification:
+- `curl http://eek:9090/-/ready` → `Prometheus Server is Ready.`
 - `curl http://eek:9090/targets` shows all targets **UP**.
 - `curl http://ook:9400/metrics` includes `DCGM_FI_DEV_GPU_UTIL`.
 - `curl http://oop:9400/metrics` includes `DCGM_FI_DEV_GPU_UTIL`.
 - `curl http://ojo:9100/metrics` includes Jetson system + GPU metrics.
 - `curl http://192.168.1.88:8080/metrics` includes Intel `igpu_*` metrics.
-- Grafana at `http://eek:3000/` shows dashboards, including **Fleet Overview**.
-- rpi1 displays the **Fleet Overview** URL with `?kiosk=tv&refresh=5s`.
+- Grafana at `http://eek:3000/` shows dashboards, including **Tatbot Compute**.
+- rpi1 displays the **Tatbot Compute** URL with `?kiosk=tv&refresh=5s`.
 
 ---
 

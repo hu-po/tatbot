@@ -1,8 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# Deep monitoring stack verification script
-# Enhanced version with comprehensive node diagnostics
+# Comprehensive monitoring verification and startup script
+# Single entry point for monitoring system on eek
+# Usage: ./verify_monitoring.sh [--restart]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -21,6 +22,12 @@ log_success() { echo -e "${GREEN}✅ $1${NC}"; }
 log_warning() { echo -e "${YELLOW}⚠️  $1${NC}"; }
 log_error() { echo -e "${RED}❌ $1${NC}"; }
 log_debug() { echo -e "${PURPLE}🔍 $1${NC}"; }
+
+# Check if restart flag is provided
+RESTART_SERVER=false
+if [[ "${1:-}" == "--restart" ]]; then
+    RESTART_SERVER=true
+fi
 
 # Counters
 TOTAL_CHECKS=0
@@ -69,17 +76,40 @@ check_url() {
     check "$description" "curl -s --max-time $timeout '$url'" "$expected_pattern"
 }
 
-echo "🔍 Starting DEEP monitoring verification..."
+echo "🔍 Starting monitoring verification and setup..."
 echo "📍 Running from: $(hostname)"
 echo "📂 Repository: $ROOT_DIR"
+
+# Verify we're on eek
+if [[ "$(hostname)" != "eek" ]]; then
+    log_error "This script must be run on eek (monitoring server host)"
+    echo "💡 Current host: $(hostname)"
+    exit 1
+fi
+
 echo
 
-# 1. Check Docker services on current node
+# 1. Restart monitoring services if requested
+if [[ "$RESTART_SERVER" == true ]]; then
+    log_info "=== Restarting Monitoring Services ==="
+    log_info "Stopping existing containers..."
+    cd "${ROOT_DIR}/config/monitoring"
+    make -s down || log_warning "No containers were running"
+    
+    log_info "Starting Prometheus + Grafana..."
+    make -s up
+    
+    log_info "Waiting for services to stabilize..."
+    sleep 10
+    echo
+fi
+
+# 2. Check Docker services on eek
 log_info "=== Docker Services (Local) ==="
 check "Docker daemon running" "docker info"
 check "Docker Compose available" "docker compose version"
 
-# 2. Check Prometheus and Grafana containers
+# 3. Check Prometheus and Grafana containers
 log_info "=== Prometheus & Grafana Containers ==="
 check "Prometheus container running" "docker ps --filter 'name=prometheus' --format '{{.Status}}'" "Up"
 check "Grafana container running" "docker ps --filter 'name=grafana' --format '{{.Status}}'" "Up"
@@ -90,17 +120,17 @@ if docker ps --filter 'name=prometheus' --format '{{.Status}}' | grep -q "Restar
     docker logs --tail 10 "$(docker ps --filter 'name=prometheus' --format '{{.Names}}')" 2>&1 | sed 's/^/  /'
 fi
 
-# 3. Check Prometheus web interface
+# 4. Check Prometheus web interface
 log_info "=== Prometheus Web Interface ==="
-check_url "Prometheus health check" "http://localhost:9090/-/ready" "Prometheus is Ready"
+check_url "Prometheus health check" "http://localhost:9090/-/ready" "Prometheus.*Ready"
 check_url "Prometheus targets page" "http://localhost:9090/targets" "up"
 
-# 4. Check Grafana web interface
+# 5. Check Grafana web interface
 log_info "=== Grafana Web Interface ==="
 check_url "Grafana health check" "http://localhost:3000/api/health" "ok"
-check_url "Fleet Overview dashboard" "http://localhost:3000/d/fleet-overview/fleet-overview" "Fleet Overview"
+check_url "Tatbot Compute dashboard" "http://localhost:3000/d/tatbot-compute/tatbot-compute" "Tatbot Compute"
 
-# 5. Deep dive on each node
+# 6. Deep dive on each node
 log_info "=== Deep Node Diagnostics ==="
 declare -A node_ips=(["eek"]="192.168.1.97" ["ook"]="192.168.1.90" ["oop"]="192.168.1.51" ["hog"]="192.168.1.88" ["ojo"]="192.168.1.96" ["rpi1"]="192.168.1.98" ["rpi2"]="192.168.1.99")
 
@@ -150,7 +180,7 @@ for node in "${!node_ips[@]}"; do
                 # Check DCGM exporter
                 dcgm_result=$(timeout 10 ssh -o ConnectTimeout=3 -q "$node" 'docker ps --filter "name=dcgm" --format "{{.Status}}" 2>/dev/null | head -1' 2>/dev/null || echo "check-failed")
                 if echo "$dcgm_result" | grep -q "Up"; then
-                    log_success "$node: DCGM exporter container running"
+                log_success "$node: DCGM exporter container running"
                 else
                     log_error "$node: DCGM exporter not running ($dcgm_result)"
                     # Check if NVIDIA driver is working
@@ -249,7 +279,7 @@ for node in "${!node_ips[@]}"; do
     esac
 done
 
-# 6. Detailed Prometheus target analysis
+# 7. Detailed Prometheus target analysis
 log_info "=== Prometheus Target Details ==="
 if curl -s --max-time 5 http://localhost:9090/api/v1/targets >/dev/null 2>&1; then
     targets_response=$(curl -s http://localhost:9090/api/v1/targets)
@@ -298,15 +328,15 @@ else
     TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
 fi
 
-# 7. Dashboard validation
+# 8. Dashboard validation
 log_info "=== Dashboard Validation ==="
-if curl -s --max-time 5 "http://localhost:3000/api/dashboards/uid/fleet-overview" >/dev/null 2>&1; then
-    dashboard_response=$(curl -s "http://localhost:3000/api/dashboards/uid/fleet-overview")
+if curl -s --max-time 5 "http://localhost:3000/api/dashboards/uid/tatbot-compute" >/dev/null 2>&1; then
+    dashboard_response=$(curl -s "http://localhost:3000/api/dashboards/uid/tatbot-compute")
     
     # Check if dashboard has panels
     panel_count=$(echo "$dashboard_response" | jq '.dashboard.panels | length' 2>/dev/null || echo "0")
     if [[ "$panel_count" -gt 0 ]]; then
-        log_success "Fleet Overview dashboard has $panel_count panels"
+        log_success "Tatbot Compute dashboard has $panel_count panels"
         PASSED_CHECKS=$((PASSED_CHECKS + 1))
         
         # Check if Prometheus datasource is configured
@@ -318,17 +348,17 @@ if curl -s --max-time 5 "http://localhost:3000/api/dashboards/uid/fleet-overview
             FAILED_CHECKS=$((FAILED_CHECKS + 1))
         fi
     else
-        log_error "Fleet Overview dashboard has no panels"
+        log_error "Tatbot Compute dashboard has no panels"
         FAILED_CHECKS=$((FAILED_CHECKS + 1))
     fi
     TOTAL_CHECKS=$((TOTAL_CHECKS + 2))
 else
-    log_error "Cannot access Fleet Overview dashboard"
+    log_error "Cannot access Tatbot Compute dashboard"
     FAILED_CHECKS=$((FAILED_CHECKS + 1))
     TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
 fi
 
-# 8. Summary
+# 9. Summary
 echo
 log_info "=== Verification Summary ==="
 echo "📊 Total checks: $TOTAL_CHECKS"
@@ -344,7 +374,7 @@ if [[ $FAILED_CHECKS -eq 0 ]]; then
     log_info "🌐 Access URLs:"
     echo "   Grafana: http://eek:3000/"
     echo "   Prometheus: http://eek:9090/"
-    echo "   Fleet Overview: http://eek:3000/d/fleet-overview/fleet-overview"
+    echo "   Tatbot Compute: http://eek:3000/d/tatbot-compute/tatbot-compute"
     echo
     exit 0
 else
@@ -374,6 +404,9 @@ else
     echo "  tar -xzf rpi_exporter-*.tar.gz && sudo install rpi_exporter /usr/local/bin/"
     echo "  sudo install ~/tatbot/config/monitoring/exporters/\$(hostname)/rpi_exporter.service /etc/systemd/system/"
     echo "  sudo systemctl daemon-reload && sudo systemctl enable --now rpi_exporter"
+    echo
+    log_info "🔄 To restart monitoring services, run:"
+    echo "   cd ~/tatbot && ./scripts/monitoring_server.sh --restart"
     echo
     exit 1
 fi

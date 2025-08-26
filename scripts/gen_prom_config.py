@@ -7,49 +7,71 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INVENTORY = REPO_ROOT / "config/monitoring/inventory.yml"
 OUT = REPO_ROOT / "config/monitoring/prometheus/prometheus.yml"
+NODES_YAML = REPO_ROOT / "src/conf/nodes.yaml"
 
 
-def _targets_from_inventory(inv: Dict[str, Any]) -> Dict[str, List[str]]:
+def _load_node_emojis() -> Dict[str, str]:
+    """Load node -> emoji mapping from src/conf/nodes.yaml.
+
+    Returns an empty dict if file missing or malformed to avoid hard failures.
+    """
+    try:
+        if not NODES_YAML.exists():
+            return {}
+        with NODES_YAML.open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        mapping: Dict[str, str] = {}
+        for entry in data.get("nodes", []) or []:
+            name = entry.get("name")
+            emoji = entry.get("emoji")
+            if isinstance(name, str) and isinstance(emoji, str) and emoji:
+                mapping[name] = emoji
+        return mapping
+    except Exception:
+        return {}
+
+
+def _targets_from_inventory(inv: Dict[str, Any]) -> Dict[str, List[Tuple[str, str]]]:
     nodes: Dict[str, Any] = inv.get("nodes", {})
 
-    node_targets: List[str] = []
-    jetson_targets: List[str] = []
-    nvidia_targets: List[str] = []
-    intel_targets: List[str] = []
-    rpi_targets: List[str] = []
+    node_targets: List[Tuple[str, str]] = []  # (name, addr)
+    jetson_targets: List[Tuple[str, str]] = []
+    nvidia_targets: List[Tuple[str, str]] = []
+    intel_targets: List[Tuple[str, str]] = []
+    rpi_targets: List[Tuple[str, str]] = []
 
     for name, cfg in nodes.items():
         # Node exporter
         if "addr" in cfg:
-            node_targets.append(cfg["addr"])
+            node_targets.append((name, cfg["addr"]))
 
         # Jetson exporter (on 9100)
         if "jetson" in cfg and isinstance(cfg["jetson"], dict) and "addr" in cfg["jetson"]:
-            jetson_targets.append(cfg["jetson"]["addr"])
+            jetson_targets.append((name, cfg["jetson"]["addr"]))
 
         # NVIDIA DCGM
         gpu = cfg.get("gpu", {})
         if isinstance(gpu, dict) and "nvidia_dcgm" in gpu:
             dcgm = gpu["nvidia_dcgm"]
             if isinstance(dcgm, dict) and "addr" in dcgm:
-                nvidia_targets.append(dcgm["addr"])
+                nvidia_targets.append((name, dcgm["addr"]))
 
         # Intel GPU exporter
         if isinstance(gpu, dict) and "intel" in gpu:
             intel = gpu["intel"]
             if isinstance(intel, dict) and "addr" in intel:
-                intel_targets.append(intel["addr"])
+                intel_targets.append((name, intel["addr"]))
 
         # rpi exporter
         if "rpi" in cfg and isinstance(cfg["rpi"], dict) and "addr" in cfg["rpi"]:
-            rpi_targets.append(cfg["rpi"]["addr"])
+            rpi_targets.append((name, cfg["rpi"]["addr"]))
 
     return {
         "nodes": sorted(set(node_targets)),
@@ -63,6 +85,7 @@ def _targets_from_inventory(inv: Dict[str, Any]) -> Dict[str, List[str]]:
 def render(inv: Dict[str, Any]) -> str:
     si = inv.get("scrape_interval", "15s")
     t = _targets_from_inventory(inv)
+    emoji_map = _load_node_emojis()
     # Assemble YAML with stable ordering
     doc: Dict[str, Any] = {
         "global": {
@@ -72,13 +95,31 @@ def render(inv: Dict[str, Any]) -> str:
         "scrape_configs": [],
     }
 
-    def add_job(name: str, targets: List[str]) -> None:
+    def add_job(name: str, targets: List[Tuple[str, str]]) -> None:
         if not targets:
             return
-        doc["scrape_configs"].append({
+        # Each target gets its own static_config so we can attach a per-target 'node' label
+        static_configs: List[Dict[str, Any]] = []
+        for node_name, addr in targets:
+            emoji = emoji_map.get(node_name, "")
+            friendly = f"{emoji} {node_name}".strip() if emoji else node_name
+            static_configs.append({
+                "targets": [addr],
+                # 'node' is a friendly label used for the legend (emoji + name)
+                # 'name' preserves the plain node name
+                "labels": {"node": friendly, "name": node_name},
+            })
+
+        job: Dict[str, Any] = {
             "job_name": name,
-            "static_configs": [{"targets": targets}],
-        })
+            "static_configs": static_configs,
+            # Relabel 'instance' to the friendly node name for nicer legends
+            "relabel_configs": [
+                {"source_labels": ["node"], "target_label": "instance"},
+                {"source_labels": ["__address__"], "target_label": "addr"},
+            ],
+        }
+        doc["scrape_configs"].append(job)
 
     add_job("nodes", t["nodes"]) 
     add_job("jetson", t["jetson"]) 
@@ -106,4 +147,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
