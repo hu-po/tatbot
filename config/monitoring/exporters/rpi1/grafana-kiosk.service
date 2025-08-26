@@ -3,11 +3,10 @@ Description=Grafana Kiosk on Chromium (rpi1)
 After=network-online.target
 
 [Service]
-Environment=KIOSK_URL=http://eek:3000/d/fleet-overview/fleet-overview?kiosk=tv&refresh=5s
+Environment=KIOSK_URL=http://eek:3000/d/tatbot-compute/tatbot-compute?kiosk=tv&refresh=5s
 ExecStart=/usr/local/bin/grafana-kiosk --kiosk-mode=tv --url ${KIOSK_URL}
 Restart=always
 User=pi
 
 [Install]
 WantedBy=multi-user.target
-

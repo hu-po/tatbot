@@ -14,7 +14,7 @@ REFRESH_SECONDS="${2:-5}"
 
 if [[ "${TARGET_NODE}" == "-h" || "${TARGET_NODE}" == "--help" ]]; then
   echo "Usage: $0 [target_node] [refresh_seconds]"
-  echo "Opens Grafana Fleet Overview dashboard in kiosk mode"
+  echo "Opens Grafana Tatbot Compute dashboard in kiosk mode"
   echo ""
   echo "Arguments:"
   echo "  target_node      - Node running Grafana (default: eek)"
@@ -96,11 +96,49 @@ if ! check_dashboard "$HOST"; then
 fi
 
 echo "🖥️  Starting monitoring kiosk -> ${GRAFANA_URL}"
-pkill -9 -f "chromium.*tatbot-compute" || true
+
+# Kill all existing Chrome/Chromium processes cleanly
+echo "🧹 Cleaning up existing browser processes..."
+pkill -f "chromium-browser.*kiosk" || true
+pkill -f "chromium-browser.*tatbot-compute" || true
+pkill -f "chromium.*kiosk" || true
+pkill -f "chrome.*kiosk" || true
+sleep 2
+
+# Clean up old logs and temp files
 rm -rf /tmp/monitoring_kiosk.log || true
+rm -rf /tmp/.org.chromium.Chromium.* || true
+
+# Ensure X11 display is available
 export DISPLAY=:0
-setsid chromium-browser --kiosk "${GRAFANA_URL}" --disable-gpu --disable-extensions --no-first-run --no-default-browser-check >> /tmp/monitoring_kiosk.log 2>&1 &
+
+# Start fresh Chromium in kiosk mode
+echo "🚀 Launching fresh browser in kiosk mode..."
+setsid chromium-browser --kiosk "${GRAFANA_URL}" \
+    --disable-gpu \
+    --disable-extensions \
+    --disable-plugins \
+    --disable-background-timer-throttling \
+    --disable-backgrounding-occluded-windows \
+    --disable-renderer-backgrounding \
+    --disable-features=TranslateUI \
+    --disable-ipc-flooding-protection \
+    --no-first-run \
+    --no-default-browser-check \
+    --no-sandbox \
+    --disable-dev-shm-usage \
+    --disable-background-networking \
+    --disable-default-apps \
+    --disable-sync \
+    --metrics-recording-only \
+    --no-report-upload \
+    --user-data-dir=/tmp/monitoring-kiosk-profile \
+    >> /tmp/monitoring_kiosk.log 2>&1 &
+
 disown
+sleep 3
+
 echo "✅ Launched monitoring kiosk (refresh every ${REFRESH_SECONDS}s)"
 echo "📊 Dashboard: Tatbot Compute"
 echo "🔗 URL: ${GRAFANA_URL}"
+echo "📁 Logs: /tmp/monitoring_kiosk.log"

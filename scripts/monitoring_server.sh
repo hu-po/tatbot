@@ -89,20 +89,31 @@ fi
 
 echo
 
-# 1. Restart monitoring services if requested
+# 1. Always clean up and restart monitoring services (or just ensure they're running)
+log_info "=== Managing Monitoring Services ==="
+
+# Kill any orphaned monitoring containers
+log_info "Cleaning up existing monitoring containers..."
+cd "${ROOT_DIR}/config/monitoring"
+
+# Stop monitoring containers if they exist
+docker stop $(docker ps -q --filter "name=compose-prometheus" --filter "name=compose-grafana") 2>/dev/null || true
+docker rm $(docker ps -aq --filter "name=compose-prometheus" --filter "name=compose-grafana") 2>/dev/null || true
+
+# Clean up any dangling monitoring processes/networks
+docker network prune -f >/dev/null 2>&1 || true
+
 if [[ "$RESTART_SERVER" == true ]]; then
-    log_info "=== Restarting Monitoring Services ==="
-    log_info "Stopping existing containers..."
-    cd "${ROOT_DIR}/config/monitoring"
-    make -s down || log_warning "No containers were running"
-    
-    log_info "Starting Prometheus + Grafana..."
-    make -s up
-    
-    log_info "Waiting for services to stabilize..."
-    sleep 10
-    echo
+    log_info "Force restarting services..."
+    make -s clean >/dev/null 2>&1 || true
+else
+    log_info "Starting fresh monitoring services..."
 fi
+
+make -s up
+log_info "Waiting for services to stabilize..."
+sleep 15
+echo
 
 # 2. Check Docker services on eek
 log_info "=== Docker Services (Local) ==="

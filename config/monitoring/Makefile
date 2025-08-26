@@ -41,5 +41,5 @@ restart: down up
 # Show URLs
 urls:
 	@echo "Prometheus targets: http://localhost:9090/targets"
-	@echo "Grafana dashboard: http://localhost:3000/d/fleet-overview/fleet-overview"
-	@echo "Kiosk URL: http://eek:3000/d/fleet-overview/fleet-overview?kiosk=tv&refresh=5s"
+	@echo "Grafana dashboard: http://localhost:3000/d/tatbot-compute/tatbot-compute"
+	@echo "Kiosk URL: http://eek:3000/d/tatbot-compute/tatbot-compute?kiosk=tv&refresh=5s"

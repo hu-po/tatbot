@@ -45,7 +45,7 @@ Prometheus + Grafana run centrally on **eek** (System76 Meerkat). **rpi1** displ
 
 ```
                            [ rpi1 ]  ──> Chromium/Grafana Kiosk (read‑only)
-                                        http://eek:3000/d/fleet-overview/fleet-overview?kiosk=tv&refresh=5s
+                                        http://eek:3000/d/tatbot-compute/tatbot-compute?kiosk=tv&refresh=5s
 
                 ┌──────────────────────── [ eek ] ──────────────────────────┐
                 │  Prometheus (9090)  ← scrape 15s   Grafana OSS (3000)     │
@@ -234,7 +234,7 @@ See: `~/tatbot/config/monitoring/prometheus/rules/edge.rules.yml`.
 
 ---
 
-## Grafana Provisioning & Dashboards (with Fleet Overview)
+## Grafana Provisioning & Dashboards (Tatbot Compute)
 
 ### Provision Prometheus Datasource
 File: `~/tatbot/config/monitoring/grafana/provisioning/datasources/prometheus.yaml`.
@@ -243,19 +243,19 @@ File: `~/tatbot/config/monitoring/grafana/provisioning/datasources/prometheus.ya
 File: `~/tatbot/config/monitoring/grafana/provisioning/dashboards/dashboards.yaml`.
 
 ### Included dashboards (JSON files under `grafana/dashboards/`)
-- **Fleet Overview** — `fleet-overview.json` (**installed in repo**)  
+- **Tatbot Compute** — `tatbot-compute.json` (**installed in repo**, uid=tatbot-compute)  
 - **Node Exporter Full** — `node-exporter-full-1860.json` (ID 1860)  
 - **NVIDIA DCGM** — `nvidia-dcgm-12239.json` (ID 12239)  
 - **NVIDIA Jetson** — `jetson-14493.json` (ID 14493, alt 21727)  
 - **Intel GPU Metrics** — `intel-gpu-23251.json` (ID 23251)
 
-> The **Fleet Overview** dashboard is the kiosk target and summarizes CPU, Memory, Disk, Network, and GPU across all hosts. You can drill into the detailed dashboards when needed.
+> The **Tatbot Compute** dashboard is the default kiosk target and summarizes CPU, Memory, Disk, Network, and GPU across all hosts. You can drill into the detailed dashboards when needed.
 
 Run this on eek to pull community dashboards into `~/tatbot/config/monitoring/grafana/dashboards/`:
 `cd ~/tatbot && bash scripts/fetch_dashboards.sh` (requires `jq`).
 
-### Fleet Overview Dashboard
-Installed at `~/tatbot/config/monitoring/grafana/dashboards/fleet-overview.json` (uid=fleet-overview). Intel exporter metric names may vary (`igpu_*`).
+### Tatbot Compute Dashboard
+Installed at `~/tatbot/config/monitoring/grafana/dashboards/tatbot-compute.json` (uid=tatbot-compute). Intel exporter metric names may vary (`igpu_*`).
 
 <!-- Dashboard JSON lives in the repo; see path above. -->
 
@@ -281,7 +281,7 @@ cd ~/tatbot && bash scripts/monitoring_kiosk.sh 192.168.1.97
 ### Manual Kiosk URL
 Point Chromium (or `grafana-kiosk`) at:
 ```
-http://eek:3000/d/fleet-overview/fleet-overview?kiosk=tv&refresh=5s
+http://eek:3000/d/tatbot-compute/tatbot-compute?kiosk=tv&refresh=5s
 ```
 
 ### Optional: grafana-kiosk systemd Service
@@ -317,7 +317,7 @@ config/monitoring/
 │  │  ├─ datasources/prometheus.yaml
 │  │  └─ dashboards/dashboards.yaml
 │  └─ dashboards/
-│     └─ fleet-overview.json
+│     └─ tatbot-compute.json
 └─ exporters/
    ├─ eek/node_exporter.service
    ├─ ook/{node_exporter.service,dcgm-exporter.service}
