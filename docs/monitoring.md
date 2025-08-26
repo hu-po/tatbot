@@ -327,7 +327,8 @@ config/monitoring/
    └─ rpi{1,2}/{node_exporter.service,rpi_exporter.service}
 scripts/
 ├─ monitoring_server.sh    # Single entry point for monitoring system
-├─ monitoring_kiosk.sh     # Start kiosk display on rpi1
+├─ monitoring_kiosk.sh     # Start kiosk display on rpi1  
+├─ monitoring_clean.sh     # Clean all cached monitoring data
 ├─ fetch_dashboards.sh     # Download community dashboards
 └─ gen_prom_config.py      # Generate Prometheus config from inventory
 ```
@@ -357,13 +358,32 @@ cd ~/tatbot && ./scripts/monitoring_server.sh
 cd ~/tatbot && ./scripts/monitoring_server.sh --restart
 ```
 
-This script:
+### Cache Cleanup Script
+
+**Run on any node** to clean all cached monitoring data:
+
+```bash
+# Clean cache (works on any node)
+cd ~/tatbot && ./scripts/monitoring_clean.sh
+
+# For complete reset: clean + restart
+cd ~/tatbot && ./scripts/monitoring_clean.sh && ./scripts/monitoring_server.sh
+```
+
+**monitoring_server.sh** features:
 - Verifies it's running on eek (monitoring server host)
-- Optionally restarts Prometheus + Grafana containers
+- Optionally restarts Prometheus + Grafana containers  
 - Performs comprehensive diagnostics on all nodes
 - Tests connectivity, services, and HTTP endpoints
 - Provides installation commands for missing exporters
 - Shows detailed Prometheus target status
+
+**monitoring_clean.sh** features:
+- Stops and removes Docker containers/volumes (on eek)
+- Clears browser cache and temp profiles
+- Removes log files and temporary data
+- Works on any node (cleans local cache)
+- Safe to run anytime for fresh start
 
 ### Manual Verification Checklist
 
