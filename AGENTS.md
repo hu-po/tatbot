@@ -4,14 +4,14 @@
 - `src/tatbot/`: main package (bot, cam, gen, mcp, tools, utils, viz); entry `tatbot.main`.
 - `src/conf/`: Hydra configs (e.g., `mcp/<node>.yaml`).
 - `config/`: external service/tool configs (dbv3, network, trossen, vla).
-- `scripts/`: developer and ops helpers (`mcp_run.sh`, `lint.sh`, `setup_env.sh`).
+- `scripts/`: developer and ops helpers (`mcp_run.sh`, `lint_code.sh`, `setup_env.sh`).
 - `tests/`: Python tests. Add new tests here.
 - `docs/`: Sphinx documentation.
 
 ## Build, Test, and Development Commands
 - Setup env: `source scripts/setup_env.sh` (creates `.venv`, installs extras from node config).
 - Install dev tools: `uv pip install .[dev,docs]`.
-- Lint/format/type-check: `./scripts/lint.sh` (runs isort, ruff, mypy on `src/tatbot`).
+- Lint/format/type-check: `./scripts/lint_code.sh` (runs isort, ruff, mypy on `src/tatbot`).
 - Run tests: `uv run pytest -q`.
 - Run MCP server: `./scripts/mcp_run.sh <node>` (logs in `/nfs/tatbot/mcp-logs/<node>.log`).
 - Local viz examples:
@@ -32,7 +32,7 @@
 
 ## Commit & Pull Request Guidelines
 - History shows no strict convention; use clear, imperative subject lines. Prefer Conventional Commits (e.g., `feat:`, `fix:`, `docs:`) when possible.
-- Before opening a PR: run `./scripts/lint.sh` and `pytest`; update docs/configs if behavior changes.
+- Before opening a PR: run `./scripts/lint_code.sh` and `pytest`; update docs/configs if behavior changes.
 - PRs should include: purpose, scope, linked issues, test notes, and screenshots/logs for tooling or viz.
 
 ## Security & Configuration Tips

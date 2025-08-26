@@ -62,4 +62,4 @@ opencode
 ## Reference
 - https://opencode.ai/docs/mcp-servers/
 - https://opencode.ai/docs/agents/
-- https://modelcontextprotocol.io/legacy/tools/inspector
+- https://modelcontextprotocol.io/tools/inspector
