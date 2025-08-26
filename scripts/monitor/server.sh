@@ -6,7 +6,8 @@ set -euo pipefail
 # Usage: ./scripts/monitor/server.sh [--restart]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# scripts/monitor -> repo root is two levels up
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 INVENTORY="${ROOT_DIR}/config/monitoring/inventory.yml"
 
 # Colors for output
