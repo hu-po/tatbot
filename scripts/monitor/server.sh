@@ -419,6 +419,10 @@ else
     log_info "💡 Common installation commands by node:"
     echo
     echo "Node Exporter (eek, ook, oop, hog, rpi1, rpi2):"
+    echo "  # Quick installer (auto-detects role)"
+    echo "  cd ~/tatbot && sudo bash scripts/monitor/install.sh"
+    echo "  # Manual (ensure 'nodeexp' user exists):"
+    echo "  sudo useradd --no-create-home --shell /usr/sbin/nologin nodeexp || true"
     echo "  cd /tmp && wget https://github.com/prometheus/node_exporter/releases/download/v1.9.1/node_exporter-1.9.1.linux-amd64.tar.gz"
     echo "  tar -xzf node_exporter-*.tar.gz && sudo install -o nodeexp -g nodeexp node_exporter*/node_exporter /usr/local/bin/"
     echo "  sudo install ~/tatbot/config/monitoring/exporters/\$(hostname)/node_exporter.service /etc/systemd/system/"
@@ -436,8 +440,11 @@ else
     echo "  sudo systemctl daemon-reload && sudo systemctl enable --now jetson-stats-node-exporter"
     echo
     echo "RPi Exporter (rpi1, rpi2):"
+    echo "  # Quick installer"
+    echo "  cd ~/tatbot && sudo bash scripts/monitor/install.sh"
+    echo "  # Manual"
     echo "  cd /tmp && wget https://github.com/lukasmalkmus/rpi_exporter/releases/download/v0.4.0/rpi_exporter-0.4.0.linux-arm64.tar.gz"
-    echo "  tar -xzf rpi_exporter-*.tar.gz && sudo install rpi_exporter /usr/local/bin/"
+    echo "  tar -xzf rpi_exporter-*.tar.gz && sudo install rpi_exporter-*/rpi_exporter /usr/local/bin/rpi_exporter"
     echo "  sudo install ~/tatbot/config/monitoring/exporters/\$(hostname)/rpi_exporter.service /etc/systemd/system/"
     echo "  sudo systemctl daemon-reload && sudo systemctl enable --now rpi_exporter"
     echo

@@ -98,7 +98,7 @@ Prereqs by node
 ### Common host metrics (node_exporter) — eek, ook, hog, rpi1, rpi2
 Quick installer (recommended):
 ```bash
-cd ~/tatbot && git pull &&sudo bash scripts/monitor/install.sh
+cd ~/tatbot && git pull && sudo bash scripts/monitor/install.sh
 ```
 
 Manual install (x86_64) — On each host (repo at `~/tatbot`), download and install Node Exporter v1.9.1:
@@ -201,6 +201,11 @@ curl -sS --no-progress-meter http://$(hostname):9110/metrics | head -n 20
 ```
 
 > rpi_exporter flag change: service files in this repo now use `--web.listen-address=:9110` (older docs sometimes show `-addr`). If you had a prior unit with `-addr`, update it to `--web.listen-address` or copy the unit from `config/monitoring/exporters/<host>/rpi_exporter.service`.
+
+Quick installer option:
+```bash
+cd ~/tatbot && git pull && sudo bash scripts/monitor/install.sh
+```
 
 ---
 
