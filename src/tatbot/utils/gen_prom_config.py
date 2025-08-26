@@ -11,7 +11,27 @@ from typing import Any, Dict, List, Tuple
 
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+
+def _repo_root() -> Path:
+    """Best-effort detection of the repository root.
+
+    Walk upwards until a directory containing both `config/` and `src/` is found.
+    Fallback to two levels up from this file.
+    """
+    here = Path(__file__).resolve()
+    for parent in [here] + list(here.parents):
+        try:
+            if (parent / "config").is_dir() and (parent / "src").is_dir():
+                return parent
+        except Exception:
+            continue
+    # Fallbacks: support both old (utils/) and new (src/tatbot/utils/) locations
+    # Old: parents[1] from utils/ -> repo root
+    # New: parents[3] from src/tatbot/utils/ -> repo root
+    return here.parents[3] if len(here.parents) >= 4 else here.parents[1]
+
+
+REPO_ROOT = _repo_root()
 INVENTORY = REPO_ROOT / "config/monitoring/inventory.yml"
 OUT = REPO_ROOT / "config/monitoring/prometheus/prometheus.yml"
 NODES_YAML = REPO_ROOT / "src/conf/nodes.yaml"
@@ -147,3 +167,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

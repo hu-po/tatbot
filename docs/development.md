@@ -160,20 +160,9 @@ oneliner to get diff for browser-based models:
 rm -rf diff.txt && git diff main...HEAD > /tmp/diff.txt && xclip -selection clipboard < /tmp/diff.txt
 ```
 
-when merge conflicts arise in forked repos (e.g., `lerobot`), follow this process:
-```bash
-cd ~/lerobot # or other forked repo
-git pull
-git fetch upstream
-git merge upstream/main
-git push origin main
-```
-
 ### General Tips
 - Always work within the `uv` virtual environment (`source .venv/bin/activate`)
 - Use `uv pip install` and `uv run` for consistency
-
- 
 
 ## Architecture
 

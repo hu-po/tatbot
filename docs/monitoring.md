@@ -5,9 +5,9 @@ updated: 2025-08-26
 audience: [dev, agent]
 ---
 
-# 📊 Edge Fleet Monitoring (Prometheus + Grafana)
+# 📊 Monitoring
 
-**Outcome:** a single wallboard on **rpi1** (Raspberry Pi 5) showing live CPU/memory/disk/net and GPU metrics across all nodes with minimal overhead, using **only FOSS** and unified fleet overview dashboard.
+A single wallboard (Prometheus + Grafana) on **rpi1** (Raspberry Pi 5) showing live CPU/memory/disk/net and GPU metrics across all nodes with minimal overhead, using **only FOSS** and unified fleet overview dashboard.
 
 ---
 
@@ -244,15 +244,8 @@ File: `~/tatbot/config/monitoring/grafana/provisioning/dashboards/dashboards.yam
 
 ### Included dashboards (JSON files under `grafana/dashboards/`)
 - **Tatbot Compute** — `tatbot-compute.json` (**installed in repo**, uid=tatbot-compute)  
-- **Node Exporter Full** — `node-exporter-full-1860.json` (ID 1860)  
-- **NVIDIA DCGM** — `nvidia-dcgm-12239.json` (ID 12239)  
-- **NVIDIA Jetson** — `jetson-14493.json` (ID 14493, alt 21727)  
-- **Intel GPU Metrics** — `intel-gpu-23251.json` (ID 23251)
 
 > The **Tatbot Compute** dashboard is the default kiosk target and summarizes CPU, Memory, Disk, Network, and GPU across all hosts. You can drill into the detailed dashboards when needed.
-
-Run this on eek to pull community dashboards into `~/tatbot/config/monitoring/grafana/dashboards/`:
-`cd ~/tatbot && bash scripts/monitor/fetch.sh` (requires `jq`).
 
 ### Tatbot Compute Dashboard
 Installed at `~/tatbot/config/monitoring/grafana/dashboards/tatbot-compute.json` (uid=tatbot-compute). Intel exporter metric names may vary (`igpu_*`).
@@ -328,10 +321,9 @@ config/monitoring/
 scripts/
 ├─ monitor/
 │  ├─ server.sh           # Start/verify monitoring stack on eek
-│  ├─ kiosk.sh            # Start kiosk display on rpi1  
-│  ├─ fetch.sh            # Download community dashboards
+│  ├─ kiosk.sh            # Start kiosk display on rpi1
 │  └─ clean.sh            # Clean monitoring volumes and cache
-utils/
+src/tatbot/utils/
 └─ gen_prom_config.py      # Generate Prometheus config from inventory
 ```
 
@@ -339,7 +331,7 @@ utils/
 
 Prometheus targets are generated from `inventory.yml`.
 
-- From repo root: `python3 utils/gen_prom_config.py`
+- From repo root: `python3 src/tatbot/utils/gen_prom_config.py`
 - Or: `make -C config/monitoring gen-prom`
 
 Output: `config/monitoring/prometheus/prometheus.yml`.
