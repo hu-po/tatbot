@@ -1,4 +1,3 @@
-
 from typing import List, Optional
 
 import hydra
@@ -12,6 +11,7 @@ from tatbot.utils.exceptions import ConfigurationError
 
 class AppConstants:
     """Configuration constants for the main application."""
+
     CONFIG_PATH: str = "../conf"
     DEFAULT_CONFIG_NAME: str = "config"
     DEFAULT_SCENE_NAME: str = "default"
@@ -20,9 +20,9 @@ class AppConstants:
 def load_scene_from_config(cfg: DictConfig) -> Scene:
     """Load and validate a Scene from Hydra configuration."""
     app_config = AppConfig(**OmegaConf.to_object(cfg))
+    if app_config.scene is None:
+        raise ConfigurationError("Failed to create scene: scene creation returned None")
     return app_config.scene
-
-
 
 
 def compose_and_validate_scene(
@@ -44,25 +44,20 @@ def compose_and_validate_scene(
     # Always clear and reinitialize GlobalHydra to avoid caching issues
     if GlobalHydra().is_initialized():
         GlobalHydra.instance().clear()
-    
-    with initialize(
-        config_path=AppConstants.CONFIG_PATH, 
-        version_base=None
-    ):
+
+    with initialize(config_path=AppConstants.CONFIG_PATH, version_base=None):
         cfg = compose(config_name=AppConstants.DEFAULT_CONFIG_NAME, overrides=override_list)
         return load_scene_from_config(cfg)
 
 
 @hydra.main(
-    version_base=None, 
-    config_path=AppConstants.CONFIG_PATH, 
-    config_name=AppConstants.DEFAULT_CONFIG_NAME
+    version_base=None, config_path=AppConstants.CONFIG_PATH, config_name=AppConstants.DEFAULT_CONFIG_NAME
 )
 def main(cfg: DictConfig) -> None:
     """Main entrypoint for the tatbot application."""
     print("🚀 Tatbot starting with Hydra configuration")
     print("Configuration keys:", list(cfg.keys()))
-    
+
     try:
         scene = load_scene_from_config(cfg)
         print(f"✅ Scene loaded: {scene.name}")
@@ -72,7 +67,9 @@ def main(cfg: DictConfig) -> None:
         print("✅ Configuration validated successfully!")
     except (ValueError, TypeError, KeyError) as validation_error:
         print(f"❌ Configuration validation failed: {validation_error}")
-        raise ConfigurationError(f"Failed to load scene configuration: {validation_error}") from validation_error
+        raise ConfigurationError(
+            f"Failed to load scene configuration: {validation_error}"
+        ) from validation_error
 
 
 if __name__ == "__main__":

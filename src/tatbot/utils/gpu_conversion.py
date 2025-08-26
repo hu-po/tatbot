@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 from tatbot.mcp.client import MCPClient
+from tatbot.mcp.models import MCPConstants
 from tatbot.utils.constants import NFS_DIR
 from tatbot.utils.log import get_logger
 
@@ -24,8 +25,24 @@ class GPUConversionService:
         self.client = MCPClient(request_timeout_s)
 
     def _get_gpu_nodes(self) -> List[str]:
-        # TODO: make dynamic by reading from conf/nodes.yaml or pinging
-        return ["ook"]
+        """Dynamically determine GPU nodes by reading MCP config files."""
+        config_dir = Path(__file__).resolve().parents[2] / "conf" / "mcp"
+        gpu_nodes = []
+
+        for config_file in config_dir.glob("*.yaml"):
+            if config_file.name == "default.yaml":
+                continue
+            try:
+                with open(config_file, "r") as f:
+                    node_config = yaml.safe_load(f)
+                extras = node_config.get("extras", [])
+                if "gpu" in extras:
+                    node_name = config_file.stem
+                    gpu_nodes.append(node_name)
+            except Exception as e:
+                log.warning(f"Error reading config file {config_file}: {e}")
+
+        return gpu_nodes
 
     def _load_node_host_port(self, node_name: str) -> Tuple[str, int]:
         # Config files live under tatbot/src/conf/mcp, not tatbot/src/tatbot/conf/mcp
@@ -36,7 +53,7 @@ class GPUConversionService:
         with open(node_config_file, "r") as f:
             node_config = yaml.safe_load(f)
         host = node_config.get("host", "localhost")
-        port = int(node_config.get("port", 8000))
+        port = int(node_config.get("port", MCPConstants.DEFAULT_PORT))
         return host, port
 
     async def convert_strokelist_remote(
@@ -113,6 +130,7 @@ class GPUConversionService:
                         for item in response["content"]:
                             if item.get("type") == "text":
                                 import json as _json
+
                                 try:
                                     payload = _json.loads(item["text"])  # tool's JSON
                                 except Exception:
@@ -126,7 +144,7 @@ class GPUConversionService:
                 log.warning(f"Conversion failed on {node_name}: {response}")
 
             if retry < max_retries - 1:
-                wait_s = 2 ** retry
+                wait_s = 2**retry
                 log.info(f"Waiting {wait_s}s before retry...")
                 await asyncio.sleep(wait_s)
 
@@ -156,4 +174,3 @@ class GPUConversionService:
         for n, r in zip(target_nodes, responses, strict=False):
             results[n] = False if isinstance(r, Exception) else bool(r)
         return results
-
