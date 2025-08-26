@@ -65,11 +65,11 @@ check_grafana() {
 
 check_dashboard() {
     local host="$1"
-    local url="http://${host}:3000/d/fleet-overview/fleet-overview"
+    local api_url="http://${host}:3000/api/dashboards/uid/fleet-overview"
     
     echo "🔍 Verifying Fleet Overview dashboard exists..."
     
-    if curl -s --max-time 5 "$url" | grep -q "Fleet Overview"; then
+    if curl -s --max-time 5 "$api_url" | grep -q '"slug":"fleet-overview"'; then
         echo "✅ Fleet Overview dashboard accessible"
         return 0
     else

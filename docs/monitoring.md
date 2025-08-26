@@ -11,12 +11,12 @@ audience: [dev, agent]
 
 ---
 
-## 1) Executive summary
+## Executive Summary
 
 We standardize on **Prometheus + Grafana** with per-node exporters:
 
 - **Host metrics (all nodes):** Prometheus **Node Exporter** (tiny static binary).
-- **NVIDIA dGPU (ook / RTX 4050):** **DCGM Exporter** (official NVIDIA).
+- **NVIDIA dGPU (ook/oop):** **DCGM Exporter** (official NVIDIA).
 - **Jetson (ojo / AGX Orin):** **jetson-stats (jtop)–based exporter** that exposes system + GPU.
 - **Intel Arc/iGPU (hog):** Intel GPU exporter that parses `intel_gpu_top -J`.
 - **Raspberry Pi SoC (rpi1, rpi2):** lightweight **rpi_exporter** for temps/voltages/clock.
@@ -25,7 +25,7 @@ Prometheus + Grafana run centrally on **eek** (System76 Meerkat). **rpi1** displ
 
 ---
 
-## 2) Fleet & roles
+## Fleet & Roles
 
 | Host | Hardware | Role(s) | Exporters |
 |---|---|---|---|
@@ -41,7 +41,7 @@ Prometheus + Grafana run centrally on **eek** (System76 Meerkat). **rpi1** displ
 
 ---
 
-## 3) High‑level architecture
+## High‑Level Architecture
 
 ```
                            [ rpi1 ]  ──> Chromium/Grafana Kiosk (read‑only)
@@ -60,7 +60,7 @@ Prometheus + Grafana run centrally on **eek** (System76 Meerkat). **rpi1** displ
 
 ---
 
-## 4) Design decisions
+## Design Decisions
 
 1. **Centralize Prometheus+Grafana on `eek`** to keep compute nodes light.
 2. **Keep exporters tiny**:
@@ -75,15 +75,15 @@ Prometheus + Grafana run centrally on **eek** (System76 Meerkat). **rpi1** displ
 
 ---
 
-## 5) Inventory (single source of truth)
+## Inventory (Single Source of Truth)
 
-Inventory lives at `~/tatbot/config/monitoring/inventory.yml` (versions, scrape interval, and nodes). IPs should match `src/conf/nodes.yaml`. Keep them in sync and regenerate Prometheus config (see §12).
+Inventory lives at `~/tatbot/config/monitoring/inventory.yml` (versions, scrape interval, and nodes). IPs should match `src/conf/nodes.yaml`. Keep them in sync and regenerate Prometheus config (see "Generate Prometheus Config").
 
 > **Why versions here?** This makes `inventory.yml` the **true** source of truth for **both topology and versions**. The agent can template Docker tags, download URLs, and PyPI requirements from these fields to produce deterministic configs and installers.
 
 ---
 
-## 6) Human‑performed installation (per node)
+## Per‑Node Installation
 
 > The CLI agent commits config/service files; a human runs the commands below (root ssh).
 > Replace versions with those from **inventory.yml** if you change them.
@@ -95,7 +95,7 @@ Prereqs by node
 - ojo (Jetson): Python3/pip; install jetson-stats + exporter (section 6.3).
 - rpi1/rpi2: None beyond systemd and curl.
 
-### 6.1 Common host metrics (node_exporter) — eek, ook, hog, rpi1, rpi2
+### Common host metrics (node_exporter) — eek, ook, hog, rpi1, rpi2
 On each host (repo at `~/tatbot`), download and install Node Exporter v1.9.1:
 
 **eek, ook, hog** (Intel/AMD x86_64):
@@ -122,9 +122,9 @@ sudo systemctl daemon-reload && sudo systemctl enable --now node_exporter
 curl -sS --no-progress-meter http://localhost:9100/metrics | head -n 20
 ```
 
-> Do not install node_exporter on `ojo` (Jetson). It runs `jetson-stats-node-exporter` on :9100 (see §6.3).
+> Do not install node_exporter on `ojo` (Jetson). It runs `jetson-stats-node-exporter` on :9100 (see "Jetson (ojo): jtop/jetson‑stats Exporter").
 
-### 6.2 NVIDIA dGPU (ook/oop): DCGM exporter (container, **pinned tag**)
+### NVIDIA dGPU (ook/oop): DCGM Exporter (container, **pinned tag**)
 Prereqs (Docker engine + NVIDIA Container Toolkit on Ubuntu 24.04):
 ```bash
 sudo apt-get update
@@ -152,7 +152,7 @@ Verify (ook): `curl -sS --no-progress-meter http://192.168.1.90:9400/metrics | h
 
 Verify (oop): `curl -sS --no-progress-meter http://192.168.1.51:9400/metrics | head -n 20`
 
-### 6.3 Jetson (ojo): jtop/jetson‑stats exporter (**no jtop.service dependency required**)
+### Jetson (ojo): jtop/jetson‑stats Exporter (**no jtop.service dependency required**)
 ```bash
 sudo -H pip3 install "jetson-stats==4.3.2"
 sudo -H pip3 install "jetson-stats-node-exporter==0.1.2"
@@ -161,9 +161,9 @@ sudo systemctl daemon-reload && sudo systemctl enable --now jetson-stats-node-ex
 curl -sS --no-progress-meter http://192.168.1.96:9100/metrics | head -n 20
 ```
 
-> We **removed** the `Requires=jtop.service` dependency. The exporter uses the **Python API** from jetson‑stats directly and does not require the `jtop` systemd service to be running. See §10 for the corrected unit file.
+> We **removed** the `Requires=jtop.service` dependency. The exporter uses the **Python API** from jetson‑stats directly and does not require the `jtop` systemd service to be running. See "Systemd Unit Files (Exporters)" for the corrected unit file.
 
-### 6.4 Intel Arc/iGPU (hog): Intel GPU exporter
+### Intel Arc/iGPU (hog): Intel GPU Exporter
 **hog** needs Node Exporter (section 6.1) PLUS Intel GPU monitoring:
 
 First install Docker if not present:
@@ -175,13 +175,15 @@ sudo usermod -aG docker $USER
 # Log out and back in for group changes
 ```
 
-Then run Intel GPU exporter:
+Then run Intel GPU exporter (replace the tag with your pinned tag from inventory):
 ```bash
-docker run -d --restart=always --net host --name intel-gpu-exporter --privileged -v /sys:/sys:ro -v /dev/dri:/dev/dri restreamio/intel-prometheus:latest
+docker run -d --restart=always --net host --name intel-gpu-exporter --privileged \
+  -v /sys:/sys:ro -v /dev/dri:/dev/dri \
+  restreamio/intel-prometheus:latest  # replace 'latest' with a pinned tag
 curl -sS --no-progress-meter http://192.168.1.88:8080/metrics | head -n 20
 ```
 
-### 6.5 Raspberry Pi SoC telemetry — rpi1, rpi2
+### Raspberry Pi SoC telemetry — rpi1, rpi2
 Download and install rpi_exporter for ARM64:
 ```bash
 cd /tmp
@@ -195,13 +197,13 @@ curl -sS --no-progress-meter http://$(hostname):9110/metrics | head -n 20
 
 ---
 
-## 7) Prometheus & Grafana on **eek** (pinned images)
+## Prometheus & Grafana on eek (Pinned Images)
 
-### 7.1 Docker Compose setup (eek)
+### Docker Compose Setup (eek)
 Install Docker with modern compose plugin:
 ```bash
-# Remove broken legacy docker-compose if installed
-sudo apt-get remove -y docker-compose
+# Remove legacy docker-compose if installed
+sudo apt-get remove -y docker-compose || true
 
 # Add Docker's official repository
 sudo install -m 0755 -d /etc/apt/keyrings
@@ -224,23 +226,23 @@ cd ~/tatbot && make -C config/monitoring up
 ```
 
 
-### 7.2 Prometheus config
+### Prometheus Config
 File: `~/tatbot/config/monitoring/prometheus/prometheus.yml` (generated from inventory). Alert rules: `~/tatbot/config/monitoring/prometheus/rules/`.
 
-### 7.3 (Optional) starter alerts
+### (Optional) Starter Alerts
 See: `~/tatbot/config/monitoring/prometheus/rules/edge.rules.yml`.
 
 ---
 
-## 8) Grafana provisioning & dashboards (with **Fleet Overview**)
+## Grafana Provisioning & Dashboards (with Fleet Overview)
 
-### 8.1 Provision Prometheus datasource
+### Provision Prometheus Datasource
 File: `~/tatbot/config/monitoring/grafana/provisioning/datasources/prometheus.yaml`.
 
-### 8.2 Provision dashboards
+### Provision Dashboards
 File: `~/tatbot/config/monitoring/grafana/provisioning/dashboards/dashboards.yaml`.
 
-### 8.3 Included dashboards (JSON files under `grafana/dashboards/`)
+### Included dashboards (JSON files under `grafana/dashboards/`)
 - **Fleet Overview** — `fleet-overview.json` (**installed in repo**)  
 - **Node Exporter Full** — `node-exporter-full-1860.json` (ID 1860)  
 - **NVIDIA DCGM** — `nvidia-dcgm-12239.json` (ID 12239)  
@@ -252,16 +254,16 @@ File: `~/tatbot/config/monitoring/grafana/provisioning/dashboards/dashboards.yam
 Run this on eek to pull community dashboards into `~/tatbot/config/monitoring/grafana/dashboards/`:
 `cd ~/tatbot && bash scripts/fetch_dashboards.sh` (requires `jq`).
 
-### 8.4 Fleet Overview dashboard
+### Fleet Overview Dashboard
 Installed at `~/tatbot/config/monitoring/grafana/dashboards/fleet-overview.json` (uid=fleet-overview). Intel exporter metric names may vary (`igpu_*`).
 
 <!-- Dashboard JSON lives in the repo; see path above. -->
 
 ---
 
-## 9) rpi1 wallboard (kiosk)
+## rpi1 Wallboard (Kiosk)
 
-### 9.1 Quick start with monitoring kiosk script
+### Quick Start: Monitoring Kiosk Script
 **Run on rpi1** (wallboard display node) to launch the monitoring dashboard in kiosk mode:
 ```bash
 # Start monitoring kiosk (default: eek:3000, 5s refresh)
@@ -276,19 +278,19 @@ cd ~/tatbot && bash scripts/monitoring_kiosk.sh 192.168.1.97
 
 **When to run:** Once per boot, or when you want to restart the wallboard display.
 
-### 9.2 Manual kiosk URL
+### Manual Kiosk URL
 Point Chromium (or `grafana-kiosk`) at:
 ```
 http://eek:3000/d/fleet-overview/fleet-overview?kiosk=tv&refresh=5s
 ```
 
-### 9.3 Optional: grafana-kiosk systemd service
+### Optional: grafana-kiosk systemd Service
 Unit file: `~/tatbot/config/monitoring/exporters/rpi1/grafana-kiosk.service`.
 Enable: `sudo systemctl daemon-reload && sudo systemctl enable --now grafana-kiosk`
 
 ---
 
-## 10) Systemd unit files (exporters) — repository paths
+## Systemd Unit Files (Exporters)
 
 - Node Exporter: `~/tatbot/config/monitoring/exporters/<host>/node_exporter.service`
 - DCGM exporter (docker): `~/tatbot/config/monitoring/exporters/ook/dcgm-exporter.service`, `~/tatbot/config/monitoring/exporters/oop/dcgm-exporter.service`
@@ -299,7 +301,7 @@ Enable: `sudo systemctl daemon-reload && sudo systemctl enable --now grafana-kio
 
 ---
 
-## 11) Repo layout
+## Repo Layout
 
 ```
 config/monitoring/
@@ -328,7 +330,18 @@ scripts/
 └─ gen_prom_config.py
 ```
 
-## 13) Verification checklist
+## Generate Prometheus Config
+
+Prometheus targets are generated from `inventory.yml`.
+
+- From repo root: `python3 scripts/gen_prom_config.py`
+- Or: `make -C config/monitoring gen-prom`
+
+Output: `config/monitoring/prometheus/prometheus.yml`.
+After changes, restart the stack on eek:
+- `make -C config/monitoring restart`
+
+## Verification Checklist
 
 - `curl http://eek:9090/-/ready` → `Prometheus is Ready.`
 - `curl http://eek:9090/targets` shows all targets **UP**.
@@ -341,7 +354,7 @@ scripts/
 
 ---
 
-## 15) Security & operations
+## Security & Operations
 
 - LAN‑only exposure; firewall Prometheus (9090) and Grafana (3000) to your subnet.
 - Grafana uses **anonymous Viewer**; remove when not needed.
@@ -351,7 +364,7 @@ scripts/
 
 ---
 
-## 16) References (selected)
+## References (Selected)
 
 - Prometheus downloads & retention flags  
   - https://prometheus.io/download/  
