@@ -10,9 +10,19 @@ mkdir -p "$DASH_DIR"
 
 fetch() {
   local id="$1"; local out="$2";
+  echo "Fetching dashboard ${id}..."
+  
+  # Get latest revision - handle both old and new API response formats
   local rev
-  rev="$(curl -sL "https://grafana.com/api/dashboards/${id}/revisions" | jq '.[-1].revision')"
-  curl -sL "https://grafana.com/api/dashboards/${id}/revisions/${rev}/download" -o "$out"
+  rev="$(curl -sL "https://grafana.com/api/dashboards/${id}/revisions" | jq -r 'if type=="array" then .[-1].revision else .revision end' 2>/dev/null || echo "1")"
+  
+  # Download the dashboard
+  if curl -sL "https://grafana.com/api/dashboards/${id}/revisions/${rev}/download" -o "$out"; then
+    echo "✅ Downloaded ${id} (revision ${rev}) to $(basename "$out")"
+  else
+    echo "❌ Failed to download dashboard ${id}"
+    return 1
+  fi
 }
 
 fetch 1860 "$DASH_DIR/node-exporter-full-1860.json"

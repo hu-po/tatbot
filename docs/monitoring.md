@@ -33,8 +33,8 @@ Prometheus + Grafana run centrally on **eek** (System76 Meerkat). **rpi1** displ
 | Host | Hardware | Role(s) | Exporters |
 |---|---|---|---|
 | **eek** | System76 Meerkat (i5‑1340P) | **Prometheus + Grafana server**; NFS | `node_exporter` |
-| **ook** | Acer Nitro V 15 (i7‑13620H) | Wi‑Fi NAT; general compute | `node_exporter` |
-| **oop** | Desktop PC (RTX 3090) | GPU compute; development | `node_exporter`, **DCGM exporter** |
+| **ook** | Acer Nitro V 15 (i7‑13620H + **RTX 4050**) | Wi‑Fi NAT; GPU compute | `node_exporter`, **DCGM exporter** |
+| **oop** | Desktop PC | GPU compute; development | `node_exporter` |
 | **hog** | GEEKOM GT1 Mega (Core Ultra 9 + **Intel Arc**) | Robot control, RealSense | `node_exporter`, **Intel GPU exporter** |
 | **ojo** | **Jetson AGX Orin** | Agent inference | **jetson‑stats node exporter** (includes CPU/mem/GPU) |
 | **rpi1** | Raspberry Pi 5 (8GB) | **Wallboard**; app frontend | `node_exporter`, **rpi_exporter**; **Grafana kiosk** client |
@@ -91,6 +91,13 @@ Inventory lives at `~/tatbot/config/monitoring/inventory.yml` (versions, scrape 
 > The CLI agent commits config/service files; a human runs the commands below (root ssh).
 > Replace versions with those from **inventory.yml** if you change them.
 
+Prereqs by node
+- eek: Docker Engine + compose plugin (section 7.1).
+- ook (RTX 4050): Docker Engine + NVIDIA Container Toolkit (section 6.2); NVIDIA driver working (`nvidia-smi`).
+- hog (Intel GPU): Docker Engine (section 6.4).
+- ojo (Jetson): Python3/pip; install jetson-stats + exporter (section 6.3).
+- rpi1/rpi2: None beyond systemd and curl.
+
 ### 6.1 Common host metrics (node_exporter) — eek, ook, hog, rpi1, rpi2
 On each host (repo at `~/tatbot`), download and install Node Exporter v1.9.1:
 
@@ -103,7 +110,7 @@ sudo useradd --no-create-home --shell /usr/sbin/nologin nodeexp || true
 sudo install -o nodeexp -g nodeexp -m 0755 /tmp/node_exporter-1.9.1.linux-amd64/node_exporter /usr/local/bin/node_exporter
 sudo install -o root -g root -m 0644 ~/tatbot/config/monitoring/exporters/$(hostname)/node_exporter.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now node_exporter
-curl -sS --no-progress-meter http://$(hostname):9100/metrics | head -n 20
+curl -sS --no-progress-meter http://localhost:9100/metrics | head -n 20
 ```
 
 **rpi1, rpi2** (Raspberry Pi 5 ARM64):
@@ -115,7 +122,7 @@ sudo useradd --no-create-home --shell /usr/sbin/nologin nodeexp || true
 sudo install -o nodeexp -g nodeexp -m 0755 /tmp/node_exporter-1.9.1.linux-arm64/node_exporter /usr/local/bin/node_exporter
 sudo install -o root -g root -m 0644 ~/tatbot/config/monitoring/exporters/$(hostname)/node_exporter.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now node_exporter
-curl -sS --no-progress-meter http://$(hostname):9100/metrics | head -n 20
+curl -sS --no-progress-meter http://localhost:9100/metrics | head -n 20
 ```
 
 > Do not install node_exporter on `ojo` (Jetson). It runs `jetson-stats-node-exporter` on :9100 (see §6.3).
@@ -191,37 +198,32 @@ curl -sS --no-progress-meter http://$(hostname):9110/metrics | head -n 20
 
 ## 7) Prometheus & Grafana on **eek** (pinned images)
 
-### 7.1 Docker Compose
-Prereqs on eek (Docker + compose plugin, with fallback):
+### 7.1 Docker Compose setup (eek)
+Install Docker with modern compose plugin:
 ```bash
+# Remove broken legacy docker-compose if installed
+sudo apt-get remove -y docker-compose
+
+# Add Docker's official repository
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release; echo $VERSION_CODENAME) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Install Docker Engine + Compose plugin
 sudo apt-get update
-sudo apt-get install -y docker.io
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 sudo systemctl enable --now docker
 sudo usermod -aG docker $USER && newgrp docker
 
-# If docker-compose-plugin is unavailable via apt on your distro sources,
-# add Docker's official repo (recommended) and install the plugin:
-if ! docker compose version >/dev/null 2>&1; then
-  echo "Installing compose plugin from Docker's official repo..."
-  sudo install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release; echo $VERSION_CODENAME) stable" | \
-    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-  sudo apt-get update
-  sudo apt-get install -y docker-compose-plugin || true
-fi
-
-# Fallback to legacy docker-compose if needed
-if ! docker compose version >/dev/null 2>&1; then
-  sudo apt-get install -y docker-compose || true
-fi
+# Verify
+docker compose version
 ```
 
-Compose file: `~/tatbot/config/monitoring/compose/docker-compose.yml`.
-Start on eek: `cd ~/tatbot && make -C config/monitoring up`.
-The Makefile auto-detects `docker compose` vs `docker-compose`.
+Start Prometheus + Grafana:
+```bash
+cd ~/tatbot && make -C config/monitoring up
+```
 
-> **Optional: digest pinning.** For extra determinism, resolve each image to a **content digest** and use `image: name@sha256:...`. The coding agent can automate this step.
 
 ### 7.2 Prometheus config
 File: `~/tatbot/config/monitoring/prometheus/prometheus.yml` (generated from inventory). Alert rules: `~/tatbot/config/monitoring/prometheus/rules/`.
@@ -248,7 +250,8 @@ File: `~/tatbot/config/monitoring/grafana/provisioning/dashboards/dashboards.yam
 
 > The **Fleet Overview** dashboard is the kiosk target and summarizes CPU, Memory, Disk, Network, and GPU across all hosts. You can drill into the detailed dashboards when needed.
 
-Use script: `~/tatbot/scripts/fetch_dashboards.sh` to pull community dashboards into `~/tatbot/config/monitoring/grafana/dashboards/`.
+Run this on eek to pull community dashboards into `~/tatbot/config/monitoring/grafana/dashboards/`:
+`cd ~/tatbot && bash scripts/fetch_dashboards.sh` (requires `jq`).
 
 ### 8.4 Fleet Overview dashboard
 Installed at `~/tatbot/config/monitoring/grafana/dashboards/fleet-overview.json` (uid=fleet-overview). Intel exporter metric names may vary (`igpu_*`).
@@ -259,13 +262,28 @@ Installed at `~/tatbot/config/monitoring/grafana/dashboards/fleet-overview.json`
 
 ## 9) rpi1 wallboard (kiosk)
 
-Point Chromium (or `grafana-kiosk`) at:
+### 9.1 Quick start with monitoring kiosk script
+**Run on rpi1** (wallboard display node) to launch the monitoring dashboard in kiosk mode:
+```bash
+# Start monitoring kiosk (default: eek:3000, 5s refresh)
+cd ~/tatbot && bash scripts/monitoring_kiosk.sh
 
+# Custom refresh interval  
+cd ~/tatbot && bash scripts/monitoring_kiosk.sh eek 10
+
+# Specific IP address
+cd ~/tatbot && bash scripts/monitoring_kiosk.sh 192.168.1.97
+```
+
+**When to run:** Once per boot, or when you want to restart the wallboard display.
+
+### 9.2 Manual kiosk URL
+Point Chromium (or `grafana-kiosk`) at:
 ```
 http://eek:3000/d/fleet-overview/fleet-overview?kiosk=tv&refresh=5s
 ```
 
-**Optional: grafana-kiosk service** (ARM binary pinned separately if desired).
+### 9.3 Optional: grafana-kiosk systemd service
 Unit file: `~/tatbot/config/monitoring/exporters/rpi1/grafana-kiosk.service`.
 Enable: `sudo systemctl daemon-reload && sudo systemctl enable --now grafana-kiosk`
 
