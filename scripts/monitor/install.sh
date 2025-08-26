@@ -16,7 +16,7 @@ require_root() {
 }
 
 node_exporter_install() {
-  bash "${ROOT_DIR}/scripts/monitor/install_node_exporter.sh"
+  bash "${ROOT_DIR}/scripts/monitor/install.sh"
 }
 
 rpi_exporter_install() {
