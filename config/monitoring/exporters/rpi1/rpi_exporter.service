@@ -1,0 +1,11 @@
+[Unit]
+Description=Raspberry Pi Hardware Exporter
+After=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/rpi_exporter -addr=:9110
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+

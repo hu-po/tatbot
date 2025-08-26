@@ -1,0 +1,24 @@
+groups:
+- name: edge-basics
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 2m
+    labels: { severity: critical }
+    annotations:
+      summary: "Target {{ $labels.instance }} down"
+
+  - alert: HighCPU
+    expr: 100 - (avg by (instance)(irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
+    for: 10m
+    labels: { severity: warning }
+    annotations:
+      summary: "High CPU on {{ $labels.instance }}"
+
+  - alert: NvidiaGpuHighUtil
+    expr: avg_over_time(DCGM_FI_DEV_GPU_UTIL[5m]) > 90
+    for: 5m
+    labels: { severity: warning }
+    annotations:
+      summary: "High NVIDIA GPU util on {{ $labels.instance }}"
+

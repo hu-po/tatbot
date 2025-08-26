@@ -1,0 +1,44 @@
+# monitoring/inventory.yml – single source of truth for versions and topology
+
+versions:
+  # Server-side
+  prometheus: "v3.5.0"
+  grafana_oss: "12.1.1"
+
+  # Exporters
+  node_exporter: "1.9.0"
+  dcgm_exporter: "4.4.0-4.5.0-ubi9"
+  jetson_stats: "4.3.2"
+  jetson_stats_exporter: "0.1.2"
+  intel_gpu_exporter_image: "restreamio/intel-prometheus"
+  intel_gpu_exporter_tag: "latest"  # consider pinning to a digest/tag
+  rpi_exporter: "0.4.0"
+
+scrape_interval: "15s"
+
+nodes:
+  eek:
+    addr: "eek:9100"
+    roles: [node, server]
+  ook:
+    addr: "ook:9100"
+    roles: [node]
+    gpu:
+      nvidia_dcgm: { addr: "ook:9400" }
+  hog:
+    addr: "192.168.1.88:9100"
+    roles: [node]
+    gpu:
+      intel: { addr: "192.168.1.88:8080" }
+  ojo:
+    # jetson-stats exporter includes CPU/mem + GPU on 9100; no separate node_exporter
+    jetson: { addr: "ojo:9100" }
+  rpi1:
+    addr: "rpi1:9100"
+    roles: [node, kiosk]
+    rpi: { addr: "rpi1:9110" }
+  rpi2:
+    addr: "rpi2:9100"
+    roles: [node]
+    rpi: { addr: "rpi2:9110" }
+
