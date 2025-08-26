@@ -33,7 +33,8 @@ Prometheus + Grafana run centrally on **eek** (System76 Meerkat). **rpi1** displ
 | Host | Hardware | Role(s) | Exporters |
 |---|---|---|---|
 | **eek** | System76 Meerkat (i5‑1340P) | **Prometheus + Grafana server**; NFS | `node_exporter` |
-| **ook** | Acer Nitro V 15 (i7‑13620H + **RTX 4050**) | Wi‑Fi NAT; GPU compute | `node_exporter`, **DCGM exporter** |
+| **ook** | Acer Nitro V 15 (i7‑13620H) | Wi‑Fi NAT; general compute | `node_exporter` |
+| **oop** | Desktop PC (RTX 3090) | GPU compute; development | `node_exporter`, **DCGM exporter** |
 | **hog** | GEEKOM GT1 Mega (Core Ultra 9 + **Intel Arc**) | Robot control, RealSense | `node_exporter`, **Intel GPU exporter** |
 | **ojo** | **Jetson AGX Orin** | Agent inference | **jetson‑stats node exporter** (includes CPU/mem/GPU) |
 | **rpi1** | Raspberry Pi 5 (8GB) | **Wallboard**; app frontend | `node_exporter`, **rpi_exporter**; **Grafana kiosk** client |
@@ -119,20 +120,47 @@ curl -sS --no-progress-meter http://$(hostname):9100/metrics | head -n 20
 
 > Do not install node_exporter on `ojo` (Jetson). It runs `jetson-stats-node-exporter` on :9100 (see §6.3).
 
-### 6.2 NVIDIA dGPU (ook / RTX 4050): DCGM exporter (container, **pinned tag**)
-Install NVIDIA Container Toolkit (see vendor docs). Use the unit or run directly:
-- Unit file: `~/tatbot/config/monitoring/exporters/ook/dcgm-exporter.service`
+### 6.2 NVIDIA dGPU (oop / RTX 3090): DCGM exporter (container, **pinned tag**)
+First install NVIDIA Container Toolkit:
+```bash
+# Add NVIDIA Docker repository
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+# Install and configure
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+
+# Test GPU access
+docker run --rm --gpus all nvidia/cuda:11.0.3-base-ubuntu20.04 nvidia-smi
+```
+
+Then run DCGM exporter:
+- Unit file: `~/tatbot/config/monitoring/exporters/oop/dcgm-exporter.service`
 - Enable: `sudo systemctl daemon-reload && sudo systemctl enable --now dcgm-exporter`
-- Or: `docker run -d --restart=always --gpus all --cap-add SYS_ADMIN --net host --name dcgm-exporter -e DCGM_EXPORTER_LISTEN=":9400" nvidia/dcgm-exporter:{versions.dcgm_exporter}`
-Verify: `curl -sS --no-progress-meter http://ook:9400/metrics | head -n 20`
+- Or: `docker run -d --restart=always --gpus all --cap-add SYS_ADMIN --net host --name dcgm-exporter -e DCGM_EXPORTER_LISTEN=":9400" nvidia/dcgm-exporter:4.4.0-4.5.0-ubi9`
+
+Verify: `curl -sS --no-progress-meter http://oop:9400/metrics | head -n 20`
 
 ### 6.3 Jetson (ojo): jtop/jetson‑stats exporter (**no jtop.service dependency required**)
-`sudo -H pip3 install "jetson-stats=={versions.jetson_stats}"`
-`sudo -H pip3 install "jetson-stats-node-exporter=={versions.jetson_stats_exporter}"`
+
+Install the pinned versions (do not match numbers):
+`sudo -H pip3 install 'jetson-stats==4.3.2'`
+`sudo -H pip3 install 'jetson-stats-node-exporter==0.1.2'`
 `sudo install -m 0644 ~/tatbot/config/monitoring/exporters/ojo/jetson-stats-node-exporter.service /etc/systemd/system/`
 `sudo systemctl daemon-reload && sudo systemctl enable --now jetson-stats-node-exporter`
-Verify: `curl http://ojo:9100/metrics | head`
-> We **removed** the `Requires=jtop.service` dependency. The exporter uses the **Python API** from jetson‑stats directly and does not require the `jtop` systemd service to be running. See §10 for the corrected unit file.
+
+Verify locally on the Jetson:
+`curl -sS --no-progress-meter http://localhost:9100/metrics | head -n 20`
+
+If the device hostname is not `ojo` (e.g., it’s `ubuntu`), either:
+- Update `~/tatbot/config/monitoring/inventory.yml` to use the actual hostname or IP (e.g., `ubuntu:9100` or `192.168.1.X:9100`), or
+- Set a static hostname: `sudo hostnamectl set-hostname ojo` (then reboot or restart networking).
+> We **removed** the `Requires=jtop.service` dependency. The exporter uses the **Python API** from jetson‑stats directly and does not require the `jtop` systemd service to be running. See §10 for the unit file.
 
 ### 6.4 Intel Arc/iGPU (hog): Intel GPU exporter
 **Recommendation:** use the **container method (A)** for simplicity and to avoid managing Go/Python deps on the host. For strict reproducibility, build a **private image** from a pinned commit of a known exporter and reference that image + digest here.
