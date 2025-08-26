@@ -69,14 +69,16 @@ check_dashboard() {
     
     echo "🔍 Verifying Tatbot Compute dashboard exists..."
     
-    if curl -s --max-time 5 "$api_url" | grep -q '"slug":"tatbot-compute"'; then
-        echo "✅ Tatbot Compute dashboard accessible"
-        return 0
-    else
-        echo "❌ Tatbot Compute dashboard not found"
-        echo "💡 Check dashboard is provisioned: http://${host}:3000/dashboards"
-        return 1
-    fi
+    for i in {1..10}; do
+        if curl -s --max-time 5 "$api_url" | grep -q '"uid":"tatbot-compute"'; then
+            echo "✅ Tatbot Compute dashboard accessible"
+            return 0
+        fi
+        sleep 3
+    done
+    echo "❌ Tatbot Compute dashboard not found"
+    echo "💡 Check dashboard is provisioned: http://${host}:3000/dashboards"
+    return 1
 }
 
 HOST="$(resolve_host "${TARGET_NODE}")"

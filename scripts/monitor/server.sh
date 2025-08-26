@@ -111,6 +111,9 @@ else
     log_info "Starting fresh monitoring services..."
 fi
 
+# Ensure Prometheus config is up-to-date from inventory
+make -s gen-prom >/dev/null 2>&1 || true
+
 make -s up
 log_info "Waiting for services to stabilize..."
 sleep 15
@@ -135,12 +138,33 @@ fi
 # 4. Check Prometheus web interface
 log_info "=== Prometheus Web Interface ==="
 check_url "Prometheus health check" "http://localhost:9090/-/ready" "Prometheus.*Ready"
-check_url "Prometheus targets page" "http://localhost:9090/targets" "up"
+
+# Wait until Prometheus has active targets (up to 30s)
+log_info "Waiting for Prometheus targets to be discovered..."
+for i in {1..10}; do
+  resp=$(curl -s --max-time 3 http://localhost:9090/api/v1/targets || echo '{}')
+  total=$(echo "$resp" | jq -r '.data.activeTargets | length' 2>/dev/null || echo 0)
+  if [[ "$total" =~ ^[0-9]+$ ]] && [[ $total -gt 0 ]]; then
+    log_success "Prometheus discovered $total targets"
+    break
+  fi
+  sleep 3
+done
+check_url "Prometheus targets API" "http://localhost:9090/api/v1/targets" '"status":"success"'
 
 # 5. Check Grafana web interface
 log_info "=== Grafana Web Interface ==="
 check_url "Grafana health check" "http://localhost:3000/api/health" "ok"
-check_url "Tatbot Compute dashboard" "http://localhost:3000/d/tatbot-compute/tatbot-compute" "Tatbot Compute"
+
+# Wait for dashboard provisioning (up to 30s)
+for i in {1..10}; do
+  if curl -s --max-time 3 "http://localhost:3000/api/dashboards/uid/tatbot-compute" | grep -q '"uid":"tatbot-compute"'; then
+    log_success "Tatbot Compute dashboard provisioned"
+    break
+  fi
+  sleep 3
+done
+check_url "Tatbot Compute dashboard" "http://localhost:3000/api/dashboards/uid/tatbot-compute" '"uid":"tatbot-compute"'
 
 # 6. Deep dive on each node
 log_info "=== Deep Node Diagnostics ==="
