@@ -8,7 +8,7 @@ StartLimitBurst=5
 [Service]
 Type=simple
 User=root
-ExecStart=/home/rpi2/tatbot/scripts/mode_auto_switcher_with_dhcp.sh
+ExecStart=/home/rpi2/tatbot/scripts/network/mode_auto_switcher_with_dhcp.sh
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

@@ -63,7 +63,7 @@ Tatbot uses a sophisticated dual-mode networking system that automatically adapt
 ### Mode Detection
 - **Trigger**: Home router (192.168.1.1) reachability test
 - **Frequency**: Every 20 seconds via `tatbot-mode-auto.service`
-- **Script**: `scripts/mode_auto_switcher_with_dhcp.sh`
+- **Script**: `scripts/network/mode_auto_switcher_with_dhcp.sh`
 
 ### DHCP Renewal Orchestration
 - **Automatic**: Triggered on every mode switch
@@ -102,9 +102,9 @@ arms:    192.168.1.2-3
 - `config/network/systemd/tatbot-mode-auto.service` - Auto-detection service
 
 ### Scripts
-- `scripts/mode_auto_switcher_with_dhcp.sh` - Main mode detection and switching
-- `scripts/setup_nat_ook.sh` - NAT configuration for ook
-- `scripts/network_status.sh` - Network diagnostics and status
+- `scripts/network/mode_auto_switcher_with_dhcp.sh` - Main mode detection and switching
+- `scripts/network/setup_nat_ook.sh` - NAT configuration for ook
+- `scripts/network/network_status.sh` - Network diagnostics and status
 
 ## Network Flow
 
@@ -134,7 +134,7 @@ ssh rpi2 "readlink -f /etc/dnsmasq.d/active.conf"
 ssh rpi2 "sudo journalctl -u tatbot-mode-auto.service -f"
 
 # Network status from any node
-./scripts/network_status.sh
+./scripts/network/network_status.sh
 ```
 
 ### Troubleshooting

@@ -242,7 +242,7 @@ sudo systemctl restart dnsmasq
 # Verify dnsmasq is running with our config
 sudo systemctl status dnsmasq  # Should show "active (running)"
 
-# The auto-detection script with DHCP triggers is at scripts/mode_auto_switcher_with_dhcp.sh
+# The auto-detection script with DHCP triggers is at scripts/network/mode_auto_switcher_with_dhcp.sh
 # This script automatically triggers DHCP renewal on all nodes when switching modes
 
 # Install the auto-detection service that switches modes and triggers DHCP renewals
@@ -268,7 +268,7 @@ ssh ook
 
 # Run the NAT setup script (handles all configuration automatically)
 cd ~/tatbot
-sudo bash scripts/setup_nat_ook.sh
+sudo bash scripts/network/setup_nat_ook.sh
 
 # The script will:
 # - Enable IP forwarding
@@ -326,7 +326,7 @@ For Arm Control Boxes:
 
 ```bash
 # From any tatbot node, check network status
-./scripts/network_status.sh
+./scripts/network/network_status.sh
 
 # Check which mode is currently active on rpi2
 ssh rpi2 "readlink -f /etc/dnsmasq.d/active.conf"
