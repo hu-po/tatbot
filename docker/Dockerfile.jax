@@ -46,8 +46,8 @@ COPY config ./config
 COPY scripts ./scripts
 
 # Install project deps WITHOUT the gpu extra (we install JAX GPU explicitly)
-# - gen/img/viz/tui are safe and don't pull torch
-RUN uv pip install --system --no-cache-dir .[gen,img,viz,tui]
+# - gen/img/viz are safe and don't pull torch
+RUN uv pip install --system --no-cache-dir .[gen,img,viz]
 
 # Install JAX GPU wheels for CUDA 12.x
 # Note: jax[cuda12_pip] requires the find-links repo below for GPU wheels
@@ -58,4 +58,3 @@ RUN uv pip install --system --no-cache-dir \
 
 # Default shell
 CMD ["bash"]
-

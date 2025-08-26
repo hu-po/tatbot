@@ -1,9 +1,6 @@
-import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from queue import Empty, Queue
-from threading import Thread
 
 import cv2
 import numpy as np
@@ -12,8 +9,6 @@ from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.align import make_align_strokes
 from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.gen.gcode import make_gcode_strokes
-from tatbot.state.manager import StateManager
-from tatbot.state.schemas import RedisKeySchema
 from tatbot.utils.colors import COLORS
 from tatbot.utils.log import get_logger, print_config, setup_log_with_config
 from tatbot.viz.base import BaseViz, BaseVizConfig
@@ -52,12 +47,6 @@ class VizStrokes(BaseViz):
         self.stroke_idx = 0
         self.pose_idx = 0
         
-        # State management
-        self.state_manager = None
-        self.state_sync_enabled = False
-        self.subscription_thread = None
-        self.subscription_running = False
-        self._event_queue: Queue = Queue()
 
         with self.server.gui.add_folder("Session"):
             self.step_sleep = 1.0 / 30.0  # 30 fps
@@ -123,23 +112,6 @@ class VizStrokes(BaseViz):
                 initial_value=0,
             )
         
-        # State synchronization controls
-        with self.server.gui.add_folder("State Sync"):
-            self.state_sync_checkbox = self.server.gui.add_checkbox(
-                "Sync with Robot",
-                initial_value=False,
-            )
-            self.state_status_text = self.server.gui.add_text(
-                label="Status",
-                initial_value="Disconnected",
-                disabled=True,
-            )
-            self.last_update_text = self.server.gui.add_text(
-                label="Last Update",
-                initial_value="Never",
-                disabled=True,
-            )
-
         @self.stroke_idx_slider.on_update
         def _(_):
             self.stroke_idx = self.stroke_idx_slider.value
@@ -153,13 +125,6 @@ class VizStrokes(BaseViz):
         def _(_):
             self.pose_idx = self.pose_idx_slider.value
             
-        @self.state_sync_checkbox.on_update
-        def _(_):
-            if self.state_sync_checkbox.value:
-                self.enable_state_sync()
-            else:
-                self.disable_state_sync()
-
         if self.scene.design_img_path is not None:
             self.design_img_np = cv2.imread(self.scene.design_img_path)
             self.design_img_gui = self.server.gui.add_image(image=self.design_img_np, format="png")
@@ -199,13 +164,6 @@ class VizStrokes(BaseViz):
         self.robot_at_rest: bool = True
 
     def step(self):
-        # Apply any pending state updates from subscription thread
-        try:
-            while True:
-                message = self._event_queue.get_nowait()
-                self._handle_state_event_sync(message)
-        except Empty:
-            pass
 
         if self.pause:
             return
@@ -266,163 +224,9 @@ class VizStrokes(BaseViz):
             self.step_sleep = self.scene.arms.goal_time_fast
         self.pose_idx += 1
 
-    def enable_state_sync(self):
-        """Enable real-time state synchronization with Redis."""
-        if self.state_sync_enabled:
-            return
-            
-        try:
-            self.state_manager = StateManager()
-            self.state_sync_enabled = True
-            self.subscription_running = True
-            
-            # Start subscription thread
-            self.subscription_thread = Thread(target=self._run_subscription_loop, daemon=True)
-            self.subscription_thread.start()
-            
-            self.state_status_text.value = "Connected"
-            log.info("✅ State synchronization enabled")
-            
-        except Exception as e:
-            log.error(f"Failed to enable state sync: {e}")
-            self.state_status_text.value = f"Error: {e}"
-            self.state_sync_enabled = False
-
-    def disable_state_sync(self):
-        """Disable real-time state synchronization."""
-        if not self.state_sync_enabled:
-            return
-            
-        self.subscription_running = False
-        self.state_sync_enabled = False
-        
-        if self.subscription_thread and self.subscription_thread.is_alive():
-            # Thread will stop on next iteration
-            pass
-            
-        if self.state_manager:
-            # Will be cleaned up by thread
-            pass
-            
-        self.state_status_text.value = "Disconnected"
-        self.last_update_text.value = "Never"
-        log.info("❌ State synchronization disabled")
-
-    def _run_subscription_loop(self):
-        """Run the async subscription loop in a separate thread."""
-        try:
-            asyncio.run(self._async_subscription_loop())
-        except Exception as e:
-            log.error(f"Subscription loop error: {e}")
-            self.state_status_text.value = f"Error: {e}"
-
-    async def _async_subscription_loop(self):
-        """Async loop for subscribing to state events with reconnect backoff.
-
-        Enqueues events for main-thread processing to avoid GUI updates
-        from the subscription thread.
-        """
-        backoff = 1.0
-        while self.subscription_running:
-            try:
-                async with self.state_manager:
-                    log.info("📡 Starting state event subscription")
-
-                    channels = [
-                        RedisKeySchema.stroke_events_channel("progress"),
-                        RedisKeySchema.stroke_events_channel("session"),
-                    ]
-
-                    async for message in self.state_manager.subscribe_events(*channels):
-                        if not self.subscription_running:
-                            break
-                        # Enqueue for main-thread processing
-                        self._event_queue.put(message)
-                        self.state_status_text.value = "Connected"
-
-                backoff = 1.0
-            except Exception as e:
-                log.error(f"Subscription loop error: {e}")
-                if self.subscription_running:
-                    self.state_status_text.value = f"Retrying in {int(backoff)}s"
-                    await asyncio.sleep(backoff)
-                    backoff = min(backoff * 2.0, 10.0)
-            finally:
-                try:
-                    await self.state_manager.disconnect()
-                except Exception:
-                    pass
-
-    def _handle_state_event_sync(self, message):
-        """Handle incoming state events on the main thread."""
-        try:
-            channel = message.get("channel")
-            data = message.get("data")
-            if not isinstance(data, dict):
-                return
-            event_type = data.get("type")
-            if channel == RedisKeySchema.stroke_events_channel("progress"):
-                if event_type == "progress_update":
-                    self._update_from_progress_event(data)
-            elif channel == RedisKeySchema.stroke_events_channel("session"):
-                if event_type in ["session_start", "session_end"]:
-                    self._update_from_session_event(data, event_type)
-            self.last_update_text.value = time.strftime("%H:%M:%S")
-        except Exception as e:
-            log.error(f"Error handling state event: {e}")
-
-    def _update_from_progress_event(self, data):
-        """Update visualization from stroke progress event."""
-        try:
-            stroke_idx = data.get("stroke_idx", 0)
-            pose_idx = data.get("pose_idx", 0)
-            total_strokes = data.get("total_strokes", 0)
-            stroke_length = data.get("stroke_length", 0)
-            description_l = data.get("description_l", "")
-            description_r = data.get("description_r", "")
-            
-            # Update sliders if values are different
-            if self.stroke_idx_slider.value != stroke_idx and stroke_idx < self.num_strokes:
-                self.stroke_idx_slider.value = stroke_idx
-                self.stroke_idx = stroke_idx
-                
-            if self.pose_idx_slider.value != pose_idx and pose_idx < self.scene.stroke_length:
-                self.pose_idx_slider.value = pose_idx
-                self.pose_idx = pose_idx
-                
-            # Update descriptions
-            if description_l and self.stroke_description_l.value != description_l:
-                self.stroke_description_l.value = description_l
-                
-            if description_r and self.stroke_description_r.value != description_r:
-                self.stroke_description_r.value = description_r
-                
-            log.debug(f"Updated viz from progress: stroke {stroke_idx}/{total_strokes}, pose {pose_idx}/{stroke_length}")
-            
-        except Exception as e:
-            log.error(f"Error updating from progress event: {e}")
-
-    def _update_from_session_event(self, data, event_type):
-        """Update visualization from session events."""
-        try:
-            session_id = data.get("session_id", "")
-            
-            if event_type == "session_start":
-                total_strokes = data.get("total_strokes", 0)
-                scene_name = data.get("scene_name", "")
-                log.info(f"🎬 Stroke session started: {session_id} ({total_strokes} strokes, scene: {scene_name})")
-                self.state_status_text.value = f"Active: {session_id[:12]}..."
-                
-            elif event_type == "session_end":
-                log.info(f"🏁 Stroke session ended: {session_id}")
-                self.state_status_text.value = "Connected (Idle)"
-                
-        except Exception as e:
-            log.error(f"Error updating from session event: {e}")
 
     def stop(self):
-        """Stop the visualization and cleanup state sync."""
-        self.disable_state_sync()
+        """Stop the visualization and clean up resources."""
         super().stop()
 
 

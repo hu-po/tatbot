@@ -1,16 +1,13 @@
 """Base types and utilities for the unified tools system."""
 
 from dataclasses import dataclass
-from datetime import datetime
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Dict, List, Optional
+from typing import Any, AsyncGenerator, Callable, Dict, List
 
 from mcp.server.fastmcp import Context
 from pydantic import BaseModel, ConfigDict
 
 from tatbot.utils.log import get_logger
 
-if TYPE_CHECKING:
-    from tatbot.state.manager import StateManager
 
 log = get_logger("tools.base", "🔧")
 
@@ -34,30 +31,9 @@ class ToolContext:
     
     node_name: str
     mcp_context: Context
-    state_manager: Optional['StateManager'] = None
-    
     async def report_progress(self, progress: float, message: str) -> None:
         """Report progress to the client."""
         await self.mcp_context.report_progress(progress, 1.0, message)
-        
-        # Also publish to Redis if state manager is available
-        if self.state_manager:
-            try:
-                from tatbot.state.schemas import RedisKeySchema
-                await self.state_manager.redis.publish(
-                    RedisKeySchema.stroke_events_channel("progress"),
-                    {
-                        "type": "progress_update",
-                        "node_id": self.node_name,
-                        "progress": progress,
-                        "message": message,
-                        "stroke_idx": 0,  # Tool progress, not stroke-specific
-                        "total_strokes": 0,  # Tool progress, not stroke-specific
-                        "timestamp": datetime.utcnow().isoformat(),
-                    }
-                )
-            except Exception as e:
-                log.debug(f"Failed to publish progress to Redis: {e}")
     
     async def info(self, message: str) -> None:
         """Send info message to the client."""

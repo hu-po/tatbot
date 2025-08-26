@@ -136,83 +136,8 @@ def load_node_ips(config_root: Optional[Path] = None) -> Dict[str, str]:
     return node_ips
 
 
-def load_tui_config(config_root: Optional[Path] = None) -> Dict:
-    """Load TUI configuration from tui/default.yaml.
-    
-    Args:
-        config_root: Root path to config directory. If None, attempts to find it automatically.
-        
-    Returns:
-        TUI configuration dictionary
-        
-    Raises:
-        FileNotFoundError: If tui config doesn't exist
-    """
-    if config_root is None:
-        # Try to find config directory relative to this file
-        current_dir = Path(__file__).parent
-        config_root = current_dir.parent.parent / "conf"
-        
-        if not config_root.exists():
-            config_root = Path.cwd() / "src" / "conf"
-            
-        if not config_root.exists():
-            config_root = Path.home() / "tatbot" / "src" / "conf"
-    
-    tui_path = config_root / "tui" / "default.yaml"
-    
-    if not tui_path.exists():
-        # Return sensible defaults if config doesn't exist
-        return {
-            'refresh_rate': 2.0,
-            'health_check': {
-                'mcp_timeout': 2.0,
-                'ssh_timeout': 1.0
-            },
-            'display': {
-                'max_recent_events': 50,
-                'progress_bar_width': 20
-            }
-        }
-    
-    with open(tui_path) as f:
-        return yaml.safe_load(f)
 
 
-def load_redis_config(config_root: Optional[Path] = None) -> Dict[str, Any]:
-    """Load Redis configuration from conf/redis/default.yaml.
-
-    Args:
-        config_root: Root path to config directory. If None, attempts to find it automatically.
-
-    Returns:
-        Dictionary with keys: host (str), port (int), password (str | None)
-
-    Raises:
-        FileNotFoundError: If the redis config doesn't exist
-        ValueError: If the config file is malformed
-    """
-    if config_root is None:
-        current_dir = Path(__file__).parent
-        config_root = current_dir.parent.parent / "conf"
-        if not config_root.exists():
-            config_root = Path.cwd() / "src" / "conf"
-        if not config_root.exists():
-            config_root = Path.home() / "tatbot" / "src" / "conf"
-
-    redis_path = config_root / "redis" / "default.yaml"
-    if not redis_path.exists():
-        raise FileNotFoundError(f"Redis configuration not found at {redis_path}")
-
-    with open(redis_path) as f:
-        cfg = yaml.safe_load(f) or {}
-
-    host = cfg.get("host")
-    port = cfg.get("port")
-    password = cfg.get("password")
-    if not isinstance(host, str) or not isinstance(port, int):
-        raise ValueError(f"Malformed Redis config at {redis_path}: host={host!r}, port={port!r}")
-    return {"host": host, "port": port, "password": password}
 
 
 def main():

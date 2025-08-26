@@ -56,8 +56,6 @@ tattoo robot system composed of 2 robot arms, 7 cameras, and 6 computers control
 - [**SmolVLA**](plans/models/smolvla.md) - Compact vision-language-action model
 
 ### 🔧 Operations & Monitoring
-- [**State Server**](state_server.md) - Redis-based state management
-- [**TUI Monitor**](tui_monitor.md) - Real-time system dashboard
 - [**Development Workflows**](development.md) - Coding, testing, and deployment
 
 ### 📚 Reference
@@ -70,7 +68,6 @@ tattoo robot system composed of 2 robot arms, 7 cameras, and 6 computers control
 :maxdepth: 2
 :caption: Contents
 :hidden:
-
 development
 nodes
 robot
@@ -82,10 +79,8 @@ agent
 artwork
 gear
 progress
-state_server
 ideas
 network_architecture
-tui_monitor
 vggt
 logos/index
 paper/index

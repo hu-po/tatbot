@@ -90,13 +90,6 @@ async def start_stroke_viz(input_data: StrokeVizInput, ctx: ToolContext):
         if not viz.wait_for_ready(timeout=10.0):
             raise Exception("Server failed to start within timeout")
 
-        # Optionally enable state synchronization with Redis
-        try:
-            if getattr(input_data, "enable_state_sync", False):
-                viz.enable_state_sync()
-        except Exception as e:
-            log.error(f"Failed to enable state sync: {e}")
-
         # Register the server with thread (atomic check-and-register)
         if not register_server(server_name, viz, viz_thread):
             # Race condition - another server started between our check and registration

@@ -36,7 +36,6 @@ dependencies = [
     "paramiko==4.0.0",
     "pyroki @ git+https://github.com/chungmin99/pyroki.git@main#egg=pyroki",
     "pyyaml~=6.0.2",
-    "redis~=5.0.0",
     "safetensors~=0.6.2",
     "tyro~=0.9.27",
     "hydra-core~=1.3.2",
@@ -51,7 +50,6 @@ dependencies = [
 [project.scripts]
 tatbot = "tatbot.main:main"
 tatbot-mcp = "tatbot.mcp.server:main"
-tatbot-monitor = "tatbot.tui.monitor:main_sync"
 
 [project.optional-dependencies]
 bot = [
@@ -95,10 +93,6 @@ img = [
 viz = [
     "viser==1.0.4",
     "pyliblzfse>=0.4.1",
-]
-tui = [
-    "rich>=13.0.0",
-    "aiohttp>=3.8.0",
 ]
 
 [tool.setuptools.packages.find]

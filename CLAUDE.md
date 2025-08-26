@@ -44,13 +44,6 @@ uv run sphinx-autobuild docs docs/_build
 ./scripts/lint_code.sh
 ```
 
-### System Monitoring (TUI)
-```bash
-# Start TUI monitor on rpi1 (real-time system dashboard)
-ssh rpi1
-source scripts/setup_env.sh
-uv run tatbot-monitor
-```
 
 ### MCP Server Operations
 ```bash

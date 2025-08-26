@@ -19,8 +19,6 @@ from tatbot.data.stroke import StrokeBatch, StrokeList
 from tatbot.gen.batch import strokebatch_from_strokes
 from tatbot.gen.gcode import make_gcode_strokes
 from tatbot.main import compose_and_validate_scene
-from tatbot.state.manager import StateManager
-from tatbot.state.models import RobotState
 from tatbot.tools.base import ToolContext
 from tatbot.tools.registry import tool
 from tatbot.tools.robot.models import StrokeInput, StrokeOutput
@@ -72,8 +70,6 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
     robot = None
     atari_teleop = None
     episode_handler = None
-    state_manager = None
-    session_id = None
     
     try:
         yield {"progress": 0.01, "message": "Loading scene configuration..."}
@@ -83,10 +79,6 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
             name=input_data.scene,
             meta=input_data.meta,
         )
-        
-        # Initialize state manager
-        state_manager = StateManager(node_id=ctx.node_name)
-        await state_manager.connect()
         
         # Create output directory
         output_dir = NFS_RECORDINGS_DIR
@@ -155,15 +147,6 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
         # Connect to robot
         robot.connect()
         
-        # Update robot state
-        robot_state = RobotState(
-            node_id=ctx.node_name,
-            is_connected_l=robot.is_connected,
-            is_connected_r=robot.is_connected,
-            current_pose="connecting",
-        )
-        await state_manager.update_robot_state(robot_state)
-        
         # Calculate camera threads
         num_camera_threads = 0
         if hasattr(robot, "rs_cameras") and len(robot.rs_cameras) > 0:
@@ -204,9 +187,6 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
         yield {"progress": 0.08, "message": "Sending robot to ready position..."}
         robot.send_action(robot._urdf_joints_to_action(scene.ready_pos_full.joints), safe=True, goal_time=2.0)
         
-        # Update robot state
-        robot_state.current_pose = "ready"
-        await state_manager.update_robot_state(robot_state)
         
         # Setup episode logging
         yield {"progress": 0.2, "message": "Creating episode logger..."}
@@ -263,7 +243,7 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
             else:
                 log.info("Using remote GPU node for strokebatch conversion")
                 gpu_proxy = GPUConversionService()
-                # Inform UI/TUI users that we are routing to a GPU node
+                # Inform users that we are routing to a GPU node
                 yield {"progress": 0.24, "message": "Routing stroke conversion to GPU node..."}
                 
                 success, _ = await gpu_proxy.convert_strokelist_remote(
@@ -283,13 +263,6 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
             log.info(f"Strokebatch created with shape: {strokebatch.joints.shape}")
         
         num_strokes = len(strokes.strokes)
-        
-        # Start stroke session in state manager
-        session_id = await state_manager.start_stroke_session(
-            total_strokes=num_strokes,
-            stroke_length=scene.stroke_length,
-            scene_name=scene.name
-        )
         
         # Initialize offset indices for needle depth control
         mid_offset_idx: int = scene.arms.offset_num // 2
@@ -321,16 +294,6 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
             stroke_msg = f"Executing stroke {stroke_idx + 1}/{num_strokes}: left={stroke_l.description}, right={stroke_r.description}"
             log.info(stroke_msg)
             
-            # Update stroke progress
-            await state_manager.update_stroke_progress(
-                stroke_idx=stroke_idx,
-                pose_idx=0,
-                stroke_description_l=stroke_l.description,
-                stroke_description_r=stroke_r.description,
-                offset_idx_l=offset_idx_l,
-                offset_idx_r=offset_idx_r,
-                session_id=session_id
-            )
             
             yield {
                 'progress': 0.3 + (0.6 * stroke_idx / num_strokes),
@@ -357,17 +320,6 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
                 start_loop_t = time.perf_counter()
                 log.debug(f"pose_idx: {pose_idx}/{scene.stroke_length}")
                 
-                # Update pose progress
-                if pose_idx % 5 == 0:  # Update every 5th pose to reduce overhead
-                    await state_manager.update_stroke_progress(
-                        stroke_idx=stroke_idx,
-                        pose_idx=pose_idx,
-                        stroke_description_l=stroke_l.description,
-                        stroke_description_r=stroke_r.description,
-                        offset_idx_l=offset_idx_l,
-                        offset_idx_r=offset_idx_r,
-                        session_id=session_id
-                    )
                 
                 # Handle joystick input if enabled
                 if enable_joystick and atari_teleop:
@@ -450,10 +402,6 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
         yield {"progress": 0.95, "message": "Returning robot to ready position..."}
         robot.send_action(robot._urdf_joints_to_action(scene.ready_pos_full.joints), safe=True)
         
-        # Update robot state and end stroke session
-        robot_state.current_pose = "ready"
-        await state_manager.update_robot_state(robot_state)
-        await state_manager.end_stroke_session(session_id)
         
         log.info("✅ Stroke operation completed successfully")
         
@@ -465,8 +413,6 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
         
     except KeyboardInterrupt:
         log.info("🛑 Stroke operation interrupted by user")
-        if state_manager and session_id:
-            await state_manager.end_stroke_session(session_id)
         yield StrokeOutput(
             success=False,
             message="🛑 Stroke operation interrupted by user",
@@ -476,10 +422,6 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
     except Exception as e:
         error_msg = f"❌ Stroke operation failed: {e}"
         log.error(error_msg)
-        if state_manager:
-            await state_manager.report_error("stroke_execution", str(e), {"scene": input_data.scene})
-            if session_id:
-                await state_manager.end_stroke_session(session_id)
         yield StrokeOutput(
             success=False,
             message=error_msg,
@@ -506,8 +448,3 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
             except Exception as e:
                 log.error(f"Error disconnecting robot: {e}")
         
-        if state_manager is not None:
-            try:
-                await state_manager.disconnect()
-            except Exception as e:
-                log.error(f"Error disconnecting state manager: {e}")
