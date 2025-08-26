@@ -18,16 +18,17 @@ scrape_interval: "15s"
 
 nodes:
   eek:
-    addr: "eek:9100"
+    addr: "192.168.1.97:9100"
     roles: [node, server]
   ook:
-    addr: "ook:9100"
+    addr: "192.168.1.90:9100"
     roles: [node]
+    # Note: ook has RTX 4050 but we use oop (RTX 3090) for DCGM monitoring
   oop:
-    addr: "oop:9100"
+    addr: "192.168.1.51:9100"
     roles: [node]
     gpu:
-      nvidia_dcgm: { addr: "oop:9400" }
+      nvidia_dcgm: { addr: "192.168.1.51:9400" }
   hog:
     addr: "192.168.1.88:9100"
     roles: [node]
@@ -35,13 +36,13 @@ nodes:
       intel: { addr: "192.168.1.88:8080" }
   ojo:
     # jetson-stats exporter includes CPU/mem + GPU on 9100; no separate node_exporter
-    # Use the device's IP to avoid hostname issues (replace with actual IP)
-    jetson: { addr: "192.168.1.90:9100" }
+    # Use the device's IP to avoid hostname issues
+    jetson: { addr: "192.168.1.96:9100" }
   rpi1:
-    addr: "rpi1:9100"
+    addr: "192.168.1.98:9100"
     roles: [node, kiosk]
-    rpi: { addr: "rpi1:9110" }
+    rpi: { addr: "192.168.1.98:9110" }
   rpi2:
-    addr: "rpi2:9100"
+    addr: "192.168.1.99:9100"
     roles: [node]
-    rpi: { addr: "rpi2:9110" }
+    rpi: { addr: "192.168.1.99:9110" }

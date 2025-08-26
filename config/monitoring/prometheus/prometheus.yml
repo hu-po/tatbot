@@ -5,20 +5,20 @@ scrape_configs:
 - job_name: nodes
   static_configs:
   - targets:
+    - 192.168.1.51:9100
     - 192.168.1.88:9100
-    - eek:9100
-    - ook:9100
-    - oop:9100
-    - rpi1:9100
-    - rpi2:9100
+    - 192.168.1.90:9100
+    - 192.168.1.97:9100
+    - 192.168.1.98:9100
+    - 192.168.1.99:9100
 - job_name: jetson
   static_configs:
   - targets:
-    - ojo:9100
+    - 192.168.1.96:9100
 - job_name: nvidia_dgpu
   static_configs:
   - targets:
-    - oop:9400
+    - 192.168.1.51:9400
 - job_name: intel_gpu
   static_configs:
   - targets:
@@ -26,5 +26,5 @@ scrape_configs:
 - job_name: rpi_soc
   static_configs:
   - targets:
-    - rpi1:9110
-    - rpi2:9110
+    - 192.168.1.98:9110
+    - 192.168.1.99:9110

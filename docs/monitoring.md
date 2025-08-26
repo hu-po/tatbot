@@ -80,7 +80,7 @@ Prometheus + Grafana run centrally on **eek** (System76 Meerkat). **rpi1** displ
 
 ## 5) Inventory (single source of truth)
 
-Inventory lives at `~/tatbot/config/monitoring/inventory.yml` (versions, scrape interval, and nodes). Update that file and regenerate Prometheus config (see §12).
+Inventory lives at `~/tatbot/config/monitoring/inventory.yml` (versions, scrape interval, and nodes). IPs should match `src/conf/nodes.yaml`. Keep them in sync and regenerate Prometheus config (see §12).
 
 > **Why versions here?** This makes `inventory.yml` the **true** source of truth for **both topology and versions**. The agent can template Docker tags, download URLs, and PyPI requirements from these fields to produce deterministic configs and installers.
 
@@ -140,40 +140,42 @@ docker run --rm --gpus all nvidia/cuda:11.0.3-base-ubuntu20.04 nvidia-smi
 ```
 
 Then run DCGM exporter:
-- Unit file: `~/tatbot/config/monitoring/exporters/oop/dcgm-exporter.service`
-- Enable: `sudo systemctl daemon-reload && sudo systemctl enable --now dcgm-exporter`
-- Or: `docker run -d --restart=always --gpus all --cap-add SYS_ADMIN --net host --name dcgm-exporter -e DCGM_EXPORTER_LISTEN=":9400" nvidia/dcgm-exporter:4.4.0-4.5.0-ubi9`
+```bash
+docker run -d --restart=always --gpus all --cap-add SYS_ADMIN --net host --name dcgm-exporter -e DCGM_EXPORTER_LISTEN=":9400" nvidia/dcgm-exporter:4.4.0-4.5.0-ubi9
+```
 
-Verify: `curl -sS --no-progress-meter http://oop:9400/metrics | head -n 20`
+Verify: `curl -sS --no-progress-meter http://192.168.1.51:9400/metrics | head -n 20`
 
 ### 6.3 Jetson (ojo): jtop/jetson‑stats exporter (**no jtop.service dependency required**)
+```bash
+sudo -H pip3 install "jetson-stats==4.3.2"
+sudo -H pip3 install "jetson-stats-node-exporter==0.1.2"
+sudo install -m 0644 ~/tatbot/config/monitoring/exporters/ojo/jetson-stats-node-exporter.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now jetson-stats-node-exporter
+curl -sS --no-progress-meter http://192.168.1.96:9100/metrics | head -n 20
+```
 
-Install the pinned versions (do not match numbers):
-`sudo -H pip3 install 'jetson-stats==4.3.2'`
-`sudo -H pip3 install 'jetson-stats-node-exporter==0.1.2'`
-`sudo install -m 0644 ~/tatbot/config/monitoring/exporters/ojo/jetson-stats-node-exporter.service /etc/systemd/system/`
-`sudo systemctl daemon-reload && sudo systemctl enable --now jetson-stats-node-exporter`
-
-Verify locally on the Jetson:
-`curl -sS --no-progress-meter http://localhost:9100/metrics | head -n 20`
-
-If the device hostname is not `ojo` (e.g., it’s `ubuntu`), either:
-- Update `~/tatbot/config/monitoring/inventory.yml` to use the actual hostname or IP (e.g., `ubuntu:9100` or `192.168.1.X:9100`), or
-- Set a static hostname: `sudo hostnamectl set-hostname ojo` (then reboot or restart networking).
-> We **removed** the `Requires=jtop.service` dependency. The exporter uses the **Python API** from jetson‑stats directly and does not require the `jtop` systemd service to be running. See §10 for the unit file.
+> We **removed** the `Requires=jtop.service` dependency. The exporter uses the **Python API** from jetson‑stats directly and does not require the `jtop` systemd service to be running. See §10 for the corrected unit file.
 
 ### 6.4 Intel Arc/iGPU (hog): Intel GPU exporter
-**Recommendation:** use the **container method (A)** for simplicity and to avoid managing Go/Python deps on the host. For strict reproducibility, build a **private image** from a pinned commit of a known exporter and reference that image + digest here.
+**hog** needs Node Exporter (section 6.1) PLUS Intel GPU monitoring:
 
-**A. Container (simple):**
-Unit file: `~/tatbot/config/monitoring/exporters/hog/intel-gpu-exporter.service`
-Enable: `sudo systemctl daemon-reload && sudo systemctl enable --now intel-gpu-exporter`
-Or container (exposes :8080/metrics): `docker run -d --restart=always --net host --name intel-gpu-exporter --privileged -v /sys:/sys:ro -v /dev/dri:/dev/dri {versions.intel_gpu_exporter_image}:{versions.intel_gpu_exporter_tag}`
+First install Docker if not present:
+```bash
+sudo apt-get update
+sudo apt-get install -y docker.io
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
+# Log out and back in for group changes
+```
+
+Then run Intel GPU exporter:
+```bash
+docker run -d --restart=always --net host --name intel-gpu-exporter --privileged -v /sys:/sys:ro -v /dev/dri:/dev/dri restreamio/intel-prometheus:latest
+```
+
 Verify: `curl -sS --no-progress-meter http://192.168.1.88:8080/metrics | head -n 20`
 
-**B. Go exporter (binary) — alternative:**
-- https://gitlab.com/leandrosansilva/go-intel-gpu-exporter (wraps `intel_gpu_top -J`).
-- Build from a known tag/commit; install as a systemd service similar to node_exporter.
 
 ### 6.5 Raspberry Pi SoC telemetry — rpi1, rpi2
 `sudo install rpi_exporter /usr/local/bin/rpi_exporter`
