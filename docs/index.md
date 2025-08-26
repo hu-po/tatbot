@@ -38,7 +38,8 @@ tattoo robot system composed of 2 robot arms, 7 cameras, and 6 computers control
 - [**Vision System**](vision.md) - Cameras, AprilTag tracking, 2D→3D mapping
 - [**Tattoo Gear**](gear.md) - Physical tattoo equipment and setup
 
-### 🌐 Software Architecture  
+### 🌐 Software Architecture 
+- [**Monitoring**](monitoring.md) - Edge fleet monitoring design (Prometheus + Grafana)
 - [**MCP Protocol**](mcp.md) - Model Context Protocol for distributed control
 - [**Tools System**](tools.md) - Unified operation framework and tool registry
 - [**Network Architecture**](network_architecture.md) - Automatic dual-mode networking
@@ -68,9 +69,10 @@ tattoo robot system composed of 2 robot arms, 7 cameras, and 6 computers control
 :maxdepth: 2
 :caption: Contents
 :hidden:
-development
 nodes
 robot
+monitoring
+development
 vision
 mcp
 tools

@@ -27,6 +27,7 @@ audience: [dev]
 
 ## Quality & Debugging
 - check for arm error before episode big moves
+- analysis of logging calls potentially slowing down execution
 - method of filtering through strokelist to see if any strokes have a large delta/error and thus filter.
 - visualization of network traffic between nodes to see if there is a bottleneck with mcp or nfs
 - do strokes need to be the same size because the batch size is already arbitrary and coming from concatenation
