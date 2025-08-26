@@ -1,9 +1,13 @@
-# Edge Fleet Monitoring Design (Prometheus + Grafana)
+---
+summary: Prometheus + Grafana for edge nodes with pinned exporters
+tags: [monitoring, prometheus, grafana]
+updated: 2025-08-26
+audience: [dev, agent]
+---
 
-**Audience:** humans deploying on device, and a CLI coding agent committing config into this repo.  
-**Outcome:** a single wallboard on **rpi1** (Raspberry Pi 5) showing live CPU/memory/disk/net and GPU metrics across all nodes with minimal overhead, using **only FOSS** — now with **explicit version pinning** and a **unified Fleet Overview dashboard**.
+# 📊 Edge Fleet Monitoring (Prometheus + Grafana)
 
-_Last updated: 2025-08-26._
+**Outcome:** a single wallboard on **rpi1** (Raspberry Pi 5) showing live CPU/memory/disk/net and GPU metrics across all nodes with minimal overhead, using **only FOSS** and unified fleet overview dashboard.
 
 ---
 
@@ -19,13 +23,6 @@ We standardize on **Prometheus + Grafana** with per-node exporters:
 
 Prometheus + Grafana run centrally on **eek** (System76 Meerkat). **rpi1** displays Grafana in **kiosk mode**.
 
-**Why this fits your constraints**
-
-- **Unified dashboard** on a Pi display.
-- **Minimal overhead**: exporters read `/proc` or vendor APIs; scrape every 15s.
-- **FOSS** end‑to‑end; no cloud dependency.
-- **Reproducible**: all images/binaries **pinned to specific versions** (and optionally digests).
-
 ---
 
 ## 2) Fleet & roles
@@ -34,7 +31,7 @@ Prometheus + Grafana run centrally on **eek** (System76 Meerkat). **rpi1** displ
 |---|---|---|---|
 | **eek** | System76 Meerkat (i5‑1340P) | **Prometheus + Grafana server**; NFS | `node_exporter` |
 | **ook** | Acer Nitro V 15 (i7‑13620H + **RTX 4050**) | Wi‑Fi NAT; GPU compute | `node_exporter`, **DCGM exporter** |
-| **oop** | Desktop PC | GPU compute; development | `node_exporter` |
+| **oop** | Desktop PC (RTX 3090) | GPU compute; development | `node_exporter`, **DCGM exporter** |
 | **hog** | GEEKOM GT1 Mega (Core Ultra 9 + **Intel Arc**) | Robot control, RealSense | `node_exporter`, **Intel GPU exporter** |
 | **ojo** | **Jetson AGX Orin** | Agent inference | **jetson‑stats node exporter** (includes CPU/mem/GPU) |
 | **rpi1** | Raspberry Pi 5 (8GB) | **Wallboard**; app frontend | `node_exporter`, **rpi_exporter**; **Grafana kiosk** client |
@@ -58,7 +55,7 @@ Prometheus + Grafana run centrally on **eek** (System76 Meerkat). **rpi1** displ
                          │           │           │           │           │
                 node_exporter   DCGM exporter  Intel GPU   rpi_exporter  jetson-stats
                     :9100          :9400         :8080       :9110         :9100
-                 [eek/ook/hog]      [ook]        [hog]     [rpi1/rpi2]      [ojo]
+                 [eek/ook/hog]    [ook/oop]      [hog]     [rpi1/rpi2]      [ojo]
 ```
 
 ---
@@ -127,7 +124,7 @@ curl -sS --no-progress-meter http://localhost:9100/metrics | head -n 20
 
 > Do not install node_exporter on `ojo` (Jetson). It runs `jetson-stats-node-exporter` on :9100 (see §6.3).
 
-### 6.2 NVIDIA dGPU (ook / RTX 4050): DCGM exporter (container, **pinned tag**)
+### 6.2 NVIDIA dGPU (ook/oop): DCGM exporter (container, **pinned tag**)
 Prereqs (Docker engine + NVIDIA Container Toolkit on Ubuntu 24.04):
 ```bash
 sudo apt-get update
@@ -141,17 +138,19 @@ sudo systemctl restart docker
 docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
 ```
 
-Run DCGM exporter (pinned tag from inventory):
+Run DCGM exporter (pinned tag from inventory) on each NVIDIA host (ook, oop):
 ```bash
 docker run -d --restart=always --gpus all --cap-add SYS_ADMIN --net host \
   --name dcgm-exporter -e DCGM_EXPORTER_LISTEN=":9400" \
   nvidia/dcgm-exporter:4.4.0-4.5.0-ubi9
 ```
 
-Or use the systemd unit in the repo: `~/tatbot/config/monitoring/exporters/ook/dcgm-exporter.service`, then:
+Or use the systemd unit in the repo: `~/tatbot/config/monitoring/exporters/ook/dcgm-exporter.service` (for ook) or `~/tatbot/config/monitoring/exporters/oop/dcgm-exporter.service` (for oop), then:
 `sudo systemctl daemon-reload && sudo systemctl enable --now dcgm-exporter`
 
-Verify: `curl -sS --no-progress-meter http://192.168.1.90:9400/metrics | head -n 20`
+Verify (ook): `curl -sS --no-progress-meter http://192.168.1.90:9400/metrics | head -n 20`
+
+Verify (oop): `curl -sS --no-progress-meter http://192.168.1.51:9400/metrics | head -n 20`
 
 ### 6.3 Jetson (ojo): jtop/jetson‑stats exporter (**no jtop.service dependency required**)
 ```bash
@@ -292,7 +291,7 @@ Enable: `sudo systemctl daemon-reload && sudo systemctl enable --now grafana-kio
 ## 10) Systemd unit files (exporters) — repository paths
 
 - Node Exporter: `~/tatbot/config/monitoring/exporters/<host>/node_exporter.service`
-- DCGM exporter (docker): `~/tatbot/config/monitoring/exporters/ook/dcgm-exporter.service`
+- DCGM exporter (docker): `~/tatbot/config/monitoring/exporters/ook/dcgm-exporter.service`, `~/tatbot/config/monitoring/exporters/oop/dcgm-exporter.service`
 - Jetson exporter: `~/tatbot/config/monitoring/exporters/ojo/jetson-stats-node-exporter.service`
 - Intel GPU exporter (docker): `~/tatbot/config/monitoring/exporters/hog/intel-gpu-exporter.service`
 - rpi_exporter: `~/tatbot/config/monitoring/exporters/rpi{1,2}/rpi_exporter.service`
@@ -320,6 +319,7 @@ config/monitoring/
 └─ exporters/
    ├─ eek/node_exporter.service
    ├─ ook/{node_exporter.service,dcgm-exporter.service}
+   ├─ oop/{node_exporter.service,dcgm-exporter.service}
    ├─ hog/{node_exporter.service,intel-gpu-exporter.service}
    ├─ ojo/jetson-stats-node-exporter.service
    └─ rpi{1,2}/{node_exporter.service,rpi_exporter.service}
@@ -328,38 +328,16 @@ scripts/
 └─ gen_prom_config.py
 ```
 
----
-
-## 12) Coding agent tasks (deterministic)
-
-1. Edit `~/tatbot/config/monitoring/inventory.yml` (hosts, versions).
-2. Generate Prom config: `make -C ~/tatbot/config/monitoring gen-prom`.
-3. Install exporters using units under `~/tatbot/config/monitoring/exporters/<host>/...`.
-4. Start Prometheus + Grafana: `make -C ~/tatbot/config/monitoring up`.
-5. Optional: run `~/tatbot/scripts/fetch_dashboards.sh` to fetch reference dashboards.
-
----
-
 ## 13) Verification checklist
 
 - `curl http://eek:9090/-/ready` → `Prometheus is Ready.`
 - `curl http://eek:9090/targets` shows all targets **UP**.
 - `curl http://ook:9400/metrics` includes `DCGM_FI_DEV_GPU_UTIL`.
+- `curl http://oop:9400/metrics` includes `DCGM_FI_DEV_GPU_UTIL`.
 - `curl http://ojo:9100/metrics` includes Jetson system + GPU metrics.
 - `curl http://192.168.1.88:8080/metrics` includes Intel `igpu_*` metrics.
 - Grafana at `http://eek:3000/` shows dashboards, including **Fleet Overview**.
 - rpi1 displays the **Fleet Overview** URL with `?kiosk=tv&refresh=5s`.
-
----
-
-## 14) Version pinning policy (why & how)
-
-- **Never use `:latest`** for Docker images or unversioned binary URLs.
-- Keep **all versions in `inventory.yml`**. The agent must template every reference from there.
-- For Docker: prefer **semantic tags** (e.g., `prom/prometheus:v3.5.0`) and/or **digest pinning** (`name@sha256:...`).
-- For PyPI: use **exact `==` pins** (e.g., `jetson-stats==4.3.2`).
-- For GitHub releases: download by **tag** and verify checksums/signatures when available.
-- Revisit pins quarterly; update, test, and commit as a single change.
 
 ---
 
