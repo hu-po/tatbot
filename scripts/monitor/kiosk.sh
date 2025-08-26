@@ -2,12 +2,12 @@
 set -euo pipefail
 
 # Usage:
-#   scripts/monitoring_kiosk.sh [target_node] [refresh_seconds]
+#   scripts/monitor/kiosk.sh [target_node] [refresh_seconds]
 # Examples:
-#   scripts/monitoring_kiosk.sh                    # eek:3000 with 5s refresh (default)
-#   scripts/monitoring_kiosk.sh eek               # eek:3000 with 5s refresh
-#   scripts/monitoring_kiosk.sh eek 10            # eek:3000 with 10s refresh
-#   scripts/monitoring_kiosk.sh 192.168.1.97      # specific IP with 5s refresh
+#   scripts/monitor/kiosk.sh                    # eek:3000 with 5s refresh (default)
+#   scripts/monitor/kiosk.sh eek               # eek:3000 with 5s refresh
+#   scripts/monitor/kiosk.sh eek 10            # eek:3000 with 10s refresh
+#   scripts/monitor/kiosk.sh 192.168.1.97      # specific IP with 5s refresh
 
 TARGET_NODE="${1:-eek}"
 REFRESH_SECONDS="${2:-5}"
@@ -85,8 +85,8 @@ GRAFANA_URL="http://${HOST}:3000/d/tatbot-compute/tatbot-compute?kiosk=tv&refres
 # Run pre-flight checks
 echo "🚀 Pre-flight checks for monitoring kiosk..."
 if ! check_grafana "$HOST"; then
-    echo "🚨 Grafana not ready. Please run verification script on eek:"
-    echo "   cd ~/tatbot && bash scripts/verify_monitoring.sh"
+    echo "🚨 Grafana not ready. Please run monitoring server script on eek:"
+    echo "   cd ~/tatbot && ./scripts/monitor/server.sh --restart"
     exit 1
 fi
 

@@ -20,7 +20,7 @@ down: compose-cmd
 
 # Generate Prometheus config from inventory.yml
 gen-prom:
-	cd ../../ && python3 scripts/gen_prom_config.py
+	cd ../../ && python3 utils/gen_prom_config.py
 
 # Show logs from running services
 logs: compose-cmd

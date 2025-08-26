@@ -252,7 +252,7 @@ File: `~/tatbot/config/monitoring/grafana/provisioning/dashboards/dashboards.yam
 > The **Tatbot Compute** dashboard is the default kiosk target and summarizes CPU, Memory, Disk, Network, and GPU across all hosts. You can drill into the detailed dashboards when needed.
 
 Run this on eek to pull community dashboards into `~/tatbot/config/monitoring/grafana/dashboards/`:
-`cd ~/tatbot && bash scripts/fetch_dashboards.sh` (requires `jq`).
+`cd ~/tatbot && bash scripts/monitor/fetch.sh` (requires `jq`).
 
 ### Tatbot Compute Dashboard
 Installed at `~/tatbot/config/monitoring/grafana/dashboards/tatbot-compute.json` (uid=tatbot-compute). Intel exporter metric names may vary (`igpu_*`).
@@ -267,13 +267,13 @@ Installed at `~/tatbot/config/monitoring/grafana/dashboards/tatbot-compute.json`
 **Run on rpi1** (wallboard display node) to launch the monitoring dashboard in kiosk mode:
 ```bash
 # Start monitoring kiosk (default: eek:3000, 5s refresh)
-cd ~/tatbot && bash scripts/monitoring_kiosk.sh
+cd ~/tatbot && bash scripts/monitor/kiosk.sh
 
 # Custom refresh interval  
-cd ~/tatbot && bash scripts/monitoring_kiosk.sh eek 10
+cd ~/tatbot && bash scripts/monitor/kiosk.sh eek 10
 
 # Specific IP address
-cd ~/tatbot && bash scripts/monitoring_kiosk.sh 192.168.1.97
+cd ~/tatbot && bash scripts/monitor/kiosk.sh 192.168.1.97
 ```
 
 **When to run:** Once per boot, or when you want to restart the wallboard display.
@@ -326,10 +326,12 @@ config/monitoring/
    ├─ ojo/jetson-stats-node-exporter.service
    └─ rpi{1,2}/{node_exporter.service,rpi_exporter.service}
 scripts/
-├─ monitoring_server.sh    # Single entry point for monitoring system
-├─ monitoring_kiosk.sh     # Start kiosk display on rpi1  
-├─ monitoring_clean.sh     # Clean all cached monitoring data
-├─ fetch_dashboards.sh     # Download community dashboards
+├─ monitor/
+│  ├─ server.sh           # Start/verify monitoring stack on eek
+│  ├─ kiosk.sh            # Start kiosk display on rpi1  
+│  ├─ fetch.sh            # Download community dashboards
+│  └─ clean.sh            # Clean monitoring volumes and cache
+utils/
 └─ gen_prom_config.py      # Generate Prometheus config from inventory
 ```
 
@@ -337,7 +339,7 @@ scripts/
 
 Prometheus targets are generated from `inventory.yml`.
 
-- From repo root: `python3 scripts/gen_prom_config.py`
+- From repo root: `python3 utils/gen_prom_config.py`
 - Or: `make -C config/monitoring gen-prom`
 
 Output: `config/monitoring/prometheus/prometheus.yml`.
@@ -352,10 +354,10 @@ After changes, restart the stack on eek:
 
 ```bash
 # Start and verify monitoring system
-cd ~/tatbot && ./scripts/monitoring_server.sh
+cd ~/tatbot && ./scripts/monitor/server.sh
 
 # Restart services and verify
-cd ~/tatbot && ./scripts/monitoring_server.sh --restart
+cd ~/tatbot && ./scripts/monitor/server.sh --restart
 ```
 
 ### Cache Cleanup Script
@@ -364,13 +366,13 @@ cd ~/tatbot && ./scripts/monitoring_server.sh --restart
 
 ```bash
 # Clean cache (works on any node)
-cd ~/tatbot && ./scripts/monitoring_clean.sh
+cd ~/tatbot && ./scripts/monitor/clean.sh
 
 # For complete reset: clean + restart
-cd ~/tatbot && ./scripts/monitoring_clean.sh && ./scripts/monitoring_server.sh
+cd ~/tatbot && ./scripts/monitor/clean.sh && ./scripts/monitor/server.sh
 ```
 
-**monitoring_server.sh** features:
+**server.sh** features:
 - Verifies it's running on eek (monitoring server host)
 - Optionally restarts Prometheus + Grafana containers  
 - Performs comprehensive diagnostics on all nodes
@@ -378,7 +380,7 @@ cd ~/tatbot && ./scripts/monitoring_clean.sh && ./scripts/monitoring_server.sh
 - Provides installation commands for missing exporters
 - Shows detailed Prometheus target status
 
-**monitoring_clean.sh** features:
+**clean.sh** features:
 - Stops and removes Docker containers/volumes (on eek)
 - Clears browser cache and temp profiles
 - Removes log files and temporary data

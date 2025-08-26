@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Comprehensive monitoring verification and startup script
 # Single entry point for monitoring system on eek
-# Usage: ./verify_monitoring.sh [--restart]
+# Usage: ./scripts/monitor/server.sh [--restart]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -380,7 +380,7 @@ if [[ $FAILED_CHECKS -eq 0 ]]; then
     echo
     log_success "🎉 All monitoring systems operational!"
     log_info "🖥️  Ready for kiosk display. Run on rpi1:"
-    echo "   cd ~/tatbot && bash scripts/monitoring_kiosk.sh"
+    echo "   cd ~/tatbot && bash scripts/monitor/kiosk.sh"
     echo
     log_info "🌐 Access URLs:"
     echo "   Grafana: http://eek:3000/"
@@ -417,7 +417,7 @@ else
     echo "  sudo systemctl daemon-reload && sudo systemctl enable --now rpi_exporter"
     echo
     log_info "🔄 To restart monitoring services, run:"
-    echo "   cd ~/tatbot && ./scripts/monitoring_server.sh --restart"
+    echo "   cd ~/tatbot && ./scripts/monitor/server.sh --restart"
     echo
     exit 1
 fi
