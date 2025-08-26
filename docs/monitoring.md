@@ -98,7 +98,7 @@ Prereqs by node
 ### Common host metrics (node_exporter) — eek, ook, hog, rpi1, rpi2
 Quick installer (recommended):
 ```bash
-cd ~/tatbot && sudo bash scripts/monitor/install.sh
+cd ~/tatbot && git pull &&sudo bash scripts/monitor/install.sh
 ```
 
 Manual install (x86_64) — On each host (repo at `~/tatbot`), download and install Node Exporter v1.9.1:
