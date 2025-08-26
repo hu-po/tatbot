@@ -1,28 +1,38 @@
-.PHONY: up down gen-prom logs status clean
+.PHONY: up down gen-prom logs status clean compose-cmd
+
+# Detect compose command (plugin or legacy)
+COMPOSE:=$(shell sh -c 'docker compose version >/dev/null 2>&1 && echo "docker compose" || (command -v docker-compose >/dev/null 2>&1 && echo "docker-compose" || echo "" )')
+
+compose-cmd:
+	@if [ -z "$(COMPOSE)" ]; then \
+		echo "No docker compose found. Install docker-compose-plugin or docker-compose."; \
+		exit 1; \
+	fi; \
+	$(COMPOSE) version || true
 
 # Start Prometheus and Grafana services
-up:
-	docker compose -f compose/docker-compose.yml up -d
+up: compose-cmd
+	$(COMPOSE) -f compose/docker-compose.yml up -d
 
 # Stop Prometheus and Grafana services
-down:
-	docker compose -f compose/docker-compose.yml down
+down: compose-cmd
+	$(COMPOSE) -f compose/docker-compose.yml down
 
 # Generate Prometheus config from inventory.yml
 gen-prom:
 	cd ../../ && python3 scripts/gen_prom_config.py
 
 # Show logs from running services
-logs:
-	docker compose -f compose/docker-compose.yml logs -f
+logs: compose-cmd
+	$(COMPOSE) -f compose/docker-compose.yml logs -f
 
 # Show status of services
-status:
-	docker compose -f compose/docker-compose.yml ps
+status: compose-cmd
+	$(COMPOSE) -f compose/docker-compose.yml ps
 
 # Clean up volumes and containers
-clean:
-	docker compose -f compose/docker-compose.yml down -v
+clean: compose-cmd
+	$(COMPOSE) -f compose/docker-compose.yml down -v
 	docker system prune -f
 
 # Restart services

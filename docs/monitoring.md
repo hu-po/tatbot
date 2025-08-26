@@ -120,31 +120,31 @@ curl -sS --no-progress-meter http://$(hostname):9100/metrics | head -n 20
 
 > Do not install node_exporter on `ojo` (Jetson). It runs `jetson-stats-node-exporter` on :9100 (see §6.3).
 
-### 6.2 NVIDIA dGPU (oop / RTX 3090): DCGM exporter (container, **pinned tag**)
-First install NVIDIA Container Toolkit:
+### 6.2 NVIDIA dGPU (ook / RTX 4050): DCGM exporter (container, **pinned tag**)
+Prereqs (Docker engine + NVIDIA Container Toolkit on Ubuntu 24.04):
 ```bash
-# Add NVIDIA Docker repository
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-
-# Install and configure
 sudo apt-get update
+sudo apt-get install -y docker.io
+sudo usermod -aG docker $USER && newgrp docker
+sudo systemctl enable --now docker
 sudo apt-get install -y nvidia-container-toolkit
 sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
-
-# Test GPU access
-docker run --rm --gpus all nvidia/cuda:11.0.3-base-ubuntu20.04 nvidia-smi
+# Test GPU access inside container (optional):
+docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
 ```
 
-Then run DCGM exporter:
+Run DCGM exporter (pinned tag from inventory):
 ```bash
-docker run -d --restart=always --gpus all --cap-add SYS_ADMIN --net host --name dcgm-exporter -e DCGM_EXPORTER_LISTEN=":9400" nvidia/dcgm-exporter:4.4.0-4.5.0-ubi9
+docker run -d --restart=always --gpus all --cap-add SYS_ADMIN --net host \
+  --name dcgm-exporter -e DCGM_EXPORTER_LISTEN=":9400" \
+  nvidia/dcgm-exporter:4.4.0-4.5.0-ubi9
 ```
 
-Verify: `curl -sS --no-progress-meter http://192.168.1.51:9400/metrics | head -n 20`
+Or use the systemd unit in the repo: `~/tatbot/config/monitoring/exporters/ook/dcgm-exporter.service`, then:
+`sudo systemctl daemon-reload && sudo systemctl enable --now dcgm-exporter`
+
+Verify: `curl -sS --no-progress-meter http://192.168.1.90:9400/metrics | head -n 20`
 
 ### 6.3 Jetson (ojo): jtop/jetson‑stats exporter (**no jtop.service dependency required**)
 ```bash
@@ -172,24 +172,54 @@ sudo usermod -aG docker $USER
 Then run Intel GPU exporter:
 ```bash
 docker run -d --restart=always --net host --name intel-gpu-exporter --privileged -v /sys:/sys:ro -v /dev/dri:/dev/dri restreamio/intel-prometheus:latest
+curl -sS --no-progress-meter http://192.168.1.88:8080/metrics | head -n 20
 ```
 
-Verify: `curl -sS --no-progress-meter http://192.168.1.88:8080/metrics | head -n 20`
-
-
 ### 6.5 Raspberry Pi SoC telemetry — rpi1, rpi2
-`sudo install rpi_exporter /usr/local/bin/rpi_exporter`
-`sudo install -m 0644 ~/tatbot/config/monitoring/exporters/<host>/rpi_exporter.service /etc/systemd/system/`
-`sudo systemctl daemon-reload && sudo systemctl enable --now rpi_exporter`
-Verify: `curl -sS --no-progress-meter http://rpi1:9110/metrics | head -n 20`
+Download and install rpi_exporter for ARM64:
+```bash
+cd /tmp
+wget https://github.com/lukasmalkmus/rpi_exporter/releases/download/v0.4.0/rpi_exporter-0.4.0.linux-arm64.tar.gz
+tar -xzf rpi_exporter-0.4.0.linux-arm64.tar.gz -C /tmp
+sudo install -o root -g root -m 0755 /tmp/rpi_exporter /usr/local/bin/rpi_exporter
+sudo install -m 0644 ~/tatbot/config/monitoring/exporters/$(hostname)/rpi_exporter.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now rpi_exporter
+curl -sS --no-progress-meter http://$(hostname):9110/metrics | head -n 20
+```
 
 ---
 
 ## 7) Prometheus & Grafana on **eek** (pinned images)
 
 ### 7.1 Docker Compose
+Prereqs on eek (Docker + compose plugin, with fallback):
+```bash
+sudo apt-get update
+sudo apt-get install -y docker.io
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER && newgrp docker
+
+# If docker-compose-plugin is unavailable via apt on your distro sources,
+# add Docker's official repo (recommended) and install the plugin:
+if ! docker compose version >/dev/null 2>&1; then
+  echo "Installing compose plugin from Docker's official repo..."
+  sudo install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release; echo $VERSION_CODENAME) stable" | \
+    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+  sudo apt-get update
+  sudo apt-get install -y docker-compose-plugin || true
+fi
+
+# Fallback to legacy docker-compose if needed
+if ! docker compose version >/dev/null 2>&1; then
+  sudo apt-get install -y docker-compose || true
+fi
+```
+
 Compose file: `~/tatbot/config/monitoring/compose/docker-compose.yml`.
-Start on eek: `cd ~/tatbot && make -C config/monitoring up` (or `docker compose -f ~/tatbot/config/monitoring/compose/docker-compose.yml up -d`).
+Start on eek: `cd ~/tatbot && make -C config/monitoring up`.
+The Makefile auto-detects `docker compose` vs `docker-compose`.
 
 > **Optional: digest pinning.** For extra determinism, resolve each image to a **content digest** and use `image: name@sha256:...`. The coding agent can automate this step.
 

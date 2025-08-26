@@ -23,12 +23,12 @@ nodes:
   ook:
     addr: "192.168.1.90:9100"
     roles: [node]
+    gpu:
+      nvidia_dcgm: { addr: "192.168.1.90:9400" }
     # Note: ook has RTX 4050 but we use oop (RTX 3090) for DCGM monitoring
   oop:
     addr: "192.168.1.51:9100"
     roles: [node]
-    gpu:
-      nvidia_dcgm: { addr: "192.168.1.51:9400" }
   hog:
     addr: "192.168.1.88:9100"
     roles: [node]
