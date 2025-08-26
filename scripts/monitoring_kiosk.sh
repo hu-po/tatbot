@@ -46,8 +46,54 @@ resolve_host() {
   esac
 }
 
+# Pre-flight checks
+check_grafana() {
+    local host="$1"
+    local url="http://${host}:3000/api/health"
+    
+    echo "🔍 Verifying Grafana is accessible at ${host}:3000..."
+    
+    if curl -s --max-time 5 "$url" | grep -q "ok"; then
+        echo "✅ Grafana health check passed"
+        return 0
+    else
+        echo "❌ Grafana health check failed"
+        echo "💡 Try: curl http://${host}:3000/api/health"
+        return 1
+    fi
+}
+
+check_dashboard() {
+    local host="$1"
+    local url="http://${host}:3000/d/fleet-overview/fleet-overview"
+    
+    echo "🔍 Verifying Fleet Overview dashboard exists..."
+    
+    if curl -s --max-time 5 "$url" | grep -q "Fleet Overview"; then
+        echo "✅ Fleet Overview dashboard accessible"
+        return 0
+    else
+        echo "❌ Fleet Overview dashboard not found"
+        echo "💡 Check dashboard is provisioned: http://${host}:3000/dashboards"
+        return 1
+    fi
+}
+
 HOST="$(resolve_host "${TARGET_NODE}")"
 GRAFANA_URL="http://${HOST}:3000/d/fleet-overview/fleet-overview?kiosk=tv&refresh=${REFRESH_SECONDS}s"
+
+# Run pre-flight checks
+echo "🚀 Pre-flight checks for monitoring kiosk..."
+if ! check_grafana "$HOST"; then
+    echo "🚨 Grafana not ready. Please run verification script on eek:"
+    echo "   cd ~/tatbot && bash scripts/verify_monitoring.sh"
+    exit 1
+fi
+
+if ! check_dashboard "$HOST"; then
+    echo "🚨 Dashboard not ready. Please check Grafana configuration."
+    exit 1
+fi
 
 echo "🖥️  Starting monitoring kiosk -> ${GRAFANA_URL}"
 pkill -9 -f "chromium.*fleet-overview" || true
