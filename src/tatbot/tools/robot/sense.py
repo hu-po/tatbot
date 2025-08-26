@@ -19,8 +19,8 @@ from tatbot.bot.urdf import get_link_poses
 from tatbot.cam.depth import DepthCamera
 from tatbot.cam.extrinsics import get_extrinsics
 from tatbot.cam.validation import compare_extrinsics_with_urdf
-from tatbot.mcp.models import MCPConstants
 from tatbot.main import compose_and_validate_scene
+from tatbot.mcp.models import MCPConstants
 from tatbot.tools.base import ToolContext
 from tatbot.tools.registry import tool
 from tatbot.tools.robot.models import SenseInput, SenseOutput
@@ -381,8 +381,8 @@ async def sense_tool(input_data: SenseInput, ctx: ToolContext):
         if getattr(input_data, "enable_vggt", False):
             try:
                 # Compose Hydra config safely outside a Hydra app
-                from hydra import initialize_config_dir, compose
                 import yaml as _yaml
+                from hydra import compose, initialize_config_dir
                 from omegaconf import OmegaConf
 
                 from tatbot.mcp.client import MCPClient
