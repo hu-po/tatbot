@@ -88,6 +88,7 @@ scrape_configs:
   - source_labels:
     - __address__
     target_label: addr
+  fallback_scrape_protocol: PrometheusText0.0.4
 - job_name: rpi_soc
   static_configs:
   - targets:

@@ -195,6 +195,8 @@ sudo systemctl daemon-reload && sudo systemctl enable --now rpi_exporter
 curl -sS --no-progress-meter http://$(hostname):9110/metrics | head -n 20
 ```
 
+> rpi_exporter flag change: service files in this repo now use `--web.listen-address=:9110` (older docs sometimes show `-addr`). If you had a prior unit with `-addr`, update it to `--web.listen-address` or copy the unit from `config/monitoring/exporters/<host>/rpi_exporter.service`.
+
 ---
 
 ## Prometheus & Grafana on eek (Pinned Images)
@@ -224,7 +226,6 @@ Start Prometheus + Grafana:
 ```bash
 cd ~/tatbot && make -C config/monitoring up
 ```
-
 
 ### Prometheus Config
 File: `~/tatbot/config/monitoring/prometheus/prometheus.yml` (generated from inventory). Alert rules: `~/tatbot/config/monitoring/prometheus/rules/`.

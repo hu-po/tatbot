@@ -139,6 +139,12 @@ def render(inv: Dict[str, Any]) -> str:
                 {"source_labels": ["__address__"], "target_label": "addr"},
             ],
         }
+        # Prometheus v3 is stricter with content types. The Intel GPU exporter
+        # (restreamio/intel-prometheus) may return application/octet-stream.
+        # Provide a safe fallback to classic Prometheus text format to avoid
+        # "unsupported Content-Type ... and no fallback_scrape_protocol specified".
+        if name == "intel_gpu":
+            job["fallback_scrape_protocol"] = "PrometheusText0.0.4"
         doc["scrape_configs"].append(job)
 
     add_job("nodes", t["nodes"]) 
@@ -167,4 +173,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
