@@ -134,7 +134,7 @@
     {
       "type": "timeseries",
       "title": "Intel GPU Busy (%) by Instance",
-      "gridPos": {"x": 16, "y": 8, "w": 8, "h": 8},
+      "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
       "fieldConfig": {
         "defaults": {},
         "overrides": [
@@ -185,6 +185,38 @@
         {
           "datasource": "Prometheus",
           "expr": "avg by (instance)(disk_GB{mountpoint=\"used\",instance=~\"$instance\"}) / avg by (instance)(disk_GB{mountpoint=\"total\",instance=~\"$instance\"}) * 100",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "GPU Memory Utilization by Instance",
+      "description": "GPU memory usage: percentage for discrete GPUs (ook, oop), absolute MB for Jetson (ojo)",
+      "gridPos": {"x": 16, "y": 8, "w": 8, "h": 8},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "🦦 eek" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "#7EB26D" } } ] },
+          { "matcher": { "id": "byName", "options": "🦔 hog" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "#EAB839" } } ] },
+          { "matcher": { "id": "byName", "options": "🦧 ook" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "#6ED0E0" } } ] },
+          { "matcher": { "id": "byName", "options": "🦊 oop" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "#EF843C" } } ] },
+          { "matcher": { "id": "byName", "options": "🦎 ojo" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "#705DA0" } } ] },
+          { "matcher": { "id": "byName", "options": "🍓 rpi1" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "#1F78C1" } } ] },
+          { "matcher": { "id": "byName", "options": "🍇 rpi2" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "#E24D42" } } ] }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "avg by (instance) (DCGM_FI_DEV_FB_USED{instance=~\"$instance\"}) / (avg by (instance) (DCGM_FI_DEV_FB_USED{instance=~\"$instance\"}) + avg by (instance) (DCGM_FI_DEV_FB_FREE{instance=~\"$instance\"})) * 100",
+          "legendFormat": "{{instance}}"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "avg by (instance)(gpuram_kB{nvidia_gpu=\"mem\",instance=~\"$instance\"}) / 1024 / 1024 / 30 * 100",
           "legendFormat": "{{instance}}"
         }
       ]
