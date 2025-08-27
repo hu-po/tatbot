@@ -33,7 +33,7 @@
   <!-- lasercross -->
   <link name="lasercross" />
   <joint name="lasercross_joint" type="fixed">
-    <origin rpy="0.0 0.0 -1.5707963267948966" xyz="0.33 0.000000 0.04" />
+    <origin rpy="0.000000 0.000000 0.000000" xyz="0.250450 0.000000 0.038" />
     <parent link="root"/>
     <child link="lasercross"/>
   </joint>
@@ -596,21 +596,35 @@
     <parent link="left/link_6"/>
     <child link="left/carriage_left"/>
     <axis xyz="0 1 0"/>
-    <limit effort="200.0" lower="0.0" upper="0.01" velocity="0.25"/>
+    <limit effort="200.0" lower="0.0" upper="0.04" velocity="0.25"/>
   </joint>
-  <link name="left/ee">
+  <link name="left/ee_p1">
     <visual>
-      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0 0.007 0"/>
+      <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 -0.007 0"/>
       <geometry>
-        <mesh filename="meshes/ee/v4.stl" scale="1 1 1"/>
+        <mesh filename="meshes/ee/p1.stl" scale="0.001 0.001 0.001"/>
       </geometry>
       <material name="black"/>
     </visual>
   </link>
-  <joint name="left/ee_joint" type="fixed">
+  <joint name="left/ee_p1_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0"/>
     <parent link="left/carriage_left"/>
-    <child link="left/ee"/>
+    <child link="left/ee_p1"/>
+  </joint>
+  <link name="left/ee_p2">
+    <visual>
+      <origin rpy="-1.5707963267948966 0 -0.7853981633974483" xyz="0.0255 0.0475 0"/>
+      <geometry>
+        <mesh filename="meshes/ee/p2.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="left/ee_p2_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="left/ee_p1"/>
+    <child link="left/ee_p2"/>
   </joint>
 
   <!-- left arm tattoo pen -->
@@ -624,8 +638,8 @@
     </visual>
   </link>
   <joint name="left/tattoo_pen_joint" type="fixed">
-    <origin rpy="0 -1.5707963267948966 0" xyz="0.05 0 0"/>
-    <parent link="left/ee"/>
+    <origin rpy="-1.5707963267948966 0 0.7853981633974483" xyz="0.051 0.051 0"/>
+    <parent link="left/ee_p1"/>
     <child link="left/tattoo_pen"/>
   </joint>
   <link name="left/tattoo_needle">
@@ -964,21 +978,35 @@
     <parent link="right/link_6"/>
     <child link="right/carriage_right"/>
     <axis xyz="0 -1 0"/>
-    <limit effort="200.0" lower="0.0" upper="0.01" velocity="0.25"/>
+    <limit effort="200.0" lower="0.0" upper="0.04" velocity="0.25"/>
   </joint>
-  <link name="right/ee">
+  <link name="right/ee_p1">
     <visual>
-      <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 -0.007 0"/>
+      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0 0.007 0"/>
       <geometry>
-        <mesh filename="meshes/ee/v4.stl" scale="1 1 1"/>
+        <mesh filename="meshes/ee/p1.stl" scale="0.001 0.001 0.001"/>
       </geometry>
       <material name="black"/>
     </visual>
   </link>
-  <joint name="right/ee_joint" type="fixed">
+  <joint name="right/ee_p1_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0"/>
     <parent link="right/carriage_right"/>
-    <child link="right/ee"/>
+    <child link="right/ee_p1"/>
+  </joint>
+  <link name="right/ee_p2">
+    <visual>
+      <origin rpy="1.5707963267948966 0 0.7853981633974483" xyz="0.0255 -0.0475 0"/>
+      <geometry>
+        <mesh filename="meshes/ee/p2.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="right/ee_p2_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="right/ee_p1"/>
+    <child link="right/ee_p2"/>
   </joint>
 
   <!-- right arm tattoo pen -->
@@ -992,8 +1020,8 @@
     </visual>
   </link>
   <joint name="right/tattoo_pen_joint" type="fixed">
-    <origin rpy="0 -1.5707963267948966 0" xyz="0.05 0 0"/>
-    <parent link="right/ee"/>
+    <origin rpy="1.5707963267948966 0 -0.7853981633974483" xyz="0.051 -0.051 0"/>
+    <parent link="right/ee_p1"/>
     <child link="right/tattoo_pen"/>
   </joint>
   <link name="right/tattoo_needle">

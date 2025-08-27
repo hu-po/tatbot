@@ -7,16 +7,16 @@ goal_time_slow: 1.2
 connection_timeout: 6.0
 ee_rot_l:
   wxyz:
-  - 0.9239
+  - 0.7071
   - 0.0
   - 0.0
-  - -0.3827
+  - -0.7071
 ee_rot_r:
   wxyz:
-  - 0.9239
+  - 0.7071
   - 0.0
   - 0.0
-  - 0.3827
+  - 0.7071
 hover_offset:
   xyz:
   - 0.0
@@ -36,4 +36,4 @@ ee_offset_r:
   - 0.0010312961515411279
   - 0.007284281730025378
   - 0.0
-lasercross_len_mm: 180
+lasercross_len_mm: 60
