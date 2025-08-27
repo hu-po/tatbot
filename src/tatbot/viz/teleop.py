@@ -246,18 +246,14 @@ class TeleopViz(BaseViz):
         )
         
         if arm == "left":
-            # Use calibrator-relative left arm end-effector rotation
-            base_ee_rot_l = jaxlie.SO3(self.scene.arms.ee_rot_l.wxyz)
-            calibrator_relative_ee_rot_l = calibrator_tf.rotation() @ base_ee_rot_l
-            target_rot = calibrator_relative_ee_rot_l.wxyz.copy()
+            # Use base left arm end-effector rotation (same as during strokes)
+            target_rot = self.scene.arms.ee_rot_l.wxyz.copy()
             # Set up IK targets - left arm goes to calibrator, right arm stays where it is
             target_positions = np.array([target_pos, self.ee_r_pose.pos.xyz])
             target_rotations = np.array([target_rot, self.ee_r_pose.rot.wxyz])
         elif arm == "right":
-            # Use calibrator-relative right arm end-effector rotation  
-            base_ee_rot_r = jaxlie.SO3(self.scene.arms.ee_rot_r.wxyz)
-            calibrator_relative_ee_rot_r = calibrator_tf.rotation() @ base_ee_rot_r
-            target_rot = calibrator_relative_ee_rot_r.wxyz.copy()
+            # Use base right arm end-effector rotation (same as during strokes)
+            target_rot = self.scene.arms.ee_rot_r.wxyz.copy()
             # Set up IK targets - left arm stays where it is, right arm goes to calibrator
             target_positions = np.array([self.ee_l_pose.pos.xyz, target_pos])
             target_rotations = np.array([self.ee_l_pose.rot.wxyz, target_rot])

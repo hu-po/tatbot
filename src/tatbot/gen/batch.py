@@ -43,10 +43,6 @@ def strokebatch_from_strokes(
         scene.lasercross_pose.pos.xyz
     )
 
-    # Transform EE offsets by lasercross orientation
-    ee_offset_l_world = lasercross_tf.rotation() @ scene.arms.ee_offset_l.xyz
-    ee_offset_r_world = lasercross_tf.rotation() @ scene.arms.ee_offset_r.xyz
-
     # Start with base orientations for all strokes (will override inkdip strokes later)
     ee_rot_l = np.tile(scene.arms.ee_rot_l.wxyz, (b, l, o, 1))
     ee_rot_r = np.tile(scene.arms.ee_rot_r.wxyz, (b, l, o, 1))
@@ -67,11 +63,11 @@ def strokebatch_from_strokes(
             # inkdips do not have meter_coords, only ee_pos
             ee_pos_r[i] = np.repeat(stroke_r.ee_pos.reshape(l, 1, 3), o, 1)
             
-        # add ee_offset
+        # add ee_offset in world frame
         if use_ee_offsets:
             log.debug("Using ee offsets")
-            ee_pos_l[i] += ee_offset_l_world
-            ee_pos_r[i] += ee_offset_r_world
+            ee_pos_l[i] += scene.arms.ee_offset_l.xyz
+            ee_pos_r[i] += scene.arms.ee_offset_r.xyz
 
         # Apply hover offset to first and last poses
         ee_pos_l[i, 0] += scene.arms.hover_offset.xyz
@@ -81,7 +77,10 @@ def strokebatch_from_strokes(
 
     # Apply depth offsets
     offsets = np.linspace(scene.arms.offset_range[0], scene.arms.offset_range[1], o).astype(np.float32)
-    depth_axis = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+    depth_axis = np.array(
+        lasercross_tf.rotation() @ np.array([0.0, 0.0, 1.0], dtype=np.float32),
+        dtype=np.float32,
+    )
     ee_pos_l += offsets[None, None, :, None] * depth_axis
     ee_pos_r += offsets[None, None, :, None] * depth_axis
 
