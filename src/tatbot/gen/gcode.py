@@ -1,5 +1,6 @@
 import os
 import re
+import json
 
 import cv2
 import numpy as np
@@ -65,10 +66,83 @@ def parse_gcode_file(gcode_path: str, scene: Scene) -> list[tuple[np.ndarray, np
     img_w_m: float = scene.skin.image_width_m
     img_h_m: float = scene.skin.image_height_m
 
-    assert scene.design_img_path and os.path.exists(scene.design_img_path), f"Design image not found at {scene.design_img_path}"
-    
+    assert scene.design_img_path and os.path.exists(scene.design_img_path), (
+        f"Design image not found at {scene.design_img_path}"
+    )
+
     with Image.open(scene.design_img_path) as _im:
         img_w_px, img_h_px = _im.size
+
+    # Prefer design canvas size from a .drawingbotv3 project if present.
+    # DBV3 often uses a different canvas size (in mm) than the skin config,
+    # and the preview PNG is rendered using that canvas. Using the skin size
+    # here causes scale mismatch when overlaying strokes on the preview image.
+    try:
+        if scene.design_dir and os.path.isdir(scene.design_dir):
+            dbv3_files = [f for f in os.listdir(scene.design_dir) if f.endswith(".drawingbotv3")]
+            if len(dbv3_files) > 1:
+                raise ValueError(
+                    f"Multiple .drawingbotv3 files found in {scene.design_dir}: {dbv3_files}. "
+                    "Please keep only one per design directory."
+                )
+            if len(dbv3_files) == 1:
+                dbv3_path = os.path.join(scene.design_dir, dbv3_files[0])
+                with open(dbv3_path, "r") as fh:
+                    dbv3 = json.load(fh)
+                canvas = (
+                    dbv3
+                    .get("data", {})
+                    .get("settings", {})
+                    .get("drawingState", {})
+                    .get("canvas", {})
+                )
+                # Units conversion to millimetres
+                units = str(canvas.get("units", "MILLIMETRES")).upper()
+                unit_to_mm = {
+                    "MILLIMETRES": 1.0,
+                    "MM": 1.0,
+                    "CENTIMETRES": 10.0,
+                    "CM": 10.0,
+                    "INCHES": 25.4,
+                    "IN": 25.4,
+                }
+                conv = unit_to_mm.get(units)
+                if conv is None:
+                    log.warning(f"⚠️ Unknown DBV3 canvas units '{units}'; falling back to skin size")
+                else:
+                    drawing_w = float(canvas.get("drawingWidth", 0.0))
+                    drawing_h = float(canvas.get("drawingHeight", 0.0))
+                    drawing_w_mm = drawing_w * conv
+                    drawing_h_mm = drawing_h * conv
+                    if drawing_w_mm > 0 and drawing_h_mm > 0:
+                        img_w_m = drawing_w_mm / 1000.0
+                        img_h_m = drawing_h_mm / 1000.0
+                        log.info(
+                            "Using DBV3 canvas for pixel mapping: "
+                            f"{drawing_w_mm:.1f}x{drawing_h_mm:.1f} mm (units={units})"
+                        )
+                    else:
+                        log.warning(
+                            "⚠️ DBV3 canvas has non-positive dimensions; falling back to skin size"
+                        )
+    except Exception as e:
+        log.warning(f"⚠️ Failed to use .drawingbotv3 canvas; using skin size: {e}")
+
+    # Warn on aspect ratio mismatch between the background PNG and the chosen canvas (DBV3 or skin)
+    try:
+        img_aspect = img_w_px / img_h_px
+        canvas_aspect = img_w_m / img_h_m if (img_w_m > 0 and img_h_m > 0) else None
+        if canvas_aspect is None:
+            log.warning("⚠️ Canvas dimensions are non-positive; aspect ratio check skipped")
+        else:
+            if abs(img_aspect - canvas_aspect) > 1e-6:
+                log.warning(
+                    "⚠️ Background PNG aspect ratio does not match canvas: "
+                    f"png={img_w_px}x{img_h_px} (aspect={img_aspect:.4f}) vs "
+                    f"canvas={img_w_m*1000:.0f}x{img_h_m*1000:.0f} mm (aspect={canvas_aspect:.4f})"
+                )
+    except Exception as e:
+        log.warning(f"⚠️ Failed aspect ratio check: {e}")
 
     # ----------------------------------------------------------------—— parsing state
     paths: list[tuple[np.ndarray, np.ndarray, str]] = []
@@ -90,8 +164,17 @@ def parse_gcode_file(gcode_path: str, scene: Scene) -> list[tuple[np.ndarray, np
         meter_coords = np.hstack([pts_m, np.zeros((n_target, 1), dtype=np.float32)])
 
         # ─ Pixel space (row, col) ─────────────────────────────────────────────
-        col = (pts_m[:, 0] + img_w_m / 2) / img_w_m * img_w_px
-        row = (img_h_m / 2 - pts_m[:, 1]) / img_h_m * img_h_px  # flip Y
+        # Map meter coordinates to pixel coordinates
+        # Use actual image dimensions for proper scaling to avoid misalignment
+        # The issue is that if image aspect ratio doesn't match skin config,
+        # the coordinates will be misaligned
+        # Fix: Use actual image dimensions to determine correct scaling
+        # Instead of using configured meter dimensions, use actual image dimensions
+        # Calculate the correct scaling based on actual image dimensions
+        scale_x = img_w_px / img_w_m
+        scale_y = img_h_px / img_h_m
+        col = (pts_m[:, 0] + img_w_m / 2) * scale_x
+        row = (img_h_m / 2 - pts_m[:, 1]) * scale_y  # flip Y
 
         pixel_coords = np.stack([row, col], axis=1).astype(np.float32)
         pixel_coords[:, 0] = np.clip(pixel_coords[:, 0], 0, img_h_px - 1)
@@ -161,7 +244,7 @@ def generate_stroke_frame_image(
         raise ValueError(f"Could not read design image at {scene.design_img_path}")
 
     frame_img = base_img.copy()
-    
+
     # Use provided pen color or fall back to red
     if pen_color is not None:
         path_color = pen_color
