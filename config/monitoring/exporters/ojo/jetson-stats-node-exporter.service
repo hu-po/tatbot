@@ -1,13 +1,14 @@
 [Unit]
 Description=Jetson Stats Node Exporter
-After=network-online.target
+After=network-online.target jtop.service
+Requires=jtop.service
 
 [Service]
 Type=simple
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 -m jetson_stats_node_exporter
 Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-

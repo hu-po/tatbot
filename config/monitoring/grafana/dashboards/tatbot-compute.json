@@ -85,6 +85,7 @@
     {
       "type": "timeseries",
       "title": "NVIDIA GPU Utilization (%) by Instance",
+      "description": "Shows GPU utilization for discrete GPUs. Jetson integrated GPUs show frequency scaling instead of utilization.",
       "gridPos": {"x": 0, "y": 0, "w": 8, "h": 8},
       "fieldConfig": {
         "defaults": {},
@@ -102,11 +103,6 @@
         {
           "datasource": "Prometheus",
           "expr": "avg by (instance) (DCGM_FI_DEV_GPU_UTIL{instance=~\"$instance\"})",
-          "legendFormat": "{{instance}}"
-        },
-        {
-          "datasource": "Prometheus",
-          "expr": "avg by (instance)(gpu_utilization_percentage_Hz{nvidia_gpu=\"freq\",instance=~\"$instance\"}) / avg by (instance)(gpu_utilization_percentage_Hz{nvidia_gpu=\"max_freq\",instance=~\"$instance\"}) * 100",
           "legendFormat": "{{instance}}"
         }
       ]
