@@ -27,7 +27,7 @@
     {
       "type": "timeseries",
       "title": "CPU Utilization (%) by Instance",
-      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "gridPos": {"x": 8, "y": 0, "w": 8, "h": 8},
       "fieldConfig": {
         "defaults": {},
         "overrides": [
@@ -45,13 +45,18 @@
           "datasource": "Prometheus",
           "expr": "100 - (avg by (instance)(irate(node_cpu_seconds_total{mode=\"idle\",instance=~\"$instance\"}[5m])) * 100)",
           "legendFormat": "{{instance}}"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "avg by (instance)(cpu_Hz{statistic=\"val\",instance=~\"$instance\"}) / avg by (instance)(cpu_Hz{statistic=\"max_freq\",instance=~\"$instance\"}) * 100",
+          "legendFormat": "{{instance}}"
         }
       ]
     },
     {
       "type": "timeseries",
       "title": "Memory Utilization (%) by Instance",
-      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "gridPos": {"x": 16, "y": 0, "w": 8, "h": 8},
       "fieldConfig": {
         "defaults": {},
         "overrides": [
@@ -69,13 +74,18 @@
           "datasource": "Prometheus",
           "expr": "(1 - (avg by (instance)(node_memory_MemAvailable_bytes{instance=~\"$instance\"}) / avg by (instance)(node_memory_MemTotal_bytes{instance=~\"$instance\"}))) * 100",
           "legendFormat": "{{instance}}"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "avg by (instance)(ram_kB{statistic=\"used\",instance=~\"$instance\"}) / avg by (instance)(ram_kB{statistic=\"total\",instance=~\"$instance\"}) * 100",
+          "legendFormat": "{{instance}}"
         }
       ]
     },
     {
       "type": "timeseries",
       "title": "NVIDIA GPU Utilization (%) by Instance",
-      "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 8},
       "fieldConfig": {
         "defaults": {},
         "overrides": [
@@ -93,13 +103,18 @@
           "datasource": "Prometheus",
           "expr": "avg by (instance) (DCGM_FI_DEV_GPU_UTIL{instance=~\"$instance\"})",
           "legendFormat": "{{instance}}"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "avg by (instance)(gpu_utilization_percentage_Hz{nvidia_gpu=\"freq\",instance=~\"$instance\"}) / avg by (instance)(gpu_utilization_percentage_Hz{nvidia_gpu=\"max_freq\",instance=~\"$instance\"}) * 100",
+          "legendFormat": "{{instance}}"
         }
       ]
     },
     {
       "type": "timeseries",
       "title": "Network Throughput (MB/s) by Instance",
-      "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+      "gridPos": {"x": 0, "y": 8, "w": 8, "h": 8},
       "fieldConfig": {
         "defaults": {},
         "overrides": [
@@ -123,7 +138,7 @@
     {
       "type": "timeseries",
       "title": "Intel GPU Busy (%) by Instance",
-      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+      "gridPos": {"x": 16, "y": 8, "w": 8, "h": 8},
       "fieldConfig": {
         "defaults": {},
         "overrides": [
@@ -147,7 +162,7 @@
     {
       "type": "timeseries",
       "title": "Disk Utilization (%) by Instance",
-      "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+      "gridPos": {"x": 8, "y": 8, "w": 8, "h": 8},
       "fieldConfig": {
         "defaults": {},
         "overrides": [
@@ -169,6 +184,11 @@
         {
           "datasource": "Prometheus",
           "expr": "100 - (avg by (instance) (node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay|squashfs|aufs|ramfs\", mountpoint!~\"/(run|boot|var/lib/docker|var/lib/containers|snap).*\", instance=~\"$instance\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|overlay|squashfs|aufs|ramfs\", mountpoint!~\"/(run|boot|var/lib/docker|var/lib/containers|snap).*\", instance=~\"$instance\"})) * 100",
+          "legendFormat": "{{instance}}"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "avg by (instance)(disk_GB{mountpoint=\"used\",instance=~\"$instance\"}) / avg by (instance)(disk_GB{mountpoint=\"total\",instance=~\"$instance\"}) * 100",
           "legendFormat": "{{instance}}"
         }
       ]
