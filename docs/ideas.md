@@ -37,6 +37,8 @@ audience: [dev]
 - tune camera resolution for multiview reconstruction
 
 ## Features
+- try MuJoCo+Warp
+- try IsaacSim (data in lerobot format?)
 - docker containers for gpu jobs (jax ik and torch vggt)
 - strokes are randomly sampled from strokelist, so order can be random and you can do repeated passes
 - queues as core abstractions, arms operate async in their own behavior tree, coordinate centrally.
@@ -54,6 +56,7 @@ audience: [dev]
 - submit to https://devpost.com/submit-to/25802-openai-open-model-hackathon/manage/submissions
 - Tattoo outdoors to show off edge compute capability
 - Paper flyers to put up in random places around ATX
+- Apply to https://www.1517fund.com/
 
 ## Artwork
 - potential improvement in gcode/stroke generation with https://github.com/abey79/vpype
@@ -61,6 +64,7 @@ audience: [dev]
 - replicate playground on touchscreen
 
 ## Hardware
+- spring loaded needle guard
 - ee redesign: more natural angle, two piece screws for tightening wand foam padding
 - gather feedback on red sharpie cross with laser line leveler workflow
 - end effector redesign: suspension, scissor lift, needle guard, sanitation barrier
