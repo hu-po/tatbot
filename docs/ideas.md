@@ -37,6 +37,7 @@ audience: [dev]
 - tune camera resolution for multiview reconstruction
 
 ## Features
+- seperate design for each arm, each arm async and seperate for AB comparisons of hyperparams
 - try MuJoCo+Warp
 - try IsaacSim (data in lerobot format?)
 - docker containers for gpu jobs (jax ik and torch vggt)
@@ -57,11 +58,13 @@ audience: [dev]
 - Tattoo outdoors to show off edge compute capability
 - Paper flyers to put up in random places around ATX
 - Apply to https://www.1517fund.com/
+- Consider https://bitrobot.ai/the-network 
 
 ## Artwork
 - potential improvement in gcode/stroke generation with https://github.com/abey79/vpype
 - Medieval engraving tattoo https://youtube.com/shorts/lAyhxgaxQdc
 - replicate playground on touchscreen
+- spiral tattoo with single arm as first
 
 ## Hardware
 - spring loaded needle guard
