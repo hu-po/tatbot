@@ -5,10 +5,10 @@ arms:
   offset_range:
     - -0.002
     - 0.002
-  offset_num: 8
+  offset_num: 6
 
 scenes:
-  stroke_length: 88
+  stroke_length: 64
   design_name: "double"
   inks_config_name: "red_blue"
   pen_names_l:
