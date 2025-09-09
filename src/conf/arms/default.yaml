@@ -3,7 +3,7 @@ ip_address_r: 192.168.1.2
 arm_l_config_filepath: ~/tatbot/config/trossen/arm_l.yaml
 arm_r_config_filepath: ~/tatbot/config/trossen/arm_r.yaml
 goal_time_fast: 0.08
-goal_time_slow: 1.6
+goal_time_slow: 1.8
 connection_timeout: 6.0
 ee_rot_l:
   wxyz:
