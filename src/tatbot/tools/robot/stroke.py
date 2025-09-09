@@ -108,6 +108,54 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
             # Save scene configuration
             scene_path = dataset_dir / "scene.yaml"
             scene.to_yaml(str(scene_path))
+
+        # Load or generate strokes
+        yield {"progress": 0.03, "message": "Loading strokes..."}
+        
+        strokes_path = dataset_dir / "strokes.yaml"
+        strokebatch_path = dataset_dir / "strokebatch.safetensors"
+        
+        if resume:
+            if not strokes_path.exists():
+                raise FileNotFoundError(f"❌ Strokes file {strokes_path} does not exist")
+            if not strokebatch_path.exists():
+                raise FileNotFoundError(f"❌ Strokebatch file {strokebatch_path} does not exist")
+            
+            strokes: StrokeList = StrokeList.from_yaml_with_arrays(str(strokes_path))
+            strokebatch: StrokeBatch = StrokeBatch.load(str(strokebatch_path))
+        else:
+            # Generate new strokes
+            strokes: StrokeList = make_gcode_strokes(scene)
+            strokes.to_yaml_with_arrays(str(strokes_path))
+            
+            # Convert to strokebatch (GPU or local)
+            if check_local_gpu():
+                log.info("Using local GPU for strokebatch conversion")
+                strokebatch: StrokeBatch = strokebatch_from_strokes(scene, strokes)
+                strokebatch.save(str(strokebatch_path))
+            else:
+                log.info("Using remote GPU node for strokebatch conversion")
+                gpu_proxy = GPUConversionService()
+                # Inform users that we are routing to a GPU node
+                yield {"progress": 0.24, "message": "Routing stroke conversion to GPU node..."}
+                
+                success, _ = await gpu_proxy.convert_strokelist_remote(
+                    strokes_file_path=str(strokes_path),
+                    strokebatch_file_path=str(strokebatch_path),
+                    scene=scene.name,
+                    first_last_rest=True,
+                    use_ee_offsets=True,
+                    meta=input_data.meta
+                )
+                
+                if not success:
+                    raise RuntimeError("Failed to convert strokes to strokebatch on remote GPU node")
+                
+                strokebatch = StrokeBatch.load(str(strokebatch_path))
+            
+            log.info(f"Strokebatch created with shape: {strokebatch.joints.shape}")
+        
+        num_strokes = len(strokes.strokes)
         
         yield {"progress": 0.05, "message": "Creating robot configuration..."}
         
@@ -215,54 +263,6 @@ async def stroke_tool(input_data: StrokeInput, ctx: ToolContext):
             yield {"progress": 0.21, "message": "Connecting to joystick..."}
             atari_teleop = AtariTeleoperator(AtariTeleoperatorConfig())
             atari_teleop.connect()
-        
-        # Load or generate strokes
-        yield {"progress": 0.22, "message": "Loading strokes..."}
-        
-        strokes_path = dataset_dir / "strokes.yaml"
-        strokebatch_path = dataset_dir / "strokebatch.safetensors"
-        
-        if resume:
-            if not strokes_path.exists():
-                raise FileNotFoundError(f"❌ Strokes file {strokes_path} does not exist")
-            if not strokebatch_path.exists():
-                raise FileNotFoundError(f"❌ Strokebatch file {strokebatch_path} does not exist")
-            
-            strokes: StrokeList = StrokeList.from_yaml_with_arrays(str(strokes_path))
-            strokebatch: StrokeBatch = StrokeBatch.load(str(strokebatch_path))
-        else:
-            # Generate new strokes
-            strokes: StrokeList = make_gcode_strokes(scene)
-            strokes.to_yaml_with_arrays(str(strokes_path))
-            
-            # Convert to strokebatch (GPU or local)
-            if check_local_gpu():
-                log.info("Using local GPU for strokebatch conversion")
-                strokebatch: StrokeBatch = strokebatch_from_strokes(scene, strokes)
-                strokebatch.save(str(strokebatch_path))
-            else:
-                log.info("Using remote GPU node for strokebatch conversion")
-                gpu_proxy = GPUConversionService()
-                # Inform users that we are routing to a GPU node
-                yield {"progress": 0.24, "message": "Routing stroke conversion to GPU node..."}
-                
-                success, _ = await gpu_proxy.convert_strokelist_remote(
-                    strokes_file_path=str(strokes_path),
-                    strokebatch_file_path=str(strokebatch_path),
-                    scene=scene.name,
-                    first_last_rest=True,
-                    use_ee_offsets=True,
-                    meta=input_data.meta
-                )
-                
-                if not success:
-                    raise RuntimeError("Failed to convert strokes to strokebatch on remote GPU node")
-                
-                strokebatch = StrokeBatch.load(str(strokebatch_path))
-            
-            log.info(f"Strokebatch created with shape: {strokebatch.joints.shape}")
-        
-        num_strokes = len(strokes.strokes)
         
         # Initialize offset indices for needle depth control
         mid_offset_idx: int = scene.arms.offset_num // 2
