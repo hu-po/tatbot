@@ -303,7 +303,7 @@ def register_all_tools() -> None:
 
     # Import GPU tools
     try:
-        from tatbot.tools.gpu import convert_strokes #, vggt_recon  # noqa: F401
+        from tatbot.tools.gpu import convert_strokes  # , vggt_recon  # noqa: F401
 
         log.debug("Imported GPU tools")
     except ImportError as e:
@@ -332,12 +332,11 @@ def register_all_tools() -> None:
 
     # Import viz tools
     try:
-        from tatbot.tools.viz import (  # noqa: F401
+        from tatbot.tools.viz import (  # noqa: F401; vggt_compare_viz,
             control,
             map_viz,
             stroke_viz,
             teleop_viz,
-            # vggt_compare_viz,
         )
 
         log.debug("Imported viz tools")

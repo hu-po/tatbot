@@ -1,6 +1,6 @@
+import json
 import os
 import re
-import json
 
 import cv2
 import numpy as np

@@ -25,11 +25,11 @@ Note:
 from __future__ import annotations
 
 import argparse
+import csv
 import random
 import sys
-from dataclasses import dataclass
-import csv
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -37,7 +37,7 @@ from typing import Iterable, Sequence
 def _require_pillow() -> None:
     try:
         import PIL  # noqa: F401
-    except Exception as exc:  # pragma: no cover - runtime guard
+    except Exception:  # pragma: no cover - runtime guard
         print(
             "Pillow (PIL) is required. Install with: uv pip install pillow",
             file=sys.stderr,
@@ -246,7 +246,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     rng = random.Random(args.seed)
     pairs = choose_pairs(files, count=count, rng=rng, allow_same=args.allow_same)
 
-    from PIL import Image
 
     # Prepare CSV manifest
     csv_path = output_dir / "pairs.csv"
