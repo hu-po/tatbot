@@ -3,12 +3,14 @@
 
 arms:
   offset_range:
-    - -0.002
-    - 0.002
-  offset_num: 6
+    - -0.001
+    - 0.001
+  offset_num: 4
+  goal_time_fast: 0.1
+  goal_time_slow: 1.5
 
 scenes:
-  stroke_length: 64
+  stroke_length: 100
   design_name: "double"
   inks_config_name: "red_blue"
   pen_names_l:
