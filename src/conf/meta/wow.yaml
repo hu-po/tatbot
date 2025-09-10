@@ -1,0 +1,24 @@
+# @package _global_
+# Meta config: alliance and horde logos
+
+arms:
+  offset_range:
+    - -0.002
+    - 0.002
+  offset_num: 6
+  goal_time_fast: 0.128
+  goal_time_slow: 1.28
+
+scenes:
+  stroke_length: 64
+  design_name: "wow"
+  inks_config_name: "red_blue"
+  pen_names_l:
+    - true_blue
+  pen_names_r:
+    - bright_red
+
+skins:
+  description: "100mm x 50mm square on plotting paper"
+  image_width_m: 0.1
+  image_height_m: 0.05
