@@ -24,5 +24,7 @@ audience: [dev]
 - (✅ **07/28/2025**) [hardware 0.4](https://x.com/tatbots/status/1949917412226453599) ([✨view in 3D](https://poly.cam/capture/745155c3-e251-4b7e-8b70-78574a7a19b6))
 - (✅ **07/30/2025**) [software 0.5.4](https://x.com/tatbots/status/1950637268039086507)
 - (✅ **08/07/2025**) [hardware 0.5](https://x.com/tatbots/status/1953555799005180407) ([✨view in 3D](https://poly.cam/capture/ad7c1544-fca2-48d8-acf8-a94d328fc5c4))
-- (🚧 **Q3 2025**) first human tattoo
+- (🚧 **09/18/2025**) [software 1.0]()
+- (🚧 **09/18/2025**) [hardware 1.0]()
+- (✅ **09/19/2025**) [livestream](https://youtube.com/live/ym27ZHPMaec)
 - (🚧 **Q4 2025**) paper

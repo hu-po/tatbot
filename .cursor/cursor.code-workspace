@@ -6,7 +6,7 @@
       // Documentation
       // { "name": "tatbot-logs", "path": "../../tatbot-logs" }, // https://github.com/hu-po/tatbot-logs
       // { "name": "infra", "path": "../../infra" }, // https://github.com/hu-po/infra
-      // { "name": "docs", "path": "../../docs" }, // https://github.com/hu-po/docs
+      { "name": "docs", "path": "../../docs" }, // https://github.com/hu-po/docs
       // Dependencies are useful to provide context for AI coding agents (e.g. Cursor)
       { "name": "Isaac-GR00T", "path": "../../Isaac-GR00T" }, // https://github.com/hu-po/Isaac-GR00T
       { "name": "lerobot", "path": "../../lerobot" }, // https://github.com/hu-po/lerobot
@@ -16,6 +16,7 @@
       { "name": "trossen_arm", "path": "../../trossen_arm" }, // https://github.com/TrossenRobotics/trossen_arm
       { "name": "trossen_arm_description", "path": "../../trossen_arm_description" }, // https://github.com/TrossenRobotics/trossen_arm_description
       { "name": "apriltags", "path": "../../apriltags" }, // https://github.com/pupil-labs/apriltags
+      { "name": "openpi", "path": "../../openpi" } // https://github.com/hu-po/openpi
     ],
     "settings": {}
   }

@@ -34,7 +34,10 @@
 🚀 Follow the [progress](docs/progress.md)
 
 📚 Read the [documentation](https://hu-po.github.io/tatbot/)
- <!-- View the [paper](docs/paper/main.pdf) -->
+
+🎥 Watch the [livestream](https://youtube.com/live/ym27ZHPMaec)
+
+[![YouTube Video](docs/images/thumbnail.jpg)](https://youtube.com/live/ym27ZHPMaec)
 
 ## Citation
 
