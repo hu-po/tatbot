@@ -11,7 +11,7 @@ class BaseVizInput(ToolInput):
     env_map_hdri: str = "forest"
     view_camera_position: Tuple[float, float, float] = (0.3, 0.3, 0.3)
     view_camera_look_at: Tuple[float, float, float] = (0.0, 0.0, 0.0)
-    enable_robot: bool = False
+    enable_robot: bool = True
     enable_depth: bool = False
     speed: float = 1.0
     fps: float = 30.0

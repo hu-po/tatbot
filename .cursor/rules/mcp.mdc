@@ -1,9 +1,0 @@
----
-alwaysApply: true
----
-
-you can ssh into individual nodes to restart the mcp server
-
-```bash
-ssh eek "bash scripts/mcp_run.sh eek"
-```

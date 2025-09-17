@@ -39,8 +39,6 @@ async def start_teleop_viz(input_data: TeleopVizInput, ctx: ToolContext):
     - meta: Optional meta config to apply (default: null)
     - enable_robot: Connect to and control real robot hardware
     - enable_depth: Enable depth camera visualization
-    - transform_control_scale: Scale of the interactive transform controls
-    - transform_control_opacity: Opacity of the transform controls
     """
     server_name = "teleop_viz"
     

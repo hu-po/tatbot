@@ -2,9 +2,10 @@
 alwaysApply: true
 ---
 
-**Use the provided scripts in `scripts/` directory for common operations.**
-
-Available utility scripts:
+SSH into individual nodes to use available utility scripts:
+- `scripts/mcp_run.sh` - Run the MCP server (node is automatically determined)
 - `scripts/setup_env.sh` - Environment setup and activation
 - `scripts/lint.sh` - Code linting and formatting
 - `scripts/kill.sh` - Clean shutdown of running processes
+
+Logs for the MCP servers are located in `/nfs/mcp-logs/<NODE_NAME>.log`
