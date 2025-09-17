@@ -34,9 +34,9 @@
   <link name="lasercross" />
   <joint name="lasercross_joint" type="fixed">
     <!-- paper on rolling table -->
-    <!-- <origin rpy="0.000000 0.000000 0.000000" xyz="0.250450 0.000000 0.028" /> -->
+    <origin rpy="0.000000 0.000000 0.000000" xyz="0.250450 0.000000 0.028" />
     <!-- fake arm on table -->
-    <origin rpy="0.000000 0.000000 0.000000" xyz="0.250450 0.000000 0.125" />
+    <!-- <origin rpy="0.000000 0.000000 0.000000" xyz="0.250450 0.000000 0.125" /> -->
     <parent link="root"/>
     <child link="lasercross"/>
   </joint>

@@ -233,8 +233,8 @@ async def align_tool(input_data: AlignInput, ctx: ToolContext):
                 
                 # Record data
                 action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
-                frame = {**observation_frame, **action_frame}
-                dataset.add_frame(frame, task=f"left: {stroke_l.description}, right: {stroke_r.description}")
+                frame = {**observation_frame, **action_frame, "task": f"left: {stroke_l.description}, right: {stroke_r.description}"}
+                dataset.add_frame(frame)
                 
                 # Maintain FPS
                 dt_s = time.perf_counter() - start_loop_t
