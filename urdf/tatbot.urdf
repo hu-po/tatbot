@@ -36,7 +36,7 @@
     <!-- paper on rolling table -->
     <!-- <origin rpy="0.000000 0.000000 0.000000" xyz="0.250450 0.000000 0.028" /> -->
     <!-- fake arm on table -->
-    <origin rpy="0.000000 0.000000 0.000000" xyz="0.250450 0.000000 0.108" />
+    <origin rpy="0.000000 0.000000 0.000000" xyz="0.250450 0.000000 0.102" />
     <parent link="root"/>
     <child link="lasercross"/>
   </joint>
