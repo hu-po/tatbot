@@ -10,6 +10,7 @@ audience: [dev]
 ## Agents
 
 ## Models
+- SOG splat for skin https://blog.playcanvas.com/playcanvas-open-sources-sog-format-for-gaussian-splatting/
 - waiting for training code for https://github.com/pickxiguapi/Embodied-R1
 - waiting for training code for https://github.com/allenai/MolmoAct
 - lerobot async policy server/client pattern
