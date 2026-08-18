@@ -153,9 +153,9 @@ docker run -d --restart=always --gpus all --cap-add SYS_ADMIN --net host \
 Or use the systemd unit in the repo: `~/tatbot/config/monitoring/exporters/ook/dcgm-exporter.service` (for ook) or `~/tatbot/config/monitoring/exporters/oop/dcgm-exporter.service` (for oop), then:
 `sudo systemctl daemon-reload && sudo systemctl enable --now dcgm-exporter`
 
-Verify (ook): `curl -sS --no-progress-meter http://192.168.1.90:9400/metrics | head -n 20`
+Verify (ook): `curl -sS --no-progress-meter http://192.0.2.90:9400/metrics | head -n 20`
 
-Verify (oop): `curl -sS --no-progress-meter http://192.168.1.51:9400/metrics | head -n 20`
+Verify (oop): `curl -sS --no-progress-meter http://192.0.2.51:9400/metrics | head -n 20`
 
 ### Jetson (ojo): jtop/jetson‑stats Exporter (**no jtop.service dependency required**)
 ```bash
@@ -163,7 +163,7 @@ sudo -H pip3 install "jetson-stats==4.3.2"
 sudo -H pip3 install "jetson-stats-node-exporter==0.1.2"
 sudo install -m 0644 ~/tatbot/config/monitoring/exporters/ojo/jetson-stats-node-exporter.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now jetson-stats-node-exporter
-curl -sS --no-progress-meter http://192.168.1.96:9100/metrics | head -n 20
+curl -sS --no-progress-meter http://192.0.2.96:9100/metrics | head -n 20
 ```
 
 > We **removed** the `Requires=jtop.service` dependency. The exporter uses the **Python API** from jetson‑stats directly and does not require the `jtop` systemd service to be running. See "Systemd Unit Files (Exporters)" for the corrected unit file.
@@ -185,7 +185,7 @@ Then run Intel GPU exporter (replace the tag with your pinned tag from inventory
 docker run -d --restart=always --net host --name intel-gpu-exporter --privileged \
   -v /sys:/sys:ro -v /dev/dri:/dev/dri \
   restreamio/intel-prometheus:latest  # replace 'latest' with a pinned tag
-curl -sS --no-progress-meter http://192.168.1.88:8080/metrics | head -n 20
+curl -sS --no-progress-meter http://192.0.2.88:8080/metrics | head -n 20
 ```
 
 ### Raspberry Pi SoC telemetry — rpi1, rpi2
@@ -277,7 +277,7 @@ cd ~/tatbot && bash scripts/monitor/kiosk.sh
 cd ~/tatbot && bash scripts/monitor/kiosk.sh eek 10
 
 # Specific IP address
-cd ~/tatbot && bash scripts/monitor/kiosk.sh 192.168.1.97
+cd ~/tatbot && bash scripts/monitor/kiosk.sh 192.0.2.97
 ```
 
 **When to run:** Once per boot, or when you want to restart the wallboard display.
@@ -398,7 +398,7 @@ If running manual verification:
 - `curl http://ook:9400/metrics` includes `DCGM_FI_DEV_GPU_UTIL`.
 - `curl http://oop:9400/metrics` includes `DCGM_FI_DEV_GPU_UTIL`.
 - `curl http://ojo:9100/metrics` includes Jetson system + GPU metrics.
-- `curl http://192.168.1.88:8080/metrics` includes Intel `igpu_*` metrics.
+- `curl http://192.0.2.88:8080/metrics` includes Intel `igpu_*` metrics.
 - Grafana at `http://eek:3000/` shows dashboards, including **Tatbot Compute**.
 - rpi1 displays the **Tatbot Compute** URL with `?kiosk=tv&refresh=5s`.
 

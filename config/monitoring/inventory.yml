@@ -1,4 +1,5 @@
-# monitoring/inventory.yml – single source of truth for versions and topology
+# Public-safe example inventory. Addresses use RFC 5737 TEST-NET space;
+# deployment-specific inventory belongs in the private development repository.
 
 versions:
   # Server-side
@@ -18,32 +19,32 @@ scrape_interval: "15s"
 
 nodes:
   eek:
-    addr: "192.168.1.97:9100"
+    addr: "192.0.2.97:9100"
     roles: [node, server]
   ook:
-    addr: "192.168.1.90:9100"
+    addr: "192.0.2.90:9100"
     roles: [node]
     gpu:
-      nvidia_dcgm: { addr: "192.168.1.90:9400" }
+      nvidia_dcgm: { addr: "192.0.2.90:9400" }
   oop:
-    addr: "192.168.1.51:9100"
+    addr: "192.0.2.51:9100"
     roles: [node]
     gpu:
-      nvidia_dcgm: { addr: "192.168.1.51:9400" }
+      nvidia_dcgm: { addr: "192.0.2.51:9400" }
   hog:
-    addr: "192.168.1.88:9100"
+    addr: "192.0.2.88:9100"
     roles: [node]
     gpu:
-      intel: { addr: "192.168.1.88:8080" }
+      intel: { addr: "192.0.2.88:8080" }
   ojo:
     # jetson-stats exporter includes CPU/mem + GPU on 9100; no separate node_exporter
     # Use the device's IP to avoid hostname issues
-    jetson: { addr: "192.168.1.96:9100" }
+    jetson: { addr: "192.0.2.96:9100" }
   rpi1:
-    addr: "192.168.1.98:9100"
+    addr: "192.0.2.98:9100"
     roles: [node, kiosk]
-    rpi: { addr: "192.168.1.98:9110" }
+    rpi: { addr: "192.0.2.98:9110" }
   rpi2:
-    addr: "192.168.1.99:9100"
+    addr: "192.0.2.99:9100"
     roles: [node]
-    rpi: { addr: "192.168.1.99:9110" }
+    rpi: { addr: "192.0.2.99:9110" }

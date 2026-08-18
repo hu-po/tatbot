@@ -9,7 +9,7 @@ Refinement From Requirements (Second Prompt)
 - Keep `sense.py` behavior, add VGGT as an additional path:
   - Capture as today; additionally run VGGT to estimate extrinsics/intrinsics and dense depth; save alongside LeRobot dataset artifacts.
 - Persist images and point clouds on NFS in LeRobot dataset layout:
-  - Continue using `LeRobotDataset` under `/nfs/tatbot/recordings/<dataset>`; store VGGT outputs in a `vggt/` subdir and register paths in dataset metadata if practical.
+  - Continue using `LeRobotDataset` under `/srv/tatbot-data/recordings/<dataset>`; store VGGT outputs in a `vggt/` subdir and register paths in dataset metadata if practical.
 - Remote GPU execution:
   - Cameras are attached to `hog`, VGGT runs only on `ook`. Introduce a GPU MCP tool (mirroring `tools/gpu/convert_strokes.py`) that runs on `ook`, reads images from NFS, and writes VGGT outputs back to NFS.
 - New visualization tool:
@@ -83,7 +83,7 @@ Key Integration Design
   - Decorate with `@tool(..., nodes=["ook"], requires=["gpu"])` and verify GPU in node config as in `convert_strokes.py`.
   - Inputs: NFS image folder path, output folder paths in current dataset, scene/meta, flags for BA/point-map/depth conf threshold.
   - Outputs: success + message; PLYs saved to NFS; JSON/NPZ with camera frustums; optional COLMAP model.
-  - The robot-side `sense` tool running on `hog` calls this GPU tool via MCP; both read/write via `/nfs/tatbot`.
+  - The robot-side `sense` tool running on `hog` calls this GPU tool via MCP; both read/write via `/srv/tatbot-data`.
 - `viz/map.py` enhancements:
   - Add a GUI toggle to load PLYs from a “VGGT” subfolder.
   - Optional: add a small camera-frusta viewer for VGGT poses in map viz (leveraging existing `viser` server).
@@ -95,11 +95,11 @@ Key Integration Design
 - Configuration & dependencies:
   - Hydra: new config group `cam/vggt.yaml` to declare model path, device, use_ba, and thresholds.
   - Extras: ensure `torch`, `vggt` (or repo path), `pycolmap` (optional), and `onnxruntime` (optional sky masking) in `.[img,viz,gpu]` as needed.
-  - Model weights path should be configurable and pre-cached on `/nfs/tatbot/models/vggt/model.pt` to avoid runtime downloads on `ook`.
+  - Model weights path should be configurable and pre-cached on `/srv/tatbot-data/models/vggt/model.pt` to avoid runtime downloads on `ook`.
   - Candidate versions: `torch>=2.0`, `torchvision>=0.15`, `pycolmap>=0.4`, `trimesh>=3.15`. Pin within project constraints.
 
 NFS Dataset Layout (LeRobot-compatible)
-- All artifacts live under `/nfs/tatbot/recordings/sense-{scene}-{timestamp}/` owned by the `LeRobotDataset` root:
+- All artifacts live under `/srv/tatbot-data/recordings/sense-{scene}-{timestamp}/` owned by the `LeRobotDataset` root:
   - `images/`: captured PNGs (`<camera>.png`) plus any annotated images.
   - `pointclouds/`: RealSense PLYs (`<cam>_######.ply`) and VGGT PLYs (`vggt_dense_*.ply`).
   - `colmap/`: `cameras.txt`, `images.txt`, `points3D.txt` (VGGT outputs; may be absent if BA disabled).

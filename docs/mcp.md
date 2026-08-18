@@ -23,7 +23,7 @@ To start an MCP server on a specific node, use the unified launcher script:
 ```
 
 ## Logs
-Logs are written to `/nfs/tatbot/mcp-logs/<node_name>.log`. For example, the `ook` server's log is at `/nfs/tatbot/mcp-logs/ook.log`.
+Logs are written to `/srv/tatbot-data/mcp-logs/<node_name>.log`. For example, the `ook` server's log is at `/srv/tatbot-data/mcp-logs/ook.log`.
 
 ## Node Config
 The behavior of each MCP server is defined by a corresponding YAML file in `src/conf/mcp/`. For example, the `ook` node is configured by `src/conf/mcp/ook.yaml`.
@@ -76,7 +76,7 @@ The MCP system enables transparent cross-node GPU acceleration for stroke trajec
 - `GPUConversionService` handles node discovery and communication with GPU-enabled nodes
 
 **NFS Path Translation**
-- All nodes share NFS storage mounted at the canonical path `/nfs/tatbot/`
+- All nodes share NFS storage mounted at the canonical path `/srv/tatbot-data/`
 - Files remain on shared NFS throughout the entire process - no data transfer required
 
 **MCP Protocol Communication**
@@ -89,7 +89,7 @@ The MCP system enables transparent cross-node GPU acceleration for stroke trajec
 
 1. **Operation Start**: User runs `align` operation on `hog`
 2. **GPU Detection**: `check_local_gpu()` returns `False` on `hog`
-3. **File Creation**: Strokes saved to `/nfs/tatbot/recordings/align-*/strokes.yaml`
+3. **File Creation**: Strokes saved to `/srv/tatbot-data/recordings/align-*/strokes.yaml`
 4. **Remote Conversion**: MCP call to `convert_strokelist_to_batch` on `ook` server with translated paths
 5. **GPU Processing**: `ook` performs JAX-accelerated inverse kinematics solving
 6. **Result Storage**: Strokebatch saved to shared NFS at translated output path
@@ -100,7 +100,7 @@ The MCP system enables transparent cross-node GPU acceleration for stroke trajec
 **GPU Node Setup**
 ```yaml
 # src/conf/mcp/ook.yaml
-host: "192.168.1.90"
+host: "192.0.2.90"
 port: 8000
 extras: [bot, dev, gen, img, viz, gpu]  # Enables GPU dependencies
 tools:
@@ -118,7 +118,7 @@ tools:
 **Non-GPU Node Setup**
 ```yaml  
 # src/conf/mcp/hog.yaml
-host: "192.168.1.88"
+host: "192.0.2.88"
 port: 8000
 extras: [bot, cam, gen, img]  # No GPU dependencies
 tools:

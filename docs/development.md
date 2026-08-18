@@ -121,7 +121,7 @@ uv pip install .[bot,cam,dev,gen,gpu,img,viz,docs]
 
 # Source environment variables (e.g., API keys, camera passwords)
 # Ensure you have a .env file (see .env.example)
-set -a; source /nfs/tatbot/.env; set +a
+set -a; source /srv/tatbot-data/.env; set +a
 ```
 
 ### Startup

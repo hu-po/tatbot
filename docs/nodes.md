@@ -58,7 +58,7 @@ System76 Meerkat PC
 GEEKOM GT1 Mega
 - Intel Core Ultra 9 185H, 16-core @ 5.1 GHz
 - 32GB RAM + Intel Arc graphics
-- IP: 192.168.1.88
+- IP: 192.0.2.88
 - Robot arm control & RealSense cameras
 :::
 
@@ -91,9 +91,9 @@ Raspberry Pi 5
 ```{admonition} Modes: Edge and Home
 :class: tip
 
-**Home Mode:** Nodes are on the home network. {{rpi2}} forwards DNS to the home router for `tatbot.lan`. Gateway: 192.168.1.1 (home router).
+**Home Mode:** Nodes are on the home network. {{rpi2}} forwards DNS to the home router for `tatbot.example`. Gateway: 192.0.2.1 (home router).
 
-**Edge Mode:** Local-first operation. {{rpi2}} provides DNS and DHCP for `tatbot.lan`. Gateway: 192.168.1.90 ({{ook}} via WiFi NAT). Internet access available through {{ook}}.
+**Edge Mode:** Local-first operation. {{rpi2}} provides DNS and DHCP for `tatbot.example`. Gateway: 192.0.2.90 ({{ook}} via WiFi NAT). Internet access available through {{ook}}.
 
 **Automatic Switching:** Mode changes are detected within 20 seconds and all nodes automatically get new DHCP leases with correct settings.
 ```
@@ -160,11 +160,11 @@ currently the `eek` node serves as the NFS server for all other nodes:
 
 ```bash
 sudo apt install nfs-kernel-server
-sudo mkdir -p /nfs/tatbot
-sudo chmod 777 /nfs/tatbot
+sudo mkdir -p /srv/tatbot-data
+sudo chmod 777 /srv/tatbot-data
 sudo nano /etc/exports
 # add this line:
-> /nfs/tatbot 192.168.1.0/24(rw,sync,no_subtree_check)
+> /srv/tatbot-data 192.0.2.0/24(rw,sync,no_subtree_check)
 sudo exportfs -ra
 sudo systemctl restart nfs-server
 sudo exportfs -v
@@ -176,13 +176,13 @@ rest of the nodes:
 
 ```bash
 sudo apt install nfs-common
-showmount -e 192.168.1.97
-sudo mkdir -p /nfs/tatbot
-sudo mount -t nfs 192.168.1.97:/nfs/tatbot /nfs/tatbot
+showmount -e 192.0.2.97
+sudo mkdir -p /srv/tatbot-data
+sudo mount -t nfs 192.0.2.97:/srv/tatbot-data /srv/tatbot-data
 # enable on startup
 sudo nano /etc/fstab
 # add this line:
-> 192.168.1.97:/nfs/tatbot /nfs/tatbot nfs defaults,_netdev 0 0
+> 192.0.2.97:/srv/tatbot-data /srv/tatbot-data nfs defaults,_netdev 0 0
 sudo systemctl daemon-reload
 sudo mount -a
 ```
@@ -198,9 +198,9 @@ sudo mount -a
 
 tatbot operates in two modes that **automatically switch** based on home network availability with **automatic DHCP renewal** on all nodes:
 
-- **Edge Mode**: Local-first operation when home LAN cable is disconnected. `rpi2` provides DNS and DHCP for the `tatbot.lan` network. `ook` provides internet access via WiFi NAT (gateway: 192.168.1.90).
+- **Edge Mode**: Local-first operation when home LAN cable is disconnected. `rpi2` provides DNS and DHCP for the `tatbot.example` network. `ook` provides internet access via WiFi NAT (gateway: 192.0.2.90).
 
-- **Home Mode**: Integration with home network when home LAN cable is connected. `rpi2` forwards DNS queries to the home router while maintaining `tatbot.lan` hostname resolution. All nodes get DHCP from home router (gateway: 192.168.1.1).
+- **Home Mode**: Integration with home network when home LAN cable is connected. `rpi2` forwards DNS queries to the home router while maintaining `tatbot.example` hostname resolution. All nodes get DHCP from home router (gateway: 192.0.2.1).
 
 **Automatic DHCP Renewal**: When modes switch, all nodes automatically get new DHCP leases with correct gateway/DNS settings within 20 seconds.
 
@@ -246,7 +246,7 @@ sudo systemctl status dnsmasq  # Should show "active (running)"
 # This script automatically triggers DHCP renewal on all nodes when switching modes
 
 # Install the auto-detection service that switches modes and triggers DHCP renewals
-# This service monitors home router (192.168.1.1) availability
+# This service monitors home router (192.0.2.1) availability
 sudo cp ~/tatbot/config/network/systemd/tatbot-mode-auto.service /etc/systemd/system/tatbot-mode-auto.service
 
 # Enable and start the auto-detection service
@@ -286,11 +286,11 @@ sudo apt install -y dnsutils
 # Check which network manager is in use
 systemctl list-units --type=service --state=active | grep -E '(NetworkManager|dhcpcd)'
 
-# This ensures tatbot.lan resolution works in both modes
+# This ensures tatbot.example resolution works in both modes
 # Configure to use rpi2 DNS and accept DHCP from either rpi2 or home router
 nmcli connection show --active
 sudo nmcli connection modify 'Wired connection 1' \
-  ipv4.dns '192.168.1.99' \
+  ipv4.dns '192.0.2.99' \
   ipv4.ignore-auto-dns yes \
   ipv4.method auto
 
@@ -303,20 +303,20 @@ sudo nmcli device reapply eno1 # on ojo
 sudo nmcli device reapply eth0 # on rpi1, rpi2
 
 # Test DNS resolution
-nslookup ook.tatbot.lan 192.168.1.99  # Should resolve to 192.168.1.90
+nslookup ook.tatbot.example 192.0.2.99  # Should resolve to 192.0.2.90
 ```
 
 **4. Configure IP Cameras and Arm Controllers**
 
 For IP Cameras:
-1. Access device web interface (e.g., http://192.168.1.91 for camera1)
+1. Access device web interface (e.g., http://192.0.2.91 for camera1)
 2. Navigate to Network Settings
-3. Set Primary DNS: `192.168.1.99`
+3. Set Primary DNS: `192.0.2.99`
 4. Keep DHCP enabled (will use home router or rpi2 automatically)
 5. Save and reboot device
 
 For Arm Control Boxes:
-1. Set DNS in `config/trossen/arm-l.yaml` and `config/trossen/arm-r.yaml` to `192.168.1.99`
+1. Set DNS in `config/trossen/arm-l.yaml` and `config/trossen/arm-r.yaml` to `192.0.2.99`
 2. Push configs to arm controller boxes with `src/tatbot/bot/trossen_config.py`
 3. Reboot arm controller boxes
 
@@ -362,25 +362,25 @@ ssh rpi2 "sudo systemctl stop tatbot-mode-auto.service"
 ```bash
 # If modes aren't switching automatically:
 ssh rpi2 "sudo systemctl status tatbot-mode-auto.service"
-ssh rpi2 "ping -c 1 192.168.1.1"  # Test if home router is reachable
+ssh rpi2 "ping -c 1 192.0.2.1"  # Test if home router is reachable
 
 # If DHCP conflicts occur:
 # Check which DHCP servers are active
 sudo nmap --script broadcast-dhcp-discover
 
 # If DNS isn't working:
-nslookup ook.tatbot.lan 192.168.1.99  # Should always work
-dig @192.168.1.99 ook.tatbot.lan      # More detailed DNS query
+nslookup ook.tatbot.example 192.0.2.99  # Should always work
+dig @192.0.2.99 ook.tatbot.example      # More detailed DNS query
 
 # If systemd-resolved is interfering with DNS resolution:
 # Check if systemd-resolved is preventing proper domain routing
 resolvectl status  # Shows DNS servers per interface
-# If tatbot.lan queries are failing, disable systemd-resolved:
+# If tatbot.example queries are failing, disable systemd-resolved:
 sudo systemctl stop systemd-resolved
 sudo systemctl disable systemd-resolved
 sudo rm /etc/resolv.conf
-echo "nameserver 192.168.1.99" | sudo tee /etc/resolv.conf
-echo "nameserver 192.168.1.1" | sudo tee -a /etc/resolv.conf
+echo "nameserver 192.0.2.99" | sudo tee /etc/resolv.conf
+echo "nameserver 192.0.2.1" | sudo tee -a /etc/resolv.conf
 
 # If nodes have both WiFi and Ethernet active:
 # Disable WiFi to prevent routing conflicts in edge mode

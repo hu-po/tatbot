@@ -288,8 +288,8 @@ config = TatbotConfig(
         "cam_left": RealSenseCameraConfig(serial_number_or_name="left_serial"),
         "cam_right": RealSenseCameraConfig(serial_number_or_name="right_serial")
     },
-    ip_address_l="192.168.1.10",
-    ip_address_r="192.168.1.11",
+    ip_address_l="192.0.2.10",
+    ip_address_r="192.0.2.11",
     # ... other config parameters
 )
 

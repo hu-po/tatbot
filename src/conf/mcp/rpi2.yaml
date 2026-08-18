@@ -1,7 +1,7 @@
 defaults:
   - override /mcp: default
 
-host: "192.168.1.99"
+host: "192.0.2.99"
 port: 8000
 extras: []  # Base installation only
 tools:

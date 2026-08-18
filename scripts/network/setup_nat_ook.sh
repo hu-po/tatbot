@@ -105,10 +105,10 @@ else
     echo "  Make sure WiFi is connected"
 fi
 
-if ping -c 1 -W 2 192.168.1.99 >/dev/null 2>&1; then
+if ping -c 1 -W 2 192.0.2.99 >/dev/null 2>&1; then
     echo "✓ Can reach rpi2 (DNS server)"
 else
-    echo "⚠ Cannot reach rpi2 (192.168.1.99)"
+    echo "⚠ Cannot reach rpi2 (192.0.2.99)"
 fi
 echo ""
 
@@ -116,7 +116,7 @@ echo "========================================="
 echo "NAT setup complete!"
 echo ""
 echo "Other nodes in EDGE mode will now be able to:"
-echo "  1. Use ook (192.168.1.90) as their gateway"
+echo "  1. Use ook (192.0.2.90) as their gateway"
 echo "  2. Access the internet through ook's WiFi"
 echo ""
 echo "Note: Nodes need to get new DHCP lease to use ook as gateway."

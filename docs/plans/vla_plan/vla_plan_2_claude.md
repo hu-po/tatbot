@@ -24,7 +24,7 @@ This document outlines the complete pipeline for training Vision-Language-Action
 ### Current Capabilities
 The `stroke.py` tool already implements comprehensive recording functionality:
 
-- **LeRobot Dataset Creation**: Creates LeRobotDataset instances at `/nfs/tatbot/recordings/stroke-{scene}-{timestamp}/`
+- **LeRobot Dataset Creation**: Creates LeRobotDataset instances at `/srv/tatbot-data/recordings/stroke-{scene}-{timestamp}/`
 - **Multi-modal Recording**: 
   - Robot joint states and actions (10 Hz default, configurable)
   - Optional RealSense depth cameras
@@ -59,7 +59,7 @@ The `stroke.py` tool already implements comprehensive recording functionality:
 
 ### Directory Structure
 ```
-/nfs/tatbot/recordings/
+/srv/tatbot-data/recordings/
 └── stroke-{scene}-{timestamp}/
     ├── meta_data/
     │   ├── data.parquet          # Episode metadata
@@ -110,7 +110,7 @@ episode_cond = {
    from pathlib import Path
    
    # Aggregate multiple recording sessions
-   recordings_dir = Path("/nfs/tatbot/recordings")
+   recordings_dir = Path("/srv/tatbot-data/recordings")
    datasets = []
    
    for dataset_dir in recordings_dir.glob("stroke-*"):
@@ -151,7 +151,7 @@ For quickest iteration, train directly from local recording directories without 
 # SmolVLA finetune from base checkpoint using local dataset
 lerobot-train \
     --policy.path=lerobot/smolvla_base \
-    --dataset.root="$HOME/tatbot/nfs/recordings/stroke-tatbotlogo-2025y-08m-09d-17h-02m-10s" \
+    --dataset.root="$TATBOT_DATA_ROOT/recordings/stroke-tatbotlogo-2025y-08m-09d-17h-02m-10s" \
     --output_dir=outputs/train/tatbotlogo/smolvla \
     --batch_size=64 \
     --steps=100000 \
@@ -161,7 +161,7 @@ lerobot-train \
 # Pi0 training from scratch
 lerobot-train \
     --policy.type=pi0 \
-    --dataset.root="$HOME/tatbot/nfs/recordings/stroke-default-latest" \
+    --dataset.root="$TATBOT_DATA_ROOT/recordings/stroke-default-latest" \
     --output_dir=outputs/train/default/pi0 \
     --batch_size=32 \
     --steps=100000 \
@@ -194,7 +194,7 @@ training:
   
 dataset:
   # Option 1: Local dataset root
-  root: "/nfs/tatbot/recordings/stroke-tatbotlogo-latest"
+  root: "/srv/tatbot-data/recordings/stroke-tatbotlogo-latest"
   # Option 2: Hub repo ID (if pushed)
   # repo_id: "tatbot/stroke-aggregated"
   
@@ -228,7 +228,7 @@ outputs/train/<scene>/<policy>/
 # Train from scratch with short validation run
 uv run lerobot-train \
     --policy.type=smolvla \
-    --dataset.root="$HOME/tatbot/nfs/recordings/stroke-tatbotlogo-latest" \
+    --dataset.root="$TATBOT_DATA_ROOT/recordings/stroke-tatbotlogo-latest" \
     --batch_size=8 \
     --steps=100 \
     --output_dir=outputs/train/test_run
@@ -236,7 +236,7 @@ uv run lerobot-train \
 # Full training run
 uv run lerobot-train \
     --policy.type=smolvla \
-    --dataset.root="$HOME/tatbot/nfs/recordings/stroke-tatbotlogo-latest" \
+    --dataset.root="$TATBOT_DATA_ROOT/recordings/stroke-tatbotlogo-latest" \
     --batch_size=32 \
     --steps=100000 \
     --output_dir=outputs/train/tatbotlogo/smolvla
@@ -249,7 +249,7 @@ uv run lerobot-train \
    # Quick sanity check - train for a few steps
    uv run lerobot-train \
        --policy.type=smolvla \
-       --dataset.root="$HOME/tatbot/nfs/recordings/stroke-tatbotlogo-latest" \
+       --dataset.root="$TATBOT_DATA_ROOT/recordings/stroke-tatbotlogo-latest" \
        --batch_size=4 \
        --steps=10 \
        --output_dir=outputs/train/sanity_check
@@ -402,7 +402,7 @@ async def vla_infer(input_data: VLAInferInput, ctx: ToolContext):
         dataset = None
         eval_dir = None
         if input_data.record_eval:
-            output_dir = Path("/nfs/tatbot/recordings")
+            output_dir = Path("/srv/tatbot-data/recordings")
             eval_dir = output_dir / f"vla-eval-{scene.name}-{int(time.time())}"
             eval_dir.mkdir(parents=True, exist_ok=True)
             

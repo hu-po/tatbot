@@ -35,7 +35,7 @@ class ArmModel(Enum):
     WXAI_V0 = "wxai_v0"
 
 
-IP_ADDRESS_DEFAULT = "192.168.1.2"
+IP_ADDRESS_DEFAULT = "192.0.2.2"
 PORT_DEFAULT = 50_001
 INDICATOR_SET_HOME = b"\x01\x00\x01"
 ARM_MODELS = (ArmModel.WXAI_V0,)

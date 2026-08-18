@@ -168,7 +168,7 @@ check_url "Tatbot Compute dashboard" "http://localhost:3000/api/dashboards/uid/t
 
 # 6. Deep dive on each node
 log_info "=== Deep Node Diagnostics ==="
-declare -A node_ips=(["eek"]="192.168.1.97" ["ook"]="192.168.1.90" ["oop"]="192.168.1.51" ["hog"]="192.168.1.88" ["ojo"]="192.168.1.96" ["rpi1"]="192.168.1.98" ["rpi2"]="192.168.1.99")
+declare -A node_ips=(["eek"]="192.0.2.97" ["ook"]="192.0.2.90" ["oop"]="192.0.2.51" ["hog"]="192.0.2.88" ["ojo"]="192.0.2.96" ["rpi1"]="192.0.2.98" ["rpi2"]="192.0.2.99")
 
 for node in "${!node_ips[@]}"; do
     ip="${node_ips[$node]}"

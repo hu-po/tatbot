@@ -1,31 +1,31 @@
 {
   "mcpServers": {
     "eek": {
-      "url": "http://192.168.1.97:8000/mcp",
+      "url": "http://192.0.2.97:8000/mcp",
       "transport": "streamable-http"
     },
     "hog": {
-      "url": "http://192.168.1.88:8000/mcp",
+      "url": "http://192.0.2.88:8000/mcp",
       "transport": "streamable-http"
     },
     "ook": {
-      "url": "http://192.168.1.90:8000/mcp",
+      "url": "http://192.0.2.90:8000/mcp",
       "transport": "streamable-http"
     },
     "oop": {
-      "url": "http://192.168.1.51:8000/mcp",
+      "url": "http://192.0.2.51:8000/mcp",
       "transport": "streamable-http"
     },
     "ojo": {
-      "url": "http://192.168.1.96:8000/mcp",
+      "url": "http://192.0.2.96:8000/mcp",
       "transport": "streamable-http"
     },
     "rpi1": {
-      "url": "http://192.168.1.98:8000/mcp",
+      "url": "http://192.0.2.98:8000/mcp",
       "transport": "streamable-http"
     },
     "rpi2": {
-      "url": "http://192.168.1.99:8000/mcp",
+      "url": "http://192.0.2.99:8000/mcp",
       "transport": "streamable-http"
     }
   }

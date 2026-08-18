@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-# NFS mount point - canonical path for shared storage across all nodes
-NFS_DIR = Path("/nfs/tatbot")
+# Public default for shared data. Private deployments may override this path.
+NFS_DIR = Path("/srv/tatbot-data")
 
 # Common subdirectories
 NFS_RECORDINGS_DIR = NFS_DIR / "recordings"

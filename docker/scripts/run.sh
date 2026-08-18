@@ -50,8 +50,8 @@ MOUNTS=(
 )
 
 # Mount NFS logs if present
-if [[ -d /nfs/tatbot ]]; then
-  MOUNTS+=( -v /nfs/tatbot:/nfs/tatbot )
+if [[ -d /srv/tatbot-data ]]; then
+  MOUNTS+=( -v /srv/tatbot-data:/srv/tatbot-data )
 fi
 
 # Cache for uv to speed up repeated installs

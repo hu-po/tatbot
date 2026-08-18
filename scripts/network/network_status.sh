@@ -45,31 +45,31 @@ echo "---------------------"
 
 # Test tatbot network connectivity
 echo "  Testing tatbot network..."
-if ping -c 1 -W 2 192.168.1.99 &>/dev/null; then
-    echo "    ✅ rpi2 (192.168.1.99) - reachable"
+if ping -c 1 -W 2 192.0.2.99 &>/dev/null; then
+    echo "    ✅ rpi2 (192.0.2.99) - reachable"
 
     # Test DNS resolution in tatbot network (prefer dig A record, fallback to getent)
     if command -v dig >/dev/null 2>&1; then
-        if dig +short A eek.tatbot.lan @192.168.1.99 | grep -qE '^[0-9.]+'; then
+        if dig +short A eek.tatbot.example @192.0.2.99 | grep -qE '^[0-9.]+'; then
             echo "    ✅ tatbot DNS resolution - working"
         else
             echo "    ❌ tatbot DNS resolution - failed"
         fi
     else
-        if getent hosts eek.tatbot.lan >/dev/null 2>&1; then
+        if getent hosts eek.tatbot.example >/dev/null 2>&1; then
             echo "    ✅ tatbot DNS resolution - working"
         else
             echo "    ❌ tatbot DNS resolution - failed"
         fi
     fi
 else
-    echo "    ❌ rpi2 (192.168.1.99) - unreachable"
+    echo "    ❌ rpi2 (192.0.2.99) - unreachable"
 fi
 
-if ping -c 1 -W 2 192.168.1.97 &>/dev/null; then
-    echo "    ✅ eek (192.168.1.97) - reachable"
+if ping -c 1 -W 2 192.0.2.97 &>/dev/null; then
+    echo "    ✅ eek (192.0.2.97) - reachable"
 else
-    echo "    ❌ eek (192.168.1.97) - unreachable"
+    echo "    ❌ eek (192.0.2.97) - unreachable"
 fi
 
 # Test internet connectivity
@@ -95,17 +95,17 @@ echo "-----------------"
 # Detect if DNS is pointing at rpi2
 DNS_USES_RPI2=false
 if command -v resolvectl >/dev/null 2>&1; then
-    if resolvectl status 2>/dev/null | grep -q "DNS Servers: .*192.168.1.99"; then
+    if resolvectl status 2>/dev/null | grep -q "DNS Servers: .*192.0.2.99"; then
         DNS_USES_RPI2=true
     fi
 else
-    if grep -q "^nameserver[[:space:]]\+192.168.1.99" /etc/resolv.conf 2>/dev/null; then
+    if grep -q "^nameserver[[:space:]]\+192.0.2.99" /etc/resolv.conf 2>/dev/null; then
         DNS_USES_RPI2=true
     fi
 fi
 
 if [[ "$DNS_USES_RPI2" == true ]]; then
-    echo "  🧭 Tatbot DNS: rpi2 (192.168.1.99)"
+    echo "  🧭 Tatbot DNS: rpi2 (192.0.2.99)"
 fi
 
 if nmcli connection show --active | grep -q wifi; then
@@ -120,7 +120,7 @@ fi
 echo ""
 
 # MCP services check when rpi2 is reachable
-if ping -c 1 -W 2 192.168.1.99 &>/dev/null; then
+if ping -c 1 -W 2 192.0.2.99 &>/dev/null; then
     echo "🔧 MCP Services Check:"
     echo "---------------------"
     
@@ -128,7 +128,7 @@ if ping -c 1 -W 2 192.168.1.99 &>/dev/null; then
     for node in eek:8000 hog:8000 ook:8000 ojo:8000 rpi1:8000; do
         NODE_NAME=$(echo $node | cut -d: -f1)
         NODE_PORT=$(echo $node | cut -d: -f2)
-        NODE_IP=$(nslookup $NODE_NAME.tatbot.lan 192.168.1.99 2>/dev/null | grep -A1 "Name:" | tail -1 | awk '{print $2}')
+        NODE_IP=$(nslookup $NODE_NAME.tatbot.example 192.0.2.99 2>/dev/null | grep -A1 "Name:" | tail -1 | awk '{print $2}')
         
         if [[ -n "$NODE_IP" ]] && timeout 2 bash -c "</dev/tcp/$NODE_IP/$NODE_PORT" 2>/dev/null; then
             echo "    ✅ $NODE_NAME MCP ($NODE_IP:$NODE_PORT) - accessible"

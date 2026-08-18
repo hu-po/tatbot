@@ -13,7 +13,7 @@ This document maps the end-to-end flow when the `stroke` MCP tool on a non-GPU n
 
 - `src/tatbot/tools/robot/stroke.py` → `stroke_tool(...)`
   - Entry point for executing strokes on the robot (node: `hog`).
-  - Generates `StrokeList` and produces `strokes.yaml` under `/nfs/tatbot/recordings/...`.
+  - Generates `StrokeList` and produces `strokes.yaml` under `/srv/tatbot-data/recordings/...`.
   - If no local GPU: uses `GPUConversionService` to call a remote GPU tool.
 
 - `src/tatbot/utils/gpu_conversion.py` → `GPUConversionService`
@@ -66,7 +66,7 @@ This document maps the end-to-end flow when the `stroke` MCP tool on a non-GPU n
 
 ## Logging & Observability
 
-- GPU server logs: `/nfs/tatbot/mcp-logs/<node>.log` (started by `./scripts/mcp_run.sh <node>`).
+- GPU server logs: `/srv/tatbot-data/mcp-logs/<node>.log` (started by `./scripts/mcp_run.sh <node>`).
 - Key loggers:
   - `tools.convert_strokes` (convert tool)
   - `gen.batch` (JAX IK batching)

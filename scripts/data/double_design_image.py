@@ -189,16 +189,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "input_dir",
         nargs="?",
-        default=Path("/nfs/tatbot/designs/double/raw"),
+        default=Path("/srv/tatbot-data/designs/double/raw"),
         type=Path,
-        help="Directory containing source images (default: /nfs/tatbot/designs/double/raw)",
+        help="Directory containing source images (default: /srv/tatbot-data/designs/double/raw)",
     )
     parser.add_argument(
         "output_dir",
         nargs="?",
-        default=Path("/nfs/tatbot/designs/double/combined"),
+        default=Path("/srv/tatbot-data/designs/double/combined"),
         type=Path,
-        help="Directory to write concatenated images (default: /nfs/tatbot/designs/double/combined)",
+        help="Directory to write concatenated images (default: /srv/tatbot-data/designs/double/combined)",
     )
     parser.add_argument(
         "--num",

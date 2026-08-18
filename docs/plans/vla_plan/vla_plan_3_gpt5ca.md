@@ -28,7 +28,7 @@ This guide specifies what’s needed to train Vision-Language-Action (VLA) polic
 
 ## Dataset recorded by stroke_tool
 
-`stroke_tool` writes LeRobot-compatible episodic datasets into `/nfs/tatbot/recordings/` with names like `stroke-<scene>-<timestamp>`. Within each dataset directory:
+`stroke_tool` writes LeRobot-compatible episodic datasets into `/srv/tatbot-data/recordings/` with names like `stroke-<scene>-<timestamp>`. Within each dataset directory:
 
 - `scene.yaml`: Scene definition saved at recording start.
 - `strokes.yaml`: Stroke list with metadata; large arrays are in `arrays/*.npy` (see `tatbot.data.stroke`).
@@ -39,7 +39,7 @@ This guide specifies what’s needed to train Vision-Language-Action (VLA) polic
 Example directory structure (may vary slightly by LeRobot version/settings):
 
 ```
-/nfs/tatbot/recordings/
+/srv/tatbot-data/recordings/
 └── stroke-{scene}-{timestamp}/
     ├── meta_data/
     │   ├── data.parquet
@@ -87,7 +87,7 @@ set -a; source .env; set +a  # optional secrets for WandB, etc.
 You can train directly from a locally recorded dataset directory. Two common options:
 
 - Local path training (recommended initially):
-  - Use the full path to a recording directory, e.g. `/nfs/tatbot/recordings/stroke-tatbotlogo-2025y-08m-09d-17h-02m-10s`.
+  - Use the full path to a recording directory, e.g. `/srv/tatbot-data/recordings/stroke-tatbotlogo-2025y-08m-09d-17h-02m-10s`.
   - Many LeRobot CLIs accept `--dataset.root` or a `repo_id` that points locally; prefer `--dataset.root` where available.
 
 - Pushing to Hub (optional):
@@ -104,7 +104,7 @@ Aggregating multiple recordings (optional):
 from pathlib import Path
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-recordings_dir = Path("/nfs/tatbot/recordings")
+recordings_dir = Path("/srv/tatbot-data/recordings")
 datasets = []
 for dataset_dir in recordings_dir.glob("stroke-*"):
     repo_id = f"tatbot/{dataset_dir.name}"
@@ -128,7 +128,7 @@ SmolVLA finetune from base on a local dataset root:
 ```bash
 lerobot-train \
   --policy.type=smolvla \
-  --dataset.root="/nfs/tatbot/recordings/stroke-tatbotlogo-..." \
+  --dataset.root="/srv/tatbot-data/recordings/stroke-tatbotlogo-..." \
   --batch_size=32 \
   --steps=100000 \
   --wandb.enable=true \
@@ -140,7 +140,7 @@ Pi0 finetune from base:
 ```bash
 lerobot-train \
   --policy.type=pi0 \
-  --dataset.root="/nfs/tatbot/recordings/stroke-tatbotlogo-..." \
+  --dataset.root="/srv/tatbot-data/recordings/stroke-tatbotlogo-..." \
   --batch_size=32 \
   --steps=100000 \
   --wandb.enable=true \
@@ -292,7 +292,7 @@ async def vla_infer(input_data: VLAInferInput, ctx: ToolContext):
         # Optional eval recording
         dataset = None
         if input_data.record_eval:
-            output_dir = Path("/nfs/tatbot/recordings")
+            output_dir = Path("/srv/tatbot-data/recordings")
             eval_dir = output_dir / f"vla-eval-{scene.name}-{int(time.time())}"
             eval_dir.mkdir(parents=True, exist_ok=True)
             action_features = hw_to_dataset_features(robot.action_features, "action", True)
