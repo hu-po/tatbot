@@ -29,9 +29,9 @@ if [ -n "$EXTRAS_TRIMMED" ] && [ "$EXTRAS_TRIMMED" != "" ]; then
 fi
 
 echo "🔑  Export environment variables (keys, tokens, etc.)"
-if [ -f /nfs/tatbot/.env ]; then
+if [ -f /srv/tatbot-data/.env ]; then
   set -a  # auto-export all variables defined below
-  source /nfs/tatbot/.env || true
+  source /srv/tatbot-data/.env || true
   set +a
 fi
 

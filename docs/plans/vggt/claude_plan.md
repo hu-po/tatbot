@@ -253,7 +253,7 @@ if input_data.use_vggt:
 
 **VGGT Config**: `src/conf/cam/vggt.yaml`
 ```yaml
-model_path: /nfs/tatbot/models/vggt/model.pt
+model_path: /srv/tatbot-data/models/vggt/model.pt
 device: cuda
 resolution: 518
 use_ba: false
@@ -352,7 +352,7 @@ onnxruntime>=1.15  # Sky segmentation (optional)
 ```
 
 **Model Weight Management**:
-- Pre-cache VGGT-1B model at `/nfs/tatbot/models/vggt/model.pt`
+- Pre-cache VGGT-1B model at `/srv/tatbot-data/models/vggt/model.pt`
 - Avoid runtime downloads on GPU nodes
 - Configurable model path via Hydra config
 - Automatic device selection and dtype optimization
@@ -369,7 +369,7 @@ onnxruntime>=1.15  # Sky segmentation (optional)
 **Sensor Node (hog)** → **GPU Node (ook)**
 
 1. **sense.py on hog captures images**
-2. **Images saved to NFS** (`/nfs/tatbot/recordings/`)
+2. **Images saved to NFS** (`/srv/tatbot-data/recordings/`)
 3. **MCP call to ook** with image paths
 4. **VGGT processing on ook GPU**
 5. **Results saved to NFS** in COLMAP format
@@ -377,7 +377,7 @@ onnxruntime>=1.15  # Sky segmentation (optional)
 
 ### File Organization on NFS
 ```
-/nfs/tatbot/recordings/sense-{scene}-{timestamp}/
+/srv/tatbot-data/recordings/sense-{scene}-{timestamp}/
 ├── images/
 │   ├── realsense1.png
 │   ├── realsense2.png  

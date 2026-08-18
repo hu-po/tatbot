@@ -5,32 +5,32 @@ scrape_configs:
 - job_name: nodes
   static_configs:
   - targets:
-    - 192.168.1.97:9100
+    - 192.0.2.97:9100
     labels:
       node: "\U0001F9A6 eek"
       name: eek
   - targets:
-    - 192.168.1.88:9100
+    - 192.0.2.88:9100
     labels:
       node: "\U0001F994 hog"
       name: hog
   - targets:
-    - 192.168.1.90:9100
+    - 192.0.2.90:9100
     labels:
       node: "\U0001F9A7 ook"
       name: ook
   - targets:
-    - 192.168.1.51:9100
+    - 192.0.2.51:9100
     labels:
       node: "\U0001F98A oop"
       name: oop
   - targets:
-    - 192.168.1.98:9100
+    - 192.0.2.98:9100
     labels:
       node: "\U0001F353 rpi1"
       name: rpi1
   - targets:
-    - 192.168.1.99:9100
+    - 192.0.2.99:9100
     labels:
       node: "\U0001F347 rpi2"
       name: rpi2
@@ -44,7 +44,7 @@ scrape_configs:
 - job_name: jetson
   static_configs:
   - targets:
-    - 192.168.1.96:9100
+    - 192.0.2.96:9100
     labels:
       node: "\U0001F98E ojo"
       name: ojo
@@ -58,12 +58,12 @@ scrape_configs:
 - job_name: nvidia_dgpu
   static_configs:
   - targets:
-    - 192.168.1.90:9400
+    - 192.0.2.90:9400
     labels:
       node: "\U0001F9A7 ook"
       name: ook
   - targets:
-    - 192.168.1.51:9400
+    - 192.0.2.51:9400
     labels:
       node: "\U0001F98A oop"
       name: oop
@@ -77,7 +77,7 @@ scrape_configs:
 - job_name: intel_gpu
   static_configs:
   - targets:
-    - 192.168.1.88:8080
+    - 192.0.2.88:8080
     labels:
       node: "\U0001F994 hog"
       name: hog
@@ -92,12 +92,12 @@ scrape_configs:
 - job_name: rpi_soc
   static_configs:
   - targets:
-    - 192.168.1.98:9110
+    - 192.0.2.98:9110
     labels:
       node: "\U0001F353 rpi1"
       name: rpi1
   - targets:
-    - 192.168.1.99:9110
+    - 192.0.2.99:9110
     labels:
       node: "\U0001F347 rpi2"
       name: rpi2

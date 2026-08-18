@@ -42,7 +42,7 @@ async def convert_strokes(input_data: ConvertStrokesInput, ctx: ToolContext):
     
     NFS Integration:
     - Files are shared via NFS mount points specific to each node
-    - Path translation handles canonical /nfs/tatbot mount point across all nodes
+    - Path translation handles canonical /srv/tatbot-data mount point across all nodes
     - Input and output files remain on shared storage throughout process
     
     Parameters:

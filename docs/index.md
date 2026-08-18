@@ -16,7 +16,14 @@ audience: [all]
 
 <br>
 
-tattoo robot system composed of 2 robot arms, 7 cameras, and 6 computers controlling 2 tattoo machines. Built in public, all open source, [reserve your tattoo](https://forms.gle/Zys6f5iLEtYCG8VW7), [follow the progress](docs/progress.md)
+tattoo robot system composed of 2 robot arms, 7 cameras, and 6 computers controlling 2 tattoo machines. This site is the public project archive and reference documentation. [Reserve your tattoo](https://forms.gle/Zys6f5iLEtYCG8VW7) or [follow the progress](progress.md).
+
+```{admonition} Public repository note
+:class: note
+
+Examples in this public repository use placeholder addresses, identifiers, and
+shared-data paths. Deployment-specific configuration is maintained privately.
+```
 
 ---
 
@@ -25,8 +32,8 @@ tattoo robot system composed of 2 robot arms, 7 cameras, and 6 computers control
 ```{admonition} Essential Commands
 :class: tip
 
-- `./scripts/mcp_run.sh` - Start MCP server
-- `./scripts/setup_env.sh` - Install dependencies
+- `uv sync` - Install the development environment
+- `uv run pytest -q` - Run the test suite
 ```
 
 
@@ -87,4 +94,5 @@ vggt
 logos/index
 paper/index
 style_guide
+security
 ```

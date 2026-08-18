@@ -2,27 +2,27 @@
     "mcpServers": {
         "eek": {
             "type": "http",
-            "url": "http://192.168.1.97:8000/mcp"
+            "url": "http://192.0.2.97:8000/mcp"
         },
         "hog": {
-            "url": "http://192.168.1.88:8000/mcp",
+            "url": "http://192.0.2.88:8000/mcp",
             "transport": "streamable-http"
         },
         "ook": {
             "type": "http",
-            "url": "http://192.168.1.90:8000/mcp"
+            "url": "http://192.0.2.90:8000/mcp"
         },
         "oop": {
             "type": "http",
-            "url": "http://192.168.1.51:8000/mcp"
+            "url": "http://192.0.2.51:8000/mcp"
         },
         "rpi1": {
             "type": "http",
-            "url": "http://192.168.1.98:8000/mcp"
+            "url": "http://192.0.2.98:8000/mcp"
         },
         "rpi2": {
             "type": "http",
-            "url": "http://192.168.1.99:8000/mcp"
+            "url": "http://192.0.2.99:8000/mcp"
         }
     }
 }

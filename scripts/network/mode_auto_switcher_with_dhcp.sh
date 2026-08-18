@@ -6,7 +6,7 @@ set -euo pipefail
 # When mode switches, it triggers DHCP renewal on all nodes
 
 # Configuration
-HOME_ROUTER_IP=${HOME_ROUTER_IP:-192.168.1.1}
+HOME_ROUTER_IP=${HOME_ROUTER_IP:-192.0.2.1}
 CHECK_INTERVAL=${CHECK_INTERVAL:-20}
 DNSMASQ_PROFILES_DIR=/etc/dnsmasq-profiles
 DNSMASQ_ACTIVE_LINK=/etc/dnsmasq.d/active.conf

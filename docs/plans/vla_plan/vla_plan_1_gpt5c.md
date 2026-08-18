@@ -11,7 +11,7 @@ This guide outlines how to train a VLA policy on datasets recorded by `tatbot/to
 
 ## 1) Dataset produced by stroke.py
 
-Datasets are written to `/nfs/tatbot/recordings/stroke-<scene>-<timestamp>` and registered with repo id `tatbot/<dataset_dir_name>` using LeRobot's `LeRobotDataset`.
+Datasets are written to `/srv/tatbot-data/recordings/stroke-<scene>-<timestamp>` and registered with repo id `tatbot/<dataset_dir_name>` using LeRobot's `LeRobotDataset`.
 
 - Frame schema is built from `robot.observation_features` and `robot.action_features`
 - FPS is configurable (default 10)
@@ -39,7 +39,7 @@ Choose a policy (SmolVLA or Pi0) based on compute and task complexity.
 
 - Dataset selection
   - Use repo id like `tatbot/stroke-<scene>-<timestamp>` (or pass an explicit dataset path)
-  - Where supported by your training CLI, you can also use a local `--dataset.root="/nfs/tatbot/recordings/stroke-..."`
+  - Where supported by your training CLI, you can also use a local `--dataset.root="/srv/tatbot-data/recordings/stroke-..."`
 
 - Example: finetune SmolVLA from base
   ```bash
@@ -195,7 +195,7 @@ Example call payload
 {
   "tool": "infer_vla",
   "params": {
-    "checkpoint_path": "/home/oop/tatbot/output/train/<scene>/smolvla/checkpoints/last/pretrained_model",
+    "checkpoint_path": "$HOME/tatbot/output/train/<scene>/smolvla/checkpoints/last/pretrained_model",
     "scene": "tatbotlogo",
     "policy_type": "smolvla",
     "device": "cuda",

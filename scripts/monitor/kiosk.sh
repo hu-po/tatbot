@@ -7,7 +7,7 @@ set -euo pipefail
 #   scripts/monitor/kiosk.sh                    # eek:3000 with 5s refresh (default)
 #   scripts/monitor/kiosk.sh eek               # eek:3000 with 5s refresh
 #   scripts/monitor/kiosk.sh eek 10            # eek:3000 with 10s refresh
-#   scripts/monitor/kiosk.sh 192.168.1.97      # specific IP with 5s refresh
+#   scripts/monitor/kiosk.sh 192.0.2.97      # specific IP with 5s refresh
 
 TARGET_NODE="${1:-eek}"
 REFRESH_SECONDS="${2:-5}"
@@ -23,7 +23,7 @@ if [[ "${TARGET_NODE}" == "-h" || "${TARGET_NODE}" == "--help" ]]; then
   echo "Examples:"
   echo "  $0                    # eek:3000 with 5s refresh"
   echo "  $0 eek 10            # eek:3000 with 10s refresh"
-  echo "  $0 192.168.1.97      # specific IP with 5s refresh"
+  echo "  $0 192.0.2.97      # specific IP with 5s refresh"
   exit 0
 fi
 

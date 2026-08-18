@@ -69,10 +69,10 @@ You can also run VGGT reconstruction directly on GPU nodes:
 {
   "tool": "vggt_reconstruct",
   "input": {
-    "image_dir": "/nfs/tatbot/recordings/sense-default-20241215_143022/images",
-    "output_pointcloud_path": "/nfs/tatbot/recordings/sense-default-20241215_143022/pointclouds/vggt_dense.ply",
-    "output_frustums_path": "/nfs/tatbot/recordings/sense-default-20241215_143022/metadata/vggt_frustums.json",
-    "output_colmap_dir": "/nfs/tatbot/recordings/sense-default-20241215_143022/colmap",
+    "image_dir": "/srv/tatbot-data/recordings/sense-default-20241215_143022/images",
+    "output_pointcloud_path": "/srv/tatbot-data/recordings/sense-default-20241215_143022/pointclouds/vggt_dense.ply",
+    "output_frustums_path": "/srv/tatbot-data/recordings/sense-default-20241215_143022/metadata/vggt_frustums.json",
+    "output_colmap_dir": "/srv/tatbot-data/recordings/sense-default-20241215_143022/colmap",
     "scene": "default",
     "vggt_conf_threshold": 5.0,
     "shared_camera": false
@@ -85,7 +85,7 @@ You can also run VGGT reconstruction directly on GPU nodes:
 View VGGT reconstruction alongside RealSense data:
 
 ```bash
-uv run python -m tatbot.viz.vggt_compare --dataset_dir=/nfs/tatbot/recordings/sense-default-20241215_143022
+uv run python -m tatbot.viz.vggt_compare --dataset_dir=/srv/tatbot-data/recordings/sense-default-20241215_143022
 ```
 
 Or via MCP tool:
@@ -94,7 +94,7 @@ Or via MCP tool:
 {
   "tool": "vggt_compare_viz",
   "input": {
-    "dataset_dir": "/nfs/tatbot/recordings/sense-default-20241215_143022",
+    "dataset_dir": "/srv/tatbot-data/recordings/sense-default-20241215_143022",
     "show_vggt": true,
     "show_rs": true,
     "show_vggt_frustums": true,
@@ -108,7 +108,7 @@ Or via MCP tool:
 VGGT integration generates the following files in sense datasets:
 
 ```text
-/nfs/tatbot/recordings/sense-{scene}-{timestamp}/
+/srv/tatbot-data/recordings/sense-{scene}-{timestamp}/
 ├── images/                      # RGB images for VGGT processing
 │   ├── realsense1.png
 │   ├── realsense2.png
@@ -268,10 +268,10 @@ return_point_map: true
 Monitor VGGT processing via logs:
 ```bash
 # On GPU node
-tail -f /nfs/tatbot/mcp-logs/ook.log
+tail -f /srv/tatbot-data/mcp-logs/ook.log
 
 # Metrics file
-cat /nfs/tatbot/recordings/{dataset}/metadata/metrics.json
+cat /srv/tatbot-data/recordings/{dataset}/metadata/metrics.json
 ```
 
 Key metrics to check:

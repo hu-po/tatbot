@@ -38,13 +38,13 @@ source ~/tatbot/scripts/setup_env.sh
 cd ~/tatbot
 
 # Create log directory if it doesn't exist
-mkdir -p /nfs/tatbot/mcp-logs
-rm -f /nfs/tatbot/mcp-logs/${NODE}.log
+mkdir -p /srv/tatbot-data/mcp-logs
+rm -f /srv/tatbot-data/mcp-logs/${NODE}.log
 
 
 # Start the MCP server with Hydra
 echo "🚀 Starting MCP server for $NODE..."
-echo "📝 Logs will be written to /nfs/tatbot/mcp-logs/${NODE}.log"
+echo "📝 Logs will be written to /srv/tatbot-data/mcp-logs/${NODE}.log"
 
 # Convert --mcp.xxx=yyy arguments to mcp.xxx=yyy for Hydra
 HYDRA_ARGS=()
@@ -58,9 +58,9 @@ for arg in "$@"; do
 done
 
 nohup uv run python3 -m tatbot.mcp.server node=${NODE} "${HYDRA_ARGS[@]}" \
-    > /nfs/tatbot/mcp-logs/${NODE}.log 2>&1 &
+    > /srv/tatbot-data/mcp-logs/${NODE}.log 2>&1 &
 
 SERVER_PID=$!
 echo "✅ MCP server started with PID: $SERVER_PID"
-echo "📊 To monitor logs: tail -f /nfs/tatbot/mcp-logs/${NODE}.log"
+echo "📊 To monitor logs: tail -f /srv/tatbot-data/mcp-logs/${NODE}.log"
 echo "🛑 To stop server: kill $SERVER_PID"

@@ -1,36 +1,37 @@
+# Public-safe example node inventory. Replace addresses and MACs privately.
 nodes:
 - name: ook
   emoji: 🦧
-  ip: 192.168.1.90
+  ip: 192.0.2.90
   user: ook
-  mac: 74:d4:dd:c0:e1:39
+  mac: 02:00:00:00:00:09
 - name: oop
   emoji: 🦊
-  ip: 192.168.1.51
+  ip: 192.0.2.51
   user: oop
-  mac: 24:4B:FE:99:4D:16
+  mac: 02:00:00:00:00:03
 - name: ojo
   emoji: 🦎
-  ip: 192.168.1.96
+  ip: 192.0.2.96
   user: ojo
-  mac: 48:B0:2D:A5:08:C6
+  mac: 02:00:00:00:00:08
 - name: rpi1
   emoji: 🍓
-  ip: 192.168.1.98
+  ip: 192.0.2.98
   user: rpi1
-  mac: 2C:CF:67:25:58:7C
+  mac: 02:00:00:00:00:05
 - name: rpi2
   emoji: 🍇
-  ip: 192.168.1.99
+  ip: 192.0.2.99
   user: rpi2
-  mac: 2C:CF:67:25:9A:7C
+  mac: 02:00:00:00:00:06
 - name: eek
   emoji: 🦦
-  ip: 192.168.1.97
+  ip: 192.0.2.97
   user: eek
-  mac: F8:FE:5E:85:9A:76
+  mac: 02:00:00:00:00:15
 - name: hog
   emoji: 🦔
-  ip: 192.168.1.88
+  ip: 192.0.2.88
   user: hog
-  mac: 38:F7:CD:CD:BF:0A
+  mac: 02:00:00:00:00:07

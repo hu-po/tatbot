@@ -5,9 +5,9 @@ set -euo pipefail
 #   scripts/chrome.sh [node_or_host] [port]
 # Examples:
 #   scripts/chrome.sh                 # localhost:8080 (legacy behavior)
-#   scripts/chrome.sh ook             # 192.168.1.90:8080 (from src/conf/mcp/ook.yaml)
-#   scripts/chrome.sh oop 8080        # 192.168.1.51:8080
-#   scripts/chrome.sh 192.168.1.90    # 192.168.1.90:8080
+#   scripts/chrome.sh ook             # 192.0.2.90:8080 (from src/conf/mcp/ook.yaml)
+#   scripts/chrome.sh oop 8080        # 192.0.2.51:8080
+#   scripts/chrome.sh 192.0.2.90    # 192.0.2.90:8080
 
 NODE_OR_HOST="${1:-localhost}"
 PORT="${2:-8080}"

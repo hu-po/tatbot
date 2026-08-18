@@ -58,7 +58,7 @@ ssh eek "bash ~/tatbot/scripts/mcp_run.sh eek"
 ssh ook "bash ~/tatbot/scripts/mcp_run.sh ook"
 
 # Monitor MCP logs
-tail -f /nfs/tatbot/mcp-logs/<node_name>.log
+tail -f /srv/tatbot-data/mcp-logs/<node_name>.log
 ```
 
 ### Running Operations
@@ -118,7 +118,7 @@ The system supports **meta configs** for easy parameter overrides across scenes.
 
 ### Data Flow
 
-1. **Design Generation**: Image → DrawingBotV3 → G-code files (stored in `/nfs/tatbot/designs/`)
+1. **Design Generation**: Image → DrawingBotV3 → G-code files (stored in `/srv/tatbot-data/designs/`)
 2. **Stroke Processing**: G-code → `make_gcode_strokes` → `StrokeList` 
 3. **Surface Mapping**: (optional) `StrokeList` → `map_strokes_to_mesh` → 3D mapped strokes → `StrokeList`
 4. **IK Solving**: `StrokeList` → `strokebatch_from_strokes` → `StrokeBatch` with joint angles
@@ -191,8 +191,8 @@ The following tools are available via MCP servers on different nodes:
 - Cursor IDE MCP integration may require restart: Ctrl+Shift+P > "View: OpenMCP Settings"  
 - Distributed system - ensure network connectivity between nodes
 - Camera passwords and API keys stored in `.env` file
-- NFS mount required: `/nfs/tatbot` shared across all nodes (served by eek)
-- Designs stored in `/nfs/tatbot/designs/` directory with DrawingBotV3 project files
+- NFS mount required: `/srv/tatbot-data` shared across all nodes (served by eek)
+- Designs stored in `/srv/tatbot-data/designs/` directory with DrawingBotV3 project files
 - DrawingBotV3 configs in `config/dbv3/` for pen settings and G-code generation
 - Both RealSense cameras connected to eek via USB3
-- `/nfs/tatbot/recordings/` directory contains timestamped robot operation recordings
+- `/srv/tatbot-data/recordings/` directory contains timestamped robot operation recordings

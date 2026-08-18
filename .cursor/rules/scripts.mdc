@@ -8,4 +8,4 @@ SSH into individual nodes to use available utility scripts:
 - `scripts/lint.sh` - Code linting and formatting
 - `scripts/kill.sh` - Clean shutdown of running processes
 
-Logs for the MCP servers are located in `/nfs/mcp-logs/<NODE_NAME>.log`
+Logs for the MCP servers are located in `/srv/tatbot-data/mcp-logs/<NODE_NAME>.log`

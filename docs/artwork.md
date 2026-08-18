@@ -13,11 +13,11 @@ Basic art workflow is:
 2. vectorize into strokes (gcode)
 3. convert gcode to IK poses (batched using GPU)
 
-designs are stored in `/nfs/tatbot/designs/`
+designs are stored in `/srv/tatbot-data/designs/`
 
 ```{admonition} Quick Reference
 :class: tip
-- Designs: `/nfs/tatbot/designs/`
+- Designs: `/srv/tatbot-data/designs/`
 - DBv3 configs: `config/dbv3/{pens,gcode,areas}/...`
 ```
 

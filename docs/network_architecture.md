@@ -16,7 +16,7 @@ Tatbot uses a sophisticated dual-mode networking system that automatically adapt
 - **Automatic Mode Detection**: Zero manual intervention for mode switches
 - **Seamless Failover**: Sub-20 second transitions between modes
 - **Internet Resilience**: Always-available internet access when possible
-- **DNS Continuity**: `.tatbot.lan` domains work in both modes
+- **DNS Continuity**: `.tatbot.example` domains work in both modes
 - **Self-Healing**: Automatic DHCP renewal and configuration repair
 
 ## Network Modes
@@ -24,18 +24,18 @@ Tatbot uses a sophisticated dual-mode networking system that automatically adapt
 ### Home Mode
 **Triggered when**: Home LAN cable connected to `switch-lan`
 
-- **DHCP**: Home router (192.168.1.1) provides IP addresses
-- **Gateway**: 192.168.1.1 (home router)
-- **DNS**: rpi2 (192.168.1.99) forwards queries to home router
+- **DHCP**: Home router (192.0.2.1) provides IP addresses
+- **Gateway**: 192.0.2.1 (home router)
+- **DNS**: rpi2 (192.0.2.99) forwards queries to home router
 - **Internet**: Full access via home network
 - **Scope**: Access to home computers (e.g., oop)
 
 ### Edge Mode
 **Triggered when**: Home LAN cable disconnected from `switch-lan`
 
-- **DHCP**: rpi2 (192.168.1.99) provides IP addresses
-- **Gateway**: ook (192.168.1.90) with WiFi NAT
-- **DNS**: rpi2 (192.168.1.99) with upstream to 1.1.1.1/8.8.8.8
+- **DHCP**: rpi2 (192.0.2.99) provides IP addresses
+- **Gateway**: ook (192.0.2.90) with WiFi NAT
+- **DNS**: rpi2 (192.0.2.99) with upstream to 1.1.1.1/8.8.8.8
 - **Internet**: Available via ook's WiFi connection
 - **Scope**: Isolated tatbot network with optional internet
 
@@ -54,14 +54,14 @@ Tatbot uses a sophisticated dual-mode networking system that automatically adapt
 - **Failover**: Provides internet when home network unavailable
 
 ### Other Nodes (eek, hog, ojo, rpi1)
-- **Configuration**: Use rpi2 as DNS server (192.168.1.99)
+- **Configuration**: Use rpi2 as DNS server (192.0.2.99)
 - **DHCP Client**: Accept leases from either rpi2 or home router
 - **Auto-Renewal**: Receive new network configuration automatically
 
 ## Automation
 
 ### Mode Detection
-- **Trigger**: Home router (192.168.1.1) reachability test
+- **Trigger**: Home router (192.0.2.1) reachability test
 - **Frequency**: Every 20 seconds via `tatbot-mode-auto.service`
 - **Script**: `scripts/network/mode_auto_switcher_with_dhcp.sh`
 
@@ -72,26 +72,26 @@ Tatbot uses a sophisticated dual-mode networking system that automatically adapt
 - **Fallback**: 5-minute lease timeout ensures eventual consistency
 
 ### DNS Resolution
-- **Tatbot Domains**: Always resolves `.tatbot.lan` addresses
+- **Tatbot Domains**: Always resolves `.tatbot.example` addresses
 - **Internet Domains**: Forwarded appropriately per mode
-- **Static Entries**: All tatbot devices have fixed `.tatbot.lan` names
+- **Static Entries**: All tatbot devices have fixed `.tatbot.example` names
 
 ## IP Addressing
 
 ### Static Reservations
 ```text
-ook:     192.168.1.90  # Gateway in Edge mode
-eek:     192.168.1.97  # NFS server
-hog:     192.168.1.88  # Robot control
-ojo:     192.168.1.96  # AI inference
-rpi1:    192.168.1.98  # Visualization
-rpi2:    192.168.1.99  # DNS/DHCP server
-camera1-5: 192.168.1.91-95
-arms:    192.168.1.2-3
+ook:     192.0.2.90  # Gateway in Edge mode
+eek:     192.0.2.97  # NFS server
+hog:     192.0.2.88  # Robot control
+ojo:     192.0.2.96  # AI inference
+rpi1:    192.0.2.98  # Visualization
+rpi2:    192.0.2.99  # DNS/DHCP server
+camera1-5: 192.0.2.91-95
+arms:    192.0.2.2-3
 ```
 
 ### DHCP Ranges
-- **Edge Mode**: 192.168.1.2-254 (covers static reservations)
+- **Edge Mode**: 192.0.2.2-254 (covers static reservations)
 - **Home Mode**: Delegated to home router
 
 ## Config Files
@@ -110,17 +110,17 @@ arms:    192.168.1.2-3
 
 ### Edge Mode Internet Path
 ```text
-Node → ook (192.168.1.90) → WiFi NAT → Internet
+Node → ook (192.0.2.90) → WiFi NAT → Internet
 ```
 
 ### Home Mode Internet Path  
 ```text
-Node → Home Router (192.168.1.1) → Internet
+Node → Home Router (192.0.2.1) → Internet
 ```
 
 ### DNS Resolution Path (Both Modes)
 ```text
-Node → rpi2 (192.168.1.99) → [Home Router | Upstream DNS]
+Node → rpi2 (192.0.2.99) → [Home Router | Upstream DNS]
 ```
 
 ## Monitoring
@@ -141,7 +141,7 @@ ssh rpi2 "sudo journalctl -u tatbot-mode-auto.service -f"
 - **Mode Detection Issues**: Check `tatbot-mode-auto.service` logs
 - **DHCP Problems**: Verify lease files and dnsmasq status  
 - **Internet Issues**: Verify ook's WiFi and NAT configuration
-- **DNS Problems**: Test resolution with `nslookup <host>.tatbot.lan 192.168.1.99`
+- **DNS Problems**: Test resolution with `nslookup <host>.tatbot.example 192.0.2.99`
 
 ## Security
 

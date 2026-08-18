@@ -4,4 +4,4 @@ image_height_m: 0.05
 zone_depth_m: 0.1
 zone_width_m: 0.1
 zone_height_m: 0.1
-plymesh_dir: "/nfs/tatbot/3d/default"
+plymesh_dir: "/srv/tatbot-data/3d/default"

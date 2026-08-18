@@ -1,11 +1,13 @@
+# Public-safe example configuration. Deployment addresses, credentials, and
+# device identifiers belong in the private development repository.
 ipcameras:
   - name: "camera1"
     width: 1920
     height: 1080
     fps: 5
     urdf_link_name: "camera1_optical_frame"
-    ip: "192.168.1.91"
-    username: "admin"
+    ip: "192.0.2.91"
+    username: "camera-user"
     password: "CAMERA_1_PASSWORD"
     rtsp_port: 554
     intrinsics:
@@ -26,8 +28,8 @@ ipcameras:
     height: 1080
     fps: 5
     urdf_link_name: "camera2_optical_frame"
-    ip: "192.168.1.92"
-    username: "admin"
+    ip: "192.0.2.92"
+    username: "camera-user"
     password: "CAMERA_2_PASSWORD"
     rtsp_port: 554
     intrinsics:
@@ -48,8 +50,8 @@ ipcameras:
     height: 1080
     fps: 5
     urdf_link_name: "camera3_optical_frame"
-    ip: "192.168.1.93"
-    username: "admin"
+    ip: "192.0.2.93"
+    username: "camera-user"
     password: "CAMERA_3_PASSWORD"
     rtsp_port: 554
     intrinsics:
@@ -70,8 +72,8 @@ ipcameras:
     height: 1080
     fps: 5
     urdf_link_name: "camera4_optical_frame"
-    ip: "192.168.1.94"
-    username: "admin"
+    ip: "192.0.2.94"
+    username: "camera-user"
     password: "CAMERA_4_PASSWORD"
     rtsp_port: 554
     intrinsics:
@@ -92,8 +94,8 @@ ipcameras:
     height: 1080
     fps: 5
     urdf_link_name: "camera5_optical_frame"
-    ip: "192.168.1.95"
-    username: "admin"
+    ip: "192.0.2.95"
+    username: "camera-user"
     password: "CAMERA_5_PASSWORD"
     rtsp_port: 554
     intrinsics:
@@ -114,7 +116,7 @@ realsenses:
     width: 640
     height: 480
     fps: 30
-    serial_number: "230422273017"
+    serial_number: "REALSENSE_SERIAL_EXAMPLE_1"
     urdf_link_name: "left/realsense_depth_optical_frame"
     intrinsics:
       fov: 1.544
@@ -133,7 +135,7 @@ realsenses:
     width: 640
     height: 480
     fps: 30
-    serial_number: "218622278376"
+    serial_number: "REALSENSE_SERIAL_EXAMPLE_2"
     urdf_link_name: "right/realsense_depth_optical_frame"
     intrinsics:
       fov: 1.544

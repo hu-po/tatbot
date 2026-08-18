@@ -37,6 +37,9 @@
 
 🎥 Watch the [livestream](https://youtube.com/live/ym27ZHPMaec)
 
+> This public repository is the project archive and documentation home. Active
+> deployment configuration and ongoing internal development live separately.
+
 [![YouTube Video](docs/images/thumbnail.jpg)](https://youtube.com/live/ym27ZHPMaec)
 
 ## Citation

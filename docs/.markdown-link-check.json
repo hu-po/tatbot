@@ -13,10 +13,10 @@
       "pattern": "127.0.0.1"
     },
     {
-      "pattern": "192.168.1."
+      "pattern": "192.0.2."
     },
     {
-      "pattern": "tatbot.lan"
+      "pattern": "tatbot.example"
     }
   ],
   "replacementPatterns": [

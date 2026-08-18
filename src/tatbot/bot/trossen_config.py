@@ -38,13 +38,13 @@ def load_pose_from_yaml(pose_name: str) -> ArmPose:
 class TrossenConfig:
     debug: bool = False
     """Enable debug logging."""
-    arm_l_ip: str = "192.168.1.3"
+    arm_l_ip: str = "192.0.2.3"
     """IP address of the left arm."""
     arm_l_config_filepath: str = str(TROSSEN_CONFIG_DIR / 'arm_l.yaml')
     """YAML file containing left arm config."""
     test_pose_name_l: str = "left/ready"
     """Test pose for the left arm (ArmPose)."""
-    arm_r_ip: str = "192.168.1.2"
+    arm_r_ip: str = "192.0.2.2"
     """IP address of the right arm."""
     arm_r_config_filepath: str = str(TROSSEN_CONFIG_DIR / 'arm_r.yaml')
     """YAML file containing right arm config."""

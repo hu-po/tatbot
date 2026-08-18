@@ -1,8 +1,8 @@
 factory_reset_flag: false
 ip_method: manual
-manual_ip: 192.168.1.2
-dns: 192.168.1.99
-gateway: 192.168.1.1
+manual_ip: 192.0.2.2
+dns: 192.0.2.99
+gateway: 192.0.2.1
 subnet: 255.255.255.0
 joint_characteristics:
   - effort_correction: 1.100000023841858

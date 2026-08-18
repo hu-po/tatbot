@@ -13,7 +13,7 @@
 - Install dev tools: `uv pip install .[dev,docs]`.
 - Lint/format/type-check: `./scripts/lint_code.sh` (runs isort, ruff, mypy on `src/tatbot`).
 - Run tests: `uv run pytest -q`.
-- Run MCP server: `./scripts/mcp_run.sh <node>` (logs in `/nfs/tatbot/mcp-logs/<node>.log`).
+- Run MCP server: `./scripts/mcp_run.sh <node>` (logs in `/srv/tatbot-data/mcp-logs/<node>.log`).
 - Local viz examples:
   - `uv run python -m tatbot.viz.stroke --scene=tatbotlogo`
   - `uv run python -m tatbot.viz.teleop --enable-robot --enable-depth`
@@ -37,6 +37,6 @@
 
 ## Security & Configuration Tips
 - Secrets: use `.env` (see `.env.example`). Never commit credentials.
-- Shared paths: NFS at `/nfs/tatbot` for logs, designs, recordings.
+- Shared paths: NFS at `/srv/tatbot-data` for logs, designs, recordings.
 - Extras: install only needed extras (`.[bot,cam,gen,gpu,img,viz]`).
 - MCP nodes and ports are Hydra-driven (`src/conf/mcp/`); avoid hardcoding.
