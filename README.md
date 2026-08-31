@@ -33,16 +33,7 @@ Tatbot is an open robotics project exploring robot-assisted tattoo design and
 placement. The repository contains the software, data formats, and examples
 used by developers and artists contributing to the project.
 
-> **Status:** this is a fresh repository being prepared for the tatbot
-> **0.9.0** release. Code lands here through curated, reviewed exports; the
-> previous public tree is archived at
-> [tatbot-legacy](https://github.com/hu-po/tatbot-legacy).
-
-## Contributing
-
-Issues and pull requests are welcome — see
-[CONTRIBUTING.md](CONTRIBUTING.md) for how changes land here and
-[SECURITY.md](SECURITY.md) for reporting vulnerabilities privately.
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 📚 Read the [documentation](https://hu-po.github.io/tatbot/)
 

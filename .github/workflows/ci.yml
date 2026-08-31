@@ -26,6 +26,3 @@ jobs:
             --exclude 'poly\.cam'
             './**/*.md'
           fail: true
-
-  # Build/test jobs for each component land with the 0.9.0 export; every PR
-  # must be green here before review.

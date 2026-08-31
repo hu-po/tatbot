@@ -1,10 +1,6 @@
-<!-- Thanks for contributing! See CONTRIBUTING.md — accepted PRs land on main
-via the next curated export, with your authorship credited. -->
-
 ## What does this change?
 
-<!-- A short description of the change and why it is needed. Link the issue
-if one exists. -->
+<!-- Short description and motivation. Link the issue if one exists. -->
 
 ## How was it tested?
 
