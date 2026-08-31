@@ -1,60 +1,17 @@
-# Handheld "picosecond Nd:YAG tattoo removal laser pen".
+# Handheld "picosecond laser pen" (tattoo removal).
 #
-# *** WHAT THIS DEVICE ACTUALLY IS ***
-# The consumer handheld sold as a "picosecond laser pen" is almost certainly
-# neither picosecond nor Nd:YAG. Vendors' own listings give its wavelengths as
-# 450 nm (blue) and 850 nm (red) — ordinary diode/LED wavelengths, not the
-# 1064 nm of an Nd:YAG — and several describe the source as "LED Light Color:
-# Blue and Red". A medical-laser engineer who put one on a bench reported "it
-# is definitely NOT a picosecond pulsewidth" at roughly 1 W. No consumer
-# listing anywhere states a pulse width, spot size, fluence, or laser class;
-# vendors contradict themselves and each other. Treat every optical number
-# below as marketing copy, not measurement.
-#
-# The unit here is a HANDHELD (operator, 2026-08-25), so this datasheet is the
-# right shape for it. A real bench picosecond Nd:YAG is a different object
-# entirely — 23-125 kg, handpiece on an articulated arm, 450 ps at 1064 nm,
-# Class 4, held 3-5 cm off the skin — and would need its own file.
-#
-# FITTED AND TOUCHED OFF 2026-08-26 (sweep-20260826_122203); it is the tool
-# config/workspace.yaml is calibrated for. Tattoo removal is part of the
-# business strategy, so this was registered ahead of need rather than as a
-# curiosity: the registry has to hold more than tattoo pens.
-#
-# *** SAFETY AND REGULATORY — BOTH PATHS ARE CONSTRAINED ***
-# Professional pico/Q-switched Nd:YAG systems are Class 4 lasers (FDA's own
-# table puts skin-treatment lasers there) AND FDA Class II PRESCRIPTION
-# devices under 21 CFR 878.4810, product code GEX — cleared for use by, or
-# under the supervision of, a health care professional. PicoWay K220853,
-# PicoSure K210226, Discovery Pico K240983 are all on that footing. Eye
-# protection runs OD >= 7 at 532/755/1064 nm, and PicoSure publishes a nominal
-# ocular hazard distance of 5500 m. Some states regulate the operator
-# separately: California bars cosmetologists, estheticians, LVNs and
-# unlicensed medical assistants from performing these treatments at all.
-#
-# The consumer path is not a lighter version of that — it is outside it. No
-# consumer tattoo-removal laser has ever been FDA-cleared; under 878.4810 the
-# over-the-counter product codes cover hair, wrinkles and acne, and there is
-# no OTC tattoo-removal code to be cleared under. One vendor site claims "the
-# device is FDA-approved"; that name returns NOT_FOUND in both FDA
-# registration/listing and 510(k) databases. Two MAUDE injury reports have
-# been filed against the NEATCELL pen (17269811, 20127705). No seller states
-# a laser class, pulse width, fluence or output power, which 21 CFR 1040.10
-# would require of a Class II-IV product — and one reseller describes the
-# mechanism as converting "transient voltage discharge into electrical ions",
-# which is plasma-pen language, not a laser at all.
-#
-# Nothing in this registry makes a laser safe to put on an arm. The datasheet
-# describes its shape; who may point it at whom is a separate question and
-# this one has a real answer.
+# A consumer handheld whose optical claims are marketing copy: vendor
+# listings give diode/LED wavelengths, none state a pulse width, spot size,
+# fluence, or laser class, and a bench test found nothing picosecond about
+# it. That is why no optical numbers appear below — this file describes the
+# object's SHAPE so the robot can carry it. Nothing in a datasheet makes a
+# laser safe to point at anyone.
 schema_version: 2
-# NO MOUNT (2026-08-30): the follower's tool now sits in a bore sized for the
-# Lutin body, and this wand has no adapter for it. Until one exists this
-# tool cannot be fitted, calibrated or flown — everything that would is
-# refused by tool_spec.ToolMountError. The profile below is kept in the OLD
-# gripper frame (z = 0 at the fingertips, as it was measured) for the
-# datasets recorded with it; it will be re-measured from the adapter's bore
-# face when that adapter is designed.
+# NO MOUNT (2026-08-30): the follower's tool bore is sized for the Lutin
+# body and this wand has no adapter, so fitting/calibration/flight are
+# refused (tool_spec.ToolMountError). The profile is kept in the OLD gripper
+# frame (z = 0 at the fingertips, as measured) for the datasets recorded
+# with it; re-measure from the adapter's bore face when one exists.
 mount: none
 tool_id: picosecond-laser-pen
 kind: laser
@@ -65,27 +22,13 @@ cartridge: null
 prompt_phrase: "with the removal laser"
 
 # [z_m, radius_m] along the tool axis, z = 0 at the gripper fingertips.
-# TRACED FROM PHOTOGRAPHS on 6 mm graph paper (2026-08-25), grid pitch 107.5 px
-# giving 17.9 px/mm. Total 214 mm, which corroborates the ~220 mm listing — but
-# the listing's 55 mm width does NOT survive: the widest point measures 37.8 mm,
-# so "5.5 x 22 cm" was the box, not the pen.
-#
-# Sections along the tool, tail to tip: a 9 mm chrome tail cap, 141 mm of white
-# shell that swells from 27.5 to 37.8 mm toward the front, then 64 mm of chrome
-# that flares back down through a 13.7 mm stem to a 15.4 mm lens face. Nothing
-# like the plain cylinder this file used to claim.
-#
-# GRIP: MEASURED, 2026-08-25 — the operator reports the wand standing 130 mm
-# proud of the fingertips as fitted. That sets everything: the tail lands 84 mm
-# behind the fingers (130 mm of a 214 mm body ahead of them), the fingers close
-# mid-shell, and the profile below is the traced silhouette shifted 34 mm back
-# from the grip this file used to assume.
-#
-# 130 mm rather than the assumed 164 mm matters well beyond bookkeeping. The
-# wrist moment falls from ~4.2x a tattoo pen's to ~3.4x (mass x protrusion,
-# 0.175x0.130 against 0.113x0.060), and 34 mm of overhang is the difference
-# between the arm being able to hold this tool perpendicular over the pad and
-# not — see the reach table in
+# Traced from photographs on 6 mm graph paper (2026-08-25, 17.9 px/mm):
+# 214 mm long, widest 37.8 mm — a 9 mm chrome tail cap, 141 mm of white
+# shell swelling 27.5 → 37.8 mm, then 64 mm of chrome flaring down through
+# a 13.7 mm stem to a 15.4 mm lens face.
+# Grip measured on the arm 2026-08-25: the wand stands 130 mm proud of the
+# fingertips, so the tail sits 84 mm behind the fingers and the profile is
+# the traced silhouette shifted accordingly.
 profile: [
   [-0.084, 0.0138],
   [-0.075, 0.0138],
@@ -97,15 +40,10 @@ profile: [
   [ 0.117, 0.0075],
   [ 0.130, 0.0077]
 ]
-# The emitter window, and the flash out of it. Modelled as an emissive sphere
-# just inside the tip: under the path tracer an emissive material is an area
-# light, so the pulse actually throws blue onto the skin instead of only
-# looking bright. The env drives the pulse (TatbotDrawEnv._pulse_emitter).
-#
-# The COLOUR is a choice, not a measurement, and worth being honest about: a
-# 1064/532 nm Q-switched beam is invisible or green, and this pen's optical
-# figures are marketing copy by its own datasheet. Blue is what the operator
-# asked to see, and it reads as "firing" on camera, which is the job here.
+# The emitter window, modelled as an emissive sphere just inside the tip so
+# the pulse throws light onto the skin under the path tracer (the env drives
+# it via TatbotDrawEnv._pulse_emitter). The COLOUR is a rendering choice,
+# not a measurement: blue reads as "firing" on camera.
 tip_detail:
   kind: emitter
   radius_m: 0.0035
@@ -113,17 +51,14 @@ tip_detail:
   # green pulled down from 0.30: at 2.6x it rendered cyan, not blue
   color: "0.05 0.16 1.00 1"
   hz: 9.0
-  # Emission is RGBA and the tonemap clips per channel, so a big multiplier
-  # drives every channel past 1 and the "blue" flash renders WHITE — measured
-  # at peak 22. Keep the peak low enough that red stays well under 1 and only
-  # blue saturates, which is what reads as a blue emitter.
+  # Emission is RGBA and the tonemap clips per channel: keep the peak low
+  # enough that only blue saturates, or the flash renders white.
   peak: 2.6
 
 tip_mesh: null
-# One per profile segment: chrome tail cap, three of white shell, then the
-# chrome nose in four. Chrome sits below 0.8 on purpose — TatbotDrawEnv
-# turns anything that dark metallic, and a bright base under a metallic
-# shader washes out to plain white.
+# One per profile segment: chrome tail, three of white shell, chrome nose.
+# Chrome sits below 0.8 on purpose — TatbotDrawEnv turns anything that dark
+# metallic, and a bright base under a metallic shader washes out to white.
 segment_colors: [
   "0.60 0.63 0.67 1",
   "0.94 0.94 0.93 1",
@@ -135,77 +70,25 @@ segment_colors: [
   "0.55 0.63 0.72 1"
 ]
 
-# NOT MODELLED: the black LED panel and its two buttons, inset on ONE side of
-# the shell over roughly z = -0.04 .. 0.03. A profile of revolution can only
-# make it a band all the way round, which would read worse in a wrist camera
-# than leaving it off.
+# NOT MODELLED: the black LED panel and its two buttons on ONE side of the
+# shell (z = -0.04 .. 0.03); a profile of revolution would band them all the
+# way round, which reads worse in a wrist camera than leaving them off.
 
-# A CONTACT tool, despite being a laser. The pen has a plastic tip meant to
-# rest on the skin, with the emitter behind that housing focused at the tip
-# (operator, 2026-08-25). So the working point is the tip itself, like a pen's:
-# no standoff, no free-space focus, and a touch-off can measure it the ordinary
-# way by planting it on a surface.
-#
-# The registry's non-contact support exists for the OTHER kind of hardware, not
-# this one. A professional Nd:YAG handpiece is held 3-5 cm off the skin for
-# tattoo work and there the standoff SETS the dose — "the spot size can be
-# achieved by adjusting the distance between treatment tip and treatment area",
-# power peaking at the focus and falling either side. On that hardware the
-# working distance is a treatment parameter rather than a constant, which is
-# more than a fixed tcp_z_m can express; see docs/tools.md.
+# A CONTACT tool despite being a laser: the plastic tip rests on the skin
+# with the emitter focused at it (operator, 2026-08-25), so the working
+# point is the tip itself and a touch-off measures it the ordinary way. The
+# registry's non-contact support is for standoff hardware; see docs/tools.md.
 contact: true
 
 body_color: "0.94 0.94 0.93 1"
 tip_color: "0.60 0.63 0.67 1"
 
-# MEASURED ON THE ARM, 2026-08-25. The wand is OVOID in cross section, not
-# round: at the grip point it is 29.6 mm across the thin axis and 34.1 mm
-# across the thick one (aspect 1.15). Both fit the gripper; the thin
-# orientation is the fitted one because it lands the fingers on the two wide
-# faces, and the operator found it grips markedly better than pinching the
-# narrow edges.
-#
-# grip_diameter_m is the thin axis under light load (8 N). grip_rest_m is
-# where the jaws actually sit at the 30 N this tool runs at — 0.55 mm tighter,
-# which is why the two are not simply half of each other.
-# grip_diameter_m: 0.0296   # schema-1 grip field, retired 2026-08-30
-# grip_rest_m: 0.014446   # schema-1 grip field, retired 2026-08-30
-# MEASURED ON THE ARM, 2026-08-25, walking 8 -> 20 -> 25 -> 30 N with the
-# operator twisting the wand at each step. Loose through 20, solid at 30.
-#
-# What made 30 N defensible on a plastic shell was the compression curve
-# flattening: 8->20 N closed the jaws 0.55 mm, 20->30 N only 0.19 mm. The case
-# stiffened rather than softening, so the extra force loads a rigid contact
-# instead of crushing a void — and two minutes at 30 N drifted 0.002 mm, where
-# a shell about to yield would creep steadily. Held at 45 N max nowhere near.
-#
-# RAISED TO 33 N by the operator, 2026-08-26, overriding the "not raised for
-# symmetry" call above. The 30 N walk stands as a measurement — it is where
-# the wand stopped twisting — but 30 was the FIRST setting that held, not a
-# characterised margin, and the touch-off sessions that day wanted every
-# millimetre of grip repeatability they could get: the solved tip moved 12 mm
-# between two sessions at 30 N, against a residual the 15.4 mm contact face
-# already floors near 5 mm.
-#
-# The datasheet's own evidence says 33 N is safe on this shell. The
-# compression curve was still stiffening at 30 (8->20 N closed the jaws
-# 0.55 mm, 20->30 N only 0.19 mm), two minutes at 30 N crept 0.002 mm where a
-# yielding shell would creep steadily, and the gripper's 45 N ceiling is well
-# clear. 33 N is a 10% step into a stiffening regime, not a new one.
-#
-# It is NOT symmetry with the Lutin: that the two now agree is a coincidence
-# of both being ~30 N tools. Nothing reads one from the other — since
-# 2026-08-26 grip force is piped from whichever tool is STATED at launch.
-# grip_force_n: 33   # schema-1 grip field, retired 2026-08-30
-
 mass_kg: 0.175
 com_z_m: null
 
-# Wide, because the 15.4 mm lens face is blunt rather than a point and nothing
-# has been touched off yet; a touch-off lands where the mount puts it. Kept at
-# 30 mm even though the grip point is now measured — what remains uncertain is
-# where the mount repeats to and the traced-vs-calipered disagreement along the
-# body, and neither is narrowed by knowing the protrusion.
+# Wide, because the 15.4 mm lens face is blunt: what remains uncertain is
+# where a future mount repeats to and the traced-vs-calipered disagreement
+# along the body, and neither is narrowed by knowing the protrusion.
 tip_tolerance_m: 0.030
 
 # --- ink supply -------------------------------------------------------------
@@ -219,67 +102,21 @@ measured:
   utc: 2026-08-26T00:00:00Z
   method: "protrusion, grip point and grip force on the arm; tip by touch-off; body silhouette traced from photographs on 6 mm graph paper"
   note: |
-    TRACED FROM PHOTOGRAPHS (operator, 2026-08-25), the pen lying on 6 mm graph
-    paper. Grid pitch measured at 107.5 px by FFT, so 17.9 px/mm, and the
-    silhouette read against it: 214 mm long, widest 37.8 mm, sectioned 9 mm
-    chrome tail / 141 mm white shell / 64 mm chrome nose.
+    Traced from photographs (2026-08-25) on 6 mm graph paper, grid pitch
+    107.5 px by FFT (17.9 px/mm): 214 mm long, widest 37.8 mm. Scale
+    corroborated on the arm — the jaws closed on the grip point at 29.6 mm
+    against 30 mm predicted. The trace follows the THIN axis of an ovoid
+    shell; the thick axis is ~15% larger (widest nearer 43 mm), still well
+    inside the jaws. Grip point measured 2026-08-25: 130 mm proud of the
+    fingertips. Mass is the retailer listing's 175 g, unweighed.
 
-    That corroborates the ~220 mm length from the retailer listing and DEMOLISHES
-    its width: 5.5 x 22 cm is the box, not the pen, which is why this file
-    claimed a 55 mm cylinder until now. Mass 175 g is still that listing's, still
-    unweighed, and other listings say 140 g and 350 g.
+    Touched off 2026-08-26 (session sweep-20260826_122203): nine planted
+    holds put the tip 136.3 mm out, rms 4.26 mm — the 15.4 mm contact face,
+    not aim; workspace.yaml carried the residual beside the number. Status
+    raised to measured by the operator that day.
 
-    SCALE CONFIRMED, 2026-08-25. The trace assumed 6 mm ruling; the arm then
-    closed on the grip point at 29.6 mm against the 30 mm predicted. 5 mm
-    ruling would have made everything 17% smaller and read about 25 mm there,
-    so the ruling — and with it the 214 mm length — is corroborated by a
-    physical measurement rather than by the retailer listing.
-
-    BUT THE TRACE IS ONE AXIS. The wand is ovoid and both photographs were
-    taken on the same face, so what was traced tracks the THIN axis throughout.
-    The thick axis is ~15% larger, which puts the widest point nearer 43 mm
-    than the 37.8 mm in the profile above. Still well inside the 80 mm jaws.
-
-    GRIP POINT MEASURED, 2026-08-25: the wand stands 130 mm proud of the
-    fingertips as fitted, not the 164 mm this file assumed, so the tail sits
-    84 mm behind the fingers. Wrist moment drops to ~3.4x a tattoo pen's.
-
-    ONE TENSION TO SETTLE WITH CALIPERS. The traced thin-axis diameter at that
-    grip point is 32.2 mm, where the arm measured 29.6 mm; the trace reads
-    29.6 mm about 40 mm further back. The shell swells ~0.07 mm per mm along
-    its length, so a couple of millimetres of trace error moves the implied
-    grip a long way — which is why this is read as photo error rather than a
-    reason to doubt the 130 mm, but it is unresolved either way.
-
-    CONFIRMED BY THE OPERATOR (2026-08-25): handheld, and a CONTACT tool — the
-    plastic tip rests on the skin with the emitter focused at it. So the free
-    focal point that a bench Nd:YAG has is not a problem here.
-
-    The standoff table is the one optical figure worth trusting, and it comes
-    from a real Q-switched manual (Titan-3/LS8): tattoo removal 3-5 cm at
-    3-4 Hz and 300-500 mJ, eyebrow and eye line 1-2 cm. The same manual is
-    explicit that the beam must stay perpendicular — "if it deviated from the
-    vertical position, the laser flow will be reduced" — which for a robot
-    means beam orientation is a controlled quantity, not a by-product of
-    whatever pose the IK happens to find.
-
-    TOUCHED OFF 2026-08-26 (session sweep-20260826_122203): nine planted holds
-    on one spot of the paper pad put the tip 136.3 mm out, against the 130 mm
-    protrusion measured on the arm. rms 4.26 mm, which is the 15.4 mm contact
-    face rather than the operator's aim — a disc that wide cannot hold one
-    point across a 120 deg spread, and nine holds did not reduce it. Good to a
-    few millimetres, and workspace.yaml carries the residual beside the number.
-
-    STATUS RAISED TO MEASURED, 2026-08-26, by the operator: protrusion, grip
-    point, grip force and now the tip are all measured on the arm, and the
-    traced body is accepted as good enough for the work in hand.
-
-    STILL OPEN, and the reason to keep reading this note: the body PROFILE is
-    still traced from photographs, not calipered, and the 32.2 vs 29.6 mm
-    disagreement at the grip point is unresolved. The trace also followed one
-    face of an ovoid pen, so the widest point is nearer 43 mm than the 37.8 mm
-    recorded above. None of that moves the tip, which is measured — it is the
-    body shape the URDF draws and reasons about clearances with. Calipers along
-    the shell would settle it in a couple of minutes.
-
-    Fit it in the thin orientation; the geometry above assumes it.
+    STILL OPEN: the body profile is traced, not calipered, and the traced
+    thin-axis diameter at the grip point (32.2 mm) disagrees with the arm's
+    29.6 mm — read as photo error, unresolved. Calipers along the shell
+    would settle it in minutes. Fit in the thin orientation; the geometry
+    assumes it.

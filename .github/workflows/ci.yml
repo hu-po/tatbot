@@ -12,13 +12,13 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - name: plugin tests
         run: |
-          if [ -d python/lerobot_robot_tatbot ]; then
+          if [ -f python/lerobot_robot_tatbot/pyproject.toml ]; then
             uv run --project python/lerobot_robot_tatbot --with pytest --with pytest-timeout \
               pytest -q --timeout=120 python/lerobot_robot_tatbot/tests/
           fi
       - name: script suite
         run: |
-          if [ -d scripts/tests ]; then
+          if [ -f scripts/tests/requirements.txt ]; then
             uvx --with-requirements scripts/tests/requirements.txt --with pytest-timeout \
               pytest -q --timeout=120 scripts/tests/
           fi
@@ -32,7 +32,7 @@ jobs:
           components: clippy
       - name: visiond
         run: |
-          if [ -d rust/visiond ]; then
+          if [ -f rust/Cargo.toml ]; then
             cd rust
             cargo clippy --features rerun -- -D warnings
             cargo test --features rerun
@@ -44,7 +44,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: teleop
         run: |
-          if [ -d cpp/teleop ]; then
+          if [ -f cpp/teleop/CMakeLists.txt ]; then
             cmake -B cpp/teleop/build -S cpp/teleop
             cmake --build cpp/teleop/build -j"$(nproc)"
             ctest --test-dir cpp/teleop/build --output-on-failure
@@ -59,6 +59,6 @@ jobs:
           node-version: 22
       - name: inkmap
         run: |
-          if [ -d web/inkmap ]; then
+          if [ -f web/inkmap/package.json ]; then
             cd web/inkmap && npm ci && npm run check
           fi
