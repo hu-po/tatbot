@@ -1,0 +1,135 @@
+{
+  "//": "Synthetic wrist-tag layout example: run your own calibration sweep to produce real values. Transforms here are placeholder ee_from_tag matrices.",
+  "schema_version": 2,
+  "calibration_status": "example",
+  "generated_utc": "1970-01-01T00:00:00Z",
+  "inventory_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "target_ids": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "edge_m": 0.056,
+  "parent_frame": "right/gripper_left",
+  "source": "synthetic",
+  "source_link": "right/gripper_left",
+  "source_metrics": {
+    "observations": 0,
+    "mode": "synthetic"
+  },
+  "tags": {
+    "1": {
+      "ee_from_tag": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.02
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0,
+          -0.04
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "2": {
+      "ee_from_tag": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.02
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0,
+          -0.04
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "3": {
+      "ee_from_tag": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.02
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0,
+          -0.04
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "4": {
+      "ee_from_tag": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.02
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0,
+          -0.04
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    }
+  }
+}

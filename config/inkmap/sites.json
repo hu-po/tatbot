@@ -1,0 +1,770 @@
+{
+  "inklang": "0.3",
+  "comment": "Inklang site lexicon v0.3: 59 leaf body sites for tattoo placement language. Scope: standard commercial tattoo placements. IDs are stable keys (mesh-independent) and never rename; the region atlas maps them to faces per body. laterality: sided = takes left/right, midline = center only, any = both. level (upper/lower/mid) is a separate slot from aspect. geometry: flat | wrap | crease. `parent` marks a leaf that is a sub-part of another leaf (containment rolls up). `anchor` hints where the default point goes: centroid (default) | extremum_front | extremum_back. ncic_site = the ANSI/NIST-NCIC base site each leaf refines; snomed = SNOMED CT cross-reference where known.",
+  "laterality_words": {
+    "left": [],
+    "right": [],
+    "center": [
+      "centre"
+    ]
+  },
+  "aspects": {
+    "inner": [
+      "inside",
+      "medial"
+    ],
+    "outer": [
+      "outside",
+      "lateral"
+    ],
+    "front": [],
+    "back": [],
+    "side": [],
+    "top": []
+  },
+  "sites": {
+    "scalp": {
+      "name": "scalp",
+      "group": "head",
+      "laterality": "midline",
+      "geometry": "wrap",
+      "ncic_site": "HEAD",
+      "aliases": [
+        "head"
+      ]
+    },
+    "face": {
+      "name": "face",
+      "group": "head",
+      "laterality": "midline",
+      "geometry": "flat",
+      "ncic_site": "FACE"
+    },
+    "cheek": {
+      "name": "cheek",
+      "group": "head",
+      "laterality": "sided",
+      "geometry": "flat",
+      "ncic_site": "CHEEK"
+    },
+    "chin": {
+      "name": "chin",
+      "group": "head",
+      "laterality": "midline",
+      "geometry": "wrap",
+      "ncic_site": "CHIN",
+      "anchor": "extremum_front"
+    },
+    "ear": {
+      "name": "ear",
+      "group": "head",
+      "laterality": "sided",
+      "geometry": "crease",
+      "ncic_site": "EAR"
+    },
+    "behind_ear": {
+      "name": "behind the ear",
+      "group": "head",
+      "laterality": "sided",
+      "geometry": "crease",
+      "ncic_site": "EAR",
+      "aliases": [
+        "behind ear"
+      ]
+    },
+    "jaw": {
+      "name": "jaw",
+      "group": "head",
+      "laterality": "sided",
+      "geometry": "crease",
+      "ncic_site": "FACE",
+      "aliases": [
+        "jawline"
+      ]
+    },
+    "neck": {
+      "name": "neck",
+      "group": "head",
+      "laterality": "any",
+      "geometry": "wrap",
+      "ncic_site": "NECK",
+      "aspects": [
+        "front",
+        "side",
+        "back"
+      ]
+    },
+    "shoulder_cap": {
+      "name": "shoulder",
+      "group": "arm",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "SHOULDER",
+      "snomed": "23547007",
+      "aliases": [
+        "shoulder cap",
+        "deltoid",
+        "delt"
+      ],
+      "aspects": [
+        "front",
+        "back"
+      ]
+    },
+    "shoulder_blade": {
+      "name": "shoulder blade",
+      "group": "arm",
+      "laterality": "sided",
+      "geometry": "flat",
+      "ncic_site": "SHOULDER",
+      "aliases": [
+        "scapula"
+      ]
+    },
+    "bicep": {
+      "name": "bicep",
+      "group": "arm",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "UPPER ARM",
+      "aspects": [
+        "inner",
+        "outer"
+      ],
+      "aliases": [
+        "biceps",
+        "upper arm"
+      ]
+    },
+    "tricep": {
+      "name": "tricep",
+      "group": "arm",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "UPPER ARM",
+      "aliases": [
+        "triceps",
+        "back of the arm"
+      ]
+    },
+    "elbow": {
+      "name": "elbow",
+      "group": "arm",
+      "laterality": "sided",
+      "geometry": "crease",
+      "ncic_site": "ELBOW",
+      "anchor": "extremum_back"
+    },
+    "elbow_ditch": {
+      "name": "elbow ditch",
+      "group": "arm",
+      "laterality": "sided",
+      "geometry": "crease",
+      "ncic_site": "ELBOW",
+      "snomed": "17957002",
+      "aliases": [
+        "elbow crease",
+        "elbow pit",
+        "inner elbow",
+        "antecubital fossa"
+      ]
+    },
+    "forearm": {
+      "name": "forearm",
+      "group": "arm",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "FOREARM",
+      "aspects": [
+        "inner",
+        "outer"
+      ]
+    },
+    "wrist": {
+      "name": "wrist",
+      "group": "arm",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "WRIST",
+      "aspects": [
+        "inner",
+        "outer"
+      ]
+    },
+    "hand": {
+      "name": "hand",
+      "group": "arm",
+      "laterality": "sided",
+      "geometry": "flat",
+      "ncic_site": "HAND",
+      "aspects": [
+        "top",
+        "side"
+      ]
+    },
+    "palm": {
+      "name": "palm",
+      "group": "arm",
+      "laterality": "sided",
+      "geometry": "flat",
+      "ncic_site": "HAND"
+    },
+    "fingers": {
+      "name": "fingers",
+      "group": "arm",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "FINGER",
+      "plural": true,
+      "aliases": [
+        "finger"
+      ]
+    },
+    "knuckles": {
+      "name": "knuckles",
+      "group": "arm",
+      "laterality": "sided",
+      "geometry": "crease",
+      "ncic_site": "FINGER",
+      "plural": true,
+      "aliases": [
+        "knuckle"
+      ]
+    },
+    "chest": {
+      "name": "chest",
+      "group": "torso_front",
+      "laterality": "midline",
+      "geometry": "flat",
+      "ncic_site": "CHEST",
+      "aspects": [],
+      "aliases": [
+        "chest panel"
+      ]
+    },
+    "pec": {
+      "name": "pec",
+      "group": "torso_front",
+      "laterality": "sided",
+      "geometry": "flat",
+      "ncic_site": "CHEST",
+      "aliases": [
+        "pecs",
+        "pectoral"
+      ]
+    },
+    "collarbone": {
+      "name": "collarbone",
+      "group": "torso_front",
+      "laterality": "sided",
+      "geometry": "crease",
+      "ncic_site": "CHEST",
+      "snomed": "91009005",
+      "aliases": [
+        "collar bone",
+        "clavicle"
+      ]
+    },
+    "sternum": {
+      "name": "sternum",
+      "group": "torso_front",
+      "laterality": "midline",
+      "geometry": "flat",
+      "ncic_site": "CHEST",
+      "snomed": "244107007"
+    },
+    "underboob": {
+      "name": "underboob",
+      "group": "torso_front",
+      "laterality": "midline",
+      "geometry": "crease",
+      "ncic_site": "BREAST",
+      "aliases": [
+        "underbust",
+        "under bust"
+      ]
+    },
+    "ribs": {
+      "name": "ribs",
+      "group": "torso_front",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "CHEST",
+      "snomed": "34284005",
+      "aspects": [],
+      "aliases": [
+        "rib",
+        "rib cage",
+        "ribcage",
+        "flank"
+      ]
+    },
+    "stomach": {
+      "name": "stomach",
+      "group": "torso_front",
+      "laterality": "midline",
+      "geometry": "flat",
+      "ncic_site": "ABDOMEN",
+      "aspects": [
+        "side"
+      ],
+      "aliases": [
+        "belly",
+        "tummy",
+        "abdomen"
+      ]
+    },
+    "hip": {
+      "name": "hip",
+      "group": "torso_front",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "HIP"
+    },
+    "groin": {
+      "name": "groin",
+      "group": "torso_front",
+      "laterality": "midline",
+      "geometry": "crease",
+      "ncic_site": "GROIN"
+    },
+    "armpit": {
+      "name": "armpit",
+      "group": "torso_front",
+      "laterality": "sided",
+      "geometry": "crease",
+      "ncic_site": "ARM",
+      "aliases": [
+        "underarm",
+        "axilla"
+      ]
+    },
+    "upper_back": {
+      "name": "upper back",
+      "group": "torso_back",
+      "laterality": "midline",
+      "geometry": "flat",
+      "ncic_site": "BACK"
+    },
+    "mid_back": {
+      "name": "mid back",
+      "group": "torso_back",
+      "laterality": "midline",
+      "geometry": "flat",
+      "ncic_site": "BACK",
+      "aliases": [
+        "middle of the back"
+      ]
+    },
+    "lower_back": {
+      "name": "lower back",
+      "group": "torso_back",
+      "laterality": "midline",
+      "geometry": "flat",
+      "ncic_site": "BACK",
+      "snomed": "51027004"
+    },
+    "spine": {
+      "name": "spine",
+      "group": "torso_back",
+      "laterality": "midline",
+      "geometry": "crease",
+      "ncic_site": "BACK"
+    },
+    "buttock": {
+      "name": "buttock",
+      "group": "torso_back",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "BUTTOCKS",
+      "aliases": [
+        "butt",
+        "buttocks",
+        "glute",
+        "bum"
+      ]
+    },
+    "thigh": {
+      "name": "thigh",
+      "group": "leg",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "THIGH",
+      "aspects": [
+        "front",
+        "back",
+        "inner",
+        "outer"
+      ]
+    },
+    "knee": {
+      "name": "knee",
+      "group": "leg",
+      "laterality": "sided",
+      "geometry": "crease",
+      "ncic_site": "KNEE",
+      "aliases": [
+        "kneecap",
+        "knee cap"
+      ],
+      "anchor": "extremum_front",
+      "aspects": [
+        "inner",
+        "outer"
+      ]
+    },
+    "knee_ditch": {
+      "name": "knee ditch",
+      "group": "leg",
+      "laterality": "sided",
+      "geometry": "crease",
+      "ncic_site": "KNEE",
+      "snomed": "84507004",
+      "aliases": [
+        "knee pit",
+        "back of the knee",
+        "popliteal fossa"
+      ]
+    },
+    "calf": {
+      "name": "calf",
+      "group": "leg",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "CALF",
+      "aliases": [
+        "calves"
+      ],
+      "aspects": [
+        "inner",
+        "outer"
+      ]
+    },
+    "shin": {
+      "name": "shin",
+      "group": "leg",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "LEG",
+      "aspects": [
+        "inner",
+        "outer"
+      ]
+    },
+    "ankle": {
+      "name": "ankle",
+      "group": "leg",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "ANKLE",
+      "aspects": [
+        "inner",
+        "outer"
+      ]
+    },
+    "foot_top": {
+      "name": "top of the foot",
+      "group": "leg",
+      "laterality": "sided",
+      "geometry": "flat",
+      "ncic_site": "FOOT",
+      "aliases": [
+        "foot",
+        "top of foot"
+      ]
+    },
+    "sole": {
+      "name": "sole",
+      "group": "leg",
+      "laterality": "sided",
+      "geometry": "flat",
+      "ncic_site": "FOOT",
+      "aliases": [
+        "bottom of the foot",
+        "sole of the foot"
+      ]
+    },
+    "heel": {
+      "name": "heel",
+      "group": "leg",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "FOOT",
+      "anchor": "extremum_back"
+    },
+    "toes": {
+      "name": "toes",
+      "group": "leg",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "TOE",
+      "plural": true,
+      "aliases": [
+        "toe"
+      ]
+    },
+    "temple": {
+      "name": "temple",
+      "group": "head",
+      "laterality": "sided",
+      "geometry": "flat",
+      "ncic_site": "FACE",
+      "parent": "face"
+    },
+    "eyebrow": {
+      "name": "eyebrow",
+      "group": "head",
+      "laterality": "sided",
+      "geometry": "flat",
+      "ncic_site": "FACE",
+      "parent": "face",
+      "aliases": [
+        "brow"
+      ]
+    },
+    "forehead": {
+      "name": "forehead",
+      "group": "head",
+      "laterality": "midline",
+      "geometry": "flat",
+      "ncic_site": "FOREHEAD",
+      "parent": "face"
+    },
+    "nose": {
+      "name": "nose",
+      "group": "head",
+      "laterality": "midline",
+      "geometry": "wrap",
+      "ncic_site": "NOSE",
+      "parent": "face",
+      "anchor": "extremum_front"
+    },
+    "ear_lobe": {
+      "name": "ear lobe",
+      "group": "head",
+      "laterality": "sided",
+      "geometry": "flat",
+      "ncic_site": "EAR",
+      "parent": "ear",
+      "aliases": [
+        "earlobe"
+      ]
+    },
+    "throat": {
+      "name": "throat",
+      "group": "head",
+      "laterality": "midline",
+      "geometry": "flat",
+      "ncic_site": "NECK",
+      "parent": "neck"
+    },
+    "nape": {
+      "name": "nape",
+      "group": "head",
+      "laterality": "midline",
+      "geometry": "flat",
+      "ncic_site": "NECK",
+      "parent": "neck",
+      "aliases": [
+        "back of the neck",
+        "nape of the neck"
+      ]
+    },
+    "traps": {
+      "name": "traps",
+      "group": "torso_back",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "SHOULDER",
+      "parent": "upper_back",
+      "aliases": [
+        "trap",
+        "trapezius",
+        "top of the shoulder"
+      ]
+    },
+    "thumb": {
+      "name": "thumb",
+      "group": "arm",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "FINGER",
+      "parent": "hand"
+    },
+    "obliques": {
+      "name": "obliques",
+      "group": "torso_front",
+      "laterality": "sided",
+      "geometry": "wrap",
+      "ncic_site": "ABDOMEN",
+      "parent": "ribs",
+      "aliases": [
+        "oblique",
+        "love handles"
+      ]
+    },
+    "navel": {
+      "name": "navel",
+      "group": "torso_front",
+      "laterality": "midline",
+      "geometry": "flat",
+      "ncic_site": "ABDOMEN",
+      "parent": "stomach",
+      "aliases": [
+        "belly button"
+      ]
+    },
+    "sacrum": {
+      "name": "sacrum",
+      "group": "torso_back",
+      "laterality": "midline",
+      "geometry": "flat",
+      "ncic_site": "BACK",
+      "parent": "lower_back",
+      "aliases": [
+        "tailbone"
+      ]
+    },
+    "achilles": {
+      "name": "achilles",
+      "group": "leg",
+      "laterality": "sided",
+      "geometry": "crease",
+      "ncic_site": "ANKLE",
+      "parent": "ankle",
+      "aliases": [
+        "achilles tendon",
+        "achilles heel"
+      ]
+    },
+    "instep": {
+      "name": "instep",
+      "group": "leg",
+      "laterality": "sided",
+      "geometry": "flat",
+      "ncic_site": "FOOT",
+      "parent": "foot_top",
+      "aliases": [
+        "arch",
+        "arch of the foot"
+      ]
+    }
+  },
+  "compound_aliases": {
+    "back of the hand": {
+      "site": "hand",
+      "aspect": "top"
+    },
+    "inner arm": {
+      "site": "bicep",
+      "aspect": "inner"
+    },
+    "hamstring": {
+      "site": "thigh",
+      "aspect": "back"
+    },
+    "hamstrings": {
+      "site": "thigh",
+      "aspect": "back"
+    },
+    "quad": {
+      "site": "thigh",
+      "aspect": "front"
+    },
+    "quads": {
+      "site": "thigh",
+      "aspect": "front"
+    }
+  },
+  "zones": {
+    "quarter_sleeve": {
+      "name": "quarter sleeve",
+      "laterality": "sided",
+      "members": [
+        "shoulder_cap",
+        "bicep",
+        "tricep"
+      ]
+    },
+    "half_sleeve": {
+      "name": "half sleeve",
+      "laterality": "sided",
+      "members": [
+        "shoulder_cap",
+        "bicep",
+        "tricep",
+        "elbow",
+        "elbow_ditch"
+      ]
+    },
+    "full_sleeve": {
+      "name": "full sleeve",
+      "laterality": "sided",
+      "aliases": [
+        "sleeve"
+      ],
+      "members": [
+        "shoulder_cap",
+        "bicep",
+        "tricep",
+        "elbow",
+        "elbow_ditch",
+        "forearm",
+        "wrist"
+      ]
+    },
+    "leg_sleeve": {
+      "name": "leg sleeve",
+      "laterality": "sided",
+      "members": [
+        "thigh",
+        "knee",
+        "knee_ditch",
+        "calf",
+        "shin",
+        "ankle"
+      ]
+    },
+    "armband": {
+      "name": "armband",
+      "laterality": "sided",
+      "members": [
+        "bicep",
+        "tricep"
+      ]
+    },
+    "anklet": {
+      "name": "anklet",
+      "laterality": "sided",
+      "members": [
+        "ankle"
+      ]
+    },
+    "back_piece": {
+      "name": "back piece",
+      "laterality": "midline",
+      "aliases": [
+        "full back"
+      ],
+      "members": [
+        "upper_back",
+        "mid_back",
+        "lower_back",
+        "spine",
+        "shoulder_blade"
+      ]
+    },
+    "bodysuit": {
+      "name": "bodysuit",
+      "laterality": "midline",
+      "members": []
+    }
+  },
+  "levels": {
+    "upper": [],
+    "lower": [],
+    "mid": [
+      "middle"
+    ]
+  }
+}

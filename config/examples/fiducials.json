@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "family": "apriltag_16h5",
+  "detector": {
+    "calibration": {
+      "scale": 1.0,
+      "adaptive_window_max": 45,
+      "min_side_px": 8.0,
+      "corner_refinement": true
+    },
+    "live": {
+      "scale": 1.0,
+      "adaptive_window_max": 45,
+      "min_side_px": 12.0,
+      "corner_refinement": true
+    }
+  },
+  "targets": {
+    "wrist": {
+      "role": "rigid_ee",
+      "ids": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "edge_m": 0.056,
+      "layout": "config/examples/wrist_tags_measured.json",
+      "parent_frame": "right/gripper_left",
+      "minimum_acquisition_ids": 2,
+      "minimum_calibration_observations": 12,
+      "minimum_calibration_poses_per_id": 3,
+      "max_calibration_corner_px": 15.0,
+      "max_calibration_residual_mm": 15.0,
+      "max_calibration_parent_distance_mm": 200.0,
+      "ambiguity_group": "phase_separated_calibration_ids"
+    },
+    "board": {
+      "role": "camera_calibration",
+      "ids": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "edge_m": 0.044,
+      "root_id": 7,
+      "calibration_root_id": 10,
+      "grid": [
+        [
+          3,
+          4,
+          5
+        ],
+        [
+          6,
+          7,
+          8
+        ],
+        [
+          9,
+          10,
+          11
+        ]
+      ],
+      "max_calibration_reprojection_px": 5.0,
+      "max_calibration_consensus_mm": 25.0,
+      "max_calibration_regression_mm": 1.0,
+      "ambiguity_group": "phase_separated_calibration_ids"
+    },
+    "palette": {
+      "role": "world_anchor",
+      "ids": [
+        1
+      ],
+      "edge_m": 0.041,
+      "ambiguity_group": "phase_separated_calibration_ids"
+    }
+  },
+  "printing": {
+    "spare_ids": []
+  },
+  "//": "Synthetic fiducial inventory example. Detector policy fields are generic; ids/edge sizes are placeholders for YOUR printed tags."
+}

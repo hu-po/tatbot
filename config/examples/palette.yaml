@@ -1,0 +1,19 @@
+# Example palette — the fixed rack of ink caps in front of the arms.
+# Slot poses are URDF frames; this file says what sits at each frame.
+# Sizes below are generic placeholders — measure your caps.
+
+schema_version: 1
+
+sizes:
+  large:
+    product: "example 15 mm ink cap"
+    diameter_m: 0.015
+    depth_m: 0.0125
+    capacity_ul: 2210
+    usable_frac: 0.7
+  small:
+    product: "example 8 mm ink cap"
+    diameter_m: 0.008
+    depth_m: 0.008
+    capacity_ul: 400
+    usable_frac: 0.7

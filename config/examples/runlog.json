@@ -1,0 +1,76 @@
+{
+  "//": "Example run-log retention policy (config/runlog.json). Copy and tune.",
+  "//2": "Per-node overrides go in ~/.config/tatbot/runlog.json (deep-merged).",
+  "//3": "log_root is unset here: runs land in the XDG state dir",
+  "//4": "(~/.local/state/tatbot/logs). Set e.g. \"log_root\": \"~/my-logs\" to move them.",
+  "schema_version": 1,
+  "//stale": "A 'running' run whose pid is gone is only prunable after this long.",
+  "stale_running_hours": 24,
+  "//budget": "Pruning happens inside a run's startup; it never gets to be slow.",
+  "prune_budget_s": 20,
+  "default": {
+    "class": "text",
+    "keep_days": 90,
+    "keep_runs": 500
+  },
+  "workflows": {
+    "rollout": {
+      "class": "text",
+      "keep_days": 90,
+      "keep_runs": 500
+    },
+    "rollout_async": {
+      "class": "text",
+      "keep_days": 90,
+      "keep_runs": 500
+    },
+    "teleop": {
+      "class": "text",
+      "keep_days": 90,
+      "keep_runs": 500
+    },
+    "record": {
+      "class": "text",
+      "keep_days": 90,
+      "keep_runs": 200
+    },
+    "tune": {
+      "class": "text",
+      "keep_days": 30,
+      "keep_runs": 100
+    },
+    "netmon": {
+      "class": "text",
+      "keep_days": 90,
+      "keep_runs": 500
+    },
+    "train": {
+      "class": "text",
+      "keep_days": 180,
+      "keep_runs": 200
+    },
+    "camera_config": {
+      "class": "text",
+      "keep_days": 90,
+      "keep_runs": 200
+    },
+    "vision": {
+      "class": "media",
+      "keep_days": 7,
+      "keep_runs": 5
+    },
+    "calib": {
+      "class": "media",
+      "keep_days": 30,
+      "keep_runs": 20
+    },
+    "selftest": {
+      "class": "text",
+      "keep_days": 1,
+      "keep_runs": 5
+    },
+    "legacy": {
+      "enabled": false
+    }
+  }
+}

@@ -1,0 +1,277 @@
+{
+  "inklang": "0.3",
+  "comment": "Inklang style lexicon: three small closed axes (style, technique, color) plus open-vocabulary motif. `name` is the form the realizer emits in modifier position ('a fine line octopus'); aliases are accepted by the parser. technique 'machine' and color null are defaults the realizer omits. The robot is black-ink-only today: programs requesting a color the hardware cannot honor must fail validation loudly, never produce a lying caption. Each term's `prompt` is the fragment the generator folds into its image prompt when the term is requested.",
+  "styles": {
+    "american-traditional": {
+      "name": "american traditional",
+      "aliases": [
+        "traditional",
+        "old school",
+        "americana",
+        "classic american",
+        "american classic"
+      ],
+      "prompt": "american traditional tattoo style, bold outlines, classic old school flash"
+    },
+    "neo-traditional": {
+      "name": "neo-traditional",
+      "aliases": [
+        "neo traditional",
+        "neotraditional"
+      ],
+      "prompt": "neo-traditional tattoo style, bold lines, ornate details"
+    },
+    "new-school": {
+      "name": "new school",
+      "aliases": [
+        "newschool"
+      ],
+      "prompt": "new school tattoo style, exaggerated cartoon proportions, bold"
+    },
+    "japanese": {
+      "name": "japanese",
+      "aliases": [
+        "irezumi"
+      ],
+      "prompt": "japanese irezumi tattoo style"
+    },
+    "tribal": {
+      "name": "tribal",
+      "aliases": [
+        "polynesian",
+        "maori"
+      ],
+      "prompt": "tribal tattoo style, solid black curved shapes"
+    },
+    "chicano": {
+      "name": "chicano",
+      "aliases": [],
+      "prompt": "chicano tattoo style, fine grey shading, script details"
+    },
+    "blackwork": {
+      "name": "blackwork",
+      "aliases": [
+        "black work"
+      ],
+      "prompt": "blackwork tattoo, heavy solid black ink"
+    },
+    "fine-line": {
+      "name": "fine line",
+      "aliases": [
+        "fineline"
+      ],
+      "prompt": "fine line tattoo, delicate thin black linework, minimal"
+    },
+    "minimalist": {
+      "name": "minimalist",
+      "aliases": [
+        "minimal"
+      ],
+      "prompt": "minimalist tattoo, very few clean lines"
+    },
+    "realism": {
+      "name": "realistic",
+      "aliases": [
+        "realism"
+      ],
+      "prompt": "realistic tattoo, detailed shading"
+    },
+    "micro-realism": {
+      "name": "micro realism",
+      "aliases": [
+        "micro-realism",
+        "microrealism"
+      ],
+      "prompt": "micro realism tattoo, tiny fine detail"
+    },
+    "portrait": {
+      "name": "portrait",
+      "aliases": [],
+      "prompt": "portrait tattoo, detailed face rendering"
+    },
+    "illustrative": {
+      "name": "illustrative",
+      "aliases": [],
+      "prompt": "illustrative tattoo style, drawn illustration linework"
+    },
+    "sketch": {
+      "name": "sketch",
+      "aliases": [
+        "sketchy",
+        "sketch style"
+      ],
+      "prompt": "sketch style tattoo, loose pencil-like strokes"
+    },
+    "geometric": {
+      "name": "geometric",
+      "aliases": [
+        "geometry"
+      ],
+      "prompt": "geometric tattoo, precise lines and shapes"
+    },
+    "ornamental": {
+      "name": "ornamental",
+      "aliases": [
+        "mandala"
+      ],
+      "prompt": "ornamental tattoo, symmetric decorative patterns"
+    },
+    "lettering": {
+      "name": "lettering",
+      "aliases": [
+        "script",
+        "calligraphy"
+      ],
+      "prompt": "lettering tattoo, calligraphic script"
+    },
+    "watercolor": {
+      "name": "watercolor",
+      "aliases": [
+        "watercolour",
+        "water color"
+      ],
+      "prompt": "watercolor tattoo style, paint splash washes"
+    },
+    "trash-polka": {
+      "name": "trash polka",
+      "aliases": [
+        "trash-polka"
+      ],
+      "prompt": "trash polka tattoo style, chaotic collage of realism and graphic marks"
+    },
+    "biomechanical": {
+      "name": "biomechanical",
+      "aliases": [
+        "biomech"
+      ],
+      "prompt": "biomechanical tattoo style, machine parts under skin"
+    },
+    "surrealism": {
+      "name": "surrealist",
+      "aliases": [
+        "surreal",
+        "surrealism"
+      ],
+      "prompt": "surrealist tattoo, dreamlike imagery"
+    },
+    "horror": {
+      "name": "horror",
+      "aliases": [
+        "dark art"
+      ],
+      "prompt": "dark horror tattoo style"
+    },
+    "abstract": {
+      "name": "abstract",
+      "aliases": [],
+      "prompt": "abstract tattoo, non-representational shapes"
+    }
+  },
+  "techniques": {
+    "machine": {
+      "name": "machine",
+      "aliases": [],
+      "default": true
+    },
+    "single-needle": {
+      "name": "single needle",
+      "aliases": [
+        "single-needle"
+      ],
+      "prompt": "single needle ultra-fine lines"
+    },
+    "dotwork": {
+      "name": "dotwork",
+      "aliases": [
+        "stipple",
+        "stippled",
+        "stippling",
+        "dot work"
+      ],
+      "prompt": "dotwork stippling, dots only"
+    },
+    "whip-shading": {
+      "name": "whip-shaded",
+      "aliases": [
+        "whip shaded",
+        "whip shading"
+      ],
+      "prompt": "whip shading texture"
+    },
+    "handpoke": {
+      "name": "handpoke",
+      "aliases": [
+        "hand poked",
+        "hand-poked",
+        "stick and poke",
+        "stick-and-poke"
+      ],
+      "prompt": "hand-poked dot linework"
+    },
+    "linework-only": {
+      "name": "linework",
+      "aliases": [
+        "linework only",
+        "line work"
+      ],
+      "prompt": "pure linework, no shading fills"
+    },
+    "negative-space": {
+      "name": "negative space",
+      "aliases": [
+        "negative-space"
+      ],
+      "prompt": "negative space design"
+    }
+  },
+  "colors": {
+    "black-only": {
+      "name": "black",
+      "aliases": [
+        "all black",
+        "black ink",
+        "black only"
+      ],
+      "prompt": "solid black ink only"
+    },
+    "black-and-grey": {
+      "name": "black and grey",
+      "aliases": [
+        "black and gray",
+        "black & grey",
+        "black & gray"
+      ],
+      "prompt": "black and grey soft shading"
+    },
+    "limited-palette": {
+      "name": "limited palette",
+      "aliases": [
+        "limited color"
+      ],
+      "prompt": "limited color palette"
+    },
+    "full-color": {
+      "name": "full color",
+      "aliases": [
+        "full colour",
+        "colored",
+        "colorful",
+        "coloured"
+      ],
+      "prompt": "vibrant full color"
+    },
+    "watercolor-wash": {
+      "name": "watercolor wash",
+      "aliases": [
+        "watercolour wash"
+      ],
+      "prompt": "watercolor color washes"
+    }
+  },
+  "secondary_markers": [
+    "themes",
+    "elements",
+    "accents",
+    "influences"
+  ]
+}

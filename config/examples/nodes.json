@@ -1,0 +1,36 @@
+{
+  "//": "Synthetic example of config/nodes.json - the node -> role map the",
+  "//2": "tatbot CLI uses for role gating and --on <node> ssh hops.",
+  "//3": "Addresses use RFC 5737 documentation ranges; replace every value",
+  "//4": "with your own deployment. Fields per node: ssh (user@address,",
+  "//5": "required for --on), roles (list, gates which verbs run here),",
+  "//6": "arch (informational), hostname (optional alias when `hostname -s`",
+  "//7": "differs from the node name), checkout (optional remote repo path).",
+  "//8": "The reference rig runs 7 cameras: 5 PoE IP cameras (__cameras__ below)",
+  "//9": "plus 2 USB RealSense D405 depth cameras attached to the node holding",
+  "//10": "the 'realsense' role - USB devices are addressed by serial in the",
+  "//11": "vision config, not listed here.",
+  "workstation": {
+    "arch": "x86_64",
+    "ssh": "user@203.0.113.10",
+    "roles": ["viewer", "sim"]
+  },
+  "robot-host": {
+    "arch": "x86_64",
+    "ssh": "user@203.0.113.20",
+    "roles": ["arm", "estop", "realsense", "audio", "ink", "cameras-lan"]
+  },
+  "trainer": {
+    "arch": "aarch64",
+    "ssh": "user@203.0.113.30",
+    "roles": ["train"],
+    "checkout": "~/tatbot"
+  },
+  "__cameras__": {
+    "camera1": "192.0.2.91",
+    "camera2": "192.0.2.92",
+    "camera3": "192.0.2.93",
+    "camera4": "192.0.2.94",
+    "camera5": "192.0.2.95"
+  }
+}

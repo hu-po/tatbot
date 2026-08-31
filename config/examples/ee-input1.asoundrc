@@ -1,0 +1,21 @@
+</usr/share/alsa/alsa.conf>
+
+# Example ALSA route for a contact microphone on a multi-channel interface.
+# Replace CARD=EXAMPLE with your device (`arecord -L` lists them) and the
+# ttable line with the channel your mic is wired to. Selecting the channel
+# explicitly matters: asking plughw for one channel averages all inputs.
+pcm.tatbot_ee_route {
+    type route
+    slave {
+        pcm "hw:CARD=EXAMPLE,DEV=0"
+        channels 6
+    }
+    ttable.0.0 1
+}
+
+# Keep sample-format conversion separate from channel selection. Capture
+# callers request 48 kHz S16_LE mono from this named PCM.
+pcm.tatbot_ee {
+    type plug
+    slave.pcm "tatbot_ee_route"
+}

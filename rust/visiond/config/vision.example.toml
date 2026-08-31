@@ -1,0 +1,91 @@
+# Example visiond sensor registry. Copy to vision.toml and describe YOUR
+# cameras: any number of PoE RTSP cameras and RealSense depth cameras,
+# including none of either — the daemon derives everything (names, counts,
+# streams) from this file, never from code.
+#
+# Addresses below are RFC 5737 documentation values. Camera passwords are
+# NEVER written here: each camera names an environment variable instead
+# (an operator convention is one env file outside the repo, e.g.
+# ~/.config/tatbot/cameras.env).
+
+schema_version = 1
+
+[session]
+# Development-only default — recordings vanish on reboot. Deploys set a real
+# disk here or via TATBOT_VISIOND_RECORD_ROOT (env beats this file).
+record_root = "/tmp/tatbot-vision-recordings"
+queue_capacity = 8
+
+[sync]
+# NTP server the PoE cameras trust for cross-camera timestamps; usually your
+# LAN's NTP source. Skew/drift bounds gate which frames count as one set.
+ntp_server = "192.0.2.123"
+max_pairwise_skew_ms = 40.0
+max_clock_drift_ppm = 100.0
+
+[[cameras.poe]]
+name = "camera1"
+address = "192.0.2.91"
+password_env = "TATBOT_CAMERA_PASSWORD_CAMERA1"
+transport = "tcp"
+gstreamer_latency_ms = 200
+
+[cameras.poe.main]
+stream = "main"
+width = 2960
+height = 1668
+fps_num = 20
+fps_den = 1
+format = "h264"
+
+[cameras.poe.sub]
+stream = "sub"
+width = 704
+height = 480
+fps_num = 20
+fps_den = 1
+format = "h264"
+
+[[cameras.poe]]
+name = "camera2"
+address = "192.0.2.92"
+password_env = "TATBOT_CAMERA_PASSWORD_CAMERA2"
+
+[cameras.poe.main]
+stream = "main"
+width = 2960
+height = 1668
+fps_num = 20
+fps_den = 1
+format = "h264"
+
+[cameras.poe.sub]
+stream = "sub"
+width = 704
+height = 480
+fps_num = 20
+fps_den = 1
+format = "h264"
+
+# Depth cameras are optional — delete this block for a rig without them.
+# The serial selects the physical device; replace with yours
+# (`rs-enumerate-devices` lists them).
+[[cameras.realsense]]
+name = "realsense1"
+serial = "000000000000"
+
+[cameras.realsense.color]
+stream = "color"
+width = 640
+height = 480
+fps_num = 30
+fps_den = 1
+format = "yuyv"
+
+[cameras.realsense.depth]
+stream = "depth"
+width = 640
+height = 480
+fps_num = 30
+fps_den = 1
+format = "z16"

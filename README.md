@@ -1,47 +1,21 @@
-<div align="center">
-  <a href="https://tatbot.ai/">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="docs/logos/dark.svg">
-      <img src="docs/logos/light.svg" alt="tatbot" style="max-width: 200px; width: 80%;">
-    </picture>
-  </a>
-</div>
-<div align="center">
-  <a href="https://github.com/hu-po/tatbot/blob/main/LICENSE"><img src="https://img.shields.io/github/license/hu-po/tatbot.svg?v" alt="license"></a>
-  <a href="https://hu-po.github.io/tatbot/"><img src="https://img.shields.io/badge/📚-docs-blue.svg" alt="documentation"></a>
-  <a href="https://poly.cam/capture/ad7c1544-fca2-48d8-acf8-a94d328fc5c4" target="_blank" rel="noopener noreferrer">
-    <img src="https://img.shields.io/badge/Polycam-3D-734F96.svg?style=flat" alt="View on Polycam">
-  </a>
-  <a href="https://huggingface.co/tatbot/datasets">
-    <img alt="Datasets" src="https://img.shields.io/badge/%F0%9F%A4%97%20HF-Datasets-yellow">
-  </a>
-  <br>
-  <a href="https://x.com/tatbots">
-    <img src="https://img.shields.io/badge/x.com-%40tatbot-000000.svg?logo=x&logoColor=white&style=flat" alt="X">
-  </a>
-  <a href="https://www.tiktok.com/@tatbot">
-    <img src="https://img.shields.io/badge/TikTok-%40tatbot-000000.svg?logo=tiktok&logoColor=white&style=flat" alt="TikTok">
-  </a>
-  <a href="https://www.instagram.com/tatbots/">
-    <img src="https://img.shields.io/badge/Insta-%40tatbot-E4405F.svg?logo=instagram&logoColor=white&style=flat" alt="Instagram">
-  </a>
-</div>
+# tatbot
 
-# **tatbot**: tattoo robot
+tattoo robot 🦾🖋️🎨 — [tatbot.ai](https://tatbot.ai)
 
-📚 Read the [documentation](https://hu-po.github.io/tatbot/)
+Dual-arm robot that draws and tattoos: 400 Hz C++ teleoperation, a Rust
+camera daemon, LeRobot imitation-learning plugins, a ManiSkill data factory,
+and web tools for design and placement.
 
-🎥 Watch the [livestream](https://youtube.com/live/ym27ZHPMaec)
+- **Researchers**: `python/tatbot_sim/` generates datasets;
+  `python/lerobot_robot_tatbot/` is the robot plugin (with a mock driver).
+- **Artists**: `web/inkmap/` places designs on a 3D body; `web/inkgen/`
+  generates designs.
+- **Robot builders**: `cpp/teleop/` + `firmware/estop_pico/` +
+  `config/profiles/trossen-wxai.json` reproduce the rig on Trossen WXAI arms.
 
-[![YouTube Video](docs/images/thumbnail.jpg)](https://youtube.com/live/ym27ZHPMaec)
+Start with `AGENTS.md` for the build roots; `scripts/check` runs every check
+this tree can. Hardware needs a completed profile in `config/profiles/`.
 
-## Citation
-
-```
-@misc{tatbot-2025,
-  title={tatbot},
-  author={Hugo Ponte},
-  year={2025},
-  url={https://github.com/hu-po/tatbot}
-}
-```
+This code can move a robot arm holding a sharp tool. Keep the e-stop
+required, validate on your own hardware, and keep people out of the
+workspace. MIT licensed; see `LICENSE`.

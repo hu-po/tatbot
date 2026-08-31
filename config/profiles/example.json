@@ -1,0 +1,19 @@
+{
+  "//": "Synthetic profile for simulation and mock work. hardware:false and",
+  "//2": "no driver stanza - structurally unable to satisfy the hardware gate",
+  "//3": "(decision 2026-08-31); editing a single field cannot arm it.",
+  "schema": 1,
+  "name": "example",
+  "hardware": false,
+  "arm": {
+    "model": "synthetic-7dof",
+    "dof": 7,
+    "limits": { "source": "synthetic" },
+    "provenance": "synthetic"
+  },
+  "tool": {
+    "registry": "config/tools",
+    "mount": "left-finger-carriage",
+    "contact_axis": "carriage"
+  }
+}

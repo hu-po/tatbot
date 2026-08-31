@@ -1,28 +1,64 @@
 name: ci
-
 on:
   push:
     branches: [main]
   pull_request:
 
-permissions:
-  contents: read
-
 jobs:
-  links:
-    name: link check
+  python:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check Markdown links
-        uses: lycheeverse/lychee-action@v2
+      - uses: astral-sh/setup-uv@v5
+      - name: plugin tests
+        run: |
+          if [ -d python/lerobot_robot_tatbot ]; then
+            uv run --project python/lerobot_robot_tatbot --with pytest --with pytest-timeout \
+              pytest -q --timeout=120 python/lerobot_robot_tatbot/tests/
+          fi
+      - name: script suite
+        run: |
+          if [ -d scripts/tests ]; then
+            uvx --with-requirements scripts/tests/requirements.txt --with pytest-timeout \
+              pytest -q --timeout=120 scripts/tests/
+          fi
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          args: >-
-            --no-progress
-            --accept 200,204,206,429
-            --exclude 'x\.com'
-            --exclude 'tiktok\.com'
-            --exclude 'instagram\.com'
-            --exclude 'poly\.cam'
-            './**/*.md'
-          fail: true
+          components: clippy
+      - name: visiond
+        run: |
+          if [ -d rust/visiond ]; then
+            cd rust
+            cargo clippy --features rerun -- -D warnings
+            cargo test --features rerun
+          fi
+
+  cpp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: teleop
+        run: |
+          if [ -d cpp/teleop ]; then
+            cmake -B cpp/teleop/build -S cpp/teleop
+            cmake --build cpp/teleop/build -j"$(nproc)"
+            ctest --test-dir cpp/teleop/build --output-on-failure
+          fi
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: inkmap
+        run: |
+          if [ -d web/inkmap ]; then
+            cd web/inkmap && npm ci && npm run check
+          fi

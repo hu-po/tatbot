@@ -1,0 +1,29 @@
+{
+  "//": "Scrubbed Trossen WXAI profile - the sole public profile able to",
+  "//2": "satisfy the hardware gate (decision 2026-08-31). It ships with null",
+  "//3": "addresses on purpose: copy it (or fill these fields) with YOUR arms'",
+  "//4": "addresses and e-stop device before any hardware command will run.",
+  "//5": "Joint limits are controller-reported by the Trossen SDK at connect;",
+  "//6": "no Tatbot-measured values appear here.",
+  "schema": 1,
+  "name": "trossen-wxai",
+  "hardware": true,
+  "driver": {
+    "backend": "trossen_wxai",
+    "leader_ip": null,
+    "follower_ip": null,
+    "estop_device": null
+  },
+  "arm": {
+    "model": "trossen-wxai",
+    "dof": 7,
+    "limits": { "source": "controller" },
+    "provenance": "vendor - limits read from the arm controller via the Trossen SDK (BSD-3-Clause)"
+  },
+  "config_dir": null,
+  "tool": {
+    "registry": "config/tools",
+    "mount": "left-finger-carriage",
+    "contact_axis": "carriage"
+  }
+}

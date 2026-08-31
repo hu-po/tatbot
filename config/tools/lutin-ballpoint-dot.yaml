@@ -1,0 +1,190 @@
+# Ambition Lutin rotary machine with an Inlumino Heart Ink ballpoint dot pen
+# cartridge. THIS IS THE TOOL THE RIG HAS ALWAYS RUN — every recording and
+# calibration before 2026-08-30 was made with this pinched in the gripper
+# (embodiment gripper-held-v1); since 2026-08-30 it sits in the bore of the
+# printed mount on the left finger carriage (fixed-mount-v2). It was called
+# "lutin-rotary-a" until 2026-08-25, when the operator confirmed the
+# cartridge; that file was this file under a name that hid what it was.
+#
+# SCHEMA 2 (2026-08-30): z = 0 is the MOUNT BORE FACE, not the fingertips,
+# and the five grip_* fields are gone — nothing grips this tool now. The
+# profile below is NOMINAL in the new frame: the block is assumed to clamp
+# the same 29 mm grip band the fingers used to, which puts the bore face
+# 60 mm behind the tip exactly as the fingertips were. The phase-4 touch-off
+# (sweep-20260831_082526) replaced the assumption: the assembled tip sits at
+# 66.0 mm, and measured.status says measured. The profile stays the nominal
+# shape; the solved tip lives in the calibration bundle.
+#
+# The cartridge is a ballpoint pen refill in a tattoo-cartridge shell
+# (US patent 12,109,836 B1): needle-free, driven by the machine's stroke, and
+# marked paper-only by the manufacturer. That is exactly what the rig does —
+# squiggles and scenes on grid paper — so it is the convenient testing tool
+# rather than a compromise.
+#
+# STROKE: within the cartridge's rating since 2026-08-25. Inlumino require
+# 3.5 mm or less; the machine ran the 4.0 mm cam until the operator swapped in
+# the 3.5 mm one. Everything recorded before that date was made over-stroked,
+# which is worth remembering if old and new episodes ever disagree.
+schema_version: 2
+tool_id: lutin-ballpoint-dot
+kind: ballpoint_pen
+substrate: paper_pad
+display_name: "Ambition Lutin + Inlumino ballpoint dot cartridge"
+body: "Ambition Lutin Rotary (short pen, RCA)"
+cartridge: "Inlumino Heart Ink ballpoint dot pen cartridge (0.5 mm ball)"
+# DO NOT CHANGE without changing the recorded data too. This exact phrase is
+# in the real squiggle-grid-draw task string, in scripts/eval/wire_bench.py and
+# in scripts/sim_preview.py; the sim fills its prompt's tool slot from here, so
+# editing it silently diverges sim prompts from every episode already recorded.
+prompt_phrase: "using pen tip"
+
+# [z_m, radius_m] along the tool axis, z = 0 at the mount bore face.
+# Operator-measured: 115 mm assembled, of which the white conical cartridge is
+# 35 mm, so the machine body is 80 mm — which matches Ambition's published
+# figure exactly. With the tip NOMINALLY 60 mm past the bore face that fixes
+# every point: cartridge base at +25, body rear at -55 (inside the block).
+#
+# Body is a segmented ~29 mm (widened 2026-08-22 to match what the wrist
+# cameras recorded, not the 20 mm of the original spec); the bore is sized
+# to it. Tip is 2 mm across — that is the visible tip; the ball inside it is
+# 0.5 mm and is not modelled, being far below what any camera here resolves.
+profile: [
+  [-0.055, 0.0145],
+  [ 0.025, 0.0145],
+  [ 0.060, 0.001 ]
+]
+# The rounded steel ball that actually writes. The profile can only end in a
+# cone, and a cone is not what touches paper: a ballpoint rides on a ball
+# seated in the socket, and at a macro camera distance the difference is the
+# whole tip. Tangent to the TCP, so the contact point is unchanged.
+# SIZED TO THE SOCKET, not to a real ball. A real ballpoint ball is 0.5-1.0 mm
+# across, but the modelled tip is the display mesh (pen_tip.stl), whose point
+# is the profile's last radius of 1.0 mm -- so a real-sized ball renders
+# INSIDE the cone and cannot be seen at all (measured, 2026-08-27). At 0.9 mm
+# it seats in that bore and caps the cone as a metal hemisphere, which is what
+# the tip reads as on camera. Narrowing the mesh instead would be the deeper
+# fix and needs a new STL.
+tip_detail:
+  kind: ball
+  radius_m: 0.0011
+  # Proud of the 1.0 mm socket, so the ball is a ball rather than a rounding
+  # of the cone, and dark enough to read as steel beside the white plastic:
+  # _polish_ee_materials treats anything under 0.8 as metal.
+  color: "0.58 0.60 0.65 1"
+
+tip_mesh: pen_tip.stl
+# The mesh is a 40 mm cone; the cartridge measures 35 mm.
+tip_mesh_scale: [1.0, 1.0, 0.875]
+
+# The cam actually fitted (operator swapped 4.0 -> 3.5 on 2026-08-25). The
+# machine shipped as the 3.5/4.0 pair, so the 4.0 is now the spare.
+# said 3.8 mm and was wrong on both counts.
+#
+# A cam swap is a mechanical change to the assembled tool, so it belongs here
+# rather than in a session note. Whether it MOVES the resting tip is not
+# established: stroke is reciprocation amplitude and the ball's rest position
+# is set by the cartridge spring and the needle-depth collar, but a different
+# cam can shift the drive bar's neutral point too. The touch-off below predates
+# the swap. See measured.note.
+stroke_mm: 3.5
+
+# Machined steps along the body. The whole body is black metal, rings included
+# (operator, 2026-08-22): what reads as light bands in the recordings is
+# specular highlight on the steps, not a different material.
+rings: [
+  [-0.036, 0.004, 0.0008],
+  [-0.020, 0.003, 0.0008],
+  [-0.004, 0.005, 0.0010],
+  [ 0.012, 0.003, 0.0008]
+]
+body_color: "0.04 0.04 0.045 1"
+tip_color: "0.93 0.93 0.92 1"
+
+
+# Vendor figure for the machine body alone (113 g); the RCA battery pack adds
+# ~71 g when clipped on. Never weighed by us, and unused by the sim, which
+# gives the tool a token mass so it cannot perturb arm dynamics.
+mass_kg: 0.113
+com_z_m: null
+
+# Tightened 0.030 -> 0.025 with the 2026-08-31 measured flip. NOT the 0.015
+# the 8/30 note aimed for: that target assumed the bore locates the tool, and
+# the touch-off found the CLAMP does — seat_tolerance_deg 15 at a 66 mm reach
+# permits ~17 mm of legitimate lateral tip offset (measured: 14.8 mm), so
+# 0.015 would refuse an honest re-measure of a valid seat. 0.025 covers the
+# seat budget's lateral reach plus the measured 6 mm z deviation.
+tip_tolerance_m: 0.025
+
+# Which URDF link this tool's frame is (right/tool_mount). The pen used to
+# shuffle in the gripper — the nine-hold tip phase of 2026-08-29 spread a
+# 0.5 mm ball's contact point over ~12 mm, 4.2 mm rms — and that field
+# (grip_slop_m) is gone with the gripper.
+mount: tool_mount
+
+# How this tool sits in that mount — measured on sweep-20260831_082526, the
+# first touch-off after the move into the bore. The bore is NOT a precision
+# locator: ee_pen_mount.stl gives it ~33 mm over only ~20 mm of wall around
+# the segmented 29 mm body, so the clamp fixes where the machine points and
+# the clearance permits ~10 deg of legitimate seat freedom. That session
+# solved the tip at (4.9, 12.6, 66.0) mm — an 11.6 deg lean off the nominal
+# bore axis with cond 5.6 over 67.7 deg of spread (well-determined, stable),
+# and 3.0 mm rms whose per-hold residuals track the wrist joints (corr
+# 0.6-0.8): the seat's contact migration, not operator aim. Operator set
+# both budgets 2026-08-31. If the mount or clamp changes, re-measure before
+# trusting either number.
+seat_tolerance_deg: 15.0
+seat_residual_m: 0.0035
+
+# --- ink supply -------------------------------------------------------------
+# A ballpoint needs no ink, but it REHEARSES the ink pipeline: identical dip
+# planning, charge arithmetic and ledger events as the 3RL, every event tagged
+# `rehearsal`, real stock never touched, and dry caps accepted. Testing the
+# ink component is what this pen is for. Constants mirror lutin-3rl-bugpin so a
+# rehearsal plans the same dips a real session would.
+ink:
+  mode: rehearsal
+  charge_capacity_ul: 2.0
+  uptake_ul: 1.5
+  deposit_ul_per_mm: 0.004
+  bleed_ul_per_s: 0.01
+  dip_depth_m: 0.003
+  dip_dwell_s: 0.4
+  min_fill_frac: 0.0
+
+measured:
+  status: measured
+  utc: 2026-08-31T13:25:26Z
+  method: "phase-4 touch-off in right/tool_mount (sweep-20260831_082526); body and cartridge by calipers (2026-08-22)"
+  note: |
+    MEASURED IN THE MOUNT FRAME (2026-08-31): the touch-off solved the
+    assembled tip at (4.9, 12.6, 66.0) mm in right/tool_mount — 66 mm past
+    the bore face where the nominal guess said 60 — with cond 5.6 over
+    67.7 deg of spread and 3.0 mm rms that tracks the wrist joints (the
+    seat's contact migration; see the seat comment above). Operator accepted
+    the touch-off in lieu of phase-0 calipers, 2026-08-31. The profile keeps
+    its nominal shape; the solved tip is what calibration and FK consume.
+
+    The body (80 mm) and cartridge (35 mm) remain the operator's 2026-08-22
+    caliper figures.
+
+    MEASURED (gripper era): body and total protrusion, by the operator
+    against the real machine, and validated by the touch-off of 2026-08-22
+    (tip at 63.7 mm past the fingertips, cond 21.9, rms 1.0 mm).
+
+    SOURCED, not measured: the 0.5 mm ballpoint diameter and the <=3.5 mm
+    stroke ceiling are Inlumino's (inluminoheartink.com, Amazon B0F6DCZN5L);
+    the mechanism is US patent 12,109,836 B1. Machine body 80 mm / 32 mm /
+    113 g is Ambition's. Recommended 4-7 V.
+
+    NOT KNOWN: cartridge overall length and body diameter are published by
+    nobody — not Inlumino, not any retailer, and the patent carries no
+    dimensions at all. Not needed here, since what matters is the assembled
+    tip and the touch-off measures that directly.
+
+    CAM HISTORY: the gripper-era touch-off (2026-08-22) was taken with the
+    4.0 mm cam; the machine has run the 3.5 mm cam since 2026-08-25, and the
+    2026-08-31 touch-off above was taken with it fitted, so the cam-swap
+    staleness noted here on 2026-08-30 is resolved.
+
+    HISTORY: this file was tool_id "lutin-rotary-a" until 2026-08-25. The
+    rename records what it always was; no geometry changed with it.

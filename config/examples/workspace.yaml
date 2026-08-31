@@ -1,0 +1,25 @@
+# Example workspace.yaml — measured scene geometry. NOTHING HERE MOVES THE ARM.
+#
+# Every value below is a PLACEHOLDER: this file is written by your own
+# touch-off (scripts/il_touchoff.py) with values measured on your bench, and
+# read by rollout analysis and vision fusion. A copied example is not a
+# calibration — run the touch-off.
+right:
+  # Which physical tool is fitted — names a datasheet in config/tools/.
+  tool_id: lutin-ballpoint-dot
+  # Frame the tip offset is solved in.
+  tip_frame: right/tool_mount
+  # Pen tip in that frame, metres — MEASURED by the touch-off, not typed.
+  pen_tip_offset_x: 0.0
+  pen_tip_offset_y: 0.0
+  pen_tip_offset_z: 0.070
+  # Carriage reading at the solve, metres.
+  carriage_m: 0.0
+  # Surface Z in the arm base frame, metres.
+  paper_plane_z: 0.006
+  paper_band_mm: null
+  # Pivot point in the arm base frame, metres.
+  pivot_point_x: 0.30
+  pivot_point_y: -0.23
+  pivot_point_z: 0.006
+  ee_contact_z: null

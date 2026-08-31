@@ -1,0 +1,11 @@
+# tatbot hardware e-stop: Raspberry Pi Pico running firmware/estop_pico/.
+# boot.py sets the USB product string to "tatbot_estop", which udev exposes
+# as ID_MODEL; match on it so ANY port on the teleop host enumerates the box
+# as /dev/tatbot-estop (the default device for wxai_teleop and the lerobot
+# tatbot_follower plugin).
+#
+# Install on the machine that runs the control loop:
+#   sudo cp config/udev/99-tatbot-estop.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+# then replug the box and check:  ls -l /dev/tatbot-estop
+SUBSYSTEM=="tty", ENV{ID_MODEL}=="tatbot_estop", SYMLINK+="tatbot-estop", MODE="0666"

@@ -1,0 +1,19 @@
+# Example ink catalog — one entry per pigment the rig can be loaded with.
+# Identity only; loading state and stock live in separate files. Replace
+# these synthetic entries with your own inks.
+
+schema_version: 1
+
+example_black:
+  display_name: Example Black
+  rgb: [0, 0, 0]
+  vendor: null
+  product: "Example black lining ink"
+  bottle_ml: null
+
+example_red:
+  display_name: Example Red
+  rgb: [200, 30, 30]
+  vendor: null
+  product: "Example red shading ink"
+  bottle_ml: null

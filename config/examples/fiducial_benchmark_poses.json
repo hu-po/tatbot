@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "source_session": "synthetic",
+  "description": "Synthetic example poses for detector benchmarking; replace with poses retained by your own accepted calibration.",
+  "joint_names": [
+    "right/joint_0",
+    "right/joint_1",
+    "right/joint_2",
+    "right/joint_3",
+    "right/joint_4",
+    "right/joint_5",
+    "right/left_carriage_joint"
+  ],
+  "poses": [
+    [
+      0.0,
+      0.9,
+      0.5,
+      0.0,
+      0.4,
+      1.5,
+      0.0
+    ],
+    [
+      0.3,
+      1.0,
+      0.7,
+      0.1,
+      0.7,
+      1.1,
+      0.0
+    ],
+    [
+      -0.2,
+      0.8,
+      0.3,
+      0.5,
+      0.6,
+      0.2,
+      0.0
+    ]
+  ]
+}

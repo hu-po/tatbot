@@ -1,31 +1,31 @@
-# local state — never tracked in the public repo
-logs/
-*.log
-.env
-.env.*
-!.env.example
-
-# python
+# Python
 __pycache__/
 *.py[cod]
-.venv/
-venv/
-*.egg-info/
+.venv
+.env
+uv.lock
+!python/lerobot_robot_tatbot/uv.lock
 .pytest_cache/
+.mypy_cache/
 .ruff_cache/
+*.egg-info/
 
-# rust
+# Sphinx
+docs/_build/
+
+# Rust
 target/
 
-# c++
-build/
-compile_commands.json
+# C++ / CMake
+cpp/teleop/build/
 
-# node / web
-node_modules/
-dist/
-
-# editors / os
-.vscode/
-.idea/
+# Editor / OS
 .DS_Store
+Thumbs.db
+
+# Local outputs
+outputs/
+logs/
+*.log
+*.wxtl
+*.rrd
