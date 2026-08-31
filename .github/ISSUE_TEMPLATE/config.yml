@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://hu-po.github.io/tatbot/
+    about: Read the docs before filing an issue.
+  - name: Security report (private)
+    url: https://github.com/hu-po/tatbot/security/advisories/new
+    about: Report vulnerabilities and safety-gate bypasses privately, never as a public issue.
+  - name: tatbot.ai
+    url: https://tatbot.ai
+    about: Project site and contact.

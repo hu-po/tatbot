@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use tatbot in your work, please cite it as below."
+title: "tatbot"
+authors:
+  - family-names: "Ponte"
+    given-names: "Hugo"
+license: MIT
+repository-code: "https://github.com/hu-po/tatbot"
+url: "https://tatbot.ai"
+keywords:
+  - robotics
+  - tattoo
+  - teleoperation
+  - imitation-learning

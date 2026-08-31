@@ -1,0 +1,31 @@
+# local state — never tracked in the public repo
+logs/
+*.log
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# rust
+target/
+
+# c++
+build/
+compile_commands.json
+
+# node / web
+node_modules/
+dist/
+
+# editors / os
+.vscode/
+.idea/
+.DS_Store
