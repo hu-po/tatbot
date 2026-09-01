@@ -76,7 +76,6 @@ Global flags go **before** the noun: `--json`, `--dry-run`, `--explain`, `-q`, `
 | `vision calib fuse` | `offline` | this checkout | `scripts/vision/fuse_session.py` | fuse a sweep's streams into solver-ready samples (`--` → fuse_session.py) |
 | `vision calib solve` | `offline` | this checkout | `scripts/vision/solve_robot_world.py` | robot-world calibration from wrist tags (`--` → solve_robot_world.py) |
 | `vision calib verify` | `offline` | this checkout | `scripts/vision/verify_calibration.py` | independently verify a board-session calibration (`--` → verify_calibration.py) |
-| `vision calib report` | `offline` | this checkout | `scripts/vision/calibrate_session.py` | offline pipeline + report card for a session (`--` → calibrate_session.py) |
 | `vision calib board` | `offline` | this checkout | `scripts/vision/calibrate_board_session.py` | full-rig calibration from a guided board session (`--` → calibrate_board_session.py) |
 | `vision tags print` | `offline` | this checkout | `scripts/vision/generate_wrist_tags.py` | render the wrist-tag print sheet (`--` → generate_wrist_tags.py) |
 
@@ -120,7 +119,6 @@ tatbot sim viewer -- --help
 tatbot vision calib fuse <path>
 tatbot vision calib solve <path>
 tatbot vision calib verify <path>
-tatbot vision calib report <path>
 tatbot vision calib board <path>
 tatbot vision tags print -- --help
 tatbot inkmap dev

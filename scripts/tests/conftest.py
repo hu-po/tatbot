@@ -24,6 +24,8 @@ import os
 from importlib.util import find_spec
 from pathlib import Path
 
+import pytest
+
 # test module stem -> every import that must resolve for it to be collectable.
 # Lists, not single names: a module can clear its first missing import and hit
 # another one behind it. Mapping only the first is how this table was wrong on
@@ -67,7 +69,6 @@ collect_ignore = [f"{stem}.py" for stem in _missing]
 # scripts/check keeps for a node that lacks a toolchain.
 DEPLOYMENT_FILES: dict[str, tuple[str, ...]] = {
     "test_audio_route": ("config/audio/ee-input1.asoundrc",),
-    "test_cli": ("config/nodes.json",),
     "test_ee_fiducial": ("config/fiducials.json",),
     "test_estop_launchers": ("config/nodes.json",),
     "test_eval_checkpoint_contract": ("config/nodes.json",),
@@ -89,6 +90,76 @@ _unconfigured = {
     if (absent := [f for f in files if not (_repo_root / f).is_file()])
 }
 collect_ignore += [f"{stem}.py" for stem in _unconfigured]
+
+# --- fleet-dependent tests --------------------------------------------------
+# Most of the CLI suite is about grammar, gates, tiers and refusals, and runs
+# anywhere. These exercise node routing, ssh targets or profile addresses, so
+# they need config/nodes.json. Named explicitly: a new fleet test that forgets
+# to list itself fails loudly in a public checkout rather than skipping
+# silently, which is the right direction for that mistake.
+NEEDS_FLEET = {
+    "test_autonomous_verbs_need_a_literal_nonce",
+    "test_dashdash_passthrough_reaches_the_launcher_untouched",
+    "test_dip_plan_and_connect_only_command_nothing_and_need_no_nonce",
+    "test_dip_refuses_a_tool_that_never_dips_and_a_bare_call",
+    "test_dip_rehearse_is_a_moving_dip_with_a_rehearsal_tool",
+    "test_dip_yes_with_a_real_needle_needs_allow_real",
+    "test_dry_run_never_writes_the_arm_token",
+    "test_hop_is_refused_for_autonomous_motion",
+    "test_hop_refuses_a_node_without_a_checkout",
+    "test_hop_uses_the_canonical_ssh_target_and_no_hop",
+    "test_hostname_alias_resolves_to_the_node_name",
+    "test_hub_python_prefers_the_plugin_venv_then_il_train_then_uv",
+    "test_inkgen_ctl_verbs_construct_argv",
+    "test_inkgen_role_auto_hop_and_sync",
+    "test_inkgen_serve_options_pass_through",
+    "test_inkmap_dev_and_build_options_pass_through",
+    "test_live_cockpit_requires_viewer_role_and_passes_flags",
+    "test_motion_verbs_refuse_estop_overrides_with_exit_3",
+    "test_offline_verbs_run_anywhere",
+    "test_record_dip_writes_the_nonce_the_dip_will_consume",
+    "test_record_with_dip_is_autonomous_motion",
+    "test_safe_passthrough_is_not_refused",
+    "test_teleop_start_is_the_canonical_bare_teleop",
+    "test_tool_from_environment_is_accepted",
+    "test_tool_must_be_stated_for_motion_verbs",
+    "test_train_manifest_render_uses_the_wrapped_tools_default_mode",
+    "test_train_offline_eval_uses_the_pinned_training_environment",
+    "test_unknown_on_node_is_exit_2",
+    "test_write_nonce_is_what_the_launcher_reads",
+    "test_wrong_node_is_exit_4_with_the_on_form",
+}
+
+
+# Verbs whose backing scripts are private (fleet deploy, dataset hub) do not
+# exist in a public checkout, and the CLI hides them there on purpose. Tests
+# that assert those verbs — or read private CLI bookkeeping — only make sense
+# where that tooling is present.
+NEEDS_PRIVATE_TOOLING = {
+    "test_cli_shim_is_not_orphan_or_entry_point",
+    "test_data_push_dry_run_names_the_interpreter",
+    "test_ee_tool_is_the_flag_every_python_tool_accepts",
+    "test_every_verb_has_one_tier_and_an_example_that_dry_runs",
+    "test_inkgen_deploy_constructs_deploy_script_argv",
+    "test_inkgen_verbs_have_honest_tiers",
+    "test_inkmap_deploy_constructs_deploy_script_argv",
+    "test_inkmap_verbs_have_honest_tiers",
+    "test_shims_delegate_to_the_cli",
+}
+
+
+def pytest_collection_modifyitems(config, items):  # noqa: ANN001 - pytest hook
+    no_fleet = not (_repo_root / "config" / "nodes.json").is_file()
+    no_private = not (_repo_root / "config" / "cli-orphans.txt").is_file()
+    fleet_skip = pytest.mark.skip(reason="needs a described fleet (config/nodes.json)")
+    tooling_skip = pytest.mark.skip(reason="needs the private fleet/deploy tooling")
+    for item in items:
+        name = item.name.split("[")[0]
+        if no_fleet and name in NEEDS_FLEET:
+            item.add_marker(fleet_skip)
+        elif no_private and name in NEEDS_PRIVATE_TOOLING:
+            item.add_marker(tooling_skip)
+
 
 
 # Fiducial tests parse an inventory; the deployment's own (config/fiducials.json)
