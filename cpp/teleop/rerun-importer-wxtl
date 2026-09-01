@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Rerun external data loader for wxai_teleop flight logs (.wxtl).
+#
+# Install by symlinking onto PATH, e.g.:
+#   ln -s "$(pwd)/cpp/teleop/rerun-importer-wxtl" ~/.local/bin/   # from the repo root
+# after which `rerun teleop_logs/<run>.wxtl` opens directly in the viewer:
+# the Rerun viewer offers unknown file types to every rerun-importer-* on PATH.
+#
+# The loader converts the log with tatbot-visiond (URDF arms animated from the
+# recorded joint positions plus teleop time series), caches the .rrd next to
+# the .wxtl, and streams it to stdout per the external-importer protocol.
+# Exit code 66 tells Rerun "not my file type".
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
+VISIOND="${TELEOP_VISIOND:-$REPO/rust/target/release/tatbot-visiond}"
+URDF="${TELEOP_URDF:-$REPO/urdf/tatbot.urdf}"
+LEADER="${TELEOP_LEADER:-left}"
+
+# Positional argument = the file; skip Rerun's --flag value pairs
+# (--static is the only boolean flag in the protocol).
+path=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --static) shift ;;
+    --*) shift 2 ;;
+    *) path="$1"; shift ;;
+  esac
+done
+
+[[ "$path" == *.wxtl && -f "$path" ]] || exit 66
+
+if ! [[ -x "$VISIOND" ]]; then
+  echo "rerun-importer-wxtl: $VISIOND not built; run:" >&2
+  echo "  cd \"$REPO/rust\" && cargo build --release --features rerun" >&2
+  exit 1
+fi
+
+cache="${path%.wxtl}.rrd"
+if [[ ! -f "$cache" || "$path" -nt "$cache" || "$URDF" -nt "$cache" ]]; then
+  "$VISIOND" replay-rerun \
+    --teleop-log "$path" \
+    --urdf "$URDF" \
+    --teleop-leader "$LEADER" \
+    --output "$cache.tmp" >&2
+  mv "$cache.tmp" "$cache"
+fi
+
+exec cat "$cache"

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# tatbot — one CLI over every tatbot workflow. See docs/cli.md (generated).
+#
+# Thin shim so the CLI works from a fresh clone on any node with no install:
+# system python3 (>= 3.10), standard library only. Everything
+# heavy is delegated to the script or launcher that owns it.
+#
+# To have `tatbot` on PATH:  ln -s "$(pwd)/scripts/tatbot" ~/.local/bin/tatbot
+# — the symlink is resolved, so lib/ is found next to the real file.
+exec python3 "$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)/lib/tatbot_cli" "$@"

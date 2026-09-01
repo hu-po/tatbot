@@ -1,0 +1,10 @@
+{
+  "designs": [
+    { "id": "anchor", "name": "Anchor", "path": "designs/anchor.svg", "default_size_mm": [50, 60] },
+    { "id": "heart", "name": "Heart", "path": "designs/heart.svg", "default_size_mm": [50, 50] },
+    { "id": "star", "name": "Star", "path": "designs/star.svg", "default_size_mm": [40, 40] },
+    { "id": "snake", "name": "Snake", "path": "designs/snake.svg", "default_size_mm": [45, 120] },
+    { "id": "sun", "name": "Sun", "path": "designs/sun.svg", "default_size_mm": [55, 55] },
+    { "id": "dagger", "name": "Dagger", "path": "designs/dagger.svg", "default_size_mm": [35, 112] }
+  ]
+}

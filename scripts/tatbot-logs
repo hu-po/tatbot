@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Find and read the full log of any tatbot run. See docs/run_logs.md.
+# Kept so `scripts/tatbot-logs last rollout` still works by path; it is
+# `tatbot logs …`, which runs scripts/lib/tatbot_runlog.py in-process.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/cli_hint.sh
+source "$HERE/lib/cli_hint.sh"; cli_hint::note "tatbot logs"
+exec "$HERE/tatbot" logs "$@"

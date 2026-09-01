@@ -1,0 +1,11 @@
+hbm-male-stylized.glb, hbm-female-stylized.glb
+
+Derived from the Blender Studio "Human Base Meshes" bundle, v1.4.1
+(https://www.blender.org/download/demo-files/ — "Human Base Meshes"),
+objects GEO-body_male_stylized / GEO-body_female_stylized and their eyes.
+The bundle is published under CC0 1.0 (public domain dedication):
+http://creativecommons.org/publicdomain/zero/1.0/
+
+Export recipe (web/inkmap/tools/export-hbm.py): centred, feet on z=0, a
+per-corner colour attribute paints the body white and the eyes dark; no
+material, texture, normals, UVs or animation are kept. The whole file is CC0.

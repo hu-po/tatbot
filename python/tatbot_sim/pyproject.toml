@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tatbot_sim"
+version = "0.1.0"
+description = "tatbot synthetic data factory: scripted stroke episodes in ManiSkill 3, exported as LeRobot v3 datasets"
+authors = [{ name = "Hugo Ponte" }]
+license = "MIT"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  # widowxai agent + drawing-task infrastructure landed after the 3.0.1 tag;
+  # the nightly wheel tracks main. SAPIEN ships x86_64 wheels only, so this
+  # package installs on x86_64 hosts only.
+  "mani-skill-nightly",
+  "pytorch-kinematics",
+  "transforms3d",
+  "av",
+  "opencv-python",
+  "h5py",
+  "pandas",
+  "pyarrow",
+  "tyro",
+  "tqdm",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["tatbot_sim"]

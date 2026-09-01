@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tatbot tuning cockpit</title>
+<style>
+  /* Single-theme instrument panel: this is a LAN hardware tool, committed
+     to one dark look; every color painted explicitly. */
+  :root {
+    --bg: #141517; --panel: #1c1e21; --panel2: #212428;
+    --ink: #e7e6e1; --muted: #9aa0a6; --line: #2c2e32;
+    --accent: #4fb3ad; --accent-dim: #1b3230;
+    --warn: #d08055; --warn-dim: #382419;
+    --bad: #e05d5d; --good: #6fbf73;
+    --slate: #8fa2c4;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 13px/1.45 "IBM Plex Sans", system-ui, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  code, .mono, input[type=number], .val, .chip, .joint-tag {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+  }
+
+  /* ---- status bar ---- */
+  #statusbar {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 8px 14px; background: var(--panel);
+    border-bottom: 1px solid var(--line);
+  }
+  #statusbar .title { font-weight: 600; letter-spacing: .04em; }
+  .chip {
+    font-size: 11px; padding: 2px 8px; border-radius: 3px;
+    background: var(--panel2); border: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  .chip.ok { color: var(--accent); border-color: var(--accent-dim); }
+  .chip.bad { color: var(--bad); }
+  .chip.warn { color: var(--warn); }
+  .chip.dirty { color: var(--warn); border-color: var(--warn); }
+  #conn.err { color: var(--bad); }
+
+  /* ---- layout ---- */
+  #main { display: flex; flex: 1; min-height: 0; }
+  #params {
+    flex: 1.4; overflow-y: auto; padding: 12px 14px 80px;
+    min-width: 0;
+  }
+  #telemetry {
+    flex: 1; overflow-y: auto; padding: 12px 14px 80px;
+    border-left: 1px solid var(--line); background: var(--panel);
+    min-width: 300px; max-width: 460px;
+  }
+
+  /* ---- parameter groups ---- */
+  details.group { margin-bottom: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+  details.group > summary {
+    cursor: pointer; padding: 8px 12px; font-weight: 600;
+    letter-spacing: .06em; font-size: 12px; text-transform: uppercase;
+    color: var(--accent); user-select: none;
+  }
+  details.group[data-group="safety"] > summary { color: var(--warn); }
+  .group-body { padding: 2px 12px 10px; }
+
+  .param { padding: 8px 0; border-top: 1px solid var(--line); }
+  .param-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .param-label { font-weight: 600; }
+  .param-units { color: var(--muted); font-size: 11px; }
+  .param-doc { color: var(--muted); font-size: 11.5px; margin: 2px 0 6px; max-width: 60ch; }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; }
+  .badge.held { background: var(--warn-dim); color: var(--warn); }
+  .badge.pending { background: var(--accent-dim); color: var(--accent); }
+  .badge.waiting { background: var(--warn-dim); color: var(--warn); animation: pulse 1s infinite alternate; }
+  @keyframes pulse { from { opacity: .55; } to { opacity: 1; } }
+
+  .row { display: flex; align-items: center; gap: 10px; margin: 3px 0; }
+  .joint-tag { width: 34px; color: var(--muted); font-size: 11px; text-align: right; }
+  .slider-wrap { position: relative; flex: 1; height: 22px; display: flex; align-items: center; }
+  input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; background: transparent; }
+  .golden-tick {
+    position: absolute; top: 1px; width: 2px; height: 8px;
+    background: var(--slate); pointer-events: none;
+  }
+  input[type=number] {
+    width: 82px; background: var(--panel2); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 3px;
+    padding: 2px 6px; font-size: 12px;
+  }
+  input[type=number].dirty { border-color: var(--warn); }
+
+  /* ---- session panel ---- */
+  table.session { border-collapse: collapse; width: 100%; font-size: 12px; }
+  table.session td { padding: 3px 8px 3px 0; vertical-align: top; }
+  table.session td:first-child { color: var(--muted); white-space: nowrap; }
+
+  /* ---- telemetry ---- */
+  h3.tele { font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); margin: 14px 0 6px; }
+  .spark-row { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
+  .spark-row canvas { background: var(--panel2); border-radius: 3px; }
+  .val { font-size: 11px; width: 74px; text-align: right; color: var(--ink); }
+  #gripbar-wrap { background: var(--panel2); border-radius: 3px; height: 16px; position: relative; overflow: hidden; }
+  #gripbar { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); width: 0; transition: width .1s; }
+  #gripbar.contact { background: var(--warn); }
+  #gripcap { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--slate); }
+
+  /* ---- footer verbs ---- */
+  #footer {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    display: flex; gap: 10px; align-items: center;
+    padding: 9px 14px; background: var(--panel);
+    border-top: 1px solid var(--line);
+  }
+  button {
+    font: 600 12px "IBM Plex Sans", sans-serif; letter-spacing: .03em;
+    padding: 6px 14px; border-radius: 4px; cursor: pointer;
+    background: var(--panel2); color: var(--ink); border: 1px solid var(--line);
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+  button.danger:hover { border-color: var(--bad); color: var(--bad); }
+  button:disabled { opacity: .4; cursor: default; }
+  #toast { margin-left: auto; font-size: 12px; color: var(--muted); }
+  #toast.err { color: var(--bad); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  @media (prefers-reduced-motion: reduce) { .badge.waiting { animation: none; } }
+</style>
+</head>
+<body>
+
+<div id="statusbar">
+  <span class="title">tatbot tuning</span>
+  <span id="conn" class="chip">connecting…</span>
+  <span id="arm-leader" class="chip">leader —</span>
+  <span id="arm-follower" class="chip">follower —</span>
+  <span id="estop" class="chip">e-stop —</span>
+  <span id="dirty" class="chip">golden</span>
+  <span id="mode" class="chip"></span>
+</div>
+
+<div id="main">
+  <div id="params"></div>
+  <div id="telemetry">
+    <h3 class="tele">Gripper</h3>
+    <div id="gripbar-wrap"><div id="gripbar"></div><div id="gripcap"></div></div>
+    <div class="row" style="justify-content:space-between; margin-top:2px">
+      <span class="val" id="gripval" style="text-align:left">— N</span>
+      <span class="val" id="gripcapval">cap — N</span>
+    </div>
+    <h3 class="tele">Tracking error (sent − measured, rad)</h3>
+    <div id="trackerr"></div>
+    <h3 class="tele">External effort (Nm | N)</h3>
+    <div id="exteff"></div>
+    <h3 class="tele">Leader velocity (rad/s)</h3>
+    <div id="leadervel"></div>
+    <h3 class="tele">Session &amp; rig</h3>
+    <div id="session"></div>
+  </div>
+</div>
+
+<div id="footer">
+  <button id="save" class="primary">Save to golden</button>
+  <button id="revert" class="danger">Revert to golden</button>
+  <button id="capture">Capture pose</button>
+  <button id="recover" class="danger" style="display:none">Recover arm</button>
+  <span id="toast"></span>
+</div>
+
+<script>
+"use strict";
+const JOINTS7 = ["J0","J1","J2","J3","J4","J5","grip"];
+const GROUP_ORDER = ["leader-feel","follower-tracking","carriage","safety"];
+const GROUP_TITLES = {
+  "leader-feel": "Leader feel",
+  "follower-tracking": "Follower tracking",
+  "carriage": "Carriage contact axis",
+  "safety": "Safety envelope",
+};
+let registry = {};          // name -> param def (with value/golden)
+const debounces = {};
+const history = {};         // telemetry ring buffers
+
+const $ = (id) => document.getElementById(id);
+const fmt = (v, step) => {
+  const d = step >= 1 ? 0 : step >= 0.1 ? 1 : step >= 0.01 ? 2 : 3;
+  return Number(v).toFixed(d);
+};
+
+function toast(msg, err) {
+  const t = $("toast");
+  t.textContent = msg; t.className = err ? "err" : "";
+  clearTimeout(t._t); t._t = setTimeout(() => { t.textContent = ""; }, 4000);
+}
+
+async function api(path, body) {
+  const opts = body ? {method:"POST", body: JSON.stringify(body)} : {};
+  const r = await fetch(path, opts);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.status);
+  return j;
+}
+
+function send(name, value, joint) {
+  const key = name + ":" + (joint ?? "");
+  clearTimeout(debounces[key]);
+  debounces[key] = setTimeout(async () => {
+    try {
+      await api("/api/param", {name, value, joint});
+      const p = registry[name];
+      if (p) {
+        if (p.per_joint && joint != null) { p.value = [...(p.value||[])]; p.value[joint] = value; }
+        else if (!p.per_joint) p.value = value;
+      }
+    } catch (e) { toast(`set ${name}: ${e.message}`, true); refresh(); }
+  }, 150);
+}
+
+/* ---------- parameter rendering ---------- */
+
+function jointRange(p, joint) {
+  // Joints can carry different physical scales (arm Nm vs gripper N), so a
+  // per-joint range keeps a wrist slider from reaching gripper-sized values.
+  if (p.limits && joint != null) return {min: p.limits[joint][0], max: p.limits[joint][1]};
+  return {min: p.min, max: p.max};
+}
+
+function sliderRow(p, joint) {
+  const row = document.createElement("div");
+  row.className = "row";
+  const rng = jointRange(p, joint);
+  const cur = joint == null ? p.value : (p.value || [])[joint];
+  const gold = joint == null ? p.golden : (p.golden || [])[joint];
+  if (joint != null) {
+    const tag = document.createElement("span");
+    tag.className = "joint-tag";
+    tag.textContent = JOINTS7[joint] ?? ("J" + joint);
+    row.appendChild(tag);
+  }
+  const wrap = document.createElement("div");
+  wrap.className = "slider-wrap";
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.min = rng.min; slider.max = rng.max; slider.step = p.step;
+  slider.value = cur ?? rng.min;
+  wrap.appendChild(slider);
+  if (gold != null && rng.max > rng.min) {
+    const tick = document.createElement("div");
+    tick.className = "golden-tick";
+    tick.style.left = (100 * (gold - rng.min) / (rng.max - rng.min)) + "%";
+    tick.title = "golden: " + fmt(gold, p.step);
+    wrap.appendChild(tick);
+  }
+  row.appendChild(wrap);
+  const num = document.createElement("input");
+  num.type = "number";
+  num.min = rng.min; num.max = rng.max; num.step = p.step;
+  num.value = cur != null ? fmt(cur, p.step) : "";
+  row.appendChild(num);
+
+  const markDirty = () => {
+    const g = joint == null ? p.golden : (p.golden || [])[joint];
+    // Tolerance of half a step: sub-step display rounding (e.g. the gripper's
+    // 1e-4 transition velocity at step 0.001) must not read as dirty.
+    num.classList.toggle("dirty",
+      g != null && Math.abs(parseFloat(num.value) - g) > Math.max(1e-6, p.step / 2));
+  };
+  markDirty();
+  const onChange = (v) => {
+    v = Math.min(rng.max, Math.max(rng.min, parseFloat(v)));
+    if (!isFinite(v)) return;
+    slider.value = v; num.value = fmt(v, p.step);
+    markDirty();
+    send(p.name, v, joint);
+  };
+  slider.addEventListener("input", () => onChange(slider.value));
+  num.addEventListener("change", () => onChange(num.value));
+  row._sync = (value, golden) => {
+    const v = joint == null ? value : (value || [])[joint];
+    if (v != null && document.activeElement !== num && document.activeElement !== slider) {
+      slider.value = v; num.value = fmt(v, p.step); markDirty();
+    }
+  };
+  return row;
+}
+
+function renderParam(p) {
+  const box = document.createElement("div");
+  box.className = "param";
+  box.dataset.name = p.name;
+  const head = document.createElement("div");
+  head.className = "param-head";
+  head.innerHTML =
+    `<span class="param-label">${p.label}</span>` +
+    (p.units ? `<span class="param-units">${p.units}</span>` : "") +
+    (p.apply === "held_still" ? `<span class="badge held" title="applied when every joint is at rest">held-still</span>` : "") +
+    (p.ramped ? `<span class="badge held" title="changes ease in gradually instead of stepping">ramped</span>` : "") +
+    `<span class="badge waiting" style="display:none">waiting for arm at rest…</span>` +
+    `<span class="badge pending" style="display:none">queued</span>`;
+  box.appendChild(head);
+  const doc = document.createElement("div");
+  doc.className = "param-doc"; doc.textContent = p.doc;
+  box.appendChild(doc);
+  if (p.per_joint) {
+    for (let j = 0; j < p.per_joint; j++) box.appendChild(sliderRow(p, j));
+  } else {
+    box.appendChild(sliderRow(p, null));
+  }
+  box._sync = (value, golden, pending, waiting) => {
+    box.querySelector(".badge.pending").style.display = pending && !waiting ? "" : "none";
+    box.querySelector(".badge.waiting").style.display = waiting ? "" : "none";
+    box.querySelectorAll(".row").forEach((r) => r._sync && r._sync(value, golden));
+  };
+  return box;
+}
+
+function renderAll(data) {
+  registry = {};
+  const byGroup = {};
+  for (const p of data.params) {
+    registry[p.name] = p;
+    (byGroup[p.group] = byGroup[p.group] || []).push(p);
+  }
+  const root = $("params");
+  root.innerHTML = "";
+  for (const g of GROUP_ORDER) {
+    if (!byGroup[g]) continue;
+    const det = document.createElement("details");
+    det.className = "group"; det.dataset.group = g;
+    det.open = g !== "safety";
+    det.innerHTML = `<summary>${GROUP_TITLES[g] || g}</summary>`;
+    const body = document.createElement("div");
+    body.className = "group-body";
+    for (const p of byGroup[g]) body.appendChild(renderParam(p));
+    det.appendChild(body);
+    root.appendChild(det);
+  }
+  // session panel
+  const ses = $("session");
+  ses.innerHTML = "";
+  for (const [arm, info] of Object.entries(data.session || {})) {
+    const t = document.createElement("table");
+    t.className = "session";
+    t.innerHTML = `<tr><td colspan=2 style="color:var(--accent);text-transform:uppercase;font-size:11px;letter-spacing:.08em">${arm}</td></tr>` +
+      Object.entries(info).map(([k, v]) =>
+        `<tr><td>${k}</td><td class="mono">${Array.isArray(v) ? v.map(x => typeof x === "number" ? x.toFixed(3) : x).join(", ") : v}</td></tr>`
+      ).join("");
+    ses.appendChild(t);
+  }
+  $("mode").textContent = data.standalone ? "standalone tune" : "lerobot session";
+  $("recover").style.display = data.standalone ? "" : "none";
+  $("arm-leader").className = "chip " + (data.arms.includes("leader") ? "ok" : "");
+  $("arm-leader").textContent = "leader " + (data.arms.includes("leader") ? "●" : "—");
+  $("arm-follower").className = "chip " + (data.arms.includes("follower") ? "ok" : "");
+  $("arm-follower").textContent = "follower " + (data.arms.includes("follower") ? "●" : "—");
+}
+
+async function refresh(full) {
+  try {
+    const data = await api("/api/registry");
+    const names = data.params.map((p) => p.name).sort().join(",");
+    if (full || names !== refresh._names) {
+      renderAll(data);          // structure changed (arm connected/left)
+      refresh._names = names;
+    } else {
+      // Values only — never rebuild the DOM under the user's pointer.
+      for (const p of data.params) {
+        const old = registry[p.name];
+        registry[p.name] = p;
+        const el = document.querySelector(`[data-name="${CSS.escape(p.name)}"]`);
+        if (el && el._sync) el._sync(p.value, p.golden, p.pending, p.waiting);
+      }
+    }
+    $("conn").textContent = "connected"; $("conn").className = "chip ok";
+  } catch (e) {
+    $("conn").textContent = "no server"; $("conn").className = "chip err";
+  }
+}
+
+/* ---------- telemetry ---------- */
+
+function sparkRow(containerId, key, label) {
+  const id = containerId + ":" + key;
+  let row = document.querySelector(`[data-spark="${CSS.escape(id)}"]`);
+  if (!row) {
+    row = document.createElement("div");
+    row.className = "spark-row";
+    row.dataset.spark = id;
+    const tag = document.createElement("span");
+    tag.className = "joint-tag"; tag.textContent = label;
+    const canvas = document.createElement("canvas");
+    canvas.width = 180; canvas.height = 22;
+    canvas.style.flex = "1";
+    const val = document.createElement("span");
+    val.className = "val";
+    row.append(tag, canvas, val);
+    $(containerId).appendChild(row);
+    history[id] = [];
+  }
+  return row;
+}
+
+function pushSpark(containerId, key, label, v, fmtStr, scale) {
+  const row = sparkRow(containerId, key, label);
+  const id = containerId + ":" + key;
+  const buf = history[id];
+  buf.push(v); if (buf.length > 180) buf.shift();
+  row.querySelector(".val").textContent = fmtStr(v);
+  const canvas = row.querySelector("canvas");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = "#2c2e32";
+  ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2); ctx.stroke();
+  const lim = scale || Math.max(0.05, ...buf.map(Math.abs));
+  ctx.strokeStyle = Math.abs(v) > lim * 0.8 ? "#d08055" : "#4fb3ad";
+  ctx.beginPath();
+  buf.forEach((y, i) => {
+    const px = i * W / 179;
+    const py = H/2 - Math.max(-1, Math.min(1, y / lim)) * (H/2 - 2);
+    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+  });
+  ctx.stroke();
+  // emphasized endpoint
+  ctx.fillStyle = "#e7e6e1";
+  const lx = (buf.length - 1) * W / 179;
+  const ly = H/2 - Math.max(-1, Math.min(1, v / lim)) * (H/2 - 2);
+  ctx.fillRect(lx - 1.5, ly - 1.5, 3, 3);
+}
+
+function onStream(snap) {
+  const f = (snap.arms || {}).follower;
+  const l = (snap.arms || {}).leader;
+  if (f) {
+    (f.tracking_error || []).slice(0, 6).forEach((v, i) =>
+      pushSpark("trackerr", "j" + i, JOINTS7[i], v, (x) => x.toFixed(3), 0.15));
+    (f.external_efforts || []).forEach((v, i) =>
+      pushSpark("exteff", "j" + i, JOINTS7[i], v, (x) => x.toFixed(1), i === 6 ? 80 : 10));
+    // Pen contact force: the carriage's external effort, against the cap
+    // that retracts the pen. 40 N full scale (the cap's own ceiling).
+    const cap = f.contact_cap_n || 40;
+    const eff = Math.abs(f.contact_force_n || 0);
+    $("gripbar").style.width = Math.min(100, 100 * eff / 40) + "%";
+    $("gripbar").className = eff > cap * 0.9 ? "contact" : "";
+    $("gripcap").style.left = Math.min(100, 100 * cap / 40) + "%";
+    $("gripval").textContent = eff.toFixed(1) + " N" + (f.carriage_target_m > 0.001 ? " (retracted " + (f.carriage_target_m * 1000).toFixed(0) + " mm)" : "");
+    $("gripcapval").textContent = "cap " + cap.toFixed(0) + " N";
+    const es = $("estop");
+    es.textContent = "e-stop " + (f.estop || "—");
+    es.className = "chip " + (f.estop === "ok" ? "ok" : f.estop === "disabled" ? "" : "bad");
+  }
+  if (l) {
+    (l.velocities || []).slice(0, 6).forEach((v, i) =>
+      pushSpark("leadervel", "j" + i, JOINTS7[i], v, (x) => x.toFixed(2), 3));
+  }
+  // Link health: telemetry older than ~2 s means the control loop stopped
+  // publishing for that arm (driver fault, paused session, crash).
+  for (const arm of ["leader", "follower"]) {
+    const t = (snap.arms || {})[arm];
+    const chip = $("arm-" + arm);
+    if (!t) continue;
+    if (t.age > 2) {
+      chip.className = "chip warn";
+      chip.textContent = `${arm} ⚠ stale ${Math.round(t.age)}s`;
+    } else {
+      chip.className = "chip ok";
+      chip.textContent = arm + " ●";
+    }
+  }
+  if (snap.last_error && snap.last_error !== onStream._lastErr) {
+    onStream._lastErr = snap.last_error;
+    toast(snap.last_error, true);
+  }
+  const dirty = (snap.dirty || []).length;
+  const d = $("dirty");
+  d.textContent = dirty ? `dirty: ${dirty}` : "golden";
+  d.className = "chip " + (dirty ? "dirty" : "ok");
+  for (const [name, p] of Object.entries(registry)) {
+    const el = document.querySelector(`[data-name="${CSS.escape(name)}"]`);
+    if (el && el._sync) el._sync(p.value, p.golden,
+      (snap.pending || []).includes(name), (snap.waiting || []).includes(name));
+  }
+}
+
+function connectStream() {
+  const es = new EventSource("/api/stream");
+  es.onmessage = (e) => { try { onStream(JSON.parse(e.data)); } catch {} };
+  es.onerror = () => {
+    $("conn").textContent = "reconnecting…"; $("conn").className = "chip warn";
+    es.close(); setTimeout(connectStream, 2000);
+  };
+  es.onopen = () => { $("conn").textContent = "connected"; $("conn").className = "chip ok"; };
+}
+
+/* ---------- verbs ---------- */
+
+$("save").addEventListener("click", async () => {
+  if (!confirm("Write live values to the golden YAMLs? (git history is the changelog)")) return;
+  try { const r = await api("/api/save", {}); toast("saved: " + r.saved.map(s => s.split("/").pop()).join(", ")); refresh(true); }
+  catch (e) { toast("save failed: " + e.message, true); }
+});
+$("revert").addEventListener("click", async () => {
+  if (!confirm("Queue every dirty parameter back to its golden value?")) return;
+  try { const r = await api("/api/revert", {}); toast(`reverting ${r.reverted.length} params`); setTimeout(() => refresh(true), 800); }
+  catch (e) { toast("revert failed: " + e.message, true); }
+});
+$("capture").addEventListener("click", async () => {
+  try { const r = await api("/api/capture_pose", {}); toast("staged pose captured — Save to persist"); refresh(); }
+  catch (e) { toast("capture failed: " + e.message, true); }
+});
+$("recover").addEventListener("click", async () => {
+  if (!confirm("Move the follower to the staged pose (slow, 4 s)?")) return;
+  try { await api("/api/recover", {}); toast("recover queued"); }
+  catch (e) { toast("recover failed: " + e.message, true); }
+});
+
+refresh();
+connectStream();
+setInterval(refresh, 7000);   // re-sync values (loop republishes every ~5 s)
+</script>
+</body>
+</html>

@@ -1,0 +1,381 @@
+#!/usr/bin/env bash
+# One command that checks every build root. See docs/development.md.
+#
+# This repo has three independent build roots (cpp/, rust/, python/) plus a
+# script suite and a docs tree, each with its own toolchain and its own
+# invocation. Those invocations lived in prose, and prose drifts: the test
+# command in AGENTS.md installed three of the six dependencies its suite needs,
+# so nine modules died at collection and the suite had not run green in weeks.
+# Nothing caught it, because nothing ran it.
+#
+# There is no cloud CI here and no appetite for one -- the fleet is the CI. So
+# the contract is: one command, runnable from a bare clone on any node, that
+# reports honestly on what that node can actually check.
+#
+#   PASS  the check ran and succeeded
+#   FAIL  the check ran and failed        -> exit 1
+#   SKIP  the node cannot run this check  -> named, with the reason, never fatal
+#
+# SKIP is load-bearing. An arm64 Thor has no ManiSkill wheels, an offline node
+# cannot FetchContent the Trossen SDK, and neither is a defect. A check that
+# went red on every node it did not fit would be turned off within a week; one
+# that silently passed would be a lie. So it says which it was.
+#
+# Usage:
+#   scripts/check                 every job this node can run
+#   scripts/check rust cpp        only these
+#   scripts/check --light         skip the heavy ones (torch, lerobot sync)
+#   scripts/check --staged        lint staged files only (the pre-commit hook)
+#   scripts/check --list          show jobs and exit
+#   scripts/check --install-hooks wire up scripts/githooks and exit
+
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT" || exit 2
+
+if [[ -t 1 ]]; then
+  C_PASS=$'\033[32m'; C_FAIL=$'\033[31m'; C_SKIP=$'\033[33m'; C_DIM=$'\033[2m'; C_OFF=$'\033[0m'
+else
+  C_PASS=''; C_FAIL=''; C_SKIP=''; C_DIM=''; C_OFF=''
+fi
+
+ALL_JOBS=(lint-py lint-sh cli nodes rerun-caps disclosure cpp rust tests plugin sim web docs)
+declare -A JOB_DESC=(
+  [lint-py]="ruff over tracked Python"
+  [lint-sh]="shellcheck over tracked shell"
+  [cpp]="cpp/teleop: cmake build + ctest"
+  [rust]="rust/visiond: clippy -D warnings + cargo test"
+  [tests]="scripts/tests suite"
+  [plugin]="python/lerobot_robot_tatbot tests"
+  [sim]="python/tatbot_sim tests"
+  [docs]="sphinx build -W"
+  [web]="web/inkmap: typecheck + core tests + vite build"
+  [cli]="tatbot: every verb --help/--dry-run, no orphans, docs/cli.md current"
+  [nodes]="config/nodes.json agrees with the deployment network document"
+  [disclosure]="export manifest covers every tracked file; scanner canaries fire"
+  [rerun-caps]="every live Rerun launcher caps viewer memory and producer rate"
+)
+# Jobs that pull a large toolchain or dependency set; --light drops them.
+declare -A JOB_HEAVY=([plugin]=1 [sim]=1 [cpp]=1)
+
+LIGHT=0
+STAGED=0
+declare -a WANT=()
+
+usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; }
+
+while (($#)); do
+  case "$1" in
+    --list)
+      for j in "${ALL_JOBS[@]}"; do
+        h=""; [[ -n "${JOB_HEAVY[$j]:-}" ]] && h=" ${C_DIM}(heavy)${C_OFF}"
+        printf '  %-9s %s%s\n' "$j" "${JOB_DESC[$j]}" "$h"
+      done
+      exit 0 ;;
+    --light)   LIGHT=1 ;;
+    --staged)  STAGED=1 ;;
+    --install-hooks) git config core.hooksPath scripts/githooks && echo "hooks: core.hooksPath -> scripts/githooks"; exit 0 ;;
+    --no-hooks) NO_HOOKS=1 ;;
+    -h|--help) usage; exit 0 ;;
+    -*) echo "check: unknown option $1 (try --help)" >&2; exit 2 ;;
+    *)
+      if [[ " ${ALL_JOBS[*]} " == *" $1 "* ]]; then WANT+=("$1")
+      else echo "check: unknown job '$1' (try --list)" >&2; exit 2; fi ;;
+  esac
+  shift
+done
+((${#WANT[@]})) || WANT=("${ALL_JOBS[@]}")
+
+# --- hook enforcement -------------------------------------------------------
+# core.hooksPath is per-clone and was documented as a one-time manual step,
+# which means it was set on some clones and not others -- opt-in enforcement is
+# no enforcement. Setting it here is local, idempotent and additive, so every
+# clone that ever runs a check ends up with the lint hook armed.
+if [[ -z "${NO_HOOKS:-}" && "$(git config core.hooksPath || true)" != "scripts/githooks" ]]; then
+  git config core.hooksPath scripts/githooks \
+    && echo "${C_DIM}check: armed the lint hook (core.hooksPath -> scripts/githooks)${C_OFF}"
+fi
+
+declare -a R_NAME=() R_STATE=() R_NOTE=()
+record() { R_NAME+=("$1"); R_STATE+=("$2"); R_NOTE+=("${3:-}"); }
+have()   { command -v "$1" >/dev/null 2>&1; }
+
+# Run a job body; capture output, print it only on failure so a green run is quiet.
+run_job() {
+  local name="$1"; shift
+  local out rc start dur
+  printf '%s>> %-9s%s ' "$C_DIM" "$name" "$C_OFF"
+  start=$SECONDS
+  out="$("$@" 2>&1)"; rc=$?
+  dur=$((SECONDS - start))
+  if ((rc == 0)); then
+    printf '%sPASS%s %s(%ss)%s\n' "$C_PASS" "$C_OFF" "$C_DIM" "$dur" "$C_OFF"
+    record "$name" PASS
+  else
+    printf '%sFAIL%s %s(%ss)%s\n' "$C_FAIL" "$C_OFF" "$C_DIM" "$dur" "$C_OFF"
+    printf '%s\n' "$out" | sed 's/^/     | /'
+    record "$name" FAIL
+  fi
+}
+
+skip() {
+  printf '%s>> %-9s%s %sSKIP%s %s(%s)%s\n' "$C_DIM" "$1" "$C_OFF" "$C_SKIP" "$C_OFF" "$C_DIM" "$2" "$C_OFF"
+  record "$1" SKIP "$2"
+}
+
+# Tracked files of a given kind, or just the staged ones under --staged.
+sources() {
+  if ((STAGED)); then git diff --cached --name-only --diff-filter=ACMR -- "$@"
+  else git ls-files -- "$@"; fi
+}
+
+# --- jobs -------------------------------------------------------------------
+
+job_lint_py() {
+  mapfile -t f < <(sources '*.py')
+  ((${#f[@]})) || { skip lint-py "no Python in scope"; return; }
+  have uvx || { skip lint-py "uvx not installed"; return; }
+  run_job lint-py uvx ruff check --no-fix "${f[@]}"
+}
+
+# Shell here is not reliably named `*.sh`: scripts/check, scripts/tatbot-logs
+# and scripts/githooks/pre-commit are all extensionless, and a hardcoded list
+# of them rots the first time someone adds another. Ask the shebang instead.
+# (Staging scripts/check itself reported "no shell in scope" until this existed
+# -- the runner was the one file its own lint could not see.)
+shell_sources() {
+  local f line
+  while IFS= read -r f; do
+    case "$f" in
+      *.sh|*.bash) printf '%s\n' "$f"; continue ;;
+    esac
+    [[ -f $f && -r $f ]] || continue
+    IFS= read -r line < "$f" 2>/dev/null || continue
+    case "$line" in
+      '#!'*[bd]a[s]h*|'#!'*/sh|'#!'*"env sh"*|'#!'*/bash*) printf '%s\n' "$f" ;;
+    esac
+  done < <(sources)
+}
+
+job_lint_sh() {
+  mapfile -t f < <(shell_sources)
+  ((${#f[@]})) || { skip lint-sh "no shell in scope"; return; }
+  if have shellcheck; then run_job lint-sh shellcheck -S warning "${f[@]}"
+  elif have uvx;      then run_job lint-sh uvx --from shellcheck-py shellcheck -S warning "${f[@]}"
+  else skip lint-sh "shellcheck and uvx both absent"; fi
+}
+
+# The unified CLI (scripts/tatbot) is stdlib Python, so this runs on every
+# node. It is the contract that keeps the CLI honest: a script nobody wrapped
+# is an orphan, a verb whose example no longer dry-runs is a regression, and
+# docs/cli.md is generated so it can never drift from the registry.
+job_cli() {
+  have python3 || { skip cli "no python3"; return; }
+  run_job cli python3 -c 'import sys; sys.path.insert(0, "scripts/lib"); from tatbot_cli import selfcheck; sys.exit(selfcheck.main(["cli"]))'
+}
+
+job_nodes() {
+  have python3 || { skip nodes "no python3"; return; }
+  # The python side owns the skip reason (no fleet document / no parity
+  # module); surface it as SKIP here rather than a silent PASS.
+  local out
+  out="$(python3 -c 'import sys; sys.path.insert(0, "scripts/lib"); from tatbot_cli import selfcheck; sys.exit(selfcheck.main(["nodes"]))' 2>&1)"
+  if [[ "$out" == SKIP:* ]]; then skip nodes "${out#SKIP: }"; return; fi
+  run_job nodes python3 -c 'import sys; sys.path.insert(0, "scripts/lib"); from tatbot_cli import selfcheck; sys.exit(selfcheck.main(["nodes"]))'
+}
+
+# A Rerun viewer keeps every row it is sent until --memory-limit, and a
+# producer without a rate cap fills that in minutes (a viewer OOM froze a
+# workstation on 2026-08-20). Launchers therefore start
+# the viewer only through rerun_session::start_viewer (both caps) or a literal
+# `rerun --memory-limit`, and every --rerun-connect producer states
+# --rerun-max-fps in the same file.
+job_rerun_caps() {
+  run_job rerun-caps bash -c '
+    set -u; rc=0
+    for f in $(git ls-files --cached --others --exclude-standard "scripts/*.sh" "scripts/**/*.sh"); do
+      [[ $f == scripts/vision/rerun_session.sh ]] && continue
+      # a viewer start is `rerun` followed by a flag, a path, or a variable —
+      # not the English verb ("rerun after fixing").
+      if grep -vE "^[[:space:]]*#" "$f" | grep -qE "(^|[[:space:]])rerun[[:space:]]+(--|/|~|\\\$|\"\\\$|[A-Za-z0-9_./-]+\.rrd)" \
+         && ! grep -qE "rerun_session::start_viewer|rerun +--memory-limit" "$f"; then
+        echo "$f: starts a Rerun viewer without rerun_session::start_viewer / --memory-limit"; rc=1
+      fi
+      if grep -vE "grep|^[[:space:]]*#" "$f" | grep -q -- "--rerun-connect" && ! grep -q -- "--rerun-max-fps" "$f"; then
+        echo "$f: uses --rerun-connect without --rerun-max-fps"; rc=1
+      fi
+    done
+    exit $rc'
+}
+
+# The public-export boundary (internal/export/manifest.json) is only honest if
+# it covers every tracked file and the scanner still catches every category of
+# leak. A silently broken scanner fails red here, not green at export time.
+# The acceptance scan itself runs against the BUILT export tree, not this repo
+# (the export boundary is internal/export/manifest.json).
+job_disclosure() {
+  have python3 || { skip disclosure "no python3"; return; }
+  run_job disclosure bash -c '
+    set -e
+    python3 scripts/export_scan.py self-test
+    python3 scripts/export_scan.py audit
+  '
+}
+
+job_cpp() {
+  have cmake || { skip cpp "cmake not installed"; return; }
+  have c++   || { skip cpp "no C++ compiler"; return; }
+  # The Trossen SDK arrives via FetchContent; without it or a warm _deps cache
+  # there is nothing to build against.
+  if [[ ! -d cpp/teleop/build/_deps ]] && ! git ls-remote -q https://github.com/TrossenRobotics/trossen_arm.git HEAD >/dev/null 2>&1; then
+    skip cpp "trossen_arm SDK unavailable (no network, cold _deps cache)"; return
+  fi
+  run_job cpp bash -c '
+    set -e
+    cmake -B cpp/teleop/build -S cpp/teleop -DCMAKE_BUILD_TYPE=Release >/dev/null
+    cmake --build cpp/teleop/build -j"$(nproc)"
+    ctest --test-dir cpp/teleop/build --output-on-failure
+  '
+}
+
+job_rust() {
+  have cargo || { skip rust "cargo not installed"; return; }
+  cargo clippy --version >/dev/null 2>&1 || { skip rust "clippy component absent"; return; }
+  # gstreamer/realsense need system libs only the capture hosts have; the rerun
+  # feature builds the same code paths everywhere.
+  run_job rust bash -c '
+    set -e
+    cd rust
+    cargo clippy --features rerun --quiet -- -D warnings
+    cargo test --features rerun --quiet
+  '
+}
+
+# A wedged check is worse than a failing one: it burns the runner and reports
+# nothing. TatbotFollower.disconnect() blocks for as long as the e-stop is
+# latched -- correct for an operator disconnect, but lerobot's Robot.__del__
+# calls it, so a garbage collection at any allocation point can park the
+# interpreter forever. That is exactly how this suite hung: mid-YAML-parse, in
+# an unrelated test. A per-test alarm turns any such hang into a normal
+# failure with a stack, and the run continues.
+PYTEST_TIMEOUT=${PYTEST_TIMEOUT:-120}
+TIMEOUT_ARGS=(--timeout="$PYTEST_TIMEOUT" --timeout-method=signal)
+
+job_tests() {
+  have uvx || { skip tests "uvx not installed"; return; }
+  # conftest.py drops modules whose optional dep is missing, so the light set
+  # still produces a real (smaller) run rather than a collection error.
+  if ((LIGHT)); then
+    run_job tests uvx --with pytest --with pytest-timeout --with numpy --with scipy \
+      pytest -q "${TIMEOUT_ARGS[@]}" scripts/tests/
+  else
+    run_job tests uvx --with-requirements scripts/tests/requirements.txt --with pytest-timeout \
+      pytest -q "${TIMEOUT_ARGS[@]}" scripts/tests/
+  fi
+}
+
+job_plugin() {
+  have uv || { skip plugin "uv not installed"; return; }
+  run_job plugin uv run --project python/lerobot_robot_tatbot --with pytest --with pytest-timeout \
+    pytest -q "${TIMEOUT_ARGS[@]}" python/lerobot_robot_tatbot/tests/
+}
+
+job_sim() {
+  have uv || { skip sim "uv not installed"; return; }
+  # SAPIEN/ManiSkill publish x86_64 wheels only -- the Sparks and Thors are out.
+  [[ "$(uname -m)" == "x86_64" ]] || { skip sim "ManiSkill is x86_64-only (this node is $(uname -m))"; return; }
+  run_job sim uv run --project python/tatbot_sim --with pytest --with pytest-timeout \
+    pytest -q "${TIMEOUT_ARGS[@]}" python/tatbot_sim/tests/
+}
+
+# The docs tree carries a warning backlog (pages outside any toctree, a couple
+# of myst directive-option warnings, one dead xref). Building with -W today
+# would be red on arrival and switched off by Friday, so this is a ratchet
+# instead: hard errors fail, and the warning count may not grow. Fix some,
+# lower the number, and the gains are locked in.
+#
+# 97 -> 18 on 27d7bff, when docs/tattooing, docs/bd and docs/council moved to
+# their own repos and took 79 warnings with them. Re-measure after any bulk
+# doc move; -E is required, since an incremental build re-reads nothing and
+# reports 0.
+DOCS_WARN_BASELINE=0
+
+job_web() {
+  have node || { skip web "node not installed"; return; }
+  have npm  || { skip web "npm not installed"; return; }
+  local major; major=$(node -p 'process.versions.node.split(".")[0]')
+  (( major >= 22 )) || { skip web "node $major < 22 (tests use --experimental-strip-types)"; return; }
+  if [[ ! -d web/inkmap/node_modules ]]; then
+    ping -c1 -W2 registry.npmjs.org >/dev/null 2>&1 || { skip web "no node_modules and no network for npm ci"; return; }
+  fi
+  run_job web bash -c '
+    set -e
+    cd web/inkmap
+    [[ -d node_modules ]] || npm ci --silent
+    npm run --silent check
+  '
+}
+
+job_docs() {
+  have uvx || { skip docs "uvx not installed"; return; }
+  run_job docs bash -c '
+    set -o pipefail
+    err=$(mktemp); trap "rm -f $err" EXIT
+    # -E forces a fresh read: an incremental build reports 0 warnings because
+    # it never re-parses the unchanged pages that emit them.
+    uvx --from sphinx --with-requirements docs/requirements.txt \
+      sphinx-build -b html -E --keep-going -q docs docs/_build 2>"$err" || {
+        sed "s/^/sphinx: /" "$err" >&2; exit 1; }
+    n=$(grep -c WARNING "$err" || true)
+    if (( n > '"$DOCS_WARN_BASELINE"' )); then
+      echo "docs: $n warnings, over the ${0##*/} baseline of '"$DOCS_WARN_BASELINE"'" >&2
+      grep WARNING "$err" | sed "s/^/  /" >&2
+      exit 1
+    fi
+    echo "docs: $n warnings (baseline '"$DOCS_WARN_BASELINE"')"
+  '
+}
+
+# --- drive ------------------------------------------------------------------
+
+echo "tatbot check -- $(git rev-parse --short HEAD)$([[ -n "$(git status --porcelain)" ]] && echo ' (dirty)') on $(hostname -s), $(uname -m)"
+
+for j in "${WANT[@]}"; do
+  if ((LIGHT)) && [[ -n "${JOB_HEAVY[$j]:-}" && "$j" != "tests" ]]; then
+    skip "$j" "--light"; continue
+  fi
+  case "$j" in
+    lint-py) job_lint_py ;;
+    lint-sh) job_lint_sh ;;
+    cli)     job_cli ;;
+    nodes)   job_nodes ;;
+    rerun-caps) job_rerun_caps ;;
+    disclosure) job_disclosure ;;
+    cpp)     job_cpp ;;
+    rust)    job_rust ;;
+    tests)   job_tests ;;
+    plugin)  job_plugin ;;
+    sim)     job_sim ;;
+    web)     job_web ;;
+    docs)    job_docs ;;
+  esac
+done
+
+pass=0; fail=0; skipped=0
+declare -a failed=() skips=()
+for i in "${!R_NAME[@]}"; do
+  case "${R_STATE[$i]}" in
+    PASS) ((pass++)) ;;
+    FAIL) ((fail++)); failed+=("${R_NAME[$i]}") ;;
+    SKIP) ((skipped++)); skips+=("${R_NAME[$i]} (${R_NOTE[$i]})") ;;
+  esac
+done
+
+echo
+printf '%s%d passed%s, %s%d failed%s, %s%d skipped%s\n' \
+  "$C_PASS" "$pass" "$C_OFF" "$C_FAIL" "$fail" "$C_OFF" "$C_SKIP" "$skipped" "$C_OFF"
+((skipped)) && printf '%snot checked here: %s%s\n' "$C_DIM" "$(IFS='; '; echo "${skips[*]}")" "$C_OFF"
+((fail))    && printf '%sfailed: %s%s\n' "$C_FAIL" "${failed[*]}" "$C_OFF"
+
+exit $(( fail > 0 ))

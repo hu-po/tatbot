@@ -1,0 +1,35 @@
+# Dependency set for the scripts/ test suite.
+#
+# This file exists because the set used to live only in a hand-typed command in
+# AGENTS.md, and that command was wrong: it installed pytest/numpy/scipy and
+# nothing else, so nine modules failed to import and the suite never ran green.
+# A declared set can be fixed once; an incantation gets re-typed wrong.
+#
+# scripts/tests/conftest.py maps each module to the import it needs and skips
+# what is absent, so a partial install still produces an honest run.
+
+pytest
+
+# Broadly needed across calibration, log and geometry tests.
+numpy
+scipy
+
+# Fiducial/vision tests: ee_fiducial, ee_tracker_io, fiducial_inventory,
+# calibrate_board_session.
+opencv-python
+
+# LeRobot dataset-layout tests: train_dataset, train_depth_encoding.
+pyarrow
+
+# Policy/checkpoint tests: train_offline_eval, train_sampler, train_tb_bridge.
+# Large (~2.5 GB with CUDA wheels). `scripts/check tests --light` omits it.
+torch
+
+# train_tb_bridge reads back what the TensorBoard logger wrote.
+tensorboard
+
+# NOT listed, deliberately: lerobot. train_dataset, train_depth_encoding and
+# train_offline_eval import it, but it is a whole robotics stack from a git
+# fork carrying a pinned trossen-arm override -- too much to drag into this
+# suite's throwaway environment for three modules. conftest.py skips them and
+# says so; run the suite from python/lerobot_robot_tatbot/.venv to include them.

@@ -1,0 +1,1298 @@
+<?xml version="1.0" ?>
+<robot name="tatbot">
+  <material name="black">
+    <color rgba="0.1 0.1 0.1 1"/>
+    <specular rgba="0.5 0.5 0.5 1"/>
+  </material>
+  <link name="root">
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+  </link>
+
+  <!-- palette -->
+  <link name="palette_root">
+    <visual>
+      <origin rpy="0 0 1.5707963267948966" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/palette.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="palette_root_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.126 0 0.085"/>
+    <parent link="root"/>
+    <child link="palette_root"/>
+  </joint>
+  <link name="palette_calibrator" />
+  <joint name="palette_calibrator_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.038 0 0.006"/>
+    <parent link="palette_root"/>
+    <child link="palette_calibrator"/>
+  </joint>
+
+  <!-- Palette world-anchor fiducial: AprilTag 16h5 id 8, 41 mm black edge. -->
+  <link name="palette_tag8">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/tags/16h5_008_41mm/tag.obj" scale="1 1 1"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="palette_tag8_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0.0035"/>
+    <parent link="palette_root"/>
+    <child link="palette_tag8"/>
+  </joint>
+
+  <!-- left inkcaps -->
+  <link name="inkcap_left_large" />
+  <joint name="inkcap_left_large_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.055 0"/>
+    <parent link="palette_root"/>
+    <child link="inkcap_left_large"/>
+  </joint>
+  <link name="inkcap_left_small_0" />
+  <joint name="inkcap_left_small_0_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.008 0.069 0"/>
+    <parent link="palette_root"/>
+    <child link="inkcap_left_small_0"/>
+  </joint>
+  <link name="inkcap_left_small_1" />
+  <joint name="inkcap_left_small_1_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.008 0.069 0"/>
+    <parent link="palette_root"/>
+    <child link="inkcap_left_small_1"/>
+  </joint>
+  <link name="inkcap_left_medium_0" />
+  <joint name="inkcap_left_medium_0_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.01 0.039 0"/>
+    <parent link="palette_root"/>
+    <child link="inkcap_left_medium_0"/>
+  </joint>
+  <link name="inkcap_left_medium_1" />
+  <joint name="inkcap_left_medium_1_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.01 0.039 0"/>
+    <parent link="palette_root"/>
+    <child link="inkcap_left_medium_1"/>
+  </joint>
+  
+  <!-- right inkcaps -->
+  <link name="inkcap_right_large" />
+  <joint name="inkcap_right_large_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 -0.055 0"/>
+    <parent link="palette_root"/>
+    <child link="inkcap_right_large"/>
+  </joint>
+  <link name="inkcap_right_small_0" />
+  <joint name="inkcap_right_small_0_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.008 -0.069 0"/>
+    <parent link="palette_root"/>
+    <child link="inkcap_right_small_0"/>
+  </joint>
+  <link name="inkcap_right_small_1" />
+  <joint name="inkcap_right_small_1_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.008 -0.069 0"/>
+    <parent link="palette_root"/>
+    <child link="inkcap_right_small_1"/>
+  </joint>
+  <link name="inkcap_right_medium_0" />
+  <joint name="inkcap_right_medium_0_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.01 -0.039 0"/>
+    <parent link="palette_root"/>
+    <child link="inkcap_right_medium_0"/>
+  </joint>
+  <link name="inkcap_right_medium_1" />
+  <joint name="inkcap_right_medium_1_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.01 -0.039 0"/>
+    <parent link="palette_root"/>
+    <child link="inkcap_right_medium_1"/>
+  </joint>
+
+  <!-- camera1 -->
+  <joint name="camera1_mount_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.2 0 0"/>
+    <parent link="palette_root"/>
+    <child link="camera1"/>
+  </joint>
+  <link name="camera1">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/cameras/amcrest.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/cameras/amcrest.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="camera1_frame_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 0" xyz="0 0 0.07"/>
+    <parent link="camera1"/>
+    <child link="camera1_frame"/>
+  </joint>
+  <link name="camera1_frame"/>
+  <joint name="camera1_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 1.5707963267948966 -0.7853981633974483" xyz="0 0 0"/>
+    <parent link="camera1_frame"/>
+    <child link="camera1_optical_frame"/>
+  </joint>
+  <link name="camera1_optical_frame"/>
+  
+  <!-- camera2 -->
+  <joint name="camera2_mount_joint" type="fixed">
+    <origin rpy="0 1.5707963267948966 0" xyz="-0.0275 0.27 0.6"/>
+    <parent link="root"/>
+    <child link="camera2"/>
+  </joint>
+  <link name="camera2">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/cameras/amcrest.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/cameras/amcrest.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="camera2_frame_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0.07"/>
+    <parent link="camera2"/>
+    <child link="camera2_frame"/>
+  </joint>
+  <link name="camera2_frame"/>
+  <joint name="camera2_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="camera2_frame"/>
+    <child link="camera2_optical_frame"/>
+  </joint>
+  <link name="camera2_optical_frame"/>
+  
+  <!-- camera3 -->
+  <joint name="camera3_mount_joint" type="fixed">
+    <origin rpy="0 1.5707963267948966 0" xyz="-0.0275 0.11 0.7"/>
+    <parent link="root"/>
+    <child link="camera3"/>
+  </joint>
+  <link name="camera3">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/cameras/amcrest.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/cameras/amcrest.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="camera3_frame_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0.07"/>
+    <parent link="camera3"/>
+    <child link="camera3_frame"/>
+  </joint>
+  <link name="camera3_frame"/>
+  <joint name="camera3_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="camera3_frame"/>
+    <child link="camera3_optical_frame"/>
+  </joint>
+  <link name="camera3_optical_frame"/>
+
+  <!-- camera4 -->
+  <joint name="camera4_mount_joint" type="fixed">
+    <origin rpy="0 1.5707963267948966 0" xyz="-0.0275 -0.11 0.7"/>
+    <parent link="root"/>
+    <child link="camera4"/>
+  </joint>
+  <link name="camera4">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/cameras/amcrest.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="camera4_frame_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0.07"/>
+    <parent link="camera4"/>
+    <child link="camera4_frame"/>
+  </joint>
+  <link name="camera4_frame"/>
+  <joint name="camera4_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="camera4_frame"/>
+    <child link="camera4_optical_frame"/>
+  </joint>
+  <link name="camera4_optical_frame"/>
+
+  <!-- camera5 -->
+  <joint name="camera5_mount_joint" type="fixed">
+    <origin rpy="0 1.5707963267948966 0" xyz="-0.0275 -0.27 0.6"/>
+    <parent link="root"/>
+    <child link="camera5"/>
+  </joint>
+  <link name="camera5">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/cameras/amcrest.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="camera5_frame_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0.07"/>
+    <parent link="camera5"/>
+    <child link="camera5_frame"/>
+  </joint>
+  <link name="camera5_frame"/>
+  <joint name="camera5_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="camera5_frame"/>
+    <child link="camera5_optical_frame"/>
+  </joint>
+  <link name="camera5_optical_frame"/>
+
+  <!-- arm_l -->
+  <joint name="left/mount_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.2675 0"/>
+    <parent link="root"/>
+    <child link="left/base_link"/>
+  </joint>
+  <link name="left/base_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.00014175 -0.00005228 0.03175177"/>
+      <mass value="0.45969858"/>
+      <inertia ixx="0.00041660" ixy="0.00000011" ixz="-0.00000454" iyy="0.00044896" iyz="-0.00000078" izz="0.00021403"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/base_link.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/base_link.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="left/link_1">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.00011075 0.00171176 0.02044592"/>
+      <mass value="0.15270428"/>
+      <inertia ixx="0.00018509" ixy="-0.00000191" ixz="-0.00001436" iyy="0.00008358" iyz="-0.00000130" izz="0.00019219"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_1.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_1.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left/joint_0" type="revolute">
+    <origin rpy="0 0 0" xyz="0 0 0.05725"/>
+    <parent link="left/base_link"/>
+    <child link="left/link_1"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="27.0" lower="-3.0543261909900767" upper="3.0543261909900767" velocity="3.375"/>
+  </joint>
+  <link name="left/link_2">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.13121451 -0.00292583 0.00021345"/>
+      <mass value="1.15316319"/>
+      <inertia ixx="0.00102632" ixy="-0.00000319" ixz="-0.00002679" iyy="0.01736118" iyz="-0.00000193" izz="0.01794489"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_2.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_2.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left/joint_1" type="revolute">
+    <origin rpy="0 0 0" xyz="0.02 0 0.04625"/>
+    <parent link="left/link_1"/>
+    <child link="left/link_2"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="27.0" lower="0.0" upper="3.141592653589793" velocity="3.375"/>
+  </joint>
+  <link name="left/link_3">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.18083602 -0.00094090 0.05554937"/>
+      <mass value="0.68666638"/>
+      <inertia ixx="0.00064876" ixy="0.00009128" ixz="-0.00052002" iyy="0.00547407" iyz="0.00001159" izz="0.00561509"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_3.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_3.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left/joint_2" type="revolute">
+    <origin rpy="0 0 0" xyz="-0.264 0 0"/>
+    <parent link="left/link_2"/>
+    <child link="left/link_3"/>
+    <axis xyz="0 -1 0"/>
+    <limit effort="27.0" lower="0.0" upper="2.356194490192345" velocity="3.375"/>
+  </joint>
+  <link name="left/link_4">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.05797842 0.00027145 0.05884447"/>
+      <mass value="0.45789905"/>
+      <inertia ixx="0.00053839" ixy="0.00000690" ixz="-0.00018164" iyy="0.00066138" iyz="0.00000724" izz="0.00042116"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_4.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_4.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left/joint_3" type="revolute">
+    <origin rpy="0 0 0" xyz="0.245 0 0.06"/>
+    <parent link="left/link_3"/>
+    <child link="left/link_4"/>
+    <axis xyz="0 -1 0"/>
+    <limit effort="7.0" lower="-1.5707963267948966" upper="1.5707963267948966" velocity="7.0"/>
+  </joint>
+  <link name="left/link_5">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.00412447 -0.00001138 -0.04283184"/>
+      <mass value="0.36693910"/>
+      <inertia ixx="0.00018912" ixy="-0.00000045" ixz="0.00000090" iyy="0.00032062" iyz="0.00000003" izz="0.00026750"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_5.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_5.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left/joint_4" type="revolute">
+    <origin rpy="0 0 0" xyz="0.06775 0 0.0455"/>
+    <parent link="left/link_4"/>
+    <child link="left/link_5"/>
+    <axis xyz="0 0 -1"/>
+    <limit effort="7.0" lower="-1.5707963267948966" upper="1.5707963267948966" velocity="7.0"/>
+  </joint>
+  <link name="left/link_6">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.04572768 -0.00000726 0.00001402"/>
+      <mass value="0.55469347"/>
+      <inertia ixx="0.00082429" ixy="-0.00000051" ixz="0.00000010" iyy="0.00048759" iyz="0.00000004" izz="0.00108600"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_6.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_6.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left/joint_5" type="revolute">
+    <origin rpy="0 0 0" xyz="0.02895 0 -0.0455"/>
+    <parent link="left/link_5"/>
+    <child link="left/link_6"/>
+    <axis xyz="1 0 0"/>
+    <limit effort="7.0" lower="-3.141592653589793" upper="3.141592653589793" velocity="7.0"/>
+  </joint>
+
+
+  <!-- left arm carriage -->
+  <link name="left/carriage_left">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.00889602 -0.00403515 -0.00457908"/>
+      <mass value="0.05036313"/>
+      <inertia ixx="0.00001736" ixy="-0.00000165" ixz="-0.00000104" iyy="0.00000591" iyz="-0.00000172" izz="0.00001378"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/carriage_left.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/carriage_left.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left/left_carriage_joint" type="prismatic">
+    <origin rpy="0 0 0" xyz="0.0865 0.023 0"/>
+    <parent link="left/link_6"/>
+    <child link="left/carriage_left"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
+  </joint>
+  <link name="left/carriage_right">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.00889602 0.00403514 0.00457901"/>
+      <mass value="0.05036313"/>
+      <inertia ixx="0.00001736" ixy="-0.00000165" ixz="-0.00000104" iyy="0.00000591" iyz="-0.00000172" izz="0.00001378"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/carriage_right.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/carriage_right.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left/right_carriage_joint" type="prismatic">
+    <origin rpy="0 0 0" xyz="0.0865 -0.023 0"/>
+    <parent link="left/link_6"/>
+    <child link="left/carriage_right"/>
+    <mimic joint="left/left_carriage_joint"/>
+    <axis xyz="0 -1 0"/>
+    <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
+  </joint>
+  <link name="left/handle">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.02058209 -0.00684633 -0.07527822"/>
+      <mass value="0.05670184"/>
+      <inertia ixx="0.00000769" ixy="0.00000321" ixz="0.00000029" iyy="0.00001487" iyz="-0.00000020" izz="0.00001184"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/handle_left.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/handle_left.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left/handle_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.012 0 0"/>
+    <parent link="left/link_6"/>
+    <child link="left/handle"/>
+  </joint>
+  <link name="left/leader_finger_left_index">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.00463071 0.00281421 -0.02178863"/>
+      <mass value="0.02647075"/>
+      <inertia ixx="0.00001952" ixy="0.00000025" ixz="-0.00000099" iyy="0.00001830" iyz="0.00000228" izz="0.00000303"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/leader_finger_left_index.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/leader_finger_left_index.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left/left_index_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="left/carriage_left"/>
+    <child link="left/leader_finger_left_index"/>
+  </joint>
+  <link name="left/leader_finger_left_thumb">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.00130654 -0.00425887 -0.02751970"/>
+      <mass value="0.02088075"/>
+      <inertia ixx="0.00001780" ixy="-0.00000050" ixz="-0.00000239" iyy="0.00001685" iyz="-0.00000235" izz="0.00000317"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/leader_finger_left_thumb.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/leader_finger_left_thumb.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left/left_thumb_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="left/carriage_right"/>
+    <child link="left/leader_finger_left_thumb"/>
+  </joint>
+  <joint name="left/ee_gripper" type="fixed">
+    <origin rpy="0 0 0" xyz="0.156062 0 0"/>
+    <parent link="left/link_6"/>
+    <child link="left/ee_gripper_link"/>
+  </joint>
+  <link name="left/ee_gripper_link"/>
+
+
+  <!-- arm_r -->
+  <joint name="right/mount_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 -0.2675 0"/>
+    <parent link="root"/>
+    <child link="right/base_link"/>
+  </joint>
+  <link name="right/base_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.00014175 -0.00005228 0.03175177"/>
+      <mass value="0.45969858"/>
+      <inertia ixx="0.00041660" ixy="0.00000011" ixz="-0.00000454" iyy="0.00044896" iyz="-0.00000078" izz="0.00021403"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/base_link.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/base_link.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="right/link_1">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.00011075 0.00171176 0.02044592"/>
+      <mass value="0.15270428"/>
+      <inertia ixx="0.00018509" ixy="-0.00000191" ixz="-0.00001436" iyy="0.00008358" iyz="-0.00000130" izz="0.00019219"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_1.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_1.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="right/joint_0" type="revolute">
+    <origin rpy="0 0 0" xyz="0 0 0.05725"/>
+    <parent link="right/base_link"/>
+    <child link="right/link_1"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="27.0" lower="-3.0543261909900767" upper="3.0543261909900767" velocity="3.375"/>
+  </joint>
+  <link name="right/link_2">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.13121451 -0.00292583 0.00021345"/>
+      <mass value="1.15316319"/>
+      <inertia ixx="0.00102632" ixy="-0.00000319" ixz="-0.00002679" iyy="0.01736118" iyz="-0.00000193" izz="0.01794489"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_2.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_2.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="right/joint_1" type="revolute">
+    <origin rpy="0 0 0" xyz="0.02 0 0.04625"/>
+    <parent link="right/link_1"/>
+    <child link="right/link_2"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="27.0" lower="0.0" upper="3.141592653589793" velocity="3.375"/>
+  </joint>
+  <link name="right/link_3">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.18083602 -0.00094090 0.05554937"/>
+      <mass value="0.68666638"/>
+      <inertia ixx="0.00064876" ixy="0.00009128" ixz="-0.00052002" iyy="0.00547407" iyz="0.00001159" izz="0.00561509"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_3.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_3.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="right/joint_2" type="revolute">
+    <origin rpy="0 0 0" xyz="-0.264 0 0"/>
+    <parent link="right/link_2"/>
+    <child link="right/link_3"/>
+    <axis xyz="0 -1 0"/>
+    <limit effort="27.0" lower="0.0" upper="2.356194490192345" velocity="3.375"/>
+  </joint>
+  <link name="right/link_4">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.05797842 0.00027145 0.05884447"/>
+      <mass value="0.45789905"/>
+      <inertia ixx="0.00053839" ixy="0.00000690" ixz="-0.00018164" iyy="0.00066138" iyz="0.00000724" izz="0.00042116"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_4.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_4.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="right/joint_3" type="revolute">
+    <origin rpy="0 0 0" xyz="0.245 0 0.06"/>
+    <parent link="right/link_3"/>
+    <child link="right/link_4"/>
+    <axis xyz="0 -1 0"/>
+    <limit effort="7.0" lower="-1.5707963267948966" upper="1.5707963267948966" velocity="7.0"/>
+  </joint>
+  <link name="right/link_5">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.00412447 -0.00001138 -0.04283184"/>
+      <mass value="0.36693910"/>
+      <inertia ixx="0.00018912" ixy="-0.00000045" ixz="0.00000090" iyy="0.00032062" iyz="0.00000003" izz="0.00026750"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_5.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_5.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="right/joint_4" type="revolute">
+    <origin rpy="0 0 0" xyz="0.06775 0 0.0455"/>
+    <parent link="right/link_4"/>
+    <child link="right/link_5"/>
+    <axis xyz="0 0 -1"/>
+    <limit effort="7.0" lower="-1.5707963267948966" upper="1.5707963267948966" velocity="7.0"/>
+  </joint>
+  <link name="right/link_6">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.04572768 -0.00000726 0.00001402"/>
+      <mass value="0.55469347"/>
+      <inertia ixx="0.00082429" ixy="-0.00000051" ixz="0.00000010" iyy="0.00048759" iyz="0.00000004" izz="0.00108600"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_6.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/link_6.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="right/joint_5" type="revolute">
+    <origin rpy="0 0 0" xyz="0.02895 0 -0.0455"/>
+    <parent link="right/link_5"/>
+    <child link="right/link_6"/>
+    <axis xyz="1 0 0"/>
+    <limit effort="7.0" lower="-3.141592653589793" upper="3.141592653589793" velocity="7.0"/>
+  </joint>
+
+  <!-- right realsense -->
+  <link name="right/realsense_mount_d405">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.03023383 0.00679835 0.05006687"/>
+      <mass value="0.04518012"/>
+      <inertia ixx="0.00003426" ixy="-0.00000027" ixz="-0.00000309" iyy="0.00001980" iyz="-0.00000319" izz="0.00002470"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/camera_mount_d405.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/camera_mount_d405.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="right/realsense_mount_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.012 0 0"/>
+    <parent link="right/link_6"/>
+    <child link="right/realsense_mount_d405"/>
+  </joint>
+  <joint name="right/realsense_joint" type="fixed">
+    <origin rpy="0 0.3490658503988659 0" xyz="0.02927207801 0 0.03824951197"/>
+    <parent link="right/realsense_mount_d405"/>
+    <child link="right/realsense_bottom_screw_frame"/>
+  </joint>
+  <link name="right/realsense_bottom_screw_frame"/>
+  <joint name="right/realsense_link_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.01085 0.009 0.021"/>
+    <parent link="right/realsense_bottom_screw_frame"/>
+    <child link="right/realsense_link"/>
+  </joint>
+  <link name="right/realsense_link">
+    <visual>
+      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0038 -0.009 0"/>
+      <geometry>
+        <mesh filename="meshes/cameras/d405.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="-0.0078 -0.009 0"/>
+      <geometry>
+        <box size="0.023 0.042 0.042"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.072"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.00002117" ixy="0.0" ixz="0.0" iyy="0.000013758" iyz="0.0" izz="0.000013758"/>
+    </inertial>
+  </link>
+
+  <!-- BEGIN GENERATED WRIST FIDUCIALS layout_sha256=8e9ae689f2568360accfe6c718c5aebd872803ce6c62603f9034400ff6bf8e65 -->
+  <!-- status=calibrated; generated by scripts/vision/export_wrist_tags.py -->
+  <link name="right/wrist_tag3"/>
+  <joint name="right/wrist_tag3_joint" type="fixed">
+    <origin rpy="-3.12270922 -0.01142015 1.56903879" xyz="0.04260701 0.11760005 -0.04011157"/>
+    <parent link="right/gripper_left"/>
+    <child link="right/wrist_tag3"/>
+  </joint>
+  <link name="right/wrist_tag6"/>
+  <joint name="right/wrist_tag6_joint" type="fixed">
+    <origin rpy="-1.53747224 -0.02453984 1.57546309" xyz="0.00016985 0.12019381 -0.00407259"/>
+    <parent link="right/gripper_left"/>
+    <child link="right/wrist_tag6"/>
+  </joint>
+  <link name="right/wrist_tag7"/>
+  <joint name="right/wrist_tag7_joint" type="fixed">
+    <origin rpy="-1.59214907 -1.54368002 0.01198296" xyz="0.04062539 0.15829438 -0.00138517"/>
+    <parent link="right/gripper_left"/>
+    <child link="right/wrist_tag7"/>
+  </joint>
+  <link name="right/wrist_tag8"/>
+  <joint name="right/wrist_tag8_joint" type="fixed">
+    <origin rpy="0.05166801 -0.00723160 1.58050082" xyz="0.03950073 0.11731603 0.03798188"/>
+    <parent link="right/gripper_left"/>
+    <child link="right/wrist_tag8"/>
+  </joint>
+  <!-- END GENERATED WRIST FIDUCIALS -->
+  <joint name="right/realsense_depth_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="right/realsense_link"/>
+    <child link="right/realsense_depth_frame"/>
+  </joint>
+  <link name="right/realsense_depth_frame"/>
+  <joint name="right/realsense_depth_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="right/realsense_depth_frame"/>
+    <child link="right/realsense_depth_optical_frame"/>
+  </joint>
+  <link name="right/realsense_depth_optical_frame"/>
+  <joint name="right/realsense_infra1_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.0 0"/>
+    <parent link="right/realsense_link"/>
+    <child link="right/realsense_infra1_frame"/>
+  </joint>
+  <link name="right/realsense_infra1_frame"/>
+  <joint name="right/realsense_infra1_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="right/realsense_infra1_frame"/>
+    <child link="right/realsense_infra1_optical_frame"/>
+  </joint>
+  <link name="right/realsense_infra1_optical_frame"/>
+  <joint name="right/realsense_infra2_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 -0.018 0"/>
+    <parent link="right/realsense_link"/>
+    <child link="right/realsense_infra2_frame"/>
+  </joint>
+  <link name="right/realsense_infra2_frame"/>
+  <joint name="right/realsense_infra2_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="right/realsense_infra2_frame"/>
+    <child link="right/realsense_infra2_optical_frame"/>
+  </joint>
+  <link name="right/realsense_infra2_optical_frame"/>
+  <joint name="right/realsense_color_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.0 0"/>
+    <parent link="right/realsense_link"/>
+    <child link="right/realsense_color_frame"/>
+  </joint>
+  <link name="right/realsense_color_frame"/>
+  <joint name="right/realsense_color_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="right/realsense_color_frame"/>
+    <child link="right/realsense_color_optical_frame"/>
+  </joint>
+  <link name="right/realsense_color_optical_frame"/>
+
+  <!-- right arm lower realsense (same mount, flipped 180deg) -->
+  <link name="right/realsense_lower_mount_d405">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.03023383 0.00679835 0.05006687"/>
+      <mass value="0.04518012"/>
+      <inertia ixx="0.00003426" ixy="-0.00000027" ixz="-0.00000309" iyy="0.00001980" iyz="-0.00000319" izz="0.00002470"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/camera_mount_d405.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/camera_mount_d405.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="right/realsense_lower_mount_joint" type="fixed">
+    <origin rpy="3.141592653589793 0 0" xyz="0.012 0 0"/>
+    <parent link="right/link_6"/>
+    <child link="right/realsense_lower_mount_d405"/>
+  </joint>
+  <joint name="right/realsense_lower_joint" type="fixed">
+    <origin rpy="0 0.3490658503988659 0" xyz="0.02927207801 0 0.03824951197"/>
+    <parent link="right/realsense_lower_mount_d405"/>
+    <child link="right/realsense_lower_bottom_screw_frame"/>
+  </joint>
+  <link name="right/realsense_lower_bottom_screw_frame"/>
+  <joint name="right/realsense_lower_link_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.01085 0.009 0.021"/>
+    <parent link="right/realsense_lower_bottom_screw_frame"/>
+    <child link="right/realsense_lower_link"/>
+  </joint>
+  <link name="right/realsense_lower_link">
+    <visual>
+      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0038 -0.009 0"/>
+      <geometry>
+        <mesh filename="meshes/cameras/d405.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="-0.0078 -0.009 0"/>
+      <geometry>
+        <box size="0.023 0.042 0.042"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.072"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.00002117" ixy="0.0" ixz="0.0" iyy="0.000013758" iyz="0.0" izz="0.000013758"/>
+    </inertial>
+  </link>
+  <joint name="right/realsense_lower_depth_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="right/realsense_lower_link"/>
+    <child link="right/realsense_lower_depth_frame"/>
+  </joint>
+  <link name="right/realsense_lower_depth_frame"/>
+  <joint name="right/realsense_lower_depth_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="right/realsense_lower_depth_frame"/>
+    <child link="right/realsense_lower_depth_optical_frame"/>
+  </joint>
+  <link name="right/realsense_lower_depth_optical_frame"/>
+  <joint name="right/realsense_lower_infra1_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.0 0"/>
+    <parent link="right/realsense_lower_link"/>
+    <child link="right/realsense_lower_infra1_frame"/>
+  </joint>
+  <link name="right/realsense_lower_infra1_frame"/>
+  <joint name="right/realsense_lower_infra1_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="right/realsense_lower_infra1_frame"/>
+    <child link="right/realsense_lower_infra1_optical_frame"/>
+  </joint>
+  <link name="right/realsense_lower_infra1_optical_frame"/>
+  <joint name="right/realsense_lower_infra2_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 -0.018 0"/>
+    <parent link="right/realsense_lower_link"/>
+    <child link="right/realsense_lower_infra2_frame"/>
+  </joint>
+  <link name="right/realsense_lower_infra2_frame"/>
+  <joint name="right/realsense_lower_infra2_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="right/realsense_lower_infra2_frame"/>
+    <child link="right/realsense_lower_infra2_optical_frame"/>
+  </joint>
+  <link name="right/realsense_lower_infra2_optical_frame"/>
+  <joint name="right/realsense_lower_color_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.0 0"/>
+    <parent link="right/realsense_lower_link"/>
+    <child link="right/realsense_lower_color_frame"/>
+  </joint>
+  <link name="right/realsense_lower_color_frame"/>
+  <joint name="right/realsense_lower_color_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+    <parent link="right/realsense_lower_color_frame"/>
+    <child link="right/realsense_lower_color_optical_frame"/>
+  </joint>
+  <link name="right/realsense_lower_color_optical_frame"/>
+
+  <!-- right arm carriage -->
+  <link name="right/carriage_left">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.00889602 -0.00403515 -0.00457908"/>
+      <mass value="0.05036313"/>
+      <inertia ixx="0.00001736" ixy="-0.00000165" ixz="-0.00000104" iyy="0.00000591" iyz="-0.00000172" izz="0.00001378"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/carriage_left.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wxai/carriage_left.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="right/left_carriage_joint" type="prismatic">
+    <origin rpy="0 0 0" xyz="0.0865 0.023 0"/>
+    <parent link="right/link_6"/>
+    <child link="right/carriage_left"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
+  </joint>
+  <!-- right/gripper_left is a FRAME only since 2026-08-30: both fingertips are
+       physically removed. It is kept because the wrist fiducials and the EE
+       mount chain are parented to it (its origin is the carriage's 2x3 M3
+       pattern centre; +x the pattern's normal). No geometry. -->
+  <link name="right/gripper_left"/>
+  <joint name="right/left_gripper_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="right/carriage_left"/>
+    <child link="right/gripper_left"/>
+  </joint>
+  <!-- EE mount chain (2026-08-30, from the three printed-part STLs in urdf/meshes/ee/,
+       mm-scaled):
+       carriage front face (the 2x3 M3 pattern at 14 x 12 mm the finger bolts to,
+       pattern centre = this link's origin, normal = +x)
+         -> ee_fiducial_cube.stl: 6 mm plate on that pattern, plate x -> link +y
+            (+7 mm), plate y -> link z, plate z -> link x; the 66 mm hollow cube
+            with the wrist tags sits 75-141 mm out on the +y side (cube "up")
+         -> ee_base.stl: 4 mm plate on the same pattern (rotated 180 deg on it),
+            6 mm further out; its wall rises on the cube side (+y, 27-53 mm past
+            the pattern) and ends in a 45 deg face
+         -> ee_pen_mount.stl: on that face by four M3 (17.9 x 43.3 mm); the pen
+            bore (dia 32, along the block's own x) is parallel to the face, so
+            the tool axis is 45 deg between link -y and +x: in the rolled idle
+            (cube up, x forward) the tip points forward-and-down, exiting the
+            bore end away from the wall. The 2x3 pattern is symmetric, so the
+            other 180 deg seat (wall across the centreline, tip down-and-back)
+            is geometrically possible; the operator's "tilted forward" and the
+            wrist's reach (a back-tilted tip cannot be held vertical, joint_3
+            hits its limit) pick this one.
+       Neither fingertip is fitted any more; the plates sit directly on the
+       carriage's pattern. NOMINAL: the chain is exact to the STLs; only the
+       carriage hole pattern's position in this link (+-0.5 mm) and the pen's
+       seat in the bore are unmeasured. The touch-off measures the tip in
+       tool_mount. -->
+  <link name="right/ee_mount">
+    <visual>
+      <origin rpy="1.5707963 0 1.5707963" xyz="0 0.007 0"/>
+      <geometry><mesh filename="meshes/ee/ee_fiducial_cube.stl" scale="0.001 0.001 0.001"/></geometry>
+      <material name="ee_print_black"><color rgba="0.12 0.12 0.13 1"/></material>
+    </visual>
+    <visual>
+      <origin rpy="-1.5707963 0 -1.5707963" xyz="0.006 0.007 0"/>
+      <geometry><mesh filename="meshes/ee/ee_base.stl" scale="0.001 0.001 0.001"/></geometry>
+      <material name="ee_print_black2"><color rgba="0.14 0.14 0.15 1"/></material>
+    </visual>
+    <visual>
+      <origin rpy="-1.5707963 0 -0.7853982" xyz="0.031811 0.061189 0"/>
+      <geometry><mesh filename="meshes/ee/ee_pen_mount.stl" scale="0.001 0.001 0.001"/></geometry>
+      <material name="ee_print_black3"><color rgba="0.16 0.16 0.17 1"/></material>
+    </visual>
+  </link>
+  <joint name="right/ee_mount_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="right/gripper_left"/>
+    <child link="right/ee_mount"/>
+  </joint>
+  <!-- tool_mount: origin = centre of the bore face the tool leaves through (the
+       x = 45 mm end of ee_pen_mount, away from the wall), +z = the tool axis
+       toward the tip, +x = link z (the wrist-camera axis). In link_6 at
+       carriage rest: (0.165, 0.067, 0), tip direction (+x, -y)/sqrt2. -->
+  <link name="right/tool_mount"/>
+  <joint name="right/tool_mount_joint" type="fixed">
+    <origin rpy="2.356194 -1.570796 0" xyz="0.078444 0.044183 0"/>
+    <parent link="right/gripper_left"/>
+    <child link="right/tool_mount"/>
+  </joint>
+  <joint name="right/ee_gripper" type="fixed">
+    <origin rpy="0 0 0" xyz="0.156062 0 0"/>
+    <parent link="right/link_6"/>
+    <child link="right/ee_gripper_link"/>
+  </joint>
+  <link name="right/ee_gripper_link"/>
+
+  <!-- horizontal aluminum framing -->
+  <link name="600mm_front_horizontal">
+    <visual>
+      <origin rpy="1.57079632679 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/t2020_600mm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="600mm_front_horizontal_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.0275 0 -0.01"/>
+    <parent link="root"/>
+    <child link="600mm_front_horizontal"/>
+  </joint>
+  <link name="600mm_back_horizontal">
+    <visual>
+      <origin rpy="1.57079632679 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/t2020_600mm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="600mm_back_horizontal_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.0275 0 -0.01"/>
+    <parent link="root"/>
+    <child link="600mm_back_horizontal"/>
+  </joint>
+
+  <!-- vertical aluminum framing -->
+  <link name="600mm_vertical_left">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/t2020_600mm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="600mm_vertical_left_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.0275 0.1 0.30"/>
+    <parent link="root"/>
+    <child link="600mm_vertical_left"/>
+  </joint>
+  <link name="600mm_vertical_right">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/t2020_600mm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="600mm_vertical_right_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.0275 -0.1 0.30"/>
+    <parent link="root"/>
+    <child link="600mm_vertical_right"/>
+  </joint>
+  <link name="600mm_vertical_top">
+    <visual>
+      <origin rpy="1.57079632679 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/t2020_600mm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="600mm_vertical_top_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="-0.0275 0 0.61"/>
+    <parent link="root"/>
+    <child link="600mm_vertical_top"/>
+  </joint>
+
+  <!-- front rails -->
+  <link name="300mm_front_rail_left">
+    <visual>
+      <origin rpy="1.57079632679 0 1.57079632679" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/t2020_300mm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="300mm_front_rail_left_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.08 0.1 -0.01"/>
+    <parent link="root"/>
+    <child link="300mm_front_rail_left"/>
+  </joint>
+  <link name="300mm_front_rail_right">
+    <visual>
+      <origin rpy="1.57079632679 0 1.57079632679" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/frame/t2020_300mm.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="300mm_front_rail_right_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.08 -0.1 -0.01"/>
+    <parent link="root"/>
+    <child link="300mm_front_rail_right"/>
+  </joint>
+
+
+  <!-- BEGIN generated tool block — scripts/gen_tool_urdf.py, do not edit -->
+  <!-- Ambition Lutin + Inlumino ballpoint dot cartridge (lutin-ballpoint-dot), datasheet config/tools/lutin-ballpoint-dot.yaml sha256 e3a31b49e885.
+       Body from its profile; the needle sits at the touch-off's measured tip,
+       69.45 mm out along an axis 9.3 deg
+       off the mount's nominal +z (datasheet nominal 60 mm;
+       the measurement wins).
+       Regenerate with scripts/gen_tool_urdf.py. -->
+  <link name="right/tattoo_pen">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 -0.015"/>
+      <geometry>
+        <cylinder length="0.08" radius="0.0145"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0.025"/>
+      <geometry>
+        <mesh filename="meshes/ee/pen_tip.stl" scale="1 1 0.875"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0.0589"/>
+      <geometry>
+        <sphere radius="0.0011"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 -0.036"/>
+      <geometry>
+        <cylinder length="0.008" radius="0.0153"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 -0.02"/>
+      <geometry>
+        <cylinder length="0.006" radius="0.0153"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 -0.004"/>
+      <geometry>
+        <cylinder length="0.01" radius="0.0155"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0.012"/>
+      <geometry>
+        <cylinder length="0.006" radius="0.0153"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="right/tattoo_pen_joint" type="fixed">
+    <origin rpy="0 0.162855098 1.70351218" xyz="0 0 0"/>
+    <parent link="right/tool_mount"/>
+    <child link="right/tattoo_pen"/>
+  </joint>
+  <link name="right/tattoo_needle"/>
+  <joint name="right/tattoo_needle_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0.0694479075"/>
+    <parent link="right/tattoo_pen"/>
+    <child link="right/tattoo_needle"/>
+  </joint>
+  <!-- END generated tool block -->
+
+</robot>

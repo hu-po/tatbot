@@ -49,23 +49,23 @@
         9
       ],
       "edge_m": 0.044,
-      "root_id": 7,
-      "calibration_root_id": 10,
+      "root_id": 5,
+      "calibration_root_id": 8,
       "grid": [
         [
-          3,
+          1,
+          2,
+          3
+        ],
+        [
           4,
-          5
+          5,
+          6
         ],
         [
-          6,
           7,
-          8
-        ],
-        [
-          9,
-          10,
-          11
+          8,
+          9
         ]
       ],
       "max_calibration_reprojection_px": 5.0,
@@ -85,5 +85,5 @@
   "printing": {
     "spare_ids": []
   },
-  "//": "Synthetic fiducial inventory example. Detector policy fields are generic; ids/edge sizes are placeholders for YOUR printed tags."
+  "//": "Synthetic fiducial inventory example. Detector policy fields are generic; tag ids/sizes are placeholders \u2014 print your own tags and record them here."
 }

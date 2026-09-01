@@ -73,6 +73,8 @@ format = "h264"
 [[cameras.realsense]]
 name = "realsense1"
 serial = "000000000000"
+# Which wrist this camera is; consumers map by role, never by file order.
+role = "wrist_upper"
 
 [cameras.realsense.color]
 stream = "color"

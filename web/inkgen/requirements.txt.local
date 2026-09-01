@@ -1,0 +1,11 @@
+torch>=2.8,<2.12
+diffusers>=0.40
+transformers>=4.50
+accelerate>=1.0
+sentencepiece
+protobuf
+gradio>=5
+fastapi
+uvicorn
+httpx
+pillow

@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lerobot_robot_tatbot"
+version = "0.1.0"
+description = "tatbot LeRobot robot plugin: WidowX AI follower with bounded-grip gripper control"
+authors = [{ name = "Hugo Ponte" }]
+license = "MIT"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "lerobot[async,core-scripts,dataset,intelrealsense]>=0.6.1",
+  "lerobot_robot_trossen",
+  "lerobot_teleoperator_trossen",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["lerobot_robot_tatbot"]
+
+[tool.setuptools.package-data]
+lerobot_robot_tatbot = ["cockpit.html"]
+
+[tool.uv.sources]
+lerobot_robot_trossen = { git = "https://github.com/TrossenRobotics/lerobot_trossen", subdirectory = "packages/lerobot_robot_trossen" }
+lerobot_teleoperator_trossen = { git = "https://github.com/TrossenRobotics/lerobot_trossen", subdirectory = "packages/lerobot_teleoperator_trossen" }
+
+[tool.uv]
+# Our arms run controller firmware v1.8.4; the trossen_arm driver's minor
+# version must pair with the firmware's, so force the 1.8 line even though
+# the Trossen plugin declares >=1.9. Pinned to 1.8.5 — the exact version the
+# hardware-validated C++ cockpit uses (cpp/teleop pins SDK v1.8.5 and runs
+# for hours at 400 Hz on this firmware). The previous 1.8.8 pin wedged the
+# follower controller twice within a minute on 2026-08-20 (UDP output
+# stream died, TCP half-dead, power cycle required) and also required YAML
+# schema keys (position_offset) the firmware era doesn't produce. Drop this
+# override after the arms' firmware is upgraded to >=1.9.
+override-dependencies = ["trossen-arm==1.8.5"]

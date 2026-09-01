@@ -1,0 +1,17 @@
+import { chromium } from "playwright";
+import { mkdirSync } from "node:fs";
+const out = new URL("./out/", import.meta.url).pathname;
+mkdirSync(out, { recursive: true });
+const browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--ignore-gpu-blocklist"] });
+const page = await (await browser.newContext({ viewport: { width: 900, height: 1100 } })).newPage();
+await page.goto(process.argv[2] ?? "http://127.0.0.1:4181/");
+await page.waitForFunction(() => window.__inkmap?.getState().body && window.__inkmap?.getState().atlas, null, { timeout: 60_000 });
+await page.evaluate(() => { const s = window.__inkmap.getState(); if (!s.showAtlas) s.toggleAtlas(); });
+await page.waitForTimeout(800);
+await page.screenshot({ path: `${out}/overlay-male.png`, clip: { x: 320, y: 0, width: 580, height: 1100 } });
+await page.evaluate(() => window.__inkmap.getState().setBodyId("hbm-female-stylized"));
+await page.waitForFunction(() => window.__inkmap.getState().atlas && window.__inkmap.getState().bodyId === "hbm-female-stylized", null, { timeout: 60_000 });
+await page.waitForTimeout(800);
+await page.screenshot({ path: `${out}/overlay-female.png`, clip: { x: 320, y: 0, width: 580, height: 1100 } });
+await browser.close();
+console.log("done");

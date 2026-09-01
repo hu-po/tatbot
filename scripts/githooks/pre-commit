@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# tatbot pre-commit: lint what is staged, stay fast.
+#
+# Armed automatically the first time anyone runs scripts/check; to do it by hand:
+#   scripts/check --install-hooks       (or: git config core.hooksPath scripts/githooks)
+# Bypass in an emergency:  git commit --no-verify
+#
+# The *how* of every check lives in scripts/check, so the hook and a full local
+# run can never drift into disagreeing about what "lint clean" means. This file
+# only decides what is worth paying for before a commit.
+
+set -uo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+staged() { git diff --cached --name-only --diff-filter=ACMR -- "$@"; }
+fail=0
+
+# Always: ruff + shellcheck, scoped to the staged files only.
+"$ROOT/scripts/check" --staged --no-hooks lint-py lint-sh || fail=1
+
+# Rust is compiled, so a staged .rs change gets clippy before it lands.
+if staged '*.rs' 'rust/Cargo.*' 'rust/visiond/Cargo.*' | grep -q .; then
+  "$ROOT/scripts/check" --no-hooks rust || fail=1
+fi
+
+# The run-log writer, its test, and the two documents describing it must keep
+# agreeing; cheap enough to verify on every commit that touches any of them.
+if staged 'scripts/lib/tatbot_runlog.py' 'scripts/lib/runlog.sh' \
+          'scripts/tests/test_runlog.py' 'docs/run_logs.md' 'AGENTS.md' | grep -q .; then
+  if command -v uvx >/dev/null 2>&1; then
+    uvx --with pytest pytest -q "$ROOT/scripts/tests/test_runlog.py" || fail=1
+  else
+    echo "pre-commit: uvx not found, skipping run-log layout test" >&2
+  fi
+fi
+
+if ((fail)); then
+  echo "pre-commit: failed -- fix the findings (or git commit --no-verify if you must)" >&2
+  exit 1
+fi

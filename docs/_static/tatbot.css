@@ -1,0 +1,202 @@
+/* Tatbot Documentation Custom Styles */
+
+/* Color Palette - Tattoo Inspired: Black, Grey, White */
+:root {
+  --tatbot-black: #000000;
+  --tatbot-dark-gray: #1a1a1a;
+  --tatbot-gray: #404040;
+  --tatbot-light-gray: #808080;
+  --tatbot-lighter-gray: #b0b0b0;
+  --tatbot-white: #ffffff;
+  --tatbot-off-white: #f8f9fa;
+  --tatbot-text-light: #ffffff;
+  --tatbot-text-dark: #000000;
+  --tatbot-accent: #404040;     /* Dark gray for primary accent */
+  --tatbot-secondary: #808080;  /* Medium gray for secondary */
+}
+
+/* Dark theme adjustments */
+.theme-dark {
+  --color-brand-primary: var(--tatbot-white);
+  --color-brand-content: var(--tatbot-lighter-gray);
+  --color-sidebar-background: var(--tatbot-black);
+  --color-sidebar-brand-text: var(--tatbot-white);
+  --color-sidebar-link-text: var(--tatbot-lighter-gray);
+  --color-sidebar-link-text--top-level: var(--tatbot-white);
+}
+
+/* Light theme adjustments */
+.theme-light {
+  --color-brand-primary: var(--tatbot-black);
+  --color-brand-content: var(--tatbot-gray);
+  --color-sidebar-background: var(--tatbot-off-white);
+  --color-sidebar-brand-text: var(--tatbot-black);
+  --color-sidebar-link-text: var(--tatbot-gray);
+  --color-sidebar-link-text--top-level: var(--tatbot-black);
+}
+
+/* Custom fonts */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+code, pre {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+/* Enhanced headings with tattoo style */
+h1, h2, h3 {
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+h1 {
+  border-bottom: 3px solid var(--tatbot-gray);
+  padding-bottom: 0.5rem;
+}
+
+h2 {
+  border-left: 4px solid var(--tatbot-accent);
+  padding-left: 1rem;
+  margin-left: -1rem;
+}
+
+/* Node emoji styling */
+.node-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  background: var(--tatbot-dark-gray);
+  border-radius: 6px;
+  font-family: monospace;
+  font-weight: bold;
+  color: var(--tatbot-text-light);
+  margin-right: 0.5rem;
+}
+
+/* Enhanced code blocks */
+.highlight {
+  border-left: 4px solid var(--tatbot-gray);
+  border-radius: 6px;
+}
+
+.highlight pre {
+  padding: 1rem;
+  background: var(--tatbot-black) !important;
+  color: var(--tatbot-white);
+}
+
+/* Copy button styling */
+.copybtn {
+  background: var(--tatbot-gray);
+  color: var(--tatbot-white);
+  border: none;
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.copybtn:hover {
+  background: var(--tatbot-accent);
+}
+
+/* Navigation enhancements */
+.sidebar-drawer {
+  background: var(--tatbot-dark-gray);
+}
+
+.sidebar-brand-text {
+  font-weight: bold;
+  color: var(--tatbot-text-light) !important;
+  font-size: 1.2rem;
+}
+
+/* Table styling */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+
+th, td {
+  border: 1px solid var(--tatbot-gray);
+  padding: 0.75rem;
+  text-align: left;
+}
+
+th {
+  background: var(--tatbot-dark-gray);
+  color: var(--tatbot-text-light);
+  font-weight: 600;
+}
+
+/* Admonition styling */
+.admonition {
+  border-left: 4px solid var(--tatbot-gray);
+  border-radius: 6px;
+  background: rgba(128, 128, 128, 0.1);
+  margin: 1rem 0;
+}
+
+.admonition.note {
+  border-left-color: var(--tatbot-gray);
+  background: rgba(128, 128, 128, 0.05);
+}
+
+.admonition.tip {
+  border-left-color: var(--tatbot-lighter-gray);
+  background: rgba(176, 176, 176, 0.1);
+}
+
+.admonition.important {
+  border-left-color: var(--tatbot-accent);
+  background: rgba(64, 64, 64, 0.1);
+}
+
+.admonition.warning {
+  border-left-color: var(--tatbot-black);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.admonition.danger {
+  border-left-color: var(--tatbot-black);
+  background: rgba(0, 0, 0, 0.1);
+}
+
+/* Quick reference boxes */
+.quick-ref {
+  background: var(--tatbot-dark-gray);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 1rem 0;
+  border-left: 4px solid var(--tatbot-white);
+}
+
+.quick-ref h3 {
+  margin-top: 0;
+  color: var(--tatbot-white);
+}
+
+/* Status indicators */
+.status-online {
+  color: var(--tatbot-lighter-gray);
+  font-weight: bold;
+}
+
+.status-offline {
+  color: var(--tatbot-gray);
+  font-weight: bold;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .node-badge {
+    display: block;
+    margin: 0.25rem 0;
+  }
+}
+
+/* Logo integration */
+.sidebar-brand img {
+  max-height: 32px;
+  margin-right: 0.5rem;
+}

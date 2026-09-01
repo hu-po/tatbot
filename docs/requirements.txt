@@ -1,0 +1,15 @@
+# Dependency set for building docs/ with Sphinx.
+#
+# docs/conf.py has always named these extensions, but nothing declared them:
+# the old public-repo workflow installed `.[docs]` from a pyproject extra that
+# no longer exists, and this repo ships no root package at all. The docs tree
+# was therefore unbuildable from a clean checkout on any node.
+#
+#   scripts/check docs
+#   uvx --with-requirements docs/requirements.txt sphinx-build -b html -W docs docs/_build
+
+sphinx
+furo                # html_theme
+myst-parser         # Markdown sources
+sphinx-copybutton   # extensions
+sphinx-design       # extensions (grid/card directives used across docs/)
