@@ -7,8 +7,8 @@ sys.path.insert(0, os.path.abspath(".."))
 project = "tatbot"
 copyright = "2026, Hugo Ponte"
 author = "Hugo Ponte"
-version = "2.0"
-release = "2.0"
+version = "0.9.0"
+release = "0.9.0"
 
 extensions = [
     "myst_parser",
