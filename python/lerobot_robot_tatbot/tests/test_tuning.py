@@ -1218,3 +1218,54 @@ def test_arm_group_unregister_clears_state():
     assert group.names() == ["leader"]
     group.unregister("leader")
     assert group.names() == [] and group.land() is False
+
+
+class _FakeLimitDriver(_FakeLandDriver):
+    """A controller that booted with its own limits and idled the carriage at connect."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.limits = [_FakeLimit() for _ in range(N)]
+        self.positions[6] = -0.00467  # carriage on its stop, past the boot -4 mm limit
+
+    def get_joint_limits(self):
+        return self.limits
+
+    def set_joint_limits(self, jl):
+        self.limits = list(jl)
+        self.calls.append("set_joint_limits")
+
+    def get_error_information(self):
+        # first session sees the boot-limit fault; the reconnect after the golden is clean
+        return "Position limit exceeded: -0.004668 < -0.004000. Setting to idle." \
+            if len(_FakeLandDriver.instances) == 1 else "No error"
+
+
+class _FakeLimit:
+    def __init__(self):
+        self.position_min = -0.004
+        self.position_max = 0.044
+
+
+def test_landing_applies_the_golden_limits_and_reconnects_to_clear_the_fault(land, tmp_path, monkeypatch):
+    """The follower's carriage rests past the controller's boot limit; the landing must push
+    the golden's -6 mm limit and reconnect so clear_error runs against it (2026-09-01)."""
+    from lerobot_robot_tatbot import recovery
+
+    limits = "\n".join(
+        f"- position_min: {-0.006 if j == 6 else -3.14}\n  position_max: {0.04 if j == 6 else 3.14}" for j in range(N)
+    )
+    (tmp_path / "follower.yaml").write_text("joint_limits:\n" + limits + "\n")
+    monkeypatch.setenv("TATBOT_CONFIG_DIR", str(tmp_path))
+    _FakeLandDriver.instances = []
+    monkeypatch.setattr(recovery.trossen_arm, "TrossenArmDriver", _FakeLimitDriver)
+    staged = [0.0, 1.047, 0.524, 0.628, 0.0, 0.0, 0.0]
+    # the recover script names the arm "follower@<ip>"; the golden is looked up by role
+    assert recovery.land_arm("192.0.2.2", object(), staged, name="follower@192.0.2.2", gripper_index=6)
+    first, second = _FakeLandDriver.instances[:2]
+    assert first.calls[:2] == ["configure(clear_error=True)", "set_joint_limits"]
+    assert first.limits[6].position_min == pytest.approx(-0.006)
+    assert first.calls[-1] == "cleanup"
+    assert second.calls[0] == "configure(clear_error=True)"
+    assert f"modes:{trossen_arm.Mode.position}" in second.calls
+    assert second.calls[-1] == "cleanup"

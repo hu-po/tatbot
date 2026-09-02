@@ -94,19 +94,17 @@ def test_only_the_touching_env_is_marked():
     assert float(cov[0]) > 0 and float(cov[1]) == 0.0
 
 
-def test_the_gate_is_the_measured_band():
-    """Marks land inside 5.5 mm of the surface and nowhere above it."""
+def test_the_gate_is_the_contact_band():
+    """Marks require resolved contact; a millimetre of air never writes."""
     _, base = env_and_base()
-    band = base.TIP_MARK_MARGIN_M + base.ink_threshold
-    assert abs(band - 0.0055) < 1e-9  # expert.py's floor clamp assumes this
-    # Measured from the SURFACE, not from the canvas origin: on a mound the
-    # origin sits tens of millimetres below the skin, so a probe placed
-    # relative to it says nothing about the deposit band.
-    uv = torch.zeros(base.num_envs, 2, device=base.device)
-    point, _, _, normal = base.surface.frame(uv)
-    _, inside, _ = base.surface.project(point + normal * (band * 0.5))
-    _, outside, _ = base.surface.project(point + normal * (band * 2.0))
-    assert bool((inside < band).all()) and bool((outside >= band).all())
+    distances = torch.tensor([
+        -base.max_penetration_m - 1e-6,
+        -base.max_penetration_m,
+        0.0,
+        base.contact_above_tolerance_m,
+        0.001,
+    ], device=base.device)
+    assert base._interaction_mask(distances).tolist() == [False, True, True, True, False]
 
 
 def test_line_width_matches_the_configured_radius():

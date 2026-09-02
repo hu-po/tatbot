@@ -1,0 +1,40 @@
+{
+  "schema_version": 4,
+  "units": { "length": "m", "tattoo_size": "mm", "up": "+z" },
+  "body": {
+    "id": "hbm-male-stylized",
+    "asset_sha256": "1f82950b85a77c80f60c389fd0f06b6ce69f248825adff2351b0e1ef9c1aa125",
+    "surface_sha256": "dec5cc557e39dbc45f3c485c9986a74005f08e491604a001cb698b6a60a26f48",
+    "path": "bodies/hbm-male-stylized.glb"
+  },
+  "placements": [
+    {
+      "id": "p-forearm-heart",
+      "design_id": "heart",
+      "anchor": { "face": 9843, "barycentric": [0.3333333333333333, 0.3333333333333333, 0.3333333333333334] },
+      "rotation_rad": 0.0,
+      "size_mm": [50, 50],
+      "mirror": false,
+      "site": {
+        "id": "forearm",
+        "laterality": "left",
+        "aspect": "inner",
+        "level": null,
+        "uv": [0.49191075168996623, 0.4766008909818177],
+        "lexicon": "0.3"
+      },
+      "language": {
+        "sentence": "a heart on the left inner forearm",
+        "program": {
+          "inklang": "0.3",
+          "motif": "heart",
+          "style": null,
+          "secondary": [],
+          "technique": null,
+          "color": null,
+          "site": { "id": "forearm", "laterality": "left", "aspect": "inner", "level": null }
+        }
+      }
+    }
+  ]
+}

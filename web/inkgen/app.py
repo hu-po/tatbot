@@ -58,7 +58,7 @@ def tattoo_prompt(subject: str, style: str | None = None) -> str:
     """Must match web/inkmap/src/core/gen.ts. `style` replaces the default look."""
     s = " ".join(subject.split())
     look = " ".join((style or "").split())[:160] or \
-        "bold black linework, solid black ink, minimal shading"
+        "clean black linework suitable for vector tracing"
     return (f"tattoo flash design of {s}, {look}, "
             "isolated on a plain white background, centered, no text")
 

@@ -207,6 +207,32 @@ class SigintShield:
         return False
 
 
+def _apply_golden(driver, name: str) -> list[str]:
+    """Push the arm's golden (config/trossen/<name>.yaml) into the controller before any mode switch.
+
+    A power-cycled controller boots with its own limits, and the follower's
+    carriage rests on its stop at ~-4.6 mm, past the boot -4 mm limit: the
+    controller idled motor 6 at connect and every landing attempt failed with
+    "Robot input with modes different than configured modes" (2026-09-01).
+    The golden carries the -6 mm limit the sessions run with.
+    """
+    try:
+        from lerobot_robot_tatbot import goldens
+        # callers name the arm "follower" or "follower@<address>"; the golden is per role
+        role = name.split("@", 1)[0].strip().lower()
+        if role not in ("follower", "leader"):
+            logger.warning("%s landing: no golden for role %r (expected follower|leader)", name, role)
+            return []
+        path = goldens.config_dir() / f"{role}.yaml"
+        if not path.exists():
+            logger.warning("%s landing: golden %s missing; controller keeps its boot limits", name, path)
+            return []
+        return goldens.apply_arm_golden(driver, trossen_arm, path)
+    except Exception as exc:  # a landing must never die on its own config
+        logger.warning("%s golden not applied at landing: %s", name, exc)
+        return []
+
+
 def land_arm(ip: str, end_effector, staged_positions, *, name: str = "arm",
              gripper_index: int = 6, estop=None, attempts: int = 3,
              verify: bool = True) -> bool:
@@ -248,6 +274,25 @@ def land_arm(ip: str, end_effector, staged_positions, *, name: str = "arm",
                 err = controller_error(driver)
                 if err:
                     logger.warning("%s firmware error at landing: %s", name, err)
+                applied = _apply_golden(driver, name)
+                if applied:
+                    logger.warning("%s landing: golden applied (%s)", name, ", ".join(applied))
+                if err and applied:
+                    # The fault was judged against the boot limits. The SDK clears
+                    # errors only at configure, so reconnect once now that the
+                    # golden limits are in the controller.
+                    with contextlib.suppress(Exception):
+                        driver.cleanup()
+                    driver = trossen_arm.TrossenArmDriver()
+                    driver.configure(
+                        trossen_arm.Model.wxai_v0, end_effector, ip, True,
+                        CONFIGURE_TIMEOUT_S,
+                    )
+                    err = controller_error(driver)
+                    if err:
+                        logger.warning("%s fault persists after the golden: %s", name, err)
+                    else:
+                        logger.warning("%s fault cleared after applying the golden limits", name)
 
                 positions = list(driver.get_all_positions())
                 staged = list(staged_positions)

@@ -26,6 +26,9 @@ if "pandas" not in sys.modules:
             def __len__(self):
                 return len(self._data)
 
+            def to_numpy(self):
+                return self._data
+
         class FakeRow:
             def __init__(self, d):
                 self._d = d
@@ -58,6 +61,13 @@ if "pandas" not in sys.modules:
                     return FakeSeries(self._data[k])
                 raise AttributeError(k)
 
+            def __getitem__(self, k):
+                return FakeSeries(self._data[k])
+
+            @property
+            def empty(self):
+                return len(self) == 0
+
             def sort_values(self, col):
                 return self
 
@@ -83,7 +93,7 @@ if "pandas" not in sys.modules:
                 return FakeDataFrame(combined)
 
             @staticmethod
-            def read_parquet(f, columns=None):
+            def read_parquet(f, columns=None, filters=None):
                 path = Path(f)
                 if path.exists():
                     try:
@@ -96,7 +106,7 @@ if "pandas" not in sys.modules:
         sys.modules["pandas"] = FakePandas()
 
 # Always monkeypatch read_parquet if real pandas was imported so parquet mocks work in any environment.
-def _mock_read_parquet(f, columns=None):
+def _mock_read_parquet(f, columns=None, filters=None):
     path = Path(f)
     if path.exists():
         try:
@@ -146,6 +156,7 @@ def make_dataset_shard(
     skipped_batches: list | None = None,
     engaged: bool = True,
     corrupt_ep_table: bool = False,
+    start_lead_rad: float = 0.01,
 ) -> Path:
     """Helper to build a valid or invalid dataset shard tree."""
     meta = root / "meta"
@@ -154,11 +165,40 @@ def make_dataset_shard(
         json.dumps({"total_episodes": episodes, "total_frames": episodes * frames_per_ep})
     )
     run_meta = {
-        "config": {"distribution": distribution},
+        "config": {
+            "distribution": distribution,
+            "draw_clearance": 0.0,
+            "tool_calibration_jitter": False,
+            "tool_calibration_scale": 1.0,
+        },
         # a fresh shard carries the follower that made it (fixed-mount-v2 since
         # 2026-08-30); one without this is a gripper-held-v1 shard to the audit
-        "tool": {"tool_id": tool_id, "substrate": "paper", "embodiment": "fixed-mount-v2"},
-        "episodes": [{"engaged": engaged} for _ in range(episodes)],
+        "tool": {
+            "tool_id": tool_id,
+            "substrate": "paper",
+            "embodiment": "fixed-mount-v2",
+            "contact": True,
+            "tool_geometry_version": "resolved-tool-v1",
+            "geometry_status": "contact-qualified",
+            "contact_geometry_status": "pivot-calibrated",
+            "body_pose_status": "axis-inferred",
+            "interaction_model": "rigid-contact-v1",
+            "body_tip_offset_m": [0.0, 0.0, 0.06],
+            "calibrated_tip_offset_m": [0.0, 0.0, 0.06],
+            "calibration_delta_m": [0.0, 0.0, 0.0],
+            "tip_offset_m": [0.0, 0.0, 0.06],
+            "tcp_offset_m": [0.0, 0.0, 0.06],
+        },
+        "episodes": [{
+            "kind": "language",
+            "engaged": engaged,
+            "interaction": {
+                "frames": 10,
+                "distance_min_m": -0.0001,
+                "distance_mean_m": 0.0,
+                "distance_max_m": 0.0002,
+            },
+        } for _ in range(episodes)],
     }
     if skipped_batches is not None:
         run_meta["skipped_batches"] = skipped_batches
@@ -192,6 +232,15 @@ def make_dataset_shard(
         }
         (ep_dir / "ep.parquet").write_text(json.dumps(ep_data))
 
+    data_dir = root / "data" / "chunk-000"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    data = {
+        "action": [[start_lead_rad, 0.0] for _ in range(episodes)],
+        "observation.state": [[0.0, 0.0] for _ in range(episodes)],
+        "frame_index": [0] * episodes,
+    }
+    (data_dir / "data.parquet").write_text(json.dumps(data))
+
     return root
 
 
@@ -220,6 +269,100 @@ def test_audit_valid_dataset_passes(tmp_path: Path, capsys) -> None:
     out = capsys.readouterr().out
     assert "all checks passed" in out
     assert "paper-draw" in out
+
+
+def test_audit_requires_clean_stable_source_for_current_run_metadata(
+        tmp_path: Path, capsys) -> None:
+    ds = make_dataset_shard(tmp_path / "dirty-source")
+    run_meta_path = ds / "meta" / "run_meta.json"
+    run_meta = json.loads(run_meta_path.read_text())
+    run_meta["schema_version"] = 2
+    run_meta["software"] = {
+        "repository": "example/tatbot",
+        "revision_start": "a" * 40,
+        "revision_end": "b" * 40,
+        "dirty_start": False,
+        "dirty_end": True,
+    }
+    run_meta_path.write_text(json.dumps(run_meta))
+
+    assert sim_dataset_audit.main(sim_dataset_audit.Args(path=ds)) == 1
+    out = capsys.readouterr().out
+    assert "source revision changed during generation" in out
+    assert "source checkout was dirty or unknown" in out
+
+
+def test_audit_accepts_bounded_self_consistent_calibration_jitter(
+        tmp_path: Path, capsys) -> None:
+    ds = make_dataset_shard(tmp_path / "jittered-paper")
+    run_meta_path = ds / "meta" / "run_meta.json"
+    run_meta = json.loads(run_meta_path.read_text())
+    run_meta["config"]["tool_calibration_jitter"] = True
+    run_meta["tool"]["contact_uncertainty_m"] = 0.004637
+    run_meta["tool"]["calibration_delta_m"] = [0.001, -0.002, 0.003]
+    run_meta["tool"]["tip_offset_m"] = [0.001, -0.002, 0.063]
+    run_meta_path.write_text(json.dumps(run_meta))
+
+    assert sim_dataset_audit.main(sim_dataset_audit.Args(path=ds)) == 0
+    assert "all checks passed" in capsys.readouterr().out
+
+
+def test_audit_rejects_unbounded_or_inconsistent_calibration_jitter(
+        tmp_path: Path, capsys) -> None:
+    ds = make_dataset_shard(tmp_path / "bad-jitter")
+    run_meta_path = ds / "meta" / "run_meta.json"
+    run_meta = json.loads(run_meta_path.read_text())
+    run_meta["config"]["tool_calibration_jitter"] = True
+    run_meta["tool"]["contact_uncertainty_m"] = 0.004
+    run_meta["tool"]["calibration_delta_m"] = [0.005, 0.0, 0.0]
+    # Deliberately leave tip_offset_m at the central calibration too.
+    run_meta_path.write_text(json.dumps(run_meta))
+
+    assert sim_dataset_audit.main(sim_dataset_audit.Args(path=ds)) == 1
+    out = capsys.readouterr().out
+    assert "outside its 4.000 mm bound" in out
+    assert "actual minus calibrated tip disagrees" in out
+
+
+def test_audit_rejects_air_gap_geometry_unless_explicitly_historical(
+        tmp_path: Path, capsys) -> None:
+    ds = make_dataset_shard(tmp_path / "air-gap")
+    run_meta_path = ds / "meta" / "run_meta.json"
+    run_meta = json.loads(run_meta_path.read_text())
+    run_meta["tool"].pop("tool_geometry_version")
+    run_meta["tool"].pop("interaction_model")
+    run_meta["config"]["draw_clearance"] = 0.004
+    run_meta_path.write_text(json.dumps(run_meta))
+
+    assert sim_dataset_audit.main(sim_dataset_audit.Args(path=ds)) == 1
+    assert "air-gap-v0" in capsys.readouterr().out
+    assert sim_dataset_audit.main(
+        sim_dataset_audit.Args(path=ds, allow_air_gap=True)) == 0
+
+
+def test_audit_rejects_provisional_geometry_for_production(tmp_path: Path, capsys) -> None:
+    ds = make_dataset_shard(tmp_path / "provisional")
+    run_meta_path = ds / "meta" / "run_meta.json"
+    run_meta = json.loads(run_meta_path.read_text())
+    run_meta["tool"]["geometry_status"] = "provisional"
+    run_meta["tool"]["contact_geometry_status"] = "unqualified"
+    run_meta_path.write_text(json.dumps(run_meta))
+
+    assert sim_dataset_audit.main(sim_dataset_audit.Args(path=ds)) == 1
+    assert "quality-gated pivot TCP" in capsys.readouterr().out
+    assert sim_dataset_audit.main(
+        sim_dataset_audit.Args(path=ds, allow_provisional=True)) == 0
+
+
+def test_audit_rejects_marks_outside_the_contact_band(tmp_path: Path, capsys) -> None:
+    ds = make_dataset_shard(tmp_path / "floating-mark")
+    run_meta_path = ds / "meta" / "run_meta.json"
+    run_meta = json.loads(run_meta_path.read_text())
+    run_meta["episodes"][0]["interaction"]["distance_max_m"] = 0.001
+    run_meta_path.write_text(json.dumps(run_meta))
+
+    assert sim_dataset_audit.main(sim_dataset_audit.Args(path=ds)) == 1
+    assert "above the surface" in capsys.readouterr().out
 
 
 def test_audit_detects_tool_import_binding_mismatch(tmp_path: Path, capsys) -> None:
@@ -256,6 +399,16 @@ def test_audit_detects_episode_table_mismatch_and_corruption(tmp_path: Path, cap
     assert sim_dataset_audit.main(args) == 1
     out = capsys.readouterr().out
     assert "episode table unreadable" in out
+
+
+def test_audit_rejects_large_episode_start_action_state_lead(tmp_path: Path, capsys) -> None:
+    ds = make_dataset_shard(tmp_path / "bad-start", start_lead_rad=0.2)
+
+    assert sim_dataset_audit.main(sim_dataset_audit.Args(path=ds)) == 1
+
+    out = capsys.readouterr().out
+    assert "episode-start action/state lead reaches 0.200 rad" in out
+    assert "do not train on this shard" in out
 
 
 def test_audit_shards_tool_disagreement(tmp_path: Path, capsys) -> None:

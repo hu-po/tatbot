@@ -584,8 +584,9 @@ PATCHES = [
     # demonstration-derived trajectory contract before serializing any action.
     # The contract declares which normalized metrics apply. Absolute policies
     # such as ACT enforce the decoded-action subset; GR00T additionally checks
-    # its relative min-max representation. Offline L1 and repeated-input
-    # spread remain separate gates because one request cannot measure them.
+    # its relative min-max representation. Repeated-input spread remains an
+    # offline gate because one request cannot measure it; exact-demo L1 is
+    # report-only in schema 2.
     (
         "lerobot.async_inference.policy_server",
         [
@@ -704,7 +705,7 @@ PATCHES = [
                 _tatbot_contract_path,
             )
             self.logger.info(
-                "Tatbot chunk passed demonstration plausibility contract: %s",
+                "Tatbot chunk accepted by plausibility contract: %s",
                 __import__("json").dumps(_tatbot_guard_metrics, separators=(",", ":")),
             )
 
@@ -732,6 +733,14 @@ PATCHES = [
                 )
 
             return services_pb2.Empty()''',
+    ),
+    # Patch 23e: schema 2 can accept a chunk with quality-review warnings, so
+    # the old "passed" log text is no longer accurate. This small migration
+    # also lets already-patched serving environments converge in place.
+    (
+        "lerobot.async_inference.policy_server",
+        ['"Tatbot chunk passed demonstration plausibility contract: %s"'],
+        '"Tatbot chunk accepted by plausibility contract: %s"',
     ),
     # Patch 20: GR00T flow matching starts each inference from fresh Gaussian
     # noise. A fixed seed supports repeated-input diagnostics; a seed base plus
@@ -1323,7 +1332,11 @@ def main():
             # unimportable module cannot be exercised there either.
             print(f"skipped (not importable here): {module_name} ({e})")
             continue
-        path = Path(module.__file__)
+        file_path = module.__file__
+        if file_path is None:
+            print(f"skipped (no file source): {module_name}")
+            continue
+        path = Path(file_path)
         source = path.read_text()
         if new in source:
             print(f"already patched: {path}")

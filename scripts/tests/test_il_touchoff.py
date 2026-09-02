@@ -74,7 +74,8 @@ def test_workspace_roundtrip_through_analyzer_parser(tmp_path, monkeypatch):
         "paper_band_mm": 4.20, "ee_contact_z": None,
         "touchoff": {"utc": "2026-08-21T20:00:00Z", "session": "s", "n_plate": 8,
                      "n_pad": 3, "cond": 4.2, "residual_mm": 0.1,
-                     "holdout_mm": 0.2, "spread_deg": 55.0, "note": ""},
+                     "holdout_mm": 0.2, "tip_loo_max_mm": 0.3,
+                     "spread_deg": 55.0, "note": ""},
     }
     text = il_touchoff.render_workspace(right)
     workspace = tmp_path / "config" / "workspace.yaml"
@@ -89,6 +90,7 @@ def test_workspace_roundtrip_through_analyzer_parser(tmp_path, monkeypatch):
     assert parsed["paper_plane_z"] == 0.0405
     assert parsed["paper_band_mm"] == 4.2
     assert parsed["ee_contact_z"] is None
+    assert tool_spec.parse_simple_yaml(text)["right"]["touchoff"]["tip_loo_max_mm"] == 0.3
 
 
 
@@ -197,6 +199,30 @@ def test_pivot_recovers_full_3d_tip():
     assert fit["spread_deg"] > il_touchoff.PIVOT_SPREAD_MIN_DEG
     assert fit["rms_mm"] < 0.001
     assert fit["cond"] < il_touchoff.COND_MAX
+    assert il_touchoff.pivot_holdout_residual_mm(poses) < 0.001
+
+
+def test_pivot_holdout_detects_late_seat_migration():
+    rng = np.random.default_rng(33)
+    poses, _ = pivot_poses(0.5, 40, rng, slip_indices=(38, 39))
+    assert il_touchoff.pivot_holdout_residual_mm(poses) > 5.0
+
+
+def test_pivot_uncertainty_does_not_change_observability():
+    rng = np.random.default_rng(34)
+    poses, _ = pivot_poses(0.5, 40, rng, slip_indices=(38, 39))
+    fit = il_touchoff.solve_pivot(poses)
+    assert fit["cond"] < il_touchoff.COND_MAX
+    assert fit["spread_deg"] > il_touchoff.PIVOT_SPREAD_MIN_DEG
+    assert il_touchoff.pivot_holdout_residual_mm(poses) > 5.0
+    assert il_touchoff.pivot_loo_tip_max_mm(poses) > 0.0
+
+
+def test_measurement_time_comes_from_the_physical_holds():
+    assert il_touchoff.measurement_utc([
+        {"start_unix": 1788191200.0, "end_unix": 1788191201.0},
+        {"start_unix": 1788191250.0, "end_unix": 1788191251.0},
+    ]) == "2026-08-31T15:47:31Z"
 
 
 def test_pivot_without_rotation_is_unidentifiable():

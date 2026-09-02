@@ -1,10 +1,14 @@
 import { BODIES } from "../core/body.ts";
-import { FANTASY_TONES, SKIN_TONES, useStore } from "../store.ts";
+import { FANTASY_TONES, SKIN_TONES } from "../core/defaults.ts";
+import { useStore } from "../store.ts";
+import { POSE_CATALOG, poseRecord } from "../core/pose.ts";
 
 /** The bar at the bottom of the viewport: which body, and what skin it wears. */
 export function BodyBar() {
   const bodyId = useStore((s) => s.bodyId);
   const setBodyId = useStore((s) => s.setBodyId);
+  const poseId = useStore((s) => s.poseId);
+  const setPoseId = useStore((s) => s.setPoseId);
   const skinTone = useStore((s) => s.skinTone);
   const setSkinTone = useStore((s) => s.setSkinTone);
   const atlas = useStore((s) => s.atlas);
@@ -50,6 +54,12 @@ export function BodyBar() {
           ▦
         </button>
       </div>
+      <label className="poses">
+        <span>pose</span>
+        <select value={poseId} onChange={(event) => setPoseId(event.target.value)}>
+          {POSE_CATALOG.pose_ids.map((id) => <option key={id} value={id}>{poseRecord(bodyId, id).label}</option>)}
+        </select>
+      </label>
       <div className="tones" role="radiogroup" aria-label="skin tone">
         {SKIN_TONES.map(swatch)}
         <span className="sep" aria-hidden />

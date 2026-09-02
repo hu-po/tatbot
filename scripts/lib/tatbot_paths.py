@@ -56,11 +56,6 @@ def config_dir() -> Path:
     return repo_root() / "config"
 
 
-def user_config_dir() -> Path:
-    """Per-node operator overrides (~/.config/tatbot); may not exist."""
-    return _xdg("XDG_CONFIG_HOME", ".config") / "tatbot"
-
-
 def state_root() -> Path:
     """Default writable state root (XDG state dir); created on demand."""
     return _xdg("XDG_STATE_HOME", ".local/state") / "tatbot"

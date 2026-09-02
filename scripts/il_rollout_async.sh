@@ -3,8 +3,9 @@
 #
 #   scripts/il_rollout_async.sh [duration] [server_policy_dir] [policy_type] [extra robot_client args...]
 #
-# policy_type defaults to groot; legacy architectures get their own chunk
-# sizing (bounded by each policy's n_action_steps; evo1 needs ~1.1 s per
+# policy_type is derived from the checkpoint; an explicitly supplied value
+# must match. Architectures get their own chunk sizing (bounded by each
+# policy's n_action_steps; evo1 needs ~1.1 s per
 # chunk on the GB10, so it refills earlier to avoid queue starvation).
 # The task string matters for language-conditioned policies (multi_task_dit,
 # evo1) and is ignored by act — override with TATBOT_TASK="...".
@@ -31,24 +32,6 @@ source "$REPO/scripts/lib/profile_env.sh"
 profile_env::require || exit $?
 # shellcheck source=scripts/lib/nodes.sh
 source "$REPO/scripts/lib/nodes.sh"
-# Wrist depth cameras by ROLE from the visiond sensor registry (never file
-# order); use_depth follows this run's setting.
-WRIST_CAMERAS="$(USE_DEPTH="$USE_DEPTH" python3 - "$REPO" <<'PY'
-import os, sys, tomllib
-from pathlib import Path
-reg = tomllib.loads((Path(sys.argv[1]) / "rust/visiond/config/vision.toml").read_text())
-by_role = {c["role"]: c["serial"] for c in reg.get("cameras", {}).get("realsense", []) if c.get("role")}
-missing = [r for r in ("wrist_upper", "wrist_lower") if r not in by_role]
-if missing:
-    sys.exit(f"sensor registry has no role= for {', '.join(missing)}")
-depth = os.environ.get("USE_DEPTH", "true")
-print("{" + ", ".join(
-    f"{r}: {{type: intelrealsense, serial_number_or_name: '{by_role[r]}', "
-    f"width: 640, height: 480, fps: 30, use_depth: {depth}}}"
-    for r in ("wrist_upper", "wrist_lower")) + "}")
-PY
-)"
-
 # shellcheck source=scripts/lib/ee_tool.sh
 source "$REPO/scripts/lib/ee_tool.sh"
 # shellcheck source=scripts/lib/dip_hook.sh
@@ -79,16 +62,25 @@ DURATION="${1:-10}"
 # installed only after a checkpoint passes wire and robot evaluation.
 POLICY="${2:-${TATBOT_SERVE_ROOT:-$HOME/il-serve}/models/flagship}"
 # Must match the policy dir: act, multi_task_dit, evo1, ... (see docs/imitation_learning.md)
-POLICY_TYPE="${3:-${TATBOT_POLICY_TYPE:-groot}}"
+REQUESTED_POLICY_TYPE="${3:-${TATBOT_POLICY_TYPE:-}}"
 shift $(( $# < 3 ? $# : 3 ))
 estop_guard::reject_overrides "$@"
+for arg in "$@"; do
+  case "$arg" in
+    --policy_type|--policy_type=*|--pretrained_name_or_path|--pretrained_name_or_path=*|\
+    --robot.include_external_effort|--robot.include_external_effort=*|\
+    --robot.mask_external_effort|--robot.mask_external_effort=*|\
+    --robot.depth_policy_encoding|--robot.depth_policy_encoding=*|\
+    --robot.cameras|--robot.cameras=*)
+      echo "checkpoint-controlled rollout option cannot be overridden: $arg" >&2
+      exit 2
+      ;;
+  esac
+done
 
-ee_tool::require || exit $?
-# shellcheck source=scripts/lib/arm_gate.sh
-source "$REPO/scripts/lib/arm_gate.sh"
-arm_gate::require || exit $?
 # Default: the serve node from config/nodes.json (empty -> must be stated).
 SERVER="${TATBOT_POLICY_SERVER:-$(tatbot_nodes::target serve | sed "s/.*@//"):8080}"
+SSH_TARGET="${TATBOT_POLICY_SSH:-${TATBOT_POLICY_USER:-$(tatbot_nodes::target serve | sed "s/@.*//")}@${SERVER%%:*}}"
 TASK="${TATBOT_TASK:-draw a continuous squiggle using pen tip on the grid lines of the paper pad.}"
 
 # Observation wiring must match what the CHECKPOINT was trained on, and the
@@ -100,22 +92,95 @@ TASK="${TATBOT_TASK:-draw a continuous squiggle using pen tip on the grid lines 
 # - TATBOT_EXT_EFF=0 drops external effort from the wire so observation.state
 #   is the 7 joint positions. The squiggle-era policies are 7-state; the
 #   draw-square era trained on 14 (pos+ext_eff), hence the default stays 1.
-# Neither is a safety parameter: the overforce guard and e-stop read the
-# driver directly, not the observation dict.
+# - A checkpoint with mask_external_effort keeps the 14-wide state but zeros
+#   all seven .ext_eff values. The safety watchdog still reads measured force
+#   directly from the driver; only the policy observation is masked.
+# Neither include/drop nor masking is a safety parameter: the overforce guard
+# and e-stop read the driver directly, not the observation dict.
 # - TATBOT_OBS_HISTORY=1 (opt-in) bundles the previous sent frame with each
 #   observation so the policy's n_obs=2 history is a ~250 ms pair instead of
 #   the ~1.6 s stale cross-chunk pair (33 ms in training; this is 6x closer).
 #   Untested on-robot as of 2026-08-24 — bench-verified only. Flows to the
 #   client via the environment; patches 12/13 implement it.
-DEPTH_ENCODING="${TATBOT_DEPTH_ENCODING:-}"
-USE_DEPTH=$([ "${TATBOT_DEPTH:-0}" = 1 ] && echo true || echo false)
-if [ -n "$DEPTH_ENCODING" ] && [ "$USE_DEPTH" != true ]; then
-  echo "TATBOT_DEPTH_ENCODING requires TATBOT_DEPTH=1" >&2
+POLICY_CONFIG_JSON=""
+SIDECAR_JSON="{}"
+if [ -r "$POLICY/config.json" ]; then
+  POLICY_CONFIG_JSON="$(cat "$POLICY/config.json")"
+  [ ! -r "$POLICY/tatbot_contract.json" ] || SIDECAR_JSON="$(cat "$POLICY/tatbot_contract.json")"
+else
+  POLICY_CONFIG_JSON="$(ssh -n -o BatchMode=yes -o ConnectTimeout=3 "$SSH_TARGET" \
+    "cat '$POLICY/config.json'" 2>/dev/null)" || {
+      echo "cannot read checkpoint config at $SSH_TARGET:$POLICY/config.json" >&2
+      exit 2
+    }
+  SIDECAR_JSON="$(ssh -n -o BatchMode=yes -o ConnectTimeout=3 "$SSH_TARGET" \
+    "if [ -f '$POLICY/tatbot_contract.json' ]; then cat '$POLICY/tatbot_contract.json'; else printf '{}'; fi" \
+    2>/dev/null)" || {
+      echo "cannot read checkpoint sidecar at $SSH_TARGET:$POLICY/tatbot_contract.json" >&2
+      exit 2
+    }
+fi
+IFS='|' read -r POLICY_TYPE CONTRACT_DEPTH STATE_SIZE DEPTH_ENCODING _USE_RELATIVE MASK_EXT_EFF < <(
+  python3 "$REPO/scripts/eval/checkpoint_contract.py" --format fields \
+    --sidecar-json "$SIDECAR_JSON" - <<<"$POLICY_CONFIG_JSON"
+)
+if [ -n "$REQUESTED_POLICY_TYPE" ] && [ "$REQUESTED_POLICY_TYPE" != "$POLICY_TYPE" ]; then
+  echo "requested policy type $REQUESTED_POLICY_TYPE does not match checkpoint type $POLICY_TYPE" >&2
   exit 2
 fi
-DEFAULT_EXT_EFF=1
-[ "$POLICY_TYPE" = groot ] && DEFAULT_EXT_EFF=0
-INCLUDE_EXT_EFF=$([ "${TATBOT_EXT_EFF:-$DEFAULT_EXT_EFF}" = 1 ] && echo true || echo false)
+[ "$STATE_SIZE" = 7 ] || [ "$STATE_SIZE" = 14 ] || {
+  echo "unsupported checkpoint state width $STATE_SIZE" >&2
+  exit 2
+}
+EXPECTED_EXT_EFF=$([ "$STATE_SIZE" = 14 ] && echo 1 || echo 0)
+if [ -n "${TATBOT_DEPTH+x}" ] && [ "$TATBOT_DEPTH" != "$CONTRACT_DEPTH" ]; then
+  echo "TATBOT_DEPTH=$TATBOT_DEPTH contradicts checkpoint depth=$CONTRACT_DEPTH" >&2
+  exit 2
+fi
+if [ -n "${TATBOT_DEPTH_ENCODING+x}" ] && [ "$TATBOT_DEPTH_ENCODING" != "$DEPTH_ENCODING" ]; then
+  echo "TATBOT_DEPTH_ENCODING=$TATBOT_DEPTH_ENCODING contradicts checkpoint encoding=$DEPTH_ENCODING" >&2
+  exit 2
+fi
+if [ -n "${TATBOT_EXT_EFF+x}" ] && [ "$TATBOT_EXT_EFF" != "$EXPECTED_EXT_EFF" ]; then
+  echo "TATBOT_EXT_EFF=$TATBOT_EXT_EFF contradicts checkpoint state width $STATE_SIZE" >&2
+  exit 2
+fi
+if [ -n "${TATBOT_MASK_EXT_EFF+x}" ] && [ "$TATBOT_MASK_EXT_EFF" != "$MASK_EXT_EFF" ]; then
+  echo "TATBOT_MASK_EXT_EFF=$TATBOT_MASK_EXT_EFF contradicts checkpoint mask=$MASK_EXT_EFF" >&2
+  exit 2
+fi
+if [ "$MASK_EXT_EFF" = 1 ] && [ "$STATE_SIZE" != 14 ]; then
+  echo "masked external effort requires a 14-wide checkpoint state" >&2
+  exit 2
+fi
+USE_DEPTH=$([ "$CONTRACT_DEPTH" = 1 ] && echo true || echo false)
+INCLUDE_EXT_EFF=$([ "$EXPECTED_EXT_EFF" = 1 ] && echo true || echo false)
+MASK_EXT_EFF_BOOL=$([ "$MASK_EXT_EFF" = 1 ] && echo true || echo false)
+
+# Wrist depth cameras by ROLE from the visiond sensor registry (never file
+# order); use_depth follows the checkpoint contract resolved above.
+WRIST_CAMERAS="$(USE_DEPTH="$USE_DEPTH" python3 - "$REPO" <<'PY'
+import os, sys, tomllib
+from pathlib import Path
+reg = tomllib.loads((Path(sys.argv[1]) / "rust/visiond/config/vision.toml").read_text())
+by_role = {c["role"]: c["serial"] for c in reg.get("cameras", {}).get("realsense", []) if c.get("role")}
+missing = [r for r in ("wrist_upper", "wrist_lower") if r not in by_role]
+if missing:
+    sys.exit(f"sensor registry has no role= for {', '.join(missing)}")
+depth = os.environ["USE_DEPTH"]
+print("{" + ", ".join(
+    f"{r}: {{type: intelrealsense, serial_number_or_name: '{by_role[r]}', "
+    f"width: 640, height: 480, fps: 30, use_depth: {depth}}}"
+    for r in ("wrist_upper", "wrist_lower")) + "}")
+PY
+)"
+
+# All checkpoint/wire checks precede the tool and single-use motion gates, so
+# a malformed policy cannot consume an operator nonce.
+ee_tool::require || exit $?
+# shellcheck source=scripts/lib/arm_gate.sh
+source "$REPO/scripts/lib/arm_gate.sh"
+arm_gate::require || exit $?
 TARGET_VELOCITY="${TATBOT_POLICY_TARGET_VELOCITY:-0.25}"
 CONTROLLER_VELOCITY="${TATBOT_POLICY_CONTROLLER_VELOCITY:-0.75}"
 
@@ -149,13 +214,8 @@ else: sys.exit(1)
 SERVED=""; CHUNK_SOURCE=""
 if [ -n "${TATBOT_N_ACTION_STEPS:-}" ]; then
   SERVED="$TATBOT_N_ACTION_STEPS"; CHUNK_SOURCE="env"
-elif [ -r "$POLICY/config.json" ]; then
-  SERVED="$(read_n_action_steps < "$POLICY/config.json")" && CHUNK_SOURCE="local_config"
 else
-  SSH_TARGET="${TATBOT_POLICY_SSH:-${TATBOT_POLICY_USER:-$(tatbot_nodes::target serve | sed "s/@.*//")}@${SERVER%%:*}}"
-  SERVED="$(ssh -n -o BatchMode=yes -o ConnectTimeout=3 "$SSH_TARGET" \
-              "cat '$POLICY/config.json'" 2>/dev/null | read_n_action_steps)" \
-    && CHUNK_SOURCE="server_config"
+  SERVED="$(read_n_action_steps <<<"$POLICY_CONFIG_JSON")" && CHUNK_SOURCE="checkpoint_config"
 fi
 
 if [ -n "$SERVED" ]; then
@@ -198,7 +258,7 @@ if [ "$BUDGET_MS" -lt "$((INFER_MS * 3 / 2))" ]; then
 fi
 echo "duration: ${DURATION}s  policy(server-side): $POLICY  type: $POLICY_TYPE  server: $SERVER"
 echo "task: \"$TASK\"  actions_per_chunk: $CHUNK ($CHUNK_SOURCE)  chunk_size_threshold: $THRESH"
-echo "depth: $USE_DEPTH  depth encoding: ${DEPTH_ENCODING:-raw/none}  external effort on the wire: $INCLUDE_EXT_EFF"
+echo "depth: $USE_DEPTH  depth encoding: ${DEPTH_ENCODING:-raw/none}  external effort on the wire: $INCLUDE_EXT_EFF  masked: $MASK_EXT_EFF_BOOL"
 echo "obs history bundle: ${TATBOT_OBS_HISTORY:-0}"
 echo "commissioning speed: target ${TARGET_VELOCITY} rad/s; controller ${CONTROLLER_VELOCITY} rad/s"
 echo "refill budget: ${BUDGET_MS} ms vs ~${INFER_MS} ms server inference"
@@ -213,7 +273,8 @@ runlog::init rollout_async \
   --set chunk_source="$CHUNK_SOURCE" --set n_action_steps="${SERVED:-unknown}" \
   --set thresh="$THRESH" --set refill_budget_ms="$BUDGET_MS" \
   --set infer_ms="$INFER_MS" --set use_depth="$USE_DEPTH" \
-  --set depth_encoding="${DEPTH_ENCODING:-none}" --set include_ext_eff="$INCLUDE_EXT_EFF"
+  --set depth_encoding="${DEPTH_ENCODING:-none}" --set include_ext_eff="$INCLUDE_EXT_EFF" \
+  --set mask_ext_eff="$MASK_EXT_EFF_BOOL"
 # --dip / --no-ink: the ink hook (scripts/lib/dip_hook.sh), after the run is
 # open so a dip's ledger events are mirrored into this run's ink.jsonl.
 dip_hook::run || exit $?
@@ -298,6 +359,7 @@ cd "$CLIENT_CWD"
   --robot.controller_velocity_limit="$CONTROLLER_VELOCITY" \
   --robot.cameras="$WRIST_CAMERAS" \
   --robot.include_external_effort=$INCLUDE_EXT_EFF \
+  --robot.mask_external_effort=$MASK_EXT_EFF_BOOL \
   --robot.depth_policy_encoding="$DEPTH_ENCODING" \
   --task="$TASK" \
   --fps=30 \

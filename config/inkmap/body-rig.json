@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "rig_id": "hbm-humanoid-v1",
+  "frame": { "left": "+x", "front": "-y", "up": "+z", "units": "m" },
+  "quality_gates": {
+    "max_joint_rotation_deg": 120,
+    "edge_length_ratio_p001_min": 0.55,
+    "edge_length_ratio_p99_max": 1.21,
+    "triangle_area_ratio_p01_min": 0.70,
+    "triangle_area_ratio_p99_max": 1.30
+  },
+  "anatomy_gates": {
+    "reclined-legs": {
+      "angles": [
+        { "joints": ["hip.L", "knee.L", "ankle.L"], "min_deg": 145, "max_deg": 170 },
+        { "joints": ["hip.R", "knee.R", "ankle.R"], "min_deg": 145, "max_deg": 170 }
+      ],
+      "bend_plane": [
+        { "joints": ["hip.L", "knee.L", "ankle.L"], "toward_world": [0, 0, 1], "min_offset_m": 0.045, "max_off_axis_m": 0.01 },
+        { "joints": ["hip.R", "knee.R", "ankle.R"], "toward_world": [0, 0, 1], "min_offset_m": 0.045, "max_off_axis_m": 0.01 }
+      ]
+    },
+    "supported-left-arm": {
+      "angles": [
+        { "joints": ["shoulder.L", "elbow.L", "wrist.L"], "min_deg": 110, "max_deg": 145 },
+        { "joints": ["elbow.L", "wrist.L", "hand_tip.L"], "min_deg": 170, "max_deg": 180.001 }
+      ]
+    },
+    "supported-right-arm": {
+      "angles": [
+        { "joints": ["shoulder.R", "elbow.R", "wrist.R"], "min_deg": 110, "max_deg": 145 },
+        { "joints": ["elbow.R", "wrist.R", "hand_tip.R"], "min_deg": 170, "max_deg": 180.001 }
+      ]
+    }
+  },
+  "bones": [
+    { "name": "root", "head": "ground", "tail": "pelvis", "parent": null, "deform": false },
+    { "name": "pelvis", "head": "pelvis_low", "tail": "spine_low", "parent": "root" },
+    { "name": "spine_lower", "head": "spine_low", "tail": "spine_mid", "parent": "pelvis" },
+    { "name": "spine_upper", "head": "spine_mid", "tail": "chest", "parent": "spine_lower" },
+    { "name": "neck", "head": "chest", "tail": "neck", "parent": "spine_upper" },
+    { "name": "head", "head": "neck", "tail": "head_top", "parent": "neck" },
+    { "name": "clavicle.L", "head": "chest", "tail": "shoulder.L", "parent": "spine_upper" },
+    { "name": "upper_arm.L", "head": "shoulder.L", "tail": "elbow.L", "parent": "clavicle.L" },
+    { "name": "forearm.L", "head": "elbow.L", "tail": "wrist.L", "parent": "upper_arm.L" },
+    { "name": "hand.L", "head": "wrist.L", "tail": "hand_tip.L", "parent": "forearm.L" },
+    { "name": "clavicle.R", "head": "chest", "tail": "shoulder.R", "parent": "spine_upper" },
+    { "name": "upper_arm.R", "head": "shoulder.R", "tail": "elbow.R", "parent": "clavicle.R" },
+    { "name": "forearm.R", "head": "elbow.R", "tail": "wrist.R", "parent": "upper_arm.R" },
+    { "name": "hand.R", "head": "wrist.R", "tail": "hand_tip.R", "parent": "forearm.R" },
+    { "name": "thigh.L", "head": "hip.L", "tail": "knee.L", "parent": "pelvis" },
+    { "name": "shin.L", "head": "knee.L", "tail": "ankle.L", "parent": "thigh.L" },
+    { "name": "foot.L", "head": "ankle.L", "tail": "toe.L", "parent": "shin.L" },
+    { "name": "thigh.R", "head": "hip.R", "tail": "knee.R", "parent": "pelvis" },
+    { "name": "shin.R", "head": "knee.R", "tail": "ankle.R", "parent": "thigh.R" },
+    { "name": "foot.R", "head": "ankle.R", "tail": "toe.R", "parent": "shin.R" }
+  ],
+  "bodies": {
+    "hbm-male-stylized": {
+      "joints": {
+        "ground": [0, 0, 0.02], "pelvis_low": [0, 0, 0.70], "pelvis": [0, 0, 0.82],
+        "spine_low": [0, 0, 0.90], "spine_mid": [0, 0, 1.15], "chest": [0, 0, 1.38],
+        "neck": [0, 0, 1.53], "head_top": [0, 0, 1.78],
+        "shoulder.L": [0.23, 0.02, 1.34], "elbow.L": [0.392, 0.04, 0.965],
+        "wrist.L": [0.414, 0.025, 0.81], "hand_tip.L": [0.405, 0.04, 0.68],
+        "shoulder.R": [-0.23, 0.02, 1.34], "elbow.R": [-0.392, 0.04, 0.965],
+        "wrist.R": [-0.414, 0.025, 0.81], "hand_tip.R": [-0.405, 0.04, 0.68],
+        "hip.L": [0.10, 0, 0.78], "knee.L": [0.087, 0, 0.47], "ankle.L": [0.10, 0, 0.10], "toe.L": [0.10, -0.12, 0.035],
+        "hip.R": [-0.10, 0, 0.78], "knee.R": [-0.087, 0, 0.47], "ankle.R": [-0.10, 0, 0.10], "toe.R": [-0.10, -0.12, 0.035]
+      }
+    },
+    "hbm-female-stylized": {
+      "joints": {
+        "ground": [0, 0, 0.02], "pelvis_low": [0, 0, 0.66], "pelvis": [0, 0, 0.76],
+        "spine_low": [0, 0, 0.84], "spine_mid": [0, 0, 1.05], "chest": [0, 0, 1.24],
+        "neck": [0, 0, 1.38], "head_top": [0, 0, 1.60],
+        "shoulder.L": [0.20, 0.03, 1.20], "elbow.L": [0.312, 0.04, 0.915],
+        "wrist.L": [0.34, 0.025, 0.795], "hand_tip.L": [0.335, 0.04, 0.69],
+        "shoulder.R": [-0.20, 0.03, 1.20], "elbow.R": [-0.312, 0.04, 0.915],
+        "wrist.R": [-0.34, 0.025, 0.795], "hand_tip.R": [-0.335, 0.04, 0.69],
+        "hip.L": [0.09, 0, 0.74], "knee.L": [0.078, 0, 0.454], "ankle.L": [0.075, 0, 0.07], "toe.L": [0.075, -0.105, 0.025],
+        "hip.R": [-0.09, 0, 0.74], "knee.R": [-0.078, 0, 0.454], "ankle.R": [-0.075, 0, 0.07], "toe.R": [-0.075, -0.105, 0.025]
+      }
+    }
+  },
+  "poses": {
+    "standing-neutral": { "label": "Standing", "support_id": "standing-reference-v1", "body_rotation_xyzw": [0, 0, 0, 1], "ik": [] },
+    "supine": { "label": "Supine", "support_id": "tattoo-bed-v1", "body_rotation_xyzw": [-0.7071067811865475, 0, 0, 0.7071067811865476], "ik": [] },
+    "prone": { "label": "Prone", "support_id": "tattoo-bed-v1", "body_rotation_xyzw": [0.7071067811865475, 0, 0, 0.7071067811865476], "ik": [] },
+    "reclined-seated": {
+      "label": "Reclined",
+      "support_id": "tattoo-chair-v2",
+      "body_rotation_xyzw": [-0.25881904510252074, 0, 0, 0.9659258262890683],
+      "anatomy_gates": ["reclined-legs"],
+      "ik": [
+        { "bone": "shin.L", "chain": 2, "solver": "two_bone", "target_from": "hip.L", "target_offset": [0, -0.50, -0.43], "pole_from": "hip.L", "pole_offset": [0, -0.65, 0.10] },
+        { "bone": "shin.R", "chain": 2, "solver": "two_bone", "target_from": "hip.R", "target_offset": [0, -0.50, -0.43], "pole_from": "hip.R", "pole_offset": [0, -0.65, 0.10] }
+      ]
+    },
+    "reclined-left-arm-supported": {
+      "label": "Left Arm",
+      "support_id": "tattoo-chair-left-armrest-v1",
+      "body_rotation_xyzw": [-0.25881904510252074, 0, 0, 0.9659258262890683],
+      "anatomy_gates": ["reclined-legs", "supported-left-arm"],
+      "align_with_parent": ["hand.L"],
+      "ik": [
+        { "bone": "shin.L", "chain": 2, "solver": "two_bone", "target_from": "hip.L", "target_offset": [0, -0.50, -0.43], "pole_from": "hip.L", "pole_offset": [0, -0.65, 0.10] },
+        { "bone": "shin.R", "chain": 2, "solver": "two_bone", "target_from": "hip.R", "target_offset": [0, -0.50, -0.43], "pole_from": "hip.R", "pole_offset": [0, -0.65, 0.10] },
+        { "bone": "forearm.L", "chain": 2, "target_from": "shoulder.L", "target_offset_chain_fraction": [0.58, -0.24, -0.675] }
+      ]
+    },
+    "reclined-right-arm-supported": {
+      "label": "Right Arm",
+      "support_id": "tattoo-chair-right-armrest-v1",
+      "body_rotation_xyzw": [-0.25881904510252074, 0, 0, 0.9659258262890683],
+      "anatomy_gates": ["reclined-legs", "supported-right-arm"],
+      "align_with_parent": ["hand.R"],
+      "ik": [
+        { "bone": "shin.L", "chain": 2, "solver": "two_bone", "target_from": "hip.L", "target_offset": [0, -0.50, -0.43], "pole_from": "hip.L", "pole_offset": [0, -0.65, 0.10] },
+        { "bone": "shin.R", "chain": 2, "solver": "two_bone", "target_from": "hip.R", "target_offset": [0, -0.50, -0.43], "pole_from": "hip.R", "pole_offset": [0, -0.65, 0.10] },
+        { "bone": "forearm.R", "chain": 2, "target_from": "shoulder.R", "target_offset_chain_fraction": [-0.58, -0.24, -0.675] }
+      ]
+    }
+  }
+}

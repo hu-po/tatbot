@@ -1,5 +1,6 @@
 #include "realtime.hpp"
 
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <map>
@@ -58,6 +59,21 @@ int main()
   // path it must not throw.
   require(tatbot::realtime::read_max_frequencies("/nonexistent/cpu/path").empty(),
     "a missing sysfs root must yield no frequencies");
+
+  using clock = std::chrono::steady_clock;
+  using namespace std::chrono_literals;
+  auto deadline = clock::time_point{};
+  require(tatbot::realtime::advance_deadline(deadline, 2500us, clock::time_point{}) == 0,
+    "on-time tick unexpectedly skipped a deadline");
+  require(deadline == clock::time_point{} + 2500us, "on-time deadline did not advance");
+  require(tatbot::realtime::advance_deadline(deadline, 2500us, clock::time_point{} + 10ms) == 3,
+    "large stall reported the wrong number of skipped deadlines");
+  require(deadline == clock::time_point{} + 12500us,
+    "late deadline was not resynchronized one period after now");
+  require(tatbot::realtime::advance_deadline(deadline, 0us, clock::time_point{} + 20ms) == 0,
+    "invalid period should not divide by zero");
+  require(deadline == clock::time_point{} + 20ms,
+    "invalid period should reset the deadline to now");
 
   std::cout << "realtime_test: ok" << std::endl;
   return 0;

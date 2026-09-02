@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Single-use arming gate for AUTONOMOUS-motion launchers (policy rollouts).
+# Single-use arming gate for AUTONOMOUS-motion launchers (policy rollouts,
+# scripted dips, and the one-shot Cartesian square probe).
 #
 # Why: on 2026-08-24 three rollout launches fired that nobody initiated —
 # each a byte-identical, non-interactive replay of a previously-executed
@@ -14,10 +15,11 @@
 # re-evaluates substitutions and mints a fresh nonce). Consumed nonces are
 # ledgered; a repeat refuses and points at the ancestry tripwire.
 #
-# Scope: every launcher that moves the arm on its own — policy rollouts and
-# the scripted dip (il_dip.sh). Teleop/record keep a human physically on the
-# leader arm and stay ungated, EXCEPT that their --dip runs il_dip.sh first,
-# which is gated like any other autonomous motion.
+# Scope: every launcher that moves the arm on its own — policy rollouts, the
+# scripted dip (il_dip.sh), and teleop_square.sh after its explicit handoff.
+# Ordinary teleop/record keep a human physically on the leader arm and stay
+# ungated, EXCEPT that their --dip runs il_dip.sh first, which is gated like
+# any other autonomous motion.
 #
 # Nesting: a rollout's --dip runs il_dip.sh as a child AFTER the rollout has
 # consumed its nonce. The child must not demand a second one (the operator

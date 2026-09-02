@@ -62,6 +62,11 @@ class Distribution:
     plausible-looking data under unvalidated assumptions is worse than one
     that refuses: the data looks like the other two and trains like neither."""
 
+    tip_calibration_jitter: bool = False
+    """Sample one session-persistent TCP offset before the factory re-execs.
+    Only a distribution whose fitted tool has a qualified pivot calibration
+    can enable this; the measured uncertainty sets the radius."""
+
 
 def _paper_draw():
     from tatbot_sim.generate import Args
@@ -69,6 +74,7 @@ def _paper_draw():
     return Args(
         out_dir="",
         distribution="paper-draw",
+        tool_calibration_jitter=True,
         # the sim node's gen/{final,prod,trim,notrim} runs: every shipped paper batch ran
         # mix at horizon 900 with the default squiggle share.
         task="mix",
@@ -152,12 +158,27 @@ def _skin_tattoo():
     )
 
 
+def _body_tattoo():
+    from tatbot_sim.generate import Args
+
+    return Args(
+        out_dir="",
+        distribution="body-tattoo",
+        task="language",
+        horizon=1800,
+        # A compiled scenario is immutable, so parallel slots are repeated
+        # visual/ink draws rather than pretending to be different bodies.
+        num_envs=8,
+    )
+
+
 DISTRIBUTIONS: dict[str, Distribution] = {
     "paper-draw": Distribution(
         name="paper-draw",
         tool_id=BALLPOINT,
         summary="ballpoint drawing scenes and squiggles on the ruled paper pad",
         build_args=_paper_draw,
+        tip_calibration_jitter=True,
     ),
     "skin-erase": Distribution(
         name="skin-erase",
@@ -171,5 +192,11 @@ DISTRIBUTIONS: dict[str, Distribution] = {
         summary="3RL liner depositing ink on the draped silicone skin "
                 "(ballpoint settings — see _skin_tattoo for what that borrows)",
         build_args=_skin_tattoo,
+    ),
+    "body-tattoo": Distribution(
+        name="body-tattoo",
+        tool_id=LINER,
+        summary="3RL liner following a compiled SVG trace on a posed rigged body",
+        build_args=_body_tattoo,
     ),
 }

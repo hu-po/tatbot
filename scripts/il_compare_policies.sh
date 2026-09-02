@@ -69,7 +69,8 @@ echo
 
 run_one() {
   local tag="$1" pol="$2"
-  local policy_type use_depth state_size depth_encoding relative server ssh_target config
+  local policy_type use_depth state_size depth_encoding relative mask_ext_eff
+  local server ssh_target config sidecar
   echo "########## $tag ##########"
   if pgrep -f "[i]l_client_shield.py" >/dev/null 2>&1; then
     echo "ABORT: a rollout client is already running" >&2
@@ -82,23 +83,29 @@ run_one() {
     echo "ABORT: cannot read checkpoint contract at $ssh_target:$pol/config.json" >&2
     exit 1
   }
+  sidecar="$(ssh -n -o BatchMode=yes -o ConnectTimeout=3 "$ssh_target" \
+    "if [ -f '$pol/tatbot_contract.json' ]; then cat '$pol/tatbot_contract.json'; else printf '{}'; fi" \
+    2>/dev/null)" || {
+    echo "ABORT: cannot read checkpoint sidecar at $ssh_target:$pol/tatbot_contract.json" >&2
+    exit 1
+  }
   IFS='|' read -r policy_type use_depth state_size depth_encoding relative mask_ext_eff < <(
-    python3 "$REPO/scripts/eval/checkpoint_contract.py" --format fields - <<<"$config"
+    python3 "$REPO/scripts/eval/checkpoint_contract.py" --format fields \
+      --sidecar-json "$sidecar" - <<<"$config"
   )
   [ "$state_size" = 7 ] || [ "$state_size" = 14 ] || {
     echo "ABORT: unsupported checkpoint state width $state_size" >&2
     exit 1
   }
-  [ "$mask_ext_eff" = 1 ] && {
-    echo "ABORT: $tag was trained with external effort masked to zero; the wire" >&2
-    echo "  can only include or drop those channels, not zero them, so serving it" >&2
-    echo "  live effort is train/serve skew. Teach the client to zero them first." >&2
+  [ "$mask_ext_eff" = 0 ] || [ "$state_size" = 14 ] || {
+    echo "ABORT: $tag masks external effort but does not have a 14-wide state" >&2
     exit 1
   }
-  echo "checkpoint contract: type=$policy_type depth=$use_depth state=$state_size relative=$relative"
+  echo "checkpoint contract: type=$policy_type depth=$use_depth state=$state_size relative=$relative mask_ext_eff=$mask_ext_eff"
   TATBOT_DEPTH="$use_depth" \
   TATBOT_DEPTH_ENCODING="$depth_encoding" \
   TATBOT_EXT_EFF=$([ "$state_size" = 14 ] && echo 1 || echo 0) \
+  TATBOT_MASK_EXT_EFF="$mask_ext_eff" \
   "$REPO/scripts/il_rollout_async.sh" "$DURATION" "$pol" "$policy_type" "${EXTRA[@]}" 2>&1 \
     | grep -E "tatbot-run (start|end)|geometry|motion|smoothness|dwell|timing|WARN"
   sleep 4

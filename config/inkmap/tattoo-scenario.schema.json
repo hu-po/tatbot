@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.ai/schemas/inkmap/tattoo-scenario/v1",
+  "title": "Tatbot posed tattoo scenario",
+  "description": "A self-contained, deterministic realization of one Inkmap placement on a posed body in the Tatbot simulation world. This is an offline simulation contract, not a robot motion authorization.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "units",
+    "seed",
+    "body",
+    "pose",
+    "placement",
+    "design",
+    "trace",
+    "robot",
+    "support",
+    "provenance"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "units": {
+      "type": "object",
+      "required": ["length", "tattoo_size", "angle", "up", "matrix_order"],
+      "additionalProperties": false,
+      "properties": {
+        "length": { "const": "m" },
+        "tattoo_size": { "const": "mm" },
+        "angle": { "const": "rad" },
+        "up": { "const": "+z" },
+        "matrix_order": { "const": "row-major" }
+      }
+    },
+    "seed": { "type": "integer", "minimum": 0 },
+    "body": {
+      "type": "object",
+      "required": ["id", "path", "asset_sha256", "surface_sha256", "rig_id", "rig_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "asset_sha256": { "$ref": "#/$defs/sha256" },
+        "surface_sha256": { "$ref": "#/$defs/sha256" },
+        "rig_id": { "type": "string", "minLength": 1 },
+        "rig_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "pose": {
+      "type": "object",
+      "required": ["id", "catalog_sha256", "source", "joint_rotations", "world_from_body"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "catalog_sha256": { "$ref": "#/$defs/sha256" },
+        "source": { "enum": ["named", "tracked"] },
+        "joint_rotations": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/quaternion" }
+        },
+        "world_from_body": { "$ref": "#/$defs/matrix4" },
+        "capture_time_ns": { "type": "integer", "minimum": 0 },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "placement": {
+      "type": "object",
+      "required": ["source_sha256", "id", "design_id", "anchor", "rotation_rad", "size_mm", "mirror"],
+      "additionalProperties": true,
+      "properties": {
+        "source_sha256": { "$ref": "#/$defs/sha256" },
+        "id": { "type": "string", "minLength": 1 },
+        "design_id": { "type": "string", "minLength": 1 },
+        "anchor": { "$ref": "#/$defs/anchor" },
+        "rotation_rad": { "type": "number" },
+        "size_mm": { "$ref": "#/$defs/sizeMm" },
+        "mirror": { "type": "boolean" }
+      }
+    },
+    "design": {
+      "type": "object",
+      "required": ["id", "name", "svg", "sha256", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "svg": { "type": "string", "pattern": "<svg" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "source": { "type": "object" }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "required": ["compiler", "compiler_version", "sha256", "strokes"],
+      "additionalProperties": false,
+      "properties": {
+        "compiler": { "const": "tatbot_sim.surface_trace" },
+        "compiler_version": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "strokes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "items": { "$ref": "#/$defs/anchor" }
+          }
+        }
+      }
+    },
+    "robot": {
+      "type": "object",
+      "required": ["urdf_sha256", "tool_id", "world_from_robot"],
+      "additionalProperties": false,
+      "properties": {
+        "urdf_sha256": { "$ref": "#/$defs/sha256" },
+        "tool_id": { "type": "string", "minLength": 1 },
+        "world_from_robot": { "$ref": "#/$defs/matrix4" }
+      }
+    },
+    "support": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": { "id": { "type": "string", "minLength": 1 } }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["created_at", "git_sha", "generator"],
+      "additionalProperties": false,
+      "properties": {
+        "created_at": { "type": "string", "format": "date-time" },
+        "git_sha": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+        "generator": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "quaternion": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": { "type": "number" },
+      "description": "Local bone rotation [x,y,z,w]."
+    },
+    "matrix4": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "array",
+        "minItems": 4,
+        "maxItems": 4,
+        "items": { "type": "number" }
+      }
+    },
+    "sizeMm": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "number", "exclusiveMinimum": 0 }
+    },
+    "anchor": {
+      "type": "object",
+      "required": ["face", "barycentric"],
+      "additionalProperties": false,
+      "properties": {
+        "face": { "type": "integer", "minimum": 0 },
+        "barycentric": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    }
+  }
+}

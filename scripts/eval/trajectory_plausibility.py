@@ -18,6 +18,12 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from chunk_guard import (
+    compare_metrics,
+    execution_metrics,
+    simulate_executed_actions,
+    validate_execution_model,
+)
 
 JOINT_NAMES = [
     "joint_0.pos",
@@ -28,13 +34,18 @@ JOINT_NAMES = [
     "joint_5.pos",
     "left_carriage_joint.pos",
 ]
+EXTERNAL_EFFORT_NAMES = [name.removesuffix(".pos") + ".ext_eff" for name in JOINT_NAMES]
 TASK = "remove the ink on the silicone skin with the removal laser"
 # The carriage rests at one value for a whole recording (gripper era: the
 # fingers stopped on the machine body; fixed mount: the closed hard stop).
 # Encoder noise is well under a millimetre; a real trip lifts it 40 mm.
 CARRIAGE_MAX_SPREAD_M = 0.002
+GROSS_ENVELOPE_MULTIPLIER = 2.0
+RAW_HARD_ABSOLUTE_MARGIN_RAD = 0.01
+NORMALIZED_HARD_ABSOLUTE_MARGIN = 0.05
+SUSTAINED_SLEW_FRACTION = 0.80
 SAFETY_WARNING = (
-    "rejection-only no-arm diagnostic; PASS is not powered-use acceptance or a safety claim"
+    "rejection-only no-arm diagnostic; no verdict is powered-use acceptance or a safety claim"
 )
 
 
@@ -87,8 +98,13 @@ def validate_postprocessor_binding(contract: dict[str, Any], postprocessor: Path
     return actual
 
 
-def _as_matrix(column: Any, width: int) -> np.ndarray:
-    return np.asarray(column.to_pylist(), dtype=np.float64).reshape(-1, width)
+def _as_matrix(column: Any, width: int | None = None) -> np.ndarray:
+    matrix = np.asarray(column.to_pylist(), dtype=np.float64)
+    if matrix.ndim != 2:
+        raise ValueError(f"expected a matrix column, got shape {matrix.shape}")
+    if width is not None and matrix.shape[1] != width:
+        raise ValueError(f"expected matrix width {width}, got {matrix.shape[1]}")
+    return matrix
 
 
 def read_demonstrations(roots: list[Path], horizon: int) -> dict[str, np.ndarray]:
@@ -117,7 +133,12 @@ def read_demonstrations(roots: list[Path], horizon: int) -> dict[str, np.ndarray
             ]
         ).combine_chunks()
         action = _as_matrix(table["action"], len(JOINT_NAMES))
-        state = _as_matrix(table["observation.state"], len(JOINT_NAMES))
+        state = _as_matrix(table["observation.state"])
+        if state.shape[1] < len(JOINT_NAMES):
+            raise ValueError(
+                f"observation.state width {state.shape[1]} is smaller than the "
+                f"{len(JOINT_NAMES)} position channels"
+            )
         episodes = np.asarray(table["episode_index"].to_pylist(), dtype=np.int64)
         frames = np.asarray(table["frame_index"].to_pylist(), dtype=np.int64)
         for row in range(len(action)):
@@ -254,39 +275,133 @@ def distribution(values: np.ndarray) -> dict[str, list[float]]:
     }
 
 
+def _gross_per_joint(
+    values: list[float], factor: float, absolute_margin: float
+) -> list[float]:
+    return [
+        max(float(value) * factor, float(value) + absolute_margin)
+        for value in values
+    ]
+
+
+def execution_distributions(
+    actions: np.ndarray,
+    states: np.ndarray,
+    execution_model: dict[str, Any],
+) -> dict[str, dict[str, list[float]]]:
+    """Describe requests after the rollout EMA and target slew model."""
+
+    sent, saturated = simulate_executed_actions(actions, states, execution_model)
+    previous = np.concatenate((states[..., None, :], sent[..., :-1, :]), axis=-2)
+    return {
+        "executed_step_abs_rad": distribution(np.abs(sent - previous)),
+        "executed_displacement_abs_rad": distribution(
+            np.abs(sent - states[..., None, :])
+        ),
+        "execution_slew_saturation_fraction": distribution(saturated.mean(axis=-2)),
+    }
+
+
 def build_contract(
     demonstrations: dict[str, np.ndarray],
     postprocessor: Path,
     roots: list[Path],
+    *,
+    fps: float = 30.0,
+    target_filter_tau_s: float = 0.3,
+    max_joint_velocity_rad_s: float = 0.25,
+    controller_velocity_limit_rad_s: float = 0.75,
+    actions_per_chunk: int | None = None,
 ) -> dict[str, Any]:
     states = demonstrations["state"]
     actions = demonstrations["action"]
     valid = ~demonstrations["action_is_pad"]
-    if actions.ndim != 3 or states.shape != (actions.shape[0], actions.shape[2]):
+    if (
+        actions.ndim != 3
+        or states.ndim != 2
+        or states.shape[0] != actions.shape[0]
+        or states.shape[1] < actions.shape[2]
+    ):
         raise ValueError(f"invalid state/action shapes: {states.shape}/{actions.shape}")
+    position_states = states[:, : actions.shape[2]]
     horizon, joints = actions.shape[1:]
     adjacent_valid = valid[:, 1:] & valid[:, :-1]
     adjacent = np.abs(np.diff(actions, axis=1))[adjacent_valid]
-    first_distance = np.abs(actions[:, 0] - states)
+    first_distance = np.abs(actions[:, 0] - position_states)
     adjacent_dist = distribution(adjacent)
     first_dist = distribution(first_distance)
     action_mode = postprocessor_action_mode(postprocessor)
     relative_joints = np.zeros(joints, dtype=bool)
+    execution_model: dict[str, Any] = {
+        "input_stage": "post_client_aggregation",
+        "offline_aggregation": "identity_single_chunk",
+        "fps": float(fps),
+        "target_filter_tau_s": float(target_filter_tau_s),
+        "max_joint_velocity_rad_s": float(max_joint_velocity_rad_s),
+        "controller_velocity_limit_rad_s": float(controller_velocity_limit_rad_s),
+        "actions_per_chunk": int(actions_per_chunk or horizon),
+        "aggregate_fn_name": "weighted_average",
+    }
+    if (
+        execution_model["fps"] <= 0
+        or execution_model["target_filter_tau_s"] < 0
+        or execution_model["max_joint_velocity_rad_s"] <= 0
+        or execution_model["controller_velocity_limit_rad_s"] <= 0
+        or execution_model["max_joint_velocity_rad_s"]
+        > execution_model["controller_velocity_limit_rad_s"]
+        or execution_model["actions_per_chunk"] <= 0
+        or execution_model["actions_per_chunk"] > horizon
+    ):
+        raise ValueError(f"invalid execution model: {execution_model}")
+    execution_reference = execution_distributions(
+        actions, position_states, execution_model
+    )
     reference: dict[str, Any] = {
         "adjacent_step_abs_rad": adjacent_dist,
         "first_target_distance_abs_rad": first_dist,
+        **execution_reference,
     }
     thresholds: dict[str, Any] = {
-        # Maxima make every genuine reference row pass by construction. This is an
-        # initial rejection envelope, not a calibrated acceptance tolerance.
+        # Exact demonstration maxima are diagnostic envelopes, not calibrated
+        # safety boundaries. Hard rejection begins at a gross 2x excursion.
+        "adjacent_step_abs_rad_per_joint": _gross_per_joint(
+            adjacent_dist["max"],
+            GROSS_ENVELOPE_MULTIPLIER,
+            RAW_HARD_ABSOLUTE_MARGIN_RAD,
+        ),
+        "first_target_distance_abs_rad_per_joint": _gross_per_joint(
+            first_dist["max"],
+            GROSS_ENVELOPE_MULTIPLIER,
+            RAW_HARD_ABSOLUTE_MARGIN_RAD,
+        ),
+        "repeated_first_std_rad_per_joint": adjacent_dist["q99"],
+        "executed_step_abs_rad_per_joint": [
+            execution_model["max_joint_velocity_rad_s"] / execution_model["fps"]
+        ]
+        * joints,
+        "executed_displacement_abs_rad_per_joint": _gross_per_joint(
+            execution_reference["executed_displacement_abs_rad"]["max"],
+            GROSS_ENVELOPE_MULTIPLIER,
+            RAW_HARD_ABSOLUTE_MARGIN_RAD,
+        ),
+        "execution_slew_saturation_fraction_per_joint": [
+            min(1.0, max(SUSTAINED_SLEW_FRACTION, value * GROSS_ENVELOPE_MULTIPLIER))
+            for value in execution_reference["execution_slew_saturation_fraction"]["max"]
+        ],
+    }
+    quality_thresholds: dict[str, Any] = {
         "adjacent_step_abs_rad_per_joint": adjacent_dist["max"],
         "first_target_distance_abs_rad_per_joint": first_dist["max"],
-        "l1_to_demo_rad_per_joint": first_dist["max"],
-        "repeated_first_std_rad_per_joint": adjacent_dist["q99"],
+        "executed_displacement_abs_rad_per_joint": execution_reference[
+            "executed_displacement_abs_rad"
+        ]["max"],
+        "execution_slew_saturation_fraction_per_joint": execution_reference[
+            "execution_slew_saturation_fraction"
+        ]["max"],
     }
     if action_mode == "groot_relative_minmax":
         low, high, relative_joints = action_decode_contract(postprocessor, horizon, joints)
-        normalized = inverse_decode(actions, states, low, high, relative_joints)
+        normalized = inverse_decode(actions, position_states, low, high, relative_joints)
         normalized_adjacent = np.abs(np.diff(normalized, axis=1))[adjacent_valid]
         normalized_valid = normalized[valid]
         endpoint = np.abs(normalized_valid) >= 1.0 - 1e-6
@@ -300,13 +415,20 @@ def build_contract(
         )
         thresholds.update(
             {
-                "normalized_adjacent_step_abs_per_joint": normalized_adjacent_dist["max"],
+                "normalized_adjacent_step_abs_per_joint": _gross_per_joint(
+                    normalized_adjacent_dist["max"],
+                    GROSS_ENVELOPE_MULTIPLIER,
+                    NORMALIZED_HARD_ABSOLUTE_MARGIN,
+                ),
                 "normalized_endpoint_fraction_per_joint": endpoint.mean(axis=0).tolist(),
                 "normalized_endpoint_fraction_overall": float(endpoint.mean()),
             }
         )
+        quality_thresholds["normalized_adjacent_step_abs_per_joint"] = (
+            normalized_adjacent_dist["max"]
+        )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": "demonstration-derived no-arm trajectory plausibility contract",
         "safety_warning": SAFETY_WARNING,
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -318,18 +440,40 @@ def build_contract(
         "episodes": int(len(np.unique(demonstrations["episode_index"]))),
         "horizon": horizon,
         "joints": joints,
+        "state_width": int(states.shape[1]),
         "action_semantics": {
             "normalization": action_mode,
             "relative_joint_indices": np.flatnonzero(relative_joints).tolist(),
             "absolute_joint_indices": np.flatnonzero(~relative_joints).tolist(),
         },
+        "execution_model": execution_model,
         "reference": reference,
         "rejection_thresholds": thresholds,
+        "quality_thresholds": quality_thresholds,
+        "report_only_metrics": [
+            "adjacent_step_median_rad_per_joint",
+            "l1_to_demo_rad_per_joint",
+        ],
+        "threshold_calibration": {
+            "gross_envelope_multiplier": GROSS_ENVELOPE_MULTIPLIER,
+            "raw_absolute_margin_rad": RAW_HARD_ABSOLUTE_MARGIN_RAD,
+            "normalized_absolute_margin": NORMALIZED_HARD_ABSOLUTE_MARGIN,
+            "sustained_slew_fraction": SUSTAINED_SLEW_FRACTION,
+            "status": "retrospective provisional",
+            "evidence": (
+                "2x routes the 2026-08-30 ACT 1.27x first-target miss and the "
+                "2026-08-29 GR00T 1.18x adjacent-step miss to review while retaining "
+                "hard rejection of the 2026-09-01 corrupted-sim ACT 2.43x-6.21x starts"
+            ),
+        },
         "threshold_rationale": (
-            "observed genuine-demo maxima bound decoded step, target-distance, and L1; demo "
-            "q99 adjacent motion bounds repeated-input spread. GR00T relative min-max "
-            "processors additionally bind normalized step and endpoint saturation. Standard "
-            "absolute policies are rejected on decoded-action metrics only. Passing does not "
+            "Exact genuine-demo maxima produce review warnings for decoded step, target "
+            "distance, and modeled execution. Gross 2x excursions are hard rejections; "
+            "exact-demo L1 is report-only. Demo q99 adjacent motion still hard-bounds "
+            "repeated-input spread. GR00T relative min-max processors additionally hard-bind "
+            "endpoint saturation and split normalized step into review/hard envelopes. The "
+            "execution model replays the configured EMA and target slew over a single chunk; "
+            "live weighted-average requests can be fed to the same model. Passing does not "
             "promote a checkpoint."
         ),
     }
@@ -352,6 +496,7 @@ def extract_fixture(args: argparse.Namespace) -> dict[str, Any]:
         delta_timestamps={"action": [step / args.fps for step in range(args.horizon)]},
         video_backend="pyav",
         return_uint8=True,
+        tolerance_s=args.tolerance_s,
     )
     items = [dataset[index] for index in indices]
     payload: dict[str, np.ndarray] = {
@@ -373,13 +518,15 @@ def extract_fixture(args: argparse.Namespace) -> dict[str, Any]:
         if source not in items[0]:
             continue
         images = np.stack([item[source].numpy().transpose(1, 2, 0) for item in items])
-        if images.dtype != np.uint8:
+        if key.endswith("_depth") and not args.depth_encoding:
+            images = images.astype(np.float32, copy=False)
+        elif images.dtype != np.uint8:
             images = np.rint(np.clip(images, 0.0, 1.0) * 255.0).astype(np.uint8)
         payload[key] = images
     args.npz_out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(args.npz_out, **payload)
     return {
-        "kind": "genuine held-out no-arm observation fixture",
+        "kind": "genuine no-arm observation fixture",
         "safety_warning": SAFETY_WARNING,
         "dataset_root": str(args.dataset_root),
         "repo_id": args.repo_id,
@@ -391,8 +538,17 @@ def extract_fixture(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def wire_features(scenario: str) -> dict[str, dict[str, Any]]:
+    state_names = (
+        JOINT_NAMES + EXTERNAL_EFFORT_NAMES
+        if scenario == "act_rgbd14_masked"
+        else JOINT_NAMES
+    )
     features: dict[str, dict[str, Any]] = {
-        "observation.state": {"dtype": "float32", "shape": (7,), "names": JOINT_NAMES},
+        "observation.state": {
+            "dtype": "float32",
+            "shape": (len(state_names),),
+            "names": state_names,
+        },
     }
     for name in ("wrist_upper", "wrist_lower"):
         features[f"observation.images.{name}"] = {
@@ -401,12 +557,13 @@ def wire_features(scenario: str) -> dict[str, dict[str, Any]]:
             "names": ["height", "width", "channels"],
             "info": {"is_depth_map": False},
         }
-        if scenario == "groot_rgbd":
+        if scenario in ("act_rgbd14_masked", "groot_rgbd"):
+            channels = 1 if scenario == "act_rgbd14_masked" else 3
             features[f"observation.images.{name}_depth"] = {
                 "dtype": "image",
-                "shape": (480, 640, 3),
+                "shape": (480, 640, channels),
                 "names": ["height", "width", "channels"],
-                "info": {"is_depth_map": False},
+                "info": {"is_depth_map": channels == 1},
             }
     return features
 
@@ -427,10 +584,10 @@ def evaluate_predictions(
     contract: dict[str, Any],
     postprocessor: Path,
     primary_joints: int = 6,
-) -> tuple[dict[str, Any], list[str]]:
+) -> tuple[dict[str, Any], list[str], list[str]]:
     validate_postprocessor_binding(contract, postprocessor)
     # chunks: fixture x repetition x horizon x joint
-    states = fixture["state"]
+    states = fixture["state"][..., : chunks.shape[-1]]
     truth = fixture["action"]
     valid = ~fixture["action_is_pad"]
     horizon, joints = chunks.shape[2:]
@@ -449,7 +606,13 @@ def evaluate_predictions(
         "repeated_first_std_rad_per_joint": repeated_std.tolist(),
     }
     thresholds = contract["rejection_thresholds"]
-    if "normalized_adjacent_step_abs_per_joint" in thresholds:
+    if contract.get("schema_version") == 2:
+        execution_model = validate_execution_model(contract)
+        metrics.update(
+            execution_metrics(chunks, states[:, None, :], execution_model)
+        )
+    normalized_thresholds = {**thresholds, **contract.get("quality_thresholds", {})}
+    if "normalized_adjacent_step_abs_per_joint" in normalized_thresholds:
         low, high, relative_joints = action_decode_contract(postprocessor, horizon, joints)
         normalized = inverse_decode(chunks, states[:, None], low, high, relative_joints)
         normalized_adjacent = np.abs(np.diff(normalized, axis=2))
@@ -465,22 +628,16 @@ def evaluate_predictions(
                 "normalized_endpoint_fraction_overall": float(endpoint.mean()),
             }
         )
-    failures = []
-    for metric, values in metrics.items():
-        if metric == "adjacent_step_median_rad_per_joint":
-            continue
-        if metric not in thresholds:
-            continue
-        limit = thresholds[metric]
-        if isinstance(values, list):
-            for joint, (value, maximum) in enumerate(zip(values, limit, strict=True)):
-                if joint < primary_joints and value > maximum + 1e-6:
-                    failures.append(
-                        f"{metric}[{joint}]={value:.8g} > demo_limit={maximum:.8g}"
-                    )
-        elif values > limit + 1e-9:
-            failures.append(f"{metric}={values:.8g} > demo_limit={limit:.8g}")
-    return metrics, failures
+    failures = compare_metrics(
+        metrics, thresholds, primary_joints=primary_joints, limit_label="hard_limit"
+    )
+    warnings = compare_metrics(
+        metrics,
+        contract.get("quality_thresholds", {}),
+        primary_joints=primary_joints,
+        limit_label="demo_envelope",
+    )
+    return metrics, failures, warnings
 
 
 def probe(args: argparse.Namespace) -> dict[str, Any]:
@@ -494,7 +651,7 @@ def probe(args: argparse.Namespace) -> dict[str, Any]:
     contract = json.loads(args.contract.read_text())
     postprocessor_artifacts = validate_postprocessor_binding(contract, args.postprocessor)
     required = ["state", "action", "action_is_pad", "wrist_upper", "wrist_lower"]
-    if args.scenario == "groot_rgbd":
+    if args.scenario in ("act_rgbd14_masked", "groot_rgbd"):
         required += ["wrist_upper_depth", "wrist_lower_depth"]
     missing = [key for key in required if key not in fixture]
     if missing:
@@ -506,9 +663,12 @@ def probe(args: argparse.Namespace) -> dict[str, Any]:
     stub = services_pb2_grpc.AsyncInferenceStub(channel)
     grpc.channel_ready_future(channel).result(timeout=args.timeout)
     stub.Ready(services_pb2.Empty(), timeout=args.timeout)
-    policy_type = {"act_rgb": "act", "groot_rgb": "groot", "groot_rgbd": "groot"}[
-        args.scenario
-    ]
+    policy_type = {
+        "act_rgb": "act",
+        "act_rgbd14_masked": "act",
+        "groot_rgb": "groot",
+        "groot_rgbd": "groot",
+    }[args.scenario]
     setup = RemotePolicyConfig(
         policy_type, args.policy, wire_features(args.scenario), contract["horizon"], "cuda"
     )
@@ -522,9 +682,13 @@ def probe(args: argparse.Namespace) -> dict[str, Any]:
     try:
         for fixture_index in range(len(fixture["state"])):
             repeated = []
+            state_values = np.array(fixture["state"][fixture_index], copy=True)
+            state_names = wire_features(args.scenario)["observation.state"]["names"]
+            if args.scenario == "act_rgbd14_masked":
+                state_values[7:14] = 0.0
             payload = {
                 name: float(value)
-                for name, value in zip(JOINT_NAMES, fixture["state"][fixture_index], strict=True)
+                for name, value in zip(state_names, state_values, strict=True)
             }
             for key in required[3:]:
                 payload[key] = fixture[key][fixture_index]
@@ -555,14 +719,18 @@ def probe(args: argparse.Namespace) -> dict[str, Any]:
     finally:
         channel.close()
     array = np.stack(chunks)
-    metrics, failures = evaluate_predictions(array, fixture, contract, args.postprocessor)
+    metrics, failures, warnings = evaluate_predictions(
+        array, fixture, contract, args.postprocessor
+    )
     warm = np.asarray(latencies[1:] or latencies)
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": "no-arm trajectory plausibility evaluation",
         "safety_warning": SAFETY_WARNING,
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "verdict": "reject" if failures else "pass_no_arm_only",
+        "verdict": (
+            "reject" if failures else "review_no_arm_only" if warnings else "pass_no_arm_only"
+        ),
         "scenario": args.scenario,
         "server": args.server,
         "policy": args.policy,
@@ -580,6 +748,7 @@ def probe(args: argparse.Namespace) -> dict[str, Any]:
         "warm_p95_ms": float(np.percentile(warm, 95)),
         "metrics": metrics,
         "rejection_failures": failures,
+        "quality_warnings": warnings,
         "chunks": array.tolist(),
     }
 
@@ -592,19 +761,34 @@ def main() -> None:
     contract_parser.add_argument("--dataset-root", action="append", type=Path, required=True)
     contract_parser.add_argument("--postprocessor", type=Path, required=True)
     contract_parser.add_argument("--horizon", type=int, default=16)
+    contract_parser.add_argument("--fps", type=float, default=30.0)
+    contract_parser.add_argument("--target-filter-tau-s", type=float, default=0.3)
+    contract_parser.add_argument("--max-joint-velocity-rad-s", type=float, default=0.25)
+    contract_parser.add_argument(
+        "--controller-velocity-limit-rad-s", type=float, default=0.75
+    )
+    contract_parser.add_argument(
+        "--actions-per-chunk",
+        type=int,
+        required=True,
+        help="actions the rollout client executes from each served chunk",
+    )
     contract_parser.add_argument("--json-out", type=Path, required=True)
 
-    fixture_parser = subparsers.add_parser("fixture", help="freeze genuine held-out inputs")
+    fixture_parser = subparsers.add_parser("fixture", help="freeze genuine inputs")
     fixture_parser.add_argument("--dataset-root", type=Path, required=True)
     fixture_parser.add_argument("--repo-id", required=True)
     fixture_parser.add_argument("--indices", required=True, help="comma-separated dataset indices")
     fixture_parser.add_argument("--depth-encoding")
     fixture_parser.add_argument("--fps", type=int, default=30)
     fixture_parser.add_argument("--horizon", type=int, default=16)
+    fixture_parser.add_argument("--tolerance-s", type=float, default=1e-4)
     fixture_parser.add_argument("--npz-out", type=Path, required=True)
 
     probe_parser = subparsers.add_parser("probe", help="query a policy server without a robot")
-    probe_parser.add_argument("scenario", choices=("act_rgb", "groot_rgb", "groot_rgbd"))
+    probe_parser.add_argument(
+        "scenario", choices=("act_rgb", "act_rgbd14_masked", "groot_rgb", "groot_rgbd")
+    )
     probe_parser.add_argument("--server", default=os.environ.get("TATBOT_POLICY_SERVER", ""),
                               help="host:port of the policy server (or TATBOT_POLICY_SERVER)")
     probe_parser.add_argument("--policy", required=True)
@@ -618,7 +802,16 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "contract":
         demos = read_demonstrations(args.dataset_root, args.horizon)
-        result = build_contract(demos, args.postprocessor, args.dataset_root)
+        result = build_contract(
+            demos,
+            args.postprocessor,
+            args.dataset_root,
+            fps=args.fps,
+            target_filter_tau_s=args.target_filter_tau_s,
+            max_joint_velocity_rad_s=args.max_joint_velocity_rad_s,
+            controller_velocity_limit_rad_s=args.controller_velocity_limit_rad_s,
+            actions_per_chunk=args.actions_per_chunk,
+        )
     elif args.command == "fixture":
         result = extract_fixture(args)
     else:
@@ -628,8 +821,12 @@ def main() -> None:
     if output is not None:
         output.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))
-    if args.command == "probe" and result["verdict"] == "reject":
-        raise SystemExit(1)
+    if args.command == "probe":
+        if result["verdict"] == "reject":
+            raise SystemExit(1)
+        if result["verdict"] == "review_no_arm_only":
+            # Keep shell automation from promoting a review result as a pass.
+            raise SystemExit(3)
 
 
 if __name__ == "__main__":

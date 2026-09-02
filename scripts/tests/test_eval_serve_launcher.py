@@ -232,6 +232,70 @@ def test_act_server_requires_checkpoint_bound_processor_state(tmp_path: Path) ->
     assert "lacks processor artifact hashes" in result.stderr
 
 
+def test_server_rejects_schema2_execution_model_with_mismatched_fps(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    (checkpoint / "config.json").write_text(
+        json.dumps(
+            {
+                "type": "act",
+                "n_action_steps": 16,
+                "output_features": {"action": {"shape": [7]}},
+            }
+        )
+    )
+    postprocessor = checkpoint / "policy_postprocessor.json"
+    postprocessor.write_text("{}")
+    contract = tmp_path / "contract.json"
+    contract.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "kind": "demonstration-derived no-arm trajectory plausibility contract",
+                "horizon": 16,
+                "joints": 7,
+                "postprocessor_sha256": hashlib.sha256(postprocessor.read_bytes()).hexdigest(),
+                "postprocessor_artifacts_sha256": {
+                    "policy_postprocessor.json": hashlib.sha256(
+                        postprocessor.read_bytes()
+                    ).hexdigest()
+                },
+                "quality_thresholds": {},
+                "execution_model": {
+                    "fps": 20,
+                    "target_filter_tau_s": 0.3,
+                    "max_joint_velocity_rad_s": 0.25,
+                    "controller_velocity_limit_rad_s": 0.75,
+                    "actions_per_chunk": 16,
+                    "aggregate_fn_name": "weighted_average",
+                },
+            }
+        )
+    )
+    env_root = tmp_path / "env"
+    (env_root / ".venv" / "bin").mkdir(parents=True)
+    os.symlink(sys.executable, env_root / ".venv" / "bin" / "python")
+
+    result = subprocess.run(
+        [
+            str(REPO / "scripts" / "eval" / "serve.sh"),
+            "--policy",
+            str(checkpoint),
+            "--plausibility-contract",
+            str(contract),
+            "--env-root",
+            str(env_root),
+        ],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "execution fps 20 != server fps 30" in result.stderr
+
+
 def test_policy_server_reconnect_patch_is_exact_and_fail_closed() -> None:
     namespace = runpy.run_path(str(REPO / "scripts" / "il_patch_lerobot.py"))
     replacement = next(
@@ -431,7 +495,7 @@ def test_chunk_guard_is_before_action_serialization_and_opt_in() -> None:
         new
         for module, _old, new in namespace["PATCHES"]
         if module == "lerobot.async_inference.policy_server"
-        and "Tatbot chunk passed demonstration plausibility contract" in new
+        and "Tatbot chunk accepted by plausibility contract" in new
     )
 
     assert 'environ.get(\n            "TATBOT_PLAUSIBILITY_CONTRACT"' in replacement

@@ -27,4 +27,4 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["tatbot_sim"]
+include = ["tatbot_sim*"]

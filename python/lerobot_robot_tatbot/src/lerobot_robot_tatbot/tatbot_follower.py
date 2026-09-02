@@ -978,6 +978,9 @@ class TatbotFollower(WidowXAIFollower):
                 self._leave_estop_hold(present)
         self._ensure_staged()
         observation = super().get_observation()
+        if getattr(self.config, "mask_external_effort", False):
+            for key in [name for name in observation if name.endswith(".ext_eff")]:
+                observation[key] = 0.0
         if getattr(self.config, "depth_policy_encoding", ""):
             for key in [name for name in observation if name.endswith("_depth")]:
                 observation[key] = encode_depth_mm(observation[key])

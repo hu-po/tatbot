@@ -44,9 +44,10 @@
 // jump-to-target, which together remove encoder/scheduling jitter at the cost
 // of ~tau of imperceptible lag.
 //
-// Every tick is appended to a binary flight-recorder log (timing stamps plus
-// full leader/follower state) for offline analysis of hiccups and tracking
-// quality — see analyze_log.py. Disable with --no-log.
+// Every tick is offered to a bounded, asynchronous binary flight-recorder log
+// (timing stamps plus full leader/follower state) for offline analysis of
+// hiccups and tracking quality — see analyze_log.py. A slow disk drops whole
+// records instead of blocking control. Disable with --no-log.
 //
 // Usage:
 //   wxai_teleop [leader_ip] [follower_ip] [leader_config.yaml] [follower_config.yaml]
@@ -54,6 +55,10 @@
 //               [--tau S] [--goal-time S]
 //               [--period-us U] [--log PATH] [--no-log]
 //               [--relative] [--align-rate R] [--align-confirm-deg D]
+//               [--square-probe-mm M] [--square-edge-s S]
+//               [--spiral-radius-mm M] [--spiral-turns N] [--spiral-duration-s S]
+//               [--spiral-ease-s S] [--spiral-carriage-ik]
+//               [--draw-dir DIR]
 //               [--no-rt] [--rt-priority P]
 //               [--telemetry-udp HOST:PORT] [--telemetry-fps HZ]
 //               [--estop DEV] [--no-estop]
@@ -82,19 +87,25 @@
 // the mushroom button — or losing its 100 Hz heartbeat — freezes both arms
 // in position mode. Twist-releasing the latch (or restoring the heartbeat)
 // re-reads both held poses and automatically resumes tracking with zero
-// initial step; neither arm goes limp. The default /dev/tatbot-estop device is
-// mandatory. --estop DEV selects another mandatory device; --no-estop is an
-// explicit hardware-free bench opt-out rejected by production launchers.
+// initial step in ordinary human teleop; a square probe is terminal and never
+// resumes scripted motion. Neither arm goes limp. The default
+// /dev/tatbot-estop device is mandatory. --estop DEV selects another mandatory
+// device; --no-estop is an explicit hardware-free bench opt-out rejected by
+// production launchers.
 
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
+#include <sys/resource.h>
+#include <sched.h>
 #include <termios.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -107,8 +118,10 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -116,7 +129,9 @@
 
 #include "libtrossen_arm/trossen_arm.hpp"
 #include "estop_monitor.hpp"
+#include "flight_recorder.hpp"
 #include "realtime.hpp"
+#include "square_probe.hpp"
 #include "telemetry_udp.hpp"
 
 namespace
@@ -150,6 +165,50 @@ constexpr int estop_fault = tatbot::estop::fault;
 std::atomic<int> g_estop{estop_disabled};
 
 enum class StopChoice { release, emergency, resume, estop };
+
+bool request_probe_landing()
+{
+  const char * raw_path = std::getenv("TATBOT_PROBE_LAND_SENTINEL");
+  if (!raw_path || !*raw_path) {return false;}
+  const std::filesystem::path path(raw_path);
+  if (path.parent_path() != "/tmp" ||
+    path.filename().string().rfind("tatbot-probe-land-", 0) != 0)
+  {
+    return false;
+  }
+  std::ofstream sentinel(path);
+  sentinel << "operator-release\n";
+  return static_cast<bool>(sentinel);
+}
+
+// Make a single key available immediately (no Enter) while preserving signal
+// generation, so Ctrl+C still follows the normal controlled-stop path. This is
+// enabled only after startup alignment has consumed any Enter confirmation.
+class SingleKeyInput
+{
+public:
+  explicit SingleKeyInput(bool enable)
+  {
+    if (!enable || !isatty(STDIN_FILENO)) {return;}
+    if (tcgetattr(STDIN_FILENO, &saved_) != 0) {return;}
+    termios one_key = saved_;
+    one_key.c_lflag &= static_cast<tcflag_t>(~(ICANON | ECHO));
+    one_key.c_cc[VMIN] = 0;
+    one_key.c_cc[VTIME] = 0;
+    active_ = tcsetattr(STDIN_FILENO, TCSANOW, &one_key) == 0;
+  }
+
+  ~SingleKeyInput()
+  {
+    if (active_) {tcsetattr(STDIN_FILENO, TCSANOW, &saved_);}
+  }
+
+  bool active() const {return active_;}
+
+private:
+  termios saved_{};
+  bool active_ = false;
+};
 
 // Wait at the controlled-stop prompt: Enter releases to idle, a line
 // containing 'r' resumes teleoperation, a further stop signal is an
@@ -223,6 +282,32 @@ constexpr double CARRIAGE_CONTACT_DEFLECT_M = 0.002;
 constexpr int CONTACT_CAP_DEBOUNCE_TICKS = 40;   // consecutive ticks (100 ms at 400 Hz)
 constexpr double CARRIAGE_TRIP_GOAL_S = 0.15;    // s, retract goal time on a trip
 constexpr double CARRIAGE_RESUME_GOAL_S = 0.5;   // s, return-to-rest goal time on resume
+
+// One-shot Cartesian capability probe. The operator still hand-guides to the
+// start point, but autonomous motion cannot begin until both arms have been
+// nearly still briefly and the operator taps SPACE. Readiness latches so the
+// act of reaching for the keyboard does not invalidate a good hold; only
+// actual follower motion above the normal contact-assessment speed resets it.
+constexpr double SQUARE_SETTLED_RAD_S = 0.10;
+constexpr double SQUARE_SETTLED_S = 0.20;
+constexpr double SQUARE_READY_RESET_RAD_S = CONTACT_STILL_RAD_S;
+constexpr double SQUARE_VELOCITY_ABORT_RAD_S = 2.5;
+constexpr double SQUARE_OVERFORCE_ABORT_NM = 9.0;
+constexpr double SQUARE_OVERFORCE_WINDOW_S = 0.5;
+constexpr double SQUARE_OVERFORCE_FRACTION = 0.5;
+constexpr size_t SQUARE_OVERFORCE_MIN_SAMPLES = 8;
+constexpr double SQUARE_MODEL_FK_TOLERANCE_M = 0.00025;
+constexpr double SQUARE_COMMAND_LEAD_ABORT_RAD = 0.05;
+constexpr double CARRIAGE_IK_COMMAND_LEAD_ABORT_M = 0.0005;
+constexpr double CARRIAGE_IK_PREFLIGHT_ENDPOINT_TOLERANCE_M = 0.00015;
+constexpr double SQUARE_ENDPOINT_TOLERANCE_M = 0.00025;
+constexpr double SQUARE_ENDPOINT_SETTLE_MAX_S = 3.0;
+// Draw orbit: a capture is requested only after the measured arm has been
+// this still for this long (bounded), so the depth frames are not taken on
+// the settling bounce.
+constexpr double DRAW_CAPTURE_SETTLED_RAD_S = 0.05;  // the measured floor at rest is ~0.007 rad/s; 0.02 never latched
+constexpr double DRAW_CAPTURE_SETTLED_S = 0.3;
+constexpr double DRAW_CAPTURE_SETTLE_MAX_S = 3.0;
 
 // Anti-stiction terms (--damping / --assist). Command-sign convention, proven
 // on hardware twice (828a6e8's DAMPING_SIGN test; the -ff_gain reflection):
@@ -391,6 +476,123 @@ void resolve_tool(const std::string & tool_id, bool uncalibrated = false)
 
 }  // namespace tool_registry
 
+// --- surface-first draw session (docs/draw.md) ------------------------------
+// The executor writes the arm's pose for the Python stages and runs those
+// stages as subprocesses while both arms hold. No JSON library: the two
+// records are flat and written by hand; the samples files come back as CSV.
+
+bool write_draw_pose(
+  const std::filesystem::path & path,
+  const tatbot::square::JointPose & joints,
+  double carriage_m,
+  const std::array<double, 3> & tip,
+  const tatbot::square::Rotation & rotation,
+  const std::string & tool,
+  double period_s)
+{
+  std::ofstream out(path);
+  if (!out) {return false;}
+  out << std::setprecision(12);
+  auto array = [&out](const double * values, size_t count) {
+      out << '[';
+      for (size_t i = 0; i < count; ++i) {out << (i ? ", " : "") << values[i];}
+      out << ']';
+    };
+  const double t_wall = std::chrono::duration<double>(
+    std::chrono::system_clock::now().time_since_epoch()).count();
+  out << "{\"schema\": \"tatbot.draw-pose/1\", \"frame\": \"right/base_link\", \"period_s\": "
+      << period_s << ", \"joints\": ";
+  array(joints.data(), joints.size());
+  out << ", \"carriage_m\": " << carriage_m << ", \"tip\": ";
+  array(tip.data(), tip.size());
+  out << ", \"rotation\": [";
+  for (size_t row = 0; row < 3; ++row) {
+    if (row) {out << ", ";}
+    array(rotation[row].data(), 3);
+  }
+  out << "], \"tool\": \"" << tool << "\", \"t_wall\": " << t_wall << "}\n";
+  return static_cast<bool>(out);
+}
+
+// Run `draw_stage.py <stage> <dir>` to completion. Returns the stage's exit
+// code; 124 on timeout, 125 when a stop signal or the e-stop interrupted it,
+// 126 when it could not be started. The child inherits the terminal so its
+// report is visible; the arms are holding in position mode throughout.
+int run_draw_stage(const std::string & draw_dir, const std::string & stage, double timeout_s)
+{
+  const char * python = std::getenv("TATBOT_DRAW_PYTHON");
+  if (!python || !*python) {return 126;}
+  const auto repo = tool_registry::repo_root();
+  if (repo.empty()) {return 126;}
+  const std::string script = (repo / "scripts" / "draw_stage.py").string();
+  const pid_t pid = fork();
+  if (pid < 0) {return 126;}
+  if (pid == 0) {
+    // The child inherits this process's SCHED_FIFO priority and CPU pinning.
+    // Left that way, NumPy's threads run at real-time priority on the same
+    // cores as the SDK daemon that keeps each controller's session alive:
+    // the controllers' UDP state streams were lost during an 8 s map stage,
+    // the arms froze holding, and both TCP links broke (2026-09-01, runs
+    // 20260901T234248Z and 20260902T000845Z). Back to a normal, niced,
+    // unpinned process before exec.
+    sched_param normal{};
+    normal.sched_priority = 0;
+    sched_setscheduler(0, SCHED_OTHER, &normal);
+    setpriority(PRIO_PROCESS, 0, 10);
+    cpu_set_t all_cpus;
+    CPU_ZERO(&all_cpus);
+    const long online = sysconf(_SC_NPROCESSORS_ONLN);
+    for (long cpu = 0; cpu < online && cpu < CPU_SETSIZE; ++cpu) {CPU_SET(cpu, &all_cpus);}
+    sched_setaffinity(0, sizeof(all_cpus), &all_cpus);
+    setenv("OMP_NUM_THREADS", "2", 0);
+    setenv("OPENBLAS_NUM_THREADS", "2", 0);
+    setenv("MKL_NUM_THREADS", "2", 0);
+    execl(python, python, script.c_str(), stage.c_str(), draw_dir.c_str(), static_cast<char *>(nullptr));
+    _exit(126);
+  }
+  const auto deadline = std::chrono::steady_clock::now() +
+    std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+    std::chrono::duration<double>(timeout_s));
+  const int signals_at_start = g_stop_signals.load();
+  bool killed = false;
+  int reason = 0;
+  while (true) {
+    int status = 0;
+    const pid_t done = waitpid(pid, &status, WNOHANG);
+    if (done == pid) {
+      if (killed) {return reason;}
+      return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+    }
+    if (done < 0) {return 126;}
+    if (!killed) {
+      if (g_stop_signals.load() != signals_at_start || g_estop.load() > estop_ok) {
+        kill(pid, SIGTERM);
+        killed = true;
+        reason = 125;
+      } else if (std::chrono::steady_clock::now() > deadline) {
+        kill(pid, SIGTERM);
+        killed = true;
+        reason = 124;
+      }
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+}
+
+bool write_capture_request(
+  const std::filesystem::path & path, size_t k, const std::vector<double> & follower_pos)
+{
+  std::ofstream out(path);
+  if (!out) {return false;}
+  out << std::setprecision(12);
+  const double t_wall = std::chrono::duration<double>(
+    std::chrono::system_clock::now().time_since_epoch()).count();
+  out << "{\"schema\": \"tatbot.draw-capture-request/1\", \"k\": " << k << ", \"joints\": [";
+  for (size_t i = 0; i + 1 < follower_pos.size(); ++i) {out << (i ? ", " : "") << follower_pos[i];}
+  out << "], \"carriage_m\": " << follower_pos.back() << ", \"t_wall\": " << t_wall << "}\n";
+  return static_cast<bool>(out);
+}
+
 // Arm addresses come from the hardware profile (plan Phase 2): the tatbot
 // CLI and launchers export TATBOT_LEADER_IP / TATBOT_FOLLOWER_IP from the
 // resolved profile; positionals still override. No baked-in addresses.
@@ -428,6 +630,17 @@ struct Options
   bool absolute = true;        // --relative: keep the old delta mapping
   double align_rate = 0.35;    // peak joint speed of the startup alignment, rad/s
   double align_confirm_deg = 15.0;  // ask before an alignment move larger than this
+  bool square_probe = false;
+  double square_probe_m = 0.0;  // one-shot Cartesian square after SPACE handoff
+  double square_edge_s = 12.0;  // 0.5 mm/s for the default 6 mm edge
+  bool spiral_probe = false;
+  double spiral_radius_m = 0.006;
+  double spiral_turns = 3.0;
+  double spiral_duration_s = 180.0;
+  double spiral_ease_s = 2.0;
+  bool spiral_carriage_ik = false;
+  std::string draw_dir;        // --draw-dir: surface-first draw session (docs/draw.md)
+  bool draw_mode = false;
   bool realtime = true;        // --no-rt: leave scheduling to the kernel
   int rt_priority = 80;        // SCHED_FIFO priority for the control loop
   std::string log_path;        // empty = auto under teleop_logs/
@@ -477,6 +690,20 @@ Options parse_args(int argc, char ** argv)
       opt.align_rate = std::clamp(std::stod(value()), 0.01, 1.5);
     } else
     if (arg == "--align-confirm-deg") {opt.align_confirm_deg = std::stod(value());} else
+    if (arg == "--square-probe-mm") {
+      opt.square_probe = true;
+      opt.square_probe_m = std::stod(value()) * 1e-3;
+    } else
+    if (arg == "--square-edge-s") {opt.square_edge_s = std::stod(value());} else
+    if (arg == "--spiral-radius-mm") {
+      opt.spiral_probe = true;
+      opt.spiral_radius_m = std::stod(value()) * 1e-3;
+    } else
+    if (arg == "--spiral-turns") {opt.spiral_turns = std::stod(value());} else
+    if (arg == "--spiral-duration-s") {opt.spiral_duration_s = std::stod(value());} else
+    if (arg == "--spiral-ease-s") {opt.spiral_ease_s = std::stod(value());} else
+    if (arg == "--spiral-carriage-ik") {opt.spiral_carriage_ik = true;} else
+    if (arg == "--draw-dir") {opt.draw_dir = value(); opt.draw_mode = true;} else
     if (arg == "--no-rt") {opt.realtime = false;} else
     if (arg == "--rt-priority") {
       opt.rt_priority = static_cast<int>(std::clamp(std::stod(value()), 1.0, 99.0));
@@ -495,6 +722,121 @@ Options parse_args(int argc, char ** argv)
   if (positional.size() > 1) {opt.follower_ip = positional[1];}
   if (positional.size() > 2) {opt.leader_config = positional[2];}
   if (positional.size() > 3) {opt.follower_config = positional[3];}
+
+  if (opt.period_us <= 0) {
+    throw std::runtime_error("--period-us must be positive");
+  }
+  if (opt.square_probe && (!std::isfinite(opt.square_probe_m) ||
+    opt.square_probe_m < 0.001 || opt.square_probe_m > 0.010))
+  {
+    throw std::runtime_error("--square-probe-mm must be between 1 and 10 mm");
+  }
+  if (opt.square_probe &&
+    (!std::isfinite(opt.square_edge_s) || opt.square_edge_s < 2.0 || opt.square_edge_s > 30.0))
+  {
+    throw std::runtime_error("--square-edge-s must be between 2 and 30 seconds");
+  }
+  if (opt.square_probe && !opt.absolute) {
+    throw std::runtime_error("the square probe requires absolute leader/follower mapping");
+  }
+  if (opt.square_probe && opt.spiral_probe) {
+    throw std::runtime_error("square and spiral probes are mutually exclusive");
+  }
+  if (opt.spiral_probe && (!std::isfinite(opt.spiral_radius_m) ||
+    opt.spiral_radius_m < 0.002 || opt.spiral_radius_m > 0.012))
+  {
+    throw std::runtime_error("--spiral-radius-mm must be between 2 and 12 mm");
+  }
+  if (opt.spiral_probe && (!std::isfinite(opt.spiral_turns) ||
+    opt.spiral_turns < 1.0 || opt.spiral_turns > 6.0))
+  {
+    throw std::runtime_error("--spiral-turns must be between 1 and 6");
+  }
+  if (opt.spiral_probe && (!std::isfinite(opt.spiral_duration_s) ||
+    opt.spiral_duration_s < 30.0 || opt.spiral_duration_s > 600.0))
+  {
+    throw std::runtime_error("--spiral-duration-s must be between 30 and 600 seconds");
+  }
+  if (opt.spiral_probe && (!std::isfinite(opt.spiral_ease_s) ||
+    opt.spiral_ease_s < 0.5 || opt.spiral_ease_s > 10.0))
+  {
+    throw std::runtime_error("--spiral-ease-s must be between 0.5 and 10 seconds");
+  }
+  if (opt.spiral_probe && !opt.absolute) {
+    throw std::runtime_error("the spiral probe requires absolute leader/follower mapping");
+  }
+  if (opt.spiral_carriage_ik && !opt.spiral_probe) {
+    throw std::runtime_error("--spiral-carriage-ik is valid only with the spiral probe");
+  }
+  if (opt.spiral_carriage_ik && opt.ee_tool != "lutin-ballpoint-dot") {
+    throw std::runtime_error(
+            "carriage IK is qualified only for --ee-tool lutin-ballpoint-dot");
+  }
+  if (opt.spiral_carriage_ik) {
+    const char * armed = std::getenv("TATBOT_CARRIAGE_IK_ARMED");
+    if (!armed || std::string(armed) != "1") {
+      throw std::runtime_error(
+              "carriage IK was not armed by scripts/teleop_spiral.sh; "
+              "use `tatbot --ee-tool lutin-ballpoint-dot teleop spiral --carriage-ik "
+              "--nonce <fresh-literal>`");
+    }
+  }
+  if (opt.draw_mode) {
+    // Surface-first draw session (docs/draw.md): the wrapper arms it, the
+    // seven-DOF ballpoint tip model is the only executor it has, and the
+    // Python stages it shells out to are named by the wrapper too.
+    if (opt.square_probe || opt.spiral_probe) {
+      throw std::runtime_error("--draw-dir is exclusive with the square and spiral probes");
+    }
+    if (!opt.absolute) {
+      throw std::runtime_error("the draw session requires absolute leader/follower mapping");
+    }
+    if (opt.ee_tool != "lutin-ballpoint-dot") {
+      throw std::runtime_error(
+              "the draw session is qualified only for --ee-tool lutin-ballpoint-dot (its tip model)");
+    }
+    const char * armed = std::getenv("TATBOT_DRAW_ARMED");
+    const char * carriage_armed = std::getenv("TATBOT_CARRIAGE_IK_ARMED");
+    if (!armed || std::string(armed) != "1" || !carriage_armed || std::string(carriage_armed) != "1") {
+      throw std::runtime_error(
+              "the draw session was not armed by scripts/draw_run.sh; "
+              "use `tatbot --ee-tool lutin-ballpoint-dot draw run --nonce <fresh-literal>`");
+    }
+    const char * python = std::getenv("TATBOT_DRAW_PYTHON");
+    if (!python || !*python || !std::filesystem::exists(python)) {
+      throw std::runtime_error("TATBOT_DRAW_PYTHON must name the interpreter for scripts/draw_stage.py");
+    }
+    if (!std::filesystem::is_directory(opt.draw_dir) ||
+      !std::filesystem::is_directory(std::filesystem::path(opt.draw_dir) / "capture"))
+    {
+      throw std::runtime_error("--draw-dir must be the wrapper's draw directory with its capture/ subdir");
+    }
+    if (!isatty(STDIN_FILENO)) {
+      throw std::runtime_error("the draw session needs an interactive terminal for the SPACE triggers");
+    }
+  }
+  if (opt.square_probe) {
+    const char * armed = std::getenv("TATBOT_SQUARE_ARMED");
+    if (!armed || std::string(armed) != "1") {
+      throw std::runtime_error(
+              "Cartesian square mode was not armed by scripts/teleop_square.sh; "
+              "use `tatbot --ee-tool <id> teleop square --nonce <fresh-literal>`");
+    }
+    if (!isatty(STDIN_FILENO)) {
+      throw std::runtime_error("Cartesian square mode needs an interactive terminal for the SPACE trigger");
+    }
+  }
+  if (opt.spiral_probe) {
+    const char * armed = std::getenv("TATBOT_SPIRAL_ARMED");
+    if (!armed || std::string(armed) != "1") {
+      throw std::runtime_error(
+              "Cartesian spiral mode was not armed by scripts/teleop_spiral.sh; "
+              "use `tatbot --ee-tool <id> teleop spiral --nonce <fresh-literal>`");
+    }
+    if (!isatty(STDIN_FILENO)) {
+      throw std::runtime_error("Cartesian spiral mode needs an interactive terminal for the SPACE trigger");
+    }
+  }
 
   // Fail before touching an arm. The tool in the mount decides tip geometry,
   // prompt and ink downstream, and the previous tool's identity applied to
@@ -704,8 +1046,14 @@ public:
         << static_cast<int>(
       100.0 * static_cast<double>(session_overruns_) /
       static_cast<double>(session_ticks_) + 0.5)
-        << "%), worst tick " << session_worst_busy_ * 1e3 << " ms";
+        << "%), worst tick " << session_worst_busy_ * 1e3 << " ms, skipped "
+        << session_skipped_deadlines_ << " catch-up deadlines";
     return out.str();
+  }
+
+  void note_skipped_deadlines(uint64_t count)
+  {
+    session_skipped_deadlines_ += count;
   }
 
 private:
@@ -721,6 +1069,7 @@ private:
   size_t session_ticks_ = 0;
   size_t session_overruns_ = 0;
   double session_worst_busy_ = 0.0;
+  uint64_t session_skipped_deadlines_ = 0;
 };
 
 // Describe the alignment move and, when it is large enough to be startling,
@@ -780,8 +1129,9 @@ struct LogHeader
 };
 static_assert(sizeof(LogHeader) == 64);
 
-// Flight logs live outside the repo tree, on local disk (writes in the
-// 400 Hz loop must never block on a network filesystem).
+// Flight logs live outside the repo tree, on local disk. Records cross a
+// bounded nonblocking pipe to a normal-priority writer; the 400 Hz loop never
+// performs filesystem I/O.
 std::string default_log_path()
 {
   const auto now = std::chrono::system_clock::now();
@@ -835,11 +1185,13 @@ int run(int argc, char ** argv)
       std::cout << "Control loop scheduling: SCHED_FIFO priority "
                 << opt.rt_priority << std::endl;
     } else {
-      std::cerr << "WARNING: no real-time scheduling (" << setup.fifo_error
-                << "). The loop will still run, but a busy machine can make the"
-                   " follower shake.\n"
-                << "         Fix: install config/limits/99-tatbot-realtime.conf"
-                   " and log in again, or run under sudo -E." << std::endl;
+      std::cerr << "ERROR: no real-time scheduling (" << setup.fifo_error
+                << "). Refusing before either arm driver is constructed: a busy"
+                   " machine can make the follower shake.\n"
+                << "       Fix: install config/limits/99-tatbot-realtime.conf"
+                   " and log in again. --no-rt is only an explicit bench opt-out."
+                << std::endl;
+      return 3;
     }
   }
 
@@ -924,14 +1276,11 @@ int run(int argc, char ** argv)
   alignment.restart(leader_start, follower_start);
 
   // Flight recorder.
-  std::ofstream log_file;
+  std::unique_ptr<tatbot::flight::Recorder> log_file;
   if (opt.log_enabled) {
     std::string path = opt.log_path.empty() ? default_log_path() : opt.log_path;
     std::filesystem::create_directories(std::filesystem::path(path).parent_path());
-    log_file.open(path, std::ios::binary);
-    if (!log_file) {
-      throw std::runtime_error("cannot open log file: " + path);
-    }
+    log_file = std::make_unique<tatbot::flight::Recorder>(path);
     std::cout << "Recording to " << path << std::endl;
   }
 
@@ -950,13 +1299,25 @@ int run(int argc, char ** argv)
   const double dt = static_cast<double>(opt.period_us) * 1e-6;
   LoopHealth health(dt);
   bool emergency = false;
+  bool handoff_holding = false;  // release in a probe/draw session: exit still holding
+  const bool square_enabled = opt.square_probe || opt.spiral_probe || opt.draw_mode;
+  const bool spiral_enabled = opt.spiral_probe;
+  const bool draw_enabled = opt.draw_mode;
+  // Seven-DOF ballpoint tip model: the spiral A/B opt-in, and every draw session.
+  const bool carriage_ik = opt.spiral_carriage_ik || draw_enabled;
+  const std::string probe_name = draw_enabled ? "draw" : (spiral_enabled ? "spiral" : "square");
+  const size_t probe_segment_count = (spiral_enabled || draw_enabled) ? 1 : 4;
+  bool square_finished = false;
+  double carriage_preflight_worst_endpoint_error_m = 0.0;
   try {  // any driver throw below is caught to attempt a hold before idling
 
   // Leader: external_effort mode on all joints — zero effort is pure gravity
   // compensation; the follower's external efforts (contacts) are reflected
   // back scaled by -ff_gain. Follower: position mode on EVERY joint, the tool
   // carriage included — the carriage is a position axis owned by the safety
-  // layer, and it is seated at the rest stop before tracking begins.
+  // layer. Ordinary runs seat it at the rest stop before tracking begins; the
+  // explicitly gated carriage-IK A/B run qualifies a small off-paper reversal
+  // and leaves it at a 2 mm bias before the operator approaches the paper.
   std::vector<double> leader_efforts(num_joints, 0.0);
   leader.set_all_modes(trossen_arm::Mode::external_effort);
   leader.set_all_external_efforts(leader_efforts, 0.0, false);
@@ -971,11 +1332,45 @@ int run(int argc, char ** argv)
       follower.set_joint_position(
         static_cast<uint8_t>(gripper), metres, goal_time_s, false);
     };
-  // Seat the carriage at rest (blocking, 1 s) so the pen starts from a known
-  // extension whatever the previous session left it at, then take the
-  // effort's rest baseline: the contact cap measures departure from it.
+  // Seat the carriage at rest so every session starts from a known extension.
+  // The carriage-IK candidate then performs a small, slow, off-paper reversal
+  // witness before hand-guiding is enabled. Each endpoint must be measured
+  // within 0.15 mm; a failed or stuck carriage refuses the paper trial.
   follower.set_joint_position(static_cast<uint8_t>(gripper), CARRIAGE_REST_M, 1.0, true);
   carriage_target = CARRIAGE_REST_M;
+  if (carriage_ik) {
+    std::cout << "CARRIAGE-IK OFF-PAPER PREFLIGHT: keep the pen clear. "
+                 "Testing 2.0 -> 1.5 -> 2.5 -> 2.0 mm before hand-guiding."
+              << std::endl;
+    const std::array<std::pair<double, double>, 4> carriage_witness{{
+      {tatbot::square::CARRIAGE_IK_BIAS_M, 2.0},
+      {0.0015, 1.0},
+      {0.0025, 1.0},
+      {tatbot::square::CARRIAGE_IK_BIAS_M, 1.0}}};
+    for (const auto & waypoint : carriage_witness) {
+      follower.set_joint_position(
+        static_cast<uint8_t>(gripper), waypoint.first, waypoint.second, true);
+      const double measured_m = follower.get_all_positions().at(gripper);
+      const double error_m = std::fabs(measured_m - waypoint.first);
+      carriage_preflight_worst_endpoint_error_m = std::max(
+        carriage_preflight_worst_endpoint_error_m, error_m);
+      if (!std::isfinite(measured_m) ||
+        error_m > CARRIAGE_IK_PREFLIGHT_ENDPOINT_TOLERANCE_M)
+      {
+        throw std::runtime_error(
+                "carriage-IK off-paper preflight endpoint error is " +
+                std::to_string(error_m * 1e3) + " mm (limit " +
+                std::to_string(CARRIAGE_IK_PREFLIGHT_ENDPOINT_TOLERANCE_M * 1e3) +
+                " mm); refusing hand-guiding and paper motion");
+      }
+    }
+    carriage_target = tatbot::square::CARRIAGE_IK_BIAS_M;
+    std::cout << "CARRIAGE-IK OFF-PAPER PREFLIGHT PASS: worst endpoint error "
+              << carriage_preflight_worst_endpoint_error_m * 1e3
+              << " mm; carriage holding at "
+              << carriage_target * 1e3 << " mm. Hand-guide only after this line."
+              << std::endl;
+  }
   double contact_baseline = 0.0;
   {
     std::vector<double> samples;
@@ -991,13 +1386,62 @@ int run(int argc, char ** argv)
             << "Fitted tool: "
             << (opt.ee_tool.empty() ? "none (--no-tool)" : opt.ee_tool)
             << (opt.tool_uncalibrated ? " (uncalibrated: this session is its touch-off)" : "") << "\n"
-            << "Carriage: rest " << CARRIAGE_REST_M * 1e3 << " mm, contact cap "
+            << "Carriage: "
+            << (carriage_ik ? "carriage-IK bias " : "rest ")
+            << carriage_target * 1e3 << " mm, contact cap "
             << opt.contact_cap_n << " N -> retract " << opt.carriage_retract_m * 1e3
             << " mm on a trip" << std::endl;
   if (opt.damping > 0.0 || opt.assist > 0.0) {
     std::cout << "Anti-stiction: damping " << opt.damping
               << " Nm/(rad/s), assist " << opt.assist
               << " (deadband " << ASSIST_DEADBAND_NM << " Nm)" << std::endl;
+  }
+  if (opt.square_probe) {
+    std::cout << "\nCARTESIAN SQUARE PROBE (one shot):\n"
+              << "  1. Hand-guide the pen tip to light contact at the desired start point.\n"
+              << "  2. Hold briefly until READY is printed.\n"
+              << "  3. Tap SPACE once — no Enter.\n"
+              << "The follower will trace a base-X/Y square with a preflighted smooth "
+                 "joint-position trajectory; its first X and Y edges point toward the arm base: "
+              << opt.square_probe_m * 1e3 << " mm per edge over "
+              << opt.square_edge_s << " s per edge ("
+              << opt.square_probe_m * 1e3 / opt.square_edge_s << " mm/s), then retract the pen.\n"
+              << "Any E-stop, contact cap, measured-velocity or rolling-effort trip terminates the probe; "
+                 "it never resumes scripted motion."
+              << std::endl;
+  }
+  if (opt.spiral_probe) {
+    std::cout << "\nCARTESIAN EXPANDING-SPIRAL PROBE (one shot):\n"
+              << "  1. Hand-guide the pen tip to light contact at the desired spiral CENTER.\n"
+              << "  2. Leave at least " << opt.spiral_radius_m * 1e3
+              << " mm of clear paper in every base-X/Y direction.\n"
+              << "  3. Hold briefly until READY is printed.\n"
+              << "  4. Tap SPACE once — no Enter.\n"
+              << "The follower will trace a continuous " << opt.spiral_turns
+              << "-turn Archimedean spiral to " << opt.spiral_radius_m * 1e3
+              << " mm radius over " << opt.spiral_duration_s
+              << " s at approximately constant arc-length speed, with "
+              << opt.spiral_ease_s << " s quintic speed eases at each end; trigger Z and "
+                 "orientation remain fixed"
+              << (carriage_ik ?
+                "; the arm and carriage coordinate through the measured ballpoint-tip model "
+                "inside a 0.5..3.5 mm carriage envelope" : "")
+              << ", then the pen retracts.\n"
+              << "Any E-stop, contact cap, measured-velocity or rolling-effort trip terminates the probe; "
+                 "it never resumes scripted motion."
+              << std::endl;
+  }
+  if (draw_enabled) {
+    std::cout << "\nSURFACE-FIRST DRAW SESSION (docs/draw.md), dir " << opt.draw_dir << ":\n"
+              << "  1. Hand-guide the pen tip to LIGHT contact at the design centre.\n"
+              << "  2. Hold briefly until READY is printed, then tap SPACE once.\n"
+              << "     The follower lifts to standoff and orbits the wrist cameras over the\n"
+              << "     patch (autonomous, preflighted), holding still at each capture, then\n"
+              << "     holds while the map and the path are compiled and shadowed in Rerun.\n"
+              << "  3. Inspect the shadow. When READY prints again, tap SPACE once to draw.\n"
+              << "Any refusal, timeout, E-stop, contact cap, measured-velocity or rolling-effort\n"
+              << "trip retracts the pen and ends scripted motion for this process."
+              << std::endl;
   }
   // The operator may move the leader while the announcement waits for Enter —
   // orienting it to the follower's rolled idle is the natural thing to do —
@@ -1052,7 +1496,7 @@ int run(int argc, char ** argv)
   // every flight-log sample earlier than camera observations by that duration.
   const int64_t wall_start_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
     std::chrono::system_clock::now().time_since_epoch()).count();
-  if (log_file.is_open()) {
+  if (log_file) {
     LogHeader header{};
     std::memcpy(header.magic, "WXTLOG1", 8);
     header.num_joints = num_joints;
@@ -1062,16 +1506,39 @@ int run(int argc, char ** argv)
     header.ff_gain = opt.ff_gain;
     header.abs_gripper = 1;  // the carriage channel is absolute (safety-owned, never mirrored)
     header.wall_start_ns = wall_start_ns;
-    log_file.write(reinterpret_cast<const char *>(&header), sizeof(header));
+    if (!log_file->write_header(&header, sizeof(header))) {
+      throw std::runtime_error("cannot queue the flight-log header");
+    }
   }
   auto since_start = [&t0]() {
       return std::chrono::duration<double>(clock::now() - t0).count();
     };
 
   std::vector<double> record(5 + 6 * num_joints);
+  // Snapshot into fixed-capacity storage. The SDK getters return references to
+  // driver-owned vectors; assigning those references to a new vector allocated
+  // five times on every tick.
+  std::vector<double> leader_pos(num_joints);
+  std::vector<double> leader_vel(num_joints);
+  std::vector<double> follower_pos(num_joints);
+  std::vector<double> follower_vel(num_joints);
+  std::vector<double> follower_eff(num_joints);
+  auto snapshot = [num_joints](
+      const std::vector<double> & source, std::vector<double> & destination,
+      const char * label) {
+      if (source.size() != num_joints) {
+        throw std::runtime_error(
+                std::string(label) + " returned " + std::to_string(source.size()) +
+                " joints; expected " + std::to_string(num_joints));
+      }
+      std::copy(source.begin(), source.end(), destination.begin());
+    };
   std::vector<double> target(num_joints);
   std::vector<double> arm_target(num_joints - 1);
   std::vector<double> arm_vel(num_joints - 1);
+  std::vector<double> full_vel(num_joints);
+  std::vector<double> square_guard_vel(num_joints - 1);
+  std::vector<double> square_guard_eff(num_joints - 1);
   uint64_t telemetry_sequence = 0;
   int stop_baseline = g_stop_signals.load();
   // Contact-cap debounce: consecutive ticks with |carriage effort| over the
@@ -1083,6 +1550,59 @@ int run(int argc, char ** argv)
   bool stale_baseline = false;
   // Runaway latch for --damping/--assist; clears on each (re)start.
   bool antistiction_off = false;
+  bool square_started = false;
+  bool square_guard_trip = false;
+  size_t square_edge = 0;
+  size_t square_settled_ticks = 0;
+  bool square_ready = false;
+  tatbot::square::Pose square_start{};
+  std::array<tatbot::square::Pose, 4> square_targets{};
+  std::array<std::string, 4> square_directions{};
+  std::vector<tatbot::square::Pose> square_measured;
+  std::vector<double> square_errors_mm;
+  struct SpiralTraceSample
+  {
+    double elapsed_s = 0.0;
+    std::array<double, 3> reference{};
+    std::array<double, 3> measured{};
+    double target_carriage_m = 0.0;
+    double measured_carriage_m = 0.0;
+  };
+  std::vector<SpiralTraceSample> spiral_trace;
+  tatbot::square::JointPlan square_joint_plan;
+  tatbot::square::CarriageJointPlan carriage_joint_plan;
+  size_t square_plan_tick = 0;
+  bool square_settling = false;
+  double square_model_fk_error_mm = 0.0;
+  tatbot::square::MotionGuard square_guard(
+    SQUARE_VELOCITY_ABORT_RAD_S,
+    SQUARE_OVERFORCE_ABORT_NM,
+    SQUARE_OVERFORCE_WINDOW_S,
+    SQUARE_OVERFORCE_FRACTION,
+    SQUARE_OVERFORCE_MIN_SAMPLES);
+  clock::time_point square_settle_started_at{};
+  bool square_tracking_trip = false;
+  enum class DrawStage { none, orbit, ready_draw, drawing };
+  DrawStage draw_stage = DrawStage::none;
+  size_t draw_capture_index = 0;
+  bool draw_capture_pending = false;
+  size_t draw_capture_settled_ticks = 0;
+  size_t draw_capture_wait_ticks = 0;
+  clock::time_point draw_capture_deadline{};
+  tatbot::square::FullJointPose draw_hold_positions{};
+  std::vector<std::pair<std::string, std::string>> draw_report;
+  bool draw_refused = false;
+  std::string draw_refusal;
+  auto print_draw_report = [&]() {
+      if (draw_report.empty()) {return;}
+      std::cout << "  stage report:";
+      for (const auto & [key, value] : draw_report) {std::cout << ' ' << key << '=' << value;}
+      std::cout << std::endl;
+    };
+  SingleKeyInput square_key_input(square_enabled);
+  if (square_enabled && !square_key_input.active()) {
+    throw std::runtime_error("could not enable single-key SPACE input on this terminal");
+  }
   while (true) {  // session loop: teleop until a stop, optionally resume
   auto next_tick = clock::now();
   contact_trip = false;
@@ -1090,64 +1610,75 @@ int run(int argc, char ** argv)
   first_tick = true;
   stale_baseline = false;
   antistiction_off = false;
+  square_settled_ticks = 0;
+  square_ready = false;
   while (g_stop_signals.load() == stop_baseline &&
     g_estop.load(std::memory_order_relaxed) <= estop_ok)
   {
     const double t_sched = std::chrono::duration<double>(next_tick - t0).count();
     const double t_wake = since_start();
 
-    const std::vector<double> leader_pos = leader.get_all_positions();
-    const std::vector<double> leader_vel = leader.get_all_velocities();
-    if (opt.assist > 0.0) {leader_eff = leader.get_all_external_efforts();}
+    snapshot(leader.get_all_positions(), leader_pos, "leader positions");
+    snapshot(leader.get_all_velocities(), leader_vel, "leader velocities");
+    if (opt.assist > 0.0) {
+      snapshot(leader.get_all_external_efforts(), leader_eff, "leader efforts");
+    }
     const double t_leader_read = since_start();
 
-    const std::vector<double> follower_pos = follower.get_all_positions();
-    const std::vector<double> follower_vel = follower.get_all_velocities();
-    const std::vector<double> follower_eff = follower.get_all_external_efforts();
+    snapshot(follower.get_all_positions(), follower_pos, "follower positions");
+    snapshot(follower.get_all_velocities(), follower_vel, "follower velocities");
+    snapshot(follower.get_all_external_efforts(), follower_eff, "follower efforts");
     const double t_follower_read = since_start();
 
-    // Absolute mapping: the follower arm goes where the leader's joints are,
-    // plus whatever is left of the startup offset (zero once the ramp
-    // finishes). The leader's trigger is filtered too (it is logged) but the
-    // follower carriage is never derived from it.
-    const double residual = alignment.residual();
+    // Keep the teleop filter warm while the operator positions the start. Once
+    // the SPACE handoff switches to the native Cartesian controller, the
+    // follower is no longer sent any leader-derived target.
     for (size_t i = 0; i < num_joints; ++i) {
       pos_filt[i] += alpha * (leader_pos[i] - pos_filt[i]);
       vel_filt[i] += alpha * (leader_vel[i] - vel_filt[i]);
     }
-    for (size_t i = 0; i < gripper; ++i) {
-      target[i] = std::clamp(
-        pos_filt[i] + residual * alignment.offset(i),
-        pos_min[i],
-        pos_max[i]);
-    }
-    // Carriage: the target is whatever the safety layer last commanded.
-    target[gripper] = carriage_target;
-    // The first command after a (re)start must be the follower's own pose:
-    // smoothstep starts at residual 1, so target == follower_start unless the
-    // baselines are stale. A step here is exactly the fault of 2026-08-30;
-    // refuse it instead of sending it.
-    if (first_tick) {
-      first_tick = false;
-      double worst = 0.0; size_t worst_joint = 0;
+    if (!square_started) {
+      // Absolute mapping: the follower arm goes where the leader's joints are,
+      // plus whatever is left of the startup offset (zero once the ramp
+      // finishes). The carriage is never derived from the leader trigger.
+      const double residual = alignment.residual();
       for (size_t i = 0; i < gripper; ++i) {
-        const double step = std::abs(target[i] - follower_pos[i]);
-        if (step > worst) {worst = step; worst_joint = i;}
+        target[i] = std::clamp(
+          pos_filt[i] + residual * alignment.offset(i),
+          pos_min[i],
+          pos_max[i]);
       }
-      if (worst > FIRST_STEP_MAX_RAD) {
-        std::cout << "\nREFUSED first command: joint " << worst_joint << " would step "
-                  << worst * rad_to_deg << " deg at once (baselines stale — the leader "
-                  << "moved after alignment was confirmed). Holding; press r to re-align."
-                  << std::endl;
-        stale_baseline = true;
-        break;
+      target[gripper] = carriage_target;
+      // The first command after a (re)start must be the follower's own pose.
+      if (first_tick) {
+        first_tick = false;
+        double worst = 0.0; size_t worst_joint = 0;
+        for (size_t i = 0; i < gripper; ++i) {
+          const double step = std::abs(target[i] - follower_pos[i]);
+          if (step > worst) {worst = step; worst_joint = i;}
+        }
+        if (worst > FIRST_STEP_MAX_RAD) {
+          std::cout << "\nREFUSED first command: joint " << worst_joint << " would step "
+                    << worst * rad_to_deg << " deg at once (baselines stale — the leader "
+                    << "moved after alignment was confirmed). Holding; press r to re-align."
+                    << std::endl;
+          stale_baseline = true;
+          break;
+        }
       }
-    }
-    const bool was_aligning = alignment.aligning();
-    alignment.advance(dt);
-    if (was_aligning && !alignment.aligning()) {
-      std::cout << "Aligned: follower now tracks the leader's absolute joint "
-                   "angles." << std::endl;
+      const bool was_aligning = alignment.aligning();
+      alignment.advance(dt);
+      if (was_aligning && !alignment.aligning()) {
+        std::cout << "Aligned: follower now tracks the leader's absolute joint "
+                     "angles." << std::endl;
+      }
+    } else {
+      // The binary flight format only has a joint target field. Native
+      // Cartesian goals have no truthful joint-space target to put there, so
+      // log the measured joints; square_probe.csv records the actual Cartesian
+      // targets and endpoints.
+      target = follower_pos;
+      target[gripper] = carriage_target;
     }
     // Contact force: the carriage effort's departure from its rest baseline,
     // assessed only at drawing speeds (see CONTACT_STILL_RAD_S) and debounced,
@@ -1172,47 +1703,662 @@ int run(int argc, char ** argv)
       break;
     }
 
-    // Stream the arm target with the filtered leader velocity as feedforward
-    // and a short interpolation horizon so the controller blends between
-    // commands. The carriage is not in this stream: it is commanded only when
-    // its target changes (command_carriage).
-    std::copy(target.begin(), target.end() - 1, arm_target.begin());
-    std::copy(vel_filt.begin(), vel_filt.end() - 1, arm_vel.begin());
-    follower.set_arm_positions(arm_target, opt.goal_time, false, arm_vel);
-
-    if (opt.ff_gain > 0.0 || opt.damping > 0.0 || opt.assist > 0.0) {
-      if (!antistiction_off && (opt.damping > 0.0 || opt.assist > 0.0)) {
-        double worst = 0.0;
-        for (size_t i = 0; i < gripper; ++i) {
-          worst = std::max(worst, std::fabs(leader_vel[i]));
-        }
-        if (worst > ANTISTICTION_RUNAWAY_RAD_S) {
-          antistiction_off = true;
-          std::cout << "\nANTI-STICTION OFF: a leader joint hit " << worst
-                    << " rad/s — damping/assist disabled until resume." << std::endl;
-        }
+    if (square_enabled && !square_started) {
+      double leader_speed = 0.0;
+      double follower_speed = 0.0;
+      for (size_t i = 0; i < gripper; ++i) {
+        leader_speed = std::max(leader_speed, std::fabs(leader_vel[i]));
+        follower_speed = std::max(follower_speed, std::fabs(follower_vel[i]));
       }
-      for (size_t i = 0; i < num_joints; ++i) {
-        leader_efforts[i] = -opt.ff_gain * follower_eff[i];
-        if (antistiction_off || i >= ANTISTICTION_JOINTS) {continue;}
-        if (opt.damping > 0.0) {
-          // Raw velocity on purpose: vel_filt's 20 ms lag destabilizes (above).
-          leader_efforts[i] += std::clamp(
-            opt.damping * leader_vel[i], -DAMPING_CAP_NM, DAMPING_CAP_NM);
+      const bool settled = !alignment.aligning() &&
+        leader_speed <= SQUARE_SETTLED_RAD_S && follower_speed <= SQUARE_SETTLED_RAD_S;
+      if (!square_ready) {
+        square_settled_ticks = settled ? square_settled_ticks + 1 : 0;
+        if (square_settled_ticks * dt >= SQUARE_SETTLED_S) {
+          square_ready = true;
+          std::cout << "\nREADY: tap SPACE once to start the " << probe_name << " (no Enter)."
+                    << std::endl;
         }
-        if (opt.assist > 0.0) {
-          // Deadband the operator-torque estimate, low-pass it, cap it.
-          const double e = leader_eff[i];
-          const double db = (std::fabs(e) > ASSIST_DEADBAND_NM) ?
-            e - std::copysign(ASSIST_DEADBAND_NM, e) : 0.0;
-          assist_filt[i] += assist_alpha * (db - assist_filt[i]);
-          leader_efforts[i] += std::clamp(
-            -opt.assist * assist_filt[i], -ASSIST_CAP_NM, ASSIST_CAP_NM);
+      } else if (follower_speed > SQUARE_READY_RESET_RAD_S) {
+        square_ready = false;
+        square_settled_ticks = 0;
+        std::cout << "\nReadiness reset: follower speed " << follower_speed
+                  << " rad/s exceeded " << SQUARE_READY_RESET_RAD_S
+                  << ". Hold briefly for READY again." << std::endl;
+      }
+
+      struct pollfd trigger_poll = {STDIN_FILENO, POLLIN, 0};
+      if (poll(&trigger_poll, 1, 0) > 0 && (trigger_poll.revents & POLLIN) != 0) {
+        char key = '\0';
+        const ssize_t count = read(STDIN_FILENO, &key, 1);
+        if (count <= 0) {
+          std::cout << "\n" << probe_name
+                    << " probe console closed; stopping without scripted motion."
+                    << std::endl;
+          break;
+        }
+        if (key != ' ') {
+          std::cout << "Ignored key; wait for READY, then tap SPACE once." << std::endl;
+        } else if (!square_ready) {
+          std::cout << "REFUSED SPACE: not ready yet (leader " << leader_speed
+                    << " rad/s, follower " << follower_speed << " rad/s; need both <= "
+                    << SQUARE_SETTLED_RAD_S << " for " << SQUARE_SETTLED_S
+                    << " s). Hold briefly for READY, then tap SPACE." << std::endl;
+        } else {
+          const auto controller_start = follower.get_cartesian_positions();
+          snapshot(follower.get_all_positions(), follower_pos, "follower trigger positions");
+          tatbot::square::JointPose start_joints{};
+          std::copy(follower_pos.begin(), follower_pos.end() - 1, start_joints.begin());
+          const auto model_start = tatbot::square::wxai_tcp_translation(start_joints);
+          double model_error_squared = 0.0;
+          for (size_t axis = 0; axis < 3; ++axis) {
+            const double error = model_start[axis] - controller_start[axis];
+            model_error_squared += error * error;
+          }
+          square_model_fk_error_mm = std::sqrt(model_error_squared) * 1000.0;
+          if (square_model_fk_error_mm > SQUARE_MODEL_FK_TOLERANCE_M * 1e3) {
+            throw std::runtime_error(
+                    probe_name + " model/live FK mismatch is " +
+                    std::to_string(square_model_fk_error_mm) + " mm (limit " +
+                    std::to_string(SQUARE_MODEL_FK_TOLERANCE_M * 1e3) +
+                    " mm); refusing scripted motion");
+          }
+          square_start = controller_start;
+          if (carriage_ik) {
+            if (std::fabs(follower_pos[gripper] - tatbot::square::CARRIAGE_IK_BIAS_M) >
+              CARRIAGE_IK_PREFLIGHT_ENDPOINT_TOLERANCE_M)
+            {
+              throw std::runtime_error(
+                      "carriage left its 2 mm bias before the trigger; refusing scripted motion");
+            }
+            const auto ballpoint_start = tatbot::square::wxai_ballpoint_tip_translation(
+              start_joints, follower_pos[gripper]);
+            for (size_t axis = 0; axis < 3; ++axis) {
+              square_start[axis] = ballpoint_start[axis];
+            }
+          }
+          if (spiral_enabled) {
+            square_targets.fill(square_start);
+            square_targets[0][0] += opt.spiral_radius_m;
+            square_directions[0] = "expanding about the trigger center";
+          } else if (draw_enabled) {
+            square_targets.fill(square_start);
+            square_directions[0] = "standoff orbit for the wrist cameras";
+          } else {
+            square_targets = tatbot::square::targets(square_start, opt.square_probe_m);
+            const char x_sign = square_targets[0][0] < square_start[0] ? '-' : '+';
+            const char y_sign = square_targets[1][1] < square_targets[0][1] ? '-' : '+';
+            square_directions = {
+              std::string(1, x_sign) + "base-X",
+              std::string(1, y_sign) + "base-Y",
+              std::string(1, x_sign == '+' ? '-' : '+') + "base-X",
+              std::string(1, y_sign == '+' ? '-' : '+') + "base-Y"};
+          }
+          leader.set_all_modes(trossen_arm::Mode::position);
+          leader.set_all_positions(leader_pos, 0.0, false);
+          follower.set_arm_modes(trossen_arm::Mode::position);
+          if (carriage_ik) {
+            target = follower_pos;
+            std::vector<double> full_velocity(num_joints, 0.0);
+            follower.set_all_positions(target, 0.0, false, full_velocity);
+            carriage_target = follower_pos[gripper];
+            if (draw_enabled) {
+              // Stage 1: record the contact pose, let the Python side plan the
+              // camera orbit from it, and preflight that orbit here. Every
+              // failure retracts and ends the session before any motion.
+              const auto draw_dir = std::filesystem::path(opt.draw_dir);
+              const auto trigger_rotation = tatbot::square::wxai_link6_rotation(start_joints);
+              const std::array<double, 3> trigger_tip{
+                square_start[0], square_start[1], square_start[2]};
+              if (!write_draw_pose(
+                  draw_dir / "trigger.json", start_joints, follower_pos[gripper], trigger_tip,
+                  trigger_rotation, opt.ee_tool, dt))
+              {
+                draw_refused = true;
+                draw_refusal = "could not write trigger.json";
+              }
+              if (!draw_refused) {
+                std::cout << "\nDRAW STAGE orbit: planning the camera orbit (draw_stage.py); arms holding."
+                          << std::endl;
+                const int rc = run_draw_stage(opt.draw_dir, "orbit", 60.0);
+                if (rc != 0) {
+                  draw_refused = true;
+                  draw_refusal = "orbit stage exit " + std::to_string(rc);
+                }
+              }
+              if (!draw_refused) {
+                try {
+                  const auto orbit = tatbot::square::load_path_file(
+                    (draw_dir / "orbit.csv").string(), dt);
+                  carriage_joint_plan = tatbot::square::plan_joint_path(
+                    start_joints, follower_pos[gripper], orbit.samples, dt,
+                    orbit.start_tolerance_m, orbit.carriage_ik);
+                  draw_report = orbit.report;
+                  for (size_t axis = 0; axis < 3; ++axis) {
+                    square_targets[0][axis] = orbit.samples.back().position[axis];
+                  }
+                  draw_stage = DrawStage::orbit;
+                  draw_capture_index = 0;
+                  draw_capture_pending = false;
+                } catch (const std::exception & error) {
+                  draw_refused = true;
+                  draw_refusal = error.what();
+                }
+              }
+              if (draw_refused) {
+                command_carriage(opt.carriage_retract_m, CARRIAGE_TRIP_GOAL_S);
+                std::cout << "\nDRAW REFUSED before motion: " << draw_refusal
+                          << " — pen retracted, arms holding." << std::endl;
+                break;
+              }
+              print_draw_report();
+            } else {
+              carriage_joint_plan = tatbot::square::plan_joint_spiral_with_carriage(
+                start_joints, follower_pos[gripper], opt.spiral_radius_m,
+                opt.spiral_turns, opt.spiral_duration_s, opt.spiral_ease_s, dt);
+            }
+          } else {
+            std::copy(start_joints.begin(), start_joints.end(), arm_target.begin());
+            std::fill(arm_vel.begin(), arm_vel.end(), 0.0);
+            follower.set_arm_positions(arm_target, 0.0, false, arm_vel);
+          }
+          if (spiral_enabled) {
+            if (!carriage_ik) {
+              square_joint_plan = tatbot::square::plan_joint_spiral(
+                start_joints, opt.spiral_radius_m, opt.spiral_turns,
+                opt.spiral_duration_s, opt.spiral_ease_s, dt);
+            }
+          } else if (!draw_enabled) {
+            square_joint_plan = tatbot::square::plan_joint_square(
+              start_joints, square_targets, opt.square_edge_s, dt);
+          }
+          square_edge = 0;
+          square_plan_tick = 0;
+          square_settling = false;
+          square_guard.reset();
+          square_started = true;
+          std::cout << "\nSCRIPTED MOTION START: " << probe_name << " center xyz=["
+                    << square_start[0] << ", " << square_start[1] << ", " << square_start[2]
+                    << "] m; ";
+          if (draw_enabled) {
+            std::cout << "camera orbit, " << carriage_joint_plan.positions.size()
+                      << " ticks with " << carriage_joint_plan.capture_ticks.size()
+                      << " captures; ";
+          } else if (spiral_enabled) {
+            std::cout << opt.spiral_turns << " turns to "
+                      << opt.spiral_radius_m * 1e3 << " mm radius over "
+                      << opt.spiral_duration_s << " s, constant arc-length speed with "
+                      << opt.spiral_ease_s << " s endpoint eases; ";
+          } else {
+            std::cout << "inward sequence " << square_directions[0] << ", "
+                      << square_directions[1] << ", " << square_directions[2] << ", "
+                      << square_directions[3] << "; ";
+          }
+          std::cout << "joint plan preflight: live/model FK "
+                    << square_model_fk_error_mm << " mm, peak joint speed ";
+          if (carriage_ik) {
+            std::cout << carriage_joint_plan.max_joint_velocity_rad_s
+                      << " rad/s, carriage "
+                      << carriage_joint_plan.min_carriage_m * 1e3 << ".."
+                      << carriage_joint_plan.max_carriage_m * 1e3
+                      << " mm, peak carriage speed "
+                      << carriage_joint_plan.max_carriage_velocity_m_s * 1e3
+                      << " mm/s, peak carriage acceleration "
+                      << carriage_joint_plan.max_carriage_acceleration_m_s2 * 1e3
+                      << " mm/s^2, peak tip speed "
+                      << carriage_joint_plan.max_cartesian_velocity_m_s * 1e3
+                      << " mm/s, model error "
+                      << carriage_joint_plan.max_model_error_mm
+                      << " mm, orientation error "
+                      << carriage_joint_plan.max_orientation_error_rad;
+          } else {
+            std::cout << square_joint_plan.max_joint_velocity_rad_s
+                      << " rad/s, peak TCP speed "
+                      << square_joint_plan.max_cartesian_velocity_m_s * 1e3
+                      << " mm/s, model error "
+                      << square_joint_plan.max_model_error_mm << " mm, orientation error "
+                      << square_joint_plan.max_orientation_error_rad;
+          }
+          std::cout << " rad; "
+                    << (draw_enabled ? "orbit" : (spiral_enabled ? "continuous trace" : "edge 1/4"))
+                    << " starting. "
+                    << "E-stop operator: stay ready."
+                    << std::endl;
         }
       }
     }
-    leader.set_all_external_efforts(leader_efforts, 0.0, false);
-    const double t_cmd = since_start();
+
+    double t_cmd = since_start();
+    if (square_started) {
+      std::copy(follower_vel.begin(), follower_vel.end() - 1, square_guard_vel.begin());
+      std::copy(follower_eff.begin(), follower_eff.end() - 1, square_guard_eff.begin());
+      if (const auto trip = square_guard.observe(t_wake, square_guard_vel, square_guard_eff)) {
+        command_carriage(opt.carriage_retract_m, CARRIAGE_TRIP_GOAL_S);
+        std::cout << "\n" << probe_name << " SAFETY ABORT [" << trip->code << "]: joint "
+                  << trip->joint << " value " << trip->value << " exceeded/violated "
+                  << trip->limit << " — pen retracted, arms holding; scripted motion is terminal"
+                  << std::endl;
+        square_guard_trip = true;
+        break;
+      }
+
+      auto command_square_joints = [&](
+        const tatbot::square::JointPose & positions,
+        const tatbot::square::JointPose & velocities) -> bool {
+          double worst_lead = 0.0;
+          size_t worst_joint = 0;
+          for (size_t joint = 0; joint < positions.size(); ++joint) {
+            const double lead = std::fabs(positions[joint] - follower_pos[joint]);
+            if (lead > worst_lead) {worst_lead = lead; worst_joint = joint;}
+          }
+          if (worst_lead > SQUARE_COMMAND_LEAD_ABORT_RAD) {
+            command_carriage(opt.carriage_retract_m, CARRIAGE_TRIP_GOAL_S);
+            square_tracking_trip = true;
+            std::cout << "\n" << probe_name << " TRACKING ABORT: joint " << worst_joint
+                      << " command lead " << worst_lead << " rad exceeded "
+                      << SQUARE_COMMAND_LEAD_ABORT_RAD
+                      << " rad — pen retracted, arms holding; scripted motion is terminal"
+                      << std::endl;
+            return false;
+          }
+          std::copy(positions.begin(), positions.end(), arm_target.begin());
+          std::copy(velocities.begin(), velocities.end(), arm_vel.begin());
+          std::copy(positions.begin(), positions.end(), target.begin());
+          target[gripper] = carriage_target;
+          follower.set_arm_positions(arm_target, 0.0, false, arm_vel);
+          return true;
+        };
+      auto command_carriage_joints = [&](
+        const tatbot::square::FullJointPose & positions,
+        const tatbot::square::FullJointPose & velocities) -> bool {
+          double worst_arm_lead = 0.0;
+          size_t worst_joint = 0;
+          for (size_t joint = 0; joint < gripper; ++joint) {
+            const double lead = std::fabs(positions[joint] - follower_pos[joint]);
+            if (lead > worst_arm_lead) {worst_arm_lead = lead; worst_joint = joint;}
+          }
+          const double carriage_lead = std::fabs(positions[gripper] - follower_pos[gripper]);
+          if (worst_arm_lead > SQUARE_COMMAND_LEAD_ABORT_RAD ||
+            carriage_lead > CARRIAGE_IK_COMMAND_LEAD_ABORT_M)
+          {
+            command_carriage(opt.carriage_retract_m, CARRIAGE_TRIP_GOAL_S);
+            square_tracking_trip = true;
+            if (carriage_lead > CARRIAGE_IK_COMMAND_LEAD_ABORT_M) {
+              std::cout << "\nspiral TRACKING ABORT: carriage command lead "
+                        << carriage_lead * 1e3 << " mm exceeded "
+                        << CARRIAGE_IK_COMMAND_LEAD_ABORT_M * 1e3 << " mm";
+            } else {
+              std::cout << "\nspiral TRACKING ABORT: joint " << worst_joint
+                        << " command lead " << worst_arm_lead << " rad exceeded "
+                        << SQUARE_COMMAND_LEAD_ABORT_RAD << " rad";
+            }
+            std::cout << " — pen retracted, arms holding; scripted motion is terminal"
+                      << std::endl;
+            return false;
+          }
+          std::copy(positions.begin(), positions.end(), target.begin());
+          std::copy(velocities.begin(), velocities.end(), full_vel.begin());
+          carriage_target = positions[gripper];
+          follower.set_all_positions(target, 0.0, false, full_vel);
+          return true;
+        };
+
+      bool draw_waiting = false;
+      if (draw_enabled && draw_stage == DrawStage::ready_draw) {
+        // Between the map and the draw: hold the last orbit pose, latch
+        // readiness the same way the trigger did, and wait for SPACE 2.
+        draw_waiting = true;
+        if (!command_carriage_joints(draw_hold_positions, tatbot::square::FullJointPose{})) {break;}
+        double follower_speed = 0.0;
+        for (size_t joint = 0; joint < gripper; ++joint) {
+          follower_speed = std::max(follower_speed, std::fabs(follower_vel[joint]));
+        }
+        if (!square_ready) {
+          square_settled_ticks = follower_speed <= SQUARE_SETTLED_RAD_S ? square_settled_ticks + 1 : 0;
+          if (square_settled_ticks * dt >= SQUARE_SETTLED_S) {
+            square_ready = true;
+            std::cout << "\nREADY: inspect the shadow, then tap SPACE once to draw (no Enter); "
+                         "Ctrl+C ends here with the pen retracted."
+                      << std::endl;
+          }
+        } else if (follower_speed > SQUARE_READY_RESET_RAD_S) {
+          square_ready = false;
+          square_settled_ticks = 0;
+        }
+        struct pollfd draw_poll = {STDIN_FILENO, POLLIN, 0};
+        if (poll(&draw_poll, 1, 0) > 0 && (draw_poll.revents & POLLIN) != 0) {
+          char key = '\0';
+          const ssize_t count = read(STDIN_FILENO, &key, 1);
+          if (count <= 0) {
+            std::cout << "\ndraw console closed; stopping before the path." << std::endl;
+            break;
+          }
+          if (key != ' ') {
+            std::cout << "Ignored key; wait for READY, then tap SPACE once to draw." << std::endl;
+          } else if (!square_ready) {
+            std::cout << "REFUSED SPACE: follower not settled yet; hold for READY." << std::endl;
+          } else {
+            square_plan_tick = 0;
+            square_settling = false;
+            square_guard.reset();
+            draw_stage = DrawStage::drawing;
+            std::cout << "\nSCRIPTED MOTION START: draw path, "
+                      << carriage_joint_plan.positions.size() << " ticks ("
+                      << carriage_joint_plan.positions.size() * dt << " s), peak tip speed "
+                      << carriage_joint_plan.max_cartesian_velocity_m_s * 1e3
+                      << " mm/s, carriage " << carriage_joint_plan.min_carriage_m * 1e3 << ".."
+                      << carriage_joint_plan.max_carriage_m * 1e3
+                      << " mm. E-stop operator: stay ready." << std::endl;
+          }
+        }
+      }
+      if (draw_waiting) {
+        // holding for SPACE 2; nothing else to command this tick
+      } else if (square_settling) {
+        auto measured = follower.get_cartesian_positions();
+        if (carriage_ik) {
+          tatbot::square::JointPose measured_joints{};
+          std::copy(follower_pos.begin(), follower_pos.end() - 1, measured_joints.begin());
+          const auto measured_tip = tatbot::square::wxai_ballpoint_tip_translation(
+            measured_joints, follower_pos[gripper]);
+          for (size_t axis = 0; axis < 3; ++axis) {measured[axis] = measured_tip[axis];}
+        }
+        const double error_mm = tatbot::square::translation_error_mm(
+          measured, square_targets[square_edge]);
+        double follower_speed = 0.0;
+        for (size_t joint = 0; joint < gripper; ++joint) {
+          follower_speed = std::max(follower_speed, std::fabs(follower_vel[joint]));
+        }
+        if (error_mm <= SQUARE_ENDPOINT_TOLERANCE_M * 1e3 &&
+          follower_speed <= SQUARE_SETTLED_RAD_S)
+        {
+          square_measured.push_back(measured);
+          square_errors_mm.push_back(error_mm);
+          std::cout << (draw_enabled ?
+            (draw_stage == DrawStage::orbit ? std::string("Orbit endpoint") : std::string("Draw endpoint")) :
+            spiral_enabled ? std::string("Spiral endpoint") :
+            "Square edge " + std::to_string(square_edge + 1) + "/4 endpoint")
+                    << " FK error: "
+                    << error_mm << " mm (controller-reported, not an independent ink measurement)"
+                    << std::endl;
+          ++square_edge;
+          square_settling = false;
+          if (draw_enabled && draw_stage == DrawStage::orbit) {
+            // Stage 2: the orbit is complete and the arm is settled at its
+            // last pose. Record it, let the Python side fuse the captures,
+            // anchor, compile and preflight, then load the path and hold for
+            // SPACE 2. Every failure retracts and ends the session.
+            const auto draw_dir = std::filesystem::path(opt.draw_dir);
+            tatbot::square::JointPose hold_joints{};
+            std::copy(follower_pos.begin(), follower_pos.end() - 1, hold_joints.begin());
+            std::copy(follower_pos.begin(), follower_pos.end(), draw_hold_positions.begin());
+            const auto hold_tip = tatbot::square::wxai_ballpoint_tip_translation(
+              hold_joints, follower_pos[gripper]);
+            const auto hold_rotation = tatbot::square::wxai_link6_rotation(hold_joints);
+            if (!write_draw_pose(
+                draw_dir / "hold.json", hold_joints, follower_pos[gripper], hold_tip,
+                hold_rotation, opt.ee_tool, dt))
+            {
+              draw_refused = true;
+              draw_refusal = "could not write hold.json";
+            }
+            if (!draw_refused) {
+              std::cout << "\nDRAW STAGE map: fusing the captures, anchoring, compiling and "
+                           "preflighting the path (draw_stage.py); arms holding."
+                        << std::endl;
+              const int rc = run_draw_stage(opt.draw_dir, "map", 300.0);
+              if (rc == 3) {
+                draw_refused = true;
+                draw_refusal = "preflight refused the path (see preflight.json in the draw dir)";
+              } else if (rc != 0) {
+                draw_refused = true;
+                draw_refusal = "map stage exit " + std::to_string(rc);
+              }
+            }
+            if (!draw_refused && !std::filesystem::exists(draw_dir / "path.csv")) {
+              // scan-only session: the map is the deliverable.
+              command_carriage(opt.carriage_retract_m, CARRIAGE_TRIP_GOAL_S);
+              square_finished = true;
+              std::cout << "draw SCAN COMPLETE: surface mapped and shadowed, no path requested; "
+                           "pen retracted, arms holding." << std::endl;
+              break;
+            }
+            if (!draw_refused) {
+              try {
+                const auto path = tatbot::square::load_path_file(
+                  (draw_dir / "path.csv").string(), dt);
+                carriage_joint_plan = tatbot::square::plan_joint_path(
+                  hold_joints, follower_pos[gripper], path.samples, dt, path.start_tolerance_m,
+                  path.carriage_ik);
+                draw_report = path.report;
+                for (size_t axis = 0; axis < 3; ++axis) {
+                  square_targets[0][axis] = path.samples.back().position[axis];
+                }
+              } catch (const std::exception & error) {
+                draw_refused = true;
+                draw_refusal = error.what();
+              }
+            }
+            if (draw_refused) {
+              command_carriage(opt.carriage_retract_m, CARRIAGE_TRIP_GOAL_S);
+              std::cout << "\nDRAW REFUSED after the orbit: " << draw_refusal
+                        << " — pen retracted, arms holding." << std::endl;
+              break;
+            }
+            square_edge = 0;
+            square_ready = false;
+            square_settled_ticks = 0;
+            draw_stage = DrawStage::ready_draw;
+            std::cout << "\nPATH PREFLIGHT PASS: " << carriage_joint_plan.positions.size()
+                      << " ticks, model error " << carriage_joint_plan.max_model_error_mm
+                      << " mm, orientation error " << carriage_joint_plan.max_orientation_error_rad
+                      << " rad, peak joint speed " << carriage_joint_plan.max_joint_velocity_rad_s
+                      << " rad/s, carriage " << carriage_joint_plan.min_carriage_m * 1e3 << ".."
+                      << carriage_joint_plan.max_carriage_m * 1e3 << " mm." << std::endl;
+            print_draw_report();
+            std::cout << "Holding at the standoff. Inspect the shadow in Rerun; SPACE draws, "
+                         "Ctrl+C ends here." << std::endl;
+          } else if (square_edge == probe_segment_count) {
+            command_carriage(opt.carriage_retract_m, CARRIAGE_TRIP_GOAL_S);
+            square_finished = true;
+            std::cout << probe_name << " COMPLETE: pen retracted "
+                      << opt.carriage_retract_m * 1e3
+                      << " mm; arms holding. Measure the ink on paper for physical accuracy."
+                      << std::endl;
+            break;
+          }
+          if (!draw_enabled) {
+            std::cout << "Starting edge " << square_edge + 1 << "/4 -> "
+                      << square_directions[square_edge] << std::endl;
+          }
+        } else if (std::chrono::duration<double>(
+          clock::now() - square_settle_started_at).count() >= SQUARE_ENDPOINT_SETTLE_MAX_S)
+        {
+          square_measured.push_back(measured);
+          square_errors_mm.push_back(error_mm);
+          command_carriage(opt.carriage_retract_m, CARRIAGE_TRIP_GOAL_S);
+          square_tracking_trip = true;
+          std::cout << "\n" << probe_name << " TRACKING ABORT: "
+                    << (spiral_enabled ? "endpoint" :
+                      "edge " + std::to_string(square_edge + 1))
+                    << " remained " << error_mm << " mm from its endpoint after "
+                    << SQUARE_ENDPOINT_SETTLE_MAX_S << " s of settling (limit "
+                    << SQUARE_ENDPOINT_TOLERANCE_M * 1e3
+                    << " mm) — pen retracted, arms holding; scripted motion is terminal"
+                    << std::endl;
+          break;
+        } else {
+          if (carriage_ik) {
+            const auto & endpoint = carriage_joint_plan.positions[
+              carriage_joint_plan.endpoint_tick - 1];
+            if (!command_carriage_joints(endpoint, tatbot::square::FullJointPose{})) {break;}
+          } else {
+            const auto & endpoint = square_joint_plan.positions[
+              square_joint_plan.edge_end_ticks[square_edge] - 1];
+            if (!command_square_joints(endpoint, tatbot::square::JointPose{})) {break;}
+          }
+        }
+      } else {
+        const size_t plan_size = carriage_ik ?
+          carriage_joint_plan.positions.size() : square_joint_plan.positions.size();
+        if (square_plan_tick >= plan_size) {
+          throw std::runtime_error("square joint plan exhausted before completion");
+        }
+        bool draw_capture_hold = false;
+        if (draw_enabled && draw_stage == DrawStage::orbit &&
+          draw_capture_index < carriage_joint_plan.capture_ticks.size() &&
+          carriage_joint_plan.capture_ticks[draw_capture_index].first == square_plan_tick)
+        {
+          // A capture row: hold this sample until the wrist-camera capture
+          // lands (or the deadline passes), then advance as normal.
+          const size_t k = carriage_joint_plan.capture_ticks[draw_capture_index].second;
+          const auto capture_dir = std::filesystem::path(opt.draw_dir) / "capture";
+          const auto done = capture_dir / ("capture-" + std::to_string(k) + ".done");
+          if (draw_capture_pending && std::filesystem::exists(done)) {
+            draw_capture_pending = false;
+            ++draw_capture_index;
+            std::cout << "capture " << k << "/" << carriage_joint_plan.capture_ticks.size()
+                      << " landed; orbit continues." << std::endl;
+          } else {
+            if (!command_carriage_joints(
+                carriage_joint_plan.positions[square_plan_tick], tatbot::square::FullJointPose{}))
+            {
+              break;
+            }
+            // The reference stopped a hold ago, but the arm settles with a
+            // visible bounce (operator, first session): request the capture
+            // only once the measured joints have been still for a while, with
+            // a bounded wait so a noisy encoder cannot stall the orbit.
+            if (!draw_capture_pending) {
+              draw_capture_settled_ticks =
+                arm_speed <= DRAW_CAPTURE_SETTLED_RAD_S ? draw_capture_settled_ticks + 1 : 0;
+              ++draw_capture_wait_ticks;
+              const bool settled = draw_capture_settled_ticks * dt >= DRAW_CAPTURE_SETTLED_S;
+              const bool waited_out = draw_capture_wait_ticks * dt >= DRAW_CAPTURE_SETTLE_MAX_S;
+              if (!settled && !waited_out) {
+                draw_capture_hold = true;
+              } else {
+                if (waited_out && !settled) {
+                  std::cout << "capture " << k << ": arm still moving " << arm_speed
+                            << " rad/s after " << DRAW_CAPTURE_SETTLE_MAX_S
+                            << " s; capturing anyway." << std::endl;
+                }
+                draw_capture_settled_ticks = 0;
+                draw_capture_wait_ticks = 0;
+              }
+            }
+            if (draw_capture_hold) {
+              // still settling; the plan does not advance this tick
+            } else if (!draw_capture_pending) {
+              if (!write_capture_request(
+                  capture_dir / ("request-" + std::to_string(k) + ".json"), k, follower_pos))
+              {
+                command_carriage(opt.carriage_retract_m, CARRIAGE_TRIP_GOAL_S);
+                square_tracking_trip = true;
+                std::cout << "\ndraw ABORT: could not write the capture request — pen retracted, "
+                             "arms holding; scripted motion is terminal" << std::endl;
+                break;
+              }
+              draw_capture_pending = true;
+              draw_capture_deadline = clock::now() + std::chrono::seconds(15);
+              std::cout << "capture " << k << "/" << carriage_joint_plan.capture_ticks.size()
+                        << " requested; holding still." << std::endl;
+            } else if (clock::now() > draw_capture_deadline) {
+              command_carriage(opt.carriage_retract_m, CARRIAGE_TRIP_GOAL_S);
+              square_tracking_trip = true;
+              std::cout << "\ndraw ABORT: capture " << k << " did not land within 15 s — pen "
+                           "retracted, arms holding; scripted motion is terminal" << std::endl;
+              break;
+            }
+            draw_capture_hold = true;
+          }
+        }
+        if (draw_capture_hold) {
+          // holding for the capture; the plan does not advance this tick
+        } else {
+        if (carriage_ik) {
+          if (!command_carriage_joints(
+            carriage_joint_plan.positions[square_plan_tick],
+            carriage_joint_plan.velocities[square_plan_tick]))
+          {
+            break;
+          }
+        } else {
+          if (!command_square_joints(
+            square_joint_plan.positions[square_plan_tick],
+            square_joint_plan.velocities[square_plan_tick]))
+          {
+            break;
+          }
+        }
+        if ((spiral_enabled || (draw_enabled && draw_stage == DrawStage::drawing)) &&
+          square_plan_tick % 40 == 0)
+        {
+          tatbot::square::JointPose measured_joints{};
+          std::copy(follower_pos.begin(), follower_pos.end() - 1, measured_joints.begin());
+          const auto measured_tip = carriage_ik ?
+            tatbot::square::wxai_ballpoint_tip_translation(
+              measured_joints, follower_pos[gripper]) :
+            tatbot::square::wxai_tcp_translation(measured_joints);
+          const auto & reference = carriage_ik ?
+            carriage_joint_plan.cartesian_references[square_plan_tick] :
+            square_joint_plan.cartesian_references[square_plan_tick];
+          spiral_trace.push_back(SpiralTraceSample{
+            (static_cast<double>(square_plan_tick) + 1.0) * dt,
+            reference,
+            measured_tip,
+            carriage_target,
+            follower_pos[gripper]});
+        }
+        ++square_plan_tick;
+        const size_t endpoint_tick = carriage_ik ?
+          carriage_joint_plan.endpoint_tick : square_joint_plan.edge_end_ticks[square_edge];
+        if (square_plan_tick == endpoint_tick) {
+          square_settling = true;
+          square_settle_started_at = clock::now();
+        }
+        }  // not holding for a capture
+      }
+      t_cmd = since_start();
+    } else {
+      // Stream the arm target with the filtered leader velocity as feedforward
+      // and a short interpolation horizon. The carriage remains safety-owned.
+      std::copy(target.begin(), target.end() - 1, arm_target.begin());
+      std::copy(vel_filt.begin(), vel_filt.end() - 1, arm_vel.begin());
+      follower.set_arm_positions(arm_target, opt.goal_time, false, arm_vel);
+
+      if (opt.ff_gain > 0.0 || opt.damping > 0.0 || opt.assist > 0.0) {
+        if (!antistiction_off && (opt.damping > 0.0 || opt.assist > 0.0)) {
+          double worst = 0.0;
+          for (size_t i = 0; i < gripper; ++i) {
+            worst = std::max(worst, std::fabs(leader_vel[i]));
+          }
+          if (worst > ANTISTICTION_RUNAWAY_RAD_S) {
+            antistiction_off = true;
+            std::cout << "\nANTI-STICTION OFF: a leader joint hit " << worst
+                      << " rad/s — damping/assist disabled until resume." << std::endl;
+          }
+        }
+        for (size_t i = 0; i < num_joints; ++i) {
+          leader_efforts[i] = -opt.ff_gain * follower_eff[i];
+          if (antistiction_off || i >= ANTISTICTION_JOINTS) {continue;}
+          if (opt.damping > 0.0) {
+            leader_efforts[i] += std::clamp(
+              opt.damping * leader_vel[i], -DAMPING_CAP_NM, DAMPING_CAP_NM);
+          }
+          if (opt.assist > 0.0) {
+            const double e = leader_eff[i];
+            const double db = (std::fabs(e) > ASSIST_DEADBAND_NM) ?
+              e - std::copysign(ASSIST_DEADBAND_NM, e) : 0.0;
+            assist_filt[i] += assist_alpha * (db - assist_filt[i]);
+            leader_efforts[i] += std::clamp(
+              -opt.assist * assist_filt[i], -ASSIST_CAP_NM, ASSIST_CAP_NM);
+          }
+        }
+      }
+      leader.set_all_external_efforts(leader_efforts, 0.0, false);
+      t_cmd = since_start();
+    }
 
     if (telemetry) {
       telemetry->publish(
@@ -1220,7 +2366,7 @@ int run(int argc, char ** argv)
         telemetry_sequence++, leader_pos, follower_pos, target, follower_eff);
     }
 
-    if (log_file.is_open()) {
+    if (log_file) {
       double * r = record.data();
       *r++ = t_sched; *r++ = t_wake; *r++ = t_leader_read;
       *r++ = t_follower_read; *r++ = t_cmd;
@@ -1229,28 +2375,29 @@ int run(int argc, char ** argv)
       for (const std::vector<double> * v : parts) {
         r = std::copy(v->begin(), v->end(), r);
       }
-      log_file.write(
-        reinterpret_cast<const char *>(record.data()),
-        static_cast<std::streamsize>(record.size() * sizeof(double)));
+      log_file->append_record(record.data(), record.size() * sizeof(double));
     }
 
-    const std::string warning = health.tick(t_cmd - t_wake, t_wake - t_sched);
+    const double t_tick_done = since_start();
+    const std::string warning = health.tick(t_tick_done - t_wake, t_wake - t_sched);
     if (!warning.empty()) {
       std::cerr << warning << std::endl;
     }
 
-    next_tick += loop_period;
+    const uint64_t skipped = tatbot::realtime::advance_deadline(
+      next_tick, loop_period, clock::now());
+    health.note_skipped_deadlines(skipped);
     std::this_thread::sleep_until(next_tick);
   }
 
   // Stop requested (Ctrl+C, e-stop, or a contact trip). On an e-stop the pen
   // is retracted FIRST, then everything freezes at the ACTUAL positions
   // (snapping targets to measured zeroes any residual position error). A
-  // plain controlled stop leaves the carriage where it is; a contact trip
-  // already retracted it in the loop. The carriage holds its commanded
+  // plain controlled stop leaves the carriage where it is; a contact trip or
+  // any square-probe exit retracts it. The carriage holds its commanded
   // position through any pause; only idling releases it.
   const bool estop_triggered = g_estop.load() > estop_ok;
-  if (estop_triggered && carriage_target != opt.carriage_retract_m) {
+  if ((estop_triggered || square_enabled) && carriage_target != opt.carriage_retract_m) {
     command_carriage(opt.carriage_retract_m, CARRIAGE_TRIP_GOAL_S);
   }
   leader.set_all_modes(trossen_arm::Mode::position);
@@ -1260,17 +2407,130 @@ int run(int argc, char ** argv)
       const std::vector<double> follower_now = follower.get_all_positions();
       std::copy(follower_now.begin(), follower_now.end() - 1, arm_target.begin());
       follower.set_arm_positions(arm_target, 0.0, false);
-    };
+  };
   freeze_follower_arm();
+
+  if (square_enabled) {
+    if (const char * run_dir = std::getenv("TATBOT_RUN_DIR"); run_dir && *run_dir) {
+      const std::filesystem::path report_path =
+        std::filesystem::path(run_dir) /
+        (draw_enabled ? "draw_probe.csv" : (spiral_enabled ? "spiral_probe.csv" : "square_probe.csv"));
+      std::ofstream report(report_path);
+      if (report) {
+        report << std::setprecision(12);
+        const double report_max_model_error_mm = carriage_ik ?
+          carriage_joint_plan.max_model_error_mm : square_joint_plan.max_model_error_mm;
+        const double report_max_orientation_error_rad = carriage_ik ?
+          carriage_joint_plan.max_orientation_error_rad :
+          square_joint_plan.max_orientation_error_rad;
+        const double report_max_joint_velocity_rad_s = carriage_ik ?
+          carriage_joint_plan.max_joint_velocity_rad_s :
+          square_joint_plan.max_joint_velocity_rad_s;
+        const double report_max_cartesian_velocity_m_s = carriage_ik ?
+          carriage_joint_plan.max_cartesian_velocity_m_s :
+          square_joint_plan.max_cartesian_velocity_m_s;
+        report << "status,"
+               << (square_finished ? "complete" : (square_started ? "aborted" : "not_started"))
+               << "\ncontroller,"
+               << (carriage_ik ?
+          "preflighted_seven_joint_ballpoint_dls" : "preflighted_joint_position_dls")
+               << "\nmodel_live_fk_error_mm," << square_model_fk_error_mm
+               << "\nmodel_max_error_mm," << report_max_model_error_mm
+               << "\nmodel_max_orientation_error_rad,"
+               << report_max_orientation_error_rad
+               << "\nplan_max_joint_velocity_rad_s,"
+               << report_max_joint_velocity_rad_s
+               << "\nplan_max_cartesian_velocity_mm_s,"
+               << report_max_cartesian_velocity_m_s * 1e3
+               << "\ncommand_lead_limit_rad," << SQUARE_COMMAND_LEAD_ABORT_RAD
+               << "\nendpoint_tolerance_mm," << SQUARE_ENDPOINT_TOLERANCE_M * 1e3 << "\n";
+        if (spiral_enabled || draw_enabled) {
+          if (draw_enabled) {
+            report << "draw_dir," << opt.draw_dir << "\nfinal_stage,"
+                   << (draw_stage == DrawStage::drawing ? "drawing" :
+              draw_stage == DrawStage::ready_draw ? "ready_draw" :
+              draw_stage == DrawStage::orbit ? "orbit" : "none")
+                   << "\ncaptures_landed," << draw_capture_index << "\n";
+            for (const auto & [key, value] : draw_report) {
+              report << "path_" << key << ',' << value << "\n";
+            }
+          }
+          if (spiral_enabled) {
+          report << "radius_mm," << opt.spiral_radius_m * 1e3
+                 << "\nturns," << opt.spiral_turns
+                 << "\nduration_s," << opt.spiral_duration_s
+                 << "\nease_s," << opt.spiral_ease_s
+                 << "\npath_length_mm,"
+                 << (carriage_ik ? carriage_joint_plan.path_length_m :
+            square_joint_plan.path_length_m) * 1e3 << "\n"
+                 << "carriage_ik," << (carriage_ik ? 1 : 0) << "\n";
+          }
+          if (carriage_ik) {
+            report << "plan_min_carriage_mm," << carriage_joint_plan.min_carriage_m * 1e3
+                   << "\nplan_max_carriage_mm," << carriage_joint_plan.max_carriage_m * 1e3
+                   << "\nplan_max_carriage_velocity_mm_s,"
+                   << carriage_joint_plan.max_carriage_velocity_m_s * 1e3
+                   << "\nplan_max_carriage_acceleration_mm_s2,"
+                   << carriage_joint_plan.max_carriage_acceleration_m_s2 * 1e3
+                   << "\ncarriage_command_lead_limit_mm,"
+                   << CARRIAGE_IK_COMMAND_LEAD_ABORT_M * 1e3
+                   << "\noffpaper_preflight_worst_endpoint_error_mm,"
+                   << carriage_preflight_worst_endpoint_error_m * 1e3 << "\n";
+          }
+          report << "elapsed_s,target_x_m,target_y_m,target_z_m,measured_x_m,measured_y_m,measured_z_m,error_x_mm,error_y_mm,error_z_mm,target_radius_mm,measured_radius_mm,target_carriage_mm,measured_carriage_mm,carriage_error_mm\n";
+          for (const auto & sample : spiral_trace) {
+            report << sample.elapsed_s;
+            for (double value : sample.reference) {report << ',' << value;}
+            for (double value : sample.measured) {report << ',' << value;}
+            for (size_t axis = 0; axis < 3; ++axis) {
+              report << ',' << (sample.measured[axis] - sample.reference[axis]) * 1e3;
+            }
+            const double target_dx = sample.reference[0] - square_start[0];
+            const double target_dy = sample.reference[1] - square_start[1];
+            const double measured_dx = sample.measured[0] - square_start[0];
+            const double measured_dy = sample.measured[1] - square_start[1];
+            report << ',' << std::hypot(target_dx, target_dy) * 1e3
+                   << ',' << std::hypot(measured_dx, measured_dy) * 1e3
+                   << ',' << sample.target_carriage_m * 1e3
+                   << ',' << sample.measured_carriage_m * 1e3
+                   << ',' << (sample.measured_carriage_m - sample.target_carriage_m) * 1e3
+                   << '\n';
+          }
+          if (!square_errors_mm.empty()) {
+            report << "endpoint_fk_error_mm," << square_errors_mm.back() << '\n';
+          }
+        } else {
+          report << "side_mm," << opt.square_probe_m * 1e3
+                 << "\nedge_s," << opt.square_edge_s << "\n";
+          report << "edge,target_x_m,target_y_m,target_z_m,measured_x_m,measured_y_m,measured_z_m,fk_error_mm\n";
+          for (size_t i = 0; i < square_measured.size(); ++i) {
+            report << i + 1;
+            for (size_t axis = 0; axis < 3; ++axis) {report << ',' << square_targets[i][axis];}
+            for (size_t axis = 0; axis < 3; ++axis) {report << ',' << square_measured[i][axis];}
+            report << ',' << square_errors_mm[i] << '\n';
+          }
+        }
+        std::cout << (draw_enabled ? "Draw" : spiral_enabled ? "Spiral" : "Square")
+                  << " probe report: " << report_path
+                  << " (FK/encoder evidence only; measure the physical ink separately)"
+                  << std::endl;
+      } else {
+        std::cerr << "WARNING: could not write " << probe_name
+                  << "_probe.csv under " << run_dir << std::endl;
+      }
+    }
+  }
 
   // E-stop flow: HOLD while the button is latched or its heartbeat is absent,
   // then automatically re-baseline and resume when the input is healthy.
-  auto run_estop_flow = [&]() -> StopChoice {
+  auto run_estop_flow = [&](bool resume_allowed) -> StopChoice {
       std::cout << "\nE-STOP: "
                 << (g_estop.load() == estop_fault ?
         "heartbeat lost (device unplugged or dead?)" : "button pressed")
                 << " — pen retracted, arms holding.\n"
-                << "  twist-release / reconnect = automatically resume tracking\n"
+                << (resume_allowed ?
+        "  twist-release / reconnect = automatically resume tracking\n" :
+        "  scripted probe is TERMINATED; clear the E-stop leaves both arms holding\n")
                 << "  Ctrl+C = EMERGENCY RELEASE, idle immediately (arms fall)"
                 << std::endl;
       const int signals_at_hold = g_stop_signals.load();
@@ -1279,32 +2539,100 @@ int run(int argc, char ** argv)
       if (result == tatbot::estop::WaitResult::emergency) {
         return StopChoice::emergency;
       }
-      std::cout << "\nE-stop clear — automatically resuming from held poses."
+      std::cout << (resume_allowed ?
+        "\nE-stop clear — automatically resuming from held poses." :
+        "\nE-stop clear — scripted probe remains terminated; arms still holding.")
                 << std::endl;
       return StopChoice::resume;
+    };
+
+  auto wait_square_release = [&]() -> StopChoice {
+      while (true) {
+        std::cout << "  Enter  = release this hold, then land follower and leader to sleep/idle\n"
+                  << "           (keep both landing paths clear)\n"
+                  << "  Ctrl+C = EMERGENCY RELEASE, idle immediately; automatic landing is skipped\n"
+                  << "  Scripted motion cannot resume in this process."
+                  << std::endl;
+        StopChoice terminal = wait_for_choice();
+        if (terminal == StopChoice::estop) {
+          const StopChoice cleared = run_estop_flow(false);
+          if (cleared == StopChoice::emergency) {return cleared;}
+          continue;
+        }
+        // wait_for_choice recognizes r, but the one-shot probe deliberately
+        // treats r+Enter as Enter after the operator has supported the arms.
+        return terminal == StopChoice::resume ? StopChoice::release : terminal;
+      }
     };
 
   StopChoice choice;
   bool released_from_estop = estop_triggered;
   if (estop_triggered) {
-    choice = run_estop_flow();
+    choice = run_estop_flow(!square_enabled);
+    if (square_enabled && choice != StopChoice::emergency) {
+      choice = wait_square_release();
+    }
   } else {
-    if (contact_trip) {
+    if (square_enabled) {
+      if (square_finished) {
+        std::cout << "\n" << probe_name << " probe complete: pen retracted, arms holding."
+                  << std::endl;
+      } else if (contact_trip) {
+        std::cout << "\n" << probe_name
+                  << " probe terminated by contact cap: pen retracted, arms holding."
+                  << std::endl;
+      } else if (square_guard_trip) {
+        std::cout << "\n" << probe_name
+                  << " probe terminated by measured-motion guard: pen retracted, arms holding."
+                  << std::endl;
+      } else if (square_tracking_trip) {
+        std::cout << "\n" << probe_name
+                  << " probe terminated by endpoint tracking guard: pen retracted, arms holding."
+                  << std::endl;
+      } else if (draw_refused) {
+        std::cout << "\ndraw session refused: " << draw_refusal
+                  << " — pen retracted, arms holding." << std::endl;
+      } else if (square_started) {
+        std::cout << "\n" << probe_name << " probe interrupted: pen retracted, arms holding."
+                  << std::endl;
+      } else {
+        std::cout << "\n" << probe_name << " probe stopped before the trigger; arms holding."
+                  << std::endl;
+      }
+      choice = wait_square_release();
+    } else if (contact_trip) {
       std::cout << "\nContact trip: pen retracted, arms holding." << std::endl;
     } else if (stale_baseline) {
       std::cout << "\nStale alignment: nothing was sent, arms holding. r re-aligns from the current poses." << std::endl;
     } else {
       std::cout << "\nControlled stop: arms holding, carriage holds." << std::endl;
     }
-    std::cout << "  Enter     = release arms and carriage to idle (support the arms first)\n"
-              << "  r + Enter = resume teleoperation"
-              << (carriage_target != CARRIAGE_REST_M ? " (pen returns to rest)" : "") << "\n"
-              << "  Ctrl+C    = EMERGENCY RELEASE, idle immediately (arms fall)"
-              << std::endl;
-    choice = wait_for_choice();
-    if (choice == StopChoice::estop) {
-      choice = run_estop_flow();  // e-stop pressed at the prompt: same flow
-      released_from_estop = true;
+    if (!square_enabled) {
+      std::cout << "  Enter     = release arms and carriage to idle (support the arms first)\n"
+                << "  r + Enter = resume teleoperation"
+                << (carriage_target != CARRIAGE_REST_M ? " (pen returns to rest)" : "") << "\n"
+                << "  Ctrl+C    = EMERGENCY RELEASE, idle immediately (arms fall)"
+                << std::endl;
+      choice = wait_for_choice();
+      if (choice == StopChoice::estop) {
+        choice = run_estop_flow(true);  // e-stop pressed at the prompt: same flow
+        released_from_estop = true;
+      }
+    }
+  }
+  // Release in a probe/draw session hands the arms to the wrapper's landing
+  // routine STILL HOLDING: idling here dropped the follower ~2 cm under gravity
+  // in the seconds before il_recover_arm.sh reconnected (first draw session,
+  // 2026-09-01). The landing takes control softly at the current pose
+  // (recovery.py), so the process exits without idling and without running
+  // the driver destructors, which would idle too. The e-stop stays live.
+  if (square_enabled && choice == StopChoice::release) {
+    if (request_probe_landing()) {
+      handoff_holding = true;
+    } else {
+      std::cerr << "WARNING: could not record the operator's automatic-landing request; "
+                   "the wrapper will leave the arms idle instead of moving them."
+                << std::endl;
     }
   }
   if (choice == StopChoice::resume) {
@@ -1370,12 +2698,26 @@ int run(int argc, char ** argv)
       holding = true;
     } catch (...) {}
     if (holding) {
-      std::cout << "Arms holding after fault — support them, then Enter (or Ctrl+C) to idle."
+      std::cout << "Arms holding after fault — Enter continues to automatic landing; "
+                   "Ctrl+C emergency-releases and skips landing."
                 << std::endl;
       // Keep holding through an engaged e-stop (it can't do more than the
       // hold already does); only Enter / Ctrl+C release to idle.
-      while (wait_for_choice() == StopChoice::estop) {
+      StopChoice fault_choice;
+      while ((fault_choice = wait_for_choice()) == StopChoice::estop) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+      if (fault_choice == StopChoice::emergency) {
+        try {leader.set_all_modes(trossen_arm::Mode::idle);} catch (...) {}
+        try {follower.set_all_modes(trossen_arm::Mode::idle);} catch (...) {}
+        std::cout << "EMERGENCY RELEASE after fault: automatic landing will be skipped."
+                  << std::endl;
+        return 130;
+      }
+      if (!request_probe_landing()) {
+        std::cerr << "WARNING: could not record the operator's automatic-landing request; "
+                     "the wrapper will not move the arms after this fault."
+                  << std::endl;
       }
     }
     throw;
@@ -1384,8 +2726,10 @@ int run(int argc, char ** argv)
   if (emergency) {
     std::cout << "EMERGENCY RELEASE: idling both arms now." << std::endl;
   }
-  leader.set_all_modes(trossen_arm::Mode::idle);
-  follower.set_all_modes(trossen_arm::Mode::idle);
+  if (!(handoff_holding && !emergency)) {
+    leader.set_all_modes(trossen_arm::Mode::idle);
+    follower.set_all_modes(trossen_arm::Mode::idle);
+  }
 
   const std::string health_summary = health.summary();
   if (!health_summary.empty()) {
@@ -1399,7 +2743,23 @@ int run(int argc, char ** argv)
               << " send_errors=" << stats.send_errors << std::endl;
   }
 
-  return 0;
+  if (log_file) {
+    const auto stats = log_file->finish();
+    std::cout << "Flight recorder: enqueued=" << stats.records_enqueued
+              << " dropped=" << stats.records_dropped
+              << " write_errors=" << stats.write_errors << std::endl;
+  }
+
+  if (emergency) {return 130;}
+  if (handoff_holding) {
+    std::cout << "Arms handed to the landing routine still holding (not idled); "
+                 "the wrapper lands follower, then leader." << std::endl;
+    std::cout.flush();
+    std::cerr.flush();
+    // Skip the driver destructors: their cleanup idles the arms.
+    std::_Exit(square_enabled && !square_finished ? 3 : 0);
+  }
+  return square_enabled && !square_finished ? 3 : 0;
 }
 
 int main(int argc, char ** argv)

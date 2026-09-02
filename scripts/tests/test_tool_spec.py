@@ -157,6 +157,140 @@ def test_a_contact_tool_working_point_is_its_own_tip(tmp_path, spec):
     assert tool_spec.tcp_from_touchoff_m(spec, measured) == measured
 
 
+def test_resolved_contact_geometry_puts_the_visible_body_at_the_tcp(spec):
+    """A touch-off moves the physical body endpoint, not an invisible child."""
+    workspace = tool_spec.read_workspace(REPO)
+    geometry = tool_spec.resolved_tool_geometry(spec, workspace)
+    measured = tool_spec.tip_offset_m(workspace)
+    assert measured is not None
+    assert geometry.source == "touch-axis-inferred"
+    assert geometry.status == "contact-qualified"
+    assert geometry.contact_status == "pivot-calibrated"
+    assert geometry.body_pose_status == "axis-inferred"
+    assert geometry.contact_qualification_error is None
+    assert geometry.contact_uncertainty_m == pytest.approx(0.004637)
+    assert geometry.touch_offset_m == pytest.approx(measured)
+    assert geometry.body_tip_offset_m == pytest.approx(measured)
+    assert geometry.tcp_offset_m == pytest.approx(measured)
+    assert geometry.alignment_error_m <= tool_spec.CONTACT_ALIGNMENT_TOLERANCE_M
+    assert spec.contact_radius_m == pytest.approx(0.00025)
+
+
+def test_pivot_contact_qualification_is_separate_from_body_pose(spec):
+    workspace = {"right": {
+        "tool_id": spec.tool_id,
+        "tip_frame": "right/tool_mount",
+        "pen_tip_offset_x": 0.0,
+        "pen_tip_offset_y": 0.0,
+        "pen_tip_offset_z": 0.060,
+        "touchoff": {
+            "n_plate": 0, "n_pad": 9, "cond": 7.0,
+            "residual_mm": 1.0, "holdout_mm": 4.0,
+            "tip_loo_max_mm": 1.5, "spread_deg": 60.0,
+        },
+    }}
+    geometry = tool_spec.resolved_tool_geometry(spec, workspace)
+    assert geometry.status == "contact-qualified"
+    assert geometry.contact_status == "pivot-calibrated"
+    assert geometry.body_pose_status == "axis-inferred"
+    assert geometry.contact_uncertainty_m == pytest.approx(0.004)
+
+
+def test_tip_calibration_delta_moves_body_and_tcp_together(spec):
+    workspace = tool_spec.read_workspace(REPO)
+    central = tool_spec.resolved_tool_geometry(spec, workspace)
+    delta = (0.001, -0.002, 0.003)
+    varied = tool_spec.resolved_tool_geometry(
+        spec, workspace, tip_delta_m=delta)
+    assert varied.contact_status == "pivot-calibrated"
+    assert varied.body_pose_status == "axis-inferred"
+    assert varied.calibration_delta_m == delta
+    assert varied.touch_offset_m == pytest.approx(
+        tuple(a + b for a, b in zip(central.touch_offset_m, delta, strict=True)))
+    assert varied.body_tip_offset_m == pytest.approx(varied.touch_offset_m)
+    assert varied.tcp_offset_m == pytest.approx(varied.touch_offset_m)
+    assert varied.alignment_error_m <= tool_spec.CONTACT_ALIGNMENT_TOLERANCE_M
+
+
+def test_tip_calibration_delta_requires_a_measured_touch_off(tmp_path):
+    plain = _write_tool(tmp_path, "plain-delta")
+    with pytest.raises(ValueError, match="measured mount-frame touch-off"):
+        tool_spec.resolved_tool_geometry(
+            plain, workspace=None, repo=tmp_path, tip_delta_m=(0.001, 0.0, 0.0))
+
+
+@pytest.mark.parametrize("field,value,message", [
+    ("cond", 51.0, "condition number"),
+    ("spread_deg", 29.0, "rotation spread"),
+    ("residual_mm", 3.6, "residual"),
+])
+def test_bad_pivot_observability_remains_provisional(spec, field, value, message):
+    receipt = {"n_plate": 0, "n_pad": 9, "cond": 7.0,
+               "residual_mm": 1.0, "holdout_mm": 0.5,
+               "spread_deg": 60.0}
+    receipt[field] = value
+    workspace = {"right": {
+        "tool_id": spec.tool_id,
+        "tip_frame": "right/tool_mount",
+        "pen_tip_offset_x": 0.0,
+        "pen_tip_offset_y": 0.0,
+        "pen_tip_offset_z": 0.060,
+        "touchoff": receipt,
+    }}
+    geometry = tool_spec.resolved_tool_geometry(spec, workspace)
+    assert geometry.status == "provisional"
+    assert geometry.contact_status == "unqualified"
+    assert message in geometry.contact_qualification_error
+
+
+def test_explicit_body_pose_without_report_cannot_claim_qualification(tmp_path):
+    spec = _write_tool(tmp_path, "posed")
+    workspace = {"right": {
+        "tool_id": spec.tool_id,
+        "tip_frame": "right/tool_mount",
+        "pen_tip_offset_x": 0.001,
+        "pen_tip_offset_y": 0.002,
+        "pen_tip_offset_z": 0.050,
+        "tool_body_status": "qualified",
+        "tool_body_utc": "2026-09-01T12:00:00Z",
+        "tool_body_method": "reseat-axis-study-v1",
+        "tool_body_frame": "right/tool_mount",
+        "tool_body_origin_x": 0.001,
+        "tool_body_origin_y": 0.002,
+        "tool_body_origin_z": 0.0,
+        "tool_body_rpy_x": 0.0,
+        "tool_body_rpy_y": 0.0,
+        "tool_body_rpy_z": 0.0,
+    }}
+    geometry = tool_spec.resolved_tool_geometry(spec, workspace, repo=tmp_path)
+    assert geometry.source == "touch-axis-inferred"
+    assert geometry.status == "provisional"
+    assert "no report path" in geometry.qualification_error
+    assert geometry.body_tip_offset_m == pytest.approx((0.001, 0.002, 0.050))
+    assert geometry.alignment_error_m == pytest.approx(0.0)
+
+
+def test_body_coordinates_without_qualification_remain_provisional(tmp_path):
+    spec = _write_tool(tmp_path, "unqualified-pose")
+    workspace = {"right": {
+        "tool_id": spec.tool_id,
+        "tip_frame": "right/tool_mount",
+        "pen_tip_offset_x": 0.001,
+        "pen_tip_offset_y": 0.002,
+        "pen_tip_offset_z": 0.050,
+        "tool_body_frame": "right/tool_mount",
+        "tool_body_origin_x": 0.001,
+        "tool_body_origin_y": 0.002,
+        "tool_body_origin_z": 0.0,
+        "tool_body_rpy_x": 0.0,
+        "tool_body_rpy_y": 0.0,
+        "tool_body_rpy_z": 0.0,
+    }}
+    geometry = tool_spec.resolved_tool_geometry(spec, workspace, repo=tmp_path)
+    assert geometry.source == "touch-axis-inferred"
+    assert geometry.status == "provisional"
+
+
 @pytest.mark.parametrize("extra,message", [
     ("contact: true\ntcp_z_m: 0.090\n", "cannot float"),
     ("contact: false\ntcp_z_m: 0.030\n", "buried in the tool"),
@@ -219,6 +353,8 @@ def test_tool_id_survives_a_workspace_rewrite():
     assert parsed["right"]["tool_id"] == FITTED
     assert parsed["right"]["tip_frame"] == "right/tool_mount"
     assert tool_spec.tip_offset_m(parsed) == pytest.approx((0.01, 0.02, 0.03))
+    assert parsed["right"]["tool_body_status"] is None
+    assert parsed["right"]["tool_body_report_sha256"] is None
 
 
 def test_a_gripper_era_tip_offset_reads_as_no_touchoff():
@@ -313,10 +449,28 @@ def test_a_dataset_stamp_carries_the_geometry_not_a_pointer(tmp_path, spec):
     assert payload["spec"]["profile"] == [list(p) for p in spec.profile]
     measured = tool_spec.tip_offset_m(workspace)
     assert payload["tip_offset_m"] == (pytest.approx(list(measured)) if measured else None)
+    assert payload["tool_geometry_version"] == tool_spec.TOOL_GEOMETRY_VERSION
+    assert payload["geometry_source"] == "touch-axis-inferred"
+    assert payload["geometry_status"] == "contact-qualified"
+    assert payload["contact_geometry_status"] == "pivot-calibrated"
+    assert payload["body_pose_status"] == "axis-inferred"
+    assert payload["body_tip_offset_m"] == pytest.approx(payload["tcp_offset_m"])
+    assert payload["alignment_error_m"] <= tool_spec.CONTACT_ALIGNMENT_TOLERANCE_M
     assert payload["tip_link"] == "right/tattoo_needle"
     assert payload["tip_frame"] == "right/tool_mount"
     assert payload["embodiment"] == "fixed-mount-v2"
     assert tool_spec.read_dataset_tool_metadata(tmp_path) == payload
+
+
+def test_nominal_dataset_geometry_is_concrete_and_labelled(spec):
+    payload = tool_spec.dataset_tool_metadata(spec, workspace=None)
+    assert payload["geometry_source"] == "datasheet-nominal"
+    assert payload["geometry_status"] == "nominal"
+    assert payload["geometry_measured"] is False
+    assert payload["contact_geometry_status"] == "unqualified"
+    assert payload["body_pose_status"] == "nominal"
+    assert payload["tip_offset_m"] == pytest.approx(spec.touchoff_nominal_m)
+    assert payload["tcp_offset_m"] == pytest.approx(spec.nominal_tip_offset_m)
 
 
 def test_the_z_floor_is_not_derived_from_a_surface_nobody_touched(spec):
@@ -356,8 +510,10 @@ def test_a_non_contact_tool_is_modelled_at_its_working_point(tmp_path):
     reach = [float(v) for v in
              block.split('name="right/tattoo_needle_joint"')[1]
                   .split('xyz="')[1].split('"')[0].split()]
-    measured_len = sum(v * v for v in measured) ** 0.5
-    assert reach[2] == pytest.approx(measured_len + laser.standoff_m)
+    # The body origin moves so its physical aperture lands on the measured
+    # point. In body coordinates the virtual focus remains exactly the
+    # datasheet's 90 mm working distance.
+    assert reach == pytest.approx([0.0, 0.0, laser.protrusion_m])
 
 
 def test_every_shipped_datasheet_loads():

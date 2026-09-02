@@ -121,6 +121,19 @@ def main() -> int:
     print(f"  mount  {spec.mount or 'NONE — cannot be fitted'}")
 
     problems = check_carriage_constants() + check_tip(spec, workspace)
+    geometry = tool_spec.resolved_tool_geometry(spec, workspace, args.arm, REPO)
+    uncertainty = (f", uncertainty {geometry.contact_uncertainty_m * 1000:.3f} mm"
+                   if geometry.contact_uncertainty_m is not None else "")
+    print(f"  body   {geometry.source} / {geometry.body_pose_status}; endpoint/TCP error "
+          f"{geometry.alignment_error_m * 1000:.3f} mm")
+    print(f"  TCP    {geometry.contact_status}{uncertainty}")
+    if geometry.contact_qualification_error:
+        print(f"  --  contact qualification: {geometry.contact_qualification_error}")
+    requested_body_status = (workspace.get(args.arm) or {}).get("tool_body_status")
+    if requested_body_status == "qualified" and geometry.status != "qualified":
+        problems.append(
+            "config/workspace.yaml: tool body claims qualified but its evidence "
+            f"does not revalidate: {geometry.qualification_error or 'unknown reason'}")
     if not spec.mounted:
         problems.append(f"{spec.source.relative_to(REPO)}: mount is none — this tool has no "
                         "mount on the arm and cannot be fitted, calibrated or flown")

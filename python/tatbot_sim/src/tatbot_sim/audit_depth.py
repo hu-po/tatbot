@@ -92,7 +92,9 @@ def main(args: Args):
             )
     # "config" since the DR-tree refactor; "args" in older datasets
     gen_cfg = meta.get("config") or meta.get("args") or {}
-    draw_clearance = float(gen_cfg.get("draw_clearance", 0.004))
+    # Historical datasets record 0.004 explicitly. Missing means current
+    # contact-v1, whose resolved working point is on the surface.
+    draw_clearance = float(gen_cfg.get("draw_clearance", 0.0))
 
     files = sorted((base / "data").glob("chunk-*/file-*.parquet"))
     df = pd.concat([pd.read_parquet(p) for p in files], ignore_index=True)

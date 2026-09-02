@@ -1,3 +1,5 @@
+import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -70,6 +72,47 @@ def test_leader_follower_and_recovery_are_all_required():
     text = _text("scripts/il_recover_arm.sh")
     assert 'acquire_estop(os.environ["TATBOT_ESTOP_DEVICE"], required=True)' in text
     assert "profile_env::require" in text
+
+
+def test_both_arm_recovery_attempts_follower_then_leader_and_aggregates_failure(tmp_path):
+    fake_uv = tmp_path / "uv"
+    fake_uv.write_text(
+        "#!/usr/bin/env bash\n"
+        "args=(\"$@\")\n"
+        "count=${#args[@]}\n"
+        "ip=${args[count-2]}\n"
+        "role=${args[count-1]}\n"
+        "printf '%s %s\\n' \"$role\" \"$ip\"\n"
+        "if [[ -n ${FAIL_ROLE:-} && $role == \"$FAIL_ROLE\" ]]; then exit 1; fi\n"
+    )
+    fake_uv.chmod(0o755)
+    profile = json.loads(_text("config/profiles/tatbot.json"))["driver"]
+    env = dict(
+        os.environ,
+        PATH=f"{tmp_path}:{os.environ['PATH']}",
+        TATBOT_PROFILE="tatbot",
+        TATBOT_VIA_CLI="1",
+    )
+
+    result = subprocess.run(
+        [str(REPO / "scripts/il_recover_arms.sh")], capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    expected = [
+        f"follower {profile['follower_ip']}",
+        f"leader {profile['leader_ip']}",
+    ]
+    assert result.stdout.splitlines() == expected
+
+    result = subprocess.run(
+        [str(REPO / "scripts/il_recover_arms.sh")],
+        capture_output=True,
+        text=True,
+        env={**env, "FAIL_ROLE": "follower"},
+    )
+    assert result.returncode == 1
+    assert result.stdout.splitlines() == expected
+    assert "did not verify for both arms" in result.stderr
 
 
 def test_policy_launcher_fails_closed_on_floor_estop_and_surviving_client():

@@ -511,13 +511,6 @@ def select_slot(policy: InkPolicy, palette: dict[str, PaletteSlot], load: dict[s
     return SlotChoice(best.slot_id, "; ".join(reasons))
 
 
-def pick_slot(policy: InkPolicy, palette: dict[str, PaletteSlot], load: dict[str, SlotLoad],
-              arm: str, ink_id: str | None, fills: dict[str, float] | None = None) -> str | None:
-    """Compatibility shim over ``select_slot``: the slot id, or None."""
-    choice = select_slot(policy, palette, load, arm, ink_id, fills=fills)
-    return choice.slot_id if choice else None
-
-
 # --- what a planned program will cost ---------------------------------------------------
 
 def need_from_polylines(polylines_m, policy: InkPolicy, speed_m_s: float,

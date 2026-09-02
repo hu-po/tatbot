@@ -23,6 +23,7 @@ from tatbot_sim.language import sample_scene
 from tatbot_sim.strokes import (
     MazeConfig,
     ShapeConfig,
+    Stroke,
     build_ee_trajectory,
     fit_strokes,
     overhead_steps,
@@ -274,6 +275,7 @@ def plan_batch(
 
     kinds, paths, programs = [], [], []
     preink: list | None = None
+    sizes_mm: dict[int, int] = {}
     if task in ("language", "erase"):
         lang_cfg = dataclasses.replace(shape_cfg, draw_speed_range=maze_cfg.draw_speed_range)
         # per-batch time budget, skewed short (min of two uniform draws:
@@ -456,7 +458,6 @@ def plan_batch(
         draw_horizon = horizon - n_app
         naturals = []
         worlds = []
-        sizes_mm: dict[int, int] = {}
         for i in range(num_envs):
             if task == "maze":
                 traj_cfg = dataclasses.replace(shape_cfg, draw_speed_range=maze_cfg.draw_speed_range)
@@ -540,6 +541,83 @@ def plan_batch(
                      dip_mask, dip_credits, dips, ink_initial, ink_capacity)
 
 
+def plan_tattoo_scenario(
+    rng: np.random.Generator,
+    scenario: dict,
+    surface,
+    *,
+    horizon: int,
+    num_envs: int,
+    dr: DRConfig,
+    draw_clearance: float,
+    tool_ceiling: float | None = 0.020,
+) -> BatchPlan:
+    """Plan the immutable SVG/placement in a compiled body scenario."""
+    from tatbot_sim.inkmap.contracts import validate_scenario
+    from tatbot_sim.inkmap.svg_strokes import compile_svg_strokes
+
+    validate_scenario(scenario)
+    metric = compile_svg_strokes(
+        scenario["design"]["svg"], scenario["placement"]["size_mm"],
+        mirror=scenario["placement"]["mirror"], rotation_rad=0.0,
+    )
+    strokes = [Stroke(points.copy()) for points in metric.strokes]
+    shape_cfg = ShapeConfig()
+    if tool_ceiling is not None:
+        tool_ceiling = min(tool_ceiling, 0.020)
+        lo, hi = shape_cfg.start_height_range
+        shape_cfg = dataclasses.replace(
+            shape_cfg,
+            hover_height=min(shape_cfg.hover_height, tool_ceiling),
+            start_height_range=(min(lo, tool_ceiling), min(hi, tool_ceiling)),
+        )
+    worlds, paths, lengths = [], [], []
+    for env_index in range(num_envs):
+        trajectory = build_ee_trajectory(strokes, rng, shape_cfg, horizon=horizon)
+        positions, points, normals = canvas_to_world(
+            trajectory.positions, surface, env_index, draw_clearance,
+        )
+        worlds.append(dipping.Spliced(
+            positions=positions, floor_points=points, floor_normals=normals,
+            dip_mask=np.zeros(len(positions), dtype=bool), credit_steps=[], dips=[],
+        ))
+        paths.append([stroke.points.tolist() for stroke in strokes])
+        lengths.append(len(positions))
+    targets, surface_points, surface_normals, _, _, _ = _pack(
+        worlds, horizon, "body-tattoo", horizon,
+    )
+    lean_profiles = [np.zeros((horizon, 2), dtype=np.float32) for _ in range(num_envs)]
+    pen_normals = np.stack([
+        cap_lean(surface_normals[i], surface.base_normal_np(i), dr.pen_lean.max_off_base_rad)
+        for i in range(num_envs)
+    ])
+    sentence = scenario["placement"].get("language", {}).get(
+        "sentence", f"tattoo {scenario['design']['name']} on the posed body",
+    )
+    ink_initial, ink_capacity = _ink_opening(None, num_envs)
+    return BatchPlan(
+        n_app=0,
+        q_raised=None,
+        draw_horizon=horizon,
+        targets=targets,
+        pen_normals=pen_normals,
+        surface_points=surface_points,
+        surface_normals=surface_normals,
+        lean_profiles=lean_profiles,
+        kinds=["body-tattoo"] * num_envs,
+        tasks=[sentence] * num_envs,
+        paths=paths,
+        programs=[scenario["placement"].get("language", {}).get("program")] * num_envs,
+        lengths=np.asarray(lengths, dtype=np.int64),
+        preink=None,
+        dip_mask=None,
+        dip_credits=None,
+        dips=None,
+        ink_initial_ul=ink_initial,
+        ink_capacity_ul=ink_capacity,
+    )
+
+
 # --- ink: dips in the plan -------------------------------------------------------------
 
 @dataclasses.dataclass
@@ -580,11 +658,11 @@ def _ink_context(task: str, cap_rims, dr, num_envs: int, rng: np.random.Generato
     missing = [s for s in palette if s not in cap_rims]
     if missing:
         raise ValueError(f"env placed no cap for palette slot(s) {missing}")
-    rng = rng if rng is not None else np.random.default_rng()
-    scale = rng.uniform(dr.ink.capacity_scale[0], dr.ink.capacity_scale[1], num_envs)
+    rng_gen = np.random.default_rng() if rng is None else rng
+    scale = rng_gen.uniform(dr.ink.capacity_scale[0], dr.ink.capacity_scale[1], num_envs)
     policies = [dataclasses.replace(policy, charge_capacity_ul=policy.charge_capacity_ul * float(k),
                                     uptake_ul=policy.uptake_ul * float(k)) for k in scale]
-    frac = rng.uniform(dr.ink.initial_charge_frac[0], dr.ink.initial_charge_frac[1], num_envs)
+    frac = rng_gen.uniform(dr.ink.initial_charge_frac[0], dr.ink.initial_charge_frac[1], num_envs)
     initial = np.asarray([p.charge_capacity_ul * float(f) for p, f in zip(policies, frac, strict=True)],
                          dtype=np.float32)
     return _InkContext(ink, policy, palette, load, cap_rims, dr.palette,

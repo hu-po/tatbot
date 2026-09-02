@@ -103,7 +103,7 @@ def sample_poses(rng: np.random.Generator, args: Args, n: int):
         np.minimum(shape.start_height_range[0], start_hi), np.maximum(start_hi, 0.0)
     )
     cz = np.where(kind == 0, 0.0, np.where(kind == 1, shape.hover_height, start_z))
-    cz = cz + 0.004  # draw_clearance lifts the whole canvas frame
+    cz = cz + 0.0  # contact-v1 puts the resolved working point on the surface
 
     targets = np.zeros((n, 3), dtype=np.float32)
     axes = np.zeros((n, 3), dtype=np.float32)

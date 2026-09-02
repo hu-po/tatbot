@@ -27,8 +27,9 @@ both are added here:
    but carry no geometry; the right mimic joint is fixed, so the actuator has
    one carriage.
 
-   The tool is a visual body only, with no collision geometry and a token
-   mass; its measured mass belongs to the real arm's gravity compensation.
+   The tool body remains visual-only with a token mass; a contact tool may add
+   one small physical tip collision at its resolved TCP. Its measured mass
+   belongs to the real arm's gravity compensation.
 
 The tool is welded to **link_6 at the mount's rest position**, not to the
 carriage link it rides on the real arm. The carriage joint is kept and
@@ -116,13 +117,19 @@ def _wrist_inventory() -> tuple[tuple[int, ...], float, str, str]:
 
 STOCK_URDF = Path(ASSET_DIR) / "robots/widowxai/wxai_follower.urdf"
 STOCK_SRDF = Path(ASSET_DIR) / "robots/widowxai/wxai_follower.srdf"
-def derived_paths(tool_id: str) -> tuple[Path, Path]:
+def derived_paths(tool_id: str, calibration_delta=None) -> tuple[Path, Path]:
     """Where a tool's derived URDF (and its companion SRDF) live.
 
     Scoped by tool id so previewing one tool cannot hand a stale robot to the
     next: two tools are two different robots, not two states of one file.
     """
-    stem = Path(ASSET_DIR) / "robots/widowxai" / f"wxai_tatbot_{tool_id}"
+    delta = tuple(calibration_delta or (0.0, 0.0, 0.0))
+    suffix = ""
+    if any(delta):
+        import hashlib
+        token = ",".join(f"{float(value):.9g}" for value in delta)
+        suffix = "-cal" + hashlib.sha256(token.encode()).hexdigest()[:10]
+    stem = Path(ASSET_DIR) / "robots/widowxai" / f"wxai_tatbot_{tool_id}{suffix}"
     return stem.with_suffix(".urdf"), stem.with_suffix(".srdf")
 MESH_SUBDIR = "meshes/tatbot_ee"
 REPO_MESHES = REPO / "urdf/meshes/ee"
@@ -179,7 +186,7 @@ def _fmt(v) -> str:
     return " ".join(f"{x:.9g}" for x in v)
 
 
-def _add_link(robot, name, visuals=(), mass=1e-4):
+def _add_link(robot, name, visuals=(), collisions=(), mass=1e-4):
     """Add a link. Masses are token values: these bodies are welded to link_6
     and only need to render and provide a frame, not perturb the arm's
     dynamics."""
@@ -211,6 +218,11 @@ def _add_link(robot, name, visuals=(), mass=1e-4):
             # (that bug kept the white pen tip dark through 8/22).
             mat = ET.SubElement(vis, "material", {"name": f"{name}_mat{i}"})
             ET.SubElement(mat, "color", {"rgba": color})
+    for origin_xyz, origin_rpy, geom in collisions:
+        collision = ET.SubElement(link, "collision")
+        ET.SubElement(collision, "origin", {"xyz": _fmt(origin_xyz), "rpy": _fmt(origin_rpy)})
+        g = ET.SubElement(collision, "geometry")
+        g.append(geom)
     return link
 
 
@@ -302,10 +314,8 @@ def tool_tcp_m() -> tuple[float, float, float]:
     Exposed so the expert can derive the pen-down orientation from the same
     numbers the geometry is built from (bore axis vs tip vector); see
     expert._pen_down_matrix."""
-    reg = __import__("tatbot_sim.tools", fromlist=["registry"]).registry()
-    spec = __import__("tatbot_sim.tools", fromlist=["active_tool"]).active_tool()
-    ws = reg.read_workspace(REPO)
-    return reg.tcp_from_touchoff_m(spec, _tool_tip_m(reg, ws, spec))
+    tool_module = __import__("tatbot_sim.tools", fromlist=["resolved_geometry"])
+    return tool_module.resolved_geometry().tcp_offset_m
 
 
 def _add_tool(robot, spec, carriage_m: float):
@@ -325,22 +335,25 @@ def _add_tool(robot, spec, carriage_m: float):
     every dataset then records (the same cross-tool inheritance e61193e
     fixed in the metadata).
     """
-    reg = __import__("tatbot_sim.tools", fromlist=["registry"]).registry()
-    ws = reg.read_workspace(REPO)
-    tip = _tool_tip_m(reg, ws, spec)
-    tcp = reg.tcp_from_touchoff_m(spec, tip)
-    reach = sum(v * v for v in tcp) ** 0.5
+    tool_module = __import__("tatbot_sim.tools", fromlist=["resolved_geometry"])
+    geometry = tool_module.resolved_geometry(spec)
     mount_xyz, mount_rpy = mount_in_link6(carriage_m)
     _add_link(robot, "tool_mount")
     _add_joint(robot, "tool_mount_joint", "link_6", "tool_mount", mount_xyz, mount_rpy)
     _add_link(robot, "tattoo_pen", visuals=tool_visuals(spec))
     # The point itself: the TCP for IK and for ink deposition. The link names
     # stay generic across tools — they are in every trained policy's IK chain.
-    _add_link(robot, "tattoo_needle")
+    tip_collisions = ()
+    if spec.contact_radius_m is not None:
+        radius = float(spec.contact_radius_m)
+        # The TCP is the forward tangent of the physical contact element.
+        tip_collisions = (((0, 0, -radius), (0, 0, 0),
+                           _el("sphere", radius=f"{radius:.9g}")),)
+    _add_link(robot, "tattoo_needle", collisions=tip_collisions)
     _add_joint(robot, "tattoo_pen_joint", "tool_mount", "tattoo_pen",
-               (0, 0, 0), reg.axis_rpy(tcp))
+               geometry.body_origin_m, geometry.body_rpy_rad)
     _add_joint(robot, "tattoo_needle_joint", "tattoo_pen", "tattoo_needle",
-               (0, 0, reach))
+               geometry.tcp_in_body_m)
 
 
 EE_MOUNT_LINK = "right/ee_mount"
@@ -556,7 +569,8 @@ def build_tatbot_urdf(force: bool = False) -> str:
             f"{STOCK_URDF} missing — run `python -m mani_skill.utils.download_asset widowxai -y`"
         )
     tool = active_tool()
-    derived_urdf, derived_srdf = derived_paths(tool.tool_id)
+    from tatbot_sim.tools import calibration_delta_m
+    derived_urdf, derived_srdf = derived_paths(tool.tool_id, calibration_delta_m())
     mesh_dir = STOCK_URDF.parent / MESH_SUBDIR
     mesh_dir.mkdir(parents=True, exist_ok=True)
     for stl in tool.meshes():

@@ -44,6 +44,23 @@ def decode_video(data: bytes, descriptor: dict) -> np.ndarray:
     return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) if pixel_format == "rgb8" else frame
 
 
+def decode_depth(data: bytes, descriptor: dict) -> np.ndarray:
+    """Z16 depth as a (height, width) uint16 array in the sensor's raw units.
+
+    The D405 reports 0.1 mm per unit (`depth_units_m` in the frame metadata
+    attributes); most other D4xx report 1 mm. Readers scale by that attribute,
+    never by an assumed constant (scripts/depth_probe.py learned that the
+    expensive way).
+    """
+    width, height = int(descriptor["width"]), int(descriptor["height"])
+    if width <= 0 or height <= 0:
+        raise ValueError(f"depth descriptor has an empty geometry {width}x{height}")
+    expected = width * height * 2
+    if len(data) != expected:
+        raise ValueError(f"depth payload is {len(data)} bytes, expected {expected}")
+    return np.frombuffer(data, dtype="<u2").reshape(height, width)
+
+
 class UnixWireReader:
     def __init__(self, path: Path, connect_timeout_s: float = 10.0):
         deadline = time.monotonic() + connect_timeout_s
@@ -85,13 +102,19 @@ class UnixWireReader:
             if not 0 <= count <= MAX_PAYLOAD_BYTES:
                 raise ValueError(f"invalid payload length {count}")
             payload = self._read_exact(count)
-            if variant != "video":
-                raise ValueError(f"vision consumer needs decoded video, got {variant}")
             metadata = wire_frame["metadata"]
-            frames[metadata["sensor_name"]] = {
-                "metadata": metadata,
-                "image": decode_video(payload, descriptor),
-            }
+            # One sensor may deliver both a colour and a depth frame in a set
+            # (the D405 pair); keep both under the sensor rather than letting
+            # the second overwrite the first.
+            entry = frames.setdefault(metadata["sensor_name"], {"metadata": metadata})
+            if variant == "video":
+                entry["image"] = decode_video(payload, descriptor)
+            elif variant == "depth":
+                entry["depth"] = decode_depth(payload, descriptor)
+                units = (metadata.get("attributes") or {}).get("depth_units_m")
+                entry["depth_units_m"] = float(units) if units is not None else None
+            else:
+                raise ValueError(f"vision consumer needs decoded video or depth, got {variant}")
         return {
             "sequence": int(header["sequence"]),
             "timestamp_basis": header.get("timestamp_basis", "unknown"),

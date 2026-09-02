@@ -139,8 +139,8 @@ def test_style_axes_sizes():
     assert defaults == ["machine"]
 
 
-def test_placement_schema_is_v3_with_site_language():
-    assert PLACEMENT_SCHEMA["properties"]["schema_version"]["const"] == 3
+def test_placement_schema_is_v4_with_site_language():
+    assert PLACEMENT_SCHEMA["properties"]["schema_version"]["const"] == 4
     placement = PLACEMENT_SCHEMA["properties"]["placements"]["items"]["properties"]
     assert "site" in placement and "language" in placement
     # Additive: the v2 required set must not have grown.

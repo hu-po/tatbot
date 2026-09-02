@@ -1232,11 +1232,11 @@
 
 
   <!-- BEGIN generated tool block — scripts/gen_tool_urdf.py, do not edit -->
-  <!-- Ambition Lutin + Inlumino ballpoint dot cartridge (lutin-ballpoint-dot), datasheet config/tools/lutin-ballpoint-dot.yaml sha256 e3a31b49e885.
-       Body from its profile; the needle sits at the touch-off's measured tip,
+  <!-- Ambition Lutin + Inlumino ballpoint dot cartridge (lutin-ballpoint-dot), datasheet config/tools/lutin-ballpoint-dot.yaml sha256 a5118818b60b.
+       Body profile and TCP resolve from the same measured touch-off,
        69.45 mm out along an axis 9.3 deg
        off the mount's nominal +z (datasheet nominal 60 mm;
-       the measurement wins).
+       source touch-axis-inferred; visual/TCP error 0.000 mm).
        Regenerate with scripts/gen_tool_urdf.py. -->
   <link name="right/tattoo_pen">
     <visual>
@@ -1283,13 +1283,20 @@
     </visual>
   </link>
   <joint name="right/tattoo_pen_joint" type="fixed">
-    <origin rpy="0 0.162855098 1.70351218" xyz="0 0 0"/>
+    <origin rpy="0 0.162855098 1.70351218" xyz="-0.000202704196 0.00151837686 0.00932289653"/>
     <parent link="right/tool_mount"/>
     <child link="right/tattoo_pen"/>
   </joint>
-  <link name="right/tattoo_needle"/>
+  <link name="right/tattoo_needle">
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 -0.00025"/>
+      <geometry>
+        <sphere radius="0.00025"/>
+      </geometry>
+    </collision>
+  </link>
   <joint name="right/tattoo_needle_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0.0694479075"/>
+    <origin rpy="0 0 0" xyz="0 0 0.06"/>
     <parent link="right/tattoo_pen"/>
     <child link="right/tattoo_needle"/>
   </joint>

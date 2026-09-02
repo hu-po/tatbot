@@ -9,6 +9,8 @@ works without adding a dependency.
 from __future__ import annotations
 
 import importlib.util
+import json
+import math
 import os
 import sys
 from functools import lru_cache
@@ -19,6 +21,7 @@ from tatbot_sim.repo import repo_root
 REPO = repo_root()
 _MODULE_NAME = "tatbot_tool_spec"
 _MODULE_PATH = REPO / "scripts" / "lib" / "tool_spec.py"
+CALIBRATION_DELTA_ENV = "TATBOT_SIM_TIP_DELTA_M"
 
 
 @lru_cache(maxsize=1)
@@ -66,6 +69,37 @@ def active_substrate():
 
 def workspace() -> dict:
     return registry().read_workspace(REPO)
+
+
+def calibration_delta_m() -> tuple[float, float, float]:
+    """Process-scoped mount-frame tip perturbation selected by the factory.
+
+    A physical seat persists for a session, so one simulator shard gets one
+    draw rather than changing the tool between episodes.  The factory sets the
+    value before re-exec/import so the derived URDF, IK and metadata all see
+    the same geometry.
+    """
+    raw = os.environ.get(CALIBRATION_DELTA_ENV)
+    if not raw:
+        return (0.0, 0.0, 0.0)
+    try:
+        values = tuple(float(value) for value in json.loads(raw))
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{CALIBRATION_DELTA_ENV} must be a JSON 3-vector") from exc
+    if len(values) != 3:
+        raise ValueError(f"{CALIBRATION_DELTA_ENV} must contain three values")
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError(f"{CALIBRATION_DELTA_ENV} must contain finite values")
+    return values
+
+
+def resolved_geometry(spec=None, ws: dict | None = None):
+    """The exact per-process geometry shared by URDF, IK and metadata."""
+    reg = registry()
+    active = spec or active_tool()
+    current = workspace() if ws is None else ws
+    return reg.resolved_tool_geometry(
+        active, current, "right", REPO, tip_delta_m=calibration_delta_m())
 
 
 ARM_GOLDEN_RELPATH = "config/trossen/tatbot.yaml"

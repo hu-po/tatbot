@@ -73,6 +73,12 @@ HOLDOUT = 2
 PIVOT_RESIDUAL_MAX_MM = 1.5   # floor; blunt tools get their own, see below
 PIVOT_SPREAD_MIN_DEG = 30.0
 PIVOT_REPEAT_MAX_MM = 2.5
+PIVOT_HOLDOUT = 2
+# A held-out suffix exposes pose-dependent compliance/seat migration, but does
+# not make the full fixed-point solve unobservable.  Keep 1 mm as a warning
+# threshold and propagate the observed value as uncertainty; do not demand an
+# external body-axis instrument or discard an otherwise well-conditioned TCP.
+PIVOT_HOLDOUT_WARN_MM = 1.0
 
 PAD_WORDS = ("pad", "paper")
 
@@ -235,6 +241,56 @@ def solve_pivot_trimmed(poses):
     return fit
 
 
+def pivot_holdout_residual_mm(poses, count: int = PIVOT_HOLDOUT) -> float:
+    """True suffix holdout for the planted-point model, in millimetres.
+
+    The final filed value still uses every accepted sample, but it may be
+    written only when a fit that never saw the last ``count`` poses predicts
+    their common planted point. This catches a seat/tip that migrates over the
+    session even when a permissive in-sample residual can absorb it.
+    """
+    if len(poses) < count + 4:
+        return float("inf")
+    train = solve_pivot_trimmed(poses[:-count])
+    errors = []
+    for pose in poses[-count:]:
+        world_tip = pose[:3, :3] @ train["p"] + pose[:3, 3]
+        errors.append(float(np.linalg.norm(world_tip - train["pivot"])))
+    return float(np.sqrt(np.mean(np.square(errors))) * 1000.0)
+
+
+def pivot_loo_tip_max_mm(poses) -> float:
+    """Largest leave-one-out shift of the fitted mount-frame tip.
+
+    The pivot residual is a world-point error; this companion number says how
+    sensitive the contact vector itself is to any one planted pose.  It is a
+    deterministic uncertainty diagnostic suitable for dataset metadata.
+    """
+    if len(poses) < tool_spec.CONTACT_TOUCH_MIN_SAMPLES + 1:
+        return float("inf")
+    full = solve_pivot_trimmed(poses)["p"]
+    shifts = []
+    for index in range(len(poses)):
+        subset = poses[:index] + poses[index + 1:]
+        shifts.append(float(np.linalg.norm(solve_pivot_trimmed(subset)["p"] - full)))
+    return max(shifts) * 1000.0
+
+
+def measurement_utc(samples) -> str | None:
+    """UTC of the physical observations, rather than when a re-solve ran."""
+    times = []
+    for sample in samples:
+        for key in ("end_unix", "start_unix"):
+            value = sample.get(key)
+            if value is not None and math.isfinite(float(value)):
+                times.append(float(value))
+                break
+    if not times:
+        return None
+    return datetime.datetime.fromtimestamp(
+        max(times), datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def solve_plate(poses):
     """Least squares for (p, plane_z) over plate touches. Returns fit + gates."""
     rows, rhs = [], []
@@ -322,6 +378,31 @@ def render_workspace(right):
         f"  pen_tip_offset_x: {scalar(right.get('pen_tip_offset_x'))}",
         f"  pen_tip_offset_y: {scalar(right.get('pen_tip_offset_y'))}",
         f"  pen_tip_offset_z: {scalar(right.get('pen_tip_offset_z'))}",
+        "  # Optional independent physical-body axis/origin in the same mount frame.",
+        "  # Pivot touch-off qualifies the contact vector. For this axisymmetric",
+        "  # profile, consumers infer the body axis from mount origin -> tip and",
+        "  # preserve the measured shape; roll is irrelevant. Independent body",
+        "  # evidence is optional for asymmetric clearance studies, and a new",
+        "  # touch-off clears it because the physical seat may have changed.",
+        f"  tool_body_status: {right.get('tool_body_status') or 'null'}",
+        f"  tool_body_utc: {right.get('tool_body_utc') or 'null'}",
+        f"  tool_body_method: {right.get('tool_body_method') or 'null'}",
+        f"  tool_body_measurement_source: {right.get('tool_body_measurement_source') or 'null'}",
+        f"  tool_body_report: {right.get('tool_body_report') or 'null'}",
+        f"  tool_body_report_sha256: {right.get('tool_body_report_sha256') or 'null'}",
+        f"  tool_body_samples: {scalar(right.get('tool_body_samples'), '{:.0f}')}",
+        f"  tool_body_selected_cycle: {scalar(right.get('tool_body_selected_cycle'), '{:.0f}')}",
+        f"  tool_body_alignment_max_mm: {scalar(right.get('tool_body_alignment_max_mm'))}",
+        f"  tool_body_tip_repeatability_mm: {scalar(right.get('tool_body_tip_repeatability_mm'))}",
+        f"  tool_body_origin_repeatability_mm: {scalar(right.get('tool_body_origin_repeatability_mm'))}",
+        f"  tool_body_axis_repeatability_deg: {scalar(right.get('tool_body_axis_repeatability_deg'))}",
+        f"  tool_body_frame: {right.get('tool_body_frame') or 'null'}",
+        f"  tool_body_origin_x: {scalar(right.get('tool_body_origin_x'))}",
+        f"  tool_body_origin_y: {scalar(right.get('tool_body_origin_y'))}",
+        f"  tool_body_origin_z: {scalar(right.get('tool_body_origin_z'))}",
+        f"  tool_body_rpy_x: {scalar(right.get('tool_body_rpy_x'))}",
+        f"  tool_body_rpy_y: {scalar(right.get('tool_body_rpy_y'))}",
+        f"  tool_body_rpy_z: {scalar(right.get('tool_body_rpy_z'))}",
         "  # Carriage reading at the solve, metres — the mount rides the carriage,",
         "  # so the FK that produced the offset above used this value.",
         f"  carriage_m: {scalar(right.get('carriage_m'))}",
@@ -355,6 +436,7 @@ def render_workspace(right):
         "            # >50 means the wrist orientations were too uniform",
         f"    residual_mm: {scalar(right['touchoff'].get('residual_mm'), '{:.3f}')}",
         f"    holdout_mm: {scalar(right['touchoff'].get('holdout_mm'), '{:.3f}')}",
+        f"    tip_loo_max_mm: {scalar(right['touchoff'].get('tip_loo_max_mm'), '{:.3f}')}",
         f"    spread_deg: {scalar(right['touchoff'].get('spread_deg'), '{:.1f}')}",
         f"    note: \"{right['touchoff'].get('note', '')}\"",
         "",
@@ -400,7 +482,7 @@ def tool_refusal(spec, p):
 
 
 def pivot_mode(args, chain, names, pivots, source, session, mode="pivot",
-               surface=None, n_samples=0):
+               surface=None, n_samples=0, measured_utc=None):
     """Solve planted-tip samples for (p, P). Two capture styles share the
     math: continuous pivot windows (roll while planted), and the guided tip
     holds since 2026-08-22 — discrete stills at one point, each at a
@@ -425,6 +507,8 @@ def pivot_mode(args, chain, names, pivots, source, session, mode="pivot",
               "gates": {"cond_max": COND_MAX,
                         "residual_max_mm": round(residual_gate_mm(spec), 2),
                         "residual_floor_mm": PIVOT_RESIDUAL_MAX_MM,
+                        "holdout_count": PIVOT_HOLDOUT,
+                        "holdout_warning_mm": PIVOT_HOLDOUT_WARN_MM,
                         "tip_radius_mm": (round(spec.tip_radius_m * 1000, 2)
                                           if spec else None),
                         "spread_min_deg": PIVOT_SPREAD_MIN_DEG,
@@ -448,6 +532,8 @@ def pivot_mode(args, chain, names, pivots, source, session, mode="pivot",
         poses_all.extend(poses)
         window_fits.append(solve_pivot_trimmed(poses))
     fit = solve_pivot_trimmed(poses_all)
+    holdout_mm = pivot_holdout_residual_mm(poses_all)
+    loo_tip_max_mm = pivot_loo_tip_max_mm(poses_all)
     repeat_mm = 0.0
     for i in range(len(window_fits)):
         for j in range(i + 1, len(window_fits)):
@@ -465,14 +551,17 @@ def pivot_mode(args, chain, names, pivots, source, session, mode="pivot",
               f"({CARRIAGE_REST_M * 1000:.1f} mm); a fuser from 2026-08-30 on keeps all seven")
     print(f"  pivot point P = {np.round(fit['pivot'] * 1000, 1)} mm (base frame)"
           f" — the planted spot{f' on the {surface}' if surface else ''}")
-    print(f"  cond {fit['cond']:.1f}   rms {fit['rms_mm']:.3f} mm   rotation "
-          f"spread {fit['spread_deg']:.1f} deg   repeatability {repeat_mm:.2f} mm")
+    print(f"  cond {fit['cond']:.1f}   rms {fit['rms_mm']:.3f} mm   holdout "
+          f"{holdout_mm:.3f} mm   rotation spread {fit['spread_deg']:.1f} deg   "
+          f"tip LOO {loo_tip_max_mm:.3f} mm   repeatability {repeat_mm:.2f} mm")
 
     report["fit"] = {"p_mm": [round(v * 1000, 3) for v in fit["p"]],
                      "pivot_mm": [round(v * 1000, 2) for v in fit["pivot"]],
                      "cond": round(fit["cond"], 1),
                      "rms_mm": round(fit["rms_mm"], 4),
                      "spread_deg": round(fit["spread_deg"], 1),
+                     "holdout_mm": round(holdout_mm, 4),
+                     "tip_loo_max_mm": round(loo_tip_max_mm, 4),
                      "repeat_mm": round(repeat_mm, 3),
                      "samples": len(poses_all), "trimmed": fit["dropped"]}
     step = max(20, len(poses_all) // 8)
@@ -506,6 +595,14 @@ def pivot_mode(args, chain, names, pivots, source, session, mode="pivot",
             detail += (f" (the limit is widened from {PIVOT_RESIDUAL_MAX_MM} mm "
                        f"for {why}; exceeding even that is a real slip.)")
         refusals.append(detail)
+    warnings = []
+    if holdout_mm > PIVOT_HOLDOUT_WARN_MM:
+        warnings.append(
+            f"held-out planted poses miss by {holdout_mm:.2f} mm > "
+            f"{PIVOT_HOLDOUT_WARN_MM:.2f} mm — the fixed-point solve remains "
+            "observable, but pose-dependent compliance/seat migration is larger "
+            "than 1 mm. This value is retained as contact uncertainty and must "
+            "not be converted into an air-gap allowance.")
     if len(pivots) >= 2 and repeat_mm > PIVOT_REPEAT_MAX_MM:
         refusals.append(
             f"windows disagree by {repeat_mm:.1f} mm > {PIVOT_REPEAT_MAX_MM} "
@@ -536,6 +633,12 @@ def pivot_mode(args, chain, names, pivots, source, session, mode="pivot",
             print(f"  - {reason}")
         return finish("refused", 2, reasons=refusals)
 
+    if warnings:
+        print("\nACCEPTED WITH CALIBRATION UNCERTAINTY:")
+        for warning in warnings:
+            print(f"  - {warning}")
+        report["warnings"] = warnings
+
     if not args.write:
         print("\ndry run — pass --write to update config/workspace.yaml")
         return finish("dry", 0)
@@ -554,7 +657,8 @@ def pivot_mode(args, chain, names, pivots, source, session, mode="pivot",
         # n_pad is the gate on treating paper_plane_z as the paper. Count the
         # planted holds only when they were planted on the pad.
         [None] * n_samples if surface == "pad" else [],
-        fit, None, source)
+        fit, holdout_mm, source, tip_loo_max_mm=loo_tip_max_mm,
+        measured_utc=measured_utc)
     return finish("written", 0)
 
 
@@ -619,10 +723,14 @@ def main():
         surface = (data.get("tip_surface") if data is not None else None) or tip_holds[0].get("surface") or "palette"
         return pivot_mode(args, chain, names, [window], source, session,
                           mode="tip_point", surface=surface,
-                          n_samples=len(tip_holds))
+                          n_samples=len(tip_holds),
+                          measured_utc=measurement_utc(tip_holds))
     if pivots:
         # Pivot windows beat discrete touches whenever the fuser found them.
-        return pivot_mode(args, chain, names, pivots, source, session)
+        pivot_samples = [window for pivot in pivots
+                         for window in pivot.get("samples", [])]
+        return pivot_mode(args, chain, names, pivots, source, session,
+                          measured_utc=measurement_utc(pivot_samples))
     plate = [t for t in touches if t.get("label", "plate") == "plate"]
     pad = [t for t in touches if t.get("label") == "pad"]
     print(f"{len(plate)} plate touches, {len(pad)} pad touches from {source}")
@@ -755,25 +863,42 @@ def main():
         "pen_tip_offset_z": float(fit["p"][2]),
         "paper_plane_z": paper_plane,
         "paper_band_mm": paper_band,
-    }, plate, pad, fit, holdout, source)
+    }, plate, pad, fit, holdout, source,
+        measured_utc=measurement_utc(plate + pad))
     return finish("written", 0)
 
 
-def write_workspace(args, values, plate, pad, fit, holdout, source):
+def write_workspace(args, values, plate, pad, fit, holdout, source,
+                    tip_loo_max_mm=None, measured_utc=None):
     right: dict[str, Any] = {
         "tool_id": None, "tip_frame": None, "carriage_m": None,
         "pen_tip_offset_x": None, "pen_tip_offset_y": None,
         "pen_tip_offset_z": None, "paper_plane_z": None,
         "paper_band_mm": None, "ee_contact_z": None,
+        # A new planted-tip solve cannot retain an older body's independent
+        # pose qualification.  The physical study must repopulate all of it.
+        "tool_body_status": None, "tool_body_utc": None,
+        "tool_body_method": None, "tool_body_measurement_source": None,
+        "tool_body_report": None,
+        "tool_body_report_sha256": None, "tool_body_samples": None,
+        "tool_body_selected_cycle": None, "tool_body_alignment_max_mm": None,
+        "tool_body_tip_repeatability_mm": None,
+        "tool_body_origin_repeatability_mm": None,
+        "tool_body_axis_repeatability_deg": None, "tool_body_frame": None,
+        "tool_body_origin_x": None, "tool_body_origin_y": None,
+        "tool_body_origin_z": None, "tool_body_rpy_x": None,
+        "tool_body_rpy_y": None, "tool_body_rpy_z": None,
     }
     right.update(values)
     right["touchoff"] = {
-        "utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "utc": measured_utc or datetime.datetime.now(
+            datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "session": source,
         "n_plate": len(plate), "n_pad": len(pad),
         "cond": fit["cond"] if fit else None,
         "residual_mm": fit["rms_mm"] if fit else None,
         "holdout_mm": holdout,
+        "tip_loo_max_mm": tip_loo_max_mm,
         "spread_deg": fit["spread_deg"] if fit else None,
         "note": "" if fit else "composite only — conditioning refusal",
     }

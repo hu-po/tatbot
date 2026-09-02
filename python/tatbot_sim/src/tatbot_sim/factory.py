@@ -30,7 +30,11 @@ tatbot_sim.generate` was doing all along. The second pass is a normal run.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import math
 import os
+import random
 import sys
 
 from tatbot_sim import tasks
@@ -59,6 +63,79 @@ def select_tool(dist) -> None:
             "distribution that matches the tool you meant."
         )
     os.environ["TATBOT_TOOL_ID"] = dist.tool_id
+
+
+def _option(rest: list[str], name: str, default: str) -> str:
+    """Read one pre-import scalar option in either Tyro spelling."""
+    value = default
+    for index, token in enumerate(rest):
+        if token == name:
+            if index + 1 >= len(rest):
+                raise SystemExit(f"{name} needs a value")
+            value = rest[index + 1]
+        elif token.startswith(name + "="):
+            value = token.split("=", 1)[1]
+    return value
+
+
+def _bool_option(rest: list[str], name: str, default: bool) -> bool:
+    """Read a Tyro boolean before Args can safely be imported."""
+    enabled = default
+    negative = "--no-" + name.removeprefix("--")
+    for token in rest:
+        if token == name:
+            enabled = True
+        elif token == negative:
+            enabled = False
+    return enabled
+
+
+def calibration_delta(dist, rest: list[str]) -> tuple[float, float, float]:
+    """Resolve the shard-persistent tip perturbation before process import.
+
+    The fixed-point solve locates one point in the mount frame; it does not
+    imply that the pen changes between episodes.  A shard therefore represents
+    one plausible fitted session.  Different shard seeds span the retained
+    calibration uncertainty with a uniform-volume draw inside that sphere.
+    """
+    enabled = _bool_option(
+        rest, "--tool-calibration-jitter", dist.tip_calibration_jitter)
+    try:
+        seed = int(_option(rest, "--seed", "0"))
+        scale = float(_option(rest, "--tool-calibration-scale", "1.0"))
+    except ValueError as exc:
+        raise SystemExit(f"invalid calibration jitter option: {exc}") from exc
+    if not math.isfinite(scale) or scale < 0:
+        raise SystemExit("--tool-calibration-scale must be finite and non-negative")
+    if not enabled or scale == 0:
+        return (0.0, 0.0, 0.0)
+
+    # Do not use active_tool(): this is the first pass, after package import
+    # cached the formerly fitted tool.  Resolve the distribution's tool by id.
+    from tatbot_sim import tools
+
+    registry = tools.registry()
+    spec = registry.load_tool(dist.tool_id, tools.REPO)
+    workspace = registry.read_workspace(tools.REPO)
+    geometry = registry.resolved_tool_geometry(spec, workspace, "right", tools.REPO)
+    if geometry.contact_status != "pivot-calibrated":
+        raise SystemExit(
+            f"{dist.name!r} requested calibration jitter, but {spec.tool_id!r} "
+            f"contact geometry is {geometry.contact_status!r}: "
+            f"{geometry.contact_qualification_error or 'no qualified pivot TCP'}."
+        )
+    uncertainty = geometry.contact_uncertainty_m
+    if uncertainty is None or not math.isfinite(uncertainty) or uncertainty <= 0:
+        raise SystemExit(
+            f"{spec.tool_id!r} has no positive measured contact uncertainty to sample")
+
+    material = f"tatbot-tip-calibration-v1:{dist.name}:{spec.tool_id}:{seed}"
+    stable_seed = int.from_bytes(hashlib.sha256(material.encode()).digest()[:8], "big")
+    rng = random.Random(stable_seed)
+    direction = [rng.gauss(0.0, 1.0) for _ in range(3)]
+    norm = math.sqrt(sum(value * value for value in direction))
+    radius = uncertainty * scale * rng.random() ** (1.0 / 3.0)
+    return tuple(radius * value / norm for value in direction)
 
 
 def _usage(stream=sys.stdout) -> None:
@@ -95,6 +172,10 @@ def main(argv: list[str] | None = None) -> None:
 
     if os.environ.get(_REEXEC_GUARD) != dist.name:
         select_tool(dist)
+        from tatbot_sim import tools
+
+        os.environ[tools.CALIBRATION_DELTA_ENV] = json.dumps(
+            calibration_delta(dist, rest), separators=(",", ":"))
         os.environ[_REEXEC_GUARD] = dist.name
         # Replaces this process. Everything above ran against the wrong tool
         # (the package was imported before we got a say); nothing below it did.
@@ -119,8 +200,20 @@ def main(argv: list[str] | None = None) -> None:
     args = tyro.cli(generate.Args, default=dist.build_args(), args=rest)
     if not args.out_dir:
         raise SystemExit(f"{name!r} needs somewhere to write: pass --out-dir")
+    if name == "body-tattoo" and not args.scenario:
+        raise SystemExit(
+            "'body-tattoo' needs a compiled scenario: pass --scenario PATH "
+            "(create one with `tatbot sim compile`)"
+        )
 
     substrate = tools.active_substrate()
+    delta = tools.calibration_delta_m()
+    expected_delta = calibration_delta(dist, rest)
+    if any(abs(actual - expected) > 1e-12
+           for actual, expected in zip(delta, expected_delta, strict=True)):
+        raise SystemExit(
+            "factory calibration state differs across re-exec; unset "
+            f"{_REEXEC_GUARD} and run the named distribution again")
     try:
         tools.set_supply(args.supply, args.supply_ink)
     except ValueError as exc:
@@ -138,7 +231,9 @@ def main(argv: list[str] | None = None) -> None:
     # first second of a run that may take hours.
     print(f"[factory] {name}: {tool.tool_id} on {substrate.name} — "
           f"task {args.task}, horizon {args.horizon}, "
-          f"{args.num_episodes} episodes -> {args.out_dir}", flush=True)
+          f"{args.num_episodes} episodes, tip delta "
+          f"[{', '.join(f'{value * 1000:.3f}' for value in delta)}] mm -> "
+          f"{args.out_dir}", flush=True)
     generate.main(args)
 
 

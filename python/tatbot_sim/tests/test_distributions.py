@@ -203,6 +203,18 @@ def test_every_preset_is_a_valid_triple():
             tasks.validate_task(task, tool, substrate)
 
 
+def test_body_tattoo_is_scenario_driven_and_separate_from_silicone_pad_tattoo():
+    from tatbot_sim import distributions
+
+    body = distributions.DISTRIBUTIONS["body-tattoo"].build_args()
+    pad = distributions.DISTRIBUTIONS["skin-tattoo"].build_args()
+    assert body.distribution == "body-tattoo"
+    assert body.scenario is None
+    assert body.num_envs == 8
+    assert pad.distribution == "skin-tattoo"
+    assert pad.scenario is None
+
+
 def test_a_blocked_distribution_refuses_to_run_and_says_why():
     """The mechanism, tested against a synthetic entry rather than a real one.
 
@@ -274,7 +286,41 @@ def test_the_paper_preset_only_departs_from_the_defaults_deliberately():
         f.name for f in dataclasses.fields(generate.Args)
         if getattr(preset, f.name) != getattr(base, f.name)
     }
-    assert differs == {"horizon", "distribution"}, differs
+    assert differs == {"horizon", "distribution", "tool_calibration_jitter"}, differs
+
+
+def test_distribution_and_args_agree_about_preimport_calibration_jitter():
+    """The factory must decide before it is safe to construct Args."""
+    from tatbot_sim import distributions
+
+    for dist in distributions.DISTRIBUTIONS.values():
+        assert dist.build_args().tool_calibration_jitter == dist.tip_calibration_jitter
+
+
+def test_paper_calibration_delta_is_seeded_persistent_and_bounded():
+    from tatbot_sim import factory
+
+    dist = factory.DISTRIBUTIONS["paper-draw"]
+    first = factory.calibration_delta(dist, ["--seed", "19"])
+    again = factory.calibration_delta(dist, ["--seed=19"])
+    other = factory.calibration_delta(dist, ["--seed", "20"])
+    radius = sum(value * value for value in first) ** 0.5
+    assert first == again
+    assert first != other
+    assert 0.0 < radius <= 0.004637
+
+
+def test_calibration_jitter_can_be_disabled_or_scaled():
+    from tatbot_sim import factory
+
+    dist = factory.DISTRIBUTIONS["paper-draw"]
+    assert factory.calibration_delta(
+        dist, ["--no-tool-calibration-jitter", "--seed", "19"]
+    ) == (0.0, 0.0, 0.0)
+    full = factory.calibration_delta(dist, ["--seed", "19"])
+    half = factory.calibration_delta(
+        dist, ["--seed", "19", "--tool-calibration-scale", "0.5"])
+    assert half == tuple(value * 0.5 for value in full)
 
 
 def test_a_distribution_names_itself_in_its_dataset():

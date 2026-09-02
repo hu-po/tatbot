@@ -166,7 +166,7 @@ def sim_list(ctx, ns, rest):
 
 
 def _gen_args(p):
-    p.add_argument("distribution", help="paper-draw | skin-erase | skin-tattoo (see `sim list`)")
+    p.add_argument("distribution", help="paper-draw | skin-erase | skin-tattoo | body-tattoo (see `sim list`)")
 
 
 @verb(noun="sim", verb="generate", tier=OFFLINE, summary="generate one named distribution into a LeRobot v3 dataset",
@@ -175,6 +175,32 @@ def _gen_args(p):
       invariants=SIM_INV)
 def sim_generate(ctx, ns, rest):
     return uvmod(ctx, SIM_PROJECT, "tatbot_sim.factory", ns.distribution, *rest)
+
+
+def _compile_scenario_args(p):
+    p.add_argument("placement", help="placement v4 JSON")
+
+
+@verb(noun="sim", verb="compile", tier=OFFLINE, summary="compile one Inkmap placement into a replayable posed-body scenario",
+      role="sim", wraps=("python/tatbot_sim/src/tatbot_sim/inkmap/cli.py",),
+      passthrough="tatbot_sim.inkmap.cli compile", args=_compile_scenario_args,
+      example=("config/inkmap/examples/forearm-placement-v4.json", "--", "--pose", "reclined-left-arm-supported", "--output", "/tmp/forearm.json"),
+      invariants=("Offline materialization only; the output is not robot motion authorization.",))
+def sim_compile(ctx, ns, rest):
+    return uvmod(ctx, SIM_PROJECT, "tatbot_sim.inkmap.cli", "compile", ns.placement, *rest)
+
+
+@verb(noun="sim", verb="sample", tier=OFFLINE, summary="materialize a bounded procedural posed-body scenario suite",
+      role="sim", wraps=("python/tatbot_sim/src/tatbot_sim/inkmap/cli.py",),
+      passthrough="tatbot_sim.inkmap.cli sample", example=("--", "--output-dir", "~/tatbot-sim/scenarios", "--count", "64"),
+      invariants=("Generated data must stay outside the repository.",
+                  "Every attempt is recorded; bounded retries fail rather than silently dropping a sample.",
+                  "Offline materialization only; scenarios are not robot motion authorization."))
+def sim_sample(ctx, ns, rest):
+    return uvmod(
+        ctx, SIM_PROJECT, "tatbot_sim.inkmap.cli", "sample", *rest,
+        env={"TATBOT_TOOL_ID": "lutin-3rl-bugpin"},
+    )
 
 
 def _simscript(name, rel, summary, example=("--", "--help")):

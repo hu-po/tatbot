@@ -145,15 +145,24 @@ def arm_ping(ctx, ns, rest):
 
 
 def _recover_args(p):
-    p.add_argument("role", nargs="?", choices=("leader", "follower"), default="follower")
-    p.add_argument("--ip", help="override the controller IP")
+    p.add_argument("role", nargs="?", choices=("leader", "follower"),
+                   help="recover only this arm (default: follower, then leader)")
+    p.add_argument("--ip", help="override the controller IP (requires an explicit role)")
 
 
-@verb(noun="arm", verb="recover", tier=MOTION_HUMAN, summary="clear a controller fault and land staged→sleep→idle",
-      role="arm", wraps=("scripts/il_recover_arm.sh",), args=_recover_args, example=("follower",), doc="docs/robot.md",
-      invariants=("Keep the workspace clear: the arm moves slowly through staged and sleep.",
+@verb(noun="arm", verb="recover", tier=MOTION_HUMAN,
+      summary="clear controller faults and land both arms staged→sleep→idle",
+      role="arm", wraps=("scripts/il_recover_arms.sh", "scripts/il_recover_arm.sh"),
+      args=_recover_args, example=(), doc="docs/robot.md",
+      invariants=("With no role, recovers follower first and then leader; an explicit role recovers only that arm.",
+                  "Keep the workspace clear: each arm moves slowly through staged and sleep.",
                   "Same landing routine the plugins use on a failed disconnect (recovery.land_arm)."))
 def arm_recover(ctx, ns, rest):
+    if ns.role is None:
+        if ns.ip:
+            print("arm recover: --ip requires an explicit leader or follower role", file=sys.stderr)
+            return EXIT_USAGE
+        return sh(ctx, "scripts/il_recover_arms.sh", *rest)
     ip = ns.ip or ARMS.get(ns.role)
     if not ip:
         print(f"arm recover: no {ns.role} address in the hardware profile — "
@@ -195,6 +204,18 @@ def tool_show(ctx, ns, rest):
       wraps=("scripts/check_tool_sync.py",), passthrough="check_tool_sync.py", example=(), doc="docs/tools.md")
 def tool_sync(ctx, ns, rest):
     return py(ctx, "scripts/check_tool_sync.py", *tool_flag(ctx), *rest)
+
+
+@verb(noun="tool", verb="qualify-body", tier=MUTATES_CONFIG,
+      summary="bind a five-reseat independent body-axis report to the current touch-off",
+      wraps=("scripts/tool_body_qualify.py", "scripts/lib/tool_spec.py"),
+      passthrough="tool_body_qualify.py", example=("--", "--report", "study.json"),
+      doc="docs/tools.md", needs_tool=True,
+      invariants=("Reads measurements only; never connects to or commands an arm.",
+                  "The selected last cycle must match workspace.yaml's current touch-off.",
+                  "Without --write this is a dry-run; failures write nothing."))
+def tool_qualify_body(ctx, ns, rest):
+    return py(ctx, "scripts/tool_body_qualify.py", *tool_flag(ctx), *rest)
 
 
 @verb(noun="tool", verb="urdf", tier=MUTATES_CONFIG, summary="put the fitted tool into urdf/tatbot.urdf so FK sees it",

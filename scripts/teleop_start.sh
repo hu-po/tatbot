@@ -30,6 +30,8 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$REPO/scripts/lib/cli_hint.sh"; cli_hint::note "tatbot teleop start"
 # shellcheck source=scripts/lib/estop_guard.sh
 source "$REPO/scripts/lib/estop_guard.sh"
+# shellcheck source=scripts/lib/arm_gate.sh
+source "$REPO/scripts/lib/arm_gate.sh"
 # shellcheck source=scripts/lib/profile_env.sh
 source "$REPO/scripts/lib/profile_env.sh"
 profile_env::require || exit $?
@@ -50,6 +52,53 @@ for a in "$@"; do
   esac
 done
 set -- "${REST[@]}"
+
+SQUARE_REQUESTED=0
+SPIRAL_REQUESTED=0
+CARRIAGE_IK_REQUESTED=0
+DRAW_REQUESTED=0
+for a in "$@"; do
+  case "$a" in
+    --draw-dir|--draw-dir=*) DRAW_REQUESTED=1 ;;
+    --square-probe-mm|--square-probe-mm=*) SQUARE_REQUESTED=1 ;;
+    --spiral-carriage-ik) SPIRAL_REQUESTED=1; CARRIAGE_IK_REQUESTED=1 ;;
+    --spiral-radius-mm|--spiral-radius-mm=*|--spiral-turns|--spiral-turns=*|--spiral-duration-s|--spiral-duration-s=*|--spiral-ease-s|--spiral-ease-s=*)
+      SPIRAL_REQUESTED=1 ;;
+  esac
+done
+if [ "$SQUARE_REQUESTED" = 1 ]; then
+  if [ "${TATBOT_SQUARE_ARMED:-}" != 1 ]; then
+    echo "REFUSING Cartesian square passthrough: use the dedicated autonomous verb:" >&2
+    echo "  tatbot --ee-tool $EE_TOOL teleop square --nonce <fresh-literal>" >&2
+    exit 3
+  fi
+  # The square wrapper already consumed this nonce. Requiring the inherited
+  # gate here proves the wrapper is still our ancestor and the ledger entry is
+  # still the one from this launch.
+  arm_gate::require || exit $?
+fi
+if [ "$DRAW_REQUESTED" = 1 ]; then
+  # The surface-first draw session (docs/draw.md) is armed only by its
+  # wrapper, which also owns the capture server and the Rerun shadow.
+  if [ "${TATBOT_DRAW_ARMED:-}" != 1 ] || [ "${TATBOT_CARRIAGE_IK_ARMED:-}" != 1 ]; then
+    echo "REFUSING draw passthrough: use the dedicated autonomous verb:" >&2
+    echo "  tatbot --ee-tool $EE_TOOL draw run --nonce <fresh-literal>" >&2
+    exit 3
+  fi
+  arm_gate::require || exit $?
+fi
+if [ "$SPIRAL_REQUESTED" = 1 ]; then
+  if [ "${TATBOT_SPIRAL_ARMED:-}" != 1 ]; then
+    echo "REFUSING Cartesian spiral passthrough: use the dedicated autonomous verb:" >&2
+    echo "  tatbot --ee-tool $EE_TOOL teleop spiral --nonce <fresh-literal>" >&2
+    exit 3
+  fi
+  arm_gate::require || exit $?
+  if [ "$CARRIAGE_IK_REQUESTED" = 1 ] && [ "${TATBOT_CARRIAGE_IK_ARMED:-}" != 1 ]; then
+    echo "REFUSING carriage-IK passthrough: use teleop spiral --carriage-ik." >&2
+    exit 3
+  fi
+fi
 
 TELEOP="$REPO/cpp/teleop/build/wxai_teleop"
 # Telemetry endpoint comes from the profile (endpoints.teleop_telemetry_udp,

@@ -147,7 +147,7 @@ class Verb:
 # Nouns, in the order an operator meets them in a day. --help and docs follow it.
 NOUN_ORDER = (
     "status", "schema", "check", "logs", "estop", "arm", "tool", "ink",
-    "teleop", "record", "dip", "rollout", "serve", "train", "data", "sim",
+    "teleop", "draw", "record", "dip", "rollout", "serve", "train", "data", "sim",
     "vision", "live", "depth", "audio", "net", "node", "inkmap",
     "inkgen",
 )
@@ -162,6 +162,7 @@ NOUN_SUMMARY = {
     "tool": "the end-effector tool registry",
     "ink": "inks, caps, palette and the ledger",
     "teleop": "leader→follower teleoperation and tuning",
+    "draw": "map a surface with the wrist D405s, then draw on it",
     "record": "record imitation-learning episodes",
     "dip": "dip the fitted tool into the palette",
     "rollout": "run and read trained policies on the arm",

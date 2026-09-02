@@ -155,19 +155,45 @@ if [ -n "$PLAUSIBILITY_CONTRACT" ]; then
     exit 2
   }
   PLAUSIBILITY_CONTRACT="$(cd "$(dirname "$PLAUSIBILITY_CONTRACT")" && pwd -P)/$(basename "$PLAUSIBILITY_CONTRACT")"
-  "$PYTHON" - "$PLAUSIBILITY_CONTRACT" "$POLICY" <<'PY'
+  "$PYTHON" - "$PLAUSIBILITY_CONTRACT" "$POLICY" "$FPS" <<'PY'
 import hashlib, json, pathlib, sys
-contract_path, policy_path = map(pathlib.Path, sys.argv[1:])
+contract_path, policy_path = map(pathlib.Path, sys.argv[1:3])
+serve_fps = float(sys.argv[3])
 contract = json.loads(contract_path.read_text())
 if contract.get("kind") != "demonstration-derived no-arm trajectory plausibility contract":
     raise SystemExit("unsupported plausibility contract kind")
-if contract.get("schema_version") != 1:
+if contract.get("schema_version") not in (1, 2):
     raise SystemExit("unsupported plausibility contract schema")
+if contract.get("schema_version") == 2:
+    if not isinstance(contract.get("quality_thresholds"), dict):
+        raise SystemExit("schema-2 plausibility contract lacks quality thresholds")
+    execution = contract.get("execution_model")
+    if not isinstance(execution, dict):
+        raise SystemExit("schema-2 plausibility contract lacks execution model")
 config = json.loads((policy_path / "config.json").read_text())
 expected_shape = (int(config["n_action_steps"]), int(config["output_features"]["action"]["shape"][0]))
 actual_shape = (int(contract.get("horizon", -1)), int(contract.get("joints", -1)))
 if actual_shape != expected_shape:
     raise SystemExit(f"plausibility contract shape {actual_shape} != checkpoint {expected_shape}")
+if contract.get("schema_version") == 2:
+    try:
+        execution_fps = float(execution["fps"])
+        target_velocity = float(execution["max_joint_velocity_rad_s"])
+        controller_velocity = float(execution["controller_velocity_limit_rad_s"])
+        actions_per_chunk = int(execution["actions_per_chunk"])
+        aggregate = execution["aggregate_fn_name"]
+    except (KeyError, TypeError, ValueError) as error:
+        raise SystemExit(f"invalid schema-2 execution model: {error}") from error
+    if execution_fps != serve_fps:
+        raise SystemExit(
+            f"plausibility execution fps {execution_fps:g} != server fps {serve_fps:g}"
+        )
+    if not (0 < target_velocity <= controller_velocity):
+        raise SystemExit("plausibility execution velocity limits are invalid")
+    if not (0 < actions_per_chunk <= expected_shape[0]):
+        raise SystemExit("plausibility execution actions_per_chunk is invalid")
+    if aggregate != "weighted_average":
+        raise SystemExit("plausibility execution aggregate_fn_name must be weighted_average")
 postprocessor = policy_path / "policy_postprocessor.json"
 digest = hashlib.sha256(postprocessor.read_bytes()).hexdigest()
 if contract.get("postprocessor_sha256") != digest:

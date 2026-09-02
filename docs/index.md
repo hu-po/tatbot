@@ -1,7 +1,7 @@
 ---
 summary: Public Tatbot developer and artist documentation
 tags: [index, public]
-updated: 2026-08-31
+updated: 2026-09-01
 audience: [dev, artist, contributor]
 ---
 
@@ -44,6 +44,7 @@ person. Use simulation or an instrumented non-human fixture while developing.
 - [Command-line reference](cli.md)
 - [Configuration](configuration.md)
 - [Documentation style](style_guide.md)
+- [Release notes](release-notes.md)
 
 ```{toctree}
 :maxdepth: 2
@@ -57,6 +58,7 @@ architecture
 contributing
 robot
 teleop_tuning
+draw
 vision
 fiducials
 ee_fiducial_tracking
@@ -70,5 +72,6 @@ estop
 cli
 configuration
 style_guide
+release-notes
 logos/index
 ```

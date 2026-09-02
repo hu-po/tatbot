@@ -69,6 +69,15 @@ def inkmap_check(ctx, ns, rest):
     return Plan(argv=[ctx.path("scripts/check"), "web"], notes=["runs npm ci first if node_modules is missing"])
 
 
+@verb(noun="inkmap", verb="rig", tier=OFFLINE, summary="regenerate the checked-in HBM rigs and named poses with Blender",
+      wraps=("scripts/inkmap_rig.sh", "web/inkmap/tools/rig-hbm.py", "config/inkmap/body-rig.json"),
+      passthrough="inkmap_rig.sh", example=(), doc=DOC,
+      invariants=("CPU-only; does not connect to a robot or camera.",
+                  "Fails unless canonical face order and the 0.1 mm cross-runtime LBS gate pass."))
+def inkmap_rig(ctx, ns, rest):
+    return Plan(argv=[ctx.path("scripts/inkmap_rig.sh"), *rest])
+
+
 def _deploy_args(p):
     p.add_argument("--space", default="tatbot/inkmap", help="Hugging Face Space id (static SDK)")
     p.add_argument("--no-build", action="store_true", help="upload the existing web/inkmap/dist as is")

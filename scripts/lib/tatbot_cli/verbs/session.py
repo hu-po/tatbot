@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+import math
 import sys
 
 from tatbot_cli import EXIT_GATE_REFUSED
@@ -44,6 +46,87 @@ def _teleop_start_args(p):
 def teleop_start(ctx, ns, rest):
     flags = ["--touchoff"] if ns.touchoff else []
     return sh(ctx, "scripts/teleop_start.sh", *tool_flag(ctx), *flags, *rest)
+
+
+def _teleop_square_args(p):
+    def bounded(label, low, high):
+        def parse(value):
+            number = float(value)
+            if not math.isfinite(number) or not low <= number <= high:
+                raise argparse.ArgumentTypeError(f"{label} must be between {low:g} and {high:g}")
+            return number
+        return parse
+
+    p.add_argument("--size-mm", type=bounded("--size-mm", 1.0, 10.0), default=6.0,
+                   help="square edge in millimetres (C++ gate accepts 1..10; default 6)")
+    p.add_argument("--edge-s", type=bounded("--edge-s", 2.0, 30.0), default=12.0,
+                   help="seconds per edge (C++ gate accepts 2..30; default 12 = 0.5 mm/s at 6 mm)")
+    nonce_arg(p)
+
+
+@verb(noun="teleop", verb="square", tier=MOTION_AUTO,
+      summary="hand-guide to paper, then trace one preflighted joint-space square",
+      role="arm", wraps=("scripts/teleop_square.sh", "scripts/teleop_start.sh",
+                         "cpp/teleop/wxai_teleop.cpp"),
+      passthrough="wxai_teleop", args=_teleop_square_args, needs_tool=True, nonce=True,
+      example=("--size-mm", "6", "--edge-s", "12", "--nonce", "paper-square-a"),
+      doc="docs/teleop_tuning.md", tty=True,
+      invariants=(ESTOP_INV, EXCL_INV,
+                  "Run locally on the arm node: autonomous motion and its literal single-use nonce are refused over --on.",
+                  "The operator hand-guides to light contact; READY latches after 0.2 s below 0.10 rad/s, then one SPACE transfers control.",
+                  "A model-preflighted joint-position trajectory keeps start Z/orientation and grows the base-X/Y square toward the arm base before closing once.",
+                  "E-stop, contact cap, measured velocity or rolling arm effort retracts the pen and terminates; no auto-resume.",
+                  "After Enter, follower then leader land through the shared staged-to-sleep routine; emergency release skips landing.",
+                  "Reported endpoint error is encoder/FK evidence, not independent physical ink accuracy."))
+def teleop_square(ctx, ns, rest):
+    return sh(ctx, "scripts/teleop_square.sh", *tool_flag(ctx),
+              "--size-mm", str(ns.size_mm), "--edge-s", str(ns.edge_s), *rest)
+
+
+def _teleop_spiral_args(p):
+    def bounded(label, low, high):
+        def parse(value):
+            number = float(value)
+            if not math.isfinite(number) or not low <= number <= high:
+                raise argparse.ArgumentTypeError(f"{label} must be between {low:g} and {high:g}")
+            return number
+        return parse
+
+    p.add_argument("--radius-mm", type=bounded("--radius-mm", 2.0, 12.0), default=6.0,
+                   help="final spiral radius in millimetres (default 6; clear this distance around the center)")
+    p.add_argument("--turns", type=bounded("--turns", 1.0, 6.0), default=3.0,
+                   help="number of expanding turns (default 3)")
+    p.add_argument("--duration-s", type=bounded("--duration-s", 30.0, 600.0), default=180.0,
+                   help="total draw duration (default 180 seconds)")
+    p.add_argument("--ease-s", type=bounded("--ease-s", 0.5, 10.0), default=2.0,
+                   help="quintic speed ease at each endpoint (default 2 seconds)")
+    p.add_argument("--carriage-ik", action="store_true",
+                   help="experimental ballpoint-only seven-DOF arm/carriage A/B mode")
+    nonce_arg(p)
+
+
+@verb(noun="teleop", verb="spiral", tier=MOTION_AUTO,
+      summary="hand-guide to a center point, then trace one slow expanding spiral",
+      role="arm", wraps=("scripts/teleop_spiral.sh", "scripts/teleop_start.sh",
+                         "cpp/teleop/wxai_teleop.cpp"),
+      passthrough="wxai_teleop", args=_teleop_spiral_args, needs_tool=True, nonce=True,
+      example=("--radius-mm", "6", "--turns", "3", "--duration-s", "180", "--ease-s", "2",
+               "--nonce", "paper-spiral-a"),
+      doc="docs/teleop_tuning.md", tty=True,
+      invariants=(ESTOP_INV, EXCL_INV,
+                  "Run locally on the arm node: autonomous motion and its literal single-use nonce are refused over --on.",
+                  "The trigger point is the spiral center; leave at least the selected radius clear in every base-X/Y direction.",
+                  "One SPACE starts a completely preflighted constant-Z/orientation trajectory at approximately constant arc-length speed, with short endpoint eases; no scripted auto-resume.",
+                  "--carriage-ik is a ballpoint-only A/B mode: keep clear through its off-paper reversal check; it then preflights and streams a guarded seven-joint tip trajectory.",
+                  "E-stop, contact cap, measured velocity or rolling arm effort retracts the pen and terminates.",
+                  "After Enter, follower then leader land through the shared staged-to-sleep routine; emergency release skips landing.",
+                  "The 10 Hz trace is encoder/FK evidence; ink width, continuity and physical Z remain paper evidence."))
+def teleop_spiral(ctx, ns, rest):
+    args = [*tool_flag(ctx), "--radius-mm", str(ns.radius_mm), "--turns", str(ns.turns),
+            "--duration-s", str(ns.duration_s), "--ease-s", str(ns.ease_s)]
+    if ns.carriage_ik:
+        args.append("--carriage-ik")
+    return sh(ctx, "scripts/teleop_spiral.sh", *args, *rest)
 
 
 @verb(noun="teleop", verb="lerobot", tier=MOTION_HUMAN, summary="LeRobot teleop sanity check (no recording), wrist cams shown",

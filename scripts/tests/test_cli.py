@@ -83,6 +83,31 @@ def test_bare_global_flags_work_after_the_verb():
     assert a.stdout == b.stdout
 
 
+def test_arm_recover_defaults_to_both_and_preserves_explicit_single_arm_forms():
+    both = tatbot("--dry-run", "--json", "arm", "recover", node=ARM)
+    assert both.returncode == 0, both.stderr
+    assert json.loads(both.stdout)["argv"] == [str(REPO / "scripts/il_recover_arms.sh")]
+
+    for role in ("follower", "leader"):
+        one = tatbot("--dry-run", "--json", "arm", "recover", role, node=ARM)
+        assert one.returncode == 0, one.stderr
+        assert json.loads(one.stdout)["argv"] == [
+            str(REPO / "scripts/il_recover_arm.sh"), arm_ip(role), role,
+        ]
+
+
+def test_arm_recover_ip_override_requires_an_explicit_role():
+    ambiguous = tatbot("--dry-run", "arm", "recover", "--ip", "192.0.2.1", node=ARM)
+    assert ambiguous.returncode == 2
+    assert "requires an explicit leader or follower role" in ambiguous.stderr
+
+    follower = tatbot(
+        "--dry-run", "--json", "arm", "recover", "follower", "--ip", "192.0.2.1", node=ARM,
+    )
+    assert follower.returncode == 0, follower.stderr
+    assert json.loads(follower.stdout)["argv"][-2:] == ["192.0.2.1", "follower"]
+
+
 def test_dashdash_passthrough_reaches_the_launcher_untouched():
     r = tatbot("--dry-run", "--json", "--ee-tool", TOOL, "record", "d", "t", "-n", "2", "--", "--robot.z_floor_m=0.04", "-x", node=ARM)
     assert r.returncode == 0, r.stderr
@@ -349,6 +374,7 @@ def test_inkmap_verbs_have_honest_tiers():
     assert tiers["dev"] == OFFLINE
     assert tiers["build"] == OFFLINE
     assert tiers["check"] == OFFLINE
+    assert tiers["rig"] == OFFLINE
     assert tiers["deploy"] == REMOTE
 
 
@@ -372,6 +398,24 @@ def test_inkmap_check_delegates_to_scripts_check():
     assert r.returncode == 0, r.stderr
     plan = json.loads(r.stdout)
     assert plan["argv"][-2:] == [str(REPO / "scripts/check"), "web"]
+
+    r = tatbot("--dry-run", "--json", "inkmap", "rig", "--", "--body", "hbm-male-stylized")
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["argv"][-3:] == [str(REPO / "scripts/inkmap_rig.sh"), "--body", "hbm-male-stylized"]
+
+
+def test_sim_sample_delegates_to_bounded_offline_materializer():
+    r = tatbot(
+        "--dry-run", "--json", "sim", "sample", "--",
+        "--output-dir", "/tmp/body-suite", "--count", "64", "--seed", "7",
+    )
+    assert r.returncode == 0, r.stderr
+    argv = json.loads(r.stdout)["argv"]
+    assert json.loads(r.stdout)["env"]["TATBOT_TOOL_ID"] == "lutin-3rl-bugpin"
+    assert argv[-8:] == [
+        "tatbot_sim.inkmap.cli", "sample", "--output-dir", "/tmp/body-suite",
+        "--count", "64", "--seed", "7",
+    ]
 
 
 def test_inkmap_deploy_constructs_deploy_script_argv():
@@ -542,6 +586,85 @@ def test_teleop_start_is_the_canonical_bare_teleop():
     assert "teleop start" in sweep and f"./cpp/teleop/build/wxai_teleop {arm_ip('leader')}" not in sweep
 
 
+def test_teleop_square_is_one_shot_autonomous_motion():
+    r = tatbot("--dry-run", "--json", "--ee-tool", BALLPOINT, "teleop", "square", node=ARM)
+    assert r.returncode == 3 and json.loads(r.stderr)["gate"] == "arm_gate"
+
+    r = tatbot("--dry-run", "--ee-tool", BALLPOINT, "teleop", "square",
+               "--size-mm", "0", "--nonce", "square-invalid", node=ARM)
+    assert r.returncode == 2 and "between 1 and 10" in r.stderr
+
+    r = tatbot("--dry-run", "--json", "--ee-tool", BALLPOINT, "teleop", "square",
+               "--size-mm", "6", "--edge-s", "12", "--nonce", "square-a", node=ARM)
+    assert r.returncode == 0, r.stderr
+    argv = json.loads(r.stdout)["argv"]
+    assert argv[0].endswith("scripts/teleop_square.sh")
+    assert argv[-4:] == ["--size-mm", "6.0", "--edge-s", "12.0"]
+
+    r = tatbot("--dry-run", "--json", "--on", ARM, "--ee-tool", BALLPOINT,
+               "teleop", "square", "--nonce", "square-b", node=VIEWER)
+    assert r.returncode == 3 and json.loads(r.stderr)["gate"] == "arm_gate"
+
+    wrapper = (REPO / "scripts/teleop_square.sh").read_text()
+    assert "arm_gate::require" in wrapper
+    assert "TATBOT_SQUARE_ARMED=1" in wrapper
+    assert "--square-probe-mm" in wrapper and "--square-edge-s" in wrapper
+    assert '"$TATBOT_FOLLOWER_IP" follower' in wrapper
+    assert '"$TATBOT_LEADER_IP" leader' in wrapper
+    assert '"$PROBE_RC" -eq 130' in wrapper and "automatic landing is SKIPPED" in wrapper
+    assert "TATBOT_PROBE_LAND_SENTINEL" in wrapper and 'if [ ! -f "$LAND_SENTINEL" ]' in wrapper
+    start = (REPO / "scripts/teleop_start.sh").read_text()
+    assert "REFUSING Cartesian square passthrough" in start
+    assert "arm_gate::require" in start
+    record = (REPO / "scripts/record_session.sh").read_text()
+    assert "REFUSING Cartesian square passthrough from teleop run" in record
+
+
+def test_teleop_spiral_is_one_shot_autonomous_motion():
+    r = tatbot("--dry-run", "--json", "--ee-tool", BALLPOINT, "teleop", "spiral", node=ARM)
+    assert r.returncode == 3 and json.loads(r.stderr)["gate"] == "arm_gate"
+
+    r = tatbot("--dry-run", "--ee-tool", BALLPOINT, "teleop", "spiral",
+               "--radius-mm", "1", "--nonce", "spiral-invalid", node=ARM)
+    assert r.returncode == 2 and "between 2 and 12" in r.stderr
+
+    r = tatbot("--dry-run", "--json", "--ee-tool", BALLPOINT, "teleop", "spiral",
+               "--radius-mm", "6", "--turns", "3", "--duration-s", "180",
+               "--nonce", "spiral-a", node=ARM)
+    assert r.returncode == 0, r.stderr
+    argv = json.loads(r.stdout)["argv"]
+    assert argv[0].endswith("scripts/teleop_spiral.sh")
+    assert argv[-8:] == ["--radius-mm", "6.0", "--turns", "3.0", "--duration-s", "180.0",
+                         "--ease-s", "2.0"]
+
+    r = tatbot("--dry-run", "--json", "--ee-tool", BALLPOINT, "teleop", "spiral",
+               "--duration-s", "120", "--carriage-ik", "--nonce", "spiral-carriage-a",
+               node=ARM)
+    assert r.returncode == 0, r.stderr
+    carriage_argv = json.loads(r.stdout)["argv"]
+    assert carriage_argv[-1] == "--carriage-ik"
+
+    r = tatbot("--dry-run", "--json", "--on", ARM, "--ee-tool", BALLPOINT,
+               "teleop", "spiral", "--nonce", "spiral-b", node=VIEWER)
+    assert r.returncode == 3 and json.loads(r.stderr)["gate"] == "arm_gate"
+
+    wrapper = (REPO / "scripts/teleop_spiral.sh").read_text()
+    assert "arm_gate::require" in wrapper and "TATBOT_SPIRAL_ARMED=1" in wrapper
+    assert "--spiral-radius-mm" in wrapper and "--spiral-duration-s" in wrapper
+    assert "--spiral-ease-s" in wrapper
+    assert "TATBOT_CARRIAGE_IK_ARMED=1" in wrapper and "--spiral-carriage-ik" in wrapper
+    assert "0.5..3.5 mm" in wrapper
+    assert '"$TATBOT_FOLLOWER_IP" follower' in wrapper
+    assert '"$TATBOT_LEADER_IP" leader' in wrapper
+    assert '"$PROBE_RC" -eq 130' in wrapper and "automatic landing is SKIPPED" in wrapper
+    assert "TATBOT_PROBE_LAND_SENTINEL" in wrapper and 'if [ ! -f "$LAND_SENTINEL" ]' in wrapper
+    start = (REPO / "scripts/teleop_start.sh").read_text()
+    assert "REFUSING Cartesian spiral passthrough" in start
+    assert "REFUSING carriage-IK passthrough" in start
+    record = (REPO / "scripts/record_session.sh").read_text()
+    assert "REFUSING Cartesian spiral passthrough from teleop run" in record
+
+
 # --- routing --------------------------------------------------------------------------
 
 
@@ -652,6 +775,38 @@ def test_cli_shim_is_not_orphan_or_entry_point():
     eps = selfcheck.entry_points(REPO)
     assert "scripts/tatbot" not in eps
     assert selfcheck.check_orphans(REPO) == []
+
+
+def test_verbs_vanish_when_their_backing_scripts_are_missing(tmp_path, monkeypatch):
+    from tatbot_cli import registry
+
+    # Native verb (no wraps) is always available
+    native_verb = registry.Verb(
+        noun="testnoun", verb="native", tier=registry.OFFLINE, summary="native test verb", run=lambda *a: 0, wraps=()
+    )
+    assert registry._available(native_verb) is True
+
+    # Wrapped verb with existing files is available
+    existing_file = "scripts/check"
+    assert (REPO / existing_file).exists()
+    wrapped_present = registry.Verb(
+        noun="testnoun", verb="present", tier=registry.OFFLINE, summary="present test verb", run=lambda *a: 0, wraps=(existing_file,)
+    )
+    assert registry._available(wrapped_present) is True
+
+    # Wrapped verb with any missing file is unavailable (vanishes)
+    wrapped_missing = registry.Verb(
+        noun="testnoun", verb="missing", tier=registry.OFFLINE, summary="missing test verb", run=lambda *a: 0, wraps=("scripts/nonexistent_script_xyz.sh",)
+    )
+    assert registry._available(wrapped_missing) is False
+
+    # Mock _REGISTRY and verify all_verbs() filters out missing verbs
+    monkeypatch.setattr(registry, "_REGISTRY", [native_verb, wrapped_present, wrapped_missing])
+    verbs = registry.all_verbs()
+    assert native_verb in verbs
+    assert wrapped_present in verbs
+    assert wrapped_missing not in verbs
+    assert "missing" not in [v.verb for v in registry.verbs_of("testnoun")]
 
 
 def _wrapped_launchers():

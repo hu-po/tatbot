@@ -16,10 +16,10 @@ export function Picker({ pulse = false }: { pulse?: boolean } = {}) {
             type="button"
             className={placing === d.id ? "design active" : "design"}
             onClick={() => (placing === d.id ? cancelPlacing() : startPlacing(d.id))}
+            aria-label={d.name}
             title={`${d.name} — ${d.default_size_mm[0]}×${d.default_size_mm[1]} mm`}
           >
             <img src={d.path} alt="" />
-            <span>{d.name}</span>
           </button>
         ))}
       </div>

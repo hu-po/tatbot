@@ -61,6 +61,7 @@ tip_detail:
   radius_m: 0.00015
   length_m: 0.0042
   color: "0.80 0.81 0.84 1"
+contact_radius_m: 0.00015
 
 tip_mesh: pen_tip.stl
 # The mesh is a 40 mm cone; this cartridge measures 34 mm.

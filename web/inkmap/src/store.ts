@@ -2,20 +2,27 @@ import { create } from "zustand";
 import type * as THREE from "three";
 import type { Anchor } from "./core/anchor.ts";
 import { BODIES, type BodySpec, type Skin } from "./core/body.ts";
-import { newPlacementId, SCHEMA_VERSION, validatePlacementFile, type DesignMeta, type Placement, type PlacementFile } from "./core/schema.ts";
+import { DEFAULT_BODY_ID, DEFAULT_POSE_ID, DEFAULT_SKIN_TONE } from "./core/defaults.ts";
+import { newPlacementId, placementAssetSha, placementSurfaceSha, SCHEMA_VERSION, validatePlacementFile, type DesignMeta, type Placement, type PlacementFile } from "./core/schema.ts";
 import type { AtlasIndex } from "./core/atlas.ts";
 import { INKLANG_VERSION, realize, type TattooProgram } from "./core/lang.ts";
+import { POSE_CATALOG } from "./core/pose.ts";
+import { validateTattooScenario, type TattooScenario } from "./core/scenario.ts";
 
 export interface LoadedBody {
   spec: BodySpec;
   skin: Skin;
-  sha256: string;
+  assetSha256: string;
+  surfaceSha256: string;
   scene: THREE.Object3D;
+  poseId: string;
 }
 
 export interface State {
   /** Which BodySpec is (being) shown; `body` is null while it loads. */
   bodyId: string;
+  /** Shared named pose currently baked into the body's canonical surface. */
+  poseId: string;
   body: LoadedBody | null;
   /** Placements parked per body id while another body is shown. */
   stash: Record<string, Placement[]>;
@@ -40,10 +47,15 @@ export interface State {
   toast: string | null;
   /** Bumps once per accepted tattoo; the picker pulses on change. */
   accepted: number;
+  /** Guided-showcase payload. Its trace uses the same canonical anchors as the visible placement. */
+  showcaseScenario: TattooScenario | null;
+  showcaseTraceVisible: boolean;
+  showcaseFocus: boolean;
 
   setBody: (b: LoadedBody) => void;
   /** Switch bodies: parks the current placements, restores the target's. */
   setBodyId: (id: string) => void;
+  setPoseId: (id: string) => void;
   setSkinTone: (hex: string) => void;
   setDesigns: (d: DesignMeta[]) => void;
   /** Add a session design (generated) to the picker; returns its id. */
@@ -72,13 +84,10 @@ export interface State {
   nudgeSize: (factor: number) => void;
   toFile: () => PlacementFile | null;
   loadFile: (raw: unknown) => void;
+  loadShowcaseScenario: (raw: unknown) => void;
+  toggleShowcaseTrace: () => void;
+  toggleShowcaseFocus: () => void;
 }
-
-/** Natural skin tones, very light to very dark. */
-export const SKIN_TONES: string[] = ["#fbe4d3", "#f2cdb1", "#e5b48f", "#d49a72", "#c07f57", "#a56642", "#84502f", "#5f3922", "#3b2316"];
-/** Fantasy / sci-fi skins. */
-export const FANTASY_TONES: string[] = ["#4f8fd6", "#5aa85a", "#c8413b", "#8f5fc7", "#8a8f99"];
-export const DEFAULT_SKIN_TONE = SKIN_TONES[3];
 
 /** The design a sentence's motif refers to, if one already exists. */
 export function findDesignForMotif(designs: DesignMeta[], motif: string): DesignMeta | undefined {
@@ -135,7 +144,8 @@ function scaled(size: [number, number], factor: number): [number, number] {
 const wrap = (rad: number) => Math.atan2(Math.sin(rad), Math.cos(rad));
 
 export const useStore = create<State>((set, get) => ({
-  bodyId: BODIES[0].id,
+  bodyId: DEFAULT_BODY_ID,
+  poseId: DEFAULT_POSE_ID,
   body: null,
   stash: {},
   skinTone: loadSkinTone(),
@@ -151,8 +161,11 @@ export const useStore = create<State>((set, get) => ({
   error: null,
   toast: null,
   accepted: 0,
+  showcaseScenario: null,
+  showcaseTraceVisible: true,
+  showcaseFocus: false,
 
-  setBody: (body) => set((s) => (body.spec.id === s.bodyId ? { body } : {})),
+  setBody: (body) => set((s) => (body.spec.id === s.bodyId && body.poseId === s.poseId ? { body } : {})),
   setSkinTone: (skinTone) => {
     try { localStorage.setItem("inkmap.skinTone", skinTone); } catch { /* private mode etc. */ }
     set({ skinTone });
@@ -169,6 +182,11 @@ export const useStore = create<State>((set, get) => ({
       // A picked design is body-agnostic: keep it, so the next click on the new body places it.
       selected: null, hover: null,
     };
+  }),
+  setPoseId: (poseId) => set((s) => {
+    if (poseId === s.poseId) return {};
+    if (!POSE_CATALOG.pose_ids.includes(poseId)) throw new Error(`unknown pose "${poseId}"`);
+    return { poseId, body: null, atlas: null, selected: null, hover: null };
   }),
   setDesigns: (designs) => set((s) => ({ designs: [...designs, ...s.designs.filter((d) => d.embedded)] })),
   addDesign: (d) => set((s) => ({ designs: [...s.designs.filter((x) => x.id !== d.id), d] })),
@@ -240,7 +258,12 @@ export const useStore = create<State>((set, get) => ({
     return {
       schema_version: SCHEMA_VERSION,
       units: { length: "m", tattoo_size: "mm", up: "+z" },
-      body: { id: body.spec.id, sha256: body.sha256, path: body.spec.path },
+      body: {
+        id: body.spec.id,
+        asset_sha256: body.assetSha256,
+        surface_sha256: body.surfaceSha256,
+        path: body.spec.path,
+      },
       placements,
       ...(Object.keys(embedded).length ? { designs: embedded } : {}),
     };
@@ -248,9 +271,11 @@ export const useStore = create<State>((set, get) => ({
   loadFile: (raw) => {
     validatePlacementFile(raw);
     const { body } = get();
-    if (body && raw.body.sha256 !== body.sha256) {
+    const expected = raw.schema_version >= 4 ? placementSurfaceSha(raw.body) : placementAssetSha(raw.body);
+    const loaded = raw.schema_version >= 4 ? body?.surfaceSha256 : body?.assetSha256;
+    if (body && expected !== loaded) {
       const hint = BODIES.some((b) => b.id === raw.body.id && b.id !== body.spec.id) ? ` — switch to the ${raw.body.id} body and load again` : " — anchors would not line up";
-      throw new Error(`placement file was made on body ${raw.body.id} (${raw.body.sha256.slice(0, 8)}…), loaded body is ${body.spec.id} (${body.sha256.slice(0, 8)}…)${hint}`);
+      throw new Error(`placement file was made on body ${raw.body.id} (${expected.slice(0, 8)}…), loaded body is ${body.spec.id} (${loaded?.slice(0, 8)}…)${hint}`);
     }
     const restored: DesignMeta[] = Object.entries(raw.designs ?? {}).map(([id, e]) => ({
       id, name: e.name, path: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(e.svg)}`, default_size_mm: [...e.default_size_mm], embedded: e,
@@ -260,4 +285,47 @@ export const useStore = create<State>((set, get) => ({
       placements: raw.placements, selected: null, placing: null, hover: null,
     }));
   },
+  loadShowcaseScenario: (raw) => {
+    validateTattooScenario(raw);
+    const scenario = raw;
+    if (!BODIES.some((b) => b.id === scenario.body.id)) {
+      throw new Error(`showcase scenario uses unknown body ${scenario.body.id}`);
+    }
+    if (!POSE_CATALOG.pose_ids.includes(scenario.pose.id)) {
+      throw new Error(`showcase scenario uses unknown pose ${scenario.pose.id}`);
+    }
+    const placement = scenario.placement as unknown as Placement;
+    const embedded = {
+      name: scenario.design.name,
+      svg: scenario.design.svg,
+      default_size_mm: [...placement.size_mm] as [number, number],
+    };
+    const design: DesignMeta = {
+      id: scenario.design.id,
+      name: scenario.design.name,
+      path: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(scenario.design.svg)}`,
+      default_size_mm: [...placement.size_mm],
+      embedded,
+    };
+    set((s) => {
+      const reloadBody = s.bodyId !== scenario.body.id || s.poseId !== scenario.pose.id;
+      return {
+        bodyId: scenario.body.id,
+        poseId: scenario.pose.id,
+        body: reloadBody ? null : s.body,
+        atlas: reloadBody ? null : s.atlas,
+        designs: [...s.designs.filter((d) => d.id !== design.id), design],
+        placements: [placement],
+        selected: null,
+        placing: null,
+        hover: null,
+        pending: null,
+        error: null,
+        showcaseScenario: scenario,
+        showcaseFocus: false,
+      };
+    });
+  },
+  toggleShowcaseTrace: () => set((s) => ({ showcaseTraceVisible: !s.showcaseTraceVisible })),
+  toggleShowcaseFocus: () => set((s) => ({ showcaseFocus: !s.showcaseFocus })),
 }));

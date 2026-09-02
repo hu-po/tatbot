@@ -3,9 +3,9 @@
 // on any breaking change and keep the JSON Schema in the same commit.
 import type { Anchor } from "./anchor.ts";
 
-export const SCHEMA_VERSION = 3;
-/** Older versions a reader still accepts (v1 = no embedded designs, v2 = no inklang site/language). */
-export const ACCEPTED_VERSIONS: readonly number[] = [1, 2, 3];
+export const SCHEMA_VERSION = 4;
+/** Older versions a reader still accepts (v1 = no embedded designs, v2 = no inklang, v3 = whole-asset hash only). */
+export const ACCEPTED_VERSIONS: readonly number[] = [1, 2, 3, 4];
 
 export interface DesignMeta {
   id: string;
@@ -53,10 +53,30 @@ export interface PlacementSite {
 export interface PlacementFile {
   schema_version: number;
   units: { length: "m"; tattoo_size: "mm"; up: "+z" };
-  body: { id: string; sha256: string; path: string };
+  body: PlacementBody;
   placements: Placement[];
   /** v2: designs referenced by placements that are not site files, keyed by design id. */
   designs?: Record<string, EmbeddedDesign>;
+}
+
+/** v4 keeps the anchor's rest surface stable when rig/material bytes change. */
+export interface PlacementBody {
+  id: string;
+  path: string;
+  /** v1-v3 whole-GLB identity. */
+  sha256?: string;
+  /** v4 whole-asset provenance. */
+  asset_sha256?: string;
+  /** v4 canonical non-indexed rest-surface signed-10-micrometre XYZ digest. */
+  surface_sha256?: string;
+}
+
+export function placementAssetSha(body: PlacementBody): string {
+  return body.asset_sha256 ?? body.sha256 ?? "";
+}
+
+export function placementSurfaceSha(body: PlacementBody): string {
+  return body.surface_sha256 ?? body.sha256 ?? "";
 }
 
 export function newPlacementId(): string {
@@ -74,8 +94,18 @@ export function validatePlacementFile(x: unknown): asserts x is PlacementFile {
   const u = f.units as Record<string, unknown> | undefined;
   if (!u || u.length !== "m" || u.tattoo_size !== "mm" || u.up !== "+z") fail("units must be {length:m, tattoo_size:mm, up:+z}");
   const b = f.body as Record<string, unknown> | undefined;
-  if (!b || typeof b.id !== "string" || typeof b.sha256 !== "string" || typeof b.path !== "string") return fail("body needs id, sha256, path");
-  if (!/^[0-9a-f]{64}$/.test(b.sha256 as string)) fail("body.sha256 is not a sha256 hex digest");
+  if (!b || typeof b.id !== "string" || typeof b.path !== "string") return fail("body needs id and path");
+  const version = f.schema_version as number;
+  if (version >= 4) {
+    if (typeof b.asset_sha256 !== "string" || typeof b.surface_sha256 !== "string") {
+      fail("v4 body needs asset_sha256 and surface_sha256");
+    }
+    if (!/^[0-9a-f]{64}$/.test(b.asset_sha256 as string)) fail("body.asset_sha256 is not a sha256 hex digest");
+    if (!/^[0-9a-f]{64}$/.test(b.surface_sha256 as string)) fail("body.surface_sha256 is not a sha256 hex digest");
+  } else {
+    if (typeof b.sha256 !== "string") fail("v1-v3 body needs sha256");
+    if (!/^[0-9a-f]{64}$/.test(b.sha256 as string)) fail("body.sha256 is not a sha256 hex digest");
+  }
   if (!Array.isArray(f.placements)) fail("placements must be an array");
   for (const [i, p0] of (f.placements as unknown[]).entries()) {
     const p = p0 as Record<string, unknown>;

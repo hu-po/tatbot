@@ -50,7 +50,8 @@ def _fmt(values) -> str:
     return " ".join(f"{v:.9g}" for v in values)
 
 
-def render_block(arm: str, spec, tip_offset, measured: bool) -> str:
+def render_block(arm: str, spec, tip_offset, measured: bool,
+                 workspace: dict | None = None) -> str:
     """The generated XML for one arm's tool.
 
     ``tip_offset`` is where the tip is in the mount frame: what the touch-off
@@ -59,14 +60,23 @@ def render_block(arm: str, spec, tip_offset, measured: bool) -> str:
     this frame exists yet. The TCP link goes at the working point, which for a
     non-contact tool is the standoff further on.
     """
-    tcp = tool_spec.tcp_from_touchoff_m(spec, tip_offset)
+    if workspace is None:
+        workspace = ({arm: {
+            "tool_id": spec.tool_id,
+            "tip_frame": tool_spec.tip_frame(arm),
+            "pen_tip_offset_x": tip_offset[0],
+            "pen_tip_offset_y": tip_offset[1],
+            "pen_tip_offset_z": tip_offset[2],
+        }} if measured else {})
+    geometry = tool_spec.resolved_tool_geometry(spec, workspace, arm)
+    tcp = geometry.tcp_offset_m
     reach = math.sqrt(sum(v * v for v in tcp))
-    rpy = axis_rpy(tcp)
     provenance = (
-        ["       Body from its profile; the needle sits at the touch-off's measured tip,",
+        ["       Body profile and TCP resolve from the same measured touch-off,",
          f"       {reach * 1000:.2f} mm out along an axis {tool_spec.axis_lean_deg(tcp):.1f} deg",
          f"       off the mount's nominal +z (datasheet nominal {spec.protrusion_m * 1000:.0f} mm;",
-         "       the measurement wins)."]
+         f"       source {geometry.source}; visual/TCP error "
+         f"{geometry.alignment_error_m * 1000:.3f} mm)."]
         if measured else
         [f"       NOMINAL: no touch-off in {spec.mount_frame(arm)} yet, so the needle",
          f"       sits at the datasheet's {reach * 1000:.0f} mm along the bore axis. FK",
@@ -98,13 +108,27 @@ def render_block(arm: str, spec, tip_offset, measured: bool) -> str:
     lines += [
         "  </link>",
         f'  <joint name="{arm}/tattoo_pen_joint" type="fixed">',
-        f'    <origin rpy="{_fmt(rpy)}" xyz="0 0 0"/>',
+        f'    <origin rpy="{_fmt(geometry.body_rpy_rad)}" '
+        f'xyz="{_fmt(geometry.body_origin_m)}"/>',
         f'    <parent link="{spec.mount_frame(arm)}"/>',
         f'    <child link="{arm}/tattoo_pen"/>',
         "  </joint>",
-        f'  <link name="{arm}/tattoo_needle"/>',
+        f'  <link name="{arm}/tattoo_needle">',
+    ]
+    if spec.contact_radius_m is not None:
+        radius = float(spec.contact_radius_m)
+        lines += [
+            "    <collision>",
+            f'      <origin rpy="0 0 0" xyz="0 0 {-radius:.9g}"/>',
+            "      <geometry>",
+            f'        <sphere radius="{radius:.9g}"/>',
+            "      </geometry>",
+            "    </collision>",
+        ]
+    lines += [
+        "  </link>",
         f'  <joint name="{arm}/tattoo_needle_joint" type="fixed">',
-        f'    <origin rpy="0 0 0" xyz="0 0 {reach:.9g}"/>',
+        f'    <origin rpy="0 0 0" xyz="{_fmt(geometry.tcp_in_body_m)}"/>',
         f'    <parent link="{arm}/tattoo_pen"/>',
         f'    <child link="{arm}/tattoo_needle"/>',
         "  </joint>",
@@ -165,7 +189,7 @@ def build(arms: list[str]) -> str:
             tip = spec.touchoff_nominal_m
             print(f"  {arm}: no touch-off in {mount} yet — modelling {tool_id} at its "
                   "datasheet nominal", file=sys.stderr)
-        blocks.append(render_block(arm, spec, tip, measured))
+        blocks.append(render_block(arm, spec, tip, measured, workspace))
         print(f"  {arm}: {spec.summary()}")
     if not blocks:
         return text

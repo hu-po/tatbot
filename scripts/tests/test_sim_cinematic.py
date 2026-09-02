@@ -144,6 +144,12 @@ def _setup_mocks():
         mock_ts.tasks = mock_ts_tasks
         mock_modules["tatbot_sim.tasks"] = mock_ts_tasks
 
+    if "tatbot_sim.interaction" not in sys.modules:
+        mock_interaction = types.ModuleType("tatbot_sim.interaction")
+        mock_interaction.WORKING_OFFSET_M = 0.0
+        mock_ts.interaction = mock_interaction
+        mock_modules["tatbot_sim.interaction"] = mock_interaction
+
     if "tatbot_sim.tools" not in sys.modules:
         mock_ts_tools = types.ModuleType("tatbot_sim.tools")
         mock_tool = MagicMock(tool_id="lutin-3rl-bugpin", prompt_phrase="using 3RL bugpin cartridge")

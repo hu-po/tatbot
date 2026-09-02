@@ -133,4 +133,20 @@ Setup apply(int priority)
   return setup;
 }
 
+uint64_t advance_deadline(
+  std::chrono::steady_clock::time_point & next,
+  std::chrono::steady_clock::duration period,
+  std::chrono::steady_clock::time_point now) noexcept
+{
+  if (period <= std::chrono::steady_clock::duration::zero()) {
+    next = now;
+    return 0;
+  }
+  next += period;
+  if (next > now) {return 0;}
+  const auto missed = static_cast<uint64_t>((now - next) / period) + 1;
+  next = now + period;
+  return missed;
+}
+
 }  // namespace tatbot::realtime

@@ -23,15 +23,16 @@ DART-style noise: decaying joint-space perturbation bursts are added on top of
 the reference trajectory, so the commanded pose is knocked off the stroke and
 then converges back to it — the recovery behaviour plain scripted replays lack.
 
-The commanded trajectory is clamped so it never asks for the needle below the
-pad surface, mirroring the follower's z-floor on the real rig. Nothing here
-simulates contact (see the env's contact note), so before this clamp a noise
-burst could command straight through the pad and the data taught exactly that:
+The commanded trajectory is clamped to the contact contract: at the stroke it
+permits only 0.25 mm of numerical penetration, while travel stays at least
+1 mm clear. The env adds rigid tip/pad contact for a flat qualified substrate;
+before these bounds a noise burst could command straight through the pad and
+the data taught exactly that:
 the 99%-sim policy of 2026-08-21 drove ~40 mm through the real paper. The
 clamp keeps the recovery behaviour that matters: bursts still pin the needle
-onto the surface (below the nominal draw plane) and the decaying burst then
+onto the surface and the decaying burst then
 commands back up — a "too deep, come up" demonstration. States below the
-*surface* disappear from the data entirely, and measurement says that is all
+declared penetration band disappear from the data, and measurement says that is all
 they were: in unclamped data every achieved-below step was downstream of a
 commanded-below step, and on the real rig contact plus the follower's z-floor
 make such states unreachable anyway. audit_depth.py checks both properties on
@@ -46,6 +47,7 @@ import numpy as np
 import pytorch_kinematics as pk
 import torch
 
+from tatbot_sim import interaction
 from tatbot_sim.agent import PEN_GRIP
 from tatbot_sim.urdf import build_tatbot_urdf
 
@@ -499,9 +501,8 @@ class StrokeExpert:
             pt_t = torch.as_tensor(pts, dtype=torch.float32, device=self.device)
             nm_t = torch.as_tensor(nms, dtype=torch.float32, device=self.device)
             # Per-step floor. On and near the stroke (reference inside the
-            # 5.5 mm ink-deposit band) it is the surface itself: noise may
-            # press the pen down to the pad and recover — the demonstrations
-            # that matter. Anywhere the reference is clear of the band —
+            # contact band), noise may use only the declared sub-millimetre
+            # penetration allowance. Anywhere the reference is clear —
             # travel, hover, and the upper part of the descend ramp — the
             # band is off-limits: a burst pressing through it stamps a stray
             # disconnected mark on the sheet that the recorded path never
@@ -513,13 +514,15 @@ class StrokeExpert:
             nm_t = _per_step(nm_t, b, t_draw)
             ref_dist = ((targets - pt_t) * nm_t).sum(-1)
             offset = torch.where(
-                ref_dist > 0.006, torch.full_like(ref_dist, 0.0075),
-                torch.zeros_like(ref_dist),
+                ref_dist > interaction.CONTACT_ABOVE_TOLERANCE_M,
+                torch.full_like(ref_dist, interaction.TRAVEL_FLOOR_M),
+                torch.full_like(ref_dist, -interaction.MAX_PENETRATION_M),
             )
             if approach_from is not None:
                 # the approach descends from the raised pose, always well clear
                 offset = torch.cat(
-                    [torch.full((b, approach_from[1]), 0.0075, device=self.device), offset],
+                    [torch.full((b, approach_from[1]), interaction.TRAVEL_FLOOR_M,
+                                device=self.device), offset],
                     dim=1,
                 )
             q_cmd = self._clamp_to_floor(q, q_cmd, pt_t, nm_t, offset)
@@ -700,16 +703,3 @@ def _rotations_z_to(n: np.ndarray) -> np.ndarray:
     k[:, 2, 0], k[:, 2, 1] = -a[:, 1], a[:, 0]
     out[ok] = np.eye(3) + s_[ok, None, None] * k + (1 - c[ok])[:, None, None] * (k @ k)
     return out
-
-
-def _quat_to_matrix(q: torch.Tensor) -> torch.Tensor:
-    w, x, y, z = q
-    return torch.tensor(
-        [
-            [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
-            [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
-            [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
-        ],
-        dtype=torch.float32,
-        device=q.device,
-    )

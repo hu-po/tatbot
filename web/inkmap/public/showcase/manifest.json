@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "title": "Supported tattoo-session poses",
+  "seed": 20260901,
+  "source_commit": "f23d95c",
+  "generated_at": "2026-09-01T19:50:00Z",
+  "validation": {
+    "accepted": 64,
+    "attempts": 68,
+    "rejection_rate": 0.058823529411764705,
+    "reach_audited": true,
+    "max_skinning_error_mm": 0.1,
+    "pose_quality": {
+      "max_joint_rotation_deg": 64.9568379730502,
+      "edge_length_ratio": [0.5680859088897705, 1.208474576473234],
+      "triangle_area_ratio": [0.7145648950338364, 1.2631458353996246]
+    },
+    "anatomy": {
+      "knee_angle_deg": [151.32262644057818, 159.18203895113675],
+      "knee_bend_offset_m": [0.05924001266248534, 0.08358880062587556],
+      "max_knee_off_axis_m": 4.363458207046578E-8,
+      "supported_elbow_angle_deg": [128.69583929515633, 129.31672204902523],
+      "supported_wrist_angle_deg": [179.97872823347365, 180.0]
+    }
+  },
+  "coverage": {
+    "bodies": 2,
+    "poses": 5,
+    "sites": 6,
+    "designs": 10
+  },
+  "slides": [
+    {
+      "id": "supine-shoulder-heart",
+      "eyebrow": "female · on back · tattoo bed",
+      "title": "Heart on left shoulder",
+      "description": "The body lies supine on a visible bed proxy while the shoulder design remains attached to its canonical face and barycentric coordinates.",
+      "scenario": "supine-shoulder-heart.scenario.json",
+      "probe_max_residual_mm": 0.00008078384894361079
+    },
+    {
+      "id": "prone-thigh-wave",
+      "eyebrow": "male · on front · tattoo bed",
+      "title": "Wave on right thigh",
+      "description": "The prone pose supports posterior access without bending or twisting the limbs; the compiled wave follows the exact thigh surface in the posed mesh.",
+      "scenario": "prone-thigh-wave.scenario.json",
+      "probe_max_residual_mm": 0.0000906701274061561
+    },
+    {
+      "id": "reclined-legs-shoulder-anchor",
+      "eyebrow": "female · reclined · legs supported",
+      "title": "Anchor on right shoulder",
+      "description": "A 30-degree treatment-chair recline keeps the torso and legs supported while presenting the shoulder to the robot-relative placement solver.",
+      "scenario": "reclined-legs-shoulder-anchor.scenario.json",
+      "probe_max_residual_mm": 0.00009723293459273918
+    },
+    {
+      "id": "reclined-left-bicep-snake",
+      "eyebrow": "male · reclined · left arm supported",
+      "title": "Snake on left bicep",
+      "description": "The left forearm is lowered onto its armrest to stabilize the exposed upper arm, and the sampler only pairs this pose with a tattoo site on that same supported side.",
+      "scenario": "reclined-left-bicep-snake.scenario.json",
+      "probe_max_residual_mm": 0.00008965884745748554
+    },
+    {
+      "id": "reclined-right-bicep-star",
+      "eyebrow": "female · reclined · right arm supported",
+      "title": "Star on right bicep",
+      "description": "The mirrored chair setup stabilizes the right arm and carries the chair, body, tattoo anchors, and reach-audited toolpath through one replayable scenario contract.",
+      "scenario": "reclined-right-bicep-star.scenario.json",
+      "probe_max_residual_mm": 0.00010062836963697919
+    }
+  ]
+}

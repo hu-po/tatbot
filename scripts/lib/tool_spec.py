@@ -46,7 +46,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -62,6 +64,21 @@ SCHEMA_VERSION = 2
 #   deg so the cameras are a left/right pair.
 EMBODIMENT = "fixed-mount-v2"
 LEGACY_EMBODIMENT = "gripper-held-v1"
+TOOL_GEOMETRY_VERSION = "resolved-tool-v1"
+# Contact tools put material at the working point. Half a millimetre is below
+# the narrowest modelled ink line and is the largest visual/FK mismatch a
+# contact dataset may claim as aligned.
+CONTACT_ALIGNMENT_TOLERANCE_M = 0.0005
+# A fixed-point/pivot touch-off identifies the contact point in the mount
+# frame when its wrist poses span enough orientations.  These are calibration
+# observability gates, not claims of sub-millimetre body metrology.
+CONTACT_TOUCH_MIN_SAMPLES = 4
+CONTACT_TOUCH_COND_MAX = 50.0
+CONTACT_TOUCH_SPREAD_MIN_DEG = 30.0
+CONTACT_TOUCH_RESIDUAL_FLOOR_M = 0.0015
+BODY_POSE_REPORT_SCHEMA_VERSION = 1
+BODY_POSE_MIN_RESEATS = 5
+BODY_POSE_REPORT_DIR = "internal/calibration/tool-body"
 # The frame every measured tip offset is expressed in. workspace.yaml names
 # it (`tip_frame`), and a file that names any other frame — or none, as every
 # gripper-era file did — is treated as having no measured tip at all.
@@ -245,6 +262,11 @@ class ToolSpec:
     # that assumes contact — the touch-off above all, which cannot plant a
     # working point that never lands on anything.
     contact: bool = True
+    # Radius of the physical contact element, for collision/contact modelling.
+    # This is separate from display geometry: the ballpoint's visible cap is
+    # oversized so it reads at wrist-camera resolution, while the steel ball
+    # that touches paper is only 0.5 mm in diameter.
+    contact_radius_m: float | None = None
     # Where the working point sits along the tool axis. Defaults to the end of
     # the profile, which is right for anything that works by touching. A
     # non-contact tool sets it past the profile: aperture plus working
@@ -435,6 +457,264 @@ class ToolSpec:
                 f"{self.body_radius_m * 2000:.0f} mm body{standoff}{unverified}")
 
 
+@dataclass(frozen=True)
+class ResolvedToolGeometry:
+    """One runtime answer for body pose, planted point, and working TCP.
+
+    A datasheet describes the body in axial coordinates while touch-off
+    measures a point in the mount frame. Treating that point as an axis but
+    leaving the nominal body at the mount origin created the fixed-mount
+    ballpoint's invisible extension. URDF and metadata consumers share this
+    object so the two representations cannot drift again.
+
+    ``touch-axis-inferred`` is deliberately honest about the BODY: pivot
+    calibration observes the tip, and the axisymmetric profile plus the known
+    bore-face origin make the mount-to-tip vector its contact-relevant axis.
+    Roll is unobservable but irrelevant for a profile of revolution.  This is
+    sufficient to qualify TCP/contact geometry without pretending it is an
+    independent six-DOF body measurement.  Optional external body evidence can
+    still replace the inferred visual/collision envelope when one exists.
+    """
+
+    version: str
+    source: str
+    status: str
+    measured: bool
+    contact_status: str
+    body_pose_status: str
+    contact_qualification_error: str | None
+    contact_uncertainty_m: float | None
+    calibration_delta_m: tuple[float, float, float]
+    body_origin_m: tuple[float, float, float]
+    body_rpy_rad: tuple[float, float, float]
+    body_tip_offset_m: tuple[float, float, float]
+    touch_offset_m: tuple[float, float, float]
+    tcp_offset_m: tuple[float, float, float]
+    tcp_in_body_m: tuple[float, float, float]
+    alignment_error_m: float
+    qualification_error: str | None
+
+
+@dataclass(frozen=True)
+class BodyPoseQualification:
+    """Validated independent body-axis evidence for the currently seated tool.
+
+    The tool bodies are profiles of revolution, so spin about the axis is not
+    observable or geometrically relevant.  A report therefore measures the
+    body origin and +z axis independently from the planted-tip solve; the
+    deterministic zero-roll RPY is derived from that axis.
+    """
+
+    method: str
+    measurement_source: str
+    selected_cycle: int
+    selected_utc: str
+    selected_session: str
+    sample_count: int
+    body_origin_m: tuple[float, float, float]
+    body_axis_unit: tuple[float, float, float]
+    body_rpy_rad: tuple[float, float, float]
+    tip_offset_m: tuple[float, float, float]
+    endpoint_alignment_max_m: float
+    tip_repeatability_max_m: float
+    origin_repeatability_max_m: float
+    axis_repeatability_max_deg: float
+
+
+def _rpy_matrix(rpy: tuple[float, float, float]) -> tuple[tuple[float, float, float], ...]:
+    """URDF Rz(yaw) * Ry(pitch) * Rx(roll), as a stdlib matrix."""
+    roll, pitch, yaw = rpy
+    cr, sr = math.cos(roll), math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    return (
+        (cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr),
+        (sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr),
+        (-sp, cp * sr, cp * cr),
+    )
+
+
+def _matvec(matrix, vector) -> tuple[float, float, float]:
+    res = tuple(sum(row[i] * vector[i] for i in range(3)) for row in matrix)
+    return (float(res[0]), float(res[1]), float(res[2]))
+
+
+def _transpose_matvec(matrix, vector) -> tuple[float, float, float]:
+    values = tuple(sum(matrix[row][col] * vector[row] for row in range(3))
+                   for col in range(3))
+    # libm differs by a few ulps across the Python 3.11/3.12 interpreters used
+    # by the generators. Do not let numerical zero make the checked-in URDF
+    # permanently stale on one of them.
+    v0 = 0.0 if abs(values[0]) < 1e-15 else float(values[0])
+    v1 = 0.0 if abs(values[1]) < 1e-15 else float(values[1])
+    v2 = 0.0 if abs(values[2]) < 1e-15 else float(values[2])
+    return (v0, v1, v2)
+
+
+def _workspace_triplet(side: dict, prefix: str) -> tuple[float, float, float] | None:
+    vx = side.get(f"{prefix}_x")
+    vy = side.get(f"{prefix}_y")
+    vz = side.get(f"{prefix}_z")
+    if vx is None or vy is None or vz is None:
+        return None
+    return (float(vx), float(vy), float(vz))
+
+
+def contact_pose_qualification_error(spec: ToolSpec, workspace: dict,
+                                     arm: str = "right") -> str | None:
+    """Why a planted-point calibration cannot qualify contact geometry.
+
+    The fixed-point solve identifies the mount-to-tip vector directly.  It
+    does not need an external body-axis instrument for an axisymmetric contact
+    tool; it does need enough varied poses and a residual compatible with the
+    tool's own contact/seat budget.  Held-out disagreement is retained as an
+    uncertainty diagnostic rather than a second, stricter physical model.
+    """
+    side = workspace.get(arm) or {}
+    measured = tip_offset_m(workspace, arm)
+    if measured is None:
+        return "no mount-frame tip calibration"
+    receipt = side.get("touchoff") or {}
+    count = int(receipt.get("n_plate") or 0) + int(receipt.get("n_pad") or 0)
+    if count < CONTACT_TOUCH_MIN_SAMPLES:
+        return (f"touch-off has {count} planted poses; need at least "
+                f"{CONTACT_TOUCH_MIN_SAMPLES}")
+    required = ("cond", "residual_mm", "spread_deg")
+    missing = [key for key in required if receipt.get(key) is None]
+    if missing:
+        return f"touch-off lacks {', '.join(missing)}"
+    cond = float(receipt["cond"])
+    residual_m = float(receipt["residual_mm"]) / 1000.0
+    spread = float(receipt["spread_deg"])
+    residual_limit = max(CONTACT_TOUCH_RESIDUAL_FLOOR_M,
+                         spec.tip_radius_m / math.sqrt(2.0),
+                         spec.seat_residual_m)
+    if cond > CONTACT_TOUCH_COND_MAX:
+        return (f"touch-off condition number {cond:.1f} exceeds "
+                f"{CONTACT_TOUCH_COND_MAX:.1f}")
+    if spread < CONTACT_TOUCH_SPREAD_MIN_DEG:
+        return (f"touch-off rotation spread {spread:.1f} deg is below "
+                f"{CONTACT_TOUCH_SPREAD_MIN_DEG:.1f} deg")
+    if residual_m > residual_limit:
+        return (f"touch-off residual {residual_m * 1000:.3f} mm exceeds "
+                f"the tool budget {residual_limit * 1000:.3f} mm")
+    offset_error = tip_offset_error_m(spec, measured)
+    if offset_error > spec.tip_tolerance_m:
+        return (f"tip offset differs from the datasheet by {offset_error * 1000:.3f} mm "
+                f"(limit {spec.tip_tolerance_m * 1000:.3f} mm)")
+    lean = axis_lean_deg(measured)
+    if lean > spec.seat_tolerance_deg:
+        return (f"tip axis leans {lean:.3f} deg from the bore "
+                f"(limit {spec.seat_tolerance_deg:.3f} deg)")
+    return None
+
+
+def contact_uncertainty_m(workspace: dict, arm: str = "right") -> float | None:
+    """Conservative scalar from the touch-off's retained diagnostics.
+
+    It is metadata for domain randomisation and comparison, not a clearance
+    that lets pigment appear away from collision.  Missing older diagnostics
+    do not erase the ones that are present.
+    """
+    receipt = (workspace.get(arm) or {}).get("touchoff") or {}
+    values = [receipt.get(key) for key in
+              ("residual_mm", "holdout_mm", "tip_loo_max_mm")]
+    finite = [float(value) for value in values
+              if value is not None and math.isfinite(float(value))]
+    return max(finite) / 1000.0 if finite else None
+
+
+def resolved_tool_geometry(spec: ToolSpec, workspace: dict | None = None,
+                           arm: str = "right", repo: Path | str = REPO,
+                           tip_delta_m: tuple[float, float, float] | None = None,
+                           ) -> ResolvedToolGeometry:
+    """Resolve the exact geometry used by URDF, sim, and metadata consumers.
+
+    A workspace measurement belongs only to the tool named beside it. With no
+    matching touch-off this returns complete nominal geometry, including the
+    concrete nominal TCP, so metadata records what actually ran rather than a
+    null that callers have to guess about.
+    """
+    ws = workspace or {}
+    side = ws.get(arm) or {}
+    measured_tip = (tip_offset_m(ws, arm)
+                    if active_tool_id(repo, arm, ws) == spec.tool_id else None)
+    measured = measured_tip is not None
+    delta = tuple(float(value) for value in (tip_delta_m or (0.0, 0.0, 0.0)))
+    if len(delta) != 3 or not all(math.isfinite(value) for value in delta):
+        raise ValueError(f"tip_delta_m must be three finite metres, got {tip_delta_m!r}")
+    if any(delta) and not measured:
+        raise ValueError("tip_delta_m requires a measured mount-frame touch-off")
+    base_touch = measured_tip or spec.touchoff_nominal_m
+    touch = (base_touch[0] + delta[0], base_touch[1] + delta[1], base_touch[2] + delta[2])
+    tcp = tcp_from_touchoff_m(spec, touch)
+
+    triplet_origin = _workspace_triplet(side, "tool_body_origin") if measured else None
+    triplet_rpy = _workspace_triplet(side, "tool_body_rpy") if measured else None
+    explicit_frame = side.get("tool_body_frame")
+    qualification_error = None
+    contact_error = (contact_pose_qualification_error(spec, ws, arm)
+                     if measured and spec.contact else None)
+    contact_status = ("pivot-calibrated" if measured and contact_error is None
+                      else "unqualified" if spec.contact else "not-applicable")
+    uncertainty = contact_uncertainty_m(ws, arm) if measured else None
+    qualification = None
+    if triplet_origin is not None or triplet_rpy is not None or side.get("tool_body_status"):
+        try:
+            qualification = body_pose_qualification(spec, ws, arm, repo)
+        except ValueError as exc:
+            qualification_error = str(exc)
+    if qualification is not None and explicit_frame == tip_frame(arm) and not any(delta):
+        body_origin = qualification.body_origin_m
+        body_rpy = qualification.body_rpy_rad
+        source = "workspace-body-pose"
+        status = "qualified"
+        body_pose_status = "independent-qualified"
+    elif measured:
+        body_rpy = axis_rpy(touch)
+        rotation = _rpy_matrix(body_rpy)
+        rotated_tip = _matvec(rotation, (0.0, 0.0, spec.body_tip_z_m))
+        body_origin = (touch[0] - rotated_tip[0], touch[1] - rotated_tip[1], touch[2] - rotated_tip[2])
+        source = "touch-axis-inferred"
+        status = "contact-qualified" if contact_status == "pivot-calibrated" else "provisional"
+        body_pose_status = "axis-inferred"
+    else:
+        body_origin = (0.0, 0.0, 0.0)
+        body_rpy = (0.0, 0.0, 0.0)
+        source = "datasheet-nominal"
+        status = "nominal"
+        body_pose_status = "nominal"
+
+    rotation = _rpy_matrix(body_rpy)
+    rotated_tip = _matvec(rotation, (0.0, 0.0, spec.body_tip_z_m))
+    body_tip = (body_origin[0] + rotated_tip[0], body_origin[1] + rotated_tip[1], body_origin[2] + rotated_tip[2])
+    tcp_delta = (tcp[0] - body_origin[0], tcp[1] - body_origin[1], tcp[2] - body_origin[2])
+    tcp_in_body = _transpose_matvec(rotation, tcp_delta)
+    separation = math.sqrt(sum((a - b) ** 2 for a, b in zip(body_tip, tcp, strict=True)))
+    # A non-contact tool intentionally separates material and working point by
+    # its standoff. Alignment error is only the unexplained part.
+    alignment_error = abs(separation - spec.standoff_m)
+    return ResolvedToolGeometry(
+        version=TOOL_GEOMETRY_VERSION,
+        source=source,
+        status=status,
+        measured=measured,
+        contact_status=contact_status,
+        body_pose_status=body_pose_status,
+        contact_qualification_error=contact_error,
+        contact_uncertainty_m=uncertainty,
+        calibration_delta_m=delta,
+        body_origin_m=body_origin,
+        body_rpy_rad=body_rpy,
+        body_tip_offset_m=body_tip,
+        touch_offset_m=touch,
+        tcp_offset_m=tcp,
+        tcp_in_body_m=tcp_in_body,
+        alignment_error_m=alignment_error,
+        qualification_error=qualification_error,
+    )
+
+
 def _require(data: dict, key: str, source: Path):
     if data.get(key) in (None, ""):
         raise ValueError(f"{source}: missing required field {key!r}")
@@ -460,6 +740,11 @@ def _validate(spec: ToolSpec) -> ToolSpec:
         raise ValueError(
             f"{source}: a contact tool's working point cannot float "
             f"{spec.standoff_m * 1000:.0f} mm off the end of it; set contact: false")
+    if spec.contact_radius_m is not None and (
+            not spec.contact or not 0 < spec.contact_radius_m < 0.01):
+        raise ValueError(
+            f"{source}: contact_radius_m requires a contact tool and must be in "
+            f"(0, 0.01), got {spec.contact_radius_m}")
     if spec.segment_colors and len(spec.segment_colors) != len(spec.profile) - 1:
         raise ValueError(
             f"{source}: segment_colors has {len(spec.segment_colors)} entries for "
@@ -641,6 +926,7 @@ def load_tool(tool_id: str, repo: Path | str = REPO) -> ToolSpec:
         seat_tolerance_deg=data.get("seat_tolerance_deg") or ToolSpec.seat_tolerance_deg,
         seat_residual_m=data.get("seat_residual_m") or 0.0,
         contact=data.get("contact", True),
+        contact_radius_m=data.get("contact_radius_m"),
         tcp_z_m=data.get("tcp_z_m"),
         body=data.get("body"),
         cartridge=data.get("cartridge"),
@@ -849,6 +1135,289 @@ def axis_rpy(direction) -> tuple[float, float, float]:
     return (0.0, math.acos(max(-1.0, min(1.0, z / norm))), math.atan2(y, x))
 
 
+def _vector3(value, label: str) -> tuple[float, float, float]:
+    if not isinstance(value, list) or len(value) != 3:
+        raise ValueError(f"body report {label} must be a three-value JSON array")
+    try:
+        vector = (float(value[0]), float(value[1]), float(value[2]))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"body report {label} contains a non-number") from exc
+    if not all(math.isfinite(item) for item in vector):
+        raise ValueError(f"body report {label} contains a non-finite number")
+    return vector
+
+
+def _distance3(a, b) -> float:
+    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b, strict=True)))
+
+
+def _axis_angle_deg(a, b) -> float:
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    return math.degrees(math.acos(max(-1.0, min(1.0, dot))))
+
+
+def _utc_timestamp(value, label: str) -> datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise ValueError(f"body report {label} must be an ISO-8601 UTC timestamp ending Z")
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as exc:
+        raise ValueError(f"body report {label} is not a valid UTC timestamp") from exc
+    if parsed.tzinfo != timezone.utc:
+        raise ValueError(f"body report {label} must be UTC")
+    return parsed
+
+
+def validate_body_pose_report(spec: ToolSpec, report: dict, arm: str = "right",
+                              expected_tip: tuple[float, float, float] | None = None,
+                              expected_session: str | None = None
+                              ) -> BodyPoseQualification:
+    """Validate an independent remove/reseat body-axis study.
+
+    Each cycle supplies two independent observations in the mount frame: the
+    body profile's origin/+z axis, and the planted working-tip offset.  The
+    report is useful only if those agree for every cycle and the selected last
+    cycle is the touch-off currently recorded in workspace.yaml.
+    """
+    if not isinstance(report, dict):
+        raise ValueError("body report root must be a JSON object")
+    if report.get("schema_version") != BODY_POSE_REPORT_SCHEMA_VERSION:
+        raise ValueError(
+            f"body report schema_version must be {BODY_POSE_REPORT_SCHEMA_VERSION}")
+    if report.get("tool_id") != spec.tool_id:
+        raise ValueError(
+            f"body report tool_id {report.get('tool_id')!r} != fitted {spec.tool_id!r}")
+    if report.get("arm") != arm:
+        raise ValueError(f"body report arm {report.get('arm')!r} != {arm!r}")
+    if report.get("frame") != tip_frame(arm):
+        raise ValueError(
+            f"body report frame {report.get('frame')!r} != {tip_frame(arm)!r}")
+    method = report.get("method")
+    if (not isinstance(method, str)
+            or re.fullmatch(r"[a-z0-9][a-z0-9._-]{2,63}", method) is None
+            or method == "touch-axis-inferred"):
+        raise ValueError(
+            "body report method must be a stable lowercase method id, not the tip fit")
+    source = report.get("measurement_source")
+    if (not isinstance(source, str)
+            or re.fullmatch(r"[a-z0-9][a-z0-9._-]{2,63}", source) is None):
+        raise ValueError(
+            "body report measurement_source must be a stable lowercase instrument id")
+    if report.get("independent_of_tip_fit") is not True:
+        raise ValueError(
+            "body report must assert independent_of_tip_fit: true; a planted tip alone "
+            "does not observe the body axis/origin")
+
+    samples = report.get("samples")
+    if not isinstance(samples, list) or len(samples) < BODY_POSE_MIN_RESEATS:
+        count = len(samples) if isinstance(samples, list) else 0
+        raise ValueError(
+            f"body report has {count} reseat samples; need at least {BODY_POSE_MIN_RESEATS}")
+    selected_cycle = report.get("selected_cycle")
+    if isinstance(selected_cycle, bool) or not isinstance(selected_cycle, int):
+        raise ValueError("body report selected_cycle must be an integer")
+
+    parsed = []
+    seen_cycles: set[int] = set()
+    last_timestamp: datetime | None = None
+    for index, sample in enumerate(samples):
+        label = f"samples[{index}]"
+        if not isinstance(sample, dict):
+            raise ValueError(f"body report {label} must be an object")
+        cycle = sample.get("cycle")
+        if isinstance(cycle, bool) or not isinstance(cycle, int) or cycle < 1:
+            raise ValueError(f"body report {label}.cycle must be a positive integer")
+        if cycle in seen_cycles:
+            raise ValueError(f"body report cycle {cycle} is duplicated")
+        seen_cycles.add(cycle)
+        timestamp = _utc_timestamp(sample.get("utc"), f"{label}.utc")
+        if last_timestamp is not None and timestamp <= last_timestamp:
+            raise ValueError("body report sample UTC timestamps must be strictly increasing")
+        last_timestamp = timestamp
+        session = sample.get("touchoff_session")
+        if not isinstance(session, str) or not session.strip():
+            raise ValueError(f"body report {label}.touchoff_session must be non-empty")
+        origin = _vector3(sample.get("body_origin_m"), f"{label}.body_origin_m")
+        axis_raw = _vector3(sample.get("body_axis_unit"), f"{label}.body_axis_unit")
+        axis_norm = math.sqrt(sum(value * value for value in axis_raw))
+        if abs(axis_norm - 1.0) > 0.001:
+            raise ValueError(
+                f"body report {label}.body_axis_unit norm is {axis_norm:.6f}, need 1 +/- 0.001")
+        axis = tuple(value / axis_norm for value in axis_raw)
+        tip = _vector3(sample.get("tip_offset_m"), f"{label}.tip_offset_m")
+        endpoint = tuple(origin[i] + axis[i] * spec.body_tip_z_m for i in range(3))
+        alignment = _distance3(endpoint, tip)
+        if alignment > CONTACT_ALIGNMENT_TOLERANCE_M:
+            raise ValueError(
+                f"body report cycle {cycle} endpoint is {alignment * 1000:.3f} mm "
+                f"from its independently planted tip; maximum is "
+                f"{CONTACT_ALIGNMENT_TOLERANCE_M * 1000:.3f} mm")
+        nominal_error = tip_offset_error_m(spec, tip)
+        if nominal_error > spec.tip_tolerance_m:
+            raise ValueError(
+                f"body report cycle {cycle} tip is {nominal_error * 1000:.1f} mm "
+                f"from datasheet nominal; tolerance is {spec.tip_tolerance_m * 1000:.1f} mm")
+        lean = _axis_angle_deg(axis, (0.0, 0.0, 1.0))
+        if lean > spec.seat_tolerance_deg:
+            raise ValueError(
+                f"body report cycle {cycle} axis leans {lean:.2f} deg; seat tolerance "
+                f"is {spec.seat_tolerance_deg:.2f} deg")
+        parsed.append({
+            "cycle": cycle,
+            "utc": sample["utc"],
+            "session": session,
+            "origin": origin,
+            "axis": axis,
+            "tip": tip,
+            "endpoint": endpoint,
+            "alignment": alignment,
+        })
+
+    selected = next((sample for sample in parsed
+                     if sample["cycle"] == selected_cycle), None)
+    if selected is None:
+        raise ValueError(f"body report selected_cycle {selected_cycle} is not in samples")
+    if selected is not parsed[-1]:
+        raise ValueError(
+            "body report selected_cycle must be the final reseat/current physical seat")
+    if expected_tip is not None:
+        delta = _distance3(selected["tip"], expected_tip)
+        if delta > CONTACT_ALIGNMENT_TOLERANCE_M:
+            raise ValueError(
+                f"body report selected tip differs from current workspace touch-off by "
+                f"{delta * 1000:.3f} mm; rerun the final touch-off or use its report")
+    if expected_session is not None and selected["session"] != expected_session:
+        raise ValueError(
+            f"body report selected touch-off session {selected['session']!r} != current "
+            f"workspace session {expected_session!r}")
+
+    endpoint_alignment = max(sample["alignment"] for sample in parsed)
+    tip_repeatability = max(_distance3(sample["tip"], selected["tip"])
+                            for sample in parsed)
+    origin_repeatability = max(_distance3(sample["origin"], selected["origin"])
+                               for sample in parsed)
+    axis_repeatability = max(_axis_angle_deg(sample["axis"], selected["axis"])
+                             for sample in parsed)
+    seat_repeat_limit = max(spec.seat_residual_m, CONTACT_ALIGNMENT_TOLERANCE_M)
+    if tip_repeatability > seat_repeat_limit:
+        raise ValueError(
+            f"body report reseat tip spread is {tip_repeatability * 1000:.3f} mm; "
+            f"seat repeatability limit is {seat_repeat_limit * 1000:.3f} mm")
+    if origin_repeatability > seat_repeat_limit:
+        raise ValueError(
+            f"body report reseat origin spread is {origin_repeatability * 1000:.3f} mm; "
+            f"seat repeatability limit is {seat_repeat_limit * 1000:.3f} mm")
+    if axis_repeatability > spec.seat_tolerance_deg:
+        raise ValueError(
+            f"body report reseat axis spread is {axis_repeatability:.3f} deg; "
+            f"seat tolerance is {spec.seat_tolerance_deg:.3f} deg")
+
+    return BodyPoseQualification(
+        method=method,
+        measurement_source=source,
+        selected_cycle=selected_cycle,
+        selected_utc=selected["utc"],
+        selected_session=selected["session"],
+        sample_count=len(parsed),
+        body_origin_m=selected["origin"],
+        body_axis_unit=selected["axis"],
+        body_rpy_rad=axis_rpy(selected["axis"]),
+        tip_offset_m=selected["tip"],
+        endpoint_alignment_max_m=endpoint_alignment,
+        tip_repeatability_max_m=tip_repeatability,
+        origin_repeatability_max_m=origin_repeatability,
+        axis_repeatability_max_deg=axis_repeatability,
+    )
+
+
+def body_pose_qualification(spec: ToolSpec, workspace: dict, arm: str = "right",
+                            repo: Path | str = REPO) -> BodyPoseQualification:
+    """Load and revalidate the report bound to workspace.yaml.
+
+    A `qualified` word and six coordinates are not evidence.  The report must
+    live in the repository, match its recorded digest, pass every physical
+    gate again, and agree byte-for-byte/numerically with the workspace summary.
+    """
+    side = workspace.get(arm) or {}
+    if side.get("tool_body_status") != "qualified":
+        raise ValueError("tool body status is not qualified")
+    if side.get("tool_body_frame") != tip_frame(arm):
+        raise ValueError(f"tool body frame must be {tip_frame(arm)}")
+    report_rel = side.get("tool_body_report")
+    if not isinstance(report_rel, str) or not report_rel:
+        raise ValueError("qualified tool body has no report path")
+    relpath = Path(report_rel)
+    if relpath.is_absolute() or ".." in relpath.parts:
+        raise ValueError("tool body report path must stay inside the repository")
+    root = Path(repo).resolve()
+    report_path = (root / relpath).resolve()
+    try:
+        report_path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("tool body report resolves outside the repository") from exc
+    if not report_path.is_file():
+        raise ValueError(f"tool body report is missing: {report_rel}")
+    report_bytes = report_path.read_bytes()
+    digest = hashlib.sha256(report_bytes).hexdigest()
+    if side.get("tool_body_report_sha256") != digest:
+        raise ValueError("tool body report SHA-256 does not match workspace")
+    try:
+        report = json.loads(report_bytes)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("tool body report is not valid UTF-8 JSON") from exc
+    current_tip = tip_offset_m(workspace, arm)
+    if current_tip is None:
+        raise ValueError("qualified tool body has no current touch-off")
+    current_session = (side.get("touchoff") or {}).get("session")
+    if not current_session:
+        raise ValueError("qualified tool body touch-off has no session id")
+    qualification = validate_body_pose_report(
+        spec, report, arm, expected_tip=current_tip, expected_session=current_session)
+
+    string_fields = {
+        "tool_body_utc": qualification.selected_utc,
+        "tool_body_method": qualification.method,
+        "tool_body_measurement_source": qualification.measurement_source,
+    }
+    for field_name, expected in string_fields.items():
+        if side.get(field_name) != expected:
+            raise ValueError(f"{field_name} does not match the body report")
+    integer_fields = {
+        "tool_body_samples": qualification.sample_count,
+        "tool_body_selected_cycle": qualification.selected_cycle,
+    }
+    for field_name, expected in integer_fields.items():
+        if side.get(field_name) != expected:
+            raise ValueError(f"{field_name} does not match the body report")
+    vector_fields = {
+        "tool_body_origin": qualification.body_origin_m,
+        "tool_body_rpy": qualification.body_rpy_rad,
+    }
+    for prefix, expected in vector_fields.items():
+        actual = _workspace_triplet(side, prefix)
+        # workspace.yaml serializes metres/radians to six decimals; allow only
+        # that sub-micrometre/sub-microradian representation loss.
+        if actual is None or _distance3(actual, expected) > 1e-6:
+            raise ValueError(f"{prefix} does not match the body report")
+    metric_fields = {
+        "tool_body_alignment_max_mm": qualification.endpoint_alignment_max_m * 1000,
+        "tool_body_tip_repeatability_mm": qualification.tip_repeatability_max_m * 1000,
+        "tool_body_origin_repeatability_mm": qualification.origin_repeatability_max_m * 1000,
+        "tool_body_axis_repeatability_deg": qualification.axis_repeatability_max_deg,
+    }
+    for field_name, expected in metric_fields.items():
+        val = side.get(field_name)
+        if val is None:
+            raise ValueError(f"{field_name} is missing from workspace")
+        try:
+            actual = float(val)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field_name} is invalid in workspace") from exc
+        if not math.isclose(actual, expected, abs_tol=5e-7):
+            raise ValueError(f"{field_name} does not match the body report")
+    return qualification
+
+
 class ToolMountError(RuntimeError):
     """The tool has no mount on the arm, so nothing can fit or fly it."""
 
@@ -865,19 +1434,53 @@ def dataset_tool_metadata(spec: ToolSpec, workspace: dict | None = None,
     """
     side = (workspace or {}).get(arm) or {}
     touchoff = side.get("touchoff") or {}
-    measured = tip_offset_m(workspace or {}, arm)
+    geometry = resolved_tool_geometry(spec, workspace, arm)
     payload = {
         "schema_version": SCHEMA_VERSION,
+        "tool_geometry_version": geometry.version,
         "tool_id": spec.tool_id,
         "arm": arm,
         "spec": dict(spec.raw),
         "spec_sha256": spec.sha256,
         "protrusion_m": spec.protrusion_m,
         "contact": spec.contact,
-        # what the touch-off measured (the body's end) and where the tool
-        # actually works — the same point unless the tool works at a distance
-        "tip_offset_m": list(measured) if measured else None,
-        "tcp_offset_m": (list(tcp_from_touchoff_m(spec, measured)) if measured else None),
+        "contact_radius_m": spec.contact_radius_m,
+        # What this run actually modelled. Nominal geometry is concrete too;
+        # source/status say whether it came from measurement, inference, or
+        # the datasheet instead of forcing readers to reconstruct nulls.
+        "geometry_source": geometry.source,
+        "geometry_status": geometry.status,
+        "geometry_measured": geometry.measured,
+        # Contact calibration and physical-body provenance are deliberately
+        # separate.  A pivot solve qualifies the TCP used to make marks; an
+        # axisymmetric profile may still place its body by inference.
+        "contact_geometry_status": geometry.contact_status,
+        "contact_geometry_error": geometry.contact_qualification_error,
+        "contact_uncertainty_m": geometry.contact_uncertainty_m,
+        "calibration_delta_m": list(geometry.calibration_delta_m),
+        "body_pose_status": geometry.body_pose_status,
+        "body_origin_m": list(geometry.body_origin_m),
+        "body_rpy_rad": list(geometry.body_rpy_rad),
+        "body_tip_offset_m": list(geometry.body_tip_offset_m),
+        "tip_offset_m": list(geometry.touch_offset_m),
+        "tcp_offset_m": list(geometry.tcp_offset_m),
+        "tcp_in_body_m": list(geometry.tcp_in_body_m),
+        "alignment_error_m": geometry.alignment_error_m,
+        "geometry_qualification_error": geometry.qualification_error,
+        "body_pose_qualification": {
+            "status": side.get("tool_body_status"),
+            "utc": side.get("tool_body_utc"),
+            "method": side.get("tool_body_method"),
+            "measurement_source": side.get("tool_body_measurement_source"),
+            "report": side.get("tool_body_report"),
+            "report_sha256": side.get("tool_body_report_sha256"),
+            "samples": side.get("tool_body_samples"),
+            "selected_cycle": side.get("tool_body_selected_cycle"),
+            "alignment_max_mm": side.get("tool_body_alignment_max_mm"),
+            "tip_repeatability_mm": side.get("tool_body_tip_repeatability_mm"),
+            "origin_repeatability_mm": side.get("tool_body_origin_repeatability_mm"),
+            "axis_repeatability_deg": side.get("tool_body_axis_repeatability_deg"),
+        },
         # the frame tip_offset_m is expressed in, and the URDF link that sits
         # at the working point once scripts/gen_tool_urdf.py has run
         "tip_frame": tip_frame(arm),
@@ -889,7 +1492,12 @@ def dataset_tool_metadata(spec: ToolSpec, workspace: dict | None = None,
             "utc": touchoff.get("utc"),
             "session": touchoff.get("session"),
             "residual_mm": touchoff.get("residual_mm"),
+            "holdout_mm": touchoff.get("holdout_mm"),
+            "tip_loo_max_mm": touchoff.get("tip_loo_max_mm"),
             "cond": touchoff.get("cond"),
+            "spread_deg": touchoff.get("spread_deg"),
+            "n_plate": touchoff.get("n_plate"),
+            "n_pad": touchoff.get("n_pad"),
         } if touchoff else None,
         "paper_plane_z_m": side.get("paper_plane_z"),
     }

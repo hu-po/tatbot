@@ -293,26 +293,6 @@ def overlap_s(a_start, a_end, b_start, b_end):
     return max(0.0, min(a_end, b_end) - max(a_start, b_start))
 
 
-def timeline_label(timeline, interval, slack_s=0.75):
-    """plate/pad from the guided touch window this interval overlaps.
-
-    The guide SAID what the operator was touching, which beats both the
-    default and anything the transcript heard. Slack absorbs the operator
-    landing slightly before or after the paced window.
-    """
-    if not timeline:
-        return None
-    best, best_overlap = None, 0.0
-    for entry in timeline.get("entries", []):
-        if entry.get("kind") != "touch":
-            continue
-        got = overlap_s(interval["start_unix"], interval["end_unix"],
-                        entry["start_unix"] - slack_s, entry["end_unix"] + slack_s)
-        if got > best_overlap:
-            best, best_overlap = entry.get("label"), got
-    return best
-
-
 def guided_touches(timeline, log, events):
     """Touch samples straight from the guide's paced windows.
 

@@ -20,21 +20,6 @@ source "$REPO/scripts/lib/estop_guard.sh"
 # shellcheck source=scripts/lib/profile_env.sh
 source "$REPO/scripts/lib/profile_env.sh"
 profile_env::require || exit $?
-# Wrist depth cameras by ROLE from the visiond sensor registry.
-WRIST_CAMERAS="$(python3 - "$REPO" <<'PY'
-import sys, tomllib
-from pathlib import Path
-reg = tomllib.loads((Path(sys.argv[1]) / "rust/visiond/config/vision.toml").read_text())
-by_role = {c["role"]: c["serial"] for c in reg.get("cameras", {}).get("realsense", []) if c.get("role")}
-missing = [r for r in ("wrist_upper", "wrist_lower") if r not in by_role]
-if missing:
-    sys.exit(f"sensor registry has no role= for {', '.join(missing)}")
-print("{" + ", ".join(
-    f"{r}: {{type: intelrealsense, serial_number_or_name: '{by_role[r]}', "
-    "width: 640, height: 480, fps: 30}}" for r in ("wrist_upper", "wrist_lower")) + "}")
-PY
-)"
-
 # shellcheck source=scripts/lib/ee_tool.sh
 source "$REPO/scripts/lib/ee_tool.sh"
 export TATBOT_CONFIG_DIR="${TATBOT_CONFIG_DIR:-$REPO/config/trossen}"
@@ -55,6 +40,17 @@ POLICY="$1"
 DURATION="${2:-60}"
 shift $(( $# < 2 ? $# : 2 ))
 estop_guard::reject_overrides "$@"
+for arg in "$@"; do
+  case "$arg" in
+    --policy.path|--policy.path=*|--robot.include_external_effort|\
+    --robot.include_external_effort=*|--robot.mask_external_effort|\
+    --robot.mask_external_effort=*|--robot.depth_policy_encoding|\
+    --robot.depth_policy_encoding=*|--robot.cameras|--robot.cameras=*)
+      echo "checkpoint-controlled rollout option cannot be overridden: $arg" >&2
+      exit 2
+      ;;
+  esac
+done
 
 # GR00T relative checkpoints explicitly reject select_action(): cached delta
 # rows cannot be decoded against newer observations. This synchronous launcher
@@ -62,25 +58,47 @@ estop_guard::reject_overrides "$@"
 # check and route the checkpoint to the full-chunk async stack.
 POLICY_CONFIG="$POLICY/config.json"
 [ -f "$POLICY_CONFIG" ] || POLICY_CONFIG="$POLICY/train_config.json"
-if [ -f "$POLICY_CONFIG" ]; then
-  IFS='|' read -r POLICY_TYPE _ _ _ USE_RELATIVE MASK_EXT_EFF < <(
-    python3 "$REPO/scripts/eval/checkpoint_contract.py" --format fields "$POLICY_CONFIG"
-  )
-  if [ "$POLICY_TYPE" = groot ] && [ "$USE_RELATIVE" = 1 ]; then
-    echo "relative-action GR00T requires full-chunk async inference; use:" >&2
-    echo "  scripts/il_rollout_async.sh <duration> <server-policy-path> groot" >&2
-    exit 2
-  fi
-  # Sim co-trained checkpoints see zeros in the effort channels; this launcher
-  # sends measured effort and cannot zero it, so refuse rather than skew.
-  if [ "$MASK_EXT_EFF" = 1 ]; then
-    echo "this checkpoint was trained with external effort masked to zero, and" >&2
-    echo "  the rollout wire cannot zero those channels (only include or drop)." >&2
-    echo "  Serving it live effort is train/serve skew; teach the client to zero" >&2
-    echo "  observation.state[7:14] before rolling this policy out." >&2
-    exit 2
-  fi
+[ -f "$POLICY_CONFIG" ] || {
+  echo "checkpoint has no config.json or train_config.json: $POLICY" >&2
+  exit 2
+}
+IFS='|' read -r POLICY_TYPE USE_DEPTH_INT STATE_SIZE DEPTH_ENCODING USE_RELATIVE MASK_EXT_EFF < <(
+  python3 "$REPO/scripts/eval/checkpoint_contract.py" --format fields "$POLICY_CONFIG"
+)
+if [ "$POLICY_TYPE" = groot ] && [ "$USE_RELATIVE" = 1 ]; then
+  echo "relative-action GR00T requires full-chunk async inference; use:" >&2
+  echo "  scripts/il_rollout_async.sh <duration> <server-policy-path> groot" >&2
+  exit 2
 fi
+[ "$STATE_SIZE" = 7 ] || [ "$STATE_SIZE" = 14 ] || {
+  echo "unsupported checkpoint state width $STATE_SIZE" >&2
+  exit 2
+}
+if [ "$MASK_EXT_EFF" = 1 ] && [ "$STATE_SIZE" != 14 ]; then
+  echo "masked external effort requires a 14-wide checkpoint state" >&2
+  exit 2
+fi
+USE_DEPTH=$([ "$USE_DEPTH_INT" = 1 ] && echo true || echo false)
+INCLUDE_EXT_EFF=$([ "$STATE_SIZE" = 14 ] && echo true || echo false)
+MASK_EXT_EFF_BOOL=$([ "$MASK_EXT_EFF" = 1 ] && echo true || echo false)
+
+# Wrist depth cameras by ROLE from the visiond sensor registry. The checkpoint
+# contract, not the current launcher default, decides whether depth is present.
+WRIST_CAMERAS="$(USE_DEPTH="$USE_DEPTH" python3 - "$REPO" <<'PY'
+import os, sys, tomllib
+from pathlib import Path
+reg = tomllib.loads((Path(sys.argv[1]) / "rust/visiond/config/vision.toml").read_text())
+by_role = {c["role"]: c["serial"] for c in reg.get("cameras", {}).get("realsense", []) if c.get("role")}
+missing = [r for r in ("wrist_upper", "wrist_lower") if r not in by_role]
+if missing:
+    sys.exit(f"sensor registry has no role= for {', '.join(missing)}")
+depth = os.environ["USE_DEPTH"]
+print("{" + ", ".join(
+    f"{r}: {{type: intelrealsense, serial_number_or_name: '{by_role[r]}', "
+    f"width: 640, height: 480, fps: 30, use_depth: {depth}}}"
+    for r in ("wrist_upper", "wrist_lower")) + "}")
+PY
+)"
 # Tool identity is a hardware concern: it gates here, with the other ones,
 # after the checkpoint contract has had its say.
 ee_tool::require || exit $?
@@ -90,6 +108,7 @@ arm_gate::require || exit $?
 
 TASK=$(python3 -c "import json;print(json.load(open('$POLICY/train_config.json'))['dataset'].get('single_task') or 'run the demonstrated task')" 2>/dev/null || echo "run the demonstrated task")
 echo "policy: $POLICY  duration: ${DURATION}s  task: $TASK"
+echo "checkpoint contract: type=$POLICY_TYPE depth=$USE_DEPTH state=$STATE_SIZE external effort=$INCLUDE_EXT_EFF masked=$MASK_EXT_EFF_BOOL"
 
 
 # Open the run before the preflight, so a rollout that never starts still
@@ -140,6 +159,9 @@ runlog::run env --chdir="${RUN_DIR:-$PWD}" uv run --project "$REPO/python/lerobo
   --robot.id=tatbot_follower_right \
   --robot.estop_required=true \
   --robot.cameras="$WRIST_CAMERAS" \
+  --robot.include_external_effort=$INCLUDE_EXT_EFF \
+  --robot.mask_external_effort=$MASK_EXT_EFF_BOOL \
+  --robot.depth_policy_encoding="$DEPTH_ENCODING" \
   --task="$TASK" \
   --duration="$DURATION" \
   --inference.type=sync \

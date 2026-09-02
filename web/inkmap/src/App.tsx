@@ -6,10 +6,12 @@ import { Inspector } from "./components/Inspector.tsx";
 import { BodyBar } from "./components/BodyToggle.tsx";
 import { AcceptBar } from "./components/AcceptBar.tsx";
 import { Generate } from "./components/Generate.tsx";
+import { ShowcaseHud, ShowcasePanel } from "./components/Showcase.tsx";
 import { useStore } from "./store.ts";
 import type { DesignMeta } from "./core/schema.ts";
 
 export function App() {
+  const showcase = new URLSearchParams(window.location.search).get("showcase") === "1";
   const setDesigns = useStore((s) => s.setDesigns);
   const setError = useStore((s) => s.setError);
   const error = useStore((s) => s.error);
@@ -26,6 +28,10 @@ export function App() {
   const body = useStore((s) => s.body);
 
   useEffect(() => {
+    document.title = showcase ? "Tatbot — procedural body showcase" : "Inkmap — tattoo preview";
+  }, [showcase]);
+
+  useEffect(() => {
     fetch("designs/manifest.json")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`designs/manifest.json: HTTP ${r.status}`))))
       .then((m: { designs: DesignMeta[] }) => setDesigns(m.designs))
@@ -33,6 +39,7 @@ export function App() {
   }, [setDesigns, setError]);
 
   useEffect(() => {
+    if (showcase) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") { cancelPlacing(); return; }
       // Keys never fire while typing in a field.
@@ -54,7 +61,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cancelPlacing, nudgeRotation, nudgeSize, accept, discard]);
+  }, [showcase, cancelPlacing, nudgeRotation, nudgeSize, accept, discard]);
 
   // Toasts fade out on their own.
   useEffect(() => {
@@ -64,28 +71,29 @@ export function App() {
   }, [toast, setToast]);
 
   return (
-    <div className="app">
+    <div className={showcase ? "app showcase" : "app"}>
       <aside className="sidebar">
-        <header>
-          <h1>Inkmap</h1>
+        {showcase ? <ShowcasePanel /> : <>
+          <header>
+            <h1>Inkmap</h1>
+          </header>
+          <SentenceBar />
           <p className="muted">Pick a design, hover the body, click to place.</p>
-        </header>
-        <SentenceBar />
-        <Picker key={accepted} pulse={accepted > 0} />
-        <Generate />
-        <Inspector />
+          <Picker key={accepted} pulse={accepted > 0} />
+          <Generate />
+          <Inspector />
+        </>}
         {error && <p className="error">{error}</p>}
       </aside>
       <main className="viewport">
         <Scene />
-        <BodyBar />
-        <AcceptBar />
+        {showcase ? <ShowcaseHud /> : <><BodyBar /><AcceptBar /></>}
         {toast && <div className="toast" role="status">{toast}</div>}
-        <div className="hud">
+        {!showcase && <div className="hud">
           {!body && !error && <span>loading body…</span>}
           {placing && <span>placing <b>{placing}</b> — click on the body · <kbd>A</kbd>/<kbd>D</kbd> rotate · <kbd>W</kbd>/<kbd>S</kbd> size · Esc cancels</span>}
           {!placing && selected && body && <span><kbd>A</kbd>/<kbd>D</kbd> rotate · <kbd>W</kbd>/<kbd>S</kbd> size · <kbd>Enter</kbd> accept · <kbd>Del</kbd> discard</span>}
-        </div>
+        </div>}
       </main>
     </div>
   );

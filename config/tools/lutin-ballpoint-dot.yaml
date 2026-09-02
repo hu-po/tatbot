@@ -71,6 +71,9 @@ tip_detail:
   # of the cone, and dark enough to read as steel beside the white plastic:
   # _polish_ee_materials treats anything under 0.8 as metal.
   color: "0.58 0.60 0.65 1"
+# Physical 0.5 mm ball diameter. Unlike the display cap above, this drives the
+# collision/contact model and must not be enlarged for camera visibility.
+contact_radius_m: 0.00025
 
 tip_mesh: pen_tip.stl
 # The mesh is a 40 mm cone; the cartridge measures 35 mm.

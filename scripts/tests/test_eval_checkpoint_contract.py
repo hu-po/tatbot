@@ -78,6 +78,46 @@ def test_sidecar_declares_masked_effort(tmp_path: Path) -> None:
     assert MODULE.fields(contract).split("|")[-1] == "1"
 
 
+def test_stdin_config_accepts_explicit_sidecar_json(tmp_path: Path) -> None:
+    checkpoint = _act_rgbd_checkpoint(tmp_path, {"mask_external_effort": True})
+    result = subprocess.run(
+        [
+            str(MODULE_PATH),
+            "--format",
+            "fields",
+            "--sidecar-json",
+            (checkpoint / MODULE.SIDECAR).read_text(),
+            "-",
+        ],
+        input=(checkpoint / "config.json").read_text(),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip().split("|")[-1] == "1"
+
+
+def test_masked_sidecar_rejects_non_14_wide_state(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    (checkpoint / "config.json").write_text(
+        json.dumps(
+            {
+                "type": "act",
+                "input_features": {"observation.state": {"shape": [7]}},
+            }
+        )
+    )
+    (checkpoint / MODULE.SIDECAR).write_text(json.dumps({"mask_external_effort": True}))
+
+    try:
+        MODULE.load_contract(str(checkpoint))
+    except ValueError as error:
+        assert "shape [14]" in str(error)
+    else:
+        raise AssertionError("invalid masked checkpoint was accepted")
+
+
 def test_declare_stamps_every_checkpoint_and_reads_back(tmp_path: Path) -> None:
     run = tmp_path / "outputs" / "run"
     for step in ("010000", "020000"):
@@ -88,17 +128,17 @@ def test_declare_stamps_every_checkpoint_and_reads_back(tmp_path: Path) -> None:
         assert contract["mask_external_effort"] is True
 
 
-def test_sync_launcher_refuses_masked_effort_checkpoint(tmp_path: Path) -> None:
-    checkpoint = _act_rgbd_checkpoint(tmp_path, {"mask_external_effort": True})
-    result = subprocess.run(
-        [str(REPO / "scripts" / "il_rollout.sh"), str(checkpoint), "1"],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 2
-    assert "masked to zero" in result.stderr
+def test_rollout_launchers_pass_contract_mask_to_the_robot_client() -> None:
+    sync = (REPO / "scripts" / "il_rollout.sh").read_text()
+    async_ = (REPO / "scripts" / "il_rollout_async.sh").read_text()
+    compare = (REPO / "scripts" / "il_compare_policies.sh").read_text()
+
+    assert "--robot.mask_external_effort=$MASK_EXT_EFF_BOOL" in sync
+    assert "--robot.mask_external_effort=$MASK_EXT_EFF_BOOL" in async_
+    assert 'TATBOT_MASK_EXT_EFF="$mask_ext_eff"' in compare
+    assert "checkpoint-controlled rollout option cannot be overridden" in sync
+    assert "checkpoint-controlled rollout option cannot be overridden" in async_
+    assert "Teach the client to zero" not in sync + async_ + compare
 
 
 def test_sync_launcher_rejects_relative_groot_before_arm_gate(tmp_path: Path) -> None:

@@ -38,6 +38,11 @@ import pytest
 # environment is not worth it. The three modules that need it are collected
 # when the suite is run from the plugin's own venv, and skipped here.
 OPTIONAL_DEPS: dict[str, tuple[str, ...]] = {
+    "test_draw_surface": ("numpy",),
+    "test_draw_kinematics": ("numpy",),
+    "test_draw_path": ("numpy",),
+    "test_draw_e2e": ("numpy",),
+    "test_draw_viewpoints": ("numpy",),
     "test_calibrate_board_session": ("cv2",),
     "test_ee_fiducial": ("cv2",),
     "test_ee_tracker_io": ("cv2",),

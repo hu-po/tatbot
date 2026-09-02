@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -40,11 +42,13 @@ public:
   const std::string & endpoint() const {return endpoint_;}
 
 private:
+  static constexpr size_t payload_capacity = 4096;
   int socket_ = -1;
   sockaddr_in destination_{};
   std::string endpoint_;
   std::chrono::steady_clock::duration minimum_interval_{};
   std::chrono::steady_clock::time_point last_sent_{};
+  std::array<char, payload_capacity> payload_{};
   Stats stats_;
 };
 

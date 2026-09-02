@@ -19,9 +19,9 @@ page.on("pageerror", (e) => log(`pageerror: ${e.message}`));
 await page.goto(api ? `${url}${url.includes("?") ? "&" : "?"}api=${encodeURIComponent(api)}` : url);
 await page.waitForFunction(() => window.__inkmap?.getState().body, null, { timeout: 120_000 });
 log("body loaded");
-await page.waitForFunction(() => /generator:/.test(document.querySelector(".generate > p")?.textContent ?? ""), null, { timeout: 60_000 })
+await page.waitForFunction(() => !document.querySelector(".generate > p"), null, { timeout: 60_000 })
   .catch(async () => { log(`generator not reachable: ${await page.textContent(".generate > p")}`); await browser.close(); process.exit(2); });
-log(await page.textContent(".generate > p"));
+log("generator ready");
 
 await page.fill(".generate input", "a swallow carrying a rose");
 await page.click(".generate button.primary");

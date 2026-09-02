@@ -6,9 +6,9 @@ import { validatePlacementFile, SCHEMA_VERSION } from "../src/core/schema.ts";
 const schema = JSON.parse(readFileSync(new URL("../../../config/inkmap/placement.schema.json", import.meta.url), "utf8"));
 
 const good = {
-  schema_version: 3,
+  schema_version: 4,
   units: { length: "m", tattoo_size: "mm", up: "+z" },
-  body: { id: "kaykit-barbarian", sha256: "a".repeat(64), path: "bodies/kaykit-barbarian.glb" },
+  body: { id: "hbm-male-stylized", asset_sha256: "a".repeat(64), surface_sha256: "b".repeat(64), path: "bodies/hbm-male-stylized.glb" },
   placements: [
     { id: "p-1", design_id: "anchor", anchor: { face: 12, barycentric: [0.2, 0.5, 0.3] }, rotation_rad: 0.1, size_mm: [50, 60], mirror: false },
   ],
@@ -28,7 +28,7 @@ test("bad files are rejected with a reason", () => {
     mut(f);
     assert.throws(() => validatePlacementFile(f), re);
   };
-  bad((f) => (f.schema_version = 4), /schema_version/);
+  bad((f) => (f.schema_version = 5), /schema_version/);
   bad((f) => (f.placements[0].site = { id: "", laterality: "left", aspect: null, lexicon: "0.1" }), /site\.id/);
   bad((f) => (f.placements[0].site = { id: "knee_ditch", laterality: "both", aspect: null, lexicon: "0.1" }), /laterality/);
   bad((f) => (f.placements[0].language = { sentence: "", program: {} }), /sentence/);
@@ -36,7 +36,8 @@ test("bad files are rejected with a reason", () => {
   bad((f) => (f.designs = { "gen-1": { name: "x", svg: "nope", default_size_mm: [10, 10] } }), /svg/);
   bad((f) => { f.placements[0].design_id = "gen-9"; f.designs = {}; }, /not embedded/);
   bad((f) => (f.units.up = "+y"), /units/);
-  bad((f) => (f.body.sha256 = "nope"), /sha256/);
+  bad((f) => (f.body.asset_sha256 = "nope"), /asset_sha256/);
+  bad((f) => delete f.body.surface_sha256, /surface_sha256/);
   bad((f) => (f.placements[0].anchor.barycentric = [0.5, 0.5, 0.5]), /sum to 1/);
   bad((f) => (f.placements[0].anchor.face = -1), /face/);
   bad((f) => (f.placements[0].size_mm = [0, 10]), /size_mm/);
@@ -44,9 +45,11 @@ test("bad files are rejected with a reason", () => {
 });
 
 test("a v1 file (no designs) still loads; a v2 file with an embedded design validates", () => {
-  const v1 = structuredClone(good) as any; v1.schema_version = 1;
+  const v1 = structuredClone(good) as any;
+  v1.schema_version = 1;
+  v1.body = { id: good.body.id, sha256: good.body.asset_sha256, path: good.body.path };
   assert.doesNotThrow(() => validatePlacementFile(v1));
-  const v2 = structuredClone(good) as any;
+  const v2 = structuredClone(v1) as any; v2.schema_version = 2;
   v2.placements[0].design_id = "gen-1";
   v2.designs = { "gen-1": { name: "swallow", svg: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M0 0h10v10z'/></svg>", default_size_mm: [60, 50], source: { kind: "generated", model: "sd-turbo", prompt: "p", seed: 7 } } };
   assert.doesNotThrow(() => validatePlacementFile(v2));

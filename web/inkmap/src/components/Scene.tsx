@@ -1,11 +1,13 @@
 import { Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Canvas, useLoader, type ThreeEvent } from "@react-three/fiber";
+import { Canvas, useLoader, useThree, type ThreeEvent } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { useStore, type LoadedBody } from "../store.ts";
-import { bodySpec, buildSkin, sha256Hex, type BodySpec } from "../core/body.ts";
-import { pointToAnchor } from "../core/anchor.ts";
+import { bodySpec, buildPosedSkin, buildSkin, canonicalSurfaceBytes, sha256Hex, type BodySpec } from "../core/body.ts";
+import { POSE_CATALOG, poseRecord } from "../core/pose.ts";
+import { anchorToPoint, pointToAnchor } from "../core/anchor.ts";
 import { buildDecal } from "../core/decal.ts";
 import { svgTexture } from "../core/svg.ts";
 import type { Placement } from "../core/schema.ts";
@@ -13,6 +15,7 @@ import { AtlasIndex, parseAtlas, type RegionRef } from "../core/atlas.ts";
 
 export function Scene() {
   const spec = bodySpec(useStore((s) => s.bodyId));
+  const poseId = useStore((s) => s.poseId);
   const eye = spec.eyeHeight;
   return (
     <Canvas
@@ -27,15 +30,165 @@ export function Scene() {
       <gridHelper args={[4, 16, "#3c414b", "#2a2e36"]} rotation={[Math.PI / 2, 0, 0]} />
       <CanvasErrorBoundary>
         <Suspense fallback={null}>
-          <Body key={spec.id} spec={spec} />
+          <Body key={`${spec.id}:${poseId}`} spec={spec} poseId={poseId} />
         </Suspense>
+        <PoseSupport />
         <AtlasOverlay />
         <RegionHighlight />
         <Placements />
+        <ScenarioTrace />
+        <ScenarioSiteMarker />
+        <ShowcaseCamera />
       </CanvasErrorBoundary>
       <OrbitControls makeDefault target={[0, 0, eye * 0.6]} minDistance={0.3} maxDistance={8} />
     </Canvas>
   );
+}
+
+interface SupportBox {
+  center: [number, number, number];
+  size: [number, number, number];
+  rotation?: [number, number, number];
+}
+
+/** Kinematic support proxy shared by the editor and showcase pose contract. */
+function PoseSupport() {
+  const body = useStore((s) => s.body);
+  const boxes = useMemo<SupportBox[]>(() => {
+    if (!body) return [];
+    const supportId = poseRecord(body.spec.id, body.poseId).support_id;
+    const low = body.skin.bbox.min;
+    const center = body.skin.bbox.getCenter(new THREE.Vector3());
+    const span = body.skin.bbox.getSize(new THREE.Vector3());
+    if (supportId === "standing-reference-v1") return [];
+    if (supportId === "tattoo-bed-v1") {
+      return [{
+        center: [center.x, center.y, low.z - 0.04],
+        size: [Math.max(0.9, span.x + 0.16), Math.max(1.8, span.y + 0.16), 0.08],
+      }];
+    }
+    if (supportId.startsWith("tattoo-chair-")) {
+      const seatZ = low.z + span.z * 0.18;
+      const armrestZ = low.z + span.z * (body.spec.id === "hbm-female-stylized" ? 0.365 : 0.34);
+      const result: SupportBox[] = [
+        { center: [0, center.y, seatZ - 0.035], size: [0.56, 0.50, 0.07] },
+        {
+          center: [0, center.y + 0.40, seatZ + 0.32],
+          size: [0.52, 0.06, 0.72],
+          rotation: [-Math.PI / 6, 0, 0],
+        },
+        { center: [0, -0.04, low.z + 0.045], size: [0.50, 0.54, 0.07] },
+      ];
+      if (supportId.endsWith("left-armrest-v1")) {
+        result.push({
+          center: [0.45, 0.40, armrestZ],
+          size: [0.32, 0.38, 0.05],
+        });
+      }
+      if (supportId.endsWith("right-armrest-v1")) {
+        result.push({
+          center: [-0.45, 0.40, armrestZ],
+          size: [0.32, 0.38, 0.05],
+        });
+      }
+      return result;
+    }
+    return [];
+  }, [body]);
+  return (
+    <group>
+      {boxes.map((box, index) => (
+        <mesh key={index} position={box.center} rotation={box.rotation} raycast={() => null}>
+          <boxGeometry args={box.size} />
+          <meshStandardMaterial color="#343a46" roughness={0.82} metalness={0.05} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function ShowcaseCamera() {
+  const body = useStore((s) => s.body);
+  const scenario = useStore((s) => s.showcaseScenario);
+  const focus = useStore((s) => s.showcaseFocus);
+  const { camera, controls } = useThree();
+  useEffect(() => {
+    if (!body) return;
+    const orbit = controls as unknown as { target: THREE.Vector3; update: () => void } | undefined;
+    camera.up.set(0, 0, 1);
+    const matchingScenario = scenario && body.spec.id === scenario.body.id && body.poseId === scenario.pose.id
+      ? scenario
+      : null;
+    if (matchingScenario && focus) {
+      const { p, n } = anchorToPoint(body.skin.geometry, matchingScenario.placement.anchor);
+      const largest = Math.max(...matchingScenario.placement.size_mm) / 1000;
+      const distance = THREE.MathUtils.clamp(largest * 10, 0.45, 0.70);
+      const studioView = new THREE.Vector3(0.3, -0.6, 1.0).normalize();
+      const view = n.clone().multiplyScalar(0.25).addScaledVector(studioView, 0.75).normalize();
+      camera.position.copy(p).addScaledVector(view, distance).add(new THREE.Vector3(0, 0, largest * 0.35));
+      orbit?.target.copy(p);
+    } else {
+      const center = body.skin.bbox.getCenter(new THREE.Vector3());
+      const size = body.skin.bbox.getSize(new THREE.Vector3());
+      const radius = Math.max(size.x, size.y, size.z);
+      camera.position.copy(center).add(new THREE.Vector3(radius * 0.95, -radius * 1.55, radius * 0.55));
+      orbit?.target.copy(center);
+    }
+    camera.lookAt(orbit?.target ?? body.skin.bbox.getCenter(new THREE.Vector3()));
+    camera.updateProjectionMatrix();
+    orbit?.update();
+  }, [body, scenario, focus, camera, controls]);
+  return null;
+}
+
+function ScenarioSiteMarker() {
+  const body = useStore((s) => s.body);
+  const scenario = useStore((s) => s.showcaseScenario);
+  const focus = useStore((s) => s.showcaseFocus);
+  const marker = useMemo(() => {
+    if (!body || !scenario || body.spec.id !== scenario.body.id || body.poseId !== scenario.pose.id) return null;
+    const { p, n } = anchorToPoint(body.skin.geometry, scenario.placement.anchor);
+    const scale = THREE.MathUtils.clamp(Math.max(...scenario.placement.size_mm) / 1000 * 1.35, 0.042, 0.075);
+    return {
+      position: p.addScaledVector(n, 0.0025),
+      quaternion: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n),
+      scale,
+    };
+  }, [body, scenario]);
+  if (!marker || focus) return null;
+  return (
+    <mesh position={marker.position} quaternion={marker.quaternion} raycast={() => null}>
+      <ringGeometry args={[marker.scale * 0.58, marker.scale * 0.7, 40]} />
+      <meshBasicMaterial color="#61e8ff" transparent opacity={0.9} depthTest={false} />
+    </mesh>
+  );
+}
+
+/** Exact compiled stroke anchors replayed on the currently posed skin. */
+function ScenarioTrace() {
+  const body = useStore((s) => s.body);
+  const scenario = useStore((s) => s.showcaseScenario);
+  const visible = useStore((s) => s.showcaseTraceVisible);
+  const lines = useMemo(() => {
+    if (!body || !scenario || body.spec.id !== scenario.body.id || body.poseId !== scenario.pose.id) return [];
+    return scenario.trace.strokes.map((stroke) => {
+      const points = stroke.map((anchor) => {
+        const { p, n } = anchorToPoint(body.skin.geometry, anchor);
+        return p.addScaledVector(n, 0.0015);
+      });
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const material = new THREE.LineBasicMaterial({ color: "#61e8ff", transparent: true, opacity: 0.96 });
+      const line = new THREE.Line(geometry, material);
+      line.raycast = () => undefined;
+      return line;
+    });
+  }, [body, scenario]);
+  useEffect(() => () => lines.forEach((line) => {
+    line.geometry.dispose();
+    (line.material as THREE.Material).dispose();
+  }), [lines]);
+  if (!visible) return null;
+  return <group>{lines.map((line, index) => <primitive key={index} object={line} />)}</group>;
 }
 
 /** The Canvas is its own React root: an uncaught error there blanks the scene silently. Surface it in the sidebar instead. */
@@ -49,8 +202,9 @@ class CanvasErrorBoundary extends Component<{ children: ReactNode }, { failed: b
   render() { return this.state.failed ? null : this.props.children; }
 }
 
-function Body({ spec }: { spec: BodySpec }) {
+function Body({ spec, poseId }: { spec: BodySpec; poseId: string }) {
   const gltf = useLoader(GLTFLoader, spec.path);
+  const riggedGltf = useLoader(GLTFLoader, spec.rigPath);
   const setBody = useStore((s) => s.setBody);
   const setError = useStore((s) => s.setError);
   const body = useStore((s) => s.body);
@@ -69,23 +223,34 @@ function Body({ spec }: { spec: BodySpec }) {
     (async () => {
       try {
         const t0 = performance.now();
-        const skin = buildSkin(gltf.scene, spec);
+        const restSkin = buildSkin(gltf.scene, spec);
+        const surfaceSha256 = await sha256Hex(canonicalSurfaceBytes(restSkin.geometry));
+        const catalogBody = POSE_CATALOG.bodies[spec.id];
+        if (!catalogBody) throw new Error(`body ${spec.id}: missing from pose catalog`);
+        if (catalogBody.rigged_path !== spec.rigPath) throw new Error(`body ${spec.id}: rig path differs from pose catalog`);
+        if (catalogBody.surface_sha256 !== surfaceSha256) throw new Error(`body ${spec.id}: rig was built for surface ${catalogBody.surface_sha256.slice(0, 12)}…, loaded ${surfaceSha256.slice(0, 12)}…`);
+        const rigScene = cloneSkeleton(riggedGltf.scene);
+        const pose = poseRecord(spec.id, poseId);
+        const skin = buildPosedSkin(rigScene, spec, pose.joint_rotations, pose.body_rotation_xyzw);
+        skin.map = restSkin.map;
+        skin.vertexColors = restSkin.vertexColors;
         const t1 = performance.now();
         const bytes = await (await fetch(spec.path)).arrayBuffer();
         const t2 = performance.now();
-        const sha256 = await sha256Hex(bytes);
+        const assetSha256 = await sha256Hex(bytes);
         const t3 = performance.now();
         console.info(`[inkmap] body ${spec.id} timings: skin ${(t1 - t0).toFixed(0)} ms, fetch ${(t2 - t1).toFixed(0)} ms, sha256 ${(t3 - t2).toFixed(0)} ms (since page start ${t0.toFixed(0)} ms)`);
         if (cancelled) return;
-        const loaded: LoadedBody = { spec, skin, sha256, scene: gltf.scene };
+        const loaded: LoadedBody = { spec, skin, assetSha256, surfaceSha256, scene: rigScene, poseId };
         setBody(loaded);
+        setError(null);
         // The region atlas is optional per body: without it the app works,
         // sentences and captions just have nothing to ground in.
         try {
           const res = await fetch(`bodies/${spec.id}.regions.json`);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const raw = parseAtlas(await res.json(), skin.centroids.length / 3);
-          if (raw.body.sha256 !== sha256) throw new Error(`atlas is for another export of ${spec.id} — rerun tools/build_atlas.ts`);
+          if (raw.body.sha256 !== assetSha256) throw new Error(`atlas is for another export of ${spec.id} — rerun tools/build_atlas.ts`);
           if (!cancelled) useStore.getState().setAtlas(new AtlasIndex(raw, skin.geometry, skin.centroids));
         } catch (e) {
           console.warn(`[inkmap] no region atlas for ${spec.id}:`, (e as Error).message);
@@ -93,13 +258,13 @@ function Body({ spec }: { spec: BodySpec }) {
         }
         const size = new THREE.Vector3();
         skin.bbox.getSize(size);
-        console.info(`[inkmap] body ${spec.id} sha256=${sha256.slice(0, 12)}… faces=${skin.centroids.length / 3} height=${size.z.toFixed(3)} m`);
+        console.info(`[inkmap] body ${spec.id} asset=${assetSha256.slice(0, 12)}… surface=${surfaceSha256.slice(0, 12)}… faces=${skin.centroids.length / 3} height=${size.z.toFixed(3)} m`);
       } catch (e) {
         setError((e as Error).message);
       }
     })();
     return () => { cancelled = true; };
-  }, [gltf, spec, setBody, setError]);
+  }, [gltf, riggedGltf, spec, poseId, setBody, setError]);
 
   if (!body || body.spec.id !== spec.id) return null;
 
@@ -238,8 +403,22 @@ function Decal({ placement, ghost = false, selected = false }: { placement: Plac
 
   useEffect(() => {
     let live = true;
-    if (design) svgTexture(design.path).then((t) => { if (live) setTex(t); }).catch(console.error);
-    return () => { live = false; };
+    let owned: THREE.Texture | null = null;
+    setTex(null);
+    if (design) {
+      svgTexture(design.path).then((texture) => {
+        if (!live) {
+          texture.dispose();
+          return;
+        }
+        owned = texture;
+        setTex(texture);
+      }).catch(console.error);
+    }
+    return () => {
+      live = false;
+      owned?.dispose();
+    };
   }, [design]);
 
   const { anchor, rotation_rad, size_mm, mirror } = placement;

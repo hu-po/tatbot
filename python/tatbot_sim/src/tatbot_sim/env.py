@@ -2,9 +2,9 @@
 
 Ink is a per-env PIGMENT FIELD (tatbot_sim.inkfield), not geometry: one float
 per sheet texel, composited over the paper and uploaded into the pad's texture.
-Whenever the TCP comes within ``ink_threshold`` of the surface, the fitted
-tool's ``kind`` decides what happens to the field under the tip — a pen adds
-pigment, the removal laser clears a fraction of it. That is the whole reason
+Whenever the resolved working TCP satisfies the tool's interaction contract,
+the fitted tool's ``kind`` decides what happens to the field under the tip — a
+pen adds pigment, the removal laser clears a fraction of it. That is the whole reason
 for the representation: the earlier dot pool (kinematic cylinders teleported
 under the tip, one per control step) was monotone-additive with no per-pixel
 quantity to subtract from, so no tool could ever take ink away.
@@ -17,10 +17,11 @@ refreshes, so strokes still read continuous and only the last millimetre of a
 trail can lag (by less than the observation staleness LatencyDR already trains
 across).
 
-The TCP is the fitted tool's working point, so marks are made by the thing that
-actually touches skin. No contact is simulated: the needle passes through under
-a large enough perturbation, and depth/force is a deployment-time controller
-concern rather than something the policy learns.
+The TCP is the fitted tool's working point. Contact tools carry a small physical
+tip collision and the flat substrate carries matching collision geometry; the
+mark gate remains geometric and separately audited so solver tolerance can
+never create ink in the air. Shaped surfaces still use that kinematic contact
+contract until their collision mesh is qualified.
 
 The surface is deliberately a *broader* distribution than the real sessions.
 Its height is randomized through several centimetres rather than pinned to the
@@ -32,6 +33,7 @@ plus normal — and the expert, the ink model and the floor clamp all work in
 that plane rather than assuming a horizontal surface.
 """
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -50,10 +52,13 @@ from mani_skill.utils.structs.types import SceneConfig, SimConfig
 from transforms3d.euler import euler2mat, euler2quat
 from transforms3d.quaternions import mat2quat
 
-from tatbot_sim import capmesh, tasks, tools
+from tatbot_sim import capmesh, interaction, tasks, tools
 from tatbot_sim.agent import TatbotWXAI
 from tatbot_sim.config import DRConfig
 from tatbot_sim.inkfield import InkField, laser_eta
+from tatbot_sim.inkmap.contracts import load_scenario
+from tatbot_sim.inkmap.mesh_patch_surface import MeshPatchSurface
+from tatbot_sim.inkmap.scenario_scene import build_scenario_actors
 from tatbot_sim.surface import (
     DisplacedSurface,
     PlanarSurface,
@@ -166,12 +171,10 @@ class TatbotDrawEnv(BaseEnv):
     # silicone skin under the laser and the 3RL. Sizing the geometry and the
     # texture from one record is what keeps them from drifting apart.
 
-    # How far above the surface the tool still marks, on top of ink_threshold.
-    # The 1.5 mm was the ink dot's thickness back when ink was geometry; it
-    # stays because the TOTAL (5.5 mm at the default threshold) is the number
-    # expert.py's floor clamp is written against, and moving it would quietly
-    # change where stray marks land.
-    TIP_MARK_MARGIN_M = 0.0015
+    INTERACTION_MODEL = interaction.INTERACTION_MODEL
+    CONTACT_ABOVE_TOLERANCE_M = interaction.CONTACT_ABOVE_TOLERANCE_M
+    MAX_PENETRATION_M = interaction.MAX_PENETRATION_M
+    PHYSICS_CONTACT_OFFSET_M = interaction.PHYSICS_CONTACT_OFFSET_M
 
     # Measured ceiling for holding the pen perpendicular to the surface: above
     # this the wrist cannot make the orientation at all (the IK residual does
@@ -184,16 +187,23 @@ class TatbotDrawEnv(BaseEnv):
         self,
         *args,
         robot_uids="tatbot_wxai",
-        ink_threshold: float = 0.004,
+        contact_above_tolerance_m: float = CONTACT_ABOVE_TOLERANCE_M,
+        max_penetration_m: float = MAX_PENETRATION_M,
         texture_refresh_steps: int = 3,
         num_textures: int = 8,
         dr: DRConfig | None = None,
         fiducial_calibration: str | None = None,
         fiducial_robot_world: str | None = None,
         fiducial_camera_scale: float = 0.5,
+        scenario_path: str | None = None,
         **kwargs,
     ):
-        self.ink_threshold = ink_threshold
+        self.contact_above_tolerance_m = float(contact_above_tolerance_m)
+        self.max_penetration_m = float(max_penetration_m)
+        if not 0 <= self.contact_above_tolerance_m <= 0.0005:
+            raise ValueError("contact_above_tolerance_m must be in [0, 0.0005]")
+        if not 0 <= self.max_penetration_m <= 0.0005:
+            raise ValueError("max_penetration_m must be in [0, 0.0005]")
         self.texture_refresh_steps = max(1, int(texture_refresh_steps))
         # what is in the gripper decides what the tool does to the field
         self.tool = tools.active_tool()
@@ -208,6 +218,17 @@ class TatbotDrawEnv(BaseEnv):
         self.fiducial_calibration = fiducial_calibration
         self.fiducial_robot_world = fiducial_robot_world
         self.fiducial_camera_scale = fiducial_camera_scale
+        self.body_scenario = load_scenario(scenario_path) if scenario_path else None
+        if self.body_scenario and self.body_scenario["robot"]["tool_id"] != self.tool.tool_id:
+            raise ValueError(
+                f"scenario requires tool {self.body_scenario['robot']['tool_id']!r}, "
+                f"active tool is {self.tool.tool_id!r}"
+            )
+        if self.body_scenario:
+            urdf = tools.REPO / "urdf" / "tatbot.urdf"
+            installed_sha256 = hashlib.sha256(urdf.read_bytes()).hexdigest()
+            if self.body_scenario["robot"]["urdf_sha256"] != installed_sha256:
+                raise ValueError("scenario robot URDF checksum does not match this checkout")
         # every randomization range lives in the DR tree (tatbot_sim.config);
         # the env carries no tuning literals of its own
         self.dr = (dr or DRConfig()).resolve_for(self.substrate)
@@ -221,14 +242,15 @@ class TatbotDrawEnv(BaseEnv):
 
     @property
     def _default_sim_config(self):
-        # drawing is contact-free: low solver iterations, small contact offset
+        # Millimetre-scale contact cannot use the old 10 mm broad-phase offset:
+        # it made collision proximity larger than the entire drawing contract.
         return SimConfig(
             sim_freq=120,
             control_freq=30,
             scene_config=SceneConfig(
-                contact_offset=0.01,
-                solver_position_iterations=4,
-                solver_velocity_iterations=0,
+                contact_offset=self.PHYSICS_CONTACT_OFFSET_M,
+                solver_position_iterations=8,
+                solver_velocity_iterations=1,
             ),
         )
 
@@ -382,6 +404,9 @@ class TatbotDrawEnv(BaseEnv):
                 fb.build_kinematic(name=f"floor_{env_idx}")
         else:
             build_ground(self.scene, altitude=-0.2)
+        if self.body_scenario is not None:
+            self._load_body_scene(rng)
+            return
         # A ruled substrate gets printed paper; a blank one gets silicone. The
         # planner sees the same shape of entry either way, so nothing above
         # here has to know which surface it is laying strokes on.
@@ -418,6 +443,10 @@ class TatbotDrawEnv(BaseEnv):
                     half_size=[self.pad_half_x, self.pad_half_y, self.pad_thickness / 2],
                     material=mat,
                 )
+                if self.tool.contact and self.tool.contact_radius_m is not None:
+                    builder.add_box_collision(
+                        half_size=[self.pad_half_x, self.pad_half_y, self.pad_thickness / 2],
+                    )
             builder.add_visual_from_file(
                 self._sheet_mesh(env_idx, sheet),
                 pose=sapien.Pose(p=[0, 0, self.pad_thickness / 2 + 2e-4]),
@@ -494,6 +523,9 @@ class TatbotDrawEnv(BaseEnv):
         # Ink and laser appearance, redrawn per build. Unlike the dot pool
         # these are PER ENV — a field costs nothing to vary env-to-env, where
         # a shared actor pool forced one width and colour on the whole batch.
+        self._configure_ink_field(rng)
+
+    def _configure_ink_field(self, rng):
         ink = self.dr.ink
         lvl = rng.uniform(*ink.level, size=self.num_envs)
         ink_rgb = torch.as_tensor(
@@ -517,7 +549,30 @@ class TatbotDrawEnv(BaseEnv):
         }
         self.ink_field = None  # built with the surface, at episode init
 
-    def _bind_sheet_textures(self, pad_actors):
+    def _load_body_scene(self, rng):
+        """Scenario branch: full posed visual, local ink patch, proxies, support."""
+        if self.body_scenario is None:
+            raise RuntimeError("_load_body_scene requires self.body_scenario to be set")
+        sheets = skin_sheets(self.num_textures, self.substrate)
+        self.pad_sheets = [sheets[int(rng.integers(len(sheets)))] for _ in range(self.num_envs)]
+        bodies, patches, supports, geometry = build_scenario_actors(
+            self.scene, self.body_scenario, self.num_envs,
+        )
+        self.body_actor = Actor.merge(bodies, name="posed_body")
+        self.pad = Actor.merge(patches, name="tattoo_patch")
+        self.table = Actor.merge(supports, name="body_support")
+        self._scenario_geometry = geometry
+        self.pad_height = None
+        self.table_half = np.zeros((self.num_envs, 3), dtype=np.float32)
+        self.clutter = [[] for _ in range(self.num_envs)]
+        self._load_palette(rng)
+        self._bind_sheet_textures(
+            patches,
+            texture_size=(geometry.surface.cols, geometry.surface.rows),
+        )
+        self._configure_ink_field(rng)
+
+    def _bind_sheet_textures(self, pad_actors, texture_size: tuple[int, int] | None = None):
         """Give each pad a WRITABLE copy of its sheet texture.
 
         The quad loaded from the sheet OBJ is the pad's only textured render
@@ -548,6 +603,8 @@ class TatbotDrawEnv(BaseEnv):
             if material is None:
                 raise RuntimeError(f"pad {env_idx} has no textured sheet quad")
             bgr = cv2.imread(self.pad_sheets[env_idx]["png"])
+            if texture_size is not None:
+                bgr = cv2.resize(bgr, texture_size, interpolation=cv2.INTER_AREA)
             rgba = np.ascontiguousarray(
                 np.concatenate(
                     [bgr[..., ::-1], np.full(bgr.shape[:2] + (1,), 255, np.uint8)], axis=-1
@@ -599,6 +656,9 @@ class TatbotDrawEnv(BaseEnv):
         # — the generator always resets whole batches. The field itself is
         # per-env and would take a partial reset; the assertion stays because
         # nothing downstream is written for it.
+        if self.body_scenario is not None:
+            self._initialize_body_episode(env_idx)
+            return
         self._step_count = 0
         with torch.device(self.device):
             b = len(env_idx)
@@ -696,6 +756,46 @@ class TatbotDrawEnv(BaseEnv):
             self.ink_field = InkField(
                 self.num_envs, self.surface, device=self.device, **self._field_build
             )
+        else:
+            self.ink_field.reset()
+        self._refresh_sheet_textures(force=True)
+
+    def _initialize_body_episode(self, env_idx: torch.Tensor):
+        if self.body_scenario is None:
+            raise RuntimeError("_initialize_body_episode requires self.body_scenario to be set")
+        self._step_count = 0
+        with torch.device(self.device):
+            b = len(env_idx)
+            assert b == self.num_envs, "TatbotDraw-v0 does not support partial resets"
+            qpos = torch.from_numpy(self.agent.keyframes["rest"].qpos).float().to(self.device).repeat(b, 1)
+            self.agent.robot.set_qpos(qpos)
+            self.agent.robot.set_pose(sapien.Pose())
+            base = self._scenario_geometry.surface
+            self.surface = MeshPatchSurface(
+                [base.patches[0]] * b,
+                [base.posed_vertices[0]] * b,
+                device=self.device,
+                width_m=base.width_m,
+                height_m=base.height_m,
+                cols=base.cols,
+                rows=base.rows,
+                normals=[base.normals[0]] * b,
+            )
+            source = self.body_scenario["placement"]["anchor"]
+            face, bary = int(source["face"]), np.asarray(source["barycentric"])
+            center = bary @ base.posed_vertices[0][face]
+            normal = self.surface.base_normal_np(0)
+            _, du, dv, _ = self.surface.frame(torch.zeros(b, 2, device=self.device))
+            ex = du / du.norm(dim=1, keepdim=True)
+            ez = torch.as_tensor(normal, dtype=torch.float32, device=self.device).expand(b, 3)
+            ey = torch.linalg.cross(ez, ex)
+            ey /= ey.norm(dim=1, keepdim=True)
+            self.pad_top_center = torch.as_tensor(center, dtype=torch.float32, device=self.device).expand(b, 3)
+            self.pad_rot = torch.stack([ex, ey, ez], dim=2)
+            self._place_palette(b)
+            self._reset_ink(b)
+        if self.ink_field is None:
+            self.ink_field = InkField(self.num_envs, self.surface, device=self.device, **self._field_build)
         else:
             self.ink_field.reset()
         self._refresh_sheet_textures(force=True)
@@ -801,9 +901,7 @@ class TatbotDrawEnv(BaseEnv):
 
         tcp = self.agent.tcp.pose.p
         uv, dist, incidence = self.surface.project(tcp)
-        # Same gate as the dot pool used, and the same constant: the expert's
-        # floor clamp is written against this 5.5 mm band.
-        touching = dist < self.TIP_MARK_MARGIN_M + self.ink_threshold
+        touching = self._interaction_mask(dist)
         # Away at the palette the tip is nowhere near the sheet, but a planar
         # surface extends forever and a cap rim can sit inside the band of a
         # high-resting pad: the plan says which steps are dips, and none of
@@ -811,6 +909,14 @@ class TatbotDrawEnv(BaseEnv):
         step = self._step_count
         if self._dip_mask is not None and step < self._dip_mask.shape[1]:
             touching = touching & ~self._dip_mask[:, step]
+        inf = torch.full_like(dist, float("inf"))
+        neg_inf = torch.full_like(dist, float("-inf"))
+        self.interaction_min_m = torch.minimum(
+            self.interaction_min_m, torch.where(touching, dist, inf))
+        self.interaction_max_m = torch.maximum(
+            self.interaction_max_m, torch.where(touching, dist, neg_inf))
+        self.interaction_sum_m += torch.where(touching, dist, torch.zeros_like(dist))
+        self.interaction_frames += touching.long()
         self._ink_step(tcp, touching, step)
         if bool(touching.any()):
             self._apply_tool(uv, incidence, touching)
@@ -822,6 +928,11 @@ class TatbotDrawEnv(BaseEnv):
 
         if self.gpu_sim_enabled:
             self.scene._gpu_apply_all()
+
+    def _interaction_mask(self, distance: torch.Tensor) -> torch.Tensor:
+        """Whether the resolved working point may affect the substrate."""
+        return ((distance <= self.contact_above_tolerance_m)
+                & (distance >= -self.max_penetration_m))
 
     # What each registered tool kind does to the pigment under its tip, from
     # the shared table in tatbot_sim.tasks -- the same one the (task, tool,
@@ -1039,6 +1150,10 @@ class TatbotDrawEnv(BaseEnv):
         self.ink_contact_mm = torch.zeros(b, device=dev)
         self.ink_contact_s = torch.zeros(b, device=dev)
         self.ink_dips = torch.zeros(b, dtype=torch.int64, device=dev)
+        self.interaction_min_m = torch.full((b,), float("inf"), device=dev)
+        self.interaction_max_m = torch.full((b,), float("-inf"), device=dev)
+        self.interaction_sum_m = torch.zeros(b, device=dev)
+        self.interaction_frames = torch.zeros(b, dtype=torch.int64, device=dev)
         self._prev_tcp = None
         self._dip_mask = None
         self._dip_credit = None
@@ -1122,6 +1237,9 @@ class TatbotDrawEnv(BaseEnv):
 
     def ink_episode_stats(self) -> dict:
         """What each episode spent, as numpy — for the dataset's meta/ink.json."""
+        count = self.interaction_frames.clamp(min=1)
+        mean = self.interaction_sum_m / count
+        none = self.interaction_frames == 0
         return {
             "mode": self.ink_policy.mode,
             "charge_end_ul": self.ink_charge_ul.cpu().numpy(),
@@ -1130,6 +1248,15 @@ class TatbotDrawEnv(BaseEnv):
             "contact_mm": self.ink_contact_mm.cpu().numpy(),
             "contact_s": self.ink_contact_s.cpu().numpy(),
             "dips": self.ink_dips.cpu().numpy(),
+            "interaction_frames": self.interaction_frames.cpu().numpy(),
+            "interaction_min_m": torch.where(
+                none, torch.full_like(self.interaction_min_m, float("nan")),
+                self.interaction_min_m).cpu().numpy(),
+            "interaction_mean_m": torch.where(
+                none, torch.full_like(mean, float("nan")), mean).cpu().numpy(),
+            "interaction_max_m": torch.where(
+                none, torch.full_like(self.interaction_max_m, float("nan")),
+                self.interaction_max_m).cpu().numpy(),
         }
 
     def evaluate(self):

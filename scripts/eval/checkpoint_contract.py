@@ -12,8 +12,10 @@ from typing import Any
 SIDECAR = "tatbot_contract.json"
 
 
-def load_contract(source: str) -> dict[str, Any]:
-    sidecar: dict[str, Any] = {}
+def load_contract(
+    source: str, sidecar_override: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    sidecar: dict[str, Any] = dict(sidecar_override or {})
     if source == "-":
         value = json.load(sys.stdin)
     else:
@@ -27,7 +29,7 @@ def load_contract(source: str) -> dict[str, Any]:
             sidecar_path = path.parent / SIDECAR
         with path.open() as stream:
             value = json.load(stream)
-        if sidecar_path.is_file():
+        if sidecar_override is None and sidecar_path.is_file():
             with sidecar_path.open() as stream:
                 sidecar = json.load(stream)
 
@@ -37,6 +39,12 @@ def load_contract(source: str) -> dict[str, Any]:
     state_size = int(state_shape[0]) if state_shape else 0
     policy_type = str(policy.get("type", "unknown"))
     use_depth = any(str(name).endswith("_depth") for name in features)
+    mask_external_effort = bool(sidecar.get("mask_external_effort", False))
+    if mask_external_effort and state_size != 14:
+        raise ValueError(
+            "mask_external_effort requires observation.state shape [14]; "
+            f"checkpoint declares [{state_size}]"
+        )
     # A 14-wide state carries the external-effort channels on the wire, but it
     # does not say they are meaningful: a checkpoint co-trained on simulation
     # keeps the width while those channels are masked to zero, because sim has
@@ -52,7 +60,7 @@ def load_contract(source: str) -> dict[str, Any]:
         "depth_encoding": "depth-v1" if policy_type == "groot" and use_depth else "",
         "state_size": state_size,
         "use_external_effort": state_size == 14,
-        "mask_external_effort": bool(sidecar.get("mask_external_effort", False)),
+        "mask_external_effort": mask_external_effort,
     }
 
 
@@ -93,6 +101,10 @@ def main() -> int:
     parser.add_argument("source", help="checkpoint directory, config JSON, or - for stdin")
     parser.add_argument("--format", choices=("json", "fields"), default="json")
     parser.add_argument(
+        "--sidecar-json",
+        help="tatbot_contract.json contents when the checkpoint config is supplied on stdin",
+    )
+    parser.add_argument(
         "--declare-masked-effort",
         action="store_true",
         help="record that this run trained with observation.state[7:14] zeroed, "
@@ -102,7 +114,8 @@ def main() -> int:
     if args.declare_masked_effort:
         declare(Path(args.source), mask_external_effort=True)
         return 0
-    contract = load_contract(args.source)
+    sidecar = json.loads(args.sidecar_json) if args.sidecar_json is not None else None
+    contract = load_contract(args.source, sidecar)
     if args.format == "fields":
         print(fields(contract))
     else:

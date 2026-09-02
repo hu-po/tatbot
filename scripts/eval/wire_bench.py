@@ -58,10 +58,12 @@ class Scenario:
     external_effort: bool
     depth_encoding: str
     actions_per_chunk: int
+    mask_external_effort: bool = False
 
 
 SCENARIOS = {
     "act_rgb": Scenario("act", False, False, "", 16),
+    "act_rgbd14_masked": Scenario("act", True, True, "", 100, True),
     "groot_rgb": Scenario("groot", False, False, "", 16),
     "groot_rgbd": Scenario("groot", True, False, "depth-v1", 16),
     "legacy_rgb7": Scenario("groot", False, False, "", 48),
@@ -91,6 +93,7 @@ def build_robot(scenario: Scenario, ee_tool: str):
         cameras=cameras,
         ee_tool=ee_tool,
         include_external_effort=scenario.external_effort,
+        mask_external_effort=scenario.mask_external_effort,
         depth_policy_encoding=scenario.depth_encoding,
     )
     return TatbotFollower(config)
@@ -119,7 +122,10 @@ def fake_observation(robot, task: str, seed: int) -> dict:
             positions = dict(zip(
                 [f"{joint}.pos" for joint in robot.config.joint_names], STAGED, strict=True
             ))
-            observation[key] = positions.get(key, 0.0)
+            if key.endswith(".ext_eff"):
+                observation[key] = 0.0 if robot.config.mask_external_effort else 1.0
+            else:
+                observation[key] = positions.get(key, 0.0)
     observation["task"] = task
     return observation
 
@@ -202,6 +208,7 @@ def run(args: argparse.Namespace) -> dict:
         "server": args.server,
         "policy": args.policy,
         "policy_type": policy_type,
+        "mask_external_effort": scenario.mask_external_effort,
         "actions_per_chunk": actions_per_chunk,
         "action_dim": args.expect_action_dim,
         "feature_shapes": feature_shapes,

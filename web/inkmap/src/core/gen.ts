@@ -53,12 +53,18 @@ export async function health(): Promise<Health> {
 
 async function blobToPixels(blob: Blob): Promise<Pixels> {
   const bmp = await createImageBitmap(blob);
-  const canvas = document.createElement("canvas");
-  canvas.width = bmp.width; canvas.height = bmp.height;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
-  ctx.drawImage(bmp, 0, 0);
-  const img = ctx.getImageData(0, 0, bmp.width, bmp.height);
-  return { data: img.data, width: img.width, height: img.height };
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = bmp.width; canvas.height = bmp.height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+    ctx.drawImage(bmp, 0, 0);
+    const img = ctx.getImageData(0, 0, bmp.width, bmp.height);
+    return { data: img.data, width: img.width, height: img.height };
+  } finally {
+    // ImageBitmap owns decoded native/GPU storage that GC is not required to
+    // release promptly. Generation is bursty, so return it deterministically.
+    bmp.close();
+  }
 }
 
 /** Ask the service for one raster, then trace it to a design. `style` is an
@@ -90,4 +96,9 @@ export async function generateDesign(subject: string, seed: number | undefined, 
 
 export function svgDataUrl(svg: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+/** Release the temporary raster preview owned by one generated result. */
+export function releaseGeneratedPreview(generated: Generated): void {
+  URL.revokeObjectURL(generated.pngUrl);
 }

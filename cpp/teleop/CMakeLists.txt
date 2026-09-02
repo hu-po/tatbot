@@ -45,7 +45,7 @@ if(NOT TROSSEN_SDK_AVAILABLE)
   message(WARNING
     "trossen_arm SDK unavailable (no network and no cached _deps): building "
     "only the hardware-independent targets (estop_monitor, telemetry_udp, "
-    "realtime and their tests). wxai_teleop, friction_tune and arm_set_ip "
+    "flight_recorder, realtime and their tests). wxai_teleop, friction_tune and arm_set_ip "
     "are skipped.")
 else()
   # The SDK's own imported target is directory-scoped, so define our own
@@ -71,12 +71,24 @@ target_include_directories(estop_monitor PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 add_library(telemetry_udp STATIC telemetry_udp.cpp)
 target_include_directories(telemetry_udp PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
+add_library(flight_recorder STATIC flight_recorder.cpp)
+target_include_directories(flight_recorder PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(flight_recorder PUBLIC pthread)
+
 add_library(realtime STATIC realtime.cpp)
 target_include_directories(realtime PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
+add_library(square_probe STATIC square_probe.cpp)
+target_include_directories(square_probe PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+
+# Offline draw preflight (docs/draw.md): the executor's parser + planner as a
+# tool, so `draw plan` is judged by the code that streams.
+add_executable(path_plan_check path_plan_check.cpp)
+target_link_libraries(path_plan_check PRIVATE square_probe)
+
 if(TROSSEN_SDK_AVAILABLE)
   add_executable(wxai_teleop wxai_teleop.cpp)
-  target_link_libraries(wxai_teleop PRIVATE trossen::arm estop_monitor telemetry_udp realtime pthread)
+  target_link_libraries(wxai_teleop PRIVATE trossen::arm estop_monitor telemetry_udp flight_recorder realtime square_probe pthread)
 
   add_executable(friction_tune friction_tune.cpp)
   target_link_libraries(friction_tune PRIVATE trossen::arm estop_monitor pthread)
@@ -92,6 +104,12 @@ add_test(NAME estop_monitor_test COMMAND estop_monitor_test)
 add_executable(telemetry_udp_test telemetry_udp_test.cpp)
 target_link_libraries(telemetry_udp_test PRIVATE telemetry_udp)
 add_test(NAME telemetry_udp_test COMMAND telemetry_udp_test)
+add_executable(flight_recorder_test flight_recorder_test.cpp)
+target_link_libraries(flight_recorder_test PRIVATE flight_recorder)
+add_test(NAME flight_recorder_test COMMAND flight_recorder_test)
 add_executable(realtime_test realtime_test.cpp)
 target_link_libraries(realtime_test PRIVATE realtime)
 add_test(NAME realtime_test COMMAND realtime_test)
+add_executable(square_probe_test square_probe_test.cpp)
+target_link_libraries(square_probe_test PRIVATE square_probe)
+add_test(NAME square_probe_test COMMAND square_probe_test)

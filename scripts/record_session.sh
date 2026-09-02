@@ -26,6 +26,18 @@ source "$REPO/scripts/lib/estop_guard.sh"
 source "$REPO/scripts/lib/profile_env.sh"
 profile_env::require || exit $?
 estop_guard::reject_overrides "$@"
+for a in "$@"; do
+  case "$a" in
+    --square-probe-mm|--square-probe-mm=*|--square-edge-s|--square-edge-s=*)
+      echo "REFUSING Cartesian square passthrough from teleop run." >&2
+      echo "  Use: tatbot --ee-tool <id> teleop square --nonce <fresh-literal>" >&2
+      exit 3 ;;
+    --spiral-radius-mm|--spiral-radius-mm=*|--spiral-turns|--spiral-turns=*|--spiral-duration-s|--spiral-duration-s=*|--spiral-ease-s|--spiral-ease-s=*|--spiral-carriage-ik)
+      echo "REFUSING Cartesian spiral passthrough from teleop run." >&2
+      echo "  Use: tatbot --ee-tool <id> teleop spiral --nonce <fresh-literal>" >&2
+      exit 3 ;;
+  esac
+done
 # shellcheck source=scripts/lib/runlog.sh
 source "$REPO/scripts/lib/runlog.sh"
 # shellcheck source=scripts/lib/paths.sh

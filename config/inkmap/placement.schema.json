@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://tatbot.ai/schemas/inkmap/placement/v3",
+  "$id": "https://tatbot.ai/schemas/inkmap/placement/v4",
   "title": "Inkmap placement file",
-  "description": "Tattoo placements on a 3D body. A placement is a surface anchor (face + barycentric on the body's skin geometry), a rotation about the surface normal, and a size in millimetres, referencing a vector design. The drawing frame is derived, never stored. v3 adds optional inklang site + language provenance per placement (additive; v1/v2 files load).",
+  "description": "Tattoo placements on a canonical rest-body surface. A placement is a surface anchor (face + barycentric), a rotation about the surface normal, and a size in millimetres, referencing a vector design. The drawing frame and posed realization are derived, never stored here. v4 separates the mutable asset digest from the stable rest-surface digest; readers continue to accept v1-v3 files.",
   "type": "object",
   "required": [
     "schema_version",
@@ -13,7 +13,7 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": 3
+      "const": 4
     },
     "units": {
       "type": "object",
@@ -39,7 +39,8 @@
       "type": "object",
       "required": [
         "id",
-        "sha256",
+        "asset_sha256",
+        "surface_sha256",
         "path"
       ],
       "additionalProperties": false,
@@ -48,10 +49,15 @@
           "type": "string",
           "minLength": 1
         },
-        "sha256": {
+        "asset_sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$",
-          "description": "Digest of the GLB bytes the anchors were made on. Face indices are only meaningful against this exact file and load recipe."
+          "description": "Digest of the complete body asset bytes. This is provenance and may change when rig or material data changes."
+        },
+        "surface_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Digest of canonical non-indexed rest-surface XYZ quantized to little-endian signed integer 10-micrometre units. Face and barycentric anchors are meaningful only against this digest."
         },
         "path": {
           "type": "string",

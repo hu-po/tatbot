@@ -199,9 +199,15 @@ def retention_for(workflow: str, cfg: dict) -> dict:
 # --------------------------------------------------------------------------
 
 # Whole-environment dumps leak credentials (cameras.env, HF tokens), so the
-# capture is an allowlist plus everything TATBOT_*.
+# capture is an allowlist plus everything TATBOT_* except known-secret substrings.
 ENV_ALLOW = ("DISPLAY", "CUDA_VISIBLE_DEVICES", "VIRTUAL_ENV", "HF_HOME",
              "CONDA_DEFAULT_ENV", "ROS_DOMAIN_ID", "LD_LIBRARY_PATH")
+
+# Substrings that must never be persisted even if they happen to be TATBOT_*.
+# Covers TATBOT_CAMERA_PASSWORD_*, *_TOKEN, *_SECRET, *_KEY, *_PASSWORD,
+# *_CREDENTIALS — matches anywhere in the key, not just suffix (camera keys
+# are TATBOT_CAMERA_PASSWORD_CAMERA{N}, which contains _PASSWORD_ mid-string).
+_ENV_SECRET_SUBSTRINGS = ("_PASSWORD", "_TOKEN", "_SECRET", "_KEY", "_CREDENTIALS")
 
 # Versions worth having when a run misbehaves. trossen-arm is first for a
 # reason: on 2026-08-21 a stale checkout served rollouts on 1.8.8, the version
@@ -286,12 +292,20 @@ def collect_meta(workflow: str, argv: list[str] | None = None,
         "keep": False,
     }
     meta["env"].update({k: v for k, v in os.environ.items()
-                        if k.startswith("TATBOT_")})
+                        if k.startswith("TATBOT_") and not any(s in k for s in _ENV_SECRET_SUBSTRINGS)})
     with contextlib.suppress(Exception):
         meta["node"]["kernel"] = os.uname().release
     with contextlib.suppress(Exception):
         meta["git"] = _git_meta(repo)
     if extra:
+        # Scrub any secret-substring keys that arrived via extra["env"].
+        try:
+            if isinstance(extra.get("env"), dict):
+                extra = dict(extra)
+                extra["env"] = {k: v for k, v in extra["env"].items()
+                                if not any(s in k for s in _ENV_SECRET_SUBSTRINGS)}
+        except Exception:
+            pass
         _deep_update(meta, extra)
     return meta
 
@@ -907,10 +921,6 @@ def attach(run_dir=None, *, attach_logging: bool = True,
 
 def current() -> RunLog | None:
     return _CURRENT
-
-
-def init_or_attach(workflow: str, **kwargs) -> RunLog:
-    return attach() or init(workflow, **kwargs)
 
 
 def _update_latest(workflow_dir: Path, run_dir: Path) -> None:

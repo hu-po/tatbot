@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { apiSource, loadConfig, type AppConfig } from "../core/config.ts";
-import { generateDesign, health, svgDataUrl, type Generated, type Health } from "../core/gen.ts";
+import { loadConfig, type AppConfig } from "../core/config.ts";
+import { generateDesign, health, releaseGeneratedPreview, svgDataUrl, type Generated, type Health } from "../core/gen.ts";
 import { stylePrompt, type TattooProgram } from "../core/lang.ts";
 import { findDesignForMotif, useStore } from "../store.ts";
 
@@ -20,6 +20,7 @@ export function Generate() {
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [count, setCount] = useState(0);
   const abort = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
 
   // Check the generator at load and keep checking while it is down (it may be
   // starting, or the user may bring one up after opening the page).
@@ -32,21 +33,35 @@ export function Generate() {
     return () => { stop = true; window.clearInterval(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  useEffect(() => () => abort.current?.abort(), []);
+  useEffect(() => () => {
+    mounted.current = false;
+    abort.current?.abort();
+  }, []);
+  useEffect(() => {
+    if (phase.kind !== "done") return;
+    const generated = phase.g;
+    return () => releaseGeneratedPreview(generated);
+  }, [phase]);
 
   const run = (seed?: number, subj?: string, autoPlace = false) => {
     const s = (subj ?? subject).trim();
     if (!s || phase.kind === "busy") return;
-    abort.current = new AbortController();
+    const controller = new AbortController();
+    abort.current = controller;
     setPhase({ kind: "busy" });
-    generateDesign(s, seed, undefined, abort.current.signal, pending ? stylePrompt(pending) : undefined)
+    generateDesign(s, seed, undefined, controller.signal, pending ? stylePrompt(pending) : undefined)
       .then((g) => {
+        if (!mounted.current || controller.signal.aborted) {
+          releaseGeneratedPreview(g);
+          return;
+        }
         health().then(setSvc).catch(() => {});
         // A sentence-initiated generation lands on its site without a click.
         if (autoPlace) { keep(g, s); return; }
         setPhase({ kind: "done", g });
       })
       .catch((e: Error) => {
+        if (!mounted.current) return;
         if (e.name === "AbortError") { setPhase({ kind: "idle" }); return; }
         const where = cfg ? ` (generator: ${cfg.api})` : "";
         setPhase({ kind: "error", message: e.message + (/Failed to fetch|HTTP 5|not answering/.test(e.message) ? where : "") });
@@ -77,6 +92,10 @@ export function Generate() {
       id, name, path: svgDataUrl(g.svg), default_size_mm: size,
       embedded: { name, svg: g.svg, default_size_mm: size, source: { kind: "generated", model: svc && svc !== "down" ? svc.model : "inkgen", prompt: g.prompt, seed: g.seed } },
     });
+    // Auto-placement never enters the "done" phase whose effect owns this
+    // preview URL. Revoke here as well; duplicate revocation is harmless for
+    // the interactive path.
+    releaseGeneratedPreview(g);
     setCount(count + 1);
     setPhase({ kind: "idle" });
     // A waiting sentence lands the new design on its named site directly;
@@ -126,11 +145,12 @@ export function Generate() {
           </div>
         </div>
       )}
-      <p className="muted small">
-        {svc === null && "checking the generator…"}
-        {down && cfg && <>no generator at <code>{cfg.api}</code> yet — start one with <code>tatbot inkgen serve</code>, or run <code>tatbot inkmap dev --api &lt;url&gt;</code> (or add <code>?api=&lt;url&gt;</code> to this page) to use one elsewhere; checking again every 10 s</>}
-        {svc && svc !== "down" && <>generator: {svc.model.split("/").pop()} on {svc.zero_gpu ? "ZeroGPU" : svc.device}{cfg && apiSource(cfg) !== "default" ? ` (${cfg.api})` : ""}. Fixed style: black flash linework; the app traces it to vector ink.</>}
-      </p>
+      {(svc === null || down) && (
+        <p className="muted small">
+          {svc === null && "checking the generator…"}
+          {down && cfg && <>no generator at <code>{cfg.api}</code> yet — start one with <code>tatbot inkgen serve</code>, or run <code>tatbot inkmap dev --api &lt;url&gt;</code> (or add <code>?api=&lt;url&gt;</code> to this page) to use one elsewhere; checking again every 10 s</>}
+        </p>
+      )}
     </section>
   );
 }

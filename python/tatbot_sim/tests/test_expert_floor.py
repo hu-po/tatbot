@@ -1,9 +1,9 @@
 """The floor the expert clamps against, when the surface is not flat.
 
-The clamp does two things with its plane: it holds the needle above it, and it
-decides from the same plane whether a step is DRAWING or TRAVELLING — a step
-more than 6 mm above the floor is treated as travel and held a further 7.5 mm
-clear, so a burst cannot stamp a stray mark mid-flight.
+The clamp does two things with its plane: it bounds penetration at the working
+surface, and it keeps travel at least 1 mm clear of that surface. Contact-v1
+targets the resolved working point at zero signed distance instead of drawing
+inside a 5.5 mm proximity band.
 
 Both of those are only correct while the plane IS the drawing surface. Lift the
 skin off the pad plane and the second one inverts: drawing steps read as
@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+from tatbot_sim import interaction
 from tatbot_sim.config import NoiseDR
 from tatbot_sim.expert import StrokeExpert, _per_step
 from tatbot_sim.planning import canvas_to_world
@@ -49,7 +50,8 @@ def _scene(lift_m: float):
     pts = np.zeros((B, T, 3), dtype=np.float32)
     nrm = np.zeros((B, T, 3), dtype=np.float32)
     for i in range(B):
-        targets[i], pts[i], nrm[i] = canvas_to_world(traj, surf, i, 0.004)
+        targets[i], pts[i], nrm[i] = canvas_to_world(
+            traj, surf, i, interaction.WORKING_OFFSET_M)
     return center.numpy(), rot[:, :, 2].numpy(), targets, pts, nrm
 
 
@@ -60,17 +62,17 @@ def _clamped(floor, targets):
     return expert.clamped_fraction
 
 
-def test_one_plane_per_episode_fights_a_surface_that_sits_above_it():
-    """The bug, stated as a measurement: with the chart plane as the floor,
-    every drawing step of a 3 mm-proud skin reads as travel (3 + 4 = 7 mm > 6)
-    and is then held 7.5 mm clear of a floor it is only 7 mm above."""
+def test_old_plane_misclassification_no_longer_pushes_the_tool_into_air():
+    """A low chart plane may misclassify the step, but its 1 mm travel floor
+    must not lift a reference already 3 mm above it. Per-step planes below are
+    still the actual penetration protection."""
     center, normal, targets, _, _ = _scene(LIFT_M)
-    assert _clamped((center, normal), targets) > 0.9
+    assert _clamped((center, normal), targets) == 0.0
 
 
 def test_a_plane_per_step_leaves_the_drawing_alone():
-    """With the surface itself as the floor, a drawing step is 4 mm above it —
-    on-stroke, offset 0 — and nothing is clamped."""
+    """With the surface itself as floor, the working point is at contact and
+    inside its narrow penetration allowance, so nothing is clamped."""
     _, _, targets, pts, nrm = _scene(LIFT_M)
     assert _clamped((pts, nrm), targets) == 0.0
 

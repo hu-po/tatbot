@@ -1,17 +1,14 @@
-// Designs are vectors. The preview rasterises them once, at a resolution that
-// keeps ≥ 8 px/mm for any design up to 128 mm on its long side.
+// Designs are vectors. Each mounted decal owns one raster texture at a
+// resolution that keeps ≥ 8 px/mm for any design up to 128 mm on its long
+// side. Per-decal ownership is deliberate: mirror transforms mutate a texture,
+// and a global cache both leaked inactive GPU textures and let one placement
+// change another placement's appearance.
 import * as THREE from "three";
 
 const RASTER_PX = 1024;
-const cache = new Map<string, Promise<THREE.CanvasTexture>>();
 
 export function svgTexture(url: string): Promise<THREE.CanvasTexture> {
-  let p = cache.get(url);
-  if (!p) {
-    p = rasterise(url);
-    cache.set(url, p);
-  }
-  return p;
+  return rasterise(url);
 }
 
 async function rasterise(url: string): Promise<THREE.CanvasTexture> {

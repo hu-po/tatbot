@@ -74,6 +74,13 @@ class TatbotFollowerConfig(WidowXAIFollowerConfig):
 
     # External effort is a policy observation (contact/force sensing).
     include_external_effort: bool = True
+    # Keep the seven external-effort features on the policy wire but replace
+    # their values with zero. Co-trained policies whose simulation source has
+    # no force signal use this to preserve their 14-wide state normalizer
+    # without introducing live-force train/serve skew. This affects only the
+    # observation dictionary: motion safety continues to read measured effort
+    # directly from the driver.
+    mask_external_effort: bool = False
 
     # Empty keeps the camera's raw one-channel millimetre depth, which is the
     # recording contract. ``depth-v1`` replaces each live <camera>_depth value
@@ -361,6 +368,11 @@ class TatbotFollowerConfig(WidowXAIFollowerConfig):
     staged_positions: list[float] = field(default_factory=lambda: _golden_staged_positions())
 
     def __post_init__(self):
+        if self.mask_external_effort and not self.include_external_effort:
+            raise ValueError(
+                "mask_external_effort requires include_external_effort=True "
+                "so the policy state remains 14-wide"
+            )
         self.carriage_rest_m = min(max(float(self.carriage_rest_m), 0.0), 0.040)
         self.carriage_retract_m = min(max(float(self.carriage_retract_m), 0.005), 0.040)
         self.carriage_contact_cap_n = min(max(float(self.carriage_contact_cap_n), 2.0), 40.0)

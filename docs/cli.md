@@ -61,6 +61,8 @@ Global flags go **before** the noun: `--json`, `--dry-run`, `--explain`, `-q`, `
 | --- | --- | --- | --- | --- |
 | `sim list` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/factory.py` | the named distributions the factory can generate |
 | `sim generate` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/factory.py`, `python/tatbot_sim/src/tatbot_sim/generate.py` | generate one named distribution into a LeRobot v3 dataset (`--` → tatbot_sim.generate (tyro)) |
+| `sim compile` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/cli.py` | compile one Inkmap placement into a replayable posed-body scenario (`--` → tatbot_sim.inkmap.cli compile) |
+| `sim sample` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/cli.py` | materialize a bounded procedural posed-body scenario suite (`--` → tatbot_sim.inkmap.cli sample) |
 | `sim preview` | `offline` | this checkout | `scripts/sim_preview.py` | preview what the factory would generate, no dataset written (`--` → sim_preview.py (tyro)) |
 | `sim rerender` | `offline` | this checkout | `scripts/sim_rerender.py` | re-render a recorded sim dataset under fresh visual draws (`--` → sim_rerender.py (tyro)) |
 | `sim cinematic` | `offline` | this checkout | `scripts/sim_cinematic.py` | path-traced takes of a distribution for showing outside the lab (`--` → sim_cinematic.py (tyro)) |
@@ -73,6 +75,7 @@ Global flags go **before** the noun: `--json`, `--dry-run`, `--explain`, `-q`, `
 
 | verb | tier | runs on | wraps | summary |
 | --- | --- | --- | --- | --- |
+| `vision handeye d405` | `offline` | this checkout | `scripts/vision/d405_handeye_plane.py` | plane-route hand-eye for the wrist D405s: fit depth planes against the touched-off paper (`--` → d405_handeye_plane.py) |
 | `vision calib fuse` | `offline` | this checkout | `scripts/vision/fuse_session.py` | fuse a sweep's streams into solver-ready samples (`--` → fuse_session.py) |
 | `vision calib solve` | `offline` | this checkout | `scripts/vision/solve_robot_world.py` | robot-world calibration from wrist tags (`--` → solve_robot_world.py) |
 | `vision calib verify` | `offline` | this checkout | `scripts/vision/verify_calibration.py` | independently verify a board-session calibration (`--` → verify_calibration.py) |
@@ -86,6 +89,7 @@ Global flags go **before** the noun: `--json`, `--dry-run`, `--explain`, `-q`, `
 | `inkmap dev` | `offline` | this checkout | `scripts/inkmap_dev.sh`, `web/inkmap/package.json` | the tattoo preview app on this machine, pointed at the local generator (`--` → inkmap_dev.sh) |
 | `inkmap build` | `offline` | this checkout | `web/inkmap/package.json` | production bundle into web<path> (the generated web bundle) |
 | `inkmap check` | `offline` | this checkout | `web/inkmap/package.json` | typecheck + core tests (anchor<path>) + build (`--` → scripts<path> web) |
+| `inkmap rig` | `offline` | this checkout | `scripts/inkmap_rig.sh`, `web/inkmap/tools/rig-hbm.py`, `config/inkmap/body-rig.json` | regenerate the checked-in HBM rigs and named poses with Blender (`--` → inkmap_rig.sh) |
 
 ### `tatbot profile`
 
@@ -109,6 +113,8 @@ tatbot rollout contract <path>
 tatbot rollout replay-safety -- --help
 tatbot sim list
 tatbot sim generate paper-draw -- --out-dir <path> --num-episodes 8
+tatbot sim compile config<path> -- --pose reclined-left-arm-supported --output <path>
+tatbot sim sample -- --output-dir <path> --count 64
 tatbot sim preview -- --help
 tatbot sim rerender -- --help
 tatbot sim cinematic -- --help
@@ -116,6 +122,7 @@ tatbot sim audit -- --help
 tatbot sim samples -- --help
 tatbot sim reach -- --help
 tatbot sim viewer -- --help
+tatbot vision handeye d405 --self-test
 tatbot vision calib fuse <path>
 tatbot vision calib solve <path>
 tatbot vision calib verify <path>
@@ -124,6 +131,7 @@ tatbot vision tags print -- --help
 tatbot inkmap dev
 tatbot inkmap build
 tatbot inkmap check
+tatbot inkmap rig
 tatbot profile show
 tatbot profile list
 tatbot profile check

@@ -26,7 +26,7 @@ import torch
 import tyro
 from mani_skill.sensors.camera import CameraConfig
 from mani_skill.utils import sapien_utils
-from tatbot_sim import tools
+from tatbot_sim import interaction, tools
 from tatbot_sim.config import DRConfig
 from tatbot_sim.depth_noise import DepthCorruptor, RGBJitter
 from tatbot_sim.env import TatbotDrawEnv
@@ -107,7 +107,8 @@ def main(args: Args):
     masks = ceiling = None
     q_now = robot.get_qpos()[:, idx_ik]
     slack = args.dr.pen_lean.max_off_base_rad
-    masks = reachable_canvas_masks(expert, q_now, base.surface, 0.004,
+    masks = reachable_canvas_masks(expert, q_now, base.surface,
+                                   interaction.WORKING_OFFSET_M,
                                    args.num_envs, max_off_base_rad=slack)
     ceiling = reachable_height_ceiling(expert, q_now, base.surface,
                                        args.num_envs, max_off_base_rad=slack)
@@ -117,7 +118,7 @@ def main(args: Args):
     plan = plan_batch(
         rng, base.pad_sheets, base.surface,
         task=args.task, horizon=args.horizon, num_envs=args.num_envs,
-        dr=args.dr, draw_clearance=0.004,
+        dr=args.dr, draw_clearance=interaction.WORKING_OFFSET_M,
         task_name=args.task_name, maze_task_name=args.maze_task_name,
         reachable=masks, tool_ceiling=ceiling,
     )

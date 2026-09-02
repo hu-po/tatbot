@@ -17,13 +17,16 @@
   </a>
   <br>
   <a href="https://x.com/tatbots">
-    <img src="https://img.shields.io/badge/x.com-%40tatbot-000000.svg?logo=x&logoColor=white&style=flat" alt="X">
+    <img src="https://img.shields.io/badge/x.com-%40tatbots-000000.svg?logo=x&logoColor=white&style=flat" alt="X @tatbots">
   </a>
   <a href="https://www.tiktok.com/@tatbottok">
-    <img src="https://img.shields.io/badge/TikTok-%40tatbot-000000.svg?logo=tiktok&logoColor=white&style=flat" alt="TikTok">
+    <img src="https://img.shields.io/badge/TikTok-%40tatbottok-000000.svg?logo=tiktok&logoColor=white&style=flat" alt="TikTok @tatbottok">
   </a>
   <a href="https://www.instagram.com/tatbots/">
-    <img src="https://img.shields.io/badge/Insta-%40tatbot-E4405F.svg?logo=instagram&logoColor=white&style=flat" alt="Instagram">
+    <img src="https://img.shields.io/badge/Insta-%40tatbots-E4405F.svg?logo=instagram&logoColor=white&style=flat" alt="Instagram @tatbots">
+  </a>
+  <a href="https://www.youtube.com/@tatbot">
+    <img src="https://img.shields.io/badge/YouTube-%40tatbot-FF0000.svg?logo=youtube&logoColor=white&style=flat" alt="YouTube @tatbot">
   </a>
 </div>
 

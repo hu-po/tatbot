@@ -187,11 +187,12 @@ def serve_status(ctx, ns, rest):
         return EXIT_OK
     pid = payload.get("pid")
     alive = False
-    try:
-        os.kill(int(pid), 0)
-        alive = True
-    except Exception:
-        pass
+    if pid is not None:
+        try:
+            os.kill(int(pid), 0)
+            alive = True
+        except Exception:
+            pass
     payload["alive"] = alive
     print(json.dumps(payload, indent=2) if ctx.json else
           f"serve: pid {pid} {'alive' if alive else 'DEAD (stale state file)'}  policy={payload.get('policy') or payload.get('policy_path')}  port={payload.get('port')}")

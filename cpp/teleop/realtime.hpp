@@ -1,5 +1,7 @@
 #pragma once
 
+#include <chrono>
+#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
@@ -39,9 +41,19 @@ std::map<int, long> read_max_frequencies(const std::string & sysfs_root = "/sys/
 /// the affinity mask and (with the default PTHREAD_INHERIT_SCHED) the policy,
 /// so the SDK's UDP daemon threads get the same treatment as the control loop.
 ///
-/// Never throws and never aborts: each half is best-effort and reported in the
-/// returned Setup, because an unprivileged bench run must still work.
+/// Never throws or aborts. The caller decides whether a reported failure is
+/// fatal; production teleop requires fifo_applied, while --no-rt is the
+/// explicit hardware-free bench opt-out.
 Setup apply(int priority);
+
+/// Advance a periodic deadline without running back-to-back catch-up ticks.
+/// Returns the number of scheduled wakes skipped after an overrun. A late loop
+/// is resynchronized one full period after `now`, giving the arm driver time to
+/// process the previous command instead of receiving a burst.
+uint64_t advance_deadline(
+  std::chrono::steady_clock::time_point & next,
+  std::chrono::steady_clock::duration period,
+  std::chrono::steady_clock::time_point now) noexcept;
 
 /// "0-11" style rendering of a CPU list, for logs.
 std::string format_cpus(const std::vector<int> & cpus);

@@ -31,7 +31,7 @@ use std::env;
 use std::fs::File;
 #[cfg(any(feature = "rerun", feature = "fiducials"))]
 use std::io::{BufRead, BufReader};
-#[cfg(any(feature = "gstreamer", feature = "realsense"))]
+#[cfg(any(test, feature = "gstreamer", feature = "realsense"))]
 use std::sync::mpsc;
 #[cfg(any(feature = "gstreamer", feature = "realsense", feature = "fiducials"))]
 use std::{
@@ -46,6 +46,8 @@ use std::{
     feature = "fiducials"
 ))]
 use std::collections::BTreeMap;
+#[cfg(any(test, feature = "gstreamer", feature = "realsense"))]
+use std::collections::VecDeque;
 #[cfg(any(feature = "rerun", feature = "gstreamer"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(any(feature = "gstreamer", feature = "realsense", feature = "rerun"))]
@@ -533,6 +535,45 @@ fn apply_positive_override(target: &mut f64, value: Option<f64>, name: &str) -> 
         *target = value;
     }
     Ok(())
+}
+
+#[cfg(any(test, feature = "gstreamer", feature = "realsense"))]
+fn bounded_capture_event_channel<T>(capacity: usize) -> (mpsc::SyncSender<T>, mpsc::Receiver<T>) {
+    mpsc::sync_channel(capacity.max(1))
+}
+
+#[cfg(any(test, feature = "gstreamer", feature = "realsense"))]
+#[derive(Debug)]
+/// Retains the newest diagnostic window in chronological order without hiding
+/// how many older entries were evicted.
+struct BoundedStrings {
+    values: VecDeque<String>,
+    limit: usize,
+    dropped: u64,
+}
+
+#[cfg(any(test, feature = "gstreamer", feature = "realsense"))]
+impl BoundedStrings {
+    fn new(limit: usize) -> Self {
+        assert!(limit > 0);
+        Self {
+            values: VecDeque::with_capacity(limit),
+            limit,
+            dropped: 0,
+        }
+    }
+
+    fn push(&mut self, value: String) {
+        if self.values.len() == self.limit {
+            self.values.pop_front();
+            self.dropped = self.dropped.saturating_add(1);
+        }
+        self.values.push_back(value);
+    }
+
+    fn into_vec(self) -> Vec<String> {
+        self.values.into_iter().collect()
+    }
 }
 
 fn main() -> Result<()> {
@@ -1491,7 +1532,7 @@ fn main() -> Result<()> {
             // synchronizer still owns its configured per-sensor tolerance
             // queues; duplicating that capacity here only adds frame age.
             let worker_queue_capacity = expected.max(1);
-            let (sender, receiver) = mpsc::sync_channel(worker_queue_capacity);
+            let (sender, receiver) = bounded_capture_event_channel(worker_queue_capacity);
             let mut workers = Vec::new();
             for camera in config.cameras.poe.clone() {
                 let sender = sender.clone();
@@ -1500,7 +1541,7 @@ fn main() -> Result<()> {
                     let mut capture = None;
                     let mut had_capture = false;
                     let mut reconnects = 0_u64;
-                    let mut recent_errors = Vec::new();
+                    let mut recent_errors = BoundedStrings::new(16);
                     while Instant::now() < deadline {
                         if capture.is_none() {
                             match env::var(&camera.password_env)
@@ -1575,8 +1616,7 @@ fn main() -> Result<()> {
                                 tatbot_visiond::SensorHealth::new(sensor.clone()).snapshot()
                             });
                     health.reconnects = health.reconnects.saturating_add(reconnects);
-                    health.recent_errors = recent_errors.into_iter().rev().take(16).collect();
-                    health.recent_errors.reverse();
+                    health.recent_errors = recent_errors.into_vec();
                     if let Some(value) = capture {
                         let _ = value.stop();
                     }
@@ -1587,16 +1627,16 @@ fn main() -> Result<()> {
 
             let mut finished = 0;
             let mut frame_counts = BTreeMap::<String, u64>::new();
-            let mut pipeline_capture_ages_ms = BTreeMap::<String, Vec<f64>>::new();
+            let mut pipeline_capture_ages_ms = BTreeMap::<String, TimingSamples>::new();
             let mut pipeline_stage_latencies_ms =
-                BTreeMap::<String, BTreeMap<String, Vec<f64>>>::new();
-            let mut capture_event_channel_waits_ms = BTreeMap::<String, Vec<f64>>::new();
-            let mut synchronizer_waits_ms = Vec::<f64>::new();
+                BTreeMap::<String, BTreeMap<String, TimingSamples>>::new();
+            let mut capture_event_channel_waits_ms = BTreeMap::<String, TimingSamples>::new();
+            let mut synchronizer_waits_ms = TimingSamples::default();
             #[cfg(feature = "fiducials")]
-            let mut fiducial_processing_ms = Vec::<f64>::new();
+            let mut fiducial_processing_ms = TimingSamples::default();
             #[cfg(feature = "fiducials")]
-            let mut fiducial_rate_limit_remaining_ms = Vec::<f64>::new();
-            let mut errors = Vec::new();
+            let mut fiducial_rate_limit_remaining_ms = TimingSamples::default();
+            let mut errors = BoundedStrings::new(64);
             let mut health = BTreeMap::new();
             let mut synchronized_sets = 0_u64;
             let mut frames_discarded_after_deadline = 0_u64;
@@ -1880,7 +1920,8 @@ fn main() -> Result<()> {
                 "fiducial_rate_limit_remaining_ms={}",
                 serde_json::to_string(&timing_summary(&fiducial_rate_limit_remaining_ms))?
             );
-            println!("errors={}", serde_json::to_string(&errors)?);
+            println!("errors={}", serde_json::to_string(&errors.values)?);
+            println!("errors_dropped={}", errors.dropped);
             println!("health={}", serde_json::to_string(&health)?);
             println!("synchronized_sets={synchronized_sets}");
             println!("capture_event_queue_capacity={worker_queue_capacity}");
@@ -2056,6 +2097,12 @@ fn main() -> Result<()> {
                     ]
                 })
                 .collect();
+            // RealsenseCapture emits one color and one depth event per camera
+            // frameset. Retain at most one complete synchronized set here;
+            // blocking send then stops workers from requesting another large
+            // frameset while recording, socket delivery, or Rerun is behind.
+            // FrameSynchronizer owns its separate bounded per-sensor queues.
+            let worker_queue_capacity = sensor_names.len().max(1);
             let tolerance_ns = (config.sync.max_pairwise_skew_ms * 1_000_000.0) as u128;
             let mut synchronizer =
                 FrameSynchronizer::new(sensor_names, tolerance_ns, config.session.queue_capacity)
@@ -2074,7 +2121,7 @@ fn main() -> Result<()> {
             };
             let mut publisher = socket.map(UnixFramePublisher::bind).transpose()?;
             let deadline = Instant::now() + Duration::from_secs(duration_seconds);
-            let (sender, receiver) = mpsc::channel();
+            let (sender, receiver) = bounded_capture_event_channel(worker_queue_capacity);
             let mut workers = Vec::new();
             for camera in config.cameras.realsense.clone() {
                 let sender = sender.clone();
@@ -2083,7 +2130,7 @@ fn main() -> Result<()> {
                     let mut capture = None;
                     let mut had_capture = false;
                     let mut reconnects = 0_u64;
-                    let mut recent_errors = Vec::new();
+                    let mut recent_errors = BoundedStrings::new(16);
                     while Instant::now() < deadline {
                         if capture.is_none() {
                             match RealsenseCapture::new(camera.clone()) {
@@ -2138,8 +2185,7 @@ fn main() -> Result<()> {
                             tatbot_visiond::SensorHealth::new(sensor.clone()).snapshot()
                         });
                     health.reconnects = health.reconnects.saturating_add(reconnects);
-                    health.recent_errors = recent_errors.into_iter().rev().take(16).collect();
-                    health.recent_errors.reverse();
+                    health.recent_errors = recent_errors.into_vec();
                     if let Some(mut value) = capture {
                         value.stop();
                     }
@@ -2151,7 +2197,7 @@ fn main() -> Result<()> {
             let expected = config.cameras.realsense.len();
             let mut finished = 0;
             let mut frame_counts = BTreeMap::<String, u64>::new();
-            let mut errors = Vec::new();
+            let mut errors = BoundedStrings::new(64);
             let mut health = BTreeMap::new();
             let mut synchronized_sets = 0_u64;
             while finished < expected {
@@ -2255,9 +2301,11 @@ fn main() -> Result<()> {
                 println!("captured RealSense streams into {}", output_root.display());
             }
             println!("frame_counts={}", serde_json::to_string(&frame_counts)?);
-            println!("errors={}", serde_json::to_string(&errors)?);
+            println!("errors={}", serde_json::to_string(&errors.values)?);
+            println!("errors_dropped={}", errors.dropped);
             println!("health={}", serde_json::to_string(&health)?);
             println!("synchronized_sets={synchronized_sets}");
+            println!("capture_event_queue_capacity={worker_queue_capacity}");
             println!(
                 "synchronizer_dropped_unmatched={}",
                 synchronizer.dropped_unmatched()
@@ -3295,39 +3343,74 @@ enum PoeWorkerEvent {
 #[derive(Debug, Serialize)]
 struct TimingSummary {
     samples: usize,
+    retained_samples: usize,
     median: f64,
     p95: f64,
     max: f64,
 }
 
 #[cfg(feature = "gstreamer")]
-fn timing_summary(samples: &[f64]) -> Option<TimingSummary> {
-    if samples.is_empty() {
+/// At 20 Hz, 4096 values cover more than three minutes per metric while making
+/// multi-hour live views constant-space.
+const TIMING_SAMPLE_LIMIT: usize = 4096;
+
+#[cfg(feature = "gstreamer")]
+#[derive(Debug)]
+struct TimingSamples {
+    values: Vec<f64>,
+    next: usize,
+    samples: usize,
+    max: f64,
+    limit: usize,
+}
+
+#[cfg(feature = "gstreamer")]
+impl TimingSamples {
+    fn with_limit(limit: usize) -> Self {
+        assert!(limit > 0);
+        Self {
+            values: Vec::new(),
+            next: 0,
+            samples: 0,
+            max: f64::NEG_INFINITY,
+            limit,
+        }
+    }
+
+    fn push(&mut self, value: f64) {
+        self.samples = self.samples.saturating_add(1);
+        self.max = self.max.max(value);
+        if self.values.len() < self.limit {
+            self.values.push(value);
+            return;
+        }
+        self.values[self.next] = value;
+        self.next = (self.next + 1) % self.limit;
+    }
+}
+
+#[cfg(feature = "gstreamer")]
+impl Default for TimingSamples {
+    fn default() -> Self {
+        Self::with_limit(TIMING_SAMPLE_LIMIT)
+    }
+}
+
+#[cfg(feature = "gstreamer")]
+fn timing_summary(samples: &TimingSamples) -> Option<TimingSummary> {
+    if samples.values.is_empty() {
         return None;
     }
-    let mut sorted = samples.to_vec();
+    let mut sorted = samples.values.clone();
     sorted.sort_by(f64::total_cmp);
     let p95_index = ((sorted.len() - 1) as f64 * 0.95).round() as usize;
     Some(TimingSummary {
-        samples: sorted.len(),
+        samples: samples.samples,
+        retained_samples: sorted.len(),
         median: sorted[sorted.len() / 2],
         p95: sorted[p95_index],
-        max: *sorted.last().expect("non-empty timing samples"),
+        max: samples.max,
     })
-}
-
-#[cfg(all(test, feature = "gstreamer"))]
-mod timing_summary_tests {
-    use super::timing_summary;
-
-    #[test]
-    fn reports_order_independent_percentiles() {
-        let summary = timing_summary(&[4.0, 1.0, 3.0, 2.0]).unwrap();
-        assert_eq!(summary.samples, 4);
-        assert_eq!(summary.median, 3.0);
-        assert_eq!(summary.p95, 4.0);
-        assert_eq!(summary.max, 4.0);
-    }
 }
 
 #[cfg(feature = "realsense")]
@@ -3342,4 +3425,70 @@ enum RealsenseWorkerEvent {
         sensor: String,
         health: tatbot_visiond::HealthSnapshot,
     },
+}
+
+#[cfg(test)]
+mod retention_tests {
+    use super::{BoundedStrings, bounded_capture_event_channel};
+    #[cfg(feature = "gstreamer")]
+    use super::{TimingSamples, timing_summary};
+    use std::sync::mpsc::TrySendError;
+
+    #[test]
+    fn ingress_channel_backpressures_at_its_capacity() {
+        let (sender, receiver) = bounded_capture_event_channel(2);
+        sender.try_send(1).unwrap();
+        sender.try_send(2).unwrap();
+        assert_eq!(sender.try_send(3), Err(TrySendError::Full(3)));
+
+        assert_eq!(receiver.recv().unwrap(), 1);
+        sender.try_send(3).unwrap();
+    }
+
+    #[test]
+    fn ingress_channel_never_becomes_unbounded_for_zero_capacity() {
+        let (sender, _receiver) = bounded_capture_event_channel(0);
+        sender.try_send(1).unwrap();
+        assert_eq!(sender.try_send(2), Err(TrySendError::Full(2)));
+    }
+
+    #[test]
+    fn diagnostic_strings_keep_only_the_newest_entries() {
+        let mut strings = BoundedStrings::new(2);
+        strings.push("first".into());
+        strings.push("second".into());
+        strings.push("third".into());
+        assert_eq!(strings.dropped, 1);
+        assert_eq!(strings.into_vec(), vec!["second", "third"]);
+    }
+
+    #[cfg(feature = "gstreamer")]
+    #[test]
+    fn reports_order_independent_percentiles() {
+        let mut samples = TimingSamples::default();
+        for value in [4.0, 1.0, 3.0, 2.0] {
+            samples.push(value);
+        }
+        let summary = timing_summary(&samples).unwrap();
+        assert_eq!(summary.samples, 4);
+        assert_eq!(summary.retained_samples, 4);
+        assert_eq!(summary.median, 3.0);
+        assert_eq!(summary.p95, 4.0);
+        assert_eq!(summary.max, 4.0);
+    }
+
+    #[cfg(feature = "gstreamer")]
+    #[test]
+    fn bounds_retention_without_losing_total_count_or_global_max() {
+        let mut samples = TimingSamples::with_limit(3);
+        for value in [100.0, 1.0, 2.0, 3.0] {
+            samples.push(value);
+        }
+        let summary = timing_summary(&samples).unwrap();
+        assert_eq!(summary.samples, 4);
+        assert_eq!(summary.retained_samples, 3);
+        assert_eq!(summary.median, 2.0);
+        assert_eq!(summary.p95, 3.0);
+        assert_eq!(summary.max, 100.0);
+    }
 }

@@ -1,10 +1,40 @@
 {
   "designs": [
-    { "id": "anchor", "name": "Anchor", "path": "designs/anchor.svg", "default_size_mm": [50, 60] },
-    { "id": "heart", "name": "Heart", "path": "designs/heart.svg", "default_size_mm": [50, 50] },
-    { "id": "star", "name": "Star", "path": "designs/star.svg", "default_size_mm": [40, 40] },
-    { "id": "snake", "name": "Snake", "path": "designs/snake.svg", "default_size_mm": [45, 120] },
-    { "id": "sun", "name": "Sun", "path": "designs/sun.svg", "default_size_mm": [55, 55] },
-    { "id": "dagger", "name": "Dagger", "path": "designs/dagger.svg", "default_size_mm": [35, 112] }
+    {
+      "id": "octopus",
+      "name": "Octopus",
+      "path": "designs/octopus.svg",
+      "default_size_mm": [65, 59]
+    },
+    {
+      "id": "lunar-moth",
+      "name": "Lunar Moth",
+      "path": "designs/lunar-moth.svg",
+      "default_size_mm": [70, 56]
+    },
+    {
+      "id": "peony",
+      "name": "Peony",
+      "path": "designs/peony.svg",
+      "default_size_mm": [67, 70]
+    },
+    {
+      "id": "koi",
+      "name": "Koi",
+      "path": "designs/koi.svg",
+      "default_size_mm": [45, 70]
+    },
+    {
+      "id": "swallow",
+      "name": "Swallow",
+      "path": "designs/swallow.svg",
+      "default_size_mm": [64, 70]
+    },
+    {
+      "id": "tiger",
+      "name": "Tiger",
+      "path": "designs/tiger.svg",
+      "default_size_mm": [63, 70]
+    }
   ]
 }

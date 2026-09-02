@@ -13,6 +13,29 @@ right:
   pen_tip_offset_x: 0.0
   pen_tip_offset_y: 0.0
   pen_tip_offset_z: 0.070
+  # Optional independently measured physical body axis/origin. Pivot touch-off
+  # already qualifies the contact vector for an axisymmetric profile; null here
+  # means the visual/collision body axis is inferred from mount origin -> tip.
+  # Set status to `qualified` only with a timestamp, method, and the full pose.
+  tool_body_status: null
+  tool_body_utc: null
+  tool_body_method: null
+  tool_body_measurement_source: null
+  tool_body_report: null
+  tool_body_report_sha256: null
+  tool_body_samples: null
+  tool_body_selected_cycle: null
+  tool_body_alignment_max_mm: null
+  tool_body_tip_repeatability_mm: null
+  tool_body_origin_repeatability_mm: null
+  tool_body_axis_repeatability_deg: null
+  tool_body_frame: null
+  tool_body_origin_x: null
+  tool_body_origin_y: null
+  tool_body_origin_z: null
+  tool_body_rpy_x: null
+  tool_body_rpy_y: null
+  tool_body_rpy_z: null
   # Carriage reading at the solve, metres.
   carriage_m: 0.0
   # Surface Z in the arm base frame, metres.
