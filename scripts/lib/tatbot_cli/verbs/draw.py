@@ -14,7 +14,7 @@ SESSION_WRAPS = ("scripts/draw_run.sh", "scripts/teleop_start.sh", "cpp/teleop/w
 
 SESSION_INV = (
     ESTOP_INV, EXCL_INV,
-    "Run locally on the arm node: autonomous motion and its literal single-use nonce are refused over --on.",
+    "Runs on the arm node; `--on <arm-node>` from another node hops there over ssh -t and arms the single-use nonce there (operator decision 2026-09-02). The e-stop operator stays at the rig.",
     "Ballpoint only (--ee-tool lutin-ballpoint-dot): the carriage-IK envelope and the executor's tip constant are its.",
     "The operator hand-guides to light contact at the design centre; READY latches, then SPACE hands over.",
     "SPACE 1 starts a preflighted camera orbit for the wrist D405s (cameras ~160 mm from the contact, patch "
@@ -81,6 +81,10 @@ def _session_args(p):
                         "full normal-following, decision 3). 12 lets a 15 mm spiral on a 38 mm bottle pass the "
                         "joint-velocity cap from a touch near the wrist singularity")
     p.add_argument("--no-rerun", action="store_true", help="no viewer; the shadow is still saved as shadow.rrd")
+    p.add_argument("--rerun-viewer", metavar="URL",
+                   help="stream the shadow to this viewer (rerun+http://HOST:9876/proxy). Default: over --on the "
+                        "launching node's `tatbot draw viewer` is found through SSH_CONNECTION; on the arm node "
+                        "itself a local capped viewer starts")
     nonce_arg(p)
 
 
@@ -101,6 +105,8 @@ def _session_argv(ns, scan_only: bool) -> list[str]:
         args.append("--scan-only")
     if ns.no_rerun:
         args.append("--no-rerun")
+    if ns.rerun_viewer:
+        args += ["--rerun-viewer", ns.rerun_viewer]
     return args
 
 
@@ -151,6 +157,19 @@ def draw_shadow(ctx, ns, rest):
     if ns.save:
         return lerobot_py(ctx, "scripts/draw_shadow.py", ns.draw_dir, "--save", *rest)
     return sh(ctx, "scripts/draw_shadow.sh", ns.draw_dir, *rest)
+
+
+def _viewer_args(p):
+    p.add_argument("--memory-limit", default="3GB", help="Rerun viewer memory cap (default 3GB)")
+
+
+@verb(noun="draw", verb="viewer", tier=OFFLINE, summary="a capped Rerun viewer here, for a draw session launched with --on",
+      wraps=("scripts/draw_viewer.sh",), args=_viewer_args, tty=True, doc=DOC,
+      invariants=("Nothing here touches the arm. The viewer binds every interface so the arm node can stream to it; "
+                  "`draw run --on <arm-node>` from this node finds it by itself (SSH_CONNECTION).",
+                  "Memory is capped (--memory-limit); keep it so."))
+def draw_viewer(ctx, ns, rest):
+    return sh(ctx, "scripts/draw_viewer.sh", "--memory-limit", ns.memory_limit, *rest)
 
 
 def _viewpoints_args(p):

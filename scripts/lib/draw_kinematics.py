@@ -61,10 +61,10 @@ PLAN_MAX_MODEL_ERROR_M = 0.0001
 PLAN_MAX_MODEL_ERROR_PEN_UP_M = 0.001  # standoff travel: the damped solve trails a 10 mm/s reference
 # Pen-down samples of a draw path (plan_joints). The 0.1 mm cap above stays on the
 # executor's own spiral; a surface path follows the local normal, and with the
-# wrist near its singularity (joint 4 through zero on the first bottle draw) the
-# damped solve trails a 3.5 mm/s reference by 0.18 mm -- nothing against a pen
-# line, so the path cap is 0.25 mm and the preflight reports the actual value.
-PLAN_MAX_MODEL_ERROR_DRAW_M = 0.00025
+# wrist near its singularity the damped solve trails a 3.5 mm/s reference by
+# 0.2-0.5 mm. Operator 2026-09-02: nothing on this arm resolves below 1 mm, so
+# the path cap is the pen-up cap; the preflight reports the actual value.
+PLAN_MAX_MODEL_ERROR_DRAW_M = 0.001
 PLAN_MAX_ORIENTATION_ERROR_RAD = 0.001
 DLS_DAMPING = 0.02
 POSITION_ERROR_GAIN_S = 4.0

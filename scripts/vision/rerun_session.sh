@@ -86,6 +86,13 @@ rerun_session::stop_viewer() {
   kill "$pid" 2>/dev/null || true
 }
 
+# True when something accepts TCP on host:port (2 s budget). Used by a session
+# launched over ssh to find the viewer on the launching node.
+rerun_session::port_open() {
+  local host="$1" port="${2:-9876}"
+  timeout 2 bash -c "exec 3<>/dev/tcp/${host}/${port}" 2>/dev/null
+}
+
 rerun_session::lan_ip() {
   ip -4 -o addr show \
     | awk '/192\.168\.1\./ {split($4, address, "/"); print address[1]; exit}'

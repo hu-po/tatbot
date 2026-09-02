@@ -48,6 +48,7 @@ LEAN_BUDGET_DEG=20
 LEAN_DEADBAND_DEG=0
 SCAN_ONLY=0
 NO_RERUN=0
+RERUN_CONNECT_ARG=""
 VIEWER_MEMORY_LIMIT="${VIEWER_MEMORY_LIMIT:-3GB}"
 REST=()
 need_value() { [ "$#" -ge 2 ] || { echo "$1 needs a value" >&2; exit 2; }; }
@@ -73,6 +74,7 @@ while [ "$#" -gt 0 ]; do
     --lean-deadband-deg) need_value "$@"; LEAN_DEADBAND_DEG="$2"; shift 2 ;;
     --scan-only)       SCAN_ONLY=1; shift ;;
     --no-rerun)        NO_RERUN=1; shift ;;
+    --rerun-viewer)   need_value "$@"; RERUN_CONNECT_ARG="$2"; shift 2 ;;
     --)                shift; REST+=("$@"); break ;;
     *)                 REST+=("$1"); shift ;;
   esac
@@ -130,9 +132,24 @@ cleanup() {
 trap cleanup EXIT
 
 # --- Rerun viewer (capped; scripts/check rerun-caps insists on this helper) ---------
+# Where the shadow goes, in order: --rerun-viewer; the launching node's viewer
+# when this shell came in over ssh without a display (`tatbot draw viewer` on
+# that node, found through SSH_CONNECTION); else a local capped viewer.
 RERUN_CONNECT=""
 if [ "$NO_RERUN" -eq 0 ]; then
-  if rerun_session::start_viewer "$VIEWER_MEMORY_LIMIT" 512MB; then
+  if [ -n "$RERUN_CONNECT_ARG" ]; then
+    RERUN_CONNECT="$RERUN_CONNECT_ARG"
+    echo "Rerun: streaming the shadow to $RERUN_CONNECT"
+  elif [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && [ -n "${SSH_CONNECTION:-}" ]; then
+    CLIENT_IP="${SSH_CONNECTION%% *}"
+    if rerun_session::port_open "$CLIENT_IP" 9876; then
+      RERUN_CONNECT="rerun+http://${CLIENT_IP}:9876/proxy"
+      echo "Rerun: no display here; streaming the shadow to the launching node's viewer at $RERUN_CONNECT"
+    else
+      echo "Rerun: no display here and nothing listens on ${CLIENT_IP}:9876 — run 'tatbot draw viewer' on the" \
+           "launching node first; the shadow is saved to $DRAW_DIR/shadow.rrd only" >&2
+    fi
+  elif rerun_session::start_viewer "$VIEWER_MEMORY_LIMIT" 512MB; then
     LAN_IP="$(rerun_session::lan_ip)"
     RERUN_CONNECT="rerun+http://${LAN_IP:-127.0.0.1}:9876/proxy"
     echo "Rerun viewer on $RERUN_CONNECT (memory cap $VIEWER_MEMORY_LIMIT)"

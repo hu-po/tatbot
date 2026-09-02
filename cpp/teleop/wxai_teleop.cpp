@@ -300,16 +300,14 @@ constexpr double SQUARE_MODEL_FK_TOLERANCE_M = 0.00025;
 constexpr double SQUARE_COMMAND_LEAD_ABORT_RAD = 0.05;
 constexpr double CARRIAGE_IK_COMMAND_LEAD_ABORT_M = 0.0005;
 constexpr double CARRIAGE_IK_PREFLIGHT_ENDPOINT_TOLERANCE_M = 0.00015;
-constexpr double SQUARE_ENDPOINT_TOLERANCE_M = 0.00025;
+// Endpoint settle guard for every scripted probe (square, spiral, draw orbit
+// and path). Operator 2026-09-02: nothing on this arm resolves below 1 mm --
+// the printed EE mount alone flexes more than that, before the joints -- so a
+// 0.25 mm guard only measured the controllers' steady-state error at the pose
+// (0.10-0.11 mm at some camera holds, 0.269 mm at another once the bottle moved
+// 7 cm along y) and aborted run 20260902T131437Z with a good map and path.
+constexpr double SQUARE_ENDPOINT_TOLERANCE_M = 0.001;
 constexpr double SQUARE_ENDPOINT_SETTLE_MAX_S = 3.0;
-// A draw session's plans end pen-up: the orbit at a camera hold ~40 mm above the
-// surface, the path after its lift. The spiral's 0.25 mm drawing-precision
-// guard there only measures the controllers' steady-state error at that pose
-// (0.10-0.11 mm on the first bottle runs, 0.269 mm on run 20260902T131437Z once
-// the bottle moved 7 cm along y) and aborted a session whose map and path were
-// fine; hold.json is the MEASURED pose anyway. Same number as the planner's
-// pen-up model-error cap.
-constexpr double DRAW_PEN_UP_ENDPOINT_TOLERANCE_M = 0.001;
 // Draw orbit: a capture is requested only after the measured arm has been
 // this still for this long (bounded), so the depth frames are not taken on
 // the settling bounce.
@@ -2073,8 +2071,7 @@ int run(int argc, char ** argv)
         }
         const double error_mm = tatbot::square::translation_error_mm(
           measured, square_targets[square_edge]);
-        const double endpoint_tolerance_m =
-          draw_enabled ? DRAW_PEN_UP_ENDPOINT_TOLERANCE_M : SQUARE_ENDPOINT_TOLERANCE_M;
+        const double endpoint_tolerance_m = SQUARE_ENDPOINT_TOLERANCE_M;
         double follower_speed = 0.0;
         for (size_t joint = 0; joint < gripper; ++joint) {
           follower_speed = std::max(follower_speed, std::fabs(follower_vel[joint]));
@@ -2453,9 +2450,7 @@ int run(int argc, char ** argv)
                << "\nplan_max_cartesian_velocity_mm_s,"
                << report_max_cartesian_velocity_m_s * 1e3
                << "\ncommand_lead_limit_rad," << SQUARE_COMMAND_LEAD_ABORT_RAD
-               << "\nendpoint_tolerance_mm,"
-               << (draw_enabled ? DRAW_PEN_UP_ENDPOINT_TOLERANCE_M : SQUARE_ENDPOINT_TOLERANCE_M) * 1e3
-               << "\n";
+               << "\nendpoint_tolerance_mm," << SQUARE_ENDPOINT_TOLERANCE_M * 1e3 << "\n";
         if (spiral_enabled || draw_enabled) {
           if (draw_enabled) {
             report << "draw_dir," << opt.draw_dir << "\nfinal_stage,"

@@ -103,11 +103,11 @@ constexpr double PLAN_MAX_MODEL_ERROR_M = 0.0001;
 constexpr double PLAN_MAX_MODEL_ERROR_PEN_UP_M = 0.001;
 // Pen-down samples of a draw path (plan_path_samples). The 0.1 mm cap above stays
 // on the executor's own spiral; a surface path follows the local normal, and
-// with the wrist near its singularity (joint 4 through zero on the first bottle
-// draw) the damped solve trails a 3.5 mm/s reference by 0.18 mm -- nothing
-// against a pen line. Mirrors draw_kinematics.PLAN_MAX_MODEL_ERROR_DRAW_M; the
-// preflight reports the actual value.
-constexpr double PLAN_MAX_MODEL_ERROR_DRAW_M = 0.00025;
+// with the wrist near its singularity the damped solve trails a 3.5 mm/s
+// reference by 0.2-0.5 mm. Operator 2026-09-02: nothing on this arm resolves
+// below 1 mm, so the path cap is the pen-up cap. Mirrors
+// draw_kinematics.PLAN_MAX_MODEL_ERROR_DRAW_M; the preflight reports the value.
+constexpr double PLAN_MAX_MODEL_ERROR_DRAW_M = 0.001;
 constexpr double PLAN_MAX_ORIENTATION_ERROR_RAD = 0.001;
 constexpr double DLS_DAMPING = 0.02;
 constexpr double POSITION_ERROR_GAIN_S = 4.0;

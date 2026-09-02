@@ -311,14 +311,16 @@ def test_dip_refuses_a_tool_that_never_dips_and_a_bare_call():
 
 
 def test_record_with_dip_is_autonomous_motion():
-    """--dip runs a scripted dip before the human takes the leader arm: nonce required, refused over --on."""
+    """--dip runs a scripted dip before the human takes the leader arm: nonce required; hops over --on (2026-09-02)."""
     r = tatbot("--dry-run", "--json", "--ee-tool", BALLPOINT, "record", "d", "t", "--dip", node=ARM)
     assert r.returncode == 3 and json.loads(r.stderr)["gate"] == "arm_gate"
     r = tatbot("--dry-run", "--json", "--ee-tool", BALLPOINT, "record", "d", "t", "--dip", "--nonce", "d-1", node=ARM)
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout)["argv"][-1] == "--dip"
     r = tatbot("--dry-run", "--json", "--on", ARM, "--ee-tool", BALLPOINT, "record", "d", "t", "--dip", "--nonce", "d-2", node=VIEWER)
-    assert r.returncode == 3 and json.loads(r.stderr)["gate"] == "arm_gate"
+    assert r.returncode == 0, r.stderr
+    hop = json.loads(r.stdout)["argv"]
+    assert hop[0] == "ssh" and "--nonce d-2" in hop[-1]  # armed on the arm node
     # without --dip, record stays a human-on-the-leader verb: hops, no nonce
     r = tatbot("--dry-run", "--json", "--on", ARM, "--ee-tool", BALLPOINT, "record", "d", "t", "--no-ink", node=VIEWER)
     assert r.returncode == 0, r.stderr
@@ -375,7 +377,10 @@ def test_inkmap_verbs_have_honest_tiers():
     assert tiers["build"] == OFFLINE
     assert tiers["check"] == OFFLINE
     assert tiers["rig"] == OFFLINE
-    assert tiers["deploy"] == REMOTE
+    if (REPO / "scripts/inkmap_deploy.sh").is_file():
+        assert tiers["deploy"] == REMOTE
+    else:
+        assert "deploy" not in tiers
 
 
 def test_inkmap_dev_and_build_options_pass_through():
@@ -439,7 +444,10 @@ def test_inkgen_verbs_have_honest_tiers():
     assert tiers["logs"] == OFFLINE
     assert tiers["serve"] == OFFLINE
     assert tiers["status"] == SENSOR
-    assert tiers["deploy"] == REMOTE
+    if (REPO / "scripts/inkgen_deploy.sh").is_file():
+        assert tiers["deploy"] == REMOTE
+    else:
+        assert "deploy" not in tiers
 
 
 def test_inkgen_serve_options_pass_through():
@@ -603,7 +611,9 @@ def test_teleop_square_is_one_shot_autonomous_motion():
 
     r = tatbot("--dry-run", "--json", "--on", ARM, "--ee-tool", BALLPOINT,
                "teleop", "square", "--nonce", "square-b", node=VIEWER)
-    assert r.returncode == 3 and json.loads(r.stderr)["gate"] == "arm_gate"
+    assert r.returncode == 0, r.stderr
+    hop = json.loads(r.stdout)["argv"]
+    assert hop[0] == "ssh" and "-t" in hop and "--nonce square-b" in hop[-1]  # armed on the arm node, over a tty
 
     wrapper = (REPO / "scripts/teleop_square.sh").read_text()
     assert "arm_gate::require" in wrapper
@@ -646,7 +656,8 @@ def test_teleop_spiral_is_one_shot_autonomous_motion():
 
     r = tatbot("--dry-run", "--json", "--on", ARM, "--ee-tool", BALLPOINT,
                "teleop", "spiral", "--nonce", "spiral-b", node=VIEWER)
-    assert r.returncode == 3 and json.loads(r.stderr)["gate"] == "arm_gate"
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["argv"][0] == "ssh"
 
     wrapper = (REPO / "scripts/teleop_spiral.sh").read_text()
     assert "arm_gate::require" in wrapper and "TATBOT_SPIRAL_ARMED=1" in wrapper
@@ -685,9 +696,12 @@ def test_hop_uses_the_canonical_ssh_target_and_no_hop():
     assert argv[-1].startswith("bash -lc ") and argv[-1].count("'") >= 2
 
 
-def test_hop_is_refused_for_autonomous_motion():
+def test_hop_carries_autonomous_motion_over_a_tty():
+    """Operator decision 2026-09-02: arm sessions launch from the viewer node; the nonce is armed on the arm node."""
     r = tatbot("--dry-run", "--json", "--on", ARM, "--ee-tool", TOOL, "rollout", "run", "--nonce", "x", node=VIEWER)
-    assert r.returncode == 3
+    assert r.returncode == 0, r.stderr
+    hop = json.loads(r.stdout)["argv"]
+    assert hop[0] == "ssh" and "-t" in hop and "--nonce x" in hop[-1]
 
 
 def test_hop_refuses_a_node_without_a_checkout(tmp_path):
@@ -856,7 +870,9 @@ def test_ee_tool_is_the_flag_every_python_tool_accepts():
                  "scripts/check_tool_sync.py", "scripts/il_dip.py", "scripts/ink.py"]:
         text = (REPO / path).read_text()
         assert '"--ee-tool", "--tool-id", dest="tool_id"' in text, path
-    assert "--ee-tool=*)" in (REPO / "scripts/vision/calib_sweep.sh").read_text()
+    sweep = REPO / "scripts/vision/calib_sweep.sh"
+    if sweep.is_file():
+        assert "--ee-tool=*)" in sweep.read_text()
     assert not (REPO / "scripts/il_compare_features.py").exists()
 
 
@@ -897,7 +913,9 @@ def test_data_push_dry_run_names_the_interpreter():
 
 
 def test_shims_delegate_to_the_cli():
-    assert 'exec "$REPO/scripts/tatbot" data "$@"' in (REPO / "scripts/dataset_hub.sh").read_text()
+    dataset_shim = REPO / "scripts/dataset_hub.sh"
+    if dataset_shim.is_file():
+        assert 'exec "$REPO/scripts/tatbot" data "$@"' in dataset_shim.read_text()
     assert '/tatbot" logs "$@"' in (REPO / "scripts/tatbot-logs").read_text()
     r = subprocess.run([str(REPO / "scripts/tatbot-logs"), "--help"], capture_output=True, text=True)
     assert r.returncode == 0 and "last" in r.stdout

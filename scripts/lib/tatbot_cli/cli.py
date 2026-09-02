@@ -244,10 +244,10 @@ def print_explain(ctx: Ctx, v: Verb) -> None:
     if v.needs_tool:
         print("  requires   --ee-tool <id> (stated, never inferred)")
     if v.nonce:
-        print("  requires   --nonce <literal> (single-use, ledgered; refused over --on)"
+        print("  requires   --nonce <literal> (single-use, ledgered; armed on the arm node, also over --on)"
               + (f" — not with {v.nonce_exempt_flags}, which command nothing" if v.nonce_exempt else ""))
     if v.dip_hook:
-        print("  with --dip a scripted dip runs first: --nonce <literal> required, refused over --on")
+        print("  with --dip a scripted dip runs first: --nonce <literal> required (armed on the arm node, also over --on)")
     if v.passthrough:
         print(f"  after --   passes through to {v.passthrough}")
     if v.wraps:
@@ -311,13 +311,14 @@ def dispatch(ctx: Ctx, v: Verb, ns: argparse.Namespace, passthrough: list[str]) 
 
     # Node routing.
     if ctx.on:
-        if v.autonomous(ns):
-            what = "autonomous-motion verbs are" if v.tier == MOTION_AUTO else \
-                f"{v.name} --dip is autonomous motion (a scripted dip) and is"
-            return refuse(ctx, EXIT_GATE_REFUSED, "arm_gate",
-                          f"{what} refused over --on: an arming nonce over ssh is "
-                          "the replay shape the arm gate exists to stop",
-                          f"ssh to {ctx.on} and run it there with a human present")
+        # Autonomous motion hops too (operator decision 2026-09-02: the draw
+        # sessions are launched from the viewer node). The hop is `ssh -t`, the
+        # nonce is written on the arm node right before exec and consumed once
+        # by its arm_gate, so the single-use ledger is unchanged; what moves is
+        # the keyboard, not the e-stop operator, who stays at the rig.
+        if v.autonomous(ns) and not ctx.quiet and not ctx.dry_run:
+            print(f"tatbot: autonomous motion over --on {ctx.on}: the nonce is armed there right before "
+                  "exec; the e-stop operator stays at the rig", file=sys.stderr)
         if ctx.on not in nmap:
             return _usage_error(f"unknown node '{ctx.on}' (known: {', '.join(nmap)})")
         if ctx.on == ctx.node:

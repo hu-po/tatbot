@@ -72,7 +72,7 @@ def _teleop_square_args(p):
       example=("--size-mm", "6", "--edge-s", "12", "--nonce", "paper-square-a"),
       doc="docs/teleop_tuning.md", tty=True,
       invariants=(ESTOP_INV, EXCL_INV,
-                  "Run locally on the arm node: autonomous motion and its literal single-use nonce are refused over --on.",
+                  "Runs on the arm node; `--on <arm-node>` from another node hops there over ssh -t and arms the single-use nonce there (operator decision 2026-09-02). The e-stop operator stays at the rig.",
                   "The operator hand-guides to light contact; READY latches after 0.2 s below 0.10 rad/s, then one SPACE transfers control.",
                   "A model-preflighted joint-position trajectory keeps start Z/orientation and grows the base-X/Y square toward the arm base before closing once.",
                   "E-stop, contact cap, measured velocity or rolling arm effort retracts the pen and terminates; no auto-resume.",
@@ -114,7 +114,7 @@ def _teleop_spiral_args(p):
                "--nonce", "paper-spiral-a"),
       doc="docs/teleop_tuning.md", tty=True,
       invariants=(ESTOP_INV, EXCL_INV,
-                  "Run locally on the arm node: autonomous motion and its literal single-use nonce are refused over --on.",
+                  "Runs on the arm node; `--on <arm-node>` from another node hops there over ssh -t and arms the single-use nonce there (operator decision 2026-09-02). The e-stop operator stays at the rig.",
                   "The trigger point is the spiral center; leave at least the selected radius clear in every base-X/Y direction.",
                   "One SPACE starts a completely preflighted constant-Z/orientation trajectory at approximately constant arc-length speed, with short endpoint eases; no scripted auto-resume.",
                   "--carriage-ik is a ballpoint-only A/B mode: keep clear through its off-paper reversal check; it then preflights and streams a guarded seven-joint tip trajectory.",
@@ -183,7 +183,7 @@ def _record_args(p):
       invariants=(ESTOP_INV, EXCL_INV, "During recording: → / n next episode, ← / r re-record, ESC / q stop.",
                   "Datasets stay LOCAL unless --push is given; publish later with `tatbot data hub push`.",
                   "--dip runs a scripted dip before the human takes the leader arm: that is autonomous motion, "
-                  "so it needs --nonce and is refused over --on."))
+                  "so it needs --nonce (armed on the arm node, also over --on)."))
 def record(ctx, ns, rest):
     push = ["--push"] if ns.push else []
     return sh(ctx, "scripts/il_record.sh", ns.dataset, ns.task, str(ns.episodes),

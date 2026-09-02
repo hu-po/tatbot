@@ -103,6 +103,8 @@ collect_ignore += [f"{stem}.py" for stem in _unconfigured]
 # to list itself fails loudly in a public checkout rather than skipping
 # silently, which is the right direction for that mistake.
 NEEDS_FLEET = {
+    "test_arm_recover_defaults_to_both_and_preserves_explicit_single_arm_forms",
+    "test_arm_recover_ip_override_requires_an_explicit_role",
     "test_autonomous_verbs_need_a_literal_nonce",
     "test_dashdash_passthrough_reaches_the_launcher_untouched",
     "test_dip_plan_and_connect_only_command_nothing_and_need_no_nonce",
@@ -110,7 +112,7 @@ NEEDS_FLEET = {
     "test_dip_rehearse_is_a_moving_dip_with_a_rehearsal_tool",
     "test_dip_yes_with_a_real_needle_needs_allow_real",
     "test_dry_run_never_writes_the_arm_token",
-    "test_hop_is_refused_for_autonomous_motion",
+    "test_hop_carries_autonomous_motion_over_a_tty",
     "test_hop_refuses_a_node_without_a_checkout",
     "test_hop_uses_the_canonical_ssh_target_and_no_hop",
     "test_hostname_alias_resolves_to_the_node_name",
@@ -125,6 +127,9 @@ NEEDS_FLEET = {
     "test_record_dip_writes_the_nonce_the_dip_will_consume",
     "test_record_with_dip_is_autonomous_motion",
     "test_safe_passthrough_is_not_refused",
+    "test_sim_sample_delegates_to_bounded_offline_materializer",
+    "test_teleop_spiral_is_one_shot_autonomous_motion",
+    "test_teleop_square_is_one_shot_autonomous_motion",
     "test_teleop_start_is_the_canonical_bare_teleop",
     "test_tool_from_environment_is_accepted",
     "test_tool_must_be_stated_for_motion_verbs",
@@ -140,30 +145,42 @@ NEEDS_FLEET = {
 # exist in a public checkout, and the CLI hides them there on purpose. Tests
 # that assert those verbs — or read private CLI bookkeeping — only make sense
 # where that tooling is present.
-NEEDS_PRIVATE_TOOLING = {
-    "test_cli_shim_is_not_orphan_or_entry_point",
-    "test_data_push_dry_run_names_the_interpreter",
-    "test_ee_tool_is_the_flag_every_python_tool_accepts",
-    "test_every_verb_has_one_tier_and_an_example_that_dry_runs",
-    "test_inkgen_deploy_constructs_deploy_script_argv",
-    "test_inkgen_verbs_have_honest_tiers",
-    "test_inkmap_deploy_constructs_deploy_script_argv",
-    "test_inkmap_verbs_have_honest_tiers",
-    "test_shims_delegate_to_the_cli",
+NEEDS_PRIVATE_TOOLING: dict[str, tuple[str, ...]] = {
+    "test_data_push_dry_run_names_the_interpreter": ("scripts/dataset_hub.py",),
+    "test_inkgen_deploy_constructs_deploy_script_argv": ("scripts/inkgen_deploy.sh",),
+    "test_inkmap_deploy_constructs_deploy_script_argv": ("scripts/inkmap_deploy.sh",),
 }
+
+# These compare generated paths or compiled constants with the deployment's
+# measured touch-off. The example workspace is intentionally not substituted:
+# doing that would turn placeholder geometry into apparent qualification.
+NEEDS_WORKSPACE = {
+    "test_ballpoint_tip_matches_urdf_tool_mount_plus_pen_offset",
+    "test_orbit_map_and_path_are_accepted_by_the_executor",
+    "test_tip_constant_matches_workspace_derivation",
+}
+
+_no_fleet = not (_repo_root / "config" / "nodes.json").is_file()
+_no_workspace = not (_repo_root / "config" / "workspace.yaml").is_file()
+_missing_tooling = {
+    name: [path for path in paths if not (_repo_root / path).is_file()]
+    for name, paths in NEEDS_PRIVATE_TOOLING.items()
+}
+_missing_tooling = {name: paths for name, paths in _missing_tooling.items() if paths}
 
 
 def pytest_collection_modifyitems(config, items):  # noqa: ANN001 - pytest hook
-    no_fleet = not (_repo_root / "config" / "nodes.json").is_file()
-    no_private = not (_repo_root / "config" / "cli-orphans.txt").is_file()
     fleet_skip = pytest.mark.skip(reason="needs a described fleet (config/nodes.json)")
-    tooling_skip = pytest.mark.skip(reason="needs the private fleet/deploy tooling")
+    workspace_skip = pytest.mark.skip(reason="needs a measured touch-off (config/workspace.yaml)")
     for item in items:
         name = item.name.split("[")[0]
-        if no_fleet and name in NEEDS_FLEET:
+        if _no_fleet and name in NEEDS_FLEET:
             item.add_marker(fleet_skip)
-        elif no_private and name in NEEDS_PRIVATE_TOOLING:
-            item.add_marker(tooling_skip)
+        elif name in _missing_tooling:
+            missing = ", ".join(_missing_tooling[name])
+            item.add_marker(pytest.mark.skip(reason=f"needs omitted deployment tooling ({missing})"))
+        elif _no_workspace and name in NEEDS_WORKSPACE:
+            item.add_marker(workspace_skip)
 
 
 
@@ -185,6 +202,16 @@ def pytest_report_header(config) -> str | None:  # noqa: ANN001 - pytest hook si
         lines.append(
             f"tatbot: skipping {len(_unconfigured)} module(s) that need a configured "
             f"deployment ({', '.join(files)}) -- see config/examples/")
+    if _no_fleet:
+        lines.append(f"tatbot: skipping {len(NEEDS_FLEET)} item(s) that need config/nodes.json")
+    if _missing_tooling:
+        files = sorted({f for absent in _missing_tooling.values() for f in absent})
+        lines.append(
+            f"tatbot: skipping {len(_missing_tooling)} item(s) for omitted deployment tooling "
+            f"({', '.join(files)})")
+    if _no_workspace:
+        lines.append(
+            f"tatbot: skipping {len(NEEDS_WORKSPACE)} item(s) that compare measured touch-off geometry")
     if not _missing:
         return "\n".join(lines) or None
     by_dep: dict[str, list[str]] = {}

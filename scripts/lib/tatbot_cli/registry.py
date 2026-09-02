@@ -52,7 +52,7 @@ MOTION_TIERS = (MOTION_HUMAN, MOTION_AUTO)
 GATE_ESTOP = "e-stop required (launcher: estop_guard)"
 GATE_TOOL = "--ee-tool required"
 GATE_NONCE = "single-use arm nonce (launcher: arm_gate)"
-GATE_DIP = "with --dip: motion-auto — single-use arm nonce (launcher: arm_gate), refused over --on"
+GATE_DIP = "with --dip: motion-auto — single-use arm nonce (launcher: arm_gate), armed on the arm node also over --on"
 
 
 @dataclass
