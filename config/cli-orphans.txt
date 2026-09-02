@@ -1,0 +1,27 @@
+# Public entry points that intentionally have no direct `tatbot` verb.
+# `scripts/check cli` verifies that every listed path exists and every other
+# public executable is wrapped. Keep this public variant free of site routing.
+python/tatbot_sim/src/tatbot_sim/audit_depth.py offline dataset-depth diagnostic
+python/tatbot_sim/src/tatbot_sim/distributions.py recipe library; `tatbot sim list` presents it
+python/tatbot_sim/src/tatbot_sim/fiducial_benchmark.py offline synthetic benchmark
+scripts/audio/live_audio.py helper launched by the live-audio wrapper where available
+scripts/draw_capture.py capture service launched beside the draw executor; fake mode is a bench aid
+scripts/githooks/pre-commit local lint hook
+scripts/il_client_shield.py rollout transport helper, not a user entry point
+scripts/il_patch_lerobot.py dependency patch helper, not a user entry point
+scripts/rerun_maximized.bash optional interactive-shell helper
+scripts/vision/baseline_ee_tracker.py research replay utility
+scripts/vision/compare_fiducial_detectors.py offline detector comparison
+scripts/vision/detect_shot.py per-burst calibration helper
+scripts/vision/ee_tracker.py tracking implementation launched by a wrapper where available
+scripts/vision/estimate_extrinsics.py provisional offline extrinsics helper
+scripts/vision/evaluate_ee_tracker.py offline tracker evaluation
+scripts/vision/generate_voice.py one-time clip renderer
+scripts/vision/live_surface.py viewer implementation launched by a wrapper where available
+scripts/vision/reconstruct_surface.py offline reconstruction implementation
+scripts/vision/rerun_session.sh sourced viewer lifecycle helpers
+scripts/vision/session_guide.py calibration-session helper launched by a wrapper where available
+scripts/vision/summarize_camera_encoder_ab.py offline experiment summarizer
+scripts/vision/teleop_log.py flight-log reader with a self-test entry point
+scripts/vision/transcribe_session.py offline narration transcription
+scripts/vision/urdf_kinematics.py kinematics library with a self-test entry point

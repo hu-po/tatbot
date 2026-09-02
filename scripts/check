@@ -285,6 +285,10 @@ job_sim() {
   have uv || { skip sim "uv not installed"; return; }
   # SAPIEN/ManiSkill publish x86_64 wheels only -- the Sparks and Thors are out.
   [[ "$(uname -m)" == "x86_64" ]] || { skip sim "ManiSkill is x86_64-only (this node is $(uname -m))"; return; }
+  if [[ ! -f config/workspace.yaml || ! -f config/trossen/tatbot.yaml ]]; then
+    skip sim "full suite needs a locally qualified workspace and arm profile; public fixtures support imports and geometry-only commands, not qualification tests"
+    return
+  fi
   run_job sim uv run --project python/tatbot_sim --with pytest --with pytest-timeout \
     pytest -q "${TIMEOUT_ARGS[@]}" python/tatbot_sim/tests/
 }

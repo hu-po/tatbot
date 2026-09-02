@@ -10,8 +10,14 @@ import os
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
-DEFAULT_INVENTORY_PATH = Path(
-    os.environ.get("TATBOT_FIDUCIAL_CONFIG", REPO / "config" / "fiducials.json")
+_stated_inventory = os.environ.get("TATBOT_FIDUCIAL_CONFIG")
+_private_inventory = REPO / "config" / "fiducials.json"
+DEFAULT_INVENTORY_PATH = (
+    Path(_stated_inventory)
+    if _stated_inventory
+    else _private_inventory
+    if _private_inventory.is_file()
+    else REPO / "config" / "examples" / "fiducials.json"
 )
 SUPPORTED_FAMILIES = frozenset({"apriltag_16h5"})
 

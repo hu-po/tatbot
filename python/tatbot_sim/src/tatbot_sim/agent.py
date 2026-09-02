@@ -26,7 +26,7 @@ from tatbot_sim.urdf import build_tatbot_urdf
 # The carriage is the tool's contact axis (2026-08-30): the tool sits in a
 # mount on the left finger carriage, and the carriage moves it along its own
 # axis. The real follower holds the carriage in position mode at its rest
-# (the closed hard stop, config/trossen/tatbot.yaml carriage_rest_m) and only
+# (the selected profile's carriage_rest_m) and only
 # the safety layer ever moves it, so the recorded action AND state are both
 # the rest value. The sim commands the same: one number, from the same file.
 CARRIAGE_REST = carriage_rest_m()
@@ -121,8 +121,7 @@ class TatbotWXAI(WidowXAI):
     # Fallback pose only. Because the surface height is randomized per episode,
     # the generator solves the real starting pose with IK after reset and sets
     # the arm there — see generate.py. The rest keyframe is the real arm's
-    # staged pose (config/trossen/tatbot.yaml, wrist rolled 90 deg: cube up,
-    # pen down) with the carriage at rest; the derived URDF has one carriage
+    # selected staged pose with the carriage at rest; the derived URDF has one carriage
     # (the right finger is physically removed), so qpos is 7.
     keyframes = {
         "rest": Keyframe(

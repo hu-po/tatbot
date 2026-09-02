@@ -116,7 +116,7 @@ def calibration_delta(dist, rest: list[str]) -> tuple[float, float, float]:
 
     registry = tools.registry()
     spec = registry.load_tool(dist.tool_id, tools.REPO)
-    workspace = registry.read_workspace(tools.REPO)
+    workspace = tools.workspace()
     geometry = registry.resolved_tool_geometry(spec, workspace, "right", tools.REPO)
     if geometry.contact_status != "pivot-calibrated":
         raise SystemExit(

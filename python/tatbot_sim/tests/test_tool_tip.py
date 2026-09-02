@@ -52,3 +52,10 @@ def test_calibration_delta_gets_a_distinct_derived_robot_path():
     assert varied != base
     assert varied != other
     assert "-cal" in varied[0].stem
+
+
+def test_source_profile_gets_a_distinct_derived_robot_path():
+    private = urdf.derived_paths("pen", source_fingerprint="a" * 64)
+    public = urdf.derived_paths("pen", source_fingerprint="b" * 64)
+    assert private != public
+    assert "-src" in private[0].stem

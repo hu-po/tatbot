@@ -15,11 +15,24 @@ control experiments that do not connect to an arm or camera.
 ```bash
 cd python/tatbot_sim
 uv sync
-uv run python -m tatbot_sim --help
+uv run python -m tatbot_sim.factory --list
 ```
 
 Keep generated episodes and renders outside the repository. Include the source
 revision and simulator configuration in any artifact manifest.
+
+The private engineering checkout reads its qualified workspace and arm profile.
+The public checkout instead falls back to the explicitly simulation-only files
+under `config/examples/`. They make imports and geometry-only development
+reproducible; they are not calibration, controller limits, or permission to run
+hardware. Contact-qualified generation still refuses placeholder geometry unless
+the caller selects the labelled validation-only override.
+
+`scripts/check sim` runs the complete simulator suite only when the checkout
+has a locally qualified `config/workspace.yaml` and
+`config/trossen/tatbot.yaml`. A public checkout reports this as a named skip:
+its fixtures are enough for imports, schema work, and geometry-only commands,
+but they must never be treated as qualified contact evidence.
 
 ## A dataset to read without generating one
 
@@ -37,11 +50,17 @@ print(ds.meta.info['total_episodes'], 'episodes;', ds.meta.info['total_frames'],
 print(sorted(ds.meta.features))"
 ```
 
-Regenerate an equivalent shard locally with:
+With a locally qualified workspace and arm profile, regenerate an equivalent
+shard with:
 
 ```bash
 tatbot sim generate paper-draw -- --out-dir <dir> --num-episodes 8 --num-envs 4 --seed 0
 ```
+
+The public placeholder profile cannot reproduce that shard's qualified contact
+geometry or calibration jitter. Use the published dataset for format inspection
+until you have qualified local inputs; do not relabel a provisional validation
+run as equivalent.
 
 Each `paper-draw` invocation represents one fitted session: its seed chooses a
 single persistent tip offset within the recorded calibration uncertainty, and
@@ -151,5 +170,7 @@ calibration.
 
 1. Add a deterministic fixture for the new behavior.
 2. Assert units and coordinate frames at the boundary.
-3. Run the simulator tests and `scripts/check --light`.
+3. Run `scripts/check --light`. Run `scripts/check sim` where a locally
+   qualified simulation profile is present; otherwise preserve its explicit
+   profile-missing skip and exercise the config-independent tests you changed.
 4. Label simulated results as simulated in the run manifest.

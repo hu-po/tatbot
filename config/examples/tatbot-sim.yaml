@@ -1,0 +1,7 @@
+# Simulation-only arm fixture. This is not a controller configuration, a
+# measured pose, a safety limit, or authorization for powered operation.
+# Public simulator imports use it only when config/trossen/tatbot.yaml is
+# absent. A hardware deployment must supply and qualify its own profile.
+follower:
+  carriage_rest_m: 0.0
+  staged_positions: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]

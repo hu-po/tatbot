@@ -5,6 +5,13 @@ on:
   pull_request:
 
 jobs:
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: public CLI contract
+        run: scripts/check cli
+
   python:
     runs-on: ubuntu-latest
     steps:

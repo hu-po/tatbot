@@ -22,6 +22,9 @@ REPO = repo_root()
 _MODULE_NAME = "tatbot_tool_spec"
 _MODULE_PATH = REPO / "scripts" / "lib" / "tool_spec.py"
 CALIBRATION_DELTA_ENV = "TATBOT_SIM_TIP_DELTA_M"
+SIM_WORKSPACE_RELPATH = "config/examples/workspace.yaml"
+ARM_GOLDEN_RELPATH = "config/trossen/tatbot.yaml"
+SIM_ARM_GOLDEN_RELPATH = "config/examples/tatbot-sim.yaml"
 
 
 @lru_cache(maxsize=1)
@@ -53,7 +56,7 @@ def active_tool():
     override = os.environ.get("TATBOT_TOOL_ID")
     if override:
         return registry().load_tool(override, REPO)
-    return registry().load_active_tool(REPO)
+    return registry().load_active_tool(REPO, workspace=workspace())
 
 
 def active_substrate():
@@ -67,8 +70,15 @@ def active_substrate():
     return registry().substrate_for(active_tool(), REPO)
 
 
+def workspace_path() -> Path:
+    """Use live calibration when present, else the public simulation fixture."""
+    live = REPO / registry().WORKSPACE_RELPATH
+    return live if live.is_file() else REPO / SIM_WORKSPACE_RELPATH
+
+
 def workspace() -> dict:
-    return registry().read_workspace(REPO)
+    path = workspace_path()
+    return registry().parse_simple_yaml(path.read_text()) if path.is_file() else {}
 
 
 def calibration_delta_m() -> tuple[float, float, float]:
@@ -102,16 +112,22 @@ def resolved_geometry(spec=None, ws: dict | None = None):
         active, current, "right", REPO, tip_delta_m=calibration_delta_m())
 
 
-ARM_GOLDEN_RELPATH = "config/trossen/tatbot.yaml"
+def arm_golden_path() -> Path:
+    """Select the rig profile or the explicitly simulation-only public fixture."""
+    live = REPO / ARM_GOLDEN_RELPATH
+    return live if live.is_file() else REPO / SIM_ARM_GOLDEN_RELPATH
 
 
 @lru_cache(maxsize=1)
 def arm_golden() -> dict:
-    """The follower section of config/trossen/tatbot.yaml — the one source
-    for the staged pose and the carriage constants (rest, retract, contact
-    cap). Read with the registry's own YAML subset so the sim needs no new
-    dependency; the file is written by the cockpit in that subset."""
-    data = registry().parse_simple_yaml((REPO / ARM_GOLDEN_RELPATH).read_text())
+    """The selected follower profile for the staged pose and carriage rest.
+
+    A private rig checkout reads ``config/trossen/tatbot.yaml``. A public
+    checkout instead reads an explicitly simulation-only fixture that carries
+    no controller limits or powered-operation authority.
+    """
+    path = arm_golden_path()
+    data = registry().parse_simple_yaml(path.read_text())
     return data["follower"]
 
 
@@ -119,7 +135,7 @@ def staged_pose() -> list[float]:
     """The follower's 7-value staged/idle pose (six joints + carriage)."""
     pose = [float(v) for v in arm_golden()["staged_positions"]]
     if len(pose) != 7:
-        raise ValueError(f"{ARM_GOLDEN_RELPATH}: staged_positions has {len(pose)} values, need 7")
+        raise ValueError(f"{arm_golden_path()}: staged_positions has {len(pose)} values, need 7")
     return pose
 
 
@@ -131,7 +147,7 @@ def carriage_rest_m() -> float:
 def tool_source_paths() -> list[Path]:
     """Files whose edits invalidate a derived URDF."""
     tool = active_tool()
-    paths = [REPO / registry().WORKSPACE_RELPATH]
+    paths = [workspace_path()]
     if tool.source is not None:
         paths.append(Path(tool.source))
     return [p for p in paths if p.exists()]

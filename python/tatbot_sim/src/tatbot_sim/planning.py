@@ -32,7 +32,7 @@ from tatbot_sim.strokes import (
 )
 
 # The follower's staged position — the six arm joints of the pose the real
-# arm lifts to at connect. Read from config/trossen/tatbot.yaml (through
+# arm lifts to at connect. Read from the selected arm profile (through
 # tatbot_sim.tools) rather than copied: until 2026-08-30 a literal here
 # matched the real episodes' t=0 pose only because nobody had changed either.
 from tatbot_sim.tools import staged_pose as _staged_pose  # noqa: E402

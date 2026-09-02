@@ -219,7 +219,7 @@ The public tree supports these checks without an arm:
 
 ```text
 scripts/check docs
-scripts/check tests sim
+scripts/check cli tests
 draw_capture.py serve <dir> --fake
 tatbot draw plan <draw-dir>
 tatbot draw shadow <draw-dir> --save

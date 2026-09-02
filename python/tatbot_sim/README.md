@@ -8,8 +8,20 @@ of safe human operation.
 
 ```bash
 uv sync
-uv run python -m tatbot_sim --help
+uv run python -m tatbot_sim.factory --list
 ```
+
+Private rig checkouts use their qualified workspace and arm profile. A public
+checkout falls back to the clearly marked fixtures in `config/examples/` for
+imports and geometry-only development. Those placeholders are not calibration,
+controller limits, or powered-operation authority; contact-qualified generation
+still refuses without real qualification unless an explicit validation-only
+override is selected.
+
+The complete `scripts/check sim` suite includes private-profile qualification
+tests and therefore runs only when a locally qualified workspace and arm
+profile are present. Public fixtures support imports and geometry-only commands;
+they deliberately do not impersonate qualification evidence.
 
 Keep generated datasets outside the repository. Each artifact should record
 the simulator revision, configuration, task, tool fixture, and simulated label.

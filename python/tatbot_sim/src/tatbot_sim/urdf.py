@@ -58,9 +58,16 @@ from pathlib import Path
 from mani_skill import ASSET_DIR
 
 from tatbot_sim.repo import repo_root
-from tatbot_sim.tools import active_tool, tool_source_paths
+from tatbot_sim.tools import active_tool, arm_golden_path, tool_source_paths
 
 REPO = repo_root()
+FIDUCIAL_INVENTORY_RELPATH = "config/fiducials.json"
+SIM_FIDUCIAL_INVENTORY_RELPATH = "config/examples/fiducials.json"
+
+
+def _fiducial_inventory_path() -> Path:
+    live = REPO / FIDUCIAL_INVENTORY_RELPATH
+    return live if live.is_file() else REPO / SIM_FIDUCIAL_INVENTORY_RELPATH
 
 
 def rig_from_follower_base():
@@ -103,7 +110,7 @@ def _wrist_inventory() -> tuple[tuple[int, ...], float, str, str]:
     import hashlib
     import json
 
-    raw = (REPO / "config" / "fiducials.json").read_bytes()
+    raw = _fiducial_inventory_path().read_bytes()
     data = json.loads(raw)
     wrist = data["targets"]["wrist"]
     return (
@@ -117,7 +124,11 @@ def _wrist_inventory() -> tuple[tuple[int, ...], float, str, str]:
 
 STOCK_URDF = Path(ASSET_DIR) / "robots/widowxai/wxai_follower.urdf"
 STOCK_SRDF = Path(ASSET_DIR) / "robots/widowxai/wxai_follower.srdf"
-def derived_paths(tool_id: str, calibration_delta=None) -> tuple[Path, Path]:
+def derived_paths(
+    tool_id: str,
+    calibration_delta=None,
+    source_fingerprint: str | None = None,
+) -> tuple[Path, Path]:
     """Where a tool's derived URDF (and its companion SRDF) live.
 
     Scoped by tool id so previewing one tool cannot hand a stale robot to the
@@ -129,6 +140,8 @@ def derived_paths(tool_id: str, calibration_delta=None) -> tuple[Path, Path]:
         import hashlib
         token = ",".join(f"{float(value):.9g}" for value in delta)
         suffix = "-cal" + hashlib.sha256(token.encode()).hexdigest()[:10]
+    if source_fingerprint:
+        suffix += "-src" + source_fingerprint[:10]
     stem = Path(ASSET_DIR) / "robots/widowxai" / f"wxai_tatbot_{tool_id}{suffix}"
     return stem.with_suffix(".urdf"), stem.with_suffix(".srdf")
 MESH_SUBDIR = "meshes/tatbot_ee"
@@ -570,7 +583,22 @@ def build_tatbot_urdf(force: bool = False) -> str:
         )
     tool = active_tool()
     from tatbot_sim.tools import calibration_delta_m
-    derived_urdf, derived_srdf = derived_paths(tool.tool_id, calibration_delta_m())
+    wrist_layout_json = REPO_MESHES.parents[2] / "config" / "wrist_tags_measured.json"
+    fiducial_inventory = _fiducial_inventory_path()
+    # The public simulation fixtures and a private calibrated profile can share
+    # one ManiSkill asset cache. Key the derived robot by content so neither
+    # checkout can reuse the other's newer file merely because its mtime wins.
+    inputs = [STOCK_URDF, Path(__file__), fiducial_inventory, REPO / "urdf/tatbot.urdf",
+              arm_golden_path()] + tool_source_paths() \
+        + ([STOCK_SRDF] if STOCK_SRDF.exists() else []) \
+        + ([wrist_layout_json] if wrist_layout_json.exists() else [])
+    import hashlib
+    source_hash = hashlib.sha256()
+    for path in inputs:
+        source_hash.update(path.read_bytes())
+        source_hash.update(b"\0")
+    derived_urdf, derived_srdf = derived_paths(
+        tool.tool_id, calibration_delta_m(), source_hash.hexdigest())
     mesh_dir = STOCK_URDF.parent / MESH_SUBDIR
     mesh_dir.mkdir(parents=True, exist_ok=True)
     for stl in tool.meshes():
@@ -582,13 +610,6 @@ def build_tatbot_urdf(force: bool = False) -> str:
         if force or not dst.exists() or dst.stat().st_mtime < src.stat().st_mtime:
             shutil.copy2(src, dst)
 
-    wrist_layout_json = REPO_MESHES.parents[2] / "config" / "wrist_tags_measured.json"
-    fiducial_inventory = REPO / "config" / "fiducials.json"
-    # Editing the datasheet (or swapping which tool is fitted) has to rebuild
-    # the derived URDF, the same way editing this module does.
-    inputs = [STOCK_URDF, Path(__file__), fiducial_inventory, REPO / "urdf/tatbot.urdf",
-              REPO / "config/trossen/tatbot.yaml"] + tool_source_paths() \
-        + ([wrist_layout_json] if wrist_layout_json.exists() else [])
     fresh = derived_urdf.exists() and derived_srdf.exists() and derived_urdf.stat().st_mtime >= max(
         p.stat().st_mtime for p in inputs
     )

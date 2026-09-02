@@ -37,6 +37,7 @@ def _run(repo: Path, args: list[str], env: dict | None = None) -> subprocess.Com
 def check_help_and_dry_run(repo: Path) -> list[str]:
     problems = []
     nmap = nodes.load(repo)
+    public_checkout = not (repo / "config" / "profiles" / "tatbot.json").is_file()
     for v in all_verbs():
         argv = [v.noun, *v.verb.split()]
         r = _run(repo, argv + ["--help"])
@@ -45,10 +46,14 @@ def check_help_and_dry_run(repo: Path) -> list[str]:
         role_nodes = nodes.nodes_with(nmap, v.role) if v.role else []
         node = role_nodes[0] if role_nodes else (next(iter(nmap), "") or "localnode")
         env = {"TATBOT_NODE": node, "TATBOT_EE_TOOL": "picosecond-laser-pen", "TATBOT_TRAIN_ROOT": "/nonexistent"}
+        if public_checkout:
+            env["TATBOT_PROFILE"] = "example"
         if any(a.startswith("<") for a in v.example):
             continue  # placeholder example: no fleet described here to run it against
-        r = _run(repo, ["--dry-run", *argv, *v.example], env)
-        if r.returncode != 0:
+        routing = ["--no-hop"] if public_checkout and not nmap else []
+        r = _run(repo, ["--dry-run", *routing, *argv, *v.example], env)
+        expected = {0, 3} if public_checkout and v.name == "profile check" else {0}
+        if r.returncode not in expected:
             problems.append(f"{v.name}: --dry-run {' '.join(v.example)} exit {r.returncode}: {(r.stderr or r.stdout).strip()[:300]}")
     return problems
 
