@@ -27,6 +27,14 @@ CLEARANCE_M = 0.04  # approach starts this far above the hover pose, along the n
 MAX_JOINT_SPEED = 0.5  # rad/s, any joint, any sample
 AXIS_SIGMA_M = 0.006  # pen-axis smoothing along the path
 AXIS_RATE = 0.3  # rad/s the pen axis may turn, whatever the path asks
+MAX_TILT_RAD = np.radians(30)  # the pen leans at most this far from straight down, whatever the normal
+# The pink arm stands 0.68 m to the blue arm's right (base frame -y; registrations of 2026-10-06), both
+# facing +x. Every streamed pose keeps the blue arm's links, camera, lens and working point at least
+# WALL_MARGIN_M on the blue side of a vertical wall at y = WALL_Y_M, leaving the middle to neither arm.
+WALL_Y_M = -0.20
+WALL_MARGIN_M = 0.05
+WALL_BODIES = ("link_2", "link_3", "link_4", "link_5", "link_6", "carriage_left", "carriage_right",
+               "realsense_mount_d405")
 
 
 def arm_kinematics(intr: Intrinsics | None = None) -> ArmKinematics:
@@ -65,6 +73,20 @@ def smooth_axes(axes: np.ndarray, s: np.ndarray, sigma_m: float = AXIS_SIGMA_M) 
     w = np.exp(-0.5 * ((s[:, None] - s[None, :]) / sigma_m) ** 2)
     out = w @ axes
     return out / np.linalg.norm(out, axis=1, keepdims=True)
+
+
+def tilt_capped(axes: np.ndarray, max_tilt: float = MAX_TILT_RAD) -> np.ndarray:
+    """Pen axes leaned back toward straight down where the skin's normal tips past ``max_tilt``: on the
+    forearm's flank the full normal is out of reach, and a hover only needs the working point on the ink."""
+    down = np.array([0.0, 0.0, -1.0])
+    out = np.array(axes, float)
+    for i, a in enumerate(out):
+        tilt = float(np.arccos(np.clip(a @ down, -1.0, 1.0)))
+        if tilt > max_tilt:
+            side = a - (a @ down) * down
+            side /= np.linalg.norm(side)
+            out[i] = np.cos(max_tilt) * down + np.sin(max_tilt) * side
+    return out
 
 
 def rate_limit_axes(start: np.ndarray, axes: np.ndarray, rate_rad_s: float = AXIS_RATE) -> np.ndarray:
@@ -113,7 +135,7 @@ def plan_trace(kin: ArmKinematics, q_start: np.ndarray, q_rest: np.ndarray, poin
     points, normals = np.asarray(points, float), np.asarray(normals, float)
     seg = np.linalg.norm(np.diff(points, axis=0), axis=1)
     s = np.concatenate([[0.0], np.cumsum(seg)])
-    axes = smooth_axes(-normals, s)  # the pen points into the skin
+    axes = tilt_capped(smooth_axes(-normals, s))  # the pen points into the skin
     normals = -axes
     above_first = points[0] + clearance_m * normals[0]
     above_last = points[-1] + clearance_m * normals[-1]
@@ -157,7 +179,7 @@ def plan_follow(kin: ArmKinematics, q_now: np.ndarray, points: np.ndarray, norma
     axes = np.vstack([here_axis, -normals])
     seg = np.linalg.norm(np.diff(path, axis=0), axis=1)
     s = np.concatenate([[0.0], np.cumsum(seg)])
-    axes = smooth_axes(axes, s)
+    axes = tilt_capped(smooth_axes(axes, s))
     targets = timed(path, speed_m_s)[1:]
     s_t = np.array([s[np.argmin(np.linalg.norm(path - p, axis=1))] for p in targets])
     target_axes = rate_limit_axes(here_axis, interpolate_axes(axes, s, s_t))
@@ -196,3 +218,21 @@ def plan_move(q_from: np.ndarray, q_to: np.ndarray, max_speed: float = 0.25) -> 
     duration = max(1.0, 2.0 * span / max_speed)  # cosine easing peaks at twice the mean speed
     u = np.linspace(0.0, 1.0, int(np.ceil(duration * RATE_HZ)) + 1)[1:]
     return q_from + (0.5 - 0.5 * np.cos(np.pi * u))[:, None] * (q_to - q_from)
+
+
+def wall_crossing(kin: ArmKinematics, q_traj: np.ndarray, wall_y: float = WALL_Y_M) -> str | None:
+    """Why ``q_traj`` would take the blue arm toward the pink arm's side of the wall, or None."""
+    from tatbot_travel.scene import ARM, GAP_SITE, LENS_SITE, OPTICAL_FRAME, PEN_BODY
+
+    model, data = kin.model, kin.data
+    bodies = [model.body(f"{ARM}/{name}").id for name in WALL_BODIES] + [model.body(PEN_BODY).id,
+                                                                       model.body(OPTICAL_FRAME).id]
+    sites = [model.site(LENS_SITE).id, model.site(GAP_SITE).id]
+    limit = wall_y + WALL_MARGIN_M
+    for i in list(range(0, len(q_traj), 3)) + [len(q_traj) - 1]:
+        kin.gap_pose(q_traj[i])  # sets the model's kinematics at this pose
+        lowest = min(data.xpos[bodies, 1].min(), data.site_xpos[sites, 1].min())
+        if lowest < limit:
+            return f"pose {i} reaches y = {lowest:+.3f} m, past the wall at {wall_y:+.2f} m (+{WALL_MARGIN_M} margin)"
+    return None
+

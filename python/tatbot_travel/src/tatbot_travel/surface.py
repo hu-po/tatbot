@@ -193,3 +193,37 @@ def _rotation(w: np.ndarray) -> np.ndarray:
     k = w / theta
     kx = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
     return np.eye(3) + np.sin(theta) * kx + (1 - np.cos(theta)) * kx @ kx
+
+
+def axis_to_skin(depth_m: np.ndarray, intr: Intrinsics, lens_cam: np.ndarray, axis_cam: np.ndarray,
+                 aim_cam: np.ndarray, exclude: np.ndarray | None = None, *, window_px: int = 25,
+                 band_m: float = 0.006) -> float:
+    """Lens face to the skin along the pen axis, in one depth image (camera frame), or inf.
+
+    The skin is fitted around the pixel the pen aims at, clear of ``exclude`` (the arm's own pen and
+    cradle): sampling the depth right in front of the lens instead reads the pen's own nose, whose depth
+    the stereo matcher smears onto the skin beside it once the lens is a centimetre away. A plane through
+    the window's points near their median depth, met by the axis, is the distance."""
+    u, v = np.round(intr.project(aim_cam[None])[0]).astype(int)
+    h, w = depth_m.shape
+    v0, v1, u0, u1 = max(0, v - window_px), min(h, v + window_px + 1), max(0, u - window_px), min(w, u + window_px + 1)
+    if v0 >= v1 or u0 >= u1:
+        return float("inf")
+    mask = np.zeros(depth_m.shape, bool)
+    mask[v0:v1, u0:u1] = True
+    if exclude is not None:
+        mask &= ~exclude
+    cam, _ = deproject(depth_m, intr, mask)
+    if len(cam) < 30:
+        return float("inf")
+    cam = cam[np.abs(cam[:, 2] - np.median(cam[:, 2])) < band_m]
+    if len(cam) < 30:
+        return float("inf")
+    c = cam.mean(axis=0)
+    n = np.linalg.svd(cam - c, full_matrices=False)[2][-1]
+    along = float(n @ axis_cam)
+    if abs(along) < 0.2:
+        return float("inf")  # the pen runs nearly parallel to that skin: no meaningful crossing
+    t = float(n @ (c - lens_cam)) / along
+    return t if t > 0 else 0.0
+

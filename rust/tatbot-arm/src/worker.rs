@@ -186,6 +186,8 @@ impl StreamPermit {
         }
         Ok(true)
     }
+    // Rust 1.99 renamed fetch_update to try_update; the fleet's toolchain is older.
+    #[allow(deprecated)]
     pub fn grant(&self, prefix: usize) -> Result<()> {
         if prefix > self.total {
             return Err(Error("stream permit exceeds plan".into()));

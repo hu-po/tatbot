@@ -14,6 +14,7 @@ AXIS_X, AXIS_Z, RADIUS = 0.33, 0.035, 0.035  # forearm: a cylinder along y on th
 FIST, FIST_R = np.array([AXIS_X, 0.10, 0.045]), 0.045  # and a fist at one end, so it is not symmetric
 SKIN, INK, TABLE = (225, 205, 120), (25, 25, 30), (150, 120, 90)
 REST = np.array([0.0, 0.0, 0.0, 0.0, 0.0, np.pi / 2])
+NO_ROBOT = np.zeros((480, 640), bool)  # the ray caster draws no cradle or pen
 
 
 def ink_curve(y: np.ndarray) -> np.ndarray:
@@ -138,7 +139,7 @@ def test_views_from_a_seed_look_down_on_the_forearm_and_a_scan_round_trips(kin, 
 def test_score_reads_a_faithful_trace_as_on_the_line(kin, scan):
     from tatbot_travel import trace
 
-    skin, found, _, _ = trace.strokes_from_scan(scan)
+    skin, found, _, _ = trace.strokes_from_scan(scan, robot=NO_ROBOT)
     plan = pen_path.plan_trace(kin, REST, REST, found[0].points, found[0].normals)
     result = trace.score(kin, skin, [found[0]], plan.q[plan.phase == 1])
     assert result["cross_track_mm_mean"] < 0.5 and result["hover_error_mm_mean"] < 1.0
@@ -148,7 +149,7 @@ def test_score_reads_a_faithful_trace_as_on_the_line(kin, scan):
 def test_astra_pixels_lift_onto_the_skin_and_carry_on_from_the_hover(kin, scan):
     from tatbot_travel import astra, trace
 
-    skin, found, _, view = trace.strokes_from_scan(scan)
+    skin, found, _, view = trace.strokes_from_scan(scan, robot=NO_ROBOT)
     stroke = found[0]
     frame = scan[view]
     uv, _ = frame.project(stroke.points[::8])  # a decider's pixels along the ink
@@ -169,7 +170,7 @@ def test_astra_pixels_lift_onto_the_skin_and_carry_on_from_the_hover(kin, scan):
 def test_a_perturbed_demonstration_starts_off_the_line_and_settles_onto_it(scan):
     from tatbot_travel import trace
 
-    _, found, _, _ = trace.strokes_from_scan(scan)
+    _, found, _, _ = trace.strokes_from_scan(scan, robot=NO_ROBOT)
     stroke = found[0]
     pts = trace.perturbed(stroke, np.random.default_rng(3), max_offset_m=0.006)
     off = np.linalg.norm(pts - stroke.points, axis=1)
@@ -194,7 +195,7 @@ def test_the_overhead_view_aligns_onto_the_wrist_scan(scan):
     over = surface.Frame(rgb=seen.rgb, depth_m=seen.depth_m, intr=intr, cam_p=np.zeros(3), cam_r=np.eye(3),
                          range_m=overhead.OVERHEAD_RANGE_M)
     over_arm, over_plane = overhead.forearm_cloud(over, overhead.CAMERA_UP)
-    skin, _, plane, _ = trace.strokes_from_scan(scan)
+    skin, _, plane, _ = trace.strokes_from_scan(scan, robot=NO_ROBOT)
     tf, rms, paired = overhead.align(skin.points, plane, over_arm, over_plane)
     assert paired > 0.8
     truth = np.eye(4)
@@ -206,3 +207,27 @@ def test_the_overhead_view_aligns_onto_the_wrist_scan(scan):
     axis_in_overhead = cam_r.T @ np.array([0.0, 1.0, 0.0])
     off = err[:3, 3] - (err[:3, 3] @ axis_in_overhead) * axis_in_overhead
     assert np.linalg.norm(off) < 0.003
+
+
+def test_the_lens_reads_its_standoff_from_the_skin_it_aims_at(kin):
+    """Hovering on the forearm's top, the live clearance is the datasheet's 10 mm, measured from depth."""
+    from tatbot_travel import trace
+    from tatbot_travel.scene import LENS_SITE
+
+    top = np.array([AXIS_X, -0.02, AXIS_Z + RADIUS])
+    q = kin.solve(REST, top, np.array([0.0, 0.0, -1.0]), REST, iters=300).q
+    gap, axis = kin.gap_pose(q)
+    lens = kin.data.site_xpos[kin.model.site(LENS_SITE).id].copy()
+    cam_p, cam_r = kin.camera_pose(q)
+    intr = replace(Intrinsics.left_wrist(), distortion=(0.0,) * 5)
+    frame = render(cam_p, cam_r, intr)
+    d = surface.axis_to_skin(frame.depth_m, intr, (lens - cam_p) @ cam_r, axis @ cam_r, (gap - cam_p) @ cam_r)
+    assert abs(d - trace.standoff_m()) < 0.001
+
+
+def test_the_wall_refuses_a_pose_on_the_pink_arms_side(kin):
+    assert pen_path.wall_crossing(kin, np.array([REST])) is None
+    right = REST.copy()
+    right[0] = -1.2  # the base turned well toward -y
+    reach = kin.solve(right, np.array([0.25, -0.25, 0.10]), np.array([0.0, 0.0, -1.0]), right, iters=200).q
+    assert "past the wall" in pen_path.wall_crossing(kin, np.array([REST, reach]))

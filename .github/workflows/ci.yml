@@ -83,7 +83,8 @@ jobs:
 
   simulator:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The portable suite takes ~20 minutes on a workstation (2026-10-06).
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -91,9 +92,10 @@ jobs:
         with:
           node-version: 22
       - run: npm ci --prefix web/inkmap
+      # ManiSkill is the project's opt-in `maniskill` extra (x86_64 only).
       - name: Simulator robot assets
-        run: uv run --project python/tatbot_sim python -m mani_skill.utils.download_asset widowxai -y
+        run: uv run --project python/tatbot_sim --extra maniskill python -m mani_skill.utils.download_asset widowxai -y
       - name: Portable simulator tests with public fixtures
         run: |
-          uv run --project python/tatbot_sim --with pytest --with pytest-timeout \
+          uv run --project python/tatbot_sim --extra maniskill --with pytest --with pytest-timeout \
             pytest -ra --timeout=120 python/tatbot_sim/tests --sim-profile public

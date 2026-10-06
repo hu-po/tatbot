@@ -7,9 +7,11 @@
     tatbot travel trace -- collect --scan RUN/scan.npz --dataset ROOT --episodes N  # FLUX demonstrations
 
 Everything on the arm goes through ``hardware.BlueArm`` (lease, e-stop monitor, staging, landing) and
-the visiond wrist stream. While a joint stream plays, three physical states stop it: the e-stop, the
-arm not following its commands (an obstruction), and the skin closer along the pen axis than half the
-hover standoff in the live wrist depth. Each ends the stream where the arm stands, then it rises and lands.
+the visiond wrist stream. A stream that would carry the arm past the wall toward the pink arm
+(``pen_path.wall_crossing``) is refused before it moves. While one plays, three physical states stop
+it: the e-stop, the arm not following its commands (an obstruction), and the skin closer along the pen
+axis than half the hover standoff in the live wrist depth. Each ends the stream where the arm stands,
+then it rises and lands.
 """
 
 from __future__ import annotations
@@ -25,12 +27,16 @@ import numpy as np
 
 from tatbot_travel import assets, inkmap, pen_path, surface
 from tatbot_travel.camera import Intrinsics
-from tatbot_travel.shadow import axis_clearance
 
 # A downward survey pose known to see the forearm in the 2026-10-05 layout (gap ~0.15 m above the table).
 SEED_Q = (0.0689, 0.9396, 1.0641, -0.8958, 0.1627, 1.4458)
 VIEW_HEIGHT_M = 0.05  # working point above the skin for scan views
 TRACK_RAD, TRACK_S = 0.1, 0.15  # measured behind commanded by this much for this long: obstructed
+# The controller holds position with P only, against a gravity model of the leader's handle, not the
+# pen and cradle: the wrist settles ~0.01-0.06 rad short (4 mm at the pen). Each tick adds this share of
+# the measured shortfall (against the command two ticks back, the arm's tracking delay) to every
+# command, the sum held within +-INTEGRATOR_MAX_RAD.
+INTEGRATOR_GAIN, INTEGRATOR_MAX_RAD = 0.02, 0.05
 CLEARANCE_STOP_FRACTION = 0.5  # stop when the lens is within half the standoff of the skin
 
 
@@ -51,7 +57,8 @@ class Rig:
         self.camera.wait_ready()
         self.kin = pen_path.arm_kinematics(self.camera.intrinsics)
         self.arm = BlueArm(estop_required=estop_required)
-        self.log: list[dict] = []
+        self.robot = None  # the arm's own pixels in the wrist view, made on first use
+        self.offset = np.zeros(6)  # the integrator's correction, carried from one stream to the next
 
     def __enter__(self) -> Rig:
         self.arm.connect(self.out / "landing.json")
@@ -83,47 +90,80 @@ class Rig:
         """Stream joints at the control rate. Returns why it stopped early, or None.
 
         ``on_tick(q_cmd, q_measured, frame)`` sees every commanded tick with the newest wrist frame."""
+        if why := pen_path.wall_crossing(self.kin, q_traj):
+            return f"refused before moving: {why}"
         period = 1.0 / pen_path.RATE_HZ
-        hover = standoff_m()
-        behind_since = close_since = None
+        self.behind_since = self.close_since = None
         next_tick = time.monotonic()
         for i, q in enumerate(q_traj):
             if self.arm.estopped:
                 return "e-stop"
             now = time.monotonic()
             measured = self.arm.measured()
-            lag = np.abs(measured - (q_traj[i - 1] if i else measured)).max()
-            behind_since = (behind_since or now) if lag > TRACK_RAD else None
-            if behind_since is not None and now - behind_since > TRACK_S:
-                self.arm.freeze()
-                return f"obstructed: {lag:.2f} rad behind its command"
+            if why := self._obstructed(measured, q_traj[i - 1] if i else measured, now):
+                return why
             clearance = np.inf
             if guard_clearance:
-                frame = self.camera.newest()
-                if frame is not None:
-                    clearance = self.lens_clearance(measured, frame[1])
-                    close_since = (close_since or now) if clearance < CLEARANCE_STOP_FRACTION * hover else None
-                    if close_since is not None and now - close_since > 0.2:
-                        self.arm.freeze()
-                        return f"skin {clearance * 1000:.1f} mm from the lens"
-            self.arm.command(q, 2.0 * period)
+                clearance, why = self._clearance(i, measured, now)
+                if why:
+                    return why
+            if i >= 2:
+                self._integrate(q_traj[i - 2] - measured)
+            self.arm.command(q + self.offset, 2.0 * period)
             if on_tick is not None:
                 on_tick(q, measured, self.camera.newest())
             if record is not None:
                 record.append({"t": now, "i": i, "q_cmd": q.tolist(), "q": measured.tolist(),
+                               "offset": np.round(self.offset, 5).tolist(),
                                "clearance_m": None if not np.isfinite(clearance) else round(float(clearance), 5)})
             next_tick += period
             time.sleep(max(0.0, next_tick - time.monotonic()))
         return None
 
-    def lens_clearance(self, q: np.ndarray, depth_m: np.ndarray) -> float:
-        """Lens face to the first surface along the pen axis, in the live wrist depth."""
-        from tatbot_travel.scene import LENS_SITE
+    def _obstructed(self, measured: np.ndarray, sent: np.ndarray, now: float) -> str | None:
+        lag = np.abs(measured - sent).max()
+        self.behind_since = (self.behind_since or now) if lag > TRACK_RAD else None
+        if self.behind_since is not None and now - self.behind_since > TRACK_S:
+            self.arm.freeze()
+            return f"obstructed: {lag:.2f} rad behind its command"
+        return None
 
+    def _clearance(self, i: int, measured: np.ndarray, now: float) -> tuple[float, str | None]:
+        frame = self.camera.newest()
+        if frame is None:
+            return np.inf, None
+        clearance = self.lens_clearance(measured, frame[1])
+        if clearance < 0.03 and i % 15 == 0:
+            self.keep_frame(f"near-{i:05d}", frame, measured, clearance)
+        close = clearance < CLEARANCE_STOP_FRACTION * standoff_m()
+        self.close_since = (self.close_since or now) if close else None
+        if self.close_since is not None and now - self.close_since > 0.2:
+            self.arm.freeze()
+            self.keep_frame(f"stop-{i:05d}", frame, measured, clearance)
+            return clearance, f"skin {clearance * 1000:.1f} mm from the lens"
+        return clearance, None
+
+    def _integrate(self, shortfall: np.ndarray) -> None:
+        self.offset = np.clip(self.offset + INTEGRATOR_GAIN * shortfall, -INTEGRATOR_MAX_RAD, INTEGRATOR_MAX_RAD)
+
+    def keep_frame(self, name: str, frame, q: np.ndarray, clearance: float) -> None:
+        """A wrist RGB-D frame and its joints into the run directory, for reading a stop afterwards."""
+        rgb, depth, _ = frame
+        np.savez_compressed(self.out / f"frame-{name}.npz", rgb=np.asarray(rgb), depth=np.asarray(depth), q=q,
+                            clearance_m=clearance)
+
+    def lens_clearance(self, q: np.ndarray, depth_m: np.ndarray) -> float:
+        """Lens face to the skin along the pen axis, in the live wrist depth (``surface.axis_to_skin``)."""
+        from tatbot_travel.scene import LENS_SITE
+        from tatbot_travel.selfview import robot_mask
+
+        if self.robot is None:
+            self.robot = robot_mask(self.kin, self.camera.intrinsics)
         gap, axis = self.kin.gap_pose(q)
         lens = self.kin.data.site_xpos[self.kin.model.site(LENS_SITE).id].copy()
         cam_p, cam_r = self.kin.camera_pose(q)
-        return axis_clearance(np.asarray(depth_m), (lens - cam_p) @ cam_r, axis @ cam_r, self.camera.intrinsics)
+        return surface.axis_to_skin(np.asarray(depth_m), self.camera.intrinsics, (lens - cam_p) @ cam_r,
+                                    axis @ cam_r, (gap - cam_p) @ cam_r, self.robot)
 
     def go(self, q_to: np.ndarray) -> str | None:
         return self.play(pen_path.plan_move(self.arm.measured(), q_to))
@@ -152,6 +192,36 @@ def scan_views(kin, frame: surface.Frame, q_seed: np.ndarray, n: int = 3) -> lis
     if not views:
         raise RuntimeError("no scan view above the forearm is reachable")
     return views
+
+
+SURVEY_YAWS = (0.0, 0.35, 0.7)  # base turns tried from the seed: only toward +y, away from the pink arm
+
+
+def survey(rig: Rig, seed: np.ndarray, *, enough: float = 0.08) -> tuple[surface.Frame, np.ndarray, np.ndarray]:
+    """Find the forearm: from the seed pose turn the base until the wrist view is mostly forearm (the
+    operator moves it between sessions). Returns the best view, its joints and that pose as the new seed."""
+    best = None
+    for yaw in SURVEY_YAWS:
+        pose = seed.copy()
+        pose[0] += yaw
+        if rig.go(pose):
+            break
+        frame, q = rig.capture()
+        points, _, _ = frame.points()
+        try:
+            fraction = float(inkmap.forearm_pixels(frame, surface.table_plane(points)).mean())
+        except (ValueError, IndexError):
+            fraction = 0.0
+        print(f"survey: base {yaw:+.2f} rad, forearm {fraction:.0%} of the view", file=sys.stderr)
+        if best is None or fraction > best[0]:
+            best = (fraction, frame, q, pose)
+        if fraction >= enough:
+            break
+    if best is None or best[0] < 0.02:
+        raise RuntimeError("no survey view shows the forearm; place it in front of the blue arm")
+    if rig.go(best[3]):
+        raise RuntimeError("stopped returning to the best survey view")
+    return best[1], best[2], best[3]
 
 
 def save_scan(path: Path, frames: list[surface.Frame], qs: list[np.ndarray], over: dict | None = None) -> None:
@@ -201,17 +271,29 @@ def load_scan(path: Path, kin=None) -> tuple[list[surface.Frame], np.ndarray]:
 
 # --- plan -------------------------------------------------------------------------------------------
 
-def strokes_from_scan(frames: list[surface.Frame]) -> tuple[surface.Surface, list[inkmap.Stroke], tuple, int]:
-    """The forearm surface from every view; strokes from the view that sees the most ink."""
+def strokes_from_scan(frames: list[surface.Frame], kin=None, robot: np.ndarray | None = None
+                      ) -> tuple[surface.Surface, list[inkmap.Stroke], tuple, int]:
+    """The forearm's surface from every view, and the strokes from the view that sees the most ink.
+
+    The table plane comes from everything seen; the skin only from forearm pixels clear of the arm's own
+    cradle and pen, which stand above the table too and would otherwise join the 'skin'."""
+    from tatbot_travel.selfview import robot_mask
+
+    if robot is None:
+        robot = robot_mask(kin or pen_path.arm_kinematics(frames[0].intr), frames[0].intr)
     points, _ = surface.fuse(frames)
     plane = surface.table_plane(points)
-    skin = surface.Surface(points[surface.above(points, plane)])
-    best, best_view = ([], None), 0
-    for i, frame in enumerate(frames):
-        found = inkmap.strokes(frame, skin, inkmap.forearm_pixels(frame, plane))
-        if sum(s.length_m for s in found[0]) > sum(s.length_m for s in best[0]):
+    masks = [inkmap.forearm_pixels(f, plane, exclude=robot) for f in frames]
+    on_arm = np.concatenate([f.points(m)[0] for f, m in zip(frames, masks, strict=True)])
+    # The masks are hole-filled, which takes in table along the contact line; the skin stands above it.
+    (skin_points,) = surface.voxel(on_arm[surface.above(on_arm, plane)], 0.001)
+    skin = surface.Surface(skin_points)
+    best, best_view = [], 0
+    for i, (frame, mask) in enumerate(zip(frames, masks, strict=True)):
+        found = inkmap.strokes(frame, skin, mask)[0]
+        if sum(st.length_m for st in found) > sum(st.length_m for st in best):
             best, best_view = found, i
-    return skin, best[0], plane, best_view
+    return skin, best, plane, best_view
 
 
 def preview(path: Path, frame: surface.Frame, strokes: list[inkmap.Stroke], chosen: int | None) -> None:
@@ -269,7 +351,7 @@ def cmd_scan(args) -> int:
         if why := rig.go(seed):
             print(f"scan: stopped moving to the seed pose: {why}", file=sys.stderr)
             return 1
-        frame, q = rig.capture()
+        frame, q, seed = survey(rig, seed)
         frames, qs = [frame], [q]
         for view in scan_views(rig.kin, frame, seed, args.views):
             if why := rig.go(view):
@@ -287,7 +369,7 @@ def cmd_scan(args) -> int:
 def plan_from(args, kin=None):
     frames, qs = load_scan(Path(args.scan), kin)
     kin = kin or pen_path.arm_kinematics(frames[0].intr)
-    skin, found, _, view = strokes_from_scan(frames)
+    skin, found, _, view = strokes_from_scan(frames, kin)
     if not found:
         raise RuntimeError("no ink strokes found on the forearm")
     stroke = found[args.stroke]

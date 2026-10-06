@@ -93,3 +93,39 @@ class Compositor:
 def composite(image: np.ndarray, look: SelfViewLook) -> np.ndarray:
     """One-off composite (previews and calibration views)."""
     return Compositor(look)(image)
+
+
+@lru_cache(maxsize=2)
+def _cradle_mask() -> np.ndarray:
+    alpha = np.maximum.reduce([layer.alpha[..., 0] for layer in load_layers()])
+    return alpha > 0.5
+
+
+def robot_mask(kin, intr, *, margin_px: int = 6, sweep: int = 24) -> np.ndarray:
+    """Pixels of the wrist view that show the arm itself: the cradle (its captured layers) and the pen,
+    projected from its datasheet profile. Both are rigid in the camera frame, so one mask serves every
+    pose; ink found there is chrome glare or foam, and depth there is the pen, not the skin."""
+    from tatbot_travel.scene import PEN_BODY
+
+    q = np.zeros(6)
+    cam_p, cam_r = kin.camera_pose(q)
+    body = kin.model.body(PEN_BODY).id
+    pen_p, pen_r = kin.data.xpos[body].copy(), kin.data.xmat[body].reshape(3, 3).copy()
+    from tatbot_travel.tool import load_pen
+
+    profile = load_pen().profile
+    out = np.zeros((intr.height, intr.width), np.uint8)
+    theta = np.linspace(0, 2 * np.pi, sweep, endpoint=False)
+    ring = np.stack([np.cos(theta), np.sin(theta)], axis=1)
+    for (z0, r0), (z1, r1) in zip(profile[:-1], profile[1:], strict=True):
+        local = np.vstack([np.column_stack([ring * r0, np.full(sweep, z0)]),
+                           np.column_stack([ring * r1, np.full(sweep, z1)])])
+        cam = (local @ pen_r.T + pen_p - cam_p) @ cam_r
+        if (cam[:, 2] <= 0.01).any():
+            continue
+        hull = cv2.convexHull(np.round(intr.project(cam)).astype(np.int32))
+        cv2.fillConvexPoly(out, hull, 1)
+    out = cv2.dilate(out, np.ones((2 * margin_px + 1, 2 * margin_px + 1), np.uint8)).astype(bool)
+    if out.shape == (480, 640):
+        out |= cv2.dilate(_cradle_mask().astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool)
+    return out
