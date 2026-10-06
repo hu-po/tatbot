@@ -1,0 +1,21 @@
+# The arm node's drawing stack: ros2 launch tatbot_bringup stack.launch.py with the arguments
+# `tatbot ros up` wrote to @HOME@/tatbot-ros/stack.env (TATBOT_ROS_ARGS). Installed by
+# `tatbot ros deploy` (sudo). Real-time limits here; SCHED_FIFO itself is set by the driver.
+[Unit]
+Description=tatbot ROS 2 drawing stack
+Requires=tatbot-ros-router.service
+After=tatbot-ros-router.service
+
+[Service]
+Type=simple
+User=@USER@
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
+EnvironmentFile=-@HOME@/tatbot-ros/stack.env
+ExecStart=/bin/bash -c 'source @HOME@/tatbot-ros/env.sh && exec ros2 launch tatbot_bringup stack.launch.py $TATBOT_ROS_ARGS'
+KillSignal=SIGINT
+TimeoutStopSec=20
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

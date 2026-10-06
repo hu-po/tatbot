@@ -1,0 +1,80 @@
+{
+  "actions": {
+    "deployment_enabled": false,
+    "human_contact_enabled": false,
+    "powered_motion_enabled": false,
+    "public_export_enabled": false
+  },
+  "approvals": {
+    "human_facing_study": {
+      "approved": false,
+      "evidence_sha256": null,
+      "reviewed_utc": null,
+      "reviewer": null,
+      "status": "pending"
+    },
+    "inkmap_deployment": {
+      "approved": false,
+      "evidence_sha256": null,
+      "reviewed_utc": null,
+      "reviewer": null,
+      "status": "pending"
+    },
+    "powered_evaluation": {
+      "approved": false,
+      "evidence_sha256": null,
+      "reviewed_utc": null,
+      "reviewer": null,
+      "status": "pending"
+    },
+    "public_release": {
+      "approved": false,
+      "evidence_sha256": null,
+      "reviewed_utc": null,
+      "reviewer": null,
+      "status": "pending"
+    }
+  },
+  "claims": {
+    "anatomy_prior": {
+      "enabled": false,
+      "reason": "real source-object provenance, license, and validation absent"
+    },
+    "compliant_mechanics": {
+      "enabled": false,
+      "reason": "physical instrument and held-out non-human phantom evidence absent"
+    },
+    "core_nominal_body": {
+      "enabled": false,
+      "reason": "pending published clean cutover commit, GPU parity, and maintainer visual review"
+    },
+    "model_backed_training": {
+      "enabled": false,
+      "reason": "joint model not admitted; blinded human preference pending"
+    },
+    "offline_full_pipeline": {
+      "enabled": false,
+      "reason": "pending qualified P5 instrument and approved non-human phantom baselines"
+    }
+  },
+  "content_sha256": "cfa7c2b4f61a28e419c9bf75e4ae2232f9a0c721adc40702692340618f0cd104",
+  "provenance": {
+    "created_utc": "2026-09-04T18:22:00Z",
+    "producer": "tatbot-human-representation-review",
+    "source_sha256": "59a8eb2858c8e07230e3fff55f3acc03c599975b8e681ff8a58061e6cc650316",
+    "version": "1"
+  },
+  "repository_default": "mhr-soma-v1",
+  "rollback": {
+    "known_good_mhr_soma_revision": null,
+    "reintroduces_retired_body": false,
+    "steps": [
+      "disable the Inkmap consumer at its serving route or service boundary",
+      "preserve the failed deployment and phase evidence without mutating it",
+      "repair and redeploy only a reviewed MHR/SOMA-only revision",
+      "rerun body-single-path, disclosure, browser, and offline replay checks"
+    ],
+    "strategy": "disable-consumer"
+  },
+  "schema": "tatbot.human-representation-release-gates/1"
+}

@@ -1,0 +1,23 @@
+[package]
+name = "tatbot-arm"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[features]
+default = []
+trossen = ["dep:trossen-arm-sys", "trossen-arm-sys/sdk"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+sha2 = "0.10"
+thiserror = "2"
+libc = "0.2"
+tempfile = "3"
+trossen-arm-sys = { path = "../trossen-arm-sys", optional = true }
+
+[build-dependencies]
+sha2 = "0.10"
+serde_json = "1"

@@ -15,13 +15,21 @@ ROOT="$(git rev-parse --show-toplevel)"
 staged() { git diff --cached --name-only --diff-filter=ACMR -- "$@"; }
 fail=0
 
-# Always: ruff + shellcheck, scoped to the staged files only.
-"$ROOT/scripts/check" --staged --no-hooks lint-py lint-sh || fail=1
+# The shared checkout is a mirror since 2026-09-16 (tatbot work init marks it):
+# work happens in per-session worktrees under ~/tatbot-work, and a commit made
+# here would be the unpushed local commit this flow exists to prevent.
+python3 "$ROOT/scripts/lib/tatbot_work.py" hook pre-commit-guard || exit 1
 
-# Rust is compiled, so a staged .rs change gets clippy before it lands.
-if staged '*.rs' 'rust/Cargo.*' 'rust/visiond/Cargo.*' | grep -q .; then
-  "$ROOT/scripts/check" --no-hooks rust || fail=1
-fi
+# Always: ruff + shellcheck, scoped to the staged files only.
+# lint plus the two ratchets that only ever ran in the full suite: the
+# complexity baseline (scoped to staged Python) and the export manifest
+# (scoped to staged files). Both are sub-second; both went red on main for
+# days while nothing at commit time asked.
+"$ROOT/scripts/check" --staged --no-hooks lint-py lint-sh complexity disclosure || fail=1
+
+# Rust is NOT checked here: clippy plus the workspace tests took about ten
+# minutes per commit on a shared checkout. Run `scripts/check rust` yourself
+# when you touch Rust; CI runs it for every origin/main commit.
 
 # The run-log writer, its test, and the two documents describing it must keep
 # agreeing; cheap enough to verify on every commit that touches any of them.

@@ -1,0 +1,35 @@
+# Draw a compiled program (ros/README.md section 4.4). Served by tatbot_session at /tatbot/draw.
+# The next op is always the first op of the run's ledger that is not done or skipped.
+
+# Goal
+string program_json   # the complete program.json text (format tatbot-program, version 2)
+string[] arms         # arms to draw with, e.g. ["right"]; empty = every arm the stack runs
+string from_op        # op id to start at; "" = the first op that is not done
+string run_id         # "" = a new run; a run id = resume that run's ledger (~/tatbot-logs/ros-draw/<run_id>/)
+---
+# Result
+uint32 done           # ops done in this run (all goals so far)
+uint32 skipped        # ops skipped by decision
+string[] uncertain    # op ids left `sent` by a crash; Decide REDRAW or SKIP resolves each
+string run_id
+string run_dir        # absolute path on the arm node
+string message
+---
+# Feedback
+uint8 PHASE_PLAN=1      # planning the op from the measured joints
+uint8 PHASE_TRAVEL=2    # pen-up travel to the standoff above the op start
+uint8 PHASE_DESCEND=3   # approach descent to the page
+uint8 PHASE_SETTLE=4    # dwell at contact before drawing
+uint8 PHASE_DRAW=5      # pen down, along the stroke
+uint8 PHASE_LIFT=6      # lift to the standoff
+uint8 PHASE_TOUCH=7     # page touches at run start
+uint8 PHASE_PAUSED=8    # a pause op, or waiting for a Decide
+uint8 PHASE_LATCHED=9   # the driver holds (e-stop, guard, stall, contact); waiting for release and Decide
+uint8 PHASE_LANDING=10  # landing to idle
+
+string arm
+string op_id
+uint32 index          # 0-based op index in program.ops
+uint32 total          # len(program.ops)
+uint8 phase           # PHASE_*
+float64 arc_m         # stroke arc position reached, metres from the stroke start (0 off-stroke)

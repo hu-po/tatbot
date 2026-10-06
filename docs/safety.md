@@ -16,6 +16,9 @@ procedures.
 - Prefer simulation, replay, and no-arm tests.
 - Use an instrumented non-human fixture for physical integration work.
 - Keep an operator at the physical stop whenever motion is enabled.
+- A verb that declares a launch id (`--explain` lists it) gets one
+  automatically, written to the arm node, ledgered and audited (pid chain, SSH
+  origin); `rollout run --tag <label>` adds a label.
 - Treat an unknown calibration, tool, model, or dataset as untrusted input.
 - Record the exact revision and test conditions for physical observations.
 

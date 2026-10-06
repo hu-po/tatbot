@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Pull frames and short clips out of a dataset that already exists.
 
-The repo could preview what the factory WOULD generate (``sim_preview.py``) and
-re-render what it did (``sim_rerender.py``), but nothing read a shipped dataset
-back. Looking at delivered data meant hand-rolling ffmpeg and rediscovering how
+The repo could preview what the factory WOULD generate (``sim_preview.py``),
+but nothing read a shipped dataset back. Looking at delivered data meant hand-rolling ffmpeg and rediscovering how
 episodes map onto video files — which is not obvious: LeRobot v3 concatenates
 many episodes into each mp4, so a frame is addressed by
 ``(videos/<cam>/file_index, from_timestamp)`` out of ``meta/episodes/*.parquet``.
@@ -77,8 +76,11 @@ def _shards(root: Path) -> list[Path]:
 
 
 def _episodes(ds: Path) -> pd.DataFrame:
+    # The current profile records one wrist view per arm (no wrist_lower);
+    # asking a parquet for a column it lacks fails the whole read.
+    features = json.loads((ds / "meta/info.json").read_text()).get("features", {})
     cols = ["episode_index", "tasks", "length"]
-    for cam in (UPPER, LOWER):
+    for cam in (UPPER, LOWER) if LOWER in features else (UPPER,):
         cols += [f"videos/{cam}/{s}" for s in
                  ("chunk_index", "file_index", "from_timestamp", "to_timestamp")]
     files = sorted(glob.glob(str(ds / "meta/episodes/*/*.parquet")))
@@ -104,6 +106,14 @@ def _video(ds: Path, cam: str, chunk: int, fidx: int) -> Path:
 def _task_of(row) -> str:
     t = row.tasks
     return str(t if isinstance(t, str) else t[0])
+
+
+def _has_video(row, cam: str) -> bool:
+    try:
+        row[f"videos/{cam}/chunk_index"]
+    except KeyError:
+        return False
+    return True
 
 
 def _extract(ds: Path, row, out: Path, prefix: str, a: Args) -> dict:
@@ -132,7 +142,7 @@ def _extract(ds: Path, row, out: Path, prefix: str, a: Args) -> dict:
                 str(out / name)]):
         entry["clip"] = name
 
-    if a.lower_camera:
+    if a.lower_camera and _has_video(row, LOWER):
         lsrc = _video(ds, LOWER, int(row[f"videos/{LOWER}/chunk_index"]),
                       int(row[f"videos/{LOWER}/file_index"]))
         l0 = float(row[f"videos/{LOWER}/from_timestamp"])

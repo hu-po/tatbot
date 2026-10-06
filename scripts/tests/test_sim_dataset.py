@@ -8,141 +8,117 @@ import sys
 import types
 from pathlib import Path
 
+import numpy as np
 import pytest
 
-# Ensure pandas and tyro can be imported even in lightweight test environments.
-if "pandas" not in sys.modules:
-    try:
-        import pandas as pd  # noqa: F401
-    except ImportError:
 
-        class FakeSeries:
-            def __init__(self, data):
-                self._data = list(data)
+# Lightweight JSON table doubles belong only to the two modules under test.
+class FakeSeries:
+    def __init__(self, data):
+        self._data = list(data)
 
-            def __iter__(self):
-                return iter(self._data)
+    def __iter__(self):
+        return iter(self._data)
 
-            def __len__(self):
-                return len(self._data)
+    def __len__(self):
+        return len(self._data)
 
-            def to_numpy(self):
-                return self._data
+    def to_numpy(self):
+        return self._data
 
-        class FakeRow:
-            def __init__(self, d):
-                self._d = d
+class FakeRow:
+    def __init__(self, d):
+        self._d = d
 
-            def __getattr__(self, k):
-                if k in self._d:
-                    return self._d[k]
-                raise AttributeError(k)
+    def __getattr__(self, k):
+        if k in self._d:
+            return self._d[k]
+        raise AttributeError(k)
 
-            def __getitem__(self, k):
-                return self._d[k]
+    def __getitem__(self, k):
+        return self._d[k]
 
-        class FakeILoc:
-            def __init__(self, df):
-                self._df = df
+class FakeILoc:
+    def __init__(self, df):
+        self._df = df
 
-            def __getitem__(self, idx):
-                return FakeRow({k: v[idx] for k, v in self._df._data.items()})
+    def __getitem__(self, idx):
+        return FakeRow({k: v[idx] for k, v in self._df._data.items()})
 
-        class FakeDataFrame:
-            def __init__(self, data=None):
-                self._data = data or {}
+class FakeDataFrame:
+    def __init__(self, data=None):
+        self._data = data or {}
 
-            def __len__(self):
-                first = next(iter(self._data.values()), [])
-                return len(first)
+    def __len__(self):
+        first = next(iter(self._data.values()), [])
+        return len(first)
 
-            def __getattr__(self, k):
-                if k in self._data:
-                    return FakeSeries(self._data[k])
-                raise AttributeError(k)
+    def __getattr__(self, k):
+        if k in self._data:
+            return FakeSeries(self._data[k])
+        raise AttributeError(k)
 
-            def __getitem__(self, k):
-                return FakeSeries(self._data[k])
+    def __getitem__(self, k):
+        return FakeSeries(self._data[k])
 
-            @property
-            def empty(self):
-                return len(self) == 0
+    @property
+    def empty(self):
+        return len(self) == 0
 
-            def sort_values(self, col):
-                return self
+    def sort_values(self, col):
+        return self
 
-            def reset_index(self, drop=True):
-                return self
+    def reset_index(self, drop=True):
+        return self
 
-            @property
-            def iloc(self):
-                return FakeILoc(self)
+    @property
+    def iloc(self):
+        return FakeILoc(self)
 
-        class FakePandas:
-            DataFrame = FakeDataFrame
+class FakePandas:
+    DataFrame = FakeDataFrame
 
-            @staticmethod
-            def concat(objs, ignore_index=True):
-                if not objs:
-                    return FakeDataFrame()
-                combined = {}
-                for k in objs[0]._data:
-                    combined[k] = []
-                    for o in objs:
-                        combined[k].extend(o._data.get(k, []))
-                return FakeDataFrame(combined)
+    @staticmethod
+    def concat(objs, ignore_index=True):
+        if not objs:
+            return FakeDataFrame()
+        combined = {}
+        for k in objs[0]._data:
+            combined[k] = []
+            for o in objs:
+                combined[k].extend(o._data.get(k, []))
+        return FakeDataFrame(combined)
 
-            @staticmethod
-            def read_parquet(f, columns=None, filters=None):
-                path = Path(f)
-                if path.exists():
-                    try:
-                        d = json.loads(path.read_text())
-                        return FakeDataFrame(d)
-                    except Exception:
-                        pass
-                return FakeDataFrame()
+    @staticmethod
+    def read_parquet(f, columns=None, filters=None):
+        path = Path(f)
+        if path.exists():
+            try:
+                d = json.loads(path.read_text())
+                return FakeDataFrame(d)
+            except Exception:
+                pass
+        return FakeDataFrame()
 
-        sys.modules["pandas"] = FakePandas()
-
-# Always monkeypatch read_parquet if real pandas was imported so parquet mocks work in any environment.
-def _mock_read_parquet(f, columns=None, filters=None):
-    path = Path(f)
-    if path.exists():
-        try:
-            d = json.loads(path.read_text())
-            if hasattr(sys.modules["pandas"], "DataFrame"):
-                return sys.modules["pandas"].DataFrame(d)
-        except Exception:
-            pass
-    if hasattr(sys.modules["pandas"], "DataFrame"):
-        return sys.modules["pandas"].DataFrame()
-    return None
-
-if "pandas" in sys.modules and not hasattr(sys.modules["pandas"], "FakePandas"):
-    sys.modules["pandas"].read_parquet = _mock_read_parquet
-
-if "tyro" not in sys.modules:
-    try:
-        import tyro  # noqa: F401
-    except ImportError:
-        sys.modules["tyro"] = types.ModuleType("tyro")
 
 REPO = Path(__file__).resolve().parents[2]
 
-spec_audit = importlib.util.spec_from_file_location(
-    "sim_dataset_audit", REPO / "scripts" / "sim_dataset_audit.py"
-)
-sim_dataset_audit = importlib.util.module_from_spec(spec_audit)
-sys.modules["sim_dataset_audit"] = sim_dataset_audit
-spec_audit.loader.exec_module(sim_dataset_audit)
+with pytest.MonkeyPatch.context() as imports:
+    imports.setitem(sys.modules, "pandas", FakePandas())
+    imports.setitem(sys.modules, "tyro", types.ModuleType("tyro"))
+    spec_audit = importlib.util.spec_from_file_location(
+        "sim_dataset_audit", REPO / "scripts" / "sim_dataset_audit.py"
+    )
+    sim_dataset_audit = importlib.util.module_from_spec(spec_audit)
+    sys.modules["sim_dataset_audit"] = sim_dataset_audit
+    spec_audit.loader.exec_module(sim_dataset_audit)
 
-spec_samples = importlib.util.spec_from_file_location(
-    "sim_dataset_samples", REPO / "scripts" / "sim_dataset_samples.py"
-)
-sim_dataset_samples = importlib.util.module_from_spec(spec_samples)
-sys.modules["sim_dataset_samples"] = sim_dataset_samples
-spec_samples.loader.exec_module(sim_dataset_samples)
+    spec_samples = importlib.util.spec_from_file_location(
+        "sim_dataset_samples", REPO / "scripts" / "sim_dataset_samples.py"
+    )
+    sim_dataset_samples = importlib.util.module_from_spec(spec_samples)
+    sys.modules["sim_dataset_samples"] = sim_dataset_samples
+    spec_samples.loader.exec_module(sim_dataset_samples)
 
 
 def make_dataset_shard(
@@ -271,6 +247,53 @@ def test_audit_valid_dataset_passes(tmp_path: Path, capsys) -> None:
     assert "paper-draw" in out
 
 
+def test_audit_requires_complete_frame_aligned_privileged_timelines(tmp_path: Path, capsys) -> None:
+    ds = make_dataset_shard(tmp_path / "privileged", episodes=2, frames_per_ep=3)
+    recorder = sim_dataset_audit.TEMPORAL.TemporalRecorder(2)
+    for step in range(3):
+        recorder.append(
+            tool_pose_world=np.tile([0, 0, 0.1, 1, 0, 0, 0], (2, 1)),
+            contact_distance_m=np.zeros(2),
+            contact_incidence=np.ones(2),
+            pen_down=np.ones(2, dtype=bool),
+            target_world=np.tile([0, 0, 0.1], (2, 1)),
+            target_valid=np.ones(2, dtype=bool),
+            surface_point_world=np.tile([0, 0, 0.1], (2, 1)),
+            surface_normal_world=np.tile([0, 0, 1], (2, 1)),
+            primitive_index=np.full(2, -1, dtype=np.int32),
+            layer_index=np.full(2, -1, dtype=np.int32),
+            progress=np.full(2, (step + 1) / 3),
+            deposited_coverage=np.full(2, step / 10),
+            remaining_target_fraction=np.full(2, 1 - step / 10),
+            texture_synchronized=np.ones(2, dtype=bool),
+            stencil_visible_fraction=np.zeros(2),
+            observation_occlusion_fraction=np.zeros(2),
+        )
+    records = recorder.write(
+        ds / "meta" / "privileged",
+        kept=[0, 1],
+        lengths=np.asarray([3, 3]),
+        stroke_metadata=None,
+        scenario_sha256=None,
+    )
+    meta_path = ds / "meta" / "run_meta.json"
+    meta = json.loads(meta_path.read_text())
+    meta["config"]["save_privileged_labels"] = True
+    for index, record in enumerate(records):
+        meta["episodes"][index]["episode"] = index
+        meta["episodes"][index]["privileged_timeline"] = record
+    meta_path.write_text(json.dumps(meta))
+    assert sim_dataset_audit.main(sim_dataset_audit.Args(path=ds)) == 0
+    capsys.readouterr()
+
+    timeline_manifest = ds / records[0]["manifest"]
+    manifest = json.loads(timeline_manifest.read_text())
+    manifest["steps"] = 2
+    timeline_manifest.write_text(json.dumps(manifest))
+    assert sim_dataset_audit.main(sim_dataset_audit.Args(path=ds)) == 1
+    assert "timeline steps for 3 dataset frames" in capsys.readouterr().out
+
+
 def test_audit_requires_clean_stable_source_for_current_run_metadata(
         tmp_path: Path, capsys) -> None:
     ds = make_dataset_shard(tmp_path / "dirty-source")
@@ -340,7 +363,7 @@ def test_audit_rejects_air_gap_geometry_unless_explicitly_historical(
         sim_dataset_audit.Args(path=ds, allow_air_gap=True)) == 0
 
 
-def test_audit_rejects_provisional_geometry_for_production(tmp_path: Path, capsys) -> None:
+def test_audit_warns_for_provisional_geometry_unless_strictly_requested(tmp_path: Path, capsys) -> None:
     ds = make_dataset_shard(tmp_path / "provisional")
     run_meta_path = ds / "meta" / "run_meta.json"
     run_meta = json.loads(run_meta_path.read_text())
@@ -348,10 +371,11 @@ def test_audit_rejects_provisional_geometry_for_production(tmp_path: Path, capsy
     run_meta["tool"]["contact_geometry_status"] = "unqualified"
     run_meta_path.write_text(json.dumps(run_meta))
 
-    assert sim_dataset_audit.main(sim_dataset_audit.Args(path=ds)) == 1
-    assert "quality-gated pivot TCP" in capsys.readouterr().out
-    assert sim_dataset_audit.main(
-        sim_dataset_audit.Args(path=ds, allow_provisional=True)) == 0
+    assert sim_dataset_audit.main(sim_dataset_audit.Args(path=ds)) == 0
+    assert "development-only" in capsys.readouterr().out
+    assert sim_dataset_audit.main(sim_dataset_audit.Args(
+        path=ds, require_qualified_geometry=True,
+    )) == 1
 
 
 def test_audit_rejects_marks_outside_the_contact_band(tmp_path: Path, capsys) -> None:
@@ -470,6 +494,23 @@ def test_samples_extraction_single_shard(tmp_path: Path, monkeypatch, capsys) ->
     field_copy = out_dir / "ep0000_field.png"
     assert field_copy.exists()
     assert field_copy.read_bytes() == b"png_data"
+
+
+def test_samples_extraction_without_a_lower_wrist_view(tmp_path: Path, monkeypatch) -> None:
+    """The current profile has one wrist view per arm: no wrist_lower columns to read."""
+    ds = make_dataset_shard(tmp_path / "ds-upper", episodes=2)
+    (ds / "meta/info.json").write_text(json.dumps({
+        "total_episodes": 2, "total_frames": 100,
+        "features": {"observation.images.wrist_upper": {"dtype": "video"}}}))
+    table = ds / "meta/episodes/chunk-000/ep.parquet"
+    rows = json.loads(table.read_text())
+    table.write_text(json.dumps({k: v for k, v in rows.items() if "wrist_lower" not in k}))
+    monkeypatch.setattr(sim_dataset_samples, "_ffmpeg", lambda args: True)
+
+    sim_dataset_samples.main(sim_dataset_samples.Args(path=ds, out=tmp_path / "out", samples=2))
+
+    manifest = json.loads((tmp_path / "out" / "manifest.json").read_text())
+    assert len(manifest["samples"]) == 2 and all(s["lower"] is None for s in manifest["samples"])
 
 
 def test_samples_extraction_multi_shard(tmp_path: Path, monkeypatch) -> None:

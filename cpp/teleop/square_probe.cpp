@@ -9,54 +9,6 @@
 namespace tatbot::square
 {
 
-std::array<Pose, 4> targets(const Pose & start, double side_m)
-{
-  if (!std::isfinite(side_m) || side_m <= 0.0) {
-    throw std::invalid_argument("square side must be finite and positive");
-  }
-  const double x_step = std::signbit(start[0]) ? side_m : -side_m;
-  const double y_step = std::signbit(start[1]) ? side_m : -side_m;
-  std::array<Pose, 4> result{start, start, start, start};
-  result[0][0] += x_step;
-  result[1][0] += x_step;
-  result[1][1] += y_step;
-  result[2][1] += y_step;
-  return result;
-}
-
-double translation_error_mm(const Pose & measured, const Pose & target)
-{
-  double sum = 0.0;
-  for (size_t i = 0; i < 3; ++i) {
-    const double delta = measured[i] - target[i];
-    sum += delta * delta;
-  }
-  return std::sqrt(sum) * 1000.0;
-}
-
-SegmentSample quintic_segment(
-  const Pose & start, const Pose & target, double elapsed_s, double duration_s)
-{
-  if (!std::isfinite(elapsed_s) || !std::isfinite(duration_s) || duration_s <= 0.0) {
-    throw std::invalid_argument("segment time must be finite and duration positive");
-  }
-  const double u = std::clamp(elapsed_s / duration_s, 0.0, 1.0);
-  const double u2 = u * u;
-  const double u3 = u2 * u;
-  const double u4 = u3 * u;
-  const double u5 = u4 * u;
-  const double blend = 10.0 * u3 - 15.0 * u4 + 6.0 * u5;
-  const double blend_rate = (30.0 * u2 - 60.0 * u3 + 30.0 * u4) / duration_s;
-
-  SegmentSample sample{start, Pose{}};
-  for (size_t axis = 0; axis < 3; ++axis) {
-    const double delta = target[axis] - start[axis];
-    sample.position[axis] += blend * delta;
-    sample.feedforward_velocity[axis] = blend_rate * delta;
-  }
-  return sample;
-}
-
 namespace
 {
 
@@ -66,8 +18,8 @@ using Mat6 = std::array<std::array<double, 6>, 6>;
 using Mat67 = std::array<std::array<double, 7>, 6>;
 
 // Canonical arm geometry: urdf/tatbot.urdf right/joint_0..5 and
-// right/ee_gripper. The live FK agreement gate in wxai_teleop makes any drift
-// from the vendor controller a refusal before motion.
+// right/ee_gripper, held to the URDF only by the ROS CLIK parity test; no
+// live comparison with the vendor controller runs (see square_probe.hpp).
 constexpr std::array<Vec3, 6> JOINT_ORIGINS{{
   {0.0, 0.0, 0.05725},
   {0.02, 0.0, 0.04625},
@@ -83,10 +35,10 @@ constexpr std::array<Vec3, 6> JOINT_AXES{{
   {0.0, 0.0, -1.0},
   {1.0, 0.0, 0.0}}};
 constexpr Vec3 TCP_IN_LINK6{0.156062, 0.0, 0.0};
-// config/workspace.yaml lutin-ballpoint-dot measured tip transformed through
+// config/workspace.yaml lutin-ballpoint-dot working tip (2026-09-19 palette calibration) transformed through
 // urdf/tatbot.urdf right/left_carriage_joint and right/tool_mount_joint into
 // link_6 at carriage=0. The carriage adds link_6-local +Y translation.
-constexpr Vec3 BALLPOINT_TIP_IN_LINK6{0.20550927, 0.01083364, -0.00149001};
+constexpr Vec3 BALLPOINT_TIP_IN_LINK6{0.20498692817078468, 0.012312678895000949, -0.0005439999999999881};
 constexpr Vec3 CARRIAGE_AXIS_IN_LINK6{0.0, 1.0, 0.0};
 constexpr JointPose JOINT_LOWER{
   -3.0543261909900767, 0.0, 0.0, -1.5707963267948966,
@@ -94,28 +46,34 @@ constexpr JointPose JOINT_LOWER{
 constexpr JointPose JOINT_UPPER{
   3.0543261909900767, 3.141592653589793, 2.356194490192345,
   1.5707963267948966, 1.5707963267948966, 3.141592653589793};
-constexpr double JOINT_LIMIT_MARGIN_RAD = 0.05;
-constexpr double PLAN_MAX_JOINT_VELOCITY_RAD_S = 0.25;
-constexpr double PLAN_MAX_MODEL_ERROR_M = 0.0001;
+// Planner caps and gains: one source, config/motion_constants.json (rendered to
+// motion_constants.hpp), shared with the Python sampler so its preflight and
+// this planner judge a path by the same numbers. The local names stay as
+// aliases so the solver below reads as before.
+namespace dc = tatbot::motion_constants;
+constexpr double JOINT_LIMIT_MARGIN_RAD = dc::PLANNER_JOINT_LIMIT_MARGIN_RAD;
+constexpr double PLAN_MAX_JOINT_VELOCITY_RAD_S = dc::PLANNER_MAX_JOINT_VELOCITY_RAD_S;          // pen-down: drawing precision
+constexpr double PLAN_MAX_JOINT_VELOCITY_PEN_UP_RAD_S = dc::PLANNER_MAX_JOINT_VELOCITY_PEN_UP_RAD_S;    // pen-up travel (to and from the rack, 2026-09-03)
+constexpr double PLAN_MAX_MODEL_ERROR_M = dc::PLANNER_MAX_MODEL_ERROR_M;
 // Pen up (orbit, approach, lift): the damped solve trails a 10 mm/s reference
 // by a few tenths of a millimetre, which is nothing at standoff; the drawing
 // cap above still applies to every pen-down sample.
-constexpr double PLAN_MAX_MODEL_ERROR_PEN_UP_M = 0.001;
+constexpr double PLAN_MAX_MODEL_ERROR_PEN_UP_M = dc::PLANNER_MAX_MODEL_ERROR_PEN_UP_M;
 // Pen-down samples of a draw path (plan_path_samples). The 0.1 mm cap above stays
-// on the executor's own spiral; a surface path follows the local normal, and
+// on the six-joint square; a surface path follows the local normal, and
 // with the wrist near its singularity the damped solve trails a 3.5 mm/s
 // reference by 0.2-0.5 mm. Operator 2026-09-02: nothing on this arm resolves
-// below 1 mm, so the path cap is the pen-up cap. Mirrors
-// draw_kinematics.PLAN_MAX_MODEL_ERROR_DRAW_M; the preflight reports the value.
-constexpr double PLAN_MAX_MODEL_ERROR_DRAW_M = 0.001;
-constexpr double PLAN_MAX_ORIENTATION_ERROR_RAD = 0.001;
-constexpr double DLS_DAMPING = 0.02;
-constexpr double POSITION_ERROR_GAIN_S = 4.0;
-constexpr double ORIENTATION_ERROR_GAIN_S = 2.0;
-constexpr double CARRIAGE_DLS_WEIGHT = 2.0;
-constexpr double CARRIAGE_CENTER_GAIN_S = 2.0;
-constexpr double PLAN_MAX_CARRIAGE_VELOCITY_M_S = 0.001;
-constexpr double PLAN_MAX_CARRIAGE_ACCELERATION_M_S2 = 0.02;
+// below 1 mm, so the path cap is the pen-up cap; the preflight reports the value.
+constexpr double PLAN_MAX_MODEL_ERROR_DRAW_M = dc::PLANNER_MAX_MODEL_ERROR_DRAW_M;
+constexpr double PLAN_MAX_ORIENTATION_ERROR_RAD = dc::PLANNER_MAX_ORIENTATION_ERROR_RAD;
+constexpr double DLS_DAMPING = dc::PLANNER_DLS_DAMPING;
+constexpr double POSITION_ERROR_GAIN_S = dc::PLANNER_POSITION_ERROR_GAIN_S;
+constexpr double ORIENTATION_ERROR_GAIN_S = dc::PLANNER_ORIENTATION_ERROR_GAIN_S;
+constexpr double CARRIAGE_DLS_WEIGHT = dc::PLANNER_CARRIAGE_DLS_WEIGHT;
+constexpr double CARRIAGE_CENTER_GAIN_S = dc::PLANNER_CARRIAGE_CENTER_GAIN_S;
+constexpr double PLAN_MAX_CARRIAGE_VELOCITY_M_S = dc::PLANNER_MAX_CARRIAGE_VELOCITY_M_S;
+constexpr double PLAN_MAX_CARRIAGE_ACCELERATION_M_S2 = dc::PLANNER_MAX_CARRIAGE_ACCELERATION_M_S2;
+constexpr size_t PLAN_MAX_TICKS = static_cast<size_t>(dc::PLANNER_MAX_TICKS);
 
 Mat3 identity3()
 {
@@ -220,11 +178,12 @@ struct CarriageKinematicState
   Mat67 jacobian{};
 };
 
-CarriageKinematicState evaluate_ballpoint(const JointPose & joints, double carriage_m)
+CarriageKinematicState evaluate_tool(
+  const JointPose & joints, double carriage_m, const ToolModel & tool)
 {
-  Vec3 tip = BALLPOINT_TIP_IN_LINK6;
+  Vec3 tip = tool.tip_in_link6;
   for (size_t axis = 0; axis < 3; ++axis) {
-    tip[axis] += carriage_m * CARRIAGE_AXIS_IN_LINK6[axis];
+    tip[axis] += carriage_m * tool.carriage_axis_in_link6[axis];
   }
   const KinematicState arm = evaluate_at(joints, tip);
   Mat67 jacobian{};
@@ -233,9 +192,14 @@ CarriageKinematicState evaluate_ballpoint(const JointPose & joints, double carri
       jacobian[axis][joint] = arm.jacobian[axis][joint];
     }
   }
-  const Vec3 carriage_axis = multiply(arm.rotation, CARRIAGE_AXIS_IN_LINK6);
+  const Vec3 carriage_axis = multiply(arm.rotation, tool.carriage_axis_in_link6);
   for (size_t axis = 0; axis < 3; ++axis) {jacobian[axis][6] = carriage_axis[axis];}
   return CarriageKinematicState{arm.position, arm.rotation, jacobian};
+}
+
+CarriageKinematicState evaluate_ballpoint(const JointPose & joints, double carriage_m)
+{
+  return evaluate_tool(joints, carriage_m, ToolModel{BALLPOINT_TIP_IN_LINK6, CARRIAGE_AXIS_IN_LINK6});
 }
 
 Vec3 orientation_error(const Mat3 & current, const Mat3 & target)
@@ -379,232 +343,25 @@ std::array<double, 3> wxai_ballpoint_tip_translation(
   return evaluate_ballpoint(joints, carriage_m).position;
 }
 
-JointPlan plan_joint_square(
-  const JointPose & start_joints,
-  const std::array<Pose, 4> & cartesian_targets,
-  double edge_s,
-  double period_s)
+ToolModel ballpoint_tool_model()
 {
-  if (!std::isfinite(edge_s) || edge_s <= 0.0 ||
-    !std::isfinite(period_s) || period_s <= 0.0)
-  {
-    throw std::invalid_argument("square plan times must be finite and positive");
-  }
-  check_joint_limits(start_joints);
-  const size_t ticks_per_edge = static_cast<size_t>(std::ceil(edge_s / period_s));
-  if (ticks_per_edge == 0 || ticks_per_edge > 100000) {
-    throw std::invalid_argument("square plan sample count is outside the guarded range");
-  }
-
-  JointPlan plan;
-  plan.positions.reserve(ticks_per_edge * cartesian_targets.size());
-  plan.velocities.reserve(ticks_per_edge * cartesian_targets.size());
-  plan.cartesian_references.reserve(ticks_per_edge * cartesian_targets.size());
-  JointPose joints = start_joints;
-  const KinematicState initial = evaluate(joints);
-  Pose edge_start{};
-  for (size_t axis = 0; axis < 3; ++axis) {edge_start[axis] = initial.position[axis];}
-
-  for (size_t edge = 0; edge < cartesian_targets.size(); ++edge) {
-    for (size_t tick = 1; tick <= ticks_per_edge; ++tick) {
-      const double elapsed_s = std::min(edge_s, static_cast<double>(tick) * period_s);
-      const SegmentSample reference = quintic_segment(
-        edge_start, cartesian_targets[edge], elapsed_s, edge_s);
-      const Vec3 feedforward{
-        reference.feedforward_velocity[0], reference.feedforward_velocity[1],
-        reference.feedforward_velocity[2]};
-      plan.max_cartesian_velocity_m_s = std::max(
-        plan.max_cartesian_velocity_m_s, norm(feedforward));
-      const KinematicState state = evaluate(joints);
-      const Vec3 rotation_error = orientation_error(state.rotation, initial.rotation);
-      std::array<double, 6> twist{};
-      for (size_t axis = 0; axis < 3; ++axis) {
-        twist[axis] = reference.feedforward_velocity[axis] +
-          POSITION_ERROR_GAIN_S * (reference.position[axis] - state.position[axis]);
-        twist[axis + 3] = ORIENTATION_ERROR_GAIN_S * rotation_error[axis];
-      }
-      const JointPose joint_velocity = damped_least_squares(state.jacobian, twist);
-      for (size_t joint = 0; joint < joints.size(); ++joint) {
-        plan.max_joint_velocity_rad_s = std::max(
-          plan.max_joint_velocity_rad_s, std::fabs(joint_velocity[joint]));
-        if (std::fabs(joint_velocity[joint]) > PLAN_MAX_JOINT_VELOCITY_RAD_S) {
-          throw std::runtime_error(
-                  "square joint plan exceeds its velocity cap on joint " +
-                  std::to_string(joint));
-        }
-        joints[joint] += period_s * joint_velocity[joint];
-      }
-      check_joint_limits(joints);
-      const KinematicState integrated = evaluate(joints);
-      const Vec3 reference_position{
-        reference.position[0], reference.position[1], reference.position[2]};
-      const double model_error_m = norm(subtract(reference_position, integrated.position));
-      plan.max_model_error_mm = std::max(plan.max_model_error_mm, model_error_m * 1000.0);
-      if (model_error_m > PLAN_MAX_MODEL_ERROR_M) {
-        throw std::runtime_error("square joint plan exceeds its Cartesian model-error cap");
-      }
-      const double orientation_error_rad = norm(orientation_error(
-        integrated.rotation, initial.rotation));
-      plan.max_orientation_error_rad = std::max(
-        plan.max_orientation_error_rad, orientation_error_rad);
-      if (orientation_error_rad > PLAN_MAX_ORIENTATION_ERROR_RAD) {
-        throw std::runtime_error("square joint plan exceeds its orientation-error cap");
-      }
-      plan.positions.push_back(joints);
-      plan.velocities.push_back(joint_velocity);
-      plan.cartesian_references.push_back({
-        reference.position[0], reference.position[1], reference.position[2]});
-    }
-    const KinematicState endpoint = evaluate(joints);
-    const Vec3 target{
-      cartesian_targets[edge][0], cartesian_targets[edge][1], cartesian_targets[edge][2]};
-    if (norm(subtract(target, endpoint.position)) > PLAN_MAX_MODEL_ERROR_M) {
-      throw std::runtime_error("square joint plan endpoint does not converge");
-    }
-    plan.edge_end_ticks[edge] = plan.positions.size();
-    edge_start = cartesian_targets[edge];
-  }
-  return plan;
+  return ToolModel{BALLPOINT_TIP_IN_LINK6, CARRIAGE_AXIS_IN_LINK6};
 }
 
-JointPlan plan_joint_spiral(
-  const JointPose & start_joints,
-  double radius_m,
-  double turns,
-  double duration_s,
-  double ease_s,
-  double period_s)
+ToolModel declared_wxai_tool_model(const std::array<double, 3> & tip_in_link6)
 {
-  if (!std::isfinite(radius_m) || radius_m <= 0.0 ||
-    !std::isfinite(turns) || turns <= 0.0 ||
-    !std::isfinite(duration_s) || duration_s <= 0.0 ||
-    !std::isfinite(ease_s) || ease_s <= 0.0 || ease_s * 2.0 >= duration_s ||
-    !std::isfinite(period_s) || period_s <= 0.0)
-  {
-    throw std::invalid_argument("spiral geometry and times must be finite and positive");
-  }
-  check_joint_limits(start_joints);
-  const size_t ticks = static_cast<size_t>(std::ceil(duration_s / period_s));
-  if (ticks == 0 || ticks > 250000) {
-    throw std::invalid_argument("spiral plan sample count is outside the guarded range");
-  }
+  // The compatible WXAI tool mount rides a +Y carriage in link 6. The
+  // leader-laser mount moved there from the
+  // mimicking -Y carriage on 2026-09-17; with the old axis the seven-axis
+  // solve trailed a leader hover route by 0.85 mm and snapped 33 urad off
+  // the rest seed on its first sample, which the hover contract refused).
+  return ToolModel{tip_in_link6, Vec3{0.0, 1.0, 0.0}};
+}
 
-  JointPlan plan;
-  plan.positions.reserve(ticks);
-  plan.velocities.reserve(ticks);
-  plan.cartesian_references.reserve(ticks);
-  JointPose joints = start_joints;
-  const KinematicState initial = evaluate(joints);
-  const Vec3 center = initial.position;
-  constexpr double pi = 3.14159265358979323846;
-  const double total_angle = 2.0 * pi * turns;
-  const double spiral_scale = radius_m / total_angle;
-  const double path_length = 0.5 * spiral_scale * (
-    total_angle * std::sqrt(1.0 + total_angle * total_angle) +
-    std::asinh(total_angle));
-  const double cruise_speed = path_length / (duration_s - ease_s);
-  plan.path_length_m = path_length;
-
-  for (size_t tick = 1; tick <= ticks; ++tick) {
-    const double elapsed_s = std::min(duration_s, static_cast<double>(tick) * period_s);
-    double distance = 0.0;
-    double path_speed = 0.0;
-    if (elapsed_s < ease_s) {
-      const double u = elapsed_s / ease_s;
-      const double u2 = u * u;
-      const double u3 = u2 * u;
-      const double u4 = u3 * u;
-      const double u5 = u4 * u;
-      const double u6 = u5 * u;
-      const double speed_blend = 10.0 * u3 - 15.0 * u4 + 6.0 * u5;
-      const double distance_blend = 2.5 * u4 - 3.0 * u5 + u6;
-      distance = cruise_speed * ease_s * distance_blend;
-      path_speed = cruise_speed * speed_blend;
-    } else if (elapsed_s <= duration_s - ease_s) {
-      distance = 0.5 * cruise_speed * ease_s +
-        cruise_speed * (elapsed_s - ease_s);
-      path_speed = cruise_speed;
-    } else {
-      const double remaining_s = duration_s - elapsed_s;
-      const double u = remaining_s / ease_s;
-      const double u2 = u * u;
-      const double u3 = u2 * u;
-      const double u4 = u3 * u;
-      const double u5 = u4 * u;
-      const double u6 = u5 * u;
-      const double speed_blend = 10.0 * u3 - 15.0 * u4 + 6.0 * u5;
-      const double distance_blend = 2.5 * u4 - 3.0 * u5 + u6;
-      distance = path_length - cruise_speed * ease_s * distance_blend;
-      path_speed = cruise_speed * speed_blend;
-    }
-    distance = std::clamp(distance, 0.0, path_length);
-    double angle = total_angle * distance / path_length;
-    for (size_t iteration = 0; iteration < 6; ++iteration) {
-      const double root = std::sqrt(1.0 + angle * angle);
-      const double integrated_length = 0.5 * spiral_scale * (
-        angle * root + std::asinh(angle));
-      angle -= (integrated_length - distance) / (spiral_scale * root);
-      angle = std::clamp(angle, 0.0, total_angle);
-    }
-    const double radius = spiral_scale * angle;
-    const double cosine = std::cos(angle);
-    const double sine = std::sin(angle);
-    const Vec3 reference{
-      center[0] + radius * cosine,
-      center[1] + radius * sine,
-      center[2]};
-    const Vec3 feedforward{
-      path_speed * (cosine - angle * sine) / std::sqrt(1.0 + angle * angle),
-      path_speed * (sine + angle * cosine) / std::sqrt(1.0 + angle * angle),
-      0.0};
-    plan.max_cartesian_velocity_m_s = std::max(
-      plan.max_cartesian_velocity_m_s, norm(feedforward));
-
-    const KinematicState state = evaluate(joints);
-    const Vec3 rotation_error = orientation_error(state.rotation, initial.rotation);
-    std::array<double, 6> twist{};
-    for (size_t axis = 0; axis < 3; ++axis) {
-      twist[axis] = feedforward[axis] +
-        POSITION_ERROR_GAIN_S * (reference[axis] - state.position[axis]);
-      twist[axis + 3] = ORIENTATION_ERROR_GAIN_S * rotation_error[axis];
-    }
-    const JointPose joint_velocity = damped_least_squares(state.jacobian, twist);
-    for (size_t joint = 0; joint < joints.size(); ++joint) {
-      plan.max_joint_velocity_rad_s = std::max(
-        plan.max_joint_velocity_rad_s, std::fabs(joint_velocity[joint]));
-      if (std::fabs(joint_velocity[joint]) > PLAN_MAX_JOINT_VELOCITY_RAD_S) {
-        throw std::runtime_error(
-                "spiral joint plan exceeds its velocity cap on joint " +
-                std::to_string(joint));
-      }
-      joints[joint] += period_s * joint_velocity[joint];
-    }
-    check_joint_limits(joints);
-    const KinematicState integrated = evaluate(joints);
-    const double model_error_m = norm(subtract(reference, integrated.position));
-    plan.max_model_error_mm = std::max(plan.max_model_error_mm, model_error_m * 1000.0);
-    if (model_error_m > PLAN_MAX_MODEL_ERROR_M) {
-      throw std::runtime_error("spiral joint plan exceeds its Cartesian model-error cap");
-    }
-    const double orientation_error_rad = norm(orientation_error(
-      integrated.rotation, initial.rotation));
-    plan.max_orientation_error_rad = std::max(
-      plan.max_orientation_error_rad, orientation_error_rad);
-    if (orientation_error_rad > PLAN_MAX_ORIENTATION_ERROR_RAD) {
-      throw std::runtime_error("spiral joint plan exceeds its orientation-error cap");
-    }
-    plan.positions.push_back(joints);
-    plan.velocities.push_back(joint_velocity);
-    plan.cartesian_references.push_back(reference);
-  }
-
-  const KinematicState endpoint = evaluate(joints);
-  const Vec3 target{center[0] + radius_m, center[1], center[2]};
-  if (norm(subtract(target, endpoint.position)) > PLAN_MAX_MODEL_ERROR_M) {
-    throw std::runtime_error("spiral joint plan endpoint does not converge");
-  }
-  plan.edge_end_ticks[0] = plan.positions.size();
-  return plan;
+std::array<double, 3> wxai_tool_tip_translation(
+  const JointPose & joints, double carriage_m, const ToolModel & tool)
+{
+  return evaluate_tool(joints, carriage_m, tool).position;
 }
 
 Rotation wxai_link6_rotation(const JointPose & joints)
@@ -612,109 +369,8 @@ Rotation wxai_link6_rotation(const JointPose & joints)
   return evaluate(joints).rotation;
 }
 
-std::vector<PathSample> spiral_path_samples(
-  const std::array<double, 3> & center,
-  const Rotation & rotation,
-  double radius_m,
-  double turns,
-  double duration_s,
-  double ease_s,
-  double period_s)
-{
-  if (!std::isfinite(radius_m) || radius_m <= 0.0 ||
-    !std::isfinite(turns) || turns <= 0.0 ||
-    !std::isfinite(duration_s) || duration_s <= 0.0 ||
-    !std::isfinite(ease_s) || ease_s <= 0.0 || ease_s * 2.0 >= duration_s ||
-    !std::isfinite(period_s) || period_s <= 0.0)
-  {
-    throw std::invalid_argument("carriage-IK spiral geometry and times must be finite and positive");
-  }
-  const size_t ticks = static_cast<size_t>(std::ceil(duration_s / period_s));
-  if (ticks == 0 || ticks > 250000) {
-    throw std::invalid_argument("carriage-IK spiral sample count is outside the guarded range");
-  }
-  constexpr double pi = 3.14159265358979323846;
-  const double total_angle = 2.0 * pi * turns;
-  const double spiral_scale = radius_m / total_angle;
-  const double path_length = 0.5 * spiral_scale * (
-    total_angle * std::sqrt(1.0 + total_angle * total_angle) +
-    std::asinh(total_angle));
-  const double cruise_speed = path_length / (duration_s - ease_s);
-
-  std::vector<PathSample> samples;
-  samples.reserve(ticks);
-  for (size_t tick = 1; tick <= ticks; ++tick) {
-    const double elapsed_s = std::min(duration_s, static_cast<double>(tick) * period_s);
-    double distance = 0.0;
-    double path_speed = 0.0;
-    if (elapsed_s < ease_s) {
-      const double u = elapsed_s / ease_s;
-      const double u2 = u * u;
-      const double u3 = u2 * u;
-      const double u4 = u3 * u;
-      const double u5 = u4 * u;
-      const double u6 = u5 * u;
-      const double speed_blend = 10.0 * u3 - 15.0 * u4 + 6.0 * u5;
-      const double distance_blend = 2.5 * u4 - 3.0 * u5 + u6;
-      distance = cruise_speed * ease_s * distance_blend;
-      path_speed = cruise_speed * speed_blend;
-    } else if (elapsed_s <= duration_s - ease_s) {
-      distance = 0.5 * cruise_speed * ease_s +
-        cruise_speed * (elapsed_s - ease_s);
-      path_speed = cruise_speed;
-    } else {
-      const double remaining_s = duration_s - elapsed_s;
-      const double u = remaining_s / ease_s;
-      const double u2 = u * u;
-      const double u3 = u2 * u;
-      const double u4 = u3 * u;
-      const double u5 = u4 * u;
-      const double u6 = u5 * u;
-      const double speed_blend = 10.0 * u3 - 15.0 * u4 + 6.0 * u5;
-      const double distance_blend = 2.5 * u4 - 3.0 * u5 + u6;
-      distance = path_length - cruise_speed * ease_s * distance_blend;
-      path_speed = cruise_speed * speed_blend;
-    }
-    distance = std::clamp(distance, 0.0, path_length);
-    double angle = total_angle * distance / path_length;
-    for (size_t iteration = 0; iteration < 6; ++iteration) {
-      const double root = std::sqrt(1.0 + angle * angle);
-      const double integrated_length = 0.5 * spiral_scale * (
-        angle * root + std::asinh(angle));
-      angle -= (integrated_length - distance) / (spiral_scale * root);
-      angle = std::clamp(angle, 0.0, total_angle);
-    }
-    const double radius = spiral_scale * angle;
-    const double cosine = std::cos(angle);
-    const double sine = std::sin(angle);
-    PathSample sample;
-    sample.t_s = elapsed_s;
-    sample.position = {
-      center[0] + radius * cosine,
-      center[1] + radius * sine,
-      center[2]};
-    sample.velocity = {
-      path_speed * (cosine - angle * sine) / std::sqrt(1.0 + angle * angle),
-      path_speed * (sine + angle * cosine) / std::sqrt(1.0 + angle * angle),
-      0.0};
-    sample.rotation = rotation;
-    sample.pen = true;
-    samples.push_back(sample);
-  }
-  return samples;
-}
-
 namespace
 {
-
-double spiral_path_length(double radius_m, double turns)
-{
-  constexpr double pi = 3.14159265358979323846;
-  const double total_angle = 2.0 * pi * turns;
-  const double spiral_scale = radius_m / total_angle;
-  return 0.5 * spiral_scale * (
-    total_angle * std::sqrt(1.0 + total_angle * total_angle) + std::asinh(total_angle));
-}
 
 bool orthonormal(const Rotation & r)
 {
@@ -761,18 +417,44 @@ double parse_double(const std::string & text, const std::string & what)
 
 }  // namespace
 
-PathFile load_path_file(const std::string & path, double period_s)
+PathFile load_path_file(
+  const std::string & path, double period_s, const std::string & expected_wxai_prefix,
+  const std::optional<std::array<double, 3>> & expected_tip_in_link6)
 {
+  const auto valid_prefix = [](const std::string & prefix) {
+      const auto letter = [](char c) {
+          return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+        };
+      if (prefix.empty() || prefix.size() > 64 || !letter(prefix.front()))
+      {
+        return false;
+      }
+      return std::all_of(prefix.begin() + 1, prefix.end(), [letter](char c) {
+          return letter(c) || (c >= '0' && c <= '9') || c == '_' || c == '-';
+        });
+    };
+  if (!expected_wxai_prefix.empty() && !valid_prefix(expected_wxai_prefix)) {
+    throw std::runtime_error("samples file: invalid expected WXAI arm prefix '" + expected_wxai_prefix + "'");
+  }
+  if (expected_tip_in_link6) {
+    const double reach = norm(*expected_tip_in_link6);
+    if (expected_wxai_prefix.empty() || !std::isfinite(reach) || reach < 0.05 || reach > 0.45) {
+      throw std::runtime_error("samples file: bound tool requires an explicit WXAI prefix and a finite 50..450 mm tip");
+    }
+  }
   std::ifstream file(path);
   if (!file) {
     throw std::runtime_error("samples file cannot be opened: " + path);
   }
+  // 18 columns until 2026-09-03; a trailing `dip` column since (files without it still load).
   static const std::vector<std::string> expected_columns{
     "t_s", "px", "py", "pz", "vx", "vy", "vz",
     "r00", "r01", "r02", "r10", "r11", "r12", "r20", "r21", "r22", "pen", "capture"};
+  bool has_dip_column = false;
   PathFile out;
   bool schema_ok = false;
   bool frame_ok = false;
+  std::string frame;
   bool period_seen = false;
   bool tip_seen[3] = {false, false, false};
   size_t declared_samples = 0;
@@ -797,11 +479,16 @@ PathFile load_path_file(const std::string & path, double period_s)
         schema_ok = true;
       } else if (key == "kind") {
         out.kind = value;
-      } else if (key == "frame") {
-        if (value != "right/base_link") {
-          throw std::runtime_error("samples file: frame must be right/base_link, got '" + value + "'");
+      } else if (key == "constants_sha") {
+        if (value.empty()) {
+          throw std::runtime_error("samples file: empty constants_sha header");
         }
+        out.constants_sha = value;
+      } else if (key == "frame") {
+        frame = value;
         frame_ok = true;
+      } else if (key == "arm") {
+        out.arm = value;
       } else if (key == "period_s") {
         const double declared = parse_double(value, "period_s");
         if (std::fabs(declared - period_s) > 1e-9) {
@@ -819,6 +506,8 @@ PathFile load_path_file(const std::string & path, double period_s)
         declared_samples = static_cast<size_t>(parse_double(value, key));
       } else if (key == "capture_count") {
         out.capture_count = static_cast<size_t>(parse_double(value, key));
+      } else if (key == "dip_count") {
+        out.dip_count = static_cast<size_t>(parse_double(value, key));
       } else if (key == "start_tolerance_m") {
         out.start_tolerance_m = parse_double(value, key);
       } else if (key == "carriage_ik") {
@@ -828,7 +517,12 @@ PathFile load_path_file(const std::string & path, double period_s)
         }
         out.carriage_ik = flag == 1.0;
       } else if (key == "columns") {
-        if (std::vector<std::string>(fields.begin() + 1, fields.end()) != expected_columns) {
+        std::vector<std::string> columns(fields.begin() + 1, fields.end());
+        if (columns.size() == expected_columns.size() + 1 && columns.back() == "dip") {
+          has_dip_column = true;
+          columns.pop_back();
+        }
+        if (columns != expected_columns) {
           throw std::runtime_error("samples file: unexpected column layout: " + line);
         }
         in_rows = true;
@@ -837,11 +531,12 @@ PathFile load_path_file(const std::string & path, double period_s)
       }
       continue;
     }
-    if (fields.size() != expected_columns.size()) {
+    const size_t want_fields = expected_columns.size() + (has_dip_column ? 1 : 0);
+    if (fields.size() != want_fields) {
       throw std::runtime_error(
               "samples file: row " + std::to_string(line_number) + " has " +
               std::to_string(fields.size()) + " fields, expected " +
-              std::to_string(expected_columns.size()));
+              std::to_string(want_fields));
     }
     PathSample sample;
     sample.t_s = parse_double(fields[0], "t_s");
@@ -865,10 +560,33 @@ PathFile load_path_file(const std::string & path, double period_s)
     }
     sample.pen = pen == 1.0;
     sample.capture = static_cast<size_t>(capture);
+    if (has_dip_column) {
+      const double dip = parse_double(fields[18], "dip");
+      if (dip < 0.0 || dip != std::floor(dip) || (dip > 0.0 && sample.pen)) {
+        throw std::runtime_error("samples file: row " + std::to_string(line_number) + " has a bad dip flag");
+      }
+      sample.dip = static_cast<size_t>(dip);
+    }
     out.samples.push_back(sample);
   }
   if (!schema_ok || !frame_ok || !period_seen || !tip_seen[0] || !tip_seen[1] || !tip_seen[2]) {
     throw std::runtime_error("samples file: missing schema, frame, period_s or tip_*_m header");
+  }
+  if (!valid_prefix(out.arm)) {
+    throw std::runtime_error("samples file: invalid physical arm prefix '" + out.arm + "'");
+  }
+  if (!expected_wxai_prefix.empty() && out.arm != expected_wxai_prefix) {
+    throw std::runtime_error(
+            "samples file: arm '" + out.arm + "' does not match expected WXAI arm prefix '" +
+            expected_wxai_prefix + "'");
+  }
+  if (expected_wxai_prefix.empty() && out.arm != "right" && out.arm != "left") {
+    throw std::runtime_error("samples file: arm must be right or left, got '" + out.arm + "'");
+  }
+  if (frame != out.arm + "/base_link") {
+    throw std::runtime_error(
+            "samples file: frame must be " + out.arm + "/base_link for arm " + out.arm +
+            ", got '" + frame + "'");
   }
   if (!in_rows || out.samples.empty()) {
     throw std::runtime_error("samples file: no sample rows");
@@ -878,14 +596,48 @@ PathFile load_path_file(const std::string & path, double period_s)
             "samples file: sample_count " + std::to_string(declared_samples) + " but " +
             std::to_string(out.samples.size()) + " rows");
   }
-  if (out.samples.size() > 250000) {
-    throw std::runtime_error("samples file: more than 250000 rows");
+  if (out.samples.size() > PLAN_MAX_TICKS) {
+    throw std::runtime_error("samples file: more than " + std::to_string(PLAN_MAX_TICKS) + " rows");
   }
-  const double tip_error = norm(subtract(out.tip_in_link6, BALLPOINT_TIP_IN_LINK6));
-  if (tip_error > 1e-4) {
+  // The sampler wrote the file against one config/motion_constants.json; this
+  // parser was built against one. An orbit or path compiled against other
+  // caps/gains would be preflighted by numbers this planner does not use.
+  if (out.constants_sha.empty() && (out.kind == "orbit" || out.kind == "path")) {
     throw std::runtime_error(
-            "samples file: tip model differs from the executor's ballpoint constant by " +
-            std::to_string(tip_error * 1e3) + " mm; re-derive one of them");
+            "samples file: kind " + out.kind + " has no constants_sha header; the executor is built "
+            "against draw constants " + std::string(dc::SHA) +
+            " (config/motion_constants.json) -- regenerate the file with the current planner");
+  }
+  if (!out.constants_sha.empty() && out.constants_sha != dc::SHA) {
+    throw std::runtime_error(
+            "samples file: constants_sha " + out.constants_sha + " but the executor is built against "
+            "draw constants " + std::string(dc::SHA) + " (config/motion_constants.json); regenerate the "
+            "file with the current planner, or rebuild the executor");
+  }
+  if (expected_tip_in_link6) {
+    if (norm(subtract(out.tip_in_link6, *expected_tip_in_link6)) > 1e-9) {
+      throw std::runtime_error("samples file: tip model differs from the independently bound tool model");
+    }
+    out.tool = declared_wxai_tool_model(*expected_tip_in_link6);
+  } else if (out.arm == "right") {
+    const double tip_error = norm(subtract(out.tip_in_link6, BALLPOINT_TIP_IN_LINK6));
+    if (tip_error > 1e-4) {
+      throw std::runtime_error(
+              "samples file: tip model differs from the executor's ballpoint constant by " +
+              std::to_string(tip_error * 1e3) + " mm; re-derive one of them");
+    }
+    out.tool = ballpoint_tool_model();
+  } else {
+    // No other arm tool has a compiled constant: the file declares it (the Python
+    // side derives it from the URDF and the datasheet), bounded to a working
+    // point that is plausibly on a hand-held tool past the wrist.
+    const double reach = norm(out.tip_in_link6);
+    if (!std::isfinite(reach) || reach < 0.05 || reach > 0.45) {
+      throw std::runtime_error(
+              "samples file: declared tip model is " + std::to_string(reach * 1e3) +
+              " mm from link 6; expected 50..450 mm");
+    }
+    out.tool = declared_wxai_tool_model(out.tip_in_link6);
   }
   size_t expected_capture = 1;
   for (const auto & sample : out.samples) {
@@ -899,6 +651,19 @@ PathFile load_path_file(const std::string & path, double period_s)
     throw std::runtime_error(
             "samples file: capture_count " + std::to_string(out.capture_count) + " but " +
             std::to_string(expected_capture - 1) + " capture rows");
+  }
+  size_t expected_dip = 1;
+  for (const auto & sample : out.samples) {
+    if (sample.dip == 0) {continue;}
+    if (sample.dip != expected_dip) {
+      throw std::runtime_error("samples file: dip indices must run 1..K in order");
+    }
+    ++expected_dip;
+  }
+  if (expected_dip - 1 != out.dip_count) {
+    throw std::runtime_error(
+            "samples file: dip_count " + std::to_string(out.dip_count) + " but " +
+            std::to_string(expected_dip - 1) + " dip rows");
   }
   if (!std::isfinite(out.start_tolerance_m) || out.start_tolerance_m <= 0.0 ||
     out.start_tolerance_m > 0.005)
@@ -914,17 +679,25 @@ CarriageJointPlan plan_joint_path(
   const std::vector<PathSample> & samples,
   double period_s,
   double start_tolerance_m,
-  bool carriage_ik)
+  bool carriage_ik,
+  const ToolModel & tool)
 {
+  // All-pen-up plans hold the measured carriage exactly, wherever it rests:
+  // including rest below zero and the trip's 32 mm retract (2 mm tolerance).
+  // The contact/IK envelope still applies as soon as the pen goes down.
+  const bool fixed_scan = !samples.empty() &&
+    std::all_of(samples.begin(), samples.end(), [](const PathSample & sample) {return !sample.pen;});
+  const double carriage_min = fixed_scan ? CARRIAGE_IK_PEN_UP_MIN_M : CARRIAGE_IK_MIN_M;
+  const double carriage_max = fixed_scan ? CARRIAGE_IK_PEN_UP_MAX_M : CARRIAGE_IK_MAX_M;
   if (!std::isfinite(start_carriage_m) ||
-    start_carriage_m < CARRIAGE_IK_MIN_M || start_carriage_m > CARRIAGE_IK_MAX_M)
+    start_carriage_m < carriage_min || start_carriage_m > carriage_max)
   {
     throw std::invalid_argument("carriage-IK start is outside its guarded drawing envelope");
   }
   if (!std::isfinite(period_s) || period_s <= 0.0) {
     throw std::invalid_argument("path plan period must be finite and positive");
   }
-  if (samples.empty() || samples.size() > 250000) {
+  if (samples.empty() || samples.size() > PLAN_MAX_TICKS) {
     throw std::invalid_argument("path plan sample count is outside the guarded range");
   }
   check_joint_limits(start_joints);
@@ -938,7 +711,7 @@ CarriageJointPlan plan_joint_path(
   JointPose joints = start_joints;
   double carriage_m = start_carriage_m;
   double previous_carriage_velocity = 0.0;
-  const CarriageKinematicState initial = evaluate_ballpoint(joints, carriage_m);
+  const CarriageKinematicState initial = evaluate_tool(joints, carriage_m, tool);
   const double start_error_m = norm(subtract(samples.front().position, initial.position));
   if (start_error_m > start_tolerance_m) {
     throw std::runtime_error(
@@ -946,14 +719,8 @@ CarriageJointPlan plan_joint_path(
             " mm from the current tip (tolerance " + std::to_string(start_tolerance_m * 1e3) +
             " mm)");
   }
-  const double start_rotation_error = norm(orientation_error(
-    initial.rotation, samples.front().rotation));
-  if (start_rotation_error > 0.02) {
-    throw std::runtime_error(
-            "path plan starts " + std::to_string(start_rotation_error) +
-            " rad from the current rotation (tolerance 0.02 rad)");
-  }
   double previous_t = -period_s;
+  FullJointPose previous_velocity{};
 
   for (size_t tick = 0; tick < samples.size(); ++tick) {
     const PathSample & sample = samples[tick];
@@ -969,12 +736,16 @@ CarriageJointPlan plan_joint_path(
     plan.max_cartesian_velocity_m_s = std::max(
       plan.max_cartesian_velocity_m_s, norm(feedforward));
 
-    const CarriageKinematicState state = evaluate_ballpoint(joints, carriage_m);
+    const CarriageKinematicState state = evaluate_tool(joints, carriage_m, tool);
     const Vec3 rotation_error = orientation_error(state.rotation, sample.rotation);
     // Angular feedforward from the next sample's rotation (small-angle rotation
     // vector over one tick). Without it a moving rotation target lags the
     // proportional loop by omega / K and trips the 1 mrad cap on the orbit's
     // tilts. Exactly zero for a constant rotation, so the spiral is untouched.
+    // It is deliberately not smoothed like the tip velocity column: a
+    // 21-tick box average lags a hatch turnaround under a normal-following
+    // wrist past the orientation cap (offline, 2026-09-14), so a rotation
+    // sequence has to be rate-continuous when it is sampled (pen_path.py).
     Vec3 omega_ff{};
     if (tick + 1 < samples.size()) {
       const Vec3 step = orientation_error(sample.rotation, samples[tick + 1].rotation);
@@ -1029,7 +800,7 @@ CarriageJointPlan plan_joint_path(
       // most of any motion along the tool axis, and a 100 mm lift would walk
       // it into its 3.5 mm stop, so bring it to rest at half its acceleration
       // cap and hold it; the arm takes the whole task minus what the carriage
-      // still contributes. Mirrors draw_kinematics.plan_joints.
+      // still contributes.
       const double step = 0.5 * PLAN_MAX_CARRIAGE_ACCELERATION_M_S2 * period_s;
       const double held = previous_carriage_velocity -
         std::clamp(previous_carriage_velocity, -step, step);
@@ -1045,12 +816,18 @@ CarriageJointPlan plan_joint_path(
       for (size_t joint = 0; joint < 6; ++joint) {velocity[joint] = arm_velocity[joint];}
       velocity[6] = held;
     }
+    // Pen-down rows keep the drawing cap; pen-up travel (to and from the ink
+    // rack) may move at PLAN_MAX_JOINT_VELOCITY_PEN_UP_RAD_S (2026-09-03).
+    const double joint_cap = sample.pen ? PLAN_MAX_JOINT_VELOCITY_RAD_S : PLAN_MAX_JOINT_VELOCITY_PEN_UP_RAD_S;
     for (size_t joint = 0; joint < joints.size(); ++joint) {
       plan.max_joint_velocity_rad_s = std::max(
         plan.max_joint_velocity_rad_s, std::fabs(velocity[joint]));
-      if (!std::isfinite(velocity[joint]) ||
-        std::fabs(velocity[joint]) > PLAN_MAX_JOINT_VELOCITY_RAD_S)
-      {
+      // Reported, not capped: the planned change of commanded joint velocity
+      // per tick (the first sample counts from rest).
+      plan.max_joint_acceleration_rad_s2 = std::max(
+        plan.max_joint_acceleration_rad_s2,
+        std::fabs(velocity[joint] - previous_velocity[joint]) / period_s);
+      if (!std::isfinite(velocity[joint]) || std::fabs(velocity[joint]) > joint_cap) {
         throw std::runtime_error(
                 "path plan exceeds its arm velocity cap on joint " +
                 std::to_string(joint) + " at sample " + std::to_string(tick));
@@ -1078,8 +855,9 @@ CarriageJointPlan plan_joint_path(
     }
     carriage_m += period_s * carriage_velocity;
     previous_carriage_velocity = carriage_velocity;
+    previous_velocity = velocity;
     if (!std::isfinite(carriage_m) ||
-      carriage_m < CARRIAGE_IK_MIN_M || carriage_m > CARRIAGE_IK_MAX_M)
+      carriage_m < carriage_min || carriage_m > carriage_max)
     {
       throw std::runtime_error(
               "path plan leaves its guarded carriage envelope at sample " + std::to_string(tick));
@@ -1088,7 +866,7 @@ CarriageJointPlan plan_joint_path(
     plan.max_carriage_m = std::max(plan.max_carriage_m, carriage_m);
     check_joint_limits(joints);
 
-    const CarriageKinematicState integrated = evaluate_ballpoint(joints, carriage_m);
+    const CarriageKinematicState integrated = evaluate_tool(joints, carriage_m, tool);
     const double model_error_m = norm(subtract(reference, integrated.position));
     plan.max_model_error_mm = std::max(plan.max_model_error_mm, model_error_m * 1000.0);
     if (model_error_m > (sample.pen ? PLAN_MAX_MODEL_ERROR_DRAW_M : PLAN_MAX_MODEL_ERROR_PEN_UP_M)) {
@@ -1114,111 +892,17 @@ CarriageJointPlan plan_joint_path(
     if (sample.capture > 0) {
       plan.capture_ticks.emplace_back(tick, sample.capture);
     }
+    if (sample.dip > 0) {
+      plan.dip_ticks.emplace_back(tick, sample.dip);
+    }
   }
 
-  const CarriageKinematicState endpoint = evaluate_ballpoint(joints, carriage_m);
+  const CarriageKinematicState endpoint = evaluate_tool(joints, carriage_m, tool);
   if (norm(subtract(samples.back().position, endpoint.position)) > PLAN_MAX_MODEL_ERROR_M) {
     throw std::runtime_error("path plan endpoint does not converge");
   }
   plan.endpoint_tick = plan.positions.size();
   return plan;
-}
-
-CarriageJointPlan plan_joint_spiral_with_carriage(
-  const JointPose & start_joints,
-  double start_carriage_m,
-  double radius_m,
-  double turns,
-  double duration_s,
-  double ease_s,
-  double period_s)
-{
-  if (!std::isfinite(start_carriage_m) ||
-    start_carriage_m < CARRIAGE_IK_MIN_M || start_carriage_m > CARRIAGE_IK_MAX_M)
-  {
-    throw std::invalid_argument("carriage-IK start is outside its guarded drawing envelope");
-  }
-  check_joint_limits(start_joints);
-  const CarriageKinematicState initial = evaluate_ballpoint(start_joints, start_carriage_m);
-  const auto samples = spiral_path_samples(
-    initial.position, initial.rotation, radius_m, turns, duration_s, ease_s, period_s);
-  CarriageJointPlan plan = plan_joint_path(start_joints, start_carriage_m, samples, period_s);
-  // The spiral's path length is the closed-form arc length, as the A/B reported it.
-  plan.path_length_m = spiral_path_length(radius_m, turns);
-  const Vec3 target{
-    initial.position[0] + radius_m, initial.position[1], initial.position[2]};
-  JointPose end_joints{};
-  std::copy_n(plan.positions.back().begin(), 6, end_joints.begin());
-  const auto end_tip = evaluate_ballpoint(end_joints, plan.positions.back()[6]).position;
-  if (norm(subtract(target, end_tip)) > PLAN_MAX_MODEL_ERROR_M) {
-    throw std::runtime_error("carriage-IK spiral endpoint does not converge");
-  }
-  return plan;
-}
-
-MotionGuard::MotionGuard(
-  double velocity_limit,
-  double overforce_limit,
-  double overforce_window_s,
-  double overforce_fraction,
-  size_t overforce_min_samples)
-: velocity_limit_(velocity_limit),
-  overforce_limit_(overforce_limit),
-  overforce_window_s_(overforce_window_s),
-  overforce_fraction_(overforce_fraction),
-  overforce_min_samples_(overforce_min_samples)
-{
-}
-
-void MotionGuard::reset()
-{
-  overforce_.clear();
-}
-
-std::optional<GuardTrip> MotionGuard::observe(
-  double now_s,
-  const std::vector<double> & arm_velocities,
-  const std::vector<double> & arm_efforts)
-{
-  if (arm_velocities.empty() || arm_velocities.size() != arm_efforts.size()) {
-    return GuardTrip{"telemetry_width", 0, static_cast<double>(arm_velocities.size()),
-      static_cast<double>(arm_efforts.size())};
-  }
-  for (size_t i = 0; i < arm_velocities.size(); ++i) {
-    if (!std::isfinite(arm_velocities[i]) || !std::isfinite(arm_efforts[i])) {
-      return GuardTrip{"non_finite_telemetry", i, arm_velocities[i], 0.0};
-    }
-  }
-
-  const auto fastest = std::max_element(
-    arm_velocities.begin(), arm_velocities.end(),
-    [](double a, double b) {return std::fabs(a) < std::fabs(b);});
-  if (velocity_limit_ > 0.0 && std::fabs(*fastest) > velocity_limit_) {
-    return GuardTrip{"measured_velocity",
-      static_cast<size_t>(std::distance(arm_velocities.begin(), fastest)),
-      *fastest, velocity_limit_};
-  }
-
-  const auto loaded = std::max_element(
-    arm_efforts.begin(), arm_efforts.end(),
-    [](double a, double b) {return std::fabs(a) < std::fabs(b);});
-  overforce_.emplace_back(now_s, std::fabs(*loaded) > overforce_limit_);
-  while (!overforce_.empty() && overforce_.front().first < now_s - overforce_window_s_) {
-    overforce_.pop_front();
-  }
-  const bool ready = overforce_.size() >= overforce_min_samples_ &&
-    now_s - overforce_.front().first >= overforce_window_s_ * 0.8;
-  if (overforce_limit_ > 0.0 && ready) {
-    const size_t over = static_cast<size_t>(std::count_if(
-      overforce_.begin(), overforce_.end(), [](const auto & sample) {return sample.second;}));
-    const double fraction = static_cast<double>(over) / static_cast<double>(overforce_.size());
-    if (fraction >= overforce_fraction_) {
-      return GuardTrip{"rolling_overforce",
-        static_cast<size_t>(std::distance(arm_efforts.begin(), loaded)),
-        *loaded, overforce_limit_};
-    }
-  }
-  return std::nullopt;
 }
 
 }  // namespace tatbot::square

@@ -1,0 +1,13 @@
+# The stencil observer's interpreter on the camera node (`stencild`).
+#
+# fleet_deploy.py builds `<release>/observer-venv` from this file for the
+# node that runs tatbot-stencild.service. The observer runs
+# scripts/vision/stencil_observer.py: SIFT landmark tracking for legacy
+# artwork, the coded decoder for coded prints (numpy and OpenCV only), the
+# local surface fits and the digest-bound capture readers under scripts/lib and
+# scripts/vision. No RealSense wheel: distortion deprojection is the numpy
+# port pinned by the checked-in SDK table. scipy is deliberately absent: only
+# the session scan-binding path reaches it, and the fleet observer never
+# binds a scan.
+numpy
+opencv-python-headless

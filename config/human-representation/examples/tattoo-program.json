@@ -1,0 +1,140 @@
+{
+  "canvas_m": {
+    "height": 0.05,
+    "width": 0.08
+  },
+  "content_sha256": "6e46984c4abc85cf6588524699edb588b1701d89bac4bfffc8f9e37e593f4e0b",
+  "inks": [
+    {
+      "color_srgb": [
+        0,
+        0,
+        0
+      ],
+      "id": "black"
+    },
+    {
+      "color_srgb": [
+        0.05,
+        0.2,
+        0.8
+      ],
+      "id": "blue"
+    }
+  ],
+  "layers": [
+    {
+      "elements": [
+        {
+          "closed": false,
+          "deposition": 0.7,
+          "fill": false,
+          "id": "line-1",
+          "kind": "path",
+          "points_m": [
+            [
+              0.005,
+              0.005
+            ],
+            [
+              0.03,
+              0.02
+            ],
+            [
+              0.06,
+              0.01
+            ]
+          ],
+          "width_m": 0.0008
+        }
+      ],
+      "id": "linework",
+      "ink_id": "black"
+    },
+    {
+      "elements": [
+        {
+          "closed": true,
+          "deposition": 1.0,
+          "fill": true,
+          "id": "region-1",
+          "kind": "region",
+          "points_m": [
+            [
+              0.02,
+              0.025
+            ],
+            [
+              0.035,
+              0.04
+            ],
+            [
+              0.05,
+              0.025
+            ]
+          ],
+          "width_m": 0.0008
+        }
+      ],
+      "id": "blackwork",
+      "ink_id": "black"
+    },
+    {
+      "elements": [
+        {
+          "closed": false,
+          "deposition": 0.45,
+          "fill": false,
+          "id": "dots-1",
+          "kind": "stipple",
+          "points_m": [
+            [
+              0.015,
+              0.015
+            ],
+            [
+              0.018,
+              0.016
+            ],
+            [
+              0.021,
+              0.015
+            ]
+          ],
+          "width_m": 0.0005
+        }
+      ],
+      "id": "stipple",
+      "ink_id": "blue"
+    }
+  ],
+  "negative_space_masks": [
+    {
+      "id": "mask-1",
+      "points_m": [
+        [
+          0.03,
+          0.027
+        ],
+        [
+          0.035,
+          0.034
+        ],
+        [
+          0.04,
+          0.027
+        ]
+      ]
+    }
+  ],
+  "preview_sha256": "46224ef99027389850cc53a11d68977f729bb130dfe0d0acd6a3b1824c2acb81",
+  "provenance": {
+    "created_utc": "2026-09-04T01:09:37Z",
+    "producer": "tatbot-human-representation-fixture",
+    "seed": 7,
+    "source_sha256": "a4c71d043bc7eff3c8e2efc77667b791963c075b3e387ef208713ccd425b899a",
+    "version": "1"
+  },
+  "schema": "tatbot.tattoo-program/1",
+  "semantic_intent": "Synthetic linework, blackwork, stipple, and negative-space fixture; no person data."
+}

@@ -1,0 +1,10 @@
+# Synthetic planner bounds for public replay tests. These are not controller
+# settings, measured clearances, or authorization for powered operation.
+joint_limits:
+  - {position_min: -3.1415927, position_max: 3.1415927, velocity_max: 10.0}
+  - {position_min: 0.0, position_max: 3.1415927, velocity_max: 10.0}
+  - {position_min: 0.0, position_max: 2.3561945, velocity_max: 10.0}
+  - {position_min: -1.5707964, position_max: 1.5707964, velocity_max: 10.0}
+  - {position_min: -1.5707964, position_max: 1.5707964, velocity_max: 10.0}
+  - {position_min: -3.1415927, position_max: 3.1415927, velocity_max: 10.0}
+  - {position_min: -0.01, position_max: 0.04, velocity_max: 0.25}

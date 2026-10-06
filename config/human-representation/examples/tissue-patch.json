@@ -1,0 +1,75 @@
+{
+  "schema": "tatbot.tissue-patch/1",
+  "content_sha256": "c723fb3325017ced150b968ff3f7a53da6ccb6b1f1f27cebe5906b1a21fa323b",
+  "material_chart_sha256": "1010101010101010101010101010101010101010101010101010101010101010",
+  "rest_surface_sha256": "caa66dff9b3625771c8f4c35bfe59556d30acdc3800880106f98f0ce75c49a95",
+  "deformed_surface_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "layer_prior_fields": [
+    {
+      "id": "synthetic-thickness",
+      "role": "generic-prior",
+      "unit": "m",
+      "values_sha256": "1212121212121212121212121212121212121212121212121212121212121212",
+      "uncertainty_sha256": "1313131313131313131313131313131313131313131313131313131313131313"
+    }
+  ],
+  "constitutive_model": "rigid-contact-v1",
+  "parameters": {
+    "normal_stiffness": {
+      "value": 0,
+      "sigma": 0,
+      "unit": "N/m",
+      "identified": false
+    }
+  },
+  "uncertainty": {
+    "method": "synthetic-placeholder-only",
+    "posterior_sha256": "1414141414141414141414141414141414141414141414141414141414141414",
+    "out_of_distribution_policy_sha256": "1515151515151515151515151515151515151515151515151515151515151515",
+    "confidence": 0
+  },
+  "damping": {
+    "value": 0,
+    "sigma": 0,
+    "unit": "N*s/m",
+    "identified": false
+  },
+  "relaxation": {
+    "value": 0,
+    "sigma": 0,
+    "unit": "s",
+    "identified": false
+  },
+  "friction": {
+    "value": 0,
+    "sigma": 0,
+    "unit": "1",
+    "identified": false
+  },
+  "boundary_conditions": {
+    "kind": "synthetic-fixed-support",
+    "definition_sha256": "1616161616161616161616161616161616161616161616161616161616161616"
+  },
+  "support_sha256": "1717171717171717171717171717171717171717171717171717171717171717",
+  "tool_geometry_sha256": "1818181818181818181818181818181818181818181818181818181818181818",
+  "indentation": {
+    "unit": "m",
+    "commanded_trace_sha256": "1919191919191919191919191919191919191919191919191919191919191919",
+    "estimated_trace_sha256": "2020202020202020202020202020202020202020202020202020202020202020",
+    "measured_trace_sha256": null
+  },
+  "force": {
+    "unit": "N",
+    "commanded_trace_sha256": null,
+    "estimated_trace_sha256": "2121212121212121212121212121212121212121212121212121212121212121",
+    "measured_trace_sha256": null
+  },
+  "calibration_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "batch_sha256": "2323232323232323232323232323232323232323232323232323232323232323",
+  "provenance": {
+    "producer": "human-representation-p0-fixture",
+    "version": "1",
+    "created_utc": "2026-09-04T01:09:37Z",
+    "source_sha256": "2424242424242424242424242424242424242424242424242424242424242424"
+  }
+}

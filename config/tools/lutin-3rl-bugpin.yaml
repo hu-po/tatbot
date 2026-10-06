@@ -1,17 +1,21 @@
-# Ambition Lutin rotary machine fitted with a HAWINK 3RL bugpin X-taper
-# cartridge (1003RL). A cartridge swap is a new tool_id because the tip moves
-# and the tip is the calibration — see docs/tools.md.
+# Ambition Lutin rotary machine fitted with a HAWINK 1003RL cartridge: 3 round
+# liner, 0.30 mm bugpin needles, X-taper. The same machine body, in the same
+# mount bore, as lutin-ballpoint-dot; only the cartridge differs.
 #
-# NOT YET USED ON THE RIG (operator, 2026-08-25). Body and cartridge lengths
-# are now measured, so the assembled tip is derived rather than borrowed — but
-# nothing has been touched off, so it is not confirmed. Run the tip phase
-# before this steers an arm.
+# The needles travel 6 mm in the cartridge from fully retracted to fully out,
+# and the machine strokes 4 mm of that; seated, a fresh cartridge's needles
+# stand ~1 mm out of the tube wherever the motor stopped (operator, 2026-10-05;
+# the first cartridge's sat inside it, 2026-10-04). The TCP is the centre of the
+# tube's end, which the wrist gauge measures. Running, the needles reach
+# needle_reach_mm past it at the bottom of each stroke: that, not the TCP, is
+# what enters skin or ink. They should meet the skin in the last 25% of their
+# extension (operator, 2026-10-05), so the tube's end rides
+# needle_reach_mm - 0.25 * stroke_mm over the skin.
 #
-# SCHEMA 2 (2026-08-30): the same machine body now sits in the bore of the
-# printed mount on the left finger carriage, so z = 0 is the MOUNT BORE FACE
-# and the grip_* fields are gone. Same body, same bore position as
-# lutin-ballpoint-dot; the 1 mm shorter cartridge is the whole difference,
-# and it still needs its own touch-off (the tip is the calibration).
+# Fitted on the pink arm 2026-10-04. The tip across its axis is the probe
+# calibration's (tatbot ros calib run); its length is the ballpoint's seat,
+# which the operator judges the same (2026-09-08). Drawing heights come from
+# the wrist gauge, which measures the tube's end over the surface directly.
 schema_version: 2
 tool_id: lutin-3rl-bugpin
 kind: rotary_pen
@@ -20,103 +24,96 @@ display_name: "Ambition Lutin + HAWINK 3RL bugpin X-taper"
 body: "Ambition Lutin Rotary (short pen, RCA)"
 cartridge: "HAWINK 1003RL, 3 round liner, 0.30 mm bugpin, X-taper"
 # 3RL is what a fineline machine draws with, so the prompt says liner, not
-# "pen tip" — the phrase is what a language-conditioned policy sees.
+# "pen tip" -- the phrase is what a language-conditioned policy sees.
 prompt_phrase: "using a 3RL liner"
 
-# [z_m, radius_m] along the tool axis, z = 0 at the mount bore face.
-# Same machine as lutin-ballpoint-dot, so the same 80 mm body seated the same
-# way in the bore (NOMINAL, see that file): rear -55, nose +25. The cartridge
-# measures 34 mm (operator, 2026-08-25) — 1 mm shorter than the ballpoint's —
-# putting this tip at +59, not +60. Total assembled 114 mm.
-#
-# The cartridge is conical and its outer half is TRANSLUCENT: the last ~17 mm
-# is see-through with the 0.30 mm needle visible inside. Only the silhouette is
-# modelled, since a profile of revolution cannot carry a material change. That
-# translucency is the whole visual difference between this tool and the
-# ballpoint, whose silhouettes are within a millimetre of each other.
-#
-# Needle 0.30 mm (#10 bugpin) over a 7.0 mm X-taper — an industry class scale
-# (M 3.5 / L 5.5 / X 7.0 mm) confirmed by two independent suppliers.
+# [z_m, radius_m] along the tool axis, z = 0 at the mount bore face: the
+# machine body (lutin-ballpoint-dot's V17 silhouette), the cartridge's ~13 mm
+# body, then its translucent nozzle as the palette camera saw it 7.8 mm over the
+# probe ball (the joint-6 sweep's park still, 2026-10-05, 56.6 px/mm): ~1 mm across
+# at its end, ~1.8 mm 4.5 mm up, ~4 mm 12 mm up, flaring into the body ~20 mm
+# up. Rounded outward; the tube's end is at the TCP.
 profile: [
-  [-0.055, 0.0145 ],
-  [ 0.025, 0.0145 ],
-  [ 0.059, 0.00015]
+  [-0.042,  0.0165 ],
+  [ 0.005,  0.0165 ],
+  [ 0.013,  0.016  ],
+  [ 0.038,  0.016  ],
+  [ 0.0385, 0.0070 ],
+  [ 0.0530, 0.0070 ],
+  [ 0.0553, 0.0039 ],
+  [ 0.0580, 0.0028 ],
+  [ 0.0606, 0.0020 ],
+  [ 0.0630, 0.00145],
+  [ 0.0660, 0.0012 ],
+  [ 0.0685, 0.0009 ],
+  [ 0.073,  0.0005 ]
 ]
-# What "3RL" means: 3 Round Liner, three needles grouped so they act as one
-# point. The 34 mm the operator measured is the WHOLE cartridge, needle
-# included, so it is split here: the display cone is scaled to ~31 mm of
-# plastic housing (tip_mesh_scale 0.85 -> 0.78) and the last ~3 mm is the
-# needles leaving it. Rendered the other way -- cone all the way to the tip,
-# needles inside it -- the needles cannot be seen at any distance, which is
-# what the first cut did.
-# The profile and protrusion are UNCHANGED: the tip is still +59 mm, and the
-# TCP with it. The profile ends in a single cone, which is the cartridge, not the
-# needles that leave it -- so the three are modelled explicitly, each the
-# 0.30 mm the datasheet already names, on the circle of radius s/sqrt(3) that
-# three touching needles of diameter s sit on. Lengths are nominal: nobody has
-# put calipers on the needle protrusion.
+# Three needles grouped so they act as one point, retracted inside the tube
+# with the machine off; drawn as they sit at rest, behind the tube's end.
 tip_detail:
   kind: needles
   count: 3
   radius_m: 0.00015
   length_m: 0.0042
   color: "0.80 0.81 0.84 1"
-contact_radius_m: 0.00015
+contact_radius_m: 0.0005
 
 tip_mesh: pen_tip.stl
 # The mesh is a 40 mm cone; this cartridge measures 34 mm.
 tip_mesh_scale: [1.0, 1.0, 0.78]
 
-# What the machine has in it now (operator swapped 4.0 -> 3.5 on 2026-08-25 for
-# the ballpoint cartridge, which is rated 3.5 mm max). The pair is 3.5/4.0, so
-# the 4.0 is the spare. A needle config has no such ceiling and may well want
-# the 4.0 back for lining — decide that when this cartridge is actually fitted,
-# and record what was chosen here.
-stroke_mm: 3.5
+# The machine's stroke (operator, 2026-10-05; the cam was 3.5 mm with a 4.0 spare).
+stroke_mm: 4.0
 
-# How far the needle stands out of the cartridge tip — a MACHINE ADJUSTMENT,
-# not a property of the cartridge. Across the industry it is a 0 to 4.0/4.5 mm
-# range in 0.1 mm (Cheyenne) or 0.2 mm (FK Irons) detents; the Lutin adjusts it
-# with a steel-ball rotation collar. Practice guidance is 1.5-2 mm for lining.
-#
-# This is a calibration trap, and the reason it is recorded here rather than
-# left implicit: turning that collar moves the TCP by up to 4 mm without
-# touching anything else. That is well inside the 15 mm tip_tolerance below, so
-# the touch-off gate would NOT catch it — a re-touch-off is required after any
-# needle-depth change, and this field is what makes the setting reviewable.
-# null = nobody has recorded where the collar is set.
-needle_protrusion_mm: null
+# How far the needles reach past the tube's end at the bottom of the stroke:
+# the collar setting (0 to ~4.5 mm on the Lutin's steel-ball collar). Turning
+# the collar changes it without moving the TCP. 4.0 mm (2026-10-05): on a ride
+# ladder on the silicone skin, the tube's end 5.0 down to 1.0 mm over the
+# gauged surface in 0.5 mm steps with the machine running, the operator judged
+# the 3.0 mm rung the right depth and stopped the ladder past 1.5 mm; with the
+# needles meeting the skin in the last 25% of the stroke, that is 3.0 + 1.0.
+# Neither the arm's joint nor carriage efforts resolved the contact.
+needle_reach_mm: 4.0
+# The needles at the top of the stroke are inside the tube.
+tip_out_at_top_mm: null
 
-# Machined steps along the body — same body as lutin-ballpoint-dot.
-rings: [
-  [-0.036, 0.004, 0.0008],
-  [-0.020, 0.003, 0.0008],
-  [-0.004, 0.005, 0.0010],
-  [ 0.012, 0.003, 0.0008]
-]
+rings: []
 body_color: "0.04 0.04 0.045 1"
 tip_color: "0.93 0.93 0.92 1"
 
-# THE SAME PHYSICAL MACHINE as lutin-ballpoint-dot (operator, 2026-08-25) —
-# these two datasheets are one body with different cartridges in it, seated
-# in the same bore of the same mount.
 mount: tool_mount
 
-# Vendor: 113 g body only, 184.5 g with the Korall RCA battery pack clipped on.
-# Neither is weighed by us, and which applies depends on whether the pack rides
-# on the machine during a session.
+# Vendor: 113 g body only, 184.5 g with the Korall RCA battery pack.
 mass_kg: 0.113
 com_z_m: null
 
-# Wide while the bore position is nominal; tighten with the ballpoint's.
-tip_tolerance_m: 0.030
+tip_tolerance_m: 0.025
+seat_tolerance_deg: 15.0
 
-# --- ink supply -------------------------------------------------------------
-# The needle carries a CHARGE of ink between dips; see docs/ink.md and
-# scripts/lib/ink_spec.py. Every number below is a GUESS (operator, 2026-08-28)
-# to be refit from before/after cap weighings with `ink.py fit`; the ledger
-# records contact_mm and contact_s next to every derived microlitre so the
-# refit is always possible.
+# --- palette dips (ros/README.md section 6) ----------------------------------
+# How the cartridge takes ink: the tube's end comes down the cap's axis to just
+# over the ink and holds there with the machine running, and the needles'
+# strokes pull ink up into the tube (operator, 2026-10-04). Nothing presses the
+# tube into the ink.
+dip:
+  above_ink_m: 0.0005      # the tube's end this far over the declared ink level while the machine runs
+  dwell_s: 1.5             # the machine running over the ink
+  hover_m: 0.008           # the tube's end this far over the rim before it goes down and after it comes up
+  speed_m_s: 0.010         # along the cap's axis, down and up
+  wall_margin_m: 0.0015    # the tool's outside keeps this from the bore's wall, beyond the station's uncertainty
+  mm_per_dip: 120.0        # line per dip until a bench measurement (dip, draw until it fades) replaces it; 3x the
+                           # first guess (40), which dipped well before the line faded (operator, 2026-10-06)
+  mm_per_dip_by_ink: {}    # {ink_id: mm}: measured per ink on this tool's substrate
+  # A resource activated by a rinse (tatbot-inks/3 `activation: {method: rinse, slot, ink_id}`) takes the cartridge
+  # from the last ink to its own in a cap of water, no landing: one dip there with the machine running, held longer
+  # than an ink dip, the tube's end at the water's declared level so the stroking needles flush it (operator,
+  # 2026-10-05).
+  rinse_dwell_s: 10.0
+  rinse_above_ink_m: 0.0
+
+# --- ink supply, the simulator's volume model (scripts/lib/ink_spec.py) -----
+# Guesses (operator, 2026-08-28) the simulator and `tatbot ink` read; the ROS
+# stack reads `dip:` above.
 ink:
   mode: real
   charge_capacity_ul: 2.0
@@ -127,26 +124,31 @@ ink:
   dip_dwell_s: 0.4
   min_fill_frac: 0.25
 
+# --- station probe contact model (ros/README.md section 7) -------------------
+# The tube's end is a halo: the nozzle's ring around the needles' exit hole,
+# narrower than the probe's 2 mm ball. Side pairs touch the nozzle 3 mm up, where
+# it is ~1.5 mm across: there the search passes 4 mm under the overhead fix's
+# ball (which stood ~2 mm high on this station) and still meets the stylus, and
+# its lines, spaced by the side radius, leave no gap a 1 mm nozzle slips through.
+# The first two runs planned a 2.5 and a 4 mm tube and their 4-5 mm lines all
+# missed (2026-10-05). The fit
+# measures the side radius itself.
+calibration:
+  contact_reference: tube_end
+  accuracy_profile: needle-tube
+  feature: "the cartridge nozzle's end, needles retracted"
+  face_kind: halo
+  wall_radius_m: 0.00075        # the nozzle's outside 3 mm up
+  face_radius_m: 0.0003         # the needles' exit hole
+  rim_touch_radius_m: 0.0004    # an edge pass stops with the ball this far off the axis, under the ring
+  side_touch_height_m: 0.003
+
 measured:
-  status: nominal
-  utc: 2026-08-25T00:00:00Z
-  method: "cartridge measured; body shared with lutin-ballpoint-dot"
+  status: measured
+  utc: 2026-10-05T02:40:00Z
+  method: "nozzle silhouette from the palette camera; tip across its axis from the joint-6 sweep (2026-10-05); length from lutin-ballpoint-dot's V17 seat"
   note: |
-    SOURCED: body 80 mm long, 32 mm diameter, 113 g (ambitiontattoosupply.com,
-    magnumtattoosupplies.co.uk). Cartridge code 1003RL decomposes to #10 =
-    0.30 mm bugpin needle / 03 = 3 needles / RL = round liner (hawink.com,
-    Amazon B087LVNDJC). Taper classes are an industry scale confirmed by two
-    independent suppliers — M 3.5 mm, L 5.5 mm, X 7.0 mm — so X-Taper here is
-    7.0 mm. Universal fit, with a safety membrane.
-
-    MEASURED (operator, 2026-08-25): cartridge 34 mm, conical, outer half
-    translucent with the needle visible inside. With the machine's 80 mm body
-    that gives 114 mm assembled and a 59 mm protrusion.
-
-    STILL UNCONFIRMED: no touch-off has been run with this cartridge fitted, so
-    the tip position is derived from the shared grip point rather than measured
-    in the EE frame. Cartridge body and tip-aperture diameters are published by
-    nobody — a search of patents, IFU PDFs, FDA 510(k) filings and B2B listings
-    found nothing, and the near-misses are traps (US6685719 is a surgical
-    skin-marker ink reservoir; US11040185B2's 5-12 mm figures are internal
-    magnets, not the housing).
+    SOURCED: body 80 mm long, 32 mm diameter, 113 g. Cartridge code 1003RL:
+    #10 = 0.30 mm bugpin needle, 03 = 3 needles, RL = round liner; X-taper is
+    7.0 mm (M 3.5 / L 5.5 / X 7.0 mm). Universal fit, with a safety membrane.
+    The cartridge's outer half is translucent with the needles visible inside.

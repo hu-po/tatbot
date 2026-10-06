@@ -2,7 +2,7 @@
 
 Three claims, each silent when wrong:
 
-  * with a tool that dips (the ballpoint rehearses; the 3RL is real) and a
+  * with a tool that dips (the 3RL is real) and a
     task that deposits, a batch plans dips — spliced at stroke boundaries,
     every dip step flagged so the env withholds deposition there, and each
     credit landing on a step inside its own dip;
@@ -12,10 +12,13 @@ Three claims, each silent when wrong:
   * a tool that never dips (the laser) plans none, and a removal task never
     asks — so erase datasets are byte-for-byte what they were.
 
-Torch + numpy, no render device. The fitted tool is fixed by env var before
-the package imports (tools.active_tool is import-bound):
+Torch + numpy, no render device. The tool is chosen by env var before this
+module imports (its skip conditions read the policy at import). The default
+suite fits the ballpoint, a cartridge that never dips, so it runs only the
+cartridge tests; the dip planning and the no-ink refusals need their own tool:
 
-    cd python/tatbot_sim && TATBOT_TOOL_ID=lutin-ballpoint-dot uv run python -m pytest -q tests/test_ink_dips.py
+    cd python/tatbot_sim && TATBOT_TOOL_ID=lutin-3rl-bugpin uv run python -m pytest -q tests/test_ink_dips.py
+    cd python/tatbot_sim && TATBOT_TOOL_ID=picosecond-laser-pen uv run python -m pytest -q tests/test_ink_dips.py
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ import numpy as np
 import pytest
 import torch
 from tatbot_sim import dipping, tasks, tools
+from tatbot_sim import palette as sim_palette
 from tatbot_sim.config import DRConfig
 from tatbot_sim.planning import plan_batch
 from tatbot_sim.strokes import ShapeConfig, Stroke
@@ -45,10 +49,10 @@ def _surface(b=2, seed=0):
 
 
 def _cap_rims(b=2):
-    ink = tools.ink_registry()
-    layout = ink.palette_layout_from_urdf(tools.REPO)
-    c = np.array(ink.palette_root_in_base(tools.REPO), dtype=np.float32)
-    return {s: np.repeat((c + np.array(off, dtype=np.float32))[None], b, 0) for s, off in layout.items()}
+    scene = sim_palette.load(tools.REPO)
+    _, transform = sim_palette.base_transform(tools.REPO, scene)
+    return {slot: np.repeat((transform @ np.array([*off, 1.0]))[:3][None], b, 0).astype(np.float32)
+            for slot, off in scene.rims.items()}
 
 
 @pytest.fixture(autouse=True)
@@ -132,8 +136,13 @@ def test_a_depositing_batch_dips_and_the_plan_is_consistent():
             assert plan.dip_mask[i, lo:hi].all()
             # the segment ends where the trajectory resumes: closed
             assert np.allclose(plan.targets[i, hi - 1], plan.targets[i, hi], atol=1e-5)
-            # away at the palette the floor is the cap floor, world-up
-            assert np.allclose(plan.surface_normals[i, lo:hi], [0, 0, 1])
+            # Away at the palette the floor is the cap floor, and its normal is
+            # the cap's own — world-up only while the rack is level. The
+            # measured pose has a ~5 deg tilt, so a literal [0,0,1] here would
+            # pin the assumption that put the simulator down the wrong axis.
+            from tatbot_sim.planning import _palette_entry_axis
+            assert np.allclose(plan.surface_normals[i, lo:hi],
+                               -np.asarray(_palette_entry_axis()), atol=1e-6)
         # nothing outside the dips is flagged
         outside = np.ones(plan.draw_horizon, dtype=bool)
         for dip in dips:
@@ -223,7 +232,20 @@ def test_without_a_palette_nothing_dips():
     assert plan.dips is None and plan.dip_mask is None
 
 
-@pytest.mark.skipif(POLICY.dips, reason=f"{TOOL} dips")
+@pytest.mark.skipif(POLICY.mode != "cartridge", reason=f"{TOOL} is not a cartridge")
+def test_a_cartridge_deposits_from_its_own_supply_and_never_dips():
+    """The ballpoint since 3ca4ade7: an ink supply the palette never
+    replenishes. A depositing task is admitted, no dip is planned, and the
+    session supply check does not look at the caps."""
+    plan = _plan("shapes")
+    assert plan.dips is None and plan.dip_mask is None
+    tasks.validate_task("language", tools.active_tool(), tools.active_substrate())
+    ink = tools.ink_registry()
+    dry = {s: ink.SlotLoad(s, None) for s in tools.palette()}
+    tasks.validate_supply("language", tools.active_tool(), palette_load=dry)
+
+
+@pytest.mark.skipif(POLICY.mode != "none", reason=f"{TOOL} has an ink supply")
 def test_a_tool_without_ink_never_dips_and_is_refused_for_ink_tasks():
     plan = _plan("erase", horizon=1200) if tools.active_substrate().ruled is False else None
     if plan is not None:
@@ -237,9 +259,9 @@ def test_a_tool_without_ink_never_dips_and_is_refused_for_ink_tasks():
 
 
 def test_validator_reads_the_palette_load():
-    """A real needle needs a wet cap; a rehearsal is content with a dry one."""
+    """A real needle needs a wet cap; a cartridge never asks for one."""
     ink = tools.ink_registry()
-    pal = ink.load_palette(tools.REPO)
+    pal = tools.palette()
     dry = {s: ink.SlotLoad(s, None) for s in pal}
     wet = {s: ink.SlotLoad(s, "nighthawk_black", 500.0) for s in pal}
     reg = tools.registry()
@@ -256,18 +278,140 @@ def test_validator_reads_the_palette_load():
     with pytest.raises(ValueError, match="no usable right-arm cap"):
         tasks.validate_supply("language", real, palette_load=dry)
     tasks.validate_supply("language", real, palette_load=wet)
-    tasks.validate_supply("language", reh, palette_load=dry)
+    tasks.validate_supply("language", reh, palette_load=dry)  # a cartridge: the caps are not its supply
     tasks.validate_supply("erase", laser, palette_load=dry)  # removal needs no ink
 
 
-def test_the_palette_sits_where_the_urdf_and_the_measured_hold_agree():
-    """palette_root in the arm base frame: between the arms, to the right
-    arm's left. The measured hold (poses.yaml palette_center, ROOT frame) put
-    the tip within 3 cm of it — the URDF is the rig, not 1.0 folklore."""
-    ink = tools.ink_registry()
-    c = np.array(ink.palette_root_in_base(tools.REPO))
-    assert np.allclose(c, [0.126, 0.2675, 0.085], atol=1e-6)
-    measured_tip_base = np.array([0.1541, 0.2826, 0.0965])  # FK of the 2026-08-26 hold
-    assert np.linalg.norm(measured_tip_base - c) < 0.04
-    assert DRConfig().palette.center_m is None, "the default derives from the URDF"
+def test_palette_default_is_explicitly_synthetic():
+    """Simulation placement never claims to measure the installed gooseneck."""
+    scene = sim_palette.load(tools.REPO)
+    source, pose = sim_palette.base_transform(tools.REPO, scene)
+    assert source == 'synthetic-installed-cad'
+    assert np.isfinite(pose).all()
+    assert list(scene.rims) == ['inkcap_large_1', 'inkcap_medium_1', 'inkcap_small_1',
+                                'inkcap_small_2', 'inkcap_medium_2', 'inkcap_large_2']
+    assert DRConfig().palette.center_m is None
     assert os.environ.get("TATBOT_TOOL_ID", TOOL) == TOOL
+
+
+# --- the gate on the solved reference -----------------------------------------------------
+
+def _fake_expert(tips: np.ndarray, num_envs: int, t_len: int):
+    """An expert whose joint reference lands the tip exactly where we say.
+
+    The gate's job is to compare the SOLVED reference against the cap, so the
+    solver is the thing to hold still: identity rotations mean the tool points
+    exactly where it was commanded, and every remaining error is the lateral
+    miss under test.
+    """
+    from types import SimpleNamespace
+
+    n = num_envs * t_len
+    poses = torch.eye(4).repeat(n, 1, 1)
+    poses[:, :3, 3] = torch.as_tensor(tips.reshape(n, 3), dtype=torch.float32)
+    ik = SimpleNamespace(n_joints=7, fk=lambda q: poses)
+    return SimpleNamespace(
+        q_ref=torch.zeros((num_envs, t_len, 7)), ik=ik,
+        target_rotations=lambda normals, b: torch.eye(3).repeat(b, 1, 1),
+    )
+
+
+def _dip_plan(tips, *, slot="inkcap_small_1", num_envs=2, t_len=3, step=1):
+    from types import SimpleNamespace
+
+    targets = np.zeros((num_envs, t_len, 3), dtype=np.float32)
+    up = np.zeros((num_envs, t_len, 3), dtype=np.float32)
+    up[..., 2] = 1.0
+    return SimpleNamespace(
+        n_app=0, q_raised=None, targets=targets, surface_normals=up, pen_normals=up,
+        dip_credits=[[step]] + [[] for _ in range(num_envs - 1)],
+        dips=[[{"slot": slot}]] + [[] for _ in range(num_envs - 1)],
+    ), tips
+
+
+def test_a_dip_that_misses_the_cap_is_caught_even_though_the_point_is_1mm_true():
+    """The residual gate cannot see this: the commanded point sits inside the
+    cap, so a reference 10 mm to the side still satisfies it. A small cap is
+    8 mm across, and a dip that never entered one was still credited a full
+    charge by step index (measured 2026-09-09)."""
+    from tatbot_sim.reference import _dip_reference_error
+
+    tips = np.zeros((2, 3, 3), dtype=np.float32)
+    tips[0, 1] = [0.010, 0.0, 0.0]          # 10 mm sideways, well outside a 4 mm radius
+    plan, tips = _dip_plan(tips)
+    expert = _fake_expert(tips, 2, 3)
+    lateral, axis, missed = _dip_reference_error(expert, plan, {"inkcap_small_1": np.zeros((2, 3))}, 2)
+    assert missed[0] and not missed[1], "only the env that dipped, and missed, is flagged"
+    assert lateral[0] == pytest.approx(10.0, abs=1e-3)
+    assert axis[0] == pytest.approx(0.0, abs=1e-6), "identity rotation holds the commanded axis"
+    assert lateral[1] == 0.0 and axis[1] == 0.0, "an env with no dips scores zero"
+
+
+def test_a_dip_inside_the_cap_passes():
+    """1 mm off centre in an 8 mm cap is a dip. The gate must not condemn the
+    ordinary case, or every dip episode is dropped and the corpus is empty."""
+    from tatbot_sim.reference import _dip_reference_error
+
+    tips = np.zeros((2, 3, 3), dtype=np.float32)
+    tips[0, 1] = [0.001, 0.0, 0.0]
+    plan, tips = _dip_plan(tips)
+    expert = _fake_expert(tips, 2, 3)
+    lateral, _, missed = _dip_reference_error(expert, plan, {"inkcap_small_1": np.zeros((2, 3))}, 2)
+    assert not missed.any()
+    assert lateral[0] == pytest.approx(1.0, abs=1e-3)
+
+
+def test_the_gate_is_silent_when_a_batch_plans_no_dips():
+    """Every non-dipping distribution goes through this call. It must cost
+    nothing and flag nothing."""
+    from types import SimpleNamespace
+
+    from tatbot_sim.reference import _dip_reference_error
+
+    plan = SimpleNamespace(n_app=0, q_raised=None, dip_credits=None, dips=None)
+    lateral, axis, missed = _dip_reference_error(None, plan, None, 3)
+    assert not missed.any() and not lateral.any() and not axis.any()
+
+
+def test_the_segment_enters_a_tilted_cap_along_the_shared_axis():
+    """The simulator's dip and the arm's now come from one module
+    (scripts/lib/dip_motion.py). On a level rack both stacks agreed anyway;
+    tilt the rack and the old world-Z assumption would put the hover and the
+    plunge somewhere the arm would never go."""
+    from tatbot_sim import tools
+
+    axis = np.array([0.3, 0.0, -1.0])
+    axis /= np.linalg.norm(axis)
+    rim = np.array([0.2, -0.05, 0.06])
+    geo = dipping.DipGeometry(rim_world=rim, plunge_m=0.003, cap_depth_m=0.0125,
+                              hover_m=0.02, dwell_s=0.4, plunge_speed=0.02,
+                              travel_speed=0.12, settle_time=0.2,
+                              entry_axis=tuple(axis))
+    pos, floor_pts, floor_nms, plunge = dipping.dip_segment(np.array([0.3, 0.02, 0.09]), geo, 1 / 30)
+    shared = tools.dip_motion().dip_poses(rim, axis, hover_m=geo.hover_m, plunge_m=geo.plunge_m)
+
+    assert np.allclose(pos[plunge], shared.bottom, atol=1e-6), "bottoms out where the arm would"
+    assert np.allclose(floor_nms, shared.outward_normal), "and holds the cap's own axis"
+    assert np.allclose(floor_pts, rim + axis * geo.cap_depth_m)
+    # the tilt is real: a world-Z segment would have put both on the rim's x
+    assert abs(shared.bottom[0] - rim[0]) > 1e-4
+
+
+@pytest.mark.parametrize('control_hz', [30, 400])
+def test_contact_time_and_bleed_follow_control_period(control_hz):
+    from types import SimpleNamespace
+
+    import torch
+    from tatbot_sim.env import TatbotDrawEnv
+
+    # A stationary tip spends one second touching: time-dependent ink use
+    # must be independent of how many controller samples describe that second.
+    world = SimpleNamespace(
+        control_freq=control_hz, ink_policy=SimpleNamespace(dips=True, touches_stock=False,
+            deposit_ul_per_mm=2.0, bleed_ul_per_s=3.0),
+        _dip_credit=None, _prev_tcp=None, ink_charge_ul=torch.tensor([100.0]),
+        ink_used_ul=torch.zeros(1), ink_contact_mm=torch.zeros(1), ink_contact_s=torch.zeros(1))
+    for step in range(control_hz):
+        TatbotDrawEnv._ink_step(world, torch.zeros((1, 3)), torch.tensor([True]), step)
+    assert float(world.ink_contact_s[0]) == pytest.approx(1.0, abs=2e-6)
+    assert float(world.ink_used_ul[0]) == pytest.approx(3.0, abs=2e-5)

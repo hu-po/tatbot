@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Minimal URDF forward kinematics (stdlib + numpy only).
 
-Enough to answer "where is link L in the robot's base frame when the joints
+Enough to answer "where is link L in the URDF root frame when the joints
 are at q?" — which is what ties the camera rig to the robot: the arm's
 encoders and its URDF are the one metric reference in the scene that was not
 guessed.
@@ -55,6 +55,7 @@ class UrdfChain:
 
     def __init__(self, urdf_path):
         root = ET.parse(Path(urdf_path).expanduser()).getroot()
+        self.links = {link.get('name') for link in root.findall('link')}
         self.joints = {}
         self.parent_of = {}
         for joint in root.findall("joint"):
@@ -82,14 +83,34 @@ class UrdfChain:
             transform = np.eye(4)
             transform[:3, :3] = _rpy_to_matrix(*rpy)
             transform[:3, 3] = xyz
+            mimic_element = joint.find('mimic')
+            mimic = (None if mimic_element is None else {
+                'joint': mimic_element.get('joint'),
+                'multiplier': float(mimic_element.get('multiplier', '1')),
+                'offset': float(mimic_element.get('offset', '0')),
+            })
             self.joints[name] = {
                 "name": name, "type": joint.get("type"), "parent": parent,
                 "child": child, "origin": transform, "axis": np.asarray(axis, float),
+                "mimic": mimic,
             }
             self.parent_of[child] = name
 
+    def _joint_value(self, name, joint_values, seen=()):
+        if name in seen:
+            raise ValueError(f'cycle in URDF mimic joints at {name}')
+        if name not in self.joints:
+            raise ValueError(f'unknown URDF mimic source {name!r}')
+        mimic = self.joints[name]['mimic']
+        if mimic is None:
+            return float(joint_values.get(name, 0.0))
+        source = self._joint_value(mimic['joint'], joint_values, (*seen, name))
+        return source*mimic['multiplier']+mimic['offset']
+
     def link_pose(self, link, joint_values=None):
         """Pose of `link` in the root frame, given a {joint_name: value} map."""
+        if link not in self.links:
+            raise ValueError(f'unknown URDF link {link!r}')
         joint_values = joint_values or {}
         pose = np.eye(4)
         chain = []
@@ -105,12 +126,12 @@ class UrdfChain:
         for joint in reversed(chain):
             pose = pose @ joint["origin"]
             if joint["type"] in ("revolute", "continuous"):
-                angle = float(joint_values.get(joint["name"], 0.0))
+                angle = self._joint_value(joint["name"], joint_values)
                 motion = np.eye(4)
                 motion[:3, :3] = _axis_angle_to_matrix(joint["axis"], angle)
                 pose = pose @ motion
             elif joint["type"] == "prismatic":
-                offset = float(joint_values.get(joint["name"], 0.0))
+                offset = self._joint_value(joint["name"], joint_values)
                 motion = np.eye(4)
                 motion[:3, 3] = joint["axis"] * offset
                 pose = pose @ motion
@@ -131,7 +152,7 @@ if __name__ == "__main__":
     chain = UrdfChain(sys.argv[1] if len(sys.argv) > 1
                       else Path(__file__).resolve().parents[2] / "urdf/tatbot.urdf")
     zeros = {}
-    for link in ("right/link_6", "right/realsense_link", "palette_tag8", "palette_root"):
+    for link in ("right/link_6", "right/realsense_link", "palette_tag", "palette_root"):
         try:
             pose = chain.link_pose(link, zeros)
             print(f"{link:32s} xyz={np.round(pose[:3, 3], 4)}")

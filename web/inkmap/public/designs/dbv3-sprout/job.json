@@ -1,0 +1,79 @@
+{
+  "drawing_set": {
+    "color_separation": "Default",
+    "distribution_order": "Darkest first (Default)",
+    "distribution_type": "Even weighted",
+    "name": "Tatbot pens",
+    "pens": [
+      {
+        "enabled": true,
+        "id": "black",
+        "name": "Black",
+        "rgba": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "stroke_factor": 1.0,
+        "type": "Ballpoint",
+        "weight": 100
+      }
+    ],
+    "type": "Tatbot"
+  },
+  "id": "dbv3-sprout",
+  "pen_width_mm": 0.3,
+  "pfm": "Sketch Sweeping Curves",
+  "schema": "tatbot.dbv3-job/3",
+  "settings": {
+    "Random Seed": 43
+  },
+  "size_mm": [
+    30,
+    30
+  ],
+  "source": {
+    "file": "input/source.png",
+    "provenance": {
+      "attribution": "Original Tatbot raster source, 2026",
+      "generation": null,
+      "identifier": "dbv3-sprout-source",
+      "kind": "stock",
+      "license": "CC0-1.0"
+    },
+    "sha256": "eccfa367788cfa62f8f2731f4a3eeca73f018a814a080a1a3b2770d091e52064"
+  },
+  "state": {
+    "area": {
+      "clipping": "Drawing",
+      "crop": "Crop to fit",
+      "rescale": "High Quality",
+      "units": "mm"
+    },
+    "export": {
+      "exportSVGBackground": false,
+      "lineFilteringEnabled": false,
+      "lineFilteringTolerance": 0.5,
+      "lineFilteringUnits": "mm",
+      "lineMergingEnabled": true,
+      "lineMergingTolerance": 0.5,
+      "lineMergingUnits": "mm",
+      "lineSimplifyEnabled": true,
+      "lineSimplifyTolerance": 0.1,
+      "lineSimplifyUnits": "mm",
+      "lineSortingEnabled": true,
+      "lineSortingTolerance": 1.0,
+      "lineSortingUnits": "mm",
+      "multipassCount": 1,
+      "multipassEnabled": false,
+      "pathOptimisationEnabled": true,
+      "pathSplittingDistance": 500.0,
+      "pathSplittingEnabled": false,
+      "pathSplittingUnits": "m",
+      "svgDrawingStatsComment": true,
+      "svgLayerNaming": "%NAME%",
+      "svgPFMSettingsText": false
+    }
+  }
+}

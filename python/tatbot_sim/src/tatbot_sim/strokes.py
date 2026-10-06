@@ -15,8 +15,6 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from tatbot_sim.tools import active_tool
-
 
 @dataclass
 class Stroke:
@@ -35,13 +33,9 @@ class Stroke:
 # (erase_seconds + measured pass cost), and slowing its strokes makes the
 # smallest scene overrun the pass budget (measured: SceneTooLongError).
 _LUTIN_PEN_BODY = ("lutin-ballpoint-dot", "lutin-3rl-bugpin")
-_IS_LUTIN = active_tool().tool_id in _LUTIN_PEN_BODY
-_DRAW_SPEED_RANGE = (0.004, 0.016) if _IS_LUTIN else (0.02, 0.05)
-_TRAVEL_SPEED = 0.08 if _IS_LUTIN else 0.12
 # MazeConfig's band also paces LANGUAGE scenes (plan_batch's lang_cfg borrows
 # it), so it carries the same per-tool split: slowing it unconditionally made
 # the laser's smallest erase scene overrun its pass budget.
-_MAZE_SPEED_RANGE = (0.004, 0.014) if _IS_LUTIN else (0.012, 0.03)
 
 
 @dataclass
@@ -60,8 +54,8 @@ class ShapeConfig:
     # paced from the real fm2 teleop recording; the laser keeps the band its
     # own real recordings calibrated (via erase_seconds — slowing its strokes
     # would break the measured pass-count fit).
-    draw_speed_range: tuple[float, float] = _DRAW_SPEED_RANGE
-    travel_speed: float = _TRAVEL_SPEED  # m/s between strokes / from home
+    draw_speed_range: tuple[float, float] = (0.004, 0.016)
+    travel_speed: float = 0.08  # m/s between strokes / from home
     hover_height: float = 0.025  # m above draw plane for travel between strokes
     # Every episode opens well clear of the surface and descends onto it, so
     # the policy sees an approach rather than starting already in contact.
@@ -73,6 +67,11 @@ class ShapeConfig:
     # lift. Settling at hover before the descend and on the paper before the
     # lift lets the lateral motion die where it cannot mark the sheet.
     settle_time: float = 0.2
+
+    @classmethod
+    def for_tool(cls, tool_id: str):
+        return cls() if tool_id in _LUTIN_PEN_BODY else cls(
+            draw_speed_range=(0.02, 0.05), travel_speed=0.12)
 
 
 def _regular_polygon(n: int, size: float) -> np.ndarray:
@@ -126,10 +125,14 @@ class MazeConfig:
     segments_range: tuple[int, int] = (15, 40)
     # slower than the shape task: 6 mm segments turn every quarter second at
     # shape speeds and the controller overshoots the corners off the ruling
-    draw_speed_range: tuple[float, float] = _MAZE_SPEED_RANGE
+    draw_speed_range: tuple[float, float] = (0.004, 0.014)
     # chance of continuing straight at each node, sampled per episode from
     # this range: low = twisty scribble, high = long runs with few corners
     momentum_range: tuple[float, float] = (0.3, 0.85)
+
+    @classmethod
+    def for_tool(cls, tool_id: str):
+        return cls() if tool_id in _LUTIN_PEN_BODY else cls(draw_speed_range=(0.012, 0.03))
 
 
 def sample_maze(
@@ -149,7 +152,7 @@ def sample_maze(
     xs = [x for x in sheet["xs"] if abs(x) <= cfg.reach]
     ys = [y for y in sheet["ys"] if abs(y) <= cfg.reach]
     # Nodes the fitted tool cannot be held normal over are not walkable. On a
-    # flat pad that is every node; on a mound the walk keeps to the ground it
+    # flat pad that is every node; on a curved profile the walk keeps to the ground it
     # can actually work.
     walkable = (np.ones((len(xs), len(ys)), dtype=bool) if reachable is None else
                 np.array([[reachable.node_ok(x, y) for y in ys] for x in xs], dtype=bool))
@@ -222,7 +225,7 @@ class EETrajectory:
     """Dense EE position targets, one per control step, in the canvas frame."""
 
     positions: np.ndarray  # (T, 3) xyz; z is height above the draw plane
-    pen_down: np.ndarray = field(default=None)  # (T,) bool, True while drawing
+    pen_down: np.ndarray | None = field(default=None)  # (T,) bool, True while drawing
     # The step at which the trajectory begins travelling to stroke k, hovering
     # clear of the surface: the one place a dip (tatbot_sim.dipping) can be
     # spliced in without touching the stroke on either side.
@@ -257,8 +260,7 @@ def build_ee_trajectory(
     the caller must shorten the strokes instead (see planning._fit_strokes).
     """
     dt = 1.0 / control_freq
-    if draw_speed is None:
-        draw_speed = rng.uniform(*cfg.draw_speed_range)
+    speed: float = float(rng.uniform(*cfg.draw_speed_range)) if draw_speed is None else draw_speed
     approach_steps = max(2, int(cfg.approach_time / dt))
     lo, hi = cfg.start_height_range
     if max_start_z is not None:
@@ -284,7 +286,7 @@ def build_ee_trajectory(
     cur = np.array([0.0, 0.0, cfg.hover_height])
 
     for stroke in strokes:
-        pts = _resample(stroke.points, draw_speed * dt)
+        pts = _resample(stroke.points, speed * dt)
         starts.append(len(pos) - 1)
         # travel at hover height, settle, then descend
         _extend(cur, np.array([*pts[0], cfg.hover_height]), cfg.travel_speed, False)

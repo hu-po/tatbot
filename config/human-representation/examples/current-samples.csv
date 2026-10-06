@@ -1,0 +1,14 @@
+schema,tatbot.draw-samples/1
+kind,path
+frame,right/base_link
+period_s,0.0025
+tip_x_m,0
+tip_y_m,0
+tip_z_m,0
+sample_count,2
+start_tolerance_m,0.001
+dip_count,0
+fixture,human-representation-p0
+columns,t_s,px,py,pz,vx,vy,vz,r00,r01,r02,r10,r11,r12,r20,r21,r22,pen,capture,dip
+0,0.4,0,0.2,0.004,0,0,1,0,0,0,1,0,0,0,1,0,0,0
+0.0025,0.40001,0,0.2,0.004,0,0,1,0,0,0,1,0,0,0,1,1,0,0

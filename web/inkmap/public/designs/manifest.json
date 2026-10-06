@@ -1,40 +1,81 @@
 {
+  "schema": "tatbot.artwork-collection/1",
+  "id": "dbv3-acquired-v1",
   "designs": [
     {
-      "id": "octopus",
-      "name": "Octopus",
-      "path": "designs/octopus.svg",
-      "default_size_mm": [65, 59]
+      "id": "dbv3-orbit",
+      "name": "dbv3-orbit",
+      "path": "designs/dbv3-orbit/artwork.json",
+      "default_size_mm": [
+        30,
+        30
+      ],
+      "sha256": "11687fbf9c5ce9b199019bc26a5ca328a7436c75f0e1849889b505964112413b",
+      "family": "orbital",
+      "split": "train",
+      "usage": "artwork",
+      "size_range_mm": [
+        30,
+        30
+      ],
+      "planning_width_mm": 0.3,
+      "source": {
+        "attribution": "Original Tatbot raster source, 2026",
+        "generation": null,
+        "identifier": "dbv3-orbit-source",
+        "kind": "stock",
+        "license": "CC0-1.0"
+      }
     },
     {
-      "id": "lunar-moth",
-      "name": "Lunar Moth",
-      "path": "designs/lunar-moth.svg",
-      "default_size_mm": [70, 56]
+      "id": "dbv3-sprout",
+      "name": "dbv3-sprout",
+      "path": "designs/dbv3-sprout/artwork.json",
+      "default_size_mm": [
+        30,
+        30
+      ],
+      "sha256": "bfabd962df059dc4dbe38c38cb76ba932ceb8e0c2d31ae9894380c743ff4db21",
+      "family": "botanical",
+      "split": "validation",
+      "usage": "artwork",
+      "size_range_mm": [
+        30,
+        30
+      ],
+      "planning_width_mm": 0.3,
+      "source": {
+        "attribution": "Original Tatbot raster source, 2026",
+        "generation": null,
+        "identifier": "dbv3-sprout-source",
+        "kind": "stock",
+        "license": "CC0-1.0"
+      }
     },
     {
-      "id": "peony",
-      "name": "Peony",
-      "path": "designs/peony.svg",
-      "default_size_mm": [67, 70]
-    },
-    {
-      "id": "koi",
-      "name": "Koi",
-      "path": "designs/koi.svg",
-      "default_size_mm": [45, 70]
-    },
-    {
-      "id": "swallow",
-      "name": "Swallow",
-      "path": "designs/swallow.svg",
-      "default_size_mm": [64, 70]
-    },
-    {
-      "id": "tiger",
-      "name": "Tiger",
-      "path": "designs/tiger.svg",
-      "default_size_mm": [63, 70]
+      "id": "dbv3-ridges",
+      "name": "dbv3-ridges",
+      "path": "designs/dbv3-ridges/artwork.json",
+      "default_size_mm": [
+        30,
+        30
+      ],
+      "sha256": "e16ac8b41c8139ae762f215a5df15afab167f5df770373199972d1187acdee67",
+      "family": "landscape",
+      "split": "test",
+      "usage": "artwork",
+      "size_range_mm": [
+        30,
+        30
+      ],
+      "planning_width_mm": 0.3,
+      "source": {
+        "attribution": "Original Tatbot raster source, 2026",
+        "generation": null,
+        "identifier": "dbv3-ridges-source",
+        "kind": "stock",
+        "license": "CC0-1.0"
+      }
     }
   ]
 }

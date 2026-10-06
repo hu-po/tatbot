@@ -1,0 +1,82 @@
+{
+  "adapter": "dbv3-batik-paths/1",
+  "chord_error_m": 5e-06,
+  "decoded_points": 2092,
+  "export_width_relative_tolerance": 0.01,
+  "pen_widths": [
+    {
+      "export_width_m": 0.00029897069999999993,
+      "generation_width_m": 0.0003,
+      "native_path_id": null,
+      "path": 1,
+      "pen_id": "black",
+      "pen_name": "Ballpoint_black"
+    },
+    {
+      "export_width_m": 0.00029897069999999993,
+      "generation_width_m": 0.0003,
+      "native_path_id": null,
+      "path": 2,
+      "pen_id": "black",
+      "pen_name": "Ballpoint_black"
+    },
+    {
+      "export_width_m": 0.00029897069999999993,
+      "generation_width_m": 0.0003,
+      "native_path_id": null,
+      "path": 3,
+      "pen_id": "black",
+      "pen_name": "Ballpoint_black"
+    },
+    {
+      "export_width_m": 0.00029897069999999993,
+      "generation_width_m": 0.0003,
+      "native_path_id": null,
+      "path": 4,
+      "pen_id": "black",
+      "pen_name": "Ballpoint_black"
+    },
+    {
+      "export_width_m": 0.00029897069999999993,
+      "generation_width_m": 0.0003,
+      "native_path_id": null,
+      "path": 5,
+      "pen_id": "black",
+      "pen_name": "Ballpoint_black"
+    }
+  ],
+  "pens": [
+    {
+      "enabled": true,
+      "export_group": "Ballpoint_black",
+      "exported": true,
+      "generation_width_m": 0.0003,
+      "id": "black",
+      "name": "black",
+      "native_row_id": 0,
+      "raw_path_count": 5,
+      "requested_name": "Black",
+      "rgba": [
+        0,
+        0,
+        0,
+        255
+      ],
+      "stroke_factor": 1.0,
+      "type": "Ballpoint",
+      "weight": 100
+    }
+  ],
+  "python": "3.12.14",
+  "raw_path_count": 5,
+  "sources": {
+    "python/tatbot_contracts/src/tatbot_contracts/artwork.py": "6db2759bdbf0dee7e71f8c22ac3ac36ea9cf22e78231b9c2e029926a1f2d8b3d",
+    "python/tatbot_contracts/src/tatbot_contracts/canonical.py": "81b6087c47ce7977a104c49f0b3471b6d85ece5f98145b2570f84d41c3421540",
+    "python/tatbot_contracts/src/tatbot_contracts/paths.py": "0cc47e87123d682b7786f02249ed85459a5e7d20bef77f408995b944f4b7a977",
+    "scripts/lib/drawingbot/artifacts.py": "1c6e273b3340491065a5aeb187633755e03eaf4e43fdffdb13cc832a52b44aca",
+    "scripts/lib/drawingbot/job.py": "4843214b16df746ccb2210f90176a7d7f94e5c5c1bcc398c32323cd98d2b0ed2",
+    "scripts/lib/drawingbot/native_export.py": "e4e997e681839d7aa883ce8a026fcd315c352c80c8fa9218500ef91409611d33",
+    "scripts/lib/drawingbot/native_path.py": "3c203185096b5c3f9209adc39a561d046beab045557ab35ec81e3075a6b164a7",
+    "scripts/lib/drawingbot/pens.py": "32bb94075acaabc62376560317aa36c9dd74cf8566f28c5122f2a25cd6435c9f"
+  }
+}

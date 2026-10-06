@@ -47,24 +47,11 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from tatbot_sim.resolved import resolve
 from tatbot_sim.strokes import MazeConfig, ShapeConfig, Stroke, pacing_estimate
-from tatbot_sim.tools import active_substrate, active_tool
 
 LEXICON_VERSION = "p0.8"  # p0.8: draw sentences drop the trailing period (fm2 parity)
 # p0.6: removal on a blank substrate says "the ink"
-# The tool slot comes from the fitted tool's datasheet, so the prompt cannot
-# describe a tool other than the one the URDF was built from. Swapping pens
-# re-realizes the same scene programs as "using 3RL" without touching video.
-TOOL_PHRASE = active_tool().prompt_phrase
-# The surface slot comes from the SUBSTRATE the fitted tool works on, for the
-# same reason the tool slot comes from its datasheet: a prompt that named the
-# paper pad while the laser worked a silicone skin would be the one part of an
-# episode that could tell a policy which domain it was in.
-_SUBSTRATE = active_substrate()
-SURFACE_PHRASE = _SUBSTRATE.surface_phrase
-# Nothing is printed on a blank substrate, so the motifs that put their
-# vertices ON the ruling — and say so in the prompt — have no ruling to sit on.
-RULED_SURFACE = _SUBSTRATE.ruled
 # The verb slot. Adding one means adding the wording here and a branch in
 # planning that knows what the sheet starts with — nothing else.
 VERBS = {"draw": "draw", "erase": "remove"}
@@ -442,8 +429,15 @@ def _stroke_len(strokes):
     return sum(float(np.linalg.norm(np.diff(s, axis=0), axis=1).sum()) for s in strokes)
 
 
-def _cost_s(strokes):
-    return _stroke_len(strokes) / DRAW_SPEED + len(strokes) * STROKE_OVERHEAD_S
+def pacing(config=None):
+    config = config or resolve()
+    tool_id = config.tool.tool_id
+    return pacing_estimate(ShapeConfig.for_tool(tool_id), MazeConfig.for_tool(tool_id).draw_speed_range)
+
+
+def _cost_s(strokes, config=None):
+    speed, stroke_overhead, _ = pacing(config)
+    return _stroke_len(strokes) / speed + len(strokes) * stroke_overhead
 
 
 def _plural(noun):
@@ -486,12 +480,12 @@ def _bounding_circle(pts: np.ndarray) -> tuple[np.ndarray, float]:
 
 
 def sample_scene(rng: np.random.Generator, grid: dict, budget_s: float, verb: str = "draw",
-                 reachable=None, style: "SceneStyle | None" = None):
+                 reachable=None, style: "SceneStyle | None" = None, config=None):
     """One scene program that fits the time budget. Returns (strokes, program).
 
     ``reachable`` (optional) says where on the canvas the fitted tool can be
     held normal to the surface. A motif is placed only where it can actually be
-    worked: on a mound the flanks ask the wrist for a lean it cannot make, and
+    worked: on a cylinder the flanks ask the wrist for a lean it cannot make, and
     a scene laid across them would be a scene the arm quietly misses.
 
     ``verb`` picks what the episode does with the scene. "draw" lays it down;
@@ -509,15 +503,20 @@ def sample_scene(rng: np.random.Generator, grid: dict, budget_s: float, verb: st
     exceeds the remaining budget re-rolls the slot (up to 3 draws) instead of
     ending the scene, which was quietly over-representing the cheap motifs.
     """
+    config = config or resolve()
+    tool_phrase = config.tool.prompt_phrase
+    surface_phrase = config.substrate.surface_phrase
+    ruled_surface = config.substrate.ruled
+    _, _, episode_overhead = pacing(config)
     style = style or DEFAULT_STYLE
     for _ in range(40):
         k_target = min(style.max_motifs, int(rng.choice([1, 1, 1, 2, 2, 3])))
-        placed, occupied, spent = [], [], EPISODE_OVERHEAD_S
+        placed, occupied, spent = [], [], episode_overhead
         for _slot in range(k_target):
             for _attempt in range(3):
                 allow = style.motifs or tuple(MOTIFS)
                 pool = [k for k in MOTIFS
-                        if k in allow and (RULED_SURFACE or not MOTIFS[k].grid_locked)
+                        if k in allow and (ruled_surface or not MOTIFS[k].grid_locked)
                         for _ in range(MOTIF_WEIGHTS.get(k, 1))]
                 if not pool:
                     raise ValueError(
@@ -547,7 +546,7 @@ def sample_scene(rng: np.random.Generator, grid: dict, budget_s: float, verb: st
                     trial = mod_nested(trial, nested)
                 for name in mods:
                     trial = MODS[name](trial, rng)
-                cost = _cost_s(trial) * count
+                cost = _cost_s(trial, config) * count
                 if spent + cost <= budget_s:
                     break
             else:
@@ -601,7 +600,7 @@ def sample_scene(rng: np.random.Generator, grid: dict, budget_s: float, verb: st
     strokes = [Stroke(s) for p in placed for s in p.strokes]
     joiner = str(rng.choice([" next to ", " and ", " beside "])) if len(placed) > 1 else ""
     phrases = [p.phrase if verb == "draw" else _definite(p.phrase) for p in placed]
-    if verb == "erase" and not RULED_SURFACE:
+    if verb == "erase" and not ruled_surface:
         # The operator cannot name what they are removing: on a blank skin the
         # target was inked before the episode and there is nothing printed to
         # read it against. Naming the motif here would be the one part of an
@@ -609,18 +608,18 @@ def sample_scene(rng: np.random.Generator, grid: dict, budget_s: float, verb: st
         # a blank substrate says "the ink", in the order the recordings use.
         # Both slots still come from the datasheet and the substrate registry,
         # so the sentence cannot drift from the tool or the surface it names.
-        prompt = f"{VERBS[verb]} the ink {SURFACE_PHRASE} {TOOL_PHRASE}"
+        prompt = f"{VERBS[verb]} the ink {surface_phrase} {tool_phrase}"
     else:
         # no trailing period: the real fm2 draw recording types its sentence
         # without one ("draw a 6mm square using pen tip on the grid lines of
         # the paper pad"), and punctuation is exactly the kind of freebie a
         # policy can key a domain on.
-        prompt = f"{VERBS[verb]} " + joiner.join(phrases) + f" {TOOL_PHRASE} {SURFACE_PHRASE}"
+        prompt = f"{VERBS[verb]} " + joiner.join(phrases) + f" {tool_phrase} {surface_phrase}"
     program = {
         "lexicon": LEXICON_VERSION,
         "verb": verb,
-        "tool": TOOL_PHRASE,
-        "surface": SURFACE_PHRASE,
+        "tool": tool_phrase,
+        "surface": surface_phrase,
         "motifs": [
             {"key": p.key, "size_r": round(p.params["r"], 4), "mods": p.mods,
              "nested": p.nested, "count": p.count,

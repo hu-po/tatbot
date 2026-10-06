@@ -1,0 +1,9 @@
+# tatbot operator numpad: tatbot_session.keypad reads /dev/tatbot-keypad (stack.yaml keypad) on the host that
+# runs the ROS stack. The pad (USB c0f4:0df5, "Usb KeyBoard") shows three input interfaces; 00 carries the keys.
+# The stack's login user is in plugdev, and the keypad node grabs the device, so its keys reach no console or desktop.
+#
+# `tatbot ros deploy` installs it; by hand:
+#   sudo cp config/udev/99-tatbot-keypad.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=input
+# then check:  ls -l /dev/tatbot-keypad
+SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_VENDOR_ID}=="c0f4", ENV{ID_MODEL_ID}=="0df5", ENV{ID_USB_INTERFACE_NUM}=="00", SYMLINK+="tatbot-keypad", GROUP="plugdev", MODE="0660"

@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tatbot_travel"
+version = "0.1.0"
+description = "Travel demo: synthetic ink-tracing data for one wrist-camera arm, for FLUX.3 Action fine-tuning"
+authors = [{ name = "Hugo Ponte" }]
+license = "MIT"
+requires-python = ">=3.11,<3.13"
+# Generation consumes verified SOMA pose bytes without running the provider.
+# Kinematics, rendering and a servo model simulate the non-contact task;
+# SOMA articulation is materialized separately in its locked environment.
+dependencies = [
+  "tatbot-sim==0.1.0",  # shared verified SOMA poses and canonical surface mapping
+  "mujoco>=3.3",
+  "numpy",
+  "scipy",
+  "trimesh",
+  "pyyaml",
+  "pillow",
+  "opencv-python-headless",
+  "scikit-image",  # thinning ink into traceable strokes
+  "cairosvg",  # rasterising the flash designs (needs the system cairo library)
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+agent = ["openai>=2,<4"]  # the Astra decider (tatbot_travel.astra)
+
+[project.scripts]
+travel = "tatbot_travel.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"tatbot_travel.data" = ["*.png", "*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv.sources]
+tatbot-sim = { path = "../tatbot_sim", editable = true }
+tatbot-contracts = { path = "../tatbot_contracts", editable = true }
+tatbot-scriptlib = { path = "../../scripts/lib", editable = true }

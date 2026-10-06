@@ -4,13 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sys
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "scripts/vision"))
-
-from rerun_metadata import log_producer_metadata  # noqa: E402
+from tatbot_rerun import log_producer_metadata  # noqa: E402
 
 
 class FakeRerun:

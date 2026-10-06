@@ -1,0 +1,131 @@
+{
+  "diagnostic": {
+    "capture_epoch": "synthetic-epoch",
+    "device_metadata_raw_clock_relation": "unverified_on_installed_device",
+    "exposure_clock_authority": false,
+    "frame_sequence": 11,
+    "owner_exposure_interval_ns": null,
+    "probe": {
+      "after": {
+        "device_time_us": 180000,
+        "owner_after_unix_ns": 560003000,
+        "owner_before_unix_ns": 560000000,
+        "owner_monotonic_elapsed_ns": 3000,
+        "status": "ok"
+      },
+      "before": {
+        "device_time_us": 123000,
+        "owner_after_unix_ns": 500003000,
+        "owner_before_unix_ns": 500000000,
+        "owner_monotonic_elapsed_ns": 3000,
+        "status": "ok"
+      },
+      "capture_epoch": "synthetic-epoch",
+      "frames": {
+        "overhead_depth_color": {
+          "actual_exposure_us": "1000",
+          "device_frame_number": "11",
+          "sensor_timestamp_us": "123400"
+        },
+        "overhead_depth_depth": {
+          "actual_exposure_us": "1000",
+          "device_frame_number": "11",
+          "sensor_timestamp_us": "123400"
+        }
+      },
+      "generation": 4,
+      "owner_pair_monotonic_elapsed_ns": 60003000,
+      "schema": "tatbot.raw-device-clock-sample/1",
+      "sdk_version": "2.58.4"
+    },
+    "producer": {
+      "node": "synthetic-camera-owner",
+      "pid": 1,
+      "run_id": "synthetic-run",
+      "sha": "synthetic-source"
+    },
+    "schema": "tatbot.raw-device-clock-probe/1",
+    "selected_frames": {
+      "overhead_depth_color": {
+        "actual_exposure_us": 1000,
+        "device_frame_number": 11,
+        "payload_bytes": 3,
+        "payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "record_sequence": 11,
+        "sensor_timestamp_us": 123400
+      },
+      "overhead_depth_depth": {
+        "actual_exposure_us": 1000,
+        "device_frame_number": 11,
+        "payload_bytes": 2,
+        "payload_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "record_sequence": 11,
+        "sensor_timestamp_us": 123400
+      }
+    },
+    "selection_generation": 4,
+    "set_sequence": 7,
+    "status": "raw_samples_metadata_epoch_unverified"
+  },
+  "manifest": {
+    "frame_selection": "sdk_queue_drained_post_request",
+    "frames": {
+      "overhead_depth_color": {
+        "metadata": {
+          "attributes": {
+            "actual_exposure_us": "1000",
+            "backend_timestamp_us": "123420",
+            "capture_epoch": "synthetic-epoch",
+            "device_firmware": "synthetic-firmware",
+            "device_serial": "synthetic-device",
+            "frame_number": "11",
+            "frame_timestamp_us": "123410",
+            "raw_device_clock_probe": "{\"after\":{\"device_time_us\":180000,\"owner_after_unix_ns\":560003000,\"owner_before_unix_ns\":560000000,\"owner_monotonic_elapsed_ns\":3000,\"status\":\"ok\"},\"before\":{\"device_time_us\":123000,\"owner_after_unix_ns\":500003000,\"owner_before_unix_ns\":500000000,\"owner_monotonic_elapsed_ns\":3000,\"status\":\"ok\"},\"capture_epoch\":\"synthetic-epoch\",\"frames\":{\"overhead_depth_color\":{\"actual_exposure_us\":\"1000\",\"device_frame_number\":\"11\",\"sensor_timestamp_us\":\"123400\"},\"overhead_depth_depth\":{\"actual_exposure_us\":\"1000\",\"device_frame_number\":\"11\",\"sensor_timestamp_us\":\"123400\"}},\"generation\":4,\"owner_pair_monotonic_elapsed_ns\":60003000,\"schema\":\"tatbot.raw-device-clock-sample/1\",\"sdk_version\":\"2.58.4\"}",
+            "sdk_queue_flush_generation": "4",
+            "sensor_timestamp_us": "123400",
+            "time_of_arrival_us": "123430"
+          },
+          "sequence": 11,
+          "timestamps": {
+            "host_unix_ns": 555000000,
+            "normalized_unix_ns": 123400000,
+            "source_domain": "real_sense_global",
+            "source_ns": 123400000
+          }
+        },
+        "payload_bytes": 3,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "overhead_depth_depth": {
+        "metadata": {
+          "attributes": {
+            "actual_exposure_us": "1000",
+            "capture_epoch": "synthetic-epoch",
+            "device_firmware": "synthetic-firmware",
+            "device_serial": "synthetic-device",
+            "frame_number": "11",
+            "raw_device_clock_probe": "{\"after\":{\"device_time_us\":180000,\"owner_after_unix_ns\":560003000,\"owner_before_unix_ns\":560000000,\"owner_monotonic_elapsed_ns\":3000,\"status\":\"ok\"},\"before\":{\"device_time_us\":123000,\"owner_after_unix_ns\":500003000,\"owner_before_unix_ns\":500000000,\"owner_monotonic_elapsed_ns\":3000,\"status\":\"ok\"},\"capture_epoch\":\"synthetic-epoch\",\"frames\":{\"overhead_depth_color\":{\"actual_exposure_us\":\"1000\",\"device_frame_number\":\"11\",\"sensor_timestamp_us\":\"123400\"},\"overhead_depth_depth\":{\"actual_exposure_us\":\"1000\",\"device_frame_number\":\"11\",\"sensor_timestamp_us\":\"123400\"}},\"generation\":4,\"owner_pair_monotonic_elapsed_ns\":60003000,\"schema\":\"tatbot.raw-device-clock-sample/1\",\"sdk_version\":\"2.58.4\"}",
+            "sdk_queue_flush_generation": "4",
+            "sensor_timestamp_us": "123400"
+          },
+          "sequence": 11,
+          "timestamps": {
+            "host_unix_ns": 555000000,
+            "normalized_unix_ns": 123400000,
+            "source_domain": "real_sense_global",
+            "source_ns": 123400000
+          }
+        },
+        "payload_bytes": 2,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "producer": {
+      "node": "synthetic-camera-owner",
+      "pid": 1,
+      "run_id": "synthetic-run",
+      "sha": "synthetic-source"
+    },
+    "sequence": 7
+  }
+}

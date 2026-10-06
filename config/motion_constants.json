@@ -1,0 +1,91 @@
+{
+  "schema": "tatbot.draw-constants/1",
+  "_doc": "The one source of every number the C++ samples planner and the Python planner must agree on. scripts/gen_motion_constants.py renders cpp/teleop/motion_constants.hpp from it; scripts/lib/motion_constants.py reads it. Every samples file carries constants_sha and the executor refuses a file compiled against different values. Edit here, regenerate, rebuild.",
+  "period_s": 0.0025,
+  "carriage_ik": {
+    "bias_m": 0.002,
+    "min_m": 0.0005,
+    "max_m": 0.0035,
+    "pen_up_min_m": -0.006,
+    "pen_up_max_m": 0.034
+  },
+  "planner": {
+    "joint_limit_margin_rad": 0.03333333333333333,
+    "max_joint_velocity_rad_s": 0.375,
+    "max_joint_velocity_pen_up_rad_s": 1.0,
+    "max_model_error_m": 0.00015000000000000001,
+    "max_model_error_pen_up_m": 0.0015,
+    "max_model_error_draw_m": 0.0015,
+    "max_orientation_error_rad": 0.005,
+    "dls_damping": 0.02,
+    "position_error_gain_s": 4.0,
+    "orientation_error_gain_s": 2.0,
+    "carriage_dls_weight": 2.0,
+    "carriage_center_gain_s": 2.0,
+    "max_carriage_velocity_m_s": 0.001,
+    "max_carriage_acceleration_m_s2": 0.02,
+    "max_ticks": 250000
+  },
+  "path": {
+    "lean_budget_deg": 30.0,
+    "lean_deadband_deg": 12.0,
+    "dip_travel_speed_m_s": 0.08,
+    "dip_travel_backoff_m_s": [
+      0.08,
+      0.06,
+      0.04,
+      0.025,
+      0.015,
+      0.01
+    ],
+    "dip_descent_speed_m_s": 0.01
+  },
+  "orbit": {
+    "poses": 3,
+    "speed_mm_s": 100.0,
+    "no_scan_lift_mm": 10.0,
+    "capture_settled_rad_s": 0.075,
+    "capture_settled_s": 0.15,
+    "capture_settle_max_s": 4.5
+  },
+  "audio_servo": {
+    "rate_m_s": 0.0005,
+    "up_m": 0.004,
+    "stale_s": 1.0,
+    "stall_s": 5.0
+  },
+  "touchoff": {
+    "fast_m_s": 0.01,
+    "slow_m_s": 0.0005,
+    "slow_above_m": 0.004,
+    "below_m": 0.003,
+    "lag_m": 0.0008,
+    "lag_arm_s": 0.5,
+    "lag_hold_s": 0.15,
+    "effort_stop_n": 12.0,
+    "effort_hold_s": 0.25,
+    "cover_m": 0.025,
+    "cover_max_m": 0.04,
+    "prior_tilt_deg": 8.0,
+    "wiggle_m": 0.00075,
+    "wiggle_hz": 0.5,
+    "return_m_s": 0.015,
+    "hover_wait_s": 1.0,
+    "hover_timeout_s": 10.0,
+    "settle_s": 0.5
+  },
+  "audio_rule": {
+    "rms_drop_db": 10.0,
+    "rms_hyst_db": 3.0,
+    "latch_rows": 3
+  },
+  "design": {
+    "radius_tolerance_fraction": 0.25
+  },
+  "registration": {
+    "rescan_max_translation_m": 0.008,
+    "rescan_max_rotation_rad": 0.1,
+    "rescan_max_radius_delta_m": 0.005,
+    "camera_max_disagreement_m": 0.030
+  }
+}

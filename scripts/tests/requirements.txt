@@ -5,18 +5,21 @@
 # nothing else, so nine modules failed to import and the suite never ran green.
 # A declared set can be fixed once; an incantation gets re-typed wrong.
 #
-# scripts/tests/conftest.py maps each module to the import it needs and skips
-# what is absent, so a partial install still produces an honest run.
+# scripts/tests/conftest.py derives what each module imports and skips
+# what is absent in the light profile. The full offline profile requires every
+# declared dependency (except the separately provisioned LeRobot integration).
 
-pytest
+-r requirements-light.txt
 
-# Broadly needed across calibration, log and geometry tests.
-numpy
-scipy
+# Fiducial/vision tests: ee_fiducial, ee_tracker_io, fiducial_inventory.
+opencv-python-headless==5.0.0.93
 
-# Fiducial/vision tests: ee_fiducial, ee_tracker_io, fiducial_inventory,
-# calibrate_board_session.
-opencv-python
+# Metric RGB-D and original-material comparison tests. Match the offline
+# benchmark environment. Use Python 3.12 for the Open3D wheel set. Distortion
+# deprojection is a numpy port pinned by a checked-in SDK table, so the
+# RealSense wheel is not a test dependency.
+open3d==0.19.0
+threadpoolctl==3.6.0
 
 # LeRobot dataset-layout tests: train_dataset, train_depth_encoding.
 pyarrow
@@ -28,8 +31,12 @@ torch
 # train_tb_bridge reads back what the TensorBoard logger wrote.
 tensorboard
 
+# test_stencil_rerun logs display caps into a recording spy; the version is the
+# one fleet-wide pin (python/lerobot_robot_tatbot/pyproject.toml).
+rerun-sdk==0.36.0
+
 # NOT listed, deliberately: lerobot. train_dataset, train_depth_encoding and
 # train_offline_eval import it, but it is a whole robotics stack from a git
 # fork carrying a pinned trossen-arm override -- too much to drag into this
-# suite's throwaway environment for three modules. conftest.py skips them and
+# suite's throwaway environment for integration modules. conftest.py skips them and
 # says so; run the suite from python/lerobot_robot_tatbot/.venv to include them.

@@ -5,6 +5,7 @@ __pycache__/
 .env
 uv.lock
 !python/lerobot_robot_tatbot/uv.lock
+!python/tatbot_sim/uv.lock
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -25,7 +26,21 @@ Thumbs.db
 
 # Local outputs
 outputs/
-logs/
+
+# Run logs and recordings live in ~/tatbot-logs/, never in the repo (AGENTS.md).
+# These patterns are a backstop for a stray write, not the mechanism.
+# Deliberately NOT *.csv: a future tracked data file would vanish silently.
 *.log
 *.wxtl
 *.rrd
+/tatbot-logs/
+/.tatbot-deploy.json
+/.tatbot-build.json
+.claude/settings.local.json
+
+# Compiled Inkmap showcase scenarios (~32 MB). The seed inputs -- pose ids and
+# placements -- live in the tracked showcase/manifest.json; scripts/inkmap_deploy.sh
+# recompiles these before the Vite build. Regenerate by hand with:
+#   uv run --project python/tatbot_sim python -m tatbot_sim.inkmap.showcase \
+#     --output-dir web/inkmap/public/showcase --install
+web/inkmap/public/showcase/*.scenario.json

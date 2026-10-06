@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.dev/schemas/human-representation/ink-program.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "content_sha256",
+    "tattoo_program_sha256",
+    "surface_placement_sha256",
+    "compiler_sha256",
+    "initial_ink_state",
+    "predicted_ink_state",
+    "events",
+    "total_material_path_length_m",
+    "uncertainty",
+    "provenance"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tatbot.ink-program/1"
+    },
+    "content_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "tattoo_program_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "surface_placement_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "compiler_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "initial_ink_state": {
+      "$ref": "common.schema.json#/$defs/inkState"
+    },
+    "predicted_ink_state": {
+      "$ref": "common.schema.json#/$defs/inkState"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "curve",
+              "start_choice",
+              "allowed_tool_class",
+              "speed_m_s",
+              "orientation_tolerance_rad",
+              "contact_envelope_m",
+              "research_depth_band_m",
+              "ordering_rationale"
+            ],
+            "properties": {
+              "kind": {
+                "const": "stroke"
+              },
+              "curve": {
+                "$ref": "common.schema.json#/$defs/surfaceCurve"
+              },
+              "start_choice": {
+                "enum": [
+                  "start",
+                  "end"
+                ]
+              },
+              "allowed_tool_class": {
+                "type": "string",
+                "minLength": 1
+              },
+              "speed_m_s": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "orientation_tolerance_rad": {
+                "type": "number",
+                "minimum": 0
+              },
+              "contact_envelope_m": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "research_depth_band_m": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                  }
+                ]
+              },
+              "ordering_rationale": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "state"
+            ],
+            "properties": {
+              "kind": {
+                "const": "pen_transition"
+              },
+              "state": {
+                "enum": [
+                  "lift",
+                  "approach",
+                  "contact_intent",
+                  "retract"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "ink_id",
+              "target_load",
+              "trigger_reason",
+              "dependency",
+              "expected_load_after"
+            ],
+            "properties": {
+              "kind": {
+                "const": "dip"
+              },
+              "ink_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "target_load": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "trigger_reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dependency": {
+                "type": "string",
+                "minLength": 1
+              },
+              "expected_load_after": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "required_tool_class",
+              "transition_intent"
+            ],
+            "properties": {
+              "kind": {
+                "const": "tool_change"
+              },
+              "required_tool_class": {
+                "type": "string",
+                "minLength": 1
+              },
+              "transition_intent": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "intent"
+            ],
+            "properties": {
+              "kind": {
+                "const": "barrier"
+              },
+              "intent": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        ]
+      },
+      "minItems": 1
+    },
+    "total_material_path_length_m": {
+      "type": "number",
+      "minimum": 0
+    },
+    "uncertainty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "length_sigma_m",
+        "load_sigma"
+      ],
+      "properties": {
+        "length_sigma_m": {
+          "type": "number",
+          "minimum": 0
+        },
+        "load_sigma": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "provenance": {
+      "$ref": "common.schema.json#/$defs/provenance"
+    },
+    "operating_budget_s": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Cartridge programs only: the continuous operating budget in seconds the program was compiled against; absent for a tool that dips."
+    },
+    "fill_style": {
+      "type": "string",
+      "enum": ["concentric", "hatch"],
+      "description": "The paint planner the program was compiled with, when it is not the default: absent means concentric inset rings; hatch is boundary rings then rows along each region's long axis."
+    }
+  }
+}

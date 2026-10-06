@@ -1,4 +1,4 @@
-"""Parity between scripts/lib/draw_surface.py and tatbot_sim.surface on one surface.npz.
+"""Parity between scripts/lib/surface_model.py and tatbot_sim.surface on one surface.npz.
 
 The mapper (NumPy-only) and the sim (torch) must agree on what the file
 means, or a design rehearsed in sim lands somewhere else on the pad. Frame
@@ -10,19 +10,13 @@ float32 (the env's working dtype) is held to a looser bound.
 
 from __future__ import annotations
 
-import sys
-
 import numpy as np
 import pytest
 
 torch = pytest.importorskip("torch")
 
-from tatbot_sim.repo import repo_root  # noqa: E402
+import surface_model as ds  # noqa: E402
 from tatbot_sim.surface_io import displaced_surface_from_npz  # noqa: E402
-
-sys.path.insert(0, str(repo_root() / "scripts" / "lib"))
-
-import draw_surface as ds  # noqa: E402
 
 
 def _rot(normal, u_hint):

@@ -1,0 +1,206 @@
+{
+  "effective": {
+    "area": {
+      "clipping": "Drawing",
+      "crop": "Crop to fit",
+      "rescale": "High Quality",
+      "units": "mm"
+    },
+    "drawing": {
+      "pen_width_mm": 0.3,
+      "size_mm": [
+        30.0,
+        30.0
+      ]
+    },
+    "drawing_set": {
+      "color_separation": "Default",
+      "distribution_order": "Darkest first (Default)",
+      "distribution_type": "Even weighted",
+      "name": "Tatbot pens",
+      "native_set_id": 0,
+      "pens": [
+        {
+          "enabled": true,
+          "export_group": "Ballpoint_black",
+          "generation_width_m": 0.0003,
+          "id": "black",
+          "name": "black",
+          "native_row_id": 0,
+          "requested_name": "Black",
+          "rgba": [
+            0,
+            0,
+            0,
+            255
+          ],
+          "stroke_factor": 1.0,
+          "type": "Ballpoint",
+          "weight": 100
+        }
+      ],
+      "type": "Tatbot"
+    },
+    "export": {
+      "exportSVGBackground": false,
+      "lineFilteringEnabled": false,
+      "lineFilteringTolerance": 0.5,
+      "lineFilteringUnits": "mm",
+      "lineMergingEnabled": true,
+      "lineMergingTolerance": 0.5,
+      "lineMergingUnits": "mm",
+      "lineSimplifyEnabled": true,
+      "lineSimplifyTolerance": 0.1,
+      "lineSimplifyUnits": "mm",
+      "lineSortingEnabled": true,
+      "lineSortingTolerance": 1.0,
+      "lineSortingUnits": "mm",
+      "multipassCount": 1,
+      "multipassEnabled": false,
+      "pathOptimisationEnabled": true,
+      "pathSplittingDistance": 500.0,
+      "pathSplittingEnabled": false,
+      "pathSplittingUnits": "m",
+      "svgDrawingStatsComment": true,
+      "svgLayerNaming": "%NAME%",
+      "svgPFMSettingsText": false
+    },
+    "settings": {
+      "Angularity": 0.0,
+      "Clarity": 0.0,
+      "Curvature": 0.0,
+      "Directionality": 0.0,
+      "Distortion": 0.0,
+      "Edge Power": 0.0,
+      "Erase Max": 125,
+      "Erase Min": 50,
+      "Erase Radius Max": 1.0,
+      "Erase Radius Min": 1.0,
+      "Line Density": 75.0,
+      "Line Max Length": 80,
+      "Line Max Limit": -1,
+      "Line Min Length": 20,
+      "Luminance Power": 100.0,
+      "Plotting Resolution": 1.0,
+      "Random Seed": 42,
+      "Seed Threshold": 50.0,
+      "Seed Type": "LUMINANCE",
+      "Should Lift Pen": true,
+      "Sobel Power": 0.0,
+      "Squiggle Max Deviation": 25.0,
+      "Squiggle Max Length": 500,
+      "Squiggle Min Length": 25,
+      "Tone": 50.0
+    }
+  },
+  "files": {
+    "project.json": "548cfb0cb0176f6fbf816a39ff88e8929dee9e381dbe7c384c63fe7610f254c4",
+    "source.png": "2ced08732e600fc99b642a1f55f0c69398c7952ed231279d80888a319c015f00",
+    "state.json": "08e659a794f14fca75739a45e87c20002b843fd082d0449dc42148c903781f59"
+  },
+  "outputs": {
+    "normalized.svg": "32179efa27eadbb2c48daf40149a83c5d8d58adad731b0e690d27a8fc011efc9"
+  },
+  "schema": "tatbot.dbv3-recipe/3",
+  "software": {
+    "bridge_sha256": "42be4208bd01aacadd895bb1d3039db7f00be413aac4299e87d43167e563c11e",
+    "edition": "Premium",
+    "jar_sha256": "2419a2c08c82bd7d6576cd703896c528f7ad7fa319f57016991fcd17549929ef",
+    "java_version": "openjdk version \"21.0.12.1\" 2026-08-18\nOpenJDK Runtime Environment (build 21.0.12.1+1-1-26.04.4-Ubuntu)\nOpenJDK 64-Bit Server VM (build 21.0.12.1+1-1-26.04.4-Ubuntu, mixed mode, sharing)",
+    "mode": "JavaFX with Xvfb, one job per process",
+    "runtime_flags": [
+      "prism.order=sw",
+      "xvfb:GLX=off"
+    ],
+    "version": "1.6.22"
+  },
+  "variant": {
+    "drawing_set": {
+      "color_separation": "Default",
+      "distribution_order": "Darkest first (Default)",
+      "distribution_type": "Even weighted",
+      "name": "Tatbot pens",
+      "pens": [
+        {
+          "enabled": true,
+          "id": "black",
+          "name": "Black",
+          "rgba": [
+            0,
+            0,
+            0,
+            255
+          ],
+          "stroke_factor": 1.0,
+          "type": "Ballpoint",
+          "weight": 100
+        }
+      ],
+      "type": "Tatbot"
+    },
+    "id": "dbv3-orbit",
+    "pen_width_mm": 0.3,
+    "pfm": "Sketch Sweeping Curves",
+    "schema": "tatbot.dbv3-job/3",
+    "settings": {
+      "Random Seed": 42
+    },
+    "size_mm": [
+      30,
+      30
+    ],
+    "source": {
+      "file": "source.png",
+      "provenance": {
+        "attribution": "Original Tatbot raster source, 2026",
+        "generation": null,
+        "identifier": "dbv3-orbit-source",
+        "kind": "stock",
+        "license": "CC0-1.0"
+      },
+      "sha256": "2ced08732e600fc99b642a1f55f0c69398c7952ed231279d80888a319c015f00"
+    },
+    "state": {
+      "area": {
+        "clipping": "Drawing",
+        "crop": "Crop to fit",
+        "rescale": "High Quality",
+        "units": "mm"
+      },
+      "export": {
+        "exportSVGBackground": false,
+        "lineFilteringEnabled": false,
+        "lineFilteringTolerance": 0.5,
+        "lineFilteringUnits": "mm",
+        "lineMergingEnabled": true,
+        "lineMergingTolerance": 0.5,
+        "lineMergingUnits": "mm",
+        "lineSimplifyEnabled": true,
+        "lineSimplifyTolerance": 0.1,
+        "lineSimplifyUnits": "mm",
+        "lineSortingEnabled": true,
+        "lineSortingTolerance": 1.0,
+        "lineSortingUnits": "mm",
+        "multipassCount": 1,
+        "multipassEnabled": false,
+        "pathOptimisationEnabled": true,
+        "pathSplittingDistance": 500.0,
+        "pathSplittingEnabled": false,
+        "pathSplittingUnits": "m",
+        "svgDrawingStatsComment": true,
+        "svgLayerNaming": "%NAME%",
+        "svgPFMSettingsText": false
+      }
+    }
+  },
+  "widths": {
+    "generation_mm": 0.3,
+    "pens": [
+      {
+        "generation_width_m": 0.0003,
+        "id": "black",
+        "stroke_factor": 1.0
+      }
+    ]
+  }
+}

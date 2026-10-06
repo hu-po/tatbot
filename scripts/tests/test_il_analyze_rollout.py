@@ -20,8 +20,6 @@ import numpy as np
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "scripts"))
-sys.path.insert(0, str(REPO / "scripts" / "vision"))
 
 import il_analyze_rollout as ana  # noqa: E402
 from urdf_kinematics import UrdfChain  # noqa: E402
@@ -189,37 +187,29 @@ def test_hull_area():
     assert ana.hull_area(square) == pytest.approx(100.0)
 
 
-# --- Test load_workspace -----------------------------------------------------
+# --- Test the workspace reader of record, through the analyzer -----------------
 
 
-def test_load_workspace(tmp_path, monkeypatch):
-    # Non-existent file
+def test_workspace_reads_through_tool_spec(tmp_path, monkeypatch):
+    # Non-existent file: no touch-off, nothing to read.
     monkeypatch.setattr(ana, "REPO", tmp_path)
-    assert ana.load_workspace() == {}
+    assert ana.tool_spec.read_workspace(ana.REPO) == {}
 
-    # Mock workspace.yaml
     ws_dir = tmp_path / "config"
     ws_dir.mkdir(parents=True)
-    ws_file = ws_dir / "workspace.yaml"
-    ws_content = """# Comment line
+    (ws_dir / "workspace.yaml").write_text("""# Comment line
 right:
   tool_id: "lutin-ballpoint-dot"
   paper_plane_z: 0.005945
   paper_band_mm: null
-  note:
   touchoff:
-    ignore_me: 123
-"""
-    ws_file.write_text(ws_content)
-
-    ws = ana.load_workspace()
-    assert "right" in ws
+    n_plate: 9
+""")
+    ws = ana.tool_spec.read_workspace(ana.REPO)
     assert ws["right"]["tool_id"] == "lutin-ballpoint-dot"
     assert ws["right"]["paper_plane_z"] == 0.005945
     assert ws["right"]["paper_band_mm"] is None
-    assert ws["right"]["note"] is None
-    # Nested blocks under touchoff at indent 4 are ignored
-    assert "ignore_me" not in ws["right"]
+    assert ws["right"]["touchoff"] == {"n_plate": 9}
 
 
 # --- Test sparc ---------------------------------------------------------------
@@ -442,6 +432,31 @@ right: {}
     empty_dir.mkdir()
     with pytest.raises(SystemExit, match="no flight CSV"):
         ana.analyze(empty_dir)
+
+
+@pytest.mark.parametrize('metadata', [
+    {'key': {'physical_arm': 'left'}},
+    {'hardware': {'arms': [{'physical_arm': 'left'}]}},
+])
+def test_analyze_uses_recorded_left_geometry(tmp_path, monkeypatch, metadata):
+    make_synthetic_flight_csv(tmp_path / 'flight-left.csv', n_rows=100, dt=0.1)
+    (tmp_path / 'meta.json').write_text(json.dumps(metadata))
+    workspace = {
+        'left': {'tip_frame': 'left/tool_mount', 'pen_tip_offset_z': 0.03, 'paper_plane_z': 0.04},
+        'right': {'tip_frame': 'right/tool_mount', 'pen_tip_offset_z': 0.09, 'paper_plane_z': 0.12},
+    }
+    monkeypatch.setattr(ana.tool_spec, 'read_workspace', lambda repo: workspace)
+    result = ana.analyze(tmp_path, settle=1.0)
+    assert result['physical_arm'] == 'left'
+    assert result['geometry']['link'] == 'left/tool_mount'
+    assert result['geometry']['plane_z_mm'] == 40.0
+    chain = UrdfChain(str(REPO / 'urdf/tatbot.urdf'))
+    rows = ana.load_rows(tmp_path / 'flight-left.csv')
+    tip = ana.pen_path(rows, chain, chain.arm_joint_names('left'), [0, 0, 0.03])
+    scored = np.array([float(row['t_mono']) for row in rows]) >= 1.0
+    assert result['metrics']['z_mean_mm'] == pytest.approx(round(float(tip[scored, 2].mean()), 2))
+    with pytest.raises(SystemExit, match='contradicts'):
+        ana.analyze(tmp_path, settle=1.0, arm='right')
 
 
 # --- Test print_report and compare -------------------------------------------

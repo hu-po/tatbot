@@ -20,18 +20,59 @@
 # backgrounds them. Ctrl+C is the normal way to end it.
 #
 # Joint telemetry goes to the viewer node's live URDF (--telemetry-udp, default
-# the profile telemetry endpoint, override TATBOT_TELEMETRY_UDP) as a literal argument,
-# which is what scripts/vision/calib_sweep.sh looks for to know it can
-# attach. No cameras, no recording beyond the teleop's own .wxtl flight log
-# under the resolved log root (teleop/) — `tatbot teleop run` is the full session.
+# the profile telemetry endpoint, override TATBOT_TELEMETRY_UDP) as a literal argument.
+# No cameras, no recording beyond the teleop's own .wxtl flight log
+# under the resolved log root (teleop/) — `tatbot live cockpit` on the operator
+# node shows every camera and the animated URDF beside it.
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Physical roles are validated before profiles, tools, probes or driver access.
+# The wrist-calibration mode changes control roles inside the executor.
+# Controller addresses, profiles and SDK end-effectors stay physically bound.
+WRIST_CALIBRATION=0
+LEADER_ARM=""
+FOLLOWER_ARM=""
+ROLE_ARGS=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --wrist-calibration) WRIST_CALIBRATION=1; ROLE_ARGS+=("$1"); shift ;;
+    --leader|--follower)
+      [ "$#" -ge 2 ] || { echo "$1 needs a physical arm" >&2; exit 2; }
+      [ -n "$2" ] || { echo "$1 needs a physical arm" >&2; exit 2; }
+      if [ "$1" = --leader ]; then LEADER_ARM="$2"; else FOLLOWER_ARM="$2"; fi
+      shift 2 ;;
+    --leader=|--follower=) echo "$1 needs a physical arm" >&2; exit 2 ;;
+    --leader=*) LEADER_ARM="${1#--leader=}"; shift ;;
+    --follower=*) FOLLOWER_ARM="${1#--follower=}"; shift ;;
+    *) ROLE_ARGS+=("$1"); shift ;;
+  esac
+done
+if [ "$WRIST_CALIBRATION" -eq 1 ]; then
+  LEADER_ARM="${LEADER_ARM:-right}"
+  FOLLOWER_ARM="${FOLLOWER_ARM:-left}"
+fi
+python3 - "$REPO" "$LEADER_ARM" "$FOLLOWER_ARM" "$WRIST_CALIBRATION" <<'PY'
+import sys
+from pathlib import Path
+repo = Path(sys.argv[1])
+sys.path.insert(0, str(repo / "scripts/lib"))
+from tatbot_cli.arms import require_current_executor, select_roles
+try:
+    roles = select_roles(sys.argv[2] or None, sys.argv[3] or None)
+except ValueError as exc:
+    print(f"teleop_start: {exc}", file=sys.stderr)
+    sys.exit(2)
+try:
+    require_current_executor(repo, roles, wrist_calibration=sys.argv[4] == "1")
+except ValueError as exc:
+    print(f"teleop_start: {exc}", file=sys.stderr)
+    sys.exit(3)
+PY
+set -- "${ROLE_ARGS[@]}"
 # shellcheck source=scripts/lib/cli_hint.sh
 source "$REPO/scripts/lib/cli_hint.sh"; cli_hint::note "tatbot teleop start"
 # shellcheck source=scripts/lib/estop_guard.sh
 source "$REPO/scripts/lib/estop_guard.sh"
-# shellcheck source=scripts/lib/arm_gate.sh
-source "$REPO/scripts/lib/arm_gate.sh"
 # shellcheck source=scripts/lib/profile_env.sh
 source "$REPO/scripts/lib/profile_env.sh"
 profile_env::require || exit $?
@@ -52,53 +93,6 @@ for a in "$@"; do
   esac
 done
 set -- "${REST[@]}"
-
-SQUARE_REQUESTED=0
-SPIRAL_REQUESTED=0
-CARRIAGE_IK_REQUESTED=0
-DRAW_REQUESTED=0
-for a in "$@"; do
-  case "$a" in
-    --draw-dir|--draw-dir=*) DRAW_REQUESTED=1 ;;
-    --square-probe-mm|--square-probe-mm=*) SQUARE_REQUESTED=1 ;;
-    --spiral-carriage-ik) SPIRAL_REQUESTED=1; CARRIAGE_IK_REQUESTED=1 ;;
-    --spiral-radius-mm|--spiral-radius-mm=*|--spiral-turns|--spiral-turns=*|--spiral-duration-s|--spiral-duration-s=*|--spiral-ease-s|--spiral-ease-s=*)
-      SPIRAL_REQUESTED=1 ;;
-  esac
-done
-if [ "$SQUARE_REQUESTED" = 1 ]; then
-  if [ "${TATBOT_SQUARE_ARMED:-}" != 1 ]; then
-    echo "REFUSING Cartesian square passthrough: use the dedicated autonomous verb:" >&2
-    echo "  tatbot --ee-tool $EE_TOOL teleop square --nonce <fresh-literal>" >&2
-    exit 3
-  fi
-  # The square wrapper already consumed this nonce. Requiring the inherited
-  # gate here proves the wrapper is still our ancestor and the ledger entry is
-  # still the one from this launch.
-  arm_gate::require || exit $?
-fi
-if [ "$DRAW_REQUESTED" = 1 ]; then
-  # The surface-first draw session (docs/draw.md) is armed only by its
-  # wrapper, which also owns the capture server and the Rerun shadow.
-  if [ "${TATBOT_DRAW_ARMED:-}" != 1 ] || [ "${TATBOT_CARRIAGE_IK_ARMED:-}" != 1 ]; then
-    echo "REFUSING draw passthrough: use the dedicated autonomous verb:" >&2
-    echo "  tatbot --ee-tool $EE_TOOL draw run --nonce <fresh-literal>" >&2
-    exit 3
-  fi
-  arm_gate::require || exit $?
-fi
-if [ "$SPIRAL_REQUESTED" = 1 ]; then
-  if [ "${TATBOT_SPIRAL_ARMED:-}" != 1 ]; then
-    echo "REFUSING Cartesian spiral passthrough: use the dedicated autonomous verb:" >&2
-    echo "  tatbot --ee-tool $EE_TOOL teleop spiral --nonce <fresh-literal>" >&2
-    exit 3
-  fi
-  arm_gate::require || exit $?
-  if [ "$CARRIAGE_IK_REQUESTED" = 1 ] && [ "${TATBOT_CARRIAGE_IK_ARMED:-}" != 1 ]; then
-    echo "REFUSING carriage-IK passthrough: use teleop spiral --carriage-ik." >&2
-    exit 3
-  fi
-fi
 
 TELEOP="$REPO/cpp/teleop/build/wxai_teleop"
 # Telemetry endpoint comes from the profile (endpoints.teleop_telemetry_udp,
@@ -125,9 +119,33 @@ fi
 source "$REPO/scripts/lib/runlog.sh"
 runlog::init teleop --set stack=cpp --set "estop=$TATBOT_ESTOP_DEVICE" --set tool="$EE_TOOL" --set telemetry="$TELEMETRY"
 cd "$REPO"
+# Every teleop session lands both arms inside its own live session at Enter
+# (staged -> sleep -> idle): a bare release idled the motors and left the
+# operator to `tatbot arm recover` after every reference capture. A caller that
+# already names the pose keeps its value.
+LAND_ARGS=()
+case " $* " in
+  *" --staged-positions "*) ;;
+  *)
+    # shellcheck source=scripts/lib/staged_pose.sh
+    source "$REPO/scripts/lib/staged_pose.sh"
+    STAGED="$(staged_pose::csv "$REPO")" || exit 1
+    LAND_ARGS=(--staged-positions "$STAGED") ;;
+esac
+RC=0
 runlog::run "$TELEOP" "$TATBOT_LEADER_IP" "$TATBOT_FOLLOWER_IP" \
   config/trossen/leader.yaml config/trossen/follower.yaml \
   --estop "$TATBOT_ESTOP_DEVICE" \
   --telemetry-udp "$TELEMETRY" \
-  --ee-tool "$EE_TOOL" "${TOOL_ARGS[@]}" \
-  "$@"
+  --ee-tool "$EE_TOOL" "${TOOL_ARGS[@]}" "${LAND_ARGS[@]}" \
+  "$@" || RC=$?
+# Exit 3 from wxai_teleop is its scheduling refusal, raised before either arm
+# driver is constructed. It reports the priority and the limit it measured;
+# this adds the account of WHY the policy did not reach this session — group
+# membership, PAM/SSH login handling, an inherited limit — from the same
+# read-only model `tatbot teleop check` renders. It reads files and changes
+# nothing, and it never turns a refusal into a success.
+if [ "$RC" = 3 ] && [ -f "$REPO/scripts/lib/teleop_readiness.py" ]; then
+  python3 "$REPO/scripts/lib/teleop_readiness.py" --explain-realtime || true
+fi
+exit "$RC"

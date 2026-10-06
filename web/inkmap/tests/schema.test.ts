@@ -1,62 +1,72 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import {
+  BODY_SPEC,
+  MODEL_SPEC_ID,
+  MODEL_SPEC_SHA256,
+  REFERENCE_IDENTITY_SHA256,
+  REST_ASSET_SHA256,
+  REST_SURFACE_SHA256,
+  TOPOLOGY_SHA256,
+} from "../src/core/body.ts";
 import { validatePlacementFile, SCHEMA_VERSION } from "../src/core/schema.ts";
 
 const schema = JSON.parse(readFileSync(new URL("../../../config/inkmap/placement.schema.json", import.meta.url), "utf8"));
 
 const good = {
-  schema_version: 4,
+  schema_version: 6,
   units: { length: "m", tattoo_size: "mm", up: "+z" },
-  body: { id: "hbm-male-stylized", asset_sha256: "a".repeat(64), surface_sha256: "b".repeat(64), path: "bodies/hbm-male-stylized.glb" },
+  body: {
+    model_spec_id: MODEL_SPEC_ID,
+    model_spec_sha256: MODEL_SPEC_SHA256,
+    identity_sha256: REFERENCE_IDENTITY_SHA256,
+    topology_sha256: TOPOLOGY_SHA256,
+    rest_surface_sha256: REST_SURFACE_SHA256,
+    asset_path: BODY_SPEC.path,
+    asset_sha256: REST_ASSET_SHA256,
+  },
   placements: [
     { id: "p-1", design_id: "anchor", anchor: { face: 12, barycentric: [0.2, 0.5, 0.3] }, rotation_rad: 0.1, size_mm: [50, 60], mirror: false },
   ],
 };
 
-test("the in-app validator and the JSON Schema agree on the version", () => {
+test("the in-app validator and JSON Schema agree on placement v6", () => {
   assert.equal(schema.properties.schema_version.const, SCHEMA_VERSION);
+  assert.equal(schema.properties.body.properties.model_spec_id.const, MODEL_SPEC_ID);
 });
 
-test("a well-formed file validates", () => {
+test("a well-formed v6 file validates", () => {
   assert.doesNotThrow(() => validatePlacementFile(structuredClone(good)));
 });
 
-test("bad files are rejected with a reason", () => {
-  const bad = (mut: (f: any) => void, re: RegExp) => {
-    const f = structuredClone(good) as any;
-    mut(f);
-    assert.throws(() => validatePlacementFile(f), re);
+test("old schemas, old models, and malformed geometry fail closed", () => {
+  const bad = (mutate: (file: any) => void, pattern: RegExp) => {
+    const file = structuredClone(good) as any;
+    mutate(file);
+    assert.throws(() => validatePlacementFile(file), pattern);
   };
-  bad((f) => (f.schema_version = 5), /schema_version/);
-  bad((f) => (f.placements[0].site = { id: "", laterality: "left", aspect: null, lexicon: "0.1" }), /site\.id/);
-  bad((f) => (f.placements[0].site = { id: "knee_ditch", laterality: "both", aspect: null, lexicon: "0.1" }), /laterality/);
-  bad((f) => (f.placements[0].language = { sentence: "", program: {} }), /sentence/);
-  bad((f) => (f.designs = []), /designs/);
-  bad((f) => (f.designs = { "gen-1": { name: "x", svg: "nope", default_size_mm: [10, 10] } }), /svg/);
-  bad((f) => { f.placements[0].design_id = "gen-9"; f.designs = {}; }, /not embedded/);
-  bad((f) => (f.units.up = "+y"), /units/);
-  bad((f) => (f.body.asset_sha256 = "nope"), /asset_sha256/);
-  bad((f) => delete f.body.surface_sha256, /surface_sha256/);
-  bad((f) => (f.placements[0].anchor.barycentric = [0.5, 0.5, 0.5]), /sum to 1/);
-  bad((f) => (f.placements[0].anchor.face = -1), /face/);
-  bad((f) => (f.placements[0].size_mm = [0, 10]), /size_mm/);
-  bad((f) => delete f.placements[0].mirror, /mirror/);
+  bad((file) => { file.schema_version = 5; }, /unsupported schema\/model/);
+  bad((file) => { file.body.model_spec_id = "legacy-body"; }, /unsupported schema\/model/);
+  bad((file) => { file.body.identity_sha256 = "0".repeat(64); }, /unsupported schema\/model/);
+  bad((file) => { file.body.rest_surface_sha256 = "0".repeat(64); }, /unsupported schema\/model/);
+  bad((file) => { delete file.body.topology_sha256; }, /body binding fields/);
+  bad((file) => { file.body.asset_sha256 = "nope"; }, /unsupported schema\/model/);
+  bad((file) => { file.placements[0].anchor.barycentric = [0.5, 0.5, 0.5]; }, /sum to 1/);
+  bad((file) => { file.placements[0].anchor.face = -1; }, /face/);
+  bad((file) => { file.placements[0].size_mm = [0, 10]; }, /size_mm/);
+  bad((file) => { delete file.placements[0].mirror; }, /mirror/);
 });
 
-test("a v1 file (no designs) still loads; a v2 file with an embedded design validates", () => {
-  const v1 = structuredClone(good) as any;
-  v1.schema_version = 1;
-  v1.body = { id: good.body.id, sha256: good.body.asset_sha256, path: good.body.path };
-  assert.doesNotThrow(() => validatePlacementFile(v1));
-  const v2 = structuredClone(v1) as any; v2.schema_version = 2;
-  v2.placements[0].design_id = "gen-1";
-  v2.designs = { "gen-1": { name: "swallow", svg: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M0 0h10v10z'/></svg>", default_size_mm: [60, 50], source: { kind: "generated", model: "sd-turbo", prompt: "p", seed: 7 } } };
-  assert.doesNotThrow(() => validatePlacementFile(v2));
+test("embedded designs contain the shared frozen artwork", () => {
+  const file = JSON.parse(readFileSync(new URL("../../../config/inkmap/examples/forearm-placement-v6.json", import.meta.url), "utf8"));
+  assert.doesNotThrow(() => validatePlacementFile(file));
+  file.designs["line-v1"].svg = "<svg/>";
+  assert.throws(() => validatePlacementFile(file), /missing or unknown fields/);
 });
 
-test("every field the JSON Schema requires is one the app writes", () => {
-  const req = (o: any) => o.required as string[];
-  assert.deepEqual(req(schema).sort(), Object.keys(good).sort());
-  assert.deepEqual(req(schema.properties.placements.items).sort(), Object.keys(good.placements[0]).sort());
+test("every top-level and placement field required by JSON Schema is emitted", () => {
+  const required = (value: any) => value.required as string[];
+  assert.deepEqual(required(schema).sort(), Object.keys(good).sort());
+  assert.deepEqual(required(schema.properties.placements.items).sort(), Object.keys(good.placements[0]).sort());
 });

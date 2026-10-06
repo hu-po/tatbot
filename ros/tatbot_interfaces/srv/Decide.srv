@@ -1,0 +1,11 @@
+# The operator's choice while an arm waits (ros/README.md section 8). Served by tatbot_session at /tatbot/decide.
+uint8 CONTINUE=1  # after an e-stop release or a pause: unlatch (never a step) and resume the interrupted op
+uint8 LAND=2      # unlatch and land to idle
+uint8 SKIP=3      # an op left `sent` by a crash: mark it skipped
+uint8 REDRAW=4    # an op left `sent` by a crash: draw it again from its start
+
+string arm        # "right"
+uint8 decision
+---
+bool accepted
+string reason     # why not, when accepted is false (e.g. the e-stop is still pressed)

@@ -14,11 +14,15 @@ import itertools
 import json
 import sys
 import time
+from functools import partial
 from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/lib"))
+from tatbot_paths import bootstrap  # noqa: E402
+
+bootstrap()
 from ee_tracker import evidence_sets  # noqa: E402
 from fiducials import load_inventory  # noqa: E402
 from fiducials.detector import DetectorConfig, FiducialDetector  # noqa: E402
@@ -80,22 +84,33 @@ def _corner_metrics(left: dict, right: dict) -> tuple[float, float, tuple[int, .
     return direct, best, permutation
 
 
+def _detection_identity(item, inventory, families):
+    tag_id = int(item['tag_id'])
+    family = item.get('family')
+    if family is None:
+        possible = [name for name, ids in families.items() if tag_id in ids]
+        family = possible[0] if len(possible) == 1 and tag_id not in inventory.cross_family_ids else 'unknown'
+    return family, tag_id
+
+
 def compare(args: argparse.Namespace) -> tuple[dict, bool]:
     inventory = load_inventory(args.inventory)
     profile = inventory.detector_profiles[args.profile]
     scale = profile.scale if args.scale is None else args.scale
-    target = inventory.target(args.target) if args.target else None
-    allowed_ids = frozenset(target.ids) if target else inventory.known_ids
-    detector = FiducialDetector(
-        allowed_ids,
+    detector = FiducialDetector.from_inventory(
+        inventory,
         DetectorConfig(
             scale=scale,
             adaptive_window_max=profile.adaptive_window_max,
             min_side_px=profile.min_side_px,
             corner_refinement=profile.corner_refinement,
         ),
-        inventory.family,
+        target=args.target,
     )
+    allowed_ids = detector.allowed_ids
+    families = inventory.ids_by_family(args.target)
+
+    identity = partial(_detection_identity, inventory=inventory, families=families)
     rust_rows = _load_rust(args.rust_jsonl)
     mismatches = []
     direct_errors = []
@@ -147,6 +162,7 @@ def compare(args: argparse.Namespace) -> tuple[dict, bool]:
             )
             python_by_camera[camera] = [
                 {
+                    "family": item.family,
                     "tag_id": item.tag_id,
                     "corners_px": item.corners_px.tolist(),
                     "side_px": item.side_px,
@@ -162,9 +178,10 @@ def compare(args: argparse.Namespace) -> tuple[dict, bool]:
             rust_items = [
                 item for item in rust_by_camera.get(camera, [])
                 if int(item["tag_id"]) in allowed_ids
+                and identity(item)[0] in families
             ]
-            python_ids = sorted(int(item["tag_id"]) for item in python_items)
-            rust_ids = sorted(int(item["tag_id"]) for item in rust_items)
+            python_ids = sorted(identity(item) for item in python_items)
+            rust_ids = sorted(identity(item) for item in rust_items)
             python_instances += len(python_ids)
             rust_instances += len(rust_ids)
             if python_ids != rust_ids:
@@ -178,8 +195,8 @@ def compare(args: argparse.Namespace) -> tuple[dict, bool]:
                     }
                 )
             for tag_id in sorted(set(python_ids) & set(rust_ids)):
-                left = [item for item in python_items if int(item["tag_id"]) == tag_id]
-                right = [item for item in rust_items if int(item["tag_id"]) == tag_id]
+                left = [item for item in python_items if identity(item) == tag_id]
+                right = [item for item in rust_items if identity(item) == tag_id]
                 pairs = _pair_same_id(left, right)
                 matched_instances += len(pairs)
                 for python_item, rust_item in pairs:

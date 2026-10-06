@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Which end-effector tool is in the gripper — stated, never inferred.
+# Which end-effector tool is in the mount — stated, never inferred.
 #
 # Grip force, tip offset and reach all come from the fitted tool's datasheet.
 # Until 2026-08-26 the launchers said nothing and the Python side read the tool
@@ -52,7 +52,7 @@ ee_tool::require() {
   local repo="${REPO:?ee_tool::require needs REPO}"
   local tools="$repo/config/tools"
   if [ -z "${EE_TOOL:-}" ]; then
-    echo "--ee-tool <id> is required: name the tool in the gripper." >&2
+    echo "--ee-tool <id> is required: name the tool in the mount." >&2
     echo "  Grip force, tip offset and reach all come from its datasheet, and" >&2
     echo "  guessing means using the last tool's numbers on this one." >&2
     echo "  known tools: $(ee_tool::_known "$tools")" >&2

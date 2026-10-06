@@ -1,45 +1,44 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import {
+  MODEL_SPEC_ID,
+  REST_ASSET_SHA256,
+  REST_SURFACE_SHA256,
+  TOPOLOGY_SHA256,
+} from "../src/core/body.ts";
+import { POSE_CATALOG } from "../src/core/pose.ts";
 import { validateTattooScenario, type TattooScenario } from "../src/core/scenario.ts";
 
 const root = new URL("../public/showcase/", import.meta.url);
 const manifest = JSON.parse(readFileSync(new URL("manifest.json", root), "utf8"));
-const rigConfig = JSON.parse(readFileSync(new URL("../../../config/inkmap/body-rig.json", import.meta.url), "utf8"));
 
-test("the showcase spans both bodies and every tattoo-session pose with valid scenarios", () => {
-  assert.equal(manifest.schema_version, 1);
-  assert.equal(manifest.validation.accepted, 64);
-  assert.ok(manifest.validation.attempts >= manifest.validation.accepted);
-  assert.ok(manifest.validation.rejection_rate < 0.25);
-  assert.equal(manifest.validation.reach_audited, true);
-  assert.ok(manifest.validation.pose_quality.max_joint_rotation_deg <= 120);
-  assert.ok(manifest.validation.pose_quality.edge_length_ratio[0] >= rigConfig.quality_gates.edge_length_ratio_p001_min);
-  assert.ok(manifest.validation.pose_quality.edge_length_ratio[1] <= rigConfig.quality_gates.edge_length_ratio_p99_max);
-  assert.ok(manifest.validation.pose_quality.triangle_area_ratio[0] >= rigConfig.quality_gates.triangle_area_ratio_p01_min);
-  assert.ok(manifest.validation.pose_quality.triangle_area_ratio[1] <= rigConfig.quality_gates.triangle_area_ratio_p99_max);
-  assert.ok(manifest.validation.anatomy.knee_angle_deg[0] >= 145);
-  assert.ok(manifest.validation.anatomy.knee_angle_deg[1] <= 170);
-  assert.ok(manifest.validation.anatomy.knee_bend_offset_m[0] >= 0.045);
-  assert.ok(manifest.validation.anatomy.max_knee_off_axis_m <= 0.01);
-  assert.ok(manifest.validation.anatomy.supported_elbow_angle_deg[0] >= 110);
-  assert.ok(manifest.validation.anatomy.supported_elbow_angle_deg[1] <= 145);
-  assert.ok(manifest.validation.anatomy.supported_wrist_angle_deg[0] >= 170);
-  assert.equal(manifest.slides.length, 5);
+test("the showcase uses one SOMA body and all five tattoo-session poses", () => {
+  assert.equal(manifest.schema_version, 2);
+  assert.equal(manifest.validation.scenarios, 5);
+  assert.equal(manifest.validation.trace_compiler_version, 3);
+  assert.equal(manifest.validation.body_asset_sha256, REST_ASSET_SHA256);
+  assert.equal(manifest.validation.pose_asset_sha256, POSE_CATALOG.pose_asset.sha256);
+  assert.equal(manifest.validation.reach_audited, false);
+  assert.equal(manifest.validation.visual_review, "pending");
+  assert.deepEqual(manifest.coverage, { bodies: 1, poses: 5, sites: 4, designs: 3 });
 
   const bodies = new Set<string>();
   const poses = new Set<string>();
   for (const slide of manifest.slides) {
     const scenario = JSON.parse(readFileSync(new URL(slide.scenario, root), "utf8")) as TattooScenario;
     assert.doesNotThrow(() => validateTattooScenario(scenario), slide.scenario);
+    assert.equal(scenario.schema_version, 3);
+    assert.equal(scenario.design.id, slide.artwork_id);
+    assert.equal(scenario.design.sha256, slide.artwork_sha256);
     assert.ok(scenario.trace.strokes.flat().length > 20, `${slide.scenario}: trace is visible`);
-    assert.ok(slide.probe_max_residual_mm <= 1, `${slide.scenario}: CPU reach gate`);
-    assert.match(scenario.support.id, /^tattoo-(bed|chair)-/, `${slide.scenario}: session support`);
-    bodies.add(scenario.body.id);
+    assert.equal(scenario.body.topology_sha256, TOPOLOGY_SHA256);
+    assert.equal(scenario.body.rest_surface_sha256, REST_SURFACE_SHA256);
+    assert.equal(scenario.body.asset_sha256, REST_ASSET_SHA256);
+    bodies.add(scenario.body.model_spec_id);
     poses.add(scenario.pose.id);
   }
-  assert.equal(bodies.size, manifest.coverage.bodies);
-  assert.equal(poses.size, manifest.coverage.poses);
+  assert.deepEqual([...bodies], [MODEL_SPEC_ID]);
   assert.deepEqual([...poses].sort(), [
     "prone",
     "reclined-left-arm-supported",

@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Artwork contract test</title></head>
+<body><script type="module">
+import { tattooProgramFromSvg } from '/src/core/human-representation/svg-program.ts';
+import { tattooProgramToSvg } from '/src/core/human-representation/program-svg.ts';
+import { artworkFromSvg } from '/tools/artwork-import.ts';
+import { embeddedFromArtwork } from '/src/core/body-design.ts';
+import { artworkTexture } from '/src/core/svg.ts';
+window.artworkContract = { tattooProgramFromSvg, tattooProgramToSvg, artworkFromSvg, embeddedFromArtwork, artworkTexture };
+</script></body></html>

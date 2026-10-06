@@ -95,9 +95,13 @@ std::string format_cpus(const std::vector<int> & cpus)
   return out.str();
 }
 
-Setup apply(int priority)
+Setup apply(int priority, const std::string & limits_path)
 {
   Setup setup;
+
+  setup.limits_path = limits_path;
+  std::error_code limits_error;
+  setup.limits_installed = std::filesystem::exists(limits_path, limits_error);
 
   setup.cpus = fastest_cpus(read_max_frequencies());
   if (setup.cpus.empty()) {
@@ -116,18 +120,22 @@ Setup apply(int priority)
     }
   }
 
+  rlimit limit{};
+  if (getrlimit(RLIMIT_RTPRIO, &limit) == 0) {
+    setup.rtprio_soft = static_cast<long>(limit.rlim_cur);
+    setup.rtprio_hard = static_cast<long>(limit.rlim_max);
+  }
+
   sched_param param{};
   param.sched_priority = priority;
   if (sched_setscheduler(0, SCHED_FIFO, &param) == 0) {
     setup.fifo_applied = true;
   } else {
     const int failure = errno;
-    rlimit limit{};
-    const bool capped = getrlimit(RLIMIT_RTPRIO, &limit) == 0 &&
-      limit.rlim_cur < static_cast<rlim_t>(priority);
+    const bool capped = setup.rtprio_soft >= 0 && setup.rtprio_soft < priority;
     setup.fifo_error = std::strerror(failure);
     if (failure == EPERM && capped) {
-      setup.fifo_error += " (RLIMIT_RTPRIO is " + std::to_string(limit.rlim_cur) + ")";
+      setup.fifo_error += " (RLIMIT_RTPRIO is " + std::to_string(setup.rtprio_soft) + ")";
     }
   }
   return setup;

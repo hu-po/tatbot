@@ -1,10 +1,10 @@
 """Optional bridge to the run-logging layer in scripts/lib/tatbot_runlog.py.
 
-The plugin lives in its own uv venv; the run-log module lives in the repo and
-is deliberately stdlib-only and uninstalled, because four different
-interpreters have to share it. So it is loaded by path when it is there, and
-absence is a normal condition — a bench run, a hand-invoked lerobot-record, a
-copy of this plugin without the repo — where every call here becomes a no-op.
+The module is a declared dependency now (``tatbot-scriptlib``), so the normal
+path is a plain import. ``TATBOT_RUNLOG_PY`` still wins when it is set, which
+is how a run pins the shim to one checkout's run log rather than whichever
+copy the venv happens to carry. Absence stays a normal condition — a venv
+assembled without the dependency — where every call here becomes a no-op.
 
 Nothing in this module may raise into a caller. It sits in code that moves the
 arm; a logging import error must never become a robot fault.
@@ -28,20 +28,20 @@ def _load_module():
         return _MODULE or None
     _MODULE = False
     path = os.environ.get("TATBOT_RUNLOG_PY")
-    if not path:
-        for parent in Path(__file__).resolve().parents:
-            cand = parent / "scripts" / "lib" / "tatbot_runlog.py"
-            if cand.is_file():
-                path = str(cand)
-                break
-    if not path or not Path(path).is_file():
-        return None
+    if path and Path(path).is_file():
+        # An explicit override names one checkout's run log; honour it over
+        # whatever copy this venv installed.
+        with contextlib.suppress(Exception):
+            spec = importlib.util.spec_from_file_location("tatbot_runlog", path)
+            if spec is not None and spec.loader is not None:
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                _MODULE = module
+        return _MODULE or None
     with contextlib.suppress(Exception):
-        spec = importlib.util.spec_from_file_location("tatbot_runlog", path)
-        if spec is not None and spec.loader is not None:
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            _MODULE = module
+        import tatbot_runlog
+
+        _MODULE = tatbot_runlog
     return _MODULE or None
 
 

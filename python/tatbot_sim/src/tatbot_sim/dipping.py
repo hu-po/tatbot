@@ -49,6 +49,10 @@ class DipGeometry:
     plunge_speed: float         # m/s, in and out
     travel_speed: float         # m/s, transit
     settle_time: float          # s, holds at the rim and back at the stroke
+    entry_axis: tuple[float, float, float] = (0.0, 0.0, -1.0)
+    """Unit direction INTO the cap, world frame — the arm's own convention
+    (scripts/lib/dip_motion.py). World -Z is a level rack; a tilted one is the
+    case where assuming down silently disagreed with the hardware."""
 
 
 def stroke_needs(strokes: list[Stroke], speed: float, cfg: ShapeConfig, ink_id=None):
@@ -75,13 +79,19 @@ def dip_segment(from_world: np.ndarray, geo: DipGeometry, dt: float):
     plunge_step) — the index of the first step at full depth, where the
     charge is credited.
     """
+    from tatbot_sim import tools
+
     rim = np.asarray(geo.rim_world, dtype=np.float64)
     start = np.asarray(from_world, dtype=np.float64)
-    above_rim = rim + np.array([0.0, 0.0, geo.hover_m])
+    # The cap's own geometry comes from the module the arm uses, so hover and
+    # plunge lie on the axis hardware enters along. Only the bench crossing
+    # below is the simulator's own: it has to return to the stroke it left.
+    poses = tools.dip_motion().dip_poses(
+        rim, geo.entry_axis, hover_m=geo.hover_m, plunge_m=geo.plunge_m)
+    above_rim, bottom = poses.above, poses.bottom
     transit_z = max(start[2], above_rim[2])
     up = np.array([start[0], start[1], transit_z])
     over = np.array([above_rim[0], above_rim[1], transit_z])
-    bottom = rim - np.array([0.0, 0.0, geo.plunge_m])
     settle_n = max(1, int(round(geo.settle_time / dt)))
     dwell_n = max(1, int(round(geo.dwell_s / dt)))
 
@@ -108,8 +118,11 @@ def dip_segment(from_world: np.ndarray, geo: DipGeometry, dt: float):
 
     positions = np.stack(pos).astype(np.float32)
     n = len(positions)
-    floor_pts = np.repeat((rim - np.array([0.0, 0.0, geo.cap_depth_m]))[None, :], n, axis=0)
-    floor_nms = np.repeat(np.array([[0.0, 0.0, 1.0]]), n, axis=0)
+    # The floor handed to the expert is the cap's, and its normal is the cap
+    # mouth's — which is also the axis the tool is asked to hold, since
+    # planning derives pen_normals from these.
+    floor_pts = np.repeat((rim + poses.axis * geo.cap_depth_m)[None, :], n, axis=0)
+    floor_nms = np.repeat(poses.outward_normal[None, :], n, axis=0)
     return positions, floor_pts.astype(np.float32), floor_nms.astype(np.float32), plunge_step
 
 

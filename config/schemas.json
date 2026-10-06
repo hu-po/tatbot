@@ -1,0 +1,192 @@
+{
+ "families": {
+  "tatbot.original-work-index/1": {
+   "keyed_by": null,
+   "default_kind": "index",
+   "written_by": "the arm owner's durable original-work writer"
+  },
+  "tatbot.original-work-issue/1": {
+   "keyed_by": null,
+   "default_kind": "issue",
+   "written_by": "session stencil generation on the arm owner"
+  },
+  "tatbot.session-job/4": {
+   "keyed_by": null,
+   "default_kind": "job",
+   "written_by": "session new",
+   "fields": [
+    "schema",
+    "name",
+    "tool",
+    "arm",
+    "geometry",
+    "intent",
+    "acquisition",
+    "files"
+   ]
+  },
+  "tatbot.session-program/2": {
+   "keyed_by": "kind",
+   "default_kind": "program",
+   "written_by": "the compiler and the daemon's re-preparation"
+  },
+  "tatbot.session-surface/1": {
+   "keyed_by": "kind",
+   "default_kind": null,
+   "written_by": "scan, stencil and placement tools"
+  },
+  "tatbot.session-event/1": {
+   "keyed_by": "kind",
+   "default_kind": null,
+   "written_by": "the journal; kind is the graph event, data the witness"
+  },
+  "tatbot.receipt/1": {
+   "keyed_by": "kind",
+   "default_kind": null,
+   "written_by": "numbered measurement and report files, names unchanged"
+  }
+ },
+ "kinds": {
+  "tatbot.original-work-index/1": [
+   "index"
+  ],
+  "tatbot.original-work-issue/1": [
+   "issue"
+  ],
+  "tatbot.session-job/4": [
+   "job"
+  ],
+  "tatbot.session-program/2": [
+   "bootstrap",
+   "prepared",
+   "program",
+   "schedule"
+  ],
+  "tatbot.session-surface/1": [
+   "attachment",
+   "check",
+   "live-capture",
+   "location",
+   "origin",
+   "plane",
+   "reference",
+   "registration",
+   "registration-confirmation",
+   "registration-preview",
+   "rgb",
+   "rigid-patch-support",
+   "stencil-geometry",
+   "stencil-origin",
+   "stencil-scan-binding",
+   "stencil-selection",
+   "stencil-state",
+   "stencil-surface-state",
+   "stencils",
+   "support",
+   "support-request",
+   "workspace"
+  ],
+  "tatbot.session-event/1": [
+   "mock_dynamics"
+  ],
+  "tatbot.receipt/1": [
+   "build",
+   "capture-failure",
+   "check",
+   "deploy-metrics",
+   "deployment",
+   "error",
+   "fiducial-board-witness",
+   "install",
+   "journal",
+   "list",
+   "native-reseed",
+   "observation",
+   "print",
+   "report",
+   "result",
+   "scan-settled",
+   "scenario",
+   "snapshot",
+   "source-manifest",
+   "standoff-shape-binding",
+   "status",
+   "stream-result",
+   "target-abort",
+   "trace",
+   "viewer"
+  ]
+ },
+ "program_versions": [
+  "tatbot.session-program/1",
+  "tatbot.session-program/2"
+ ],
+ "bus": [
+  "tatbot.arm-joints/1",
+  "tatbot.capture-clock-request/1",
+  "tatbot.capture-clock-sample/1",
+  "tatbot.capture-health/1",
+  "tatbot.estop-status/1",
+  "tatbot.frame-set/1",
+  "tatbot.liveliness/1",
+  "tatbot.services/1",
+  "tatbot.session-status/1",
+  "tatbot.target-pose/1",
+  "tatbot.tracking-pose/1"
+ ],
+ "external": [
+  "tatbot.arm-guide-owner/1",
+  "tatbot.arm-registration/1",
+  "tatbot.artwork-feedback/1",
+  "tatbot.artwork-review/1",
+  "tatbot.camera-intrinsics/1",
+  "tatbot.capture-clock-exchange/1",
+  "tatbot.capture-fresh-selection/1",
+  "tatbot.current-pose-wrist-binding/1",
+  "tatbot.d405-handeye/1",
+  "tatbot.device-exposure-clock/1",
+  "tatbot.draw-config/1",
+  "tatbot.draw-preflight/1",
+  "tatbot.draw-samples/1",
+  "tatbot.inkmap-design/1",
+  "tatbot.joint-plan/1",
+  "tatbot.raw-device-clock-probe/1",
+  "tatbot.raw-device-clock-sample/1",
+  "tatbot.robot-agent-proposals/1",
+  "tatbot.robot-agent-dataset-diagnostic/1",
+  "tatbot.robot-agent-dataset-trace-diagnostic/1",
+  "tatbot.robot-agent-recording/1",
+  "tatbot.sim-policy-worker/1",
+  "tatbot.stencil-reference/1",
+  "tatbot.surface/1",
+  "tatbot.robot-agent-inputs/1",
+  "tatbot.robot-agent-rgbd/1",
+  "tatbot.robot-agent-decisions/1",
+  "tatbot.robot-agent-decision-history/1",
+  "tatbot.robot-agent-worker/1",
+  "tatbot.robot-agent-worker/2",
+  "tatbot.robot-agent-score/1",
+  "tatbot.robot-agent-rig/1",
+  "tatbot.robot-agent-rig-geometry/1",
+  "tatbot.robot-agent-rig-evidence/1",
+  "tatbot.robot-agent-approach-depth-evidence/1",
+  "tatbot.robot-agent-rig-score/1",
+  "tatbot.robot-agent-rig-score-qualification/1",
+  "tatbot.robot-agent-reference-input/1",
+  "tatbot.robot-agent-reference-preparation/1",
+  "tatbot.robot-agent-reference-support/1",
+  "tatbot.plan-admission-capture/1",
+  "tatbot.robot-agent-ink-annotations/1",
+  "tatbot.joint-host-read/1",
+  "tatbot.robot-agent-suite-spec/1",
+  "tatbot.robot-agent-suite/1",
+  "tatbot.robot-agent-suite-report/1",
+  "tatbot.robot-agent-rig-report-input/1",
+  "tatbot.robot-agent-rig-report/1",
+  "tatbot.robot-agent-surface-input/1",
+  "tatbot.robot-agent-surface-preparation/1",
+  "tatbot.robot-agent-sim-audit/1"
+ ],
+ "legacy": {},
+ "pending": {}
+}

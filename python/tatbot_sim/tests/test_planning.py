@@ -12,12 +12,13 @@ Two claims live here, and both are silent when wrong:
 
 Torch + numpy, no render device (imports the env module but builds no scene):
 
-    cd python/tatbot_sim && uv run python tests/test_planning.py
+    cd python/tatbot_sim && uv run --with pytest pytest -q tests/test_planning.py
 """
 
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import torch
 from tatbot_sim.expert import ReachMask
 from tatbot_sim.language import sample_scene
@@ -160,7 +161,7 @@ def test_a_reach_mask_reads_canvas_metres():
 
 
 def test_a_scene_is_placed_only_where_the_tool_can_work():
-    """The whole point of the mask: on a mound the flanks ask the wrist for a
+    """The whole point of the mask: on a cylinder the flanks ask the wrist for a
     lean it cannot make, and a scene laid across them is a label the arm
     quietly misses by centimetres."""
     sheet = grid_paper_sheets(1, seed=1)[0]
@@ -179,7 +180,7 @@ def test_a_scene_is_placed_only_where_the_tool_can_work():
 
 def test_the_tool_leans_as_far_as_the_wrist_can_and_no_further():
     """A tool need not be exactly perpendicular to skin to work it, and on a
-    mound's flanks exactly perpendicular is a pose the arm cannot make — it
+    cylinder's flanks exactly perpendicular is a pose the arm cannot make — it
     returns a best effort tens of millimetres away and the labels never say so.
     The surface still decides WHICH WAY the tool tilts; the arm decides how
     far."""
@@ -208,6 +209,7 @@ def test_capping_does_nothing_where_nothing_is_too_steep():
     assert np.allclose(cap_lean(axes, base, 0.0), axes)      # disabled is a no-op
 
 
+@pytest.mark.slow
 def test_an_unplannable_scene_is_typed_so_one_batch_cannot_kill_a_run():
     """A scene that will not fit the horizon is a BATCH's problem, not a run's.
 
@@ -254,15 +256,3 @@ def test_an_unplannable_scene_is_typed_so_one_batch_cannot_kill_a_run():
     assert e.needed is None or e.needed > e.horizon, (e.needed, e.horizon)
     assert e.task == "language"
     assert "horizon" in str(e)
-
-
-def _run_all():
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    for fn in fns:
-        fn()
-        print(f"  ok  {fn.__name__}")
-    print(f"{len(fns)} passed")
-
-
-if __name__ == "__main__":
-    _run_all()

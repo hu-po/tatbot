@@ -5,35 +5,47 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "lerobot_robot_tatbot"
 version = "0.1.0"
-description = "tatbot LeRobot robot plugin: WidowX AI follower with bounded-grip gripper control"
+description = "tatbot LeRobot robot plugin: WidowX AI follower carrying a mounted tool on its carriage"
 authors = [{ name = "Hugo Ponte" }]
 license = "MIT"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "lerobot[async,core-scripts,dataset,intelrealsense]>=0.6.1",
   "lerobot_robot_trossen",
-  "lerobot_teleoperator_trossen",
+  "rerun-sdk==0.36.0",
+  "tatbot-scriptlib==0.1.0",
+  "tatbot-contracts==0.1.0",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["lerobot_robot_tatbot"]
 
-[tool.setuptools.package-data]
-lerobot_robot_tatbot = ["cockpit.html"]
-
 [tool.uv.sources]
+tatbot-scriptlib = { path = "../../scripts/lib", editable = true }
+tatbot-contracts = { path = "../tatbot_contracts", editable = true }
 lerobot_robot_trossen = { git = "https://github.com/TrossenRobotics/lerobot_trossen", subdirectory = "packages/lerobot_robot_trossen" }
-lerobot_teleoperator_trossen = { git = "https://github.com/TrossenRobotics/lerobot_trossen", subdirectory = "packages/lerobot_teleoperator_trossen" }
 
 [tool.uv]
+# One Rerun version fleet-wide (operator 2026-09-02): the `rerun` CLI on PATH,
+# visiond and the cockpit are 0.36.0, and Rerun's SDK and viewer
+# must match -- the 0.33.1 SDK this venv carried streamed the draw shadow to
+# the 0.36 viewer and showed nothing. lerobot 0.6.1 caps rerun-sdk below
+# 0.36; we use only rr.log/connect_grpc/set_sinks/save from the SDK, not
+# lerobot's visualizer, so override its cap.
 # Our arms run controller firmware v1.8.4; the trossen_arm driver's minor
 # version must pair with the firmware's, so force the 1.8 line even though
 # the Trossen plugin declares >=1.9. Pinned to 1.8.5 — the exact version the
-# hardware-validated C++ cockpit uses (cpp/teleop pins SDK v1.8.5 and runs
+# hardware-validated C++ teleop uses (cpp/teleop pins SDK v1.8.5 and runs
 # for hours at 400 Hz on this firmware). The previous 1.8.8 pin wedged the
 # follower controller twice within a minute on 2026-08-20 (UDP output
 # stream died, TCP half-dead, power cycle required) and also required YAML
 # schema keys (position_offset) the firmware era doesn't produce. Drop this
 # override after the arms' firmware is upgraded to >=1.9.
-override-dependencies = ["trossen-arm==1.8.5"]
+# lerobot[intelrealsense] pins pyrealsense2 to an exact version that predates
+# Intel's aarch64 wheels, so `uv sync` cannot resolve at all on the Arm arm
+# node: 2.56.5.9235 ships only manylinux1_x86_64 and win_amd64. 2.58.4.10922
+# has an aarch64 wheel and matches the librealsense2 2.58.4 the nodes install
+# from Intel's apt repo, so the Python binding and the system library stop
+# straddling two releases. Drop this override once lerobot's own pin moves.
+override-dependencies = ["trossen-arm==1.8.5", "rerun-sdk==0.36.0", "pyrealsense2==2.58.4.10922"]

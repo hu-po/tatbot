@@ -34,13 +34,14 @@ def uv_binary() -> str | None:
     return str(home) if os.access(home, os.X_OK) else None
 
 
-def hub_python(repo: Path, *, env: dict | None = None) -> tuple[list[str] | None, str]:
+def hub_python(repo: Path, *, env: dict | None = None, probe: bool = True) -> tuple[list[str] | None, str]:
     """(argv prefix that runs Python with huggingface_hub, note) — or (None, why not)."""
     e = env if env is not None else os.environ
     train_root = Path(e.get("TATBOT_TRAIN_ROOT") or (Path(e.get("HOME", "~")).expanduser() / "il-train"))
     for candidate in (repo / "python/lerobot_robot_tatbot/.venv/bin/python", train_root / ".venv/bin/python"):
-        if _imports(candidate, "huggingface_hub"):
-            return [str(candidate)], f"{candidate} imports huggingface_hub"
+        if (probe and _imports(candidate, "huggingface_hub")) or (not probe and os.access(candidate, os.X_OK)):
+            return [str(candidate)], (f"{candidate} imports huggingface_hub" if probe else
+                                      f"{candidate}; unresolved: imports huggingface_hub (checked at execution)")
     uv = uv_binary()
     if uv:
         return [uv, "run", "--quiet", "--no-project", "--with", HUB_REQUIREMENT, "python"], "throwaway uv environment"

@@ -45,24 +45,18 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
-import gymnasium as gym
 import numpy as np
 import sapien
-import tatbot_sim  # noqa: F401
-import torch
 import tyro
 from mani_skill.sensors.camera import CameraConfig
 from mani_skill.utils import sapien_utils
-from tatbot_sim.agent import TatbotWXAI
 from tatbot_sim.distributions import DISTRIBUTIONS
 from tatbot_sim.env import TatbotDrawEnv
 
-GUARD = "TATBOT_CINEMATIC_REEXEC"
-"""Set across the re-exec that puts the distribution's tool in the gripper —
-see cli(). Same mechanism, and same reason, as tatbot_sim.factory's."""
+NOMINAL_WRIST_FOV = 0.96
 
 # Where the work happens: the canvas centre, a little above the table. Every
 # staged camera aims here, so a shot stays framed when the pad moves.
@@ -112,7 +106,7 @@ def mounted_fov(width: int, height: int) -> float:
     object the real camera can see and adds sky and table above and below,
     which is what a taller frame should do.
     """
-    fov_x = 2 * np.arctan(np.tan(TatbotWXAI.CAM_FOV / 2) * 640 / 480)
+    fov_x = 2 * np.arctan(np.tan(NOMINAL_WRIST_FOV / 2) * 640 / 480)
     return float(2 * np.arctan(np.tan(fov_x / 2) * height / width))
 
 
@@ -132,10 +126,10 @@ SHOTS: dict[str, Shot] = {
     # What the robot sees. The upper wrist camera, rendered at social
     # resolution instead of the D405's 640x480 — see mounted_fov for why the
     # angle has to change when the frame stops being 4:3.
-    "pov": Shot(fov=TatbotWXAI.CAM_FOV, mounted=True),
+    "pov": Shot(fov=NOMINAL_WRIST_FOV, mounted=True),
     # The lower wrist camera: the same view from under the tool, which on a
     # mound sees the contact point the upper one is looking over.
-    "pov_low": Shot(fov=TatbotWXAI.CAM_FOV, mounted=True, mount="lower"),
+    "pov_low": Shot(fov=NOMINAL_WRIST_FOV, mounted=True, mount="lower"),
     # Close on the contact point, riding the tip. The best shot of the three
     # for a feed: it is the needle drawing, filling the frame, for as long as
     # the episode lasts.
@@ -156,6 +150,7 @@ SHOTS: dict[str, Shot] = {
 class Args:
     out: str
     """Output directory; one mp4 per shot plus a poster frame."""
+    sensor_profile: str = "deployment"
     seed: int = 0
     """Picks the take: the scene, the drawing, and the tool's path. Same seed,
     same film."""
@@ -183,8 +178,9 @@ class Args:
     crf: int = 17
     """x264 quality. 17 is visually lossless; raise it for smaller files."""
     clutter: bool = True
-    """Table distractors. They are what makes the scene look like a bench
-    rather than a render, so they stay on by default."""
+    """Legacy and inert: the scene no longer builds table distractors
+    (config.ClutterDR is kept only so old configs load); accepted so existing
+    command lines still parse."""
     studio_light: bool = True
     """Replace the randomized training rig with a fixed key/fill/rim setup."""
     exposure: float = 1.5
@@ -198,10 +194,40 @@ class Args:
     treatment, no nesting (language.CLEAN_STYLE). "full" = the training draw,
     scribble and all. Any motif key ("flower_of_life", "seed_of_life",
     "circle", ...) forces that one figure — see language.MOTIFS."""
+    portable_design: str | None = None
+    """A tatbot.inkmap-design/1 file to draw instead of the shared collection
+    — generate's --design, for the artwork task (tatbot_sim.design_scene).
+    A cylinder design needs TATBOT_SUBSTRATE=paper_cylinder; the take's
+    --horizon has to hold the whole design, and the run says what it needs."""
+    design_placement: str = "authored"
+    """authored keeps Inkmap's placement; sampled recentres and offsets it."""
+    render_skipped_steps: bool = False
+    """Render the sensors on every control step, captured or not. Off, a
+    time-lapse only renders the steps it keeps and physics runs the rest,
+    which is where the speed-up in --speed actually comes from."""
     steady: bool = True
     """Drop the DART perturbation bursts and most of the pen lean. They are
     deployment realism the policy needs to have seen; on camera they read as
     a shaky hand, and the drawing wobbles off its own geometry."""
+    surface_profile: str = ""
+    """Override the recipe's surface profile: "flat", "cylinder" or
+    "balanced". Empty keeps the recipe's. paper-draw is flat; the skin
+    recipes are balanced, which is a per-batch coin flip a single-env take
+    cannot be asked to win. Naming the profile is how a film chooses."""
+    cylinder_radius: tuple[float, float] = (0.0, 0.0)
+    """Override the sampled cylinder radius range, metres. (0, 0) keeps the
+    recipe's 75-110 mm. A tighter curl is a harder reach and not merely a
+    different picture — check the reachable fraction the run prints."""
+    dips: bool = False
+    """Splice planned dips into the take. Drawing recipes leave them off
+    (config.InkDR.dips), so the palette and dip shots have nothing to film
+    without this; --task dip is the other way in. Needs a palette in the
+    scene and a tool whose ink.mode dips."""
+    charge: tuple[float, float] = (0.05, 0.30)
+    """Per-env multiplier on the tool's datasheet charge capacity, with
+    --dips. At the nominal 2 uL and 0.004 uL/mm a charge covers ~500 mm of
+    line, far more than one take draws, so at 1.0 the tool never runs dry and
+    no dip is ever planned."""
     ink_radius: tuple[float, float] = (0.0, 0.0)
     """Override the deposited line's half-width, metres. (0, 0) keeps the
     recipe's. The skin-tattoo recipe borrows the BALLPOINT's 1.1-2.0 mm, which
@@ -261,7 +287,7 @@ def make_studio_rig(exposure: float):
     return rig
 
 
-def clean_surfaces(env_module, seed: int = 0):
+def clean_surfaces(seed: int = 0):
     """Swap the bench's procedural clutter of textures for studio surfaces.
 
     The floor and tabletop textures are drawn dark, tinted and patterned on
@@ -270,15 +296,14 @@ def clean_surfaces(env_module, seed: int = 0):
     sizes that same speckle reads as colour noise, and the eye goes to it
     instead of the tool.
 
-    The env module binds these at import, so the patch has to land on the
-    module that calls them, not the one that defines them.
+    Return instance-local texture suppliers for explicit world construction.
     """
     from tatbot_sim.textures import TEX_DIR
 
     out_dir = TEX_DIR / "cinematic"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    table = out_dir / "table_matte.png"
+    table = out_dir / f"table_matte-{seed}.png"
     if not table.exists():
         n = 1024
         rng = np.random.default_rng(seed)
@@ -307,8 +332,8 @@ def clean_surfaces(env_module, seed: int = 0):
             img = np.ones((n, n, 3)) * ramp
         _cv2().imwrite(str(f), np.clip(img[..., ::-1] * 255, 0, 255).astype(np.uint8))
 
-    env_module.floor_textures = lambda count, seed=0: [str(table)] * count
-    env_module.environment_face_sets = lambda count, seed=0: [tuple(faces)] * count
+    return (lambda count, seed=0: [str(table)] * count,
+            lambda count, seed=0: [tuple(faces)] * count)
 
 
 def _cv2():
@@ -325,9 +350,8 @@ def tool_pose(shot: Shot, tip: np.ndarray) -> sapien.Pose:
 def build_cameras(names, width, height):
     """The staged cameras, as ManiSkill sensor configs.
 
-    Mounted shots are not here: the POV is the agent's own wrist camera, and
-    it is resized by class attribute before the agent is built (the same hook
-    the env already uses for mount jitter).
+    Mounted presentation shots are added separately from the resolved wrist
+    pose, with their own image size and feature name.
     """
     out = []
     for name in names:
@@ -346,21 +370,22 @@ def build_cameras(names, width, height):
     return out
 
 
-def orbit_pose(shot: Shot, phase: float) -> sapien.Pose:
-    """Camera pose at ``phase`` in [0, 1] through the arc.
+def orbit_pose(shot: Shot, phase: float, look_at=LOOK_AT) -> sapien.Pose:
+    """Camera pose at ``phase`` in [0, 1] through the arc, about ``look_at``.
 
     Swings symmetrically about the shot's own eye so the middle of the episode
     is the framing the shot was staged for, and the ends are equal departures
     from it.
     """
+    look_at = np.asarray(look_at, dtype=np.float64)
     eye = np.array(shot.eye) - LOOK_AT
     a = np.radians(shot.orbit_deg) * (phase - 0.5)
     c, s = np.cos(a), np.sin(a)
     rotated = np.array([c * eye[0] - s * eye[1], s * eye[0] + c * eye[1], eye[2]])
     # `.sp` unwraps ManiSkill's batched Pose into the plain sapien one the
     # render component takes; handing it the wrapper is a TypeError at runtime.
-    return sapien_utils.look_at(eye=(LOOK_AT + rotated).tolist(),
-                                target=LOOK_AT.tolist(), up=list(shot.up)).sp
+    return sapien_utils.look_at(eye=(look_at + rotated).tolist(),
+                                target=look_at.tolist(), up=list(shot.up)).sp
 
 
 def encode(frames, path: Path, fps: float, crf: int):
@@ -384,6 +409,33 @@ def encode(frames, path: Path, fps: float, crf: int):
 
 
 
+def presentation(args, config, width, height):
+    """Separate display cameras and appearance from the policy sensor profile."""
+    lighting = make_studio_rig(args.exposure) if args.studio_light else None
+    surfaces = None
+    if args.look == 'clean':
+        surfaces = clean_surfaces(seed=args.seed)
+    elif args.look != 'bench':
+        raise SystemExit(f'unknown look {args.look!r}; have clean, bench')
+    mounted = [n for n in args.shots if SHOTS[n].mounted]
+    staged = [n for n in args.shots if not SHOTS[n].mounted]
+    available = {camera.role for camera in config.cameras}
+    for name in mounted:
+        if f'wrist_{SHOTS[name].mount}' not in available:
+            raise SystemExit(f'{name} requires its wrist view in --sensor-profile')
+
+    def cameras(world):
+        views = build_cameras(staged, width, height)
+        policy_views = {camera.uid: camera for camera in world.agent._sensor_configs}
+        for name in mounted:
+            view = policy_views[f'wrist_{SHOTS[name].mount}']
+            views.append(replace(view, uid=f'cine_{name}', width=width, height=height,
+                                 intrinsic=None, fov=mounted_fov(width, height)))
+        return views
+
+    return cameras, lighting, surfaces, staged
+
+
 def main(args: Args, dist):
     for name in args.shots:
         if name not in SHOTS:
@@ -396,30 +448,35 @@ def main(args: Args, dist):
     out.mkdir(parents=True, exist_ok=True)
 
     import numpy as np
-    from tatbot_sim import tasks, tools
+    from tatbot_sim import tasks
+    from tatbot_sim.backends.maniskill import ManiSkillWorld
+    from tatbot_sim.episode import Episode
     from tatbot_sim.expert import (
         StrokeExpert,
         reachable_canvas_masks,
         reachable_height_ceiling,
     )
+    from tatbot_sim.judge import strokes_from_plan_paths
+    from tatbot_sim.observations import ObservationBuilder
     from tatbot_sim.planning import plan_batch
 
     recipe = dist.build_args()
     task = args.task or recipe.task
+    if args.portable_design and task not in ("artwork", "erase"):
+        raise SystemExit(f"--portable-design draws the artwork task; pass --task artwork (got {task!r})")
     if task == "mix":
         # A mix is a per-batch coin flip over language and squiggles. A film
         # is one take, so the flip has to be made here rather than by an RNG
         # whose result nobody chose.
         task = "language"
     horizon = args.horizon or recipe.horizon
-    tool, substrate = tools.active_tool(), tools.active_substrate()
+    from tatbot_sim.resolved import resolve
+    supply = ('wet' if args.wet else args.supply, args.wet or args.supply_ink)
+    config = resolve(tool_id=dist.tool_id, sensor_profile=args.sensor_profile,
+                     seed=args.seed, dr=recipe.dr, supply=supply)
+    tool, substrate = config.tool, config.substrate
     tasks.validate_task(task, tool, substrate)
-    try:
-        # --wet <ink> is the wet supply with that ink; otherwise --supply says
-        tools.set_supply("wet" if args.wet else args.supply, args.wet or args.supply_ink)
-    except ValueError as exc:
-        raise SystemExit(str(exc)) from exc
-    tasks.validate_supply(task, tool)
+    tasks.validate_supply(task, tool, config.palette_load)
 
     from tatbot_sim.language import CLEAN_STYLE, DEFAULT_STYLE, MOTIFS, SceneStyle
     if args.design == "clean":
@@ -437,8 +494,28 @@ def main(args: Args, dist):
         raise SystemExit(
             f"unknown design {args.design!r}; use clean, full, or a motif key: "
             + ", ".join(sorted(MOTIFS)))
+    # planning.plan_batch only consults ``style`` for the language task; artwork,
+    # spiral and erase scenes come from the shared collection and ignore it. Say
+    # so rather than printing a design the take never drew.
+    if args.design != "clean" and task in ("artwork", "spiral", "erase"):
+        raise SystemExit(
+            f"--design {args.design!r} does nothing for task {task!r}: that scene comes "
+            "from the shared artwork collection, not language motifs. Add --task language "
+            "to draw a motif.")
 
     dr = recipe.dr.resolve_for(substrate)
+    if args.surface_profile:
+        if args.surface_profile not in ("flat", "cylinder", "balanced"):
+            raise SystemExit(f"unknown surface profile {args.surface_profile!r}; "
+                             "use flat, cylinder or balanced")
+        dr.surface.profile = args.surface_profile
+    if any(args.cylinder_radius):
+        dr.surface.cylinder_radius_m = tuple(args.cylinder_radius)
+    if args.dips:
+        # A take draws far less line than one charge covers, so dipping has to
+        # be asked for AND the reservoir shrunk, or nothing is ever planned.
+        dr.ink.dips = True
+        dr.ink.capacity_scale = tuple(args.charge)
     dr.clutter.enabled = args.clutter
     dr.rgb.enabled = False        # sensor response modelling, not a look
     dr.corrupt_depth = False
@@ -452,76 +529,74 @@ def main(args: Args, dist):
         dr.laser.clearance = tuple(args.clearance)
     if args.ink_radius != (0.0, 0.0):
         dr.ink.radius_m = tuple(args.ink_radius)
-    if args.studio_light:
-        dr.lighting.enabled = False   # the rig below replaces it wholesale
-        TatbotDrawEnv._load_lighting = make_studio_rig(args.exposure)
-    if args.look == "clean":
-        from tatbot_sim import env as env_module
-        clean_surfaces(env_module)
-    elif args.look != "bench":
-        raise SystemExit(f"unknown look {args.look!r}; have clean, bench")
+    portable = None
+    if args.portable_design:
+        from tatbot_sim import design_scene
 
-    mounted = [n for n in args.shots if SHOTS[n].mounted]
-    if mounted:
-        TatbotWXAI.CAM_WIDTH, TatbotWXAI.CAM_HEIGHT = width, height
-        TatbotWXAI.CAM_FOV = mounted_fov(width, height)
-    staged = [n for n in args.shots if not SHOTS[n].mounted]
-    TatbotDrawEnv._default_sensor_configs = property(
-        lambda self: build_cameras(staged, width, height))
+        try:
+            portable = design_scene.load(Path(args.portable_design), substrate, args.design_placement)
+        except (design_scene.DesignSceneError, OSError, ValueError) as exc:
+            raise SystemExit(f"--portable-design {args.portable_design}: {exc}") from exc
+        # the design's own footprint, as generate draws it
+        dr.ink.radius_m = (portable.width_mm / 2000,) * 2
+        need = portable.est_cost_s(config)
+        budget = ((horizon - int(dr.approach.duration_s[1] * 30)) / 30.0 - 0.5) * 0.96
+        if need > budget:
+            raise SystemExit(f"design {portable.name!r} needs ~{need:.0f} s and --horizon {horizon} "
+                             f"allows {budget:.0f} s; pass --horizon {int((need / 0.96 + 0.5) * 30) + 70} or more")
+    cameras, lighting, surfaces, staged = presentation(args, config, width, height)
 
+    config = config.with_dr(dr)
     rng = np.random.default_rng(args.seed)
-    env = gym.make(
-        "TatbotDraw-v0", num_envs=1, obs_mode="rgb", control_mode="pd_joint_pos",
+    env = TatbotDrawEnv(config=config, presentation_cameras=cameras,
+        presentation_lighting=lighting, presentation_surfaces=surfaces, num_envs=1, obs_mode="rgb", control_mode="pd_joint_pos",
         sim_backend="auto", reconfiguration_freq=1, dr=dr,
         sensor_configs={"shader_pack": args.shader},
+        # artwork is drawn on the factory's fine ink field, not the sheet's own
+        # 2.4 px/mm texels: a macro shot of a 0.3 mm line is made of them
+        ink_pixels_per_m=recipe.artwork_pixels_per_m if task in ("artwork", "spiral", "erase") else None,
     )
     base = env.unwrapped
-    robot = base.agent.robot
-    env.reset(seed=args.seed)
-
-    # Same order as the generator and the preview: build the expert first, so
-    # a shaped surface can be planned against what the arm can actually reach
-    # on it. Strokes placed on unreachable flanks are a miss on camera.
-    active = [j.name for j in robot.active_joints]
-    expert = StrokeExpert(1, base.device, noise=dr.noise, seed=args.seed)
-    idx_ik = [active.index(n) for n in expert.ik.chain.get_joint_parameter_names()]
-    masks = ceiling = None
-    if base.pad_height is not None:
-        q_now = robot.get_qpos()[:, idx_ik]
-        slack = dr.pen_lean.max_off_base_rad
-        masks = reachable_canvas_masks(expert, q_now, base.surface, recipe.draw_clearance,
-                                       1, max_off_base_rad=slack)
-        ceiling = reachable_height_ceiling(expert, q_now, base.surface, 1,
-                                           max_off_base_rad=slack)
+    expert = StrokeExpert(1, base.device, config=config, noise=dr.noise, seed=config.seed_for("noise"))
+    world = ManiSkillWorld(env, config, expert)
+    episode = Episode(world, ObservationBuilder(config, 1, base.device))
+    episode.reset(seed=args.seed)
+    q_now = world.positions()
+    slack = dr.pen_lean.max_off_base_rad
+    masks = reachable_canvas_masks(expert, q_now, base.surface, recipe.draw_clearance,
+                                   1, max_off_base_rad=slack)
+    ceiling = reachable_height_ceiling(expert, q_now, base.surface, 1,
+                                       max_off_base_rad=slack)
 
     plan = plan_batch(
-        rng, base.pad_sheets, base.surface, task=task, horizon=horizon, num_envs=1,
+        rng, base.pad_sheets, base.surface, config=config, task=task, horizon=horizon, num_envs=1,
         dr=dr, draw_clearance=recipe.draw_clearance, task_name=recipe.task_name,
         maze_task_name=recipe.maze_task_name, erase_passes=recipe.erase_passes,
         erase_seconds=recipe.erase_seconds, reachable=masks, tool_ceiling=ceiling,
         style=style, cap_rims=base.cap_rims_np(),
+        artwork_sampler=None if portable is None else portable.sample,
     )
-    if plan.preink is not None:
-        base.preink(plan.preink)
-    base.set_dip_schedule(plan)
+    episode.install(plan)
+    # Aim the staged cameras at the work itself: the centre of what this take
+    # draws, on the surface it is drawn on. LOOK_AT is the flat pad's centre;
+    # on the paper cylinder the crest sits a hand higher, and a design placed
+    # off the crest is drawn on the flank.
+    strokes = strokes_from_plan_paths(plan.paths[0])
+    drawn = np.concatenate([stroke.points for stroke in strokes]) if strokes else np.zeros((1, 2))
+    centre_uv = (drawn.min(axis=0) + drawn.max(axis=0)) / 2
+    work = base.surface.frame_np(0, centre_uv[None, :].astype(np.float32))[0][0]
+    look_at = np.asarray(work, dtype=np.float64)
+    print(f"[cinematic] work centre {np.round(look_at, 3).tolist()} (canvas {np.round(centre_uv, 3).tolist()})")
+    for name in staged:
+        shot = SHOTS[name]
+        if shot.track is None and shot.at is None:
+            eye = np.array(shot.eye) - LOOK_AT + look_at
+            base.scene.sensors[f"cine_{name}"].camera.set_local_pose(
+                sapien_utils.look_at(eye=eye.tolist(), target=look_at.tolist(), up=list(shot.up)).sp)
     if plan.dips:
         for d in plan.dips[0]:
             print(f"[cinematic] dip before stroke {d['before_stroke']} ({d['reason']}) "
                   f"into {d['slot']} at step {plan.n_app + d['step']}, {d['steps']} steps")
-
-    q_start = expert.solve_pose(plan.targets[:, 0], robot.get_qpos()[:, idx_ik],
-                                normals=plan.pen_normals[:, 0])
-    full = robot.get_qpos().clone()
-    full[:, idx_ik] = q_start
-    robot.set_qpos(full)
-    if plan.q_raised is not None:
-        full = robot.get_qpos().clone()
-        full[:, idx_ik] = torch.as_tensor(plan.q_raised, device=base.device)
-        robot.set_qpos(full)
-    expert.reset(plan.targets, q_start,
-                 floor_plane=(plan.surface_points, plan.surface_normals),
-                 pen_normals=plan.pen_normals,
-                 approach_from=(plan.q_raised, plan.n_app) if plan.q_raised is not None else None)
 
     # Control is 30 Hz. To play back at `speed` and land `fps` frames a
     # second, take every Nth step — never less than every step, since the sim
@@ -531,9 +606,9 @@ def main(args: Args, dist):
     if abs(actual_speed - args.speed) > 1e-6:
         print(f"[cinematic] speed {args.speed}x is not reachable at {args.fps} fps "
               f"from 30 Hz control; rendering {actual_speed:g}x")
-    n_steps = min(plan.episode_steps, args.max_frames * stride)
+    n_steps = min(episode.horizon, args.max_frames * stride)
     cams = {n: [] for n in args.shots}
-    sensor_uid = {n: (f"wrist_{SHOTS[n].mount}" if SHOTS[n].mounted else f"cine_{n}")
+    sensor_uid = {n: f"cine_{n}"
                   for n in args.shots}
     orbiting = [n for n in args.shots if SHOTS[n].track == "orbit"]
     tracking = [n for n in args.shots if SHOTS[n].track == "tool"]
@@ -547,9 +622,11 @@ def main(args: Args, dist):
 
     t0 = time.time()
     for t in range(n_steps):
+        if episode.done:
+            break
         for name in orbiting:
             base.scene.sensors[f"cine_{name}"].camera.set_local_pose(
-                orbit_pose(SHOTS[name], t / max(1, n_steps - 1)))
+                orbit_pose(SHOTS[name], t / max(1, n_steps - 1), look_at))
         if tracking:
             tip = base.agent.tcp.pose.p[0].cpu().numpy()
             for name in tracking:
@@ -558,8 +635,12 @@ def main(args: Args, dist):
                 aim[name] = tip if prev is None else prev + shot.smooth * (tip - prev)
                 base.scene.sensors[f"cine_{name}"].camera.set_local_pose(
                     tool_pose(shot, aim[name]))
-        obs, *_ = env.step(expert.act())
-        if t % stride:
+        # A step nobody keeps needs no picture: the path tracer is the whole
+        # cost of a take, and physics without it runs ~forty times faster.
+        keep = t % stride == 0
+        episode.step(capture=keep or args.render_skipped_steps)
+        obs = episode.last_raw
+        if not keep:
             continue
         for name in args.shots:
             cams[name].append(
@@ -582,34 +663,29 @@ def main(args: Args, dist):
 
     (out / f"{dist.name}-{task}-s{args.seed}.json").write_text(json.dumps({
         "distribution": dist.name, "tool": tool.tool_id, "substrate": substrate.name,
+        "resolved_config": config.metadata(), "runtime": episode.metadata(),
         "task": task, "prompt": plan.tasks[0], "seed": args.seed,
         "design": args.design, "steady": args.steady,
+        "portable_design": None if portable is None else portable.summary(),
         "laser_clearance": list(dr.laser.clearance),
         "ink_radius_m": list(dr.ink.radius_m),
         "shader": args.shader, "exposure": args.exposure, "look": args.look,
         "size": [width, height], "fps": fps, "shots": list(args.shots),
-        "frames": n_steps // stride,
+        "frames": max((len(frames) for frames in cams.values()), default=0),
         "speed": actual_speed,
         "ink_coverage_end": float(base.ink_field.coverage()[0]),
         "ink": {"mode": base.ink_policy.mode, "wet": args.wet or None,
-                "supply": {"kind": tools.supply()[0], "ink": tools.supply()[1]},
+                "supply": {"kind": config.supply[0], "ink": config.supply[1]},
                 "dips": plan.dips[0] if plan.dips else [],
                 **{("n_dips" if k == "dips" else k): float(v[0])
                    for k, v in base.ink_episode_stats().items() if k != "mode"}},
     }, indent=2) + "\n")
     print(f"[cinematic] {time.time() - t0:.0f}s total -> {out}")
-    env.close()
+    episode.close()
 
 
 def cli():
-    """Pick the distribution, put its tool in the gripper, then re-exec.
-
-    Same reason as tatbot_sim.factory: the fitted tool is resolved while the
-    package is being imported, and a script cannot run a line of its own code
-    before its imports. So the first pass only reads the distribution name and
-    execs; the second pass is the render.
-    """
-    import os
+    """Select an explicit distribution configuration and render one take."""
     import sys
 
     argv = sys.argv[1:]
@@ -624,14 +700,8 @@ def cli():
     dist = DISTRIBUTIONS.get(name)
     if dist is None:
         raise SystemExit(f"unknown distribution {name!r}; have {', '.join(names)}")
-    if os.environ.get(GUARD) != name:
-        prior = os.environ.get("TATBOT_TOOL_ID")
-        if prior and prior != dist.tool_id:
-            raise SystemExit(
-                f"TATBOT_TOOL_ID={prior!r} is set but {name!r} runs {dist.tool_id!r}")
-        os.environ["TATBOT_TOOL_ID"] = dist.tool_id
-        os.environ[GUARD] = name
-        os.execv(sys.executable, [sys.executable, __file__, *argv])
+    from tatbot_sim.factory import select_tool
+    select_tool(dist)
     main(tyro.cli(Args, args=rest), dist)
 
 

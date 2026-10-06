@@ -12,17 +12,16 @@ different tool it swaps the env's tool spec rather than rebuilding the world.
 
 Needs a render device:
 
-    cd python/tatbot_sim && uv run python tests/test_dynamic_texture.py
+    cd python/tatbot_sim && uv run --with pytest pytest -q tests/test_dynamic_texture.py
 """
 
 from __future__ import annotations
 
 import cv2
-import gymnasium as gym
 import numpy as np
-import tatbot_sim  # noqa: F401  (registers agent + env)
 import torch
 from tatbot_sim import tools
+from tatbot_sim.env import TatbotDrawEnv
 
 _ENV = None
 
@@ -31,8 +30,7 @@ def env_and_base():
     """The shared env, reset to a bare sheet."""
     global _ENV
     if _ENV is None:
-        _ENV = gym.make(
-            "TatbotDraw-v0", num_envs=2, obs_mode="rgb", control_mode="pd_joint_pos",
+        _ENV = TatbotDrawEnv( num_envs=2, obs_mode="rgb", control_mode="pd_joint_pos",
             sim_backend="auto", reconfiguration_freq=0,
         )
     _ENV.reset(seed=0)
@@ -77,7 +75,7 @@ def test_deposit_reaches_the_bound_texture():
     diff = np.abs(after.astype(int) - before.astype(int)).sum(-1)
     assert diff.sum() > 0, "deposit never reached the texture"
     ys, xs = np.nonzero(diff)  # and only where it was stamped
-    # Where it was STAMPED, not the middle of the sheet: on a mound the canvas
+    # Where it was STAMPED, not the middle of the sheet: on a curved profile the canvas
     # origin is not the nearest surface point to itself, so a world point taken
     # from the canvas frame projects a few millimetres off centre. Asking the
     # surface where the stamp went is the invariant; assuming the centre was
@@ -92,6 +90,79 @@ def test_only_the_touching_env_is_marked():
     base.ink_field.deposit(base.surface, _uv_at(base, (0.0, 0.0)), base.ink_opacity, active)
     cov = base.ink_field.coverage()
     assert float(cov[0]) > 0 and float(cov[1]) == 0.0
+
+
+def test_incremental_upload_matches_full_blend_after_pigment_and_source_changes():
+    """Sparse deposits and removal must not leave stale renderer pixels.
+
+    Compare the downloaded textures to a full blend across both environments,
+    including paper/ink color changes and adding/removing the transfer stencil.
+    """
+    _, base = env_and_base()
+    field = base.ink_field
+    base._refresh_sheet_textures(force=True)
+
+    def assert_full_blend():
+        paper = base._stencil_base if base._stencil_base is not None else base._sheet_base
+        expected = field.composite_rgba(paper).cpu().numpy()
+        for index, texture in enumerate(base._sheet_tex):
+            np.testing.assert_array_equal(texture.download(), expected[index])
+
+    untouched = base._sheet_tex[1].download().copy()
+    field.field[0, 2:5, 3:7] = 0.5
+    field.field[0, -5:-2, -7:-3] = 1.0
+    field.dirty[0] = True
+    base._refresh_sheet_textures()
+    assert_full_blend()
+    np.testing.assert_array_equal(base._sheet_tex[1].download(), untouched)
+
+    field.field[0, 2:5, 3:7] = 0.0
+    field.field[1, 7:9, 8:10] = 0.25
+    field.dirty[:] = True
+    base._refresh_sheet_textures()
+    assert_full_blend()
+
+    base._sheet_base[0, :2, :3] *= 0.5
+    field.dirty[0] = True
+    base._refresh_sheet_textures()
+    assert_full_blend()
+
+    field.ink_rgb[1] = torch.tensor([0.8, 0.15, 0.3], device=base.device)
+    field.dirty[1] = True
+    base._refresh_sheet_textures()
+    assert_full_blend()
+
+    base.set_stencil(torch.full_like(field.field, 0.4))
+    assert_full_blend()
+    field.field[1, 7:9, 8:10] = 0.0
+    field.dirty[1] = True
+    base._refresh_sheet_textures()
+    assert_full_blend()
+    base.set_stencil(None)
+    assert_full_blend()
+
+
+def test_inference_tensor_sources_still_render_color_and_pigment_changes():
+    """Callers using inference mode retain the full compositor's behavior."""
+    _, base = env_and_base()
+    field = base.ink_field
+    original_paper, original_ink = base._sheet_base, field.ink_rgb
+    try:
+        with torch.inference_mode():
+            base._sheet_base = original_paper.clone()
+            field.ink_rgb = original_ink.clone()
+            base._refresh_sheet_textures(force=True)
+            field.field[0, 2:5, 3:7] = 0.5
+            base._sheet_base[0, :2, :3] *= 0.5
+            field.ink_rgb[0] = torch.tensor([0.8, 0.15, 0.3], device=base.device)
+            field.dirty[0] = True
+            base._refresh_sheet_textures()
+            expected = field.composite_rgba(base._sheet_base).cpu().numpy()
+            for index, texture in enumerate(base._sheet_tex):
+                np.testing.assert_array_equal(texture.download(), expected[index])
+    finally:
+        base._sheet_base, field.ink_rgb = original_paper, original_ink
+        base._refresh_sheet_textures(force=True)
 
 
 def test_the_gate_is_the_contact_band():
@@ -115,9 +186,9 @@ def test_line_width_matches_the_configured_radius():
 
     Deliberately measured on a FLAT surface, and on one built here rather than
     whatever the bench has fitted. Texels and metres only coincide on a plane:
-    over a mound a canvas metre of field covers more than a metre of skin, so a
+    over a displaced surface a canvas metre of field covers more than a metre of skin, so a
     correct stamp reads narrow in texels by exactly the slope, and this
-    assertion would be measuring the mound rather than the kernel. That the
+    assertion would be measuring the surface rather than the kernel. That the
     world footprint survives slope is a separate promise, proved against known
     angles in test_inkfield.
     """
@@ -228,17 +299,3 @@ def test_the_field_leads_and_the_texture_follows_on_cadence():
     base._step_count = 0
     env.step(action)
     assert base._step_count == 1
-
-
-def _run_all():
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    for fn in fns:
-        fn()
-        print(f"  ok  {fn.__name__}")
-    if _ENV is not None:
-        _ENV.close()
-    print(f"{len(fns)} passed")
-
-
-if __name__ == "__main__":
-    _run_all()

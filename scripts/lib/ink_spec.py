@@ -13,6 +13,11 @@ datasheet as an ``ink:`` block and is read from ``ToolSpec.raw`` here, so
 
 Design:
 
+The volume model below belongs to the simulator and `tatbot ink`. ROS dipping
+uses a cap's measured ink level (`tatbot ros palette load`) and the tool's
+measured contact length per dip, never these uptake or volume guesses. Both
+record in the same palette_load.yaml.
+
 * The tool carries a CHARGE in microlitres. Contact debits it —
   ``deposit_ul_per_mm * contact_mm + bleed_ul_per_s * contact_s``, where
   contact time counts whether or not the tip is moving, because a needle
@@ -29,31 +34,18 @@ Design:
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import math
 import os
 import socket
-import sys
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
-# --- sibling import that also works when loaded by path ------------------------
-
-try:  # scripts/lib on sys.path (scripts, tests)
-    import tool_spec as _tool_spec
-except ImportError as err:  # loaded by path from the sim package
-    _tool_spec = sys.modules.get("tatbot_tool_spec")
-    if _tool_spec is None:
-        _p = Path(__file__).resolve().with_name("tool_spec.py")
-        _s = importlib.util.spec_from_file_location("tatbot_tool_spec", _p)
-        if _s is None or _s.loader is None:
-            raise ImportError(f"Cannot load module spec for {_p}") from err
-        _tool_spec = importlib.util.module_from_spec(_s)
-        sys.modules["tatbot_tool_spec"] = _tool_spec
-        _s.loader.exec_module(_tool_spec)
+# A plain sibling import: scripts put scripts/lib on sys.path, and the two uv
+# projects install this directory as tatbot-scriptlib. Both reach the same file.
+import tool_spec as _tool_spec
 
 parse_simple_yaml = _tool_spec.parse_simple_yaml
 REPO = _tool_spec.REPO
@@ -63,14 +55,17 @@ INKS_RELPATH = "config/inks.yaml"
 PALETTE_RELPATH = "config/palette.yaml"
 LOAD_RELPATH = "config/palette_load.yaml"
 INVENTORY_RELPATH = "config/inventory.yaml"
-PALETTE_CAL_RELPATH = "config/palette_calibration.yaml"
-MODES = ("real", "rehearsal", "none")
+MODES = ("real", "rehearsal", "none", "cartridge")
 DIP_REASONS = ("session_start", "low_charge", "color_change", "operator")
 NO_INK = "none"
 
 
-def _utc() -> str:
+def utc_stamp() -> str:
+    """Second-resolution UTC stamp the ink records share (`2026-09-15T13:00:00Z`)."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+_utc = utc_stamp
 
 
 def _node() -> str:
@@ -111,16 +106,36 @@ DIP_OVERRIDE_KEYS = ("uptake_ul", "deposit_ul_per_mm", "bleed_ul_per_s", "dip_de
 
 @dataclass(frozen=True)
 class CapSize:
+    """A cap as sold: OUTER diameter and OUTER height, plus its wall thickness.
+
+    The outside is what the product is specified by and what rests in the
+    palette pocket; the inside is what the tool enters and what holds ink.
+    Keeping both, rather than one set of "the" dimensions, is the difference
+    between a rim height and a plunge limit — they are 0.5 mm apart and the
+    error runs toward the cap floor.
+    """
+
     size_id: str
-    diameter_m: float
-    depth_m: float
+    diameter_m: float        # outer, across the rim
+    height_m: float          # outer, rim top to cap bottom
+    wall_m: float            # rim, wall and base thickness
     capacity_ul: float
     usable_frac: float = 0.7
     product: str | None = None
 
     @property
+    def bore_diameter_m(self) -> float:
+        """Inside the walls — what the tool has to fit through."""
+        return self.diameter_m - 2 * self.wall_m
+
+    @property
+    def depth_m(self) -> float:
+        """Rim down to the inside bottom: how deep a tool may go."""
+        return self.height_m - self.wall_m
+
+    @property
     def area_m2(self) -> float:
-        return math.pi * (self.diameter_m / 2) ** 2
+        return math.pi * (self.bore_diameter_m / 2) ** 2
 
     def surface_depth_m(self, fill_ul: float) -> float:
         """How far below the rim the ink surface sits for a given fill."""
@@ -142,11 +157,30 @@ class SlotLoad:
     fill_ul: float = 0.0
     bottle: str | None = None
     utc: str | None = None
+    cap_present: bool | None = None
+    level_lower_bound_m: float | None = None  # measured ink height above the cap's inner floor (ROS dips)
+    fill_known: bool = True  # False: a `tatbot ros palette load` declaration, which records no volume
 
     @property
     def dry(self) -> bool:
-        return self.ink_id is None or self.fill_ul <= 0
+        return self.ink_id is None or (self.fill_known and self.fill_ul <= 0)
 
+
+@dataclass(frozen=True)
+class ContinuousSupply:
+    """Legacy session account retained for journal compatibility."""
+
+    supply_id: str
+    budget_ms: int
+    started_at_ms: int
+    observed_at_ms: int
+
+    def __post_init__(self):
+        if (not isinstance(self.supply_id, str) or not self.supply_id.strip()
+                or any(type(v) is not int or not 0 <= v <= 2**64 - 1
+                       for v in (self.budget_ms, self.started_at_ms, self.observed_at_ms))
+                or self.budget_ms == 0 or self.observed_at_ms < self.started_at_ms):
+            raise ValueError("invalid continuous supply account")
 
 @dataclass(frozen=True)
 class InkPolicy:
@@ -231,16 +265,24 @@ def policy_with_ink(policy: "InkPolicy", ink: Ink | None) -> "InkPolicy":
 
 def load_palette(repo: Path | str = REPO) -> dict[str, PaletteSlot]:
     data = _read(PALETTE_RELPATH, repo)
+    from tatbot_cli.arms import load as configured_arms
+
+    arms = configured_arms(Path(repo))
     sizes = {}
     for size_id, d in (data.get("sizes") or {}).items():
         cs = CapSize(
             size_id=size_id,
             diameter_m=float(d["diameter_m"]),
-            depth_m=float(d["depth_m"]),
+            height_m=float(d["height_m"]),
+            wall_m=float(d["wall_m"]),
             capacity_ul=float(d["capacity_ul"]),
             usable_frac=float(d.get("usable_frac", 0.7)),
             product=d.get("product"),
         )
+        if not 0.0 < cs.wall_m < cs.height_m / 2 or cs.bore_diameter_m <= 0.0:
+            raise ValueError(
+                f"{PALETTE_RELPATH}: size {size_id}: wall_m {cs.wall_m} leaves no cap")
+        # the ink volume is the BORE, not the outer envelope
         geometric = cs.area_m2 * cs.depth_m * 1e9
         if abs(geometric - cs.capacity_ul) / geometric > 0.05:
             raise ValueError(
@@ -253,8 +295,8 @@ def load_palette(repo: Path | str = REPO) -> dict[str, PaletteSlot]:
         if size is None:
             raise ValueError(f"{PALETTE_RELPATH}: slot {slot_id}: unknown size {d.get('size')!r}")
         arm = d.get("arm")
-        if arm not in ("left", "right"):
-            raise ValueError(f"{PALETTE_RELPATH}: slot {slot_id}: arm must be left|right")
+        if arm not in arms:
+            raise ValueError(f"{PALETTE_RELPATH}: slot {slot_id}: arm {arm!r} is not configured")
         slots[slot_id] = PaletteSlot(slot_id=slot_id, size=size, arm=arm)
     if not slots:
         raise ValueError(f"{PALETTE_RELPATH}: no slots")
@@ -277,9 +319,12 @@ def load_palette_load(repo: Path | str = REPO,
             fill_ul=float(d.get("fill_ul") or 0.0),
             bottle=d.get("bottle"),
             utc=d.get("utc"),
+            cap_present=d.get("cap_present"),
+            level_lower_bound_m=d.get("level_lower_bound_m"),
+            fill_known=d.get("fill_known", True),
         )
     for slot_id in palette:
-        out.setdefault(slot_id, SlotLoad(slot_id=slot_id, ink_id=None))
+        out.setdefault(slot_id, SlotLoad(slot_id=slot_id, ink_id=None, fill_known=False))
     return out
 
 
@@ -342,6 +387,12 @@ def policy_for(tool) -> InkPolicy:
         if pol.uptake_ul > pol.charge_capacity_ul:
             raise ValueError(
                 f"{getattr(tool, 'tool_id', tool)}: ink.uptake_ul exceeds charge_capacity_ul")
+    if mode == "cartridge" and any(getattr(pol, name) != 0.0 for name in (
+            "charge_capacity_ul", "uptake_ul", "deposit_ul_per_mm", "bleed_ul_per_s",
+            "dip_depth_m", "dip_dwell_s", "min_fill_frac")):
+        raise ValueError("cartridge policy cannot declare volumetric charge or dipping")
+    if mode == "cartridge" and any(block.get(name) is not None for name in ("strokes_per_dip", "mm_per_dip")):
+        raise ValueError("cartridge policy cannot declare dip maintenance limits")
     return pol
 
 
@@ -386,7 +437,7 @@ def require_supply(policy: InkPolicy, palette: dict[str, PaletteSlot],
     if policy.mode == "none":
         raise InkSupplyError(
             f"this task needs an ink supply and {tool_id!r} has ink.mode none — fit a "
-            "tool that dips (lutin-3rl-bugpin, or lutin-ballpoint-dot to rehearse)")
+            "tool that dips (lutin-3rl-bugpin, or a `rehearsal` tool to rehearse)")
     if not usable_slots(policy, palette, load, arm, ink_id):
         want = f" of {ink_id}" if ink_id else ""
         raise InkSupplyError(
@@ -719,16 +770,19 @@ def dip_plunge_m(policy: InkPolicy, slot: PaletteSlot, fill_ul: float) -> float:
 URDF_RELPATH = "urdf/tatbot.urdf"
 
 
-def palette_layout_from_urdf(repo: Path | str = REPO) -> dict[str, tuple[float, float, float]]:
-    """Each slot's offset from ``palette_root``, metres, read from the URDF's
-    fixed ``inkcap_*`` joints. The rack's ARC is real hardware and this is its
-    one source; where the rack SITS is a measured pose (config/poses.yaml
-    ``palette_center``), corrected per session by the ``palette_tag8``
-    observation — the URDF's ``palette_root`` origin is 1.0-era design intent
-    and is deliberately not used for that."""
+def _palette_urdf(repo: Path | str = REPO):
+    """(relative path, parsed root) of the installed palette's URDF, named by palette_geometry.json."""
     import xml.etree.ElementTree as ET
 
-    root = ET.parse(Path(repo) / URDF_RELPATH).getroot()
+    relpath = palette_geometry(repo)["urdf"]
+    return relpath, ET.parse(Path(repo) / relpath).getroot()
+
+
+def palette_layout_from_urdf(repo: Path | str = REPO) -> dict[str, tuple[float, float, float]]:
+    """Cap support-floor offsets in metres from the standalone palette URDF.
+    Use palette_rim_layout for dipping; these are not seated cap rims.
+    """
+    relpath, root = _palette_urdf(repo)
     out = {}
     for joint in root.findall("joint"):
         child = joint.find("child")
@@ -743,21 +797,21 @@ def palette_layout_from_urdf(repo: Path | str = REPO) -> dict[str, tuple[float, 
         xyz = [float(v) for v in (raw_xyz or "0 0 0").split()]
         out[name] = (xyz[0], xyz[1], xyz[2])
     if not out:
-        raise ValueError(f"{URDF_RELPATH}: no inkcap_* joints under palette_root")
+        raise ValueError(f"{relpath}: no inkcap_* joints under palette_root")
     return out
 
 
-def _urdf_fixed_origin(root, child: str):
+def _urdf_fixed_origin(root, child: str, relpath: str = URDF_RELPATH):
     for joint in root.findall("joint"):
         c = joint.find("child")
         if c is not None and c.get("link") == child:
             if joint.get("type") != "fixed":
-                raise ValueError(f"{URDF_RELPATH}: {child} is not on a fixed joint")
+                raise ValueError(f"{relpath}: {child} is not on a fixed joint")
             o = joint.find("origin")
             xyz = [float(v) for v in (o.get("xyz") if o is not None else "0 0 0").split()]
             rpy = [float(v) for v in (o.get("rpy") if o is not None else "0 0 0").split()]
             return xyz, rpy, joint.find("parent").get("link")
-    raise ValueError(f"{URDF_RELPATH}: no joint has child {child!r}")
+    raise ValueError(f"{relpath}: no joint has child {child!r}")
 
 
 def _rpy_matrix(r, p, y):
@@ -769,17 +823,25 @@ def _rpy_matrix(r, p, y):
     ]
 
 
-def tag8_in_palette_root(repo: Path | str = REPO) -> tuple[float, float, float]:
-    """Where the palette's AprilTag (``palette_tag8``) sits relative to
-    ``palette_root``, from the URDF — so an observed tag centre (a tip planted
-    on it, or a fused tag pose) gives the rack's root back."""
-    import xml.etree.ElementTree as ET
+def palette_from_tag(repo: Path | str = REPO):
+    """4x4 palette body <- installed tag: the palette URDF's palette_tag frame, the sticker as the
+    overhead cameras measured it on the roof (its position and its in-plane turn)."""
+    import numpy as _np
 
-    root = ET.parse(Path(repo) / URDF_RELPATH).getroot()
-    xyz, _rpy, parent = _urdf_fixed_origin(root, "palette_tag8")
+    relpath, root = _palette_urdf(repo)
+    xyz, rpy, parent = _urdf_fixed_origin(root, "palette_tag", relpath)
     if parent != "palette_root":
-        raise ValueError(f"{URDF_RELPATH}: palette_tag8 must hang off palette_root")
-    return (xyz[0], xyz[1], xyz[2])
+        raise ValueError(f"{relpath}: palette_tag must hang off palette_root")
+    transform = _np.eye(4)
+    transform[:3, :3] = _rpy_matrix(*rpy)
+    transform[:3, 3] = xyz
+    return transform
+
+
+def tag_in_palette_root(repo: Path | str = REPO) -> tuple[float, float, float]:
+    """The installed tag's centre in the palette body frame; not a contact datum."""
+    x, y, z = palette_from_tag(repo)[:3, 3]
+    return (float(x), float(y), float(z))
 
 
 def base_from_root_matrix(repo: Path | str = REPO, arm: str = "right"):
@@ -790,107 +852,64 @@ def base_from_root_matrix(repo: Path | str = REPO, arm: str = "right"):
     land in the same frame as il_dip's caps."""
     import xml.etree.ElementTree as ET
 
-    root = ET.parse(Path(repo) / URDF_RELPATH).getroot()
-    base_xyz, base_rpy, base_parent = _urdf_fixed_origin(root, f"{arm}/base_link")
+    from tatbot_cli.arms import load as configured_arms
+
+    repo = Path(repo)
+    bindings = configured_arms(repo)
+    physical = bindings.get(arm)
+    if physical is None:
+        # FK callers already carry a validated URDF prefix. Its logical arm
+        # ID may have a different spelling in a renamed rig configuration.
+        matches = [entry for entry in bindings.values() if entry.urdf_prefix == arm]
+        if len(matches) != 1:
+            raise ValueError(f'{arm}: no configured arm binding with a unique ID or URDF prefix')
+        physical = matches[0]
+    prefix = physical.urdf_prefix
+    root = ET.parse(repo / URDF_RELPATH).getroot()
+    base_xyz, base_rpy, base_parent = _urdf_fixed_origin(root, f"{prefix}/base_link")
     if base_parent != "root":
-        raise ValueError(f"{URDF_RELPATH}: {arm}/base_link must hang off root")
+        raise ValueError(f"{URDF_RELPATH}: {prefix}/base_link must hang off root")
     rot = _rpy_matrix(*base_rpy)                 # base axes expressed in root
     root_from_base = [[rot[i][j] for j in range(3)] + [base_xyz[i]] for i in range(3)] + [[0, 0, 0, 1]]
     import numpy as _np
     return _np.linalg.inv(_np.array(root_from_base, float))
 
 
+def palette_geometry(repo: Path | str = REPO) -> dict:
+    """Installed asset metadata; measurement fields must never be inferred from CAD."""
+    return json.loads((Path(repo) / "config/palette_geometry.json").read_text())
+
+
 def palette_root_in_base(repo: Path | str = REPO, arm: str = "right") -> tuple[float, float, float]:
-    """``palette_root`` expressed in the ARM's base frame — the frame the
-    driver's Cartesian API and the sim both work in. Both the rack and the arm
-    mount are fixed joints off ``root`` in the URDF, so this is the rig's own
-    geometry. Verified against the measured palette hold on 2026-08-28: the
-    tip recorded "on the palette tag" (config/poses.yaml, ROOT frame) lands
-    ~3 cm from this point, on the rack, not 27 cm away — poses.yaml's ee_xyz_m
-    is root-frame, which is easy to misread as base-frame."""
-    import xml.etree.ElementTree as ET
-
-    root = ET.parse(Path(repo) / URDF_RELPATH).getroot()
-    pal_xyz, pal_rpy, pal_parent = _urdf_fixed_origin(root, "palette_root")
-    base_xyz, base_rpy, base_parent = _urdf_fixed_origin(root, f"{arm}/base_link")
-    if pal_parent != "root" or base_parent != "root":
-        raise ValueError(f"{URDF_RELPATH}: palette_root and {arm}/base_link must both hang off root")
-    rot = _rpy_matrix(*base_rpy)  # base in root; rot^T maps root vectors into base
-    d = [pal_xyz[i] - base_xyz[i] for i in range(3)]
-    res = tuple(float(sum(rot[j][i] * d[j] for j in range(3))) for i in range(3))
-    return (res[0], res[1], res[2])
+    """Synthetic simulation placement only. Hardware uses measured SE(3)."""
+    point = palette_geometry(repo)["simulation_root_xyz_m"]
+    transform = base_from_root_matrix(repo, arm)
+    return tuple(float(sum(transform[i, j] * point[j] for j in range(3)) + transform[i, 3])
+                 for i in range(3))
 
 
-# --- palette calibration: where the rack ACTUALLY is (config/palette_calibration.yaml) ---
-#
-# palette_root_in_base above is the rig's nominal geometry from the URDF. The
-# rack is not bolted to that pose — it is set on the bench and moves. A palette
-# calibration measures the real palette_root in the arm base frame, from either
-# source, and il_dip prefers it over the URDF nominal:
-#   tip     the ballpoint tip planted on palette_tag8 and rolled — the pivot
-#           solve gives the tag centre in the base frame directly (FK, no
-#           camera error), so this is authoritative. Needs the arm.
-#   vision  palette_tag8 observed by the cameras and carried into the base
-#           frame through the robot-world bundle — hands-off but only as good
-#           as that bundle (~7 mm), so it is the quick check, not the truth.
-# Both are dated; il_dip takes the freshest un-stale tip, else vision, else the
-# URDF, and folds the source's residual into the cap-clearance budget.
+def palette_rim_layout(repo: Path | str = REPO, *, measured: bool = True) -> dict:
+    """CAD XY plus the rim Z of each cap above the waist underside.
 
-def load_palette_cal(repo: Path | str = REPO) -> dict:
-    data = _read(PALETTE_CAL_RELPATH, repo)
-    return {k: v for k, v in data.items() if k in ("tip", "vision") and isinstance(v, dict)}
+    Rim Z is the pocket floor plus the cap's OUTER height — the outside is what
+    rests in the pocket, so using the bore depth would sit every rim a wall
+    thickness low. An explicit entry in palette_geometry.json's rim_z_m
+    overrides the computed value for that cap.
 
-
-def _cal_age_h(rec: dict, now: datetime | None = None) -> float | None:
-    utc = rec.get("utc")
-    if not utc:
-        return None
-    try:
-        t = datetime.strptime(utc, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    except ValueError:
-        return None
-    return (( now or datetime.now(timezone.utc)) - t).total_seconds() / 3600.0
-
-
-def choose_palette_root(cal: dict, urdf_root, max_age_h: float = 168.0,
-                        now: datetime | None = None) -> dict:
-    """Which palette_root il_dip should use, and why. Precedence: a fresh tip
-    calibration, then a fresh vision one, then the URDF nominal. 'fresh' is
-    younger than max_age_h — the rack moves, and a month-old measurement is a
-    guess. Returns {root, source, residual_mm, age_h, note}."""
-    for source in ("tip", "vision"):
-        rec = cal.get(source) or {}
-        root = rec.get("root_xyz_m")
-        age = _cal_age_h(rec, now)
-        if not root or len(root) != 3:
-            continue
-        if age is not None and age > max_age_h:
-            continue
-        return {"root": tuple(float(x) for x in root), "source": source,
-                "residual_mm": float(rec.get("residual_mm") or 0.0),
-                "age_h": age, "note": rec.get("note")}
-    # nothing fresh: say if there is a STALE one worth re-measuring
-    stale = next((src for src in ("tip", "vision")
-                  if (cal.get(src) or {}).get("root_xyz_m")), None)
-    note = f"{stale} calibration is stale (> {max_age_h:.0f} h) — re-measure it" if stale else None
-    return {"root": tuple(float(x) for x in urdf_root), "source": "urdf",
-            "residual_mm": 0.0, "age_h": None, "note": note}
-
-
-def write_palette_cal(source: str, rec: dict, repo: Path | str = REPO) -> Path:
-    """Merge one source's record into config/palette_calibration.yaml, leaving
-    the other source untouched."""
-    if source not in ("tip", "vision"):
-        raise ValueError(f"palette cal source must be tip|vision, not {source!r}")
-    path = Path(repo) / PALETTE_CAL_RELPATH
-    body = {"schema_version": SCHEMA_VERSION}
-    existing = load_palette_cal(repo)
-    existing[source] = rec
-    for src in ("tip", "vision"):
-        if src in existing:
-            body[src] = existing[src]
-    path.write_text(_preserve_header(path) + "\n".join(_emit(body)) + "\n")
-    return path
+    ``measured`` is accepted for callers that still pass it and no longer
+    changes anything: the geometry is the same arithmetic either way.
+    """
+    layout = palette_layout_from_urdf(repo)
+    geometry = palette_geometry(repo)
+    rims = geometry.get("rim_z_m", {})
+    slots = load_palette(repo)
+    out = {}
+    for name, (x, y, floor) in layout.items():
+        z = rims.get(name, floor + slots[name].size.height_m)
+        if not math.isfinite(float(z)) or not floor < float(z) < floor + 0.05:
+            raise ValueError(f"{name}: invalid rim height {z}")
+        out[name] = (x, y, float(z))
+    return out
 
 
 # --- the ledger ---------------------------------------------------------------------
@@ -1071,6 +1090,13 @@ def _preserve_header(path: Path) -> str:
     return "\n".join(head).rstrip("\n") + "\n\n" if head else ""
 
 
+def _existing_note(path: Path) -> str | None:
+    try:
+        return parse_simple_yaml(path.read_text()).get("note")
+    except Exception:
+        return None
+
+
 def write_palette_load(load: dict[str, SlotLoad], repo: Path | str = REPO,
                        note: str | None = None) -> Path:
     path = Path(repo) / LOAD_RELPATH
@@ -1084,18 +1110,14 @@ def write_palette_load(load: dict[str, SlotLoad], repo: Path | str = REPO,
                 "fill_ul": round(s.fill_ul, 1),
                 "bottle": s.bottle,
                 "utc": s.utc,
+                "cap_present": s.cap_present,
+                "level_lower_bound_m": s.level_lower_bound_m,
+                "fill_known": s.fill_known,
             } for s in load.values()
         },
     }
     path.write_text(_preserve_header(path) + "\n".join(_emit(body)) + "\n")
     return path
-
-
-def _existing_note(path: Path) -> str | None:
-    try:
-        return parse_simple_yaml(path.read_text()).get("note")
-    except Exception:
-        return None
 
 
 def write_inventory(inv: dict, repo: Path | str = REPO) -> Path:
@@ -1110,13 +1132,14 @@ def write_inventory(inv: dict, repo: Path | str = REPO) -> Path:
 # --- dataset stamp ---------------------------------------------------------------------
 
 def dataset_ink_metadata(tool, repo: Path | str = REPO, arm: str = "right",
-                         load: dict[str, SlotLoad] | None = None) -> dict:
+                         load: dict[str, SlotLoad] | None = None,
+                         palette: dict[str, PaletteSlot] | None = None) -> dict:
     """What a dataset carries next to meta/tool.json: the policy and the palette
     load at recording time, inlined so it stays readable after both change.
     ``load`` is the supply the run actually used (a sim's synthetic wet rack,
     say); None is the bench's palette_load.yaml."""
     pol = policy_for(tool)
-    palette = load_palette(repo)
+    palette = palette if palette is not None else load_palette(repo)
     load = load if load is not None else load_palette_load(repo, palette)
     inks = load_inks(repo)
     slots = {}
@@ -1130,7 +1153,9 @@ def dataset_ink_metadata(tool, repo: Path | str = REPO, arm: str = "right",
             "size": slot.size.size_id,
             "ink": sl.ink_id or NO_INK,
             "rgb": list(ink.rgb) if ink else None,
-            "fill_ul": sl.fill_ul,
+            "fill_ul": sl.fill_ul if sl.fill_known else None,
+            'cap_present': sl.cap_present,
+            'level_lower_bound_m': sl.level_lower_bound_m,
             "bottle": sl.bottle,
         }
     return {

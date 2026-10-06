@@ -76,10 +76,11 @@
     "palette": {
       "role": "world_anchor",
       "ids": [
-        1
+        0
       ],
-      "edge_m": 0.041,
-      "ambiguity_group": "phase_separated_calibration_ids"
+      "edge_m": 0.046,
+      "ambiguity_group": "phase_separated_calibration_ids",
+      "family": "apriltag_36h11"
     }
   },
   "printing": {

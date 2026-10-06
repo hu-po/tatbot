@@ -24,7 +24,7 @@ struct Stats
 class UdpPublisher
 {
 public:
-  UdpPublisher(const std::string & endpoint, double max_fps);
+  UdpPublisher(const std::string & endpoint, double max_fps, bool right_leader = false);
   ~UdpPublisher();
 
   UdpPublisher(const UdpPublisher &) = delete;
@@ -43,6 +43,7 @@ public:
 
 private:
   static constexpr size_t payload_capacity = 4096;
+  bool right_leader_ = false;
   int socket_ = -1;
   sockaddr_in destination_{};
   std::string endpoint_;

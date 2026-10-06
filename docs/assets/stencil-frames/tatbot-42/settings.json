@@ -1,0 +1,27 @@
+{
+  "black_fraction": 0.14249,
+  "clear_center_mm": [
+    62.0,
+    112.0
+  ],
+  "dpi": 300,
+  "files": {
+    "stencil.png": "ad282fc6e4f02c9b3739f9d8ef19e4633b215ec9dd429b85b4c26be13b5ebf04",
+    "stencil.svg": "b75816e8a0e1a873d35893bdb59785a9acc137e303d021d975d9fd308ed67e67"
+  },
+  "fill_rate": 0.14,
+  "frame_mm": 14.0,
+  "gap_rate": 0.22,
+  "generator_version": "1",
+  "height_mm": 150.0,
+  "margin_mm": 5.0,
+  "pillow_version": "12.1.1",
+  "pixels": [
+    1181,
+    1772
+  ],
+  "seed": "tatbot-42",
+  "spacing_mm": 7.0,
+  "stroke_mm": 0.45,
+  "width_mm": 100.0
+}

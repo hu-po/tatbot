@@ -11,13 +11,11 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "scripts" / "lib"))
 
 import tatbot_profile as tp  # noqa: E402
 from tatbot_cli import nodes  # noqa: E402
@@ -60,6 +58,9 @@ def test_tatbot_profile_passes_the_gate():
     ex = tp.env_exports(p)
     assert ex["TATBOT_FOLLOWER_IP"] and ex["TATBOT_LEADER_IP"]
     assert ex["TATBOT_ESTOP_DEVICE"]
+    import hashlib
+    assert ex["TATBOT_PROFILE_SHA256"] == hashlib.sha256(Path(p["_path"]).read_bytes()).hexdigest()
+    assert ex["TATBOT_PROFILE_PATH"] == str(Path(p["_path"]).resolve())
 
 
 def test_resolution_precedence(monkeypatch, tmp_path):
@@ -94,7 +95,7 @@ def test_cli_refuses_motion_without_valid_profile(tmp_path):
     env = dict(os.environ, TATBOT_NODE=nodes.example_node("arm"), TATBOT_PROFILE="example",
                TATBOT_EE_TOOL="picosecond-laser-pen")
     r = subprocess.run(
-        [str(REPO / "scripts" / "tatbot"), "--json", "teleop", "run"],
+        [str(REPO / "scripts" / "tatbot"), "--json", "teleop", "start"],
         capture_output=True, text=True, env=env, cwd=REPO)
     assert r.returncode == 3, (r.returncode, r.stdout, r.stderr)
     out = json.loads(r.stdout or r.stderr)

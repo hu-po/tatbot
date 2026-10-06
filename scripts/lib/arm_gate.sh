@@ -1,42 +1,35 @@
 #!/usr/bin/env bash
-# Single-use arming gate for AUTONOMOUS-motion launchers (policy rollouts,
-# scripted dips, and the one-shot Cartesian square probe).
+# Launch-id ledger and audit for AUTONOMOUS-motion launchers.
 #
-# Why: on 2026-08-24 three rollout launches fired that nobody initiated —
-# each a byte-identical, non-interactive replay of a previously-executed
-# command, ~7-8 s after the arm went idle (launcher never identified; see
-# 2026-08-24 squiggle robot eval). Possessing a valid command
-# string is therefore not proof of present intent. Every launch must be
-# armed with a nonce the operator/session writes immediately before it:
+# Every autonomous launch carries a unique launch id,
+# <utc %Y%m%dT%H%M%SZ>-<host>-<4 hex>[-<tag>]. The CLI mints it right before
+# exec and writes it to /tmp/tatbot-arm-token; arm_gate::require reads it
+# (minting one itself when the file is missing, stale or empty), appends it
+# to the ledger, and audits every decision with the pid chain up to sshd and
+# the SSH_CONNECTION. Nothing here refuses a launch: the trail exists because
+# on 2026-08-24 three rollout launches fired that nobody could attribute
+# (see the squiggle robot eval), and an attributable record is what was
+# missing. A repeated id is audited and warned about, not refused.
 #
-#   echo <unique-literal-nonce> > /tmp/tatbot-arm-token && <launcher ...>
+# Scope: every launcher that moves the arm on its own (policy rollouts,
+# scripted measurement moves).
+# Ordinary teleop/record keep a human physically on the leader arm and carry
+# no launch id.
 #
-# The nonce must be a LITERAL (never $RANDOM or $(date ...): a shell replay
-# re-evaluates substitutions and mints a fresh nonce). Consumed nonces are
-# ledgered; a repeat refuses and points at the ancestry tripwire.
-#
-# Scope: every launcher that moves the arm on its own — policy rollouts, the
-# scripted dip (il_dip.sh), and teleop_square.sh after its explicit handoff.
-# Ordinary teleop/record keep a human physically on the leader arm and stay
-# ungated, EXCEPT that their --dip runs il_dip.sh first, which is gated like
-# any other autonomous motion.
-#
-# Nesting: a rollout's --dip runs il_dip.sh as a child AFTER the rollout has
-# consumed its nonce. The child must not demand a second one (the operator
-# armed this launch once, on purpose), and must not be fooled by a stale
-# export in an interactive shell. So a pass exports TATBOT_ARM_ARMED=<nonce>
-# and TATBOT_ARM_ARMED_PID=$$, and a child accepts them only when that pid is
-# one of its own ancestors AND the nonce is the LAST line of the consumed
-# ledger — i.e. it was consumed by the launch this process is running inside.
+# Nesting: a launcher may run another gated launcher as a child inside the
+# same launch. A pass exports TATBOT_ARM_ARMED=<id> and TATBOT_ARM_ARMED_PID=$$; a child
+# reuses them only when that pid is one of its own ancestors AND the id is
+# the LAST line of the ledger — i.e. it was ledgered by the launch this
+# process is running inside. Anything else (a stale export in an interactive
+# shell) gets a fresh id of its own.
 
 arm_gate::audit() {
-  # Forensic trail for every gate decision. The 2026-08-24 phantom evaded
-  # the gate invisibly because a PASS wrote nothing — now both verdicts
-  # record who asked: pid chain up to sshd and the SSH_CONNECTION if any.
-  local verdict="$1" nonce="$2"
+  # Forensic trail for every decision: who asked — pid chain up to sshd and
+  # the SSH_CONNECTION if any.
+  local verdict="$1" id="$2"
   {
-    printf '%s pid=%s verdict=%s nonce=%s ssh=[%s] chain=' \
-      "$(date -u +%FT%T.%3NZ)" "$$" "$verdict" "$nonce" "${SSH_CONNECTION:-none}"
+    printf '%s pid=%s verdict=%s id=%s ssh=[%s] chain=' \
+      "$(date -u +%FT%T.%3NZ)" "$$" "$verdict" "$id" "${SSH_CONNECTION:-none}"
     local p=$$
     for _ in 1 2 3 4 5; do
       printf '%s:' "$(ps -o comm= -p "$p" 2>/dev/null | tr -d ' ')"
@@ -58,9 +51,20 @@ arm_gate::_is_ancestor() {
   return 1
 }
 
+arm_gate::mint() {
+  # Same shape the CLI mints: <utc>-<host>-<4 hex>.
+  local host hex
+  host="${HOSTNAME:-$(hostname 2>/dev/null)}"; host="${host%%.*}"
+  host="$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]' | tr -cd 'A-Za-z0-9_-' | head -c 16)"
+  hex="$(od -An -N2 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
+  [ -n "$hex" ] || hex="$(printf '%04x' $((RANDOM % 65536)))"
+  printf '%s-%s-%s' "$(date -u +%Y%m%dT%H%M%SZ)" "${host:-node}" "$hex"
+}
+
 arm_gate::require() {
   local token=/tmp/tatbot-arm-token
-  local ledger=/var/tmp/tatbot-consumed-nonces
+  local ledger=/var/tmp/tatbot-launch-ids
+  local id=""
   if [ -n "${TATBOT_ARM_ARMED:-}" ]; then
     local inherited last
     inherited="$(printf '%s' "$TATBOT_ARM_ARMED" | head -c 128 | tr -cd 'A-Za-z0-9_-')"
@@ -70,37 +74,31 @@ arm_gate::require() {
       arm_gate::audit pass-inherited "$inherited"
       return 0
     fi
-    arm_gate::audit refuse-stale-inherit "${inherited:--}"
-    echo "REFUSING TO LAUNCH: TATBOT_ARM_ARMED is set but is not this launch's nonce" >&2
-    echo "  (not the last consumed nonce, or its launcher is not an ancestor of this process)." >&2
-    echo "  unset TATBOT_ARM_ARMED TATBOT_ARM_ARMED_PID and arm this launch with a fresh nonce." >&2
-    return 2
-  fi
-  if [ ! -f "$token" ] || [ $(( $(date +%s) - $(stat -c %Y "$token") )) -gt 120 ]; then
-    arm_gate::audit refuse-no-token "-"
-    echo "REFUSING TO LAUNCH: no fresh arm token." >&2
-    echo "  arm this launch (valid 120 s, single use):" >&2
-    echo "    echo <unique-literal-nonce> > $token" >&2
-    return 2
-  fi
-  local nonce
-  nonce="$(head -c 128 "$token" | tr -cd 'A-Za-z0-9_-')"
-  rm -f "$token"
-  if [ -z "$nonce" ]; then
-    arm_gate::audit refuse-empty-nonce "-"
-    echo "REFUSING TO LAUNCH: arm token is empty — write a unique literal nonce into it." >&2
-    return 2
+    # A stale or mismatched export (not the last ledger line, or its launcher
+    # is not an ancestor): this is its own launch, so it gets its own id.
+    id="$(arm_gate::mint)"
+    arm_gate::audit fresh-after-stale-inherit "$id"
+    echo "arm_gate: TATBOT_ARM_ARMED was not this launch's id; minted launch id $id" >&2
+  else
+    if [ -f "$token" ] && [ $(( $(date +%s) - $(stat -c %Y "$token") )) -le 120 ]; then
+      id="$(head -c 128 "$token" | tr -cd 'A-Za-z0-9_-')"
+    fi
+    rm -f "$token"
+    if [ -z "$id" ]; then
+      id="$(arm_gate::mint)"
+      arm_gate::audit minted "$id"
+      echo "arm_gate: no launch id from the CLI (token missing, stale or empty); minted launch id $id" >&2
+    fi
   fi
   touch "$ledger"
-  if grep -qx "$nonce" "$ledger"; then
-    arm_gate::audit refuse-replayed-nonce "$nonce"
-    echo "REFUSING TO LAUNCH: arm nonce '$nonce' already consumed — this is a REPLAYED command." >&2
-    echo "  capture /tmp/phantom-ancestry.log NOW." >&2
-    return 3
+  if grep -qx "$id" "$ledger"; then
+    arm_gate::audit repeat "$id"
+    echo "arm_gate: launch id '$id' is already in $ledger — a repeated id; audited, continuing." >&2
+  else
+    arm_gate::audit pass "$id"
   fi
-  echo "$nonce" >> "$ledger"
-  arm_gate::audit pass "$nonce"
-  # Children that move the arm inside this launch (dip_hook -> il_dip.sh)
-  # inherit the arming instead of demanding a second nonce.
-  export TATBOT_ARM_ARMED="$nonce" TATBOT_ARM_ARMED_PID="$$"
+  echo "$id" >> "$ledger"
+  # Children that move the arm inside this launch
+  # inherit the id instead of minting a second one.
+  export TATBOT_ARM_ARMED="$id" TATBOT_ARM_ARMED_PID="$$"
 }

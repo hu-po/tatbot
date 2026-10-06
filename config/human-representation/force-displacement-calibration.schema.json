@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.dev/schemas/human-representation/force-displacement-calibration.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "content_sha256",
+    "instrument_id",
+    "calibration_trace_sha256",
+    "resolution",
+    "bias",
+    "drift_per_hour",
+    "synchronization_uncertainty_s",
+    "temperature_reference_c",
+    "temperature_sensitivity",
+    "repeatability",
+    "uncertainty",
+    "qualification_basis",
+    "qualified",
+    "captured_utc",
+    "provenance"
+  ],
+  "properties": {
+    "schema": {"const": "tatbot.force-displacement-calibration/1"},
+    "content_sha256": {"$ref": "common.schema.json#/$defs/sha256"},
+    "instrument_id": {"type": "string", "minLength": 1},
+    "calibration_trace_sha256": {"$ref": "common.schema.json#/$defs/sha256"},
+    "resolution": {"$ref": "#/$defs/forceDisplacement"},
+    "bias": {"$ref": "#/$defs/forceDisplacementSigned"},
+    "drift_per_hour": {"$ref": "#/$defs/forceDisplacement"},
+    "synchronization_uncertainty_s": {"type": "number", "minimum": 0},
+    "temperature_reference_c": {"type": "number"},
+    "temperature_sensitivity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["force_n_per_c", "displacement_m_per_c"],
+      "properties": {
+        "force_n_per_c": {"type": "number"},
+        "displacement_m_per_c": {"type": "number"}
+      }
+    },
+    "repeatability": {"$ref": "#/$defs/forceDisplacement"},
+    "uncertainty": {"$ref": "#/$defs/forceDisplacement"},
+    "qualification_basis": {
+      "enum": ["physical-reference", "synthetic-fixture-only", "unqualified"]
+    },
+    "qualified": {"type": "boolean"},
+    "captured_utc": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "provenance": {"$ref": "common.schema.json#/$defs/provenance"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"qualification_basis": {"const": "physical-reference"}}},
+      "then": {},
+      "else": {"properties": {"qualified": {"const": false}}}
+    }
+  ],
+  "$defs": {
+    "forceDisplacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["force_n", "displacement_m"],
+      "properties": {
+        "force_n": {"type": "number", "minimum": 0},
+        "displacement_m": {"type": "number", "minimum": 0}
+      }
+    },
+    "forceDisplacementSigned": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["force_n", "displacement_m"],
+      "properties": {
+        "force_n": {"type": "number"},
+        "displacement_m": {"type": "number"}
+      }
+    }
+  }
+}

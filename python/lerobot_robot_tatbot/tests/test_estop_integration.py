@@ -5,11 +5,10 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-import trossen_arm
 from lerobot_robot_tatbot import recovery
 from lerobot_robot_tatbot.estop import EstopState
 from lerobot_robot_tatbot.tatbot_follower import TatbotFollower
-from lerobot_robot_tatbot.tatbot_leader import TatbotLeader
+from lerobot_robot_trossen.widowxai_follower import WidowXAIFollower
 
 JOINTS = [f"joint_{i}" for i in range(7)]
 
@@ -117,8 +116,10 @@ def test_observation_only_cycle_still_enters_and_leaves_follower_hold(monkeypatc
     follower._pose_history = deque()
     follower._pending_stage = None
 
-    parent = TatbotFollower.__mro__[1]
-    monkeypatch.setattr(parent, "get_observation", lambda self: {"observed": True})
+    # Name the LeRobot base, not a position in the MRO: TatbotFollower also
+    # mixes in TatbotArmSession, so __mro__[1] is no longer the class that
+    # defines get_observation, and patching it there silently misses.
+    monkeypatch.setattr(WidowXAIFollower, "get_observation", lambda self: {"observed": True})
 
     assert follower.get_observation() == {"observed": True}
     assert follower._estop_hold is not None
@@ -130,26 +131,6 @@ def test_observation_only_cycle_still_enters_and_leaves_follower_hold(monkeypatc
     assert follower._estop_hold is None
     assert follower._cmd_target == dict.fromkeys(JOINTS[:6], 0.2)
     follower.driver.configured = False
-
-
-def test_leader_hold_uses_position_mode_and_release_restores_gravity_comp():
-    leader = object.__new__(TatbotLeader)
-    leader.config = SimpleNamespace(joint_names=JOINTS)
-    leader.driver = FakeDriver([0.05 * i for i in range(7)])
-    leader._estop = FakeEstop(EstopState.PRESSED)
-    leader._estop_holding = False
-    leader._damping_written = True
-    leader._pending_stage = None
-
-    action = leader._enter_estop_hold()
-    assert action == {f"{j}.pos": p for j, p in zip(JOINTS, leader.driver.positions, strict=True)}
-    assert ("all_positions", leader.driver.positions, 0.0, False) in leader.driver.commands
-    assert leader._estop_holding
-
-    leader._estop.state = EstopState.OK
-    leader._leave_estop_hold()
-    assert not leader._estop_holding
-    assert ("all_modes", trossen_arm.Mode.external_effort) in leader.driver.commands
 
 
 def test_deferred_staging_never_starts_while_estop_is_engaged(monkeypatch):
@@ -164,17 +145,46 @@ def test_deferred_staging_never_starts_while_estop_is_engaged(monkeypatch):
     follower._estop = FakeEstop(EstopState.PRESSED)
     follower._ensure_staged()
 
-    leader = object.__new__(TatbotLeader)
-    leader.driver = FakeDriver()
-    leader.driver.configured = False
-    leader._pending_stage = [1.0] * 7
-    leader._estop = FakeEstop(EstopState.FAULT)
-    leader._ensure_staged()
     assert not calls
 
     follower._estop.state = EstopState.OK
     follower._ensure_staged()
     assert calls == [True]
+
+
+def test_emergency_landing_refusal_still_tears_down_then_fails_the_run(monkeypatch):
+    """A landing refused for a joint past its limits commanded nothing; the follower still
+    disconnects its cameras and tears the session down, then fails the run with the refusal."""
+    refusal = recovery.JointBeyondLimitsError("follower landing refused, nothing commanded: joint 5")
+
+    def refuse(*args, **kwargs):
+        raise refusal
+
+    class DeadSession:
+        def set_all_modes(self, mode):
+            raise RuntimeError("TCP connection closed unexpectedly")
+
+        def cleanup(self):
+            pass
+
+    class Camera:
+        closed = False
+
+        def disconnect(self):
+            self.closed = True
+
+    monkeypatch.setattr(recovery, "land_arm", refuse)
+    follower = object.__new__(TatbotFollower)
+    follower.disconnect = lambda: None  # Robot.__del__ would run the real one at gc
+    follower.config = SimpleNamespace(coordinated_arms=False, ip_address="192.0.2.2",
+                                      staged_positions=[0.0] * 7)
+    follower.driver, follower._estop, follower.cameras = DeadSession(), None, {"wrist": Camera()}
+    torn_down = []
+    follower._teardown = lambda: torn_down.append(True)
+    with pytest.raises(recovery.JointBeyondLimitsError) as raised:
+        follower._disconnect_owned()
+    assert raised.value is refusal
+    assert torn_down == [True] and follower.cameras["wrist"].closed
 
 
 def test_lifecycle_motion_freezes_mid_phase_then_reissues_target():
@@ -339,7 +349,7 @@ def test_safety_guards_never_move_the_carriage():
 # The checked-in file is nulled until that touch-off happens on the arm, so
 # the floor tests feed this one through the registry instead.
 V2_WORKSPACE = {"right": {
-    "tool_id": "lutin-ballpoint-dot", "tip_frame": "right/tool_mount", "carriage_m": 0.0,
+    "tip_frame": "right/tool_mount", "carriage_m": 0.0,
     "pen_tip_offset_x": 0.0, "pen_tip_offset_y": 0.0, "pen_tip_offset_z": 0.060,
     "paper_plane_z": 0.0227, "paper_band_mm": None,
     "pivot_point_x": 0.38, "pivot_point_y": -0.23, "pivot_point_z": 0.0227,
@@ -349,10 +359,14 @@ V2_WORKSPACE = {"right": {
                  "spread_deg": 40.0, "note": ""}}}
 
 
-def _floor_follower(**overrides):
+def _floor_follower(monkeypatch, **overrides):
     """A follower with just enough wired up to exercise the workspace floor."""
     from lerobot_robot_tatbot import tool_registry
-    tool_registry.registry().read_workspace = lambda *a, **k: V2_WORKSPACE
+    reg = tool_registry.registry()
+    # Keep the synthetic touch-off consistent with the generated tool block.
+    tool_id = reg.active_tool_id(tool_registry.REPO)
+    workspace = {"right": {**V2_WORKSPACE["right"], "tool_id": tool_id}}
+    monkeypatch.setattr(reg, "read_workspace", lambda *a, **k: workspace)
     follower = object.__new__(TatbotFollower)
     cfg = {"joint_names": JOINTS, "z_floor_urdf": "urdf/tatbot.urdf",
            "z_floor_m": None, "z_floor_below_surface_m": 0.010}
@@ -360,12 +374,11 @@ def _floor_follower(**overrides):
     follower.config = SimpleNamespace(**cfg)
     follower._kin = None
     follower._z_floor_warned = 0.0
-    reg = tool_registry.registry()
-    follower._tool = tool_registry.stated_tool(reg.active_tool_id(tool_registry.REPO))
+    follower._tool = tool_registry.stated_tool(tool_id)
     return follower
 
 
-def test_workspace_floor_measures_the_tool_tip_not_the_gripper():
+def test_workspace_floor_measures_the_tool_tip_not_the_gripper(monkeypatch):
     """The floor exists because "the policy is not responsible for depth", so
     it has to bound the thing that touches the work.
 
@@ -374,7 +387,7 @@ def test_workspace_floor_measures_the_tool_tip_not_the_gripper():
     63.7 mm ballpoint and let a 136.3 mm laser's tip go ~73 mm deeper.
     """
     # the real 7th joint name: the floor maps it onto the URDF's carriage
-    follower = _floor_follower(joint_names=JOINTS[:6] + ["left_carriage_joint"])
+    follower = _floor_follower(monkeypatch, joint_names=JOINTS[:6] + ["left_carriage_joint"])
     kin = follower._kinematics()
     assert kin is not None
     # The sim's pen-down pose over the pad (2026-08-30, tool axis 45 deg
@@ -394,19 +407,19 @@ def test_workspace_floor_measures_the_tool_tip_not_the_gripper():
     assert lifted - tip > 0.02  # 40 mm of carriage travel at 45 deg to vertical
 
 
-def test_workspace_floor_follows_the_measured_surface():
+def test_workspace_floor_follows_the_measured_surface(monkeypatch):
     """The table moves -- it can sit above or below the robot base, and pads
     and skins have thickness -- so the deliberate constant is the clearance
     beneath the measured surface, not an absolute height that goes stale."""
     surface = V2_WORKSPACE["right"]["paper_plane_z"]
 
-    follower = _floor_follower(z_floor_below_surface_m=0.010)
+    follower = _floor_follower(monkeypatch, z_floor_below_surface_m=0.010)
     assert follower._kinematics() is not None
     assert abs(follower.config.z_floor_m - (surface - 0.010)) < 1e-9
 
     # A different clearance moves the floor by exactly that much, and nothing
     # assumes the surface is positive.
-    deeper = _floor_follower(z_floor_below_surface_m=0.025)
+    deeper = _floor_follower(monkeypatch, z_floor_below_surface_m=0.025)
     assert deeper._kinematics() is not None
     assert abs(deeper.config.z_floor_m - (surface - 0.025)) < 1e-9
 
@@ -464,24 +477,26 @@ def test_commissioning_velocity_limit_is_written_to_arm_controller() -> None:
     assert follower.driver.limits[6].velocity_max == 9.4
 
 
-def test_workspace_floor_refuses_a_urdf_built_for_another_tool():
+@pytest.mark.parametrize("mismatch", ["identity", "digest"])
+def test_workspace_floor_refuses_a_urdf_built_for_another_tool(monkeypatch, mismatch):
     """The floor reads the tip out of the URDF's generated block. A block for
     the previous tool puts the tip where the tool is not, which is
     under-protection wearing the same reassuring log line."""
-    follower = _floor_follower()
-    follower._tool = SimpleNamespace(tool_id="lutin-ballpoint-dot",
-                                     sha256="deadbeefcafe")
+    follower = _floor_follower(monkeypatch)
+    follower._tool = SimpleNamespace(
+        tool_id="other-tool" if mismatch == "identity" else follower._tool.tool_id,
+        sha256="deadbeefcafe" if mismatch == "digest" else follower._tool.sha256,
+    )
     assert follower._kinematics() is None, "stale tool block must refuse"
     assert follower.config.z_floor_m is None
     assert follower.config.z_floor_below_surface_m is None
 
 
-def test_unknown_tip_link_is_caught_by_membership_not_by_a_zero():
-    """UrdfChain.link_pose walks parents and returns IDENTITY for a link it
-    does not know, so probing a missing tip would read z=0 and silently
-    compare every command against the origin."""
-    follower = _floor_follower()
+def test_unknown_tip_link_is_caught_by_membership_not_by_a_zero(monkeypatch):
+    """Unknown links raise; floor setup also verifies the selected tip exists."""
+    follower = _floor_follower(monkeypatch)
     kin = follower._kinematics()
     assert kin is not None
-    assert kin.link_pose("right/no-such-link")[2, 3] == 0.0, "silent identity"
+    with pytest.raises(ValueError, match='unknown URDF link'):
+        kin.link_pose("right/no-such-link")
     assert "right/tattoo_needle" in kin.parent_of

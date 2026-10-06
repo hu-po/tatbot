@@ -5,11 +5,18 @@
 //! not need to know whether a frame came from RTSP or a RealSense device.
 
 pub mod calibration;
+#[cfg(feature = "zenoh")]
+pub mod capture_clock;
 pub mod config;
+#[cfg(feature = "zenoh")]
+pub mod frame_bus;
+pub mod frame_ops;
 pub mod health;
+pub mod ownership;
 pub mod record;
 pub mod rtcp;
 pub mod sync;
+pub mod systemd;
 pub mod teleop;
 pub mod time;
 pub mod transport;
@@ -48,7 +55,7 @@ pub use record::read_recording_frame;
 pub use record::{EvidenceRecorder, RecordedPayload, RecordingEntry, read_recording_entries};
 #[cfg(feature = "rerun")]
 pub use rerun_viewer::{
-    LiveTeleopScene, RerunLayout, RerunSink, RerunSinkStats, RerunViewer, TeleopSetup,
+    APP_ID as RERUN_APP_ID, LiveTeleopScene, RerunSink, RerunSinkStats, RerunViewer, TeleopSetup,
 };
 pub use sync::{
     ClockOffsetEstimator, FrameSynchronizer, PairwiseSyncReport, SyncAssessment,
@@ -56,7 +63,11 @@ pub use sync::{
 };
 pub use teleop::{LiveTeleopTick, TeleopLog, TeleopTick};
 pub use time::{ClockSample, TimestampDomain};
-pub use transport::{ReceivedFrameSet, UnixFrameClient, UnixFramePublisher};
+pub use transport::{CONNECT_WINDOW, ReceivedFrameSet, UnixFrameClient, UnixFramePublisher};
+
+/// The standing Rerun recording on the rerun-server node: the fixed
+/// blueprint is sent into it at every server start (`viewer.sh blueprint`).
+pub const STANDING_RECORDING: &str = "live-cameras";
 
 /// Stable sensor-family identifier used in recordings and telemetry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -71,6 +82,7 @@ pub enum SensorKind {
 #[serde(rename_all = "snake_case")]
 pub enum PixelFormat {
     H264,
+    Jpeg,
     Bgr8,
     Rgb8,
     Yuyv,

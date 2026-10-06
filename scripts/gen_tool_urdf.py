@@ -21,7 +21,8 @@ carriage retracts the pen, and the model says so.
 The block is purely additive — existing links, joints and their transforms are
 untouched, so no existing FK answer changes. Re-run it after a touch-off or a
 tool swap; ``--check`` verifies the file is current without writing (exit 1 if
-it is stale), which is what CI and the lint hook want.
+it is stale), which is what `scripts/check tools` runs (with `tool sync` and
+`export_wrist_tags.py --check`).
 """
 
 from __future__ import annotations
@@ -33,7 +34,10 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "scripts" / "lib"))
+sys.path.insert(0, str(REPO / "scripts/lib"))
+from tatbot_paths import bootstrap  # noqa: E402
+
+bootstrap()
 
 import tool_spec  # noqa: E402
 
@@ -151,19 +155,49 @@ def strip_block(text: str) -> str:
 
 def mount_links(text: str) -> set[str]:
     """Every link the hand-written URDF defines, to check the mount exists."""
-    return {link.get("name") for link in ET.fromstring(text).iter("link")}
+    return {link.get("name") for link in ET.fromstring(text).iter("link") if link.get("name") is not None}
 
 
-def build(arms: list[str]) -> str:
+ARM_IDS = ("right", "left")
+
+
+def fitted_arms(workspace: dict) -> list[str]:
+    """Every arm whose workspace section names a fitted tool, follower first."""
+    return [arm for arm in ARM_IDS if (workspace.get(arm) or {}).get("tool_id")]
+
+
+def _require_fitted(workspace: dict, arms: list[str] | None) -> list[str]:
+    """The fitted arms, after checking they are exactly the ones asked for."""
+    fitted = fitted_arms(workspace)
+    requested = list(fitted) if arms is None else list(dict.fromkeys(arms))
+    unfitted = [arm for arm in requested if arm not in fitted]
+    if unfitted:
+        raise SystemExit(
+            f"{unfitted[0]}: no tool_id under `{unfitted[0]}:` in config/workspace.yaml — "
+            f"nothing to model for that arm (fitted: {', '.join(fitted) or 'none'})")
+    unasked = [arm for arm in fitted if arm not in requested]
+    if unasked:
+        raise SystemExit(
+            f"{unasked[0]} carries {tool_spec.active_tool_id(REPO, unasked[0], workspace)} but "
+            f"was not asked for — the URDF models every fitted tool, so drop --arm or name it too")
+    return fitted
+
+
+def build(arms: list[str] | None = None) -> str:
+    """Render one block per fitted arm; ``arms`` names the ones the caller
+    expects to be fitted and is checked against the workspace.
+
+    The generated blocks are stripped and re-rendered together, so the URDF
+    always models every fitted tool: an arm asked for without a fitted tool,
+    or a fitted arm left out of the request, is a refusal rather than a skip.
+    A lone ``--arm left`` used to strip the right arm's block silently."""
     workspace = tool_spec.read_workspace(REPO)
+    fitted = _require_fitted(workspace, arms)
     text = strip_block(URDF_PATH.read_text())
     links = mount_links(text)
     blocks = []
-    for arm in arms:
+    for arm in fitted:
         tool_id = tool_spec.active_tool_id(REPO, arm, workspace)
-        if not tool_id:
-            print(f"  {arm}: no tool_id in config/workspace.yaml — skipped", file=sys.stderr)
-            continue
         spec = tool_spec.load_tool(tool_id, REPO)
         mount = spec.mount_frame(arm)  # ToolMountError for a tool with no mount
         if mount not in links:
@@ -199,13 +233,15 @@ def build(arms: list[str]) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--arm", action="append", default=None,
-                    help="arm prefix to model (repeatable); default: right")
+    ap.add_argument("--arm", action="append", default=None, choices=ARM_IDS,
+                    help="arm expected to carry a fitted tool (repeatable); the URDF always "
+                         "models every arm with a tool_id in config/workspace.yaml, and this "
+                         "refuses when that set differs")
     ap.add_argument("--check", action="store_true",
                     help="exit 1 if the URDF is not what this would generate")
     args = ap.parse_args()
 
-    rendered = build(args.arm or ["right"])
+    rendered = build(args.arm)
     current = URDF_PATH.read_text()
     if args.check:
         if rendered != current:

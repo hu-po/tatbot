@@ -1,0 +1,47 @@
+{
+  "schema": "tatbot.anatomy-registration/1",
+  "content_sha256": "3f547e60cfe1c3211e199b27ee483a46d6dc4e383151f8890689c3f4007940b2",
+  "source": "synthetic-placeholder",
+  "version": "1",
+  "license": "CC0-1.0",
+  "structure_ids": [
+    "fixture-structure"
+  ],
+  "atlas_from_body": [
+    [
+      1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      1,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      1
+    ]
+  ],
+  "warp": null,
+  "error_m": 0,
+  "confidence": 0,
+  "population_limitations": "Synthetic contract fixture only; no population or individual anatomy claim.",
+  "validation_set_sha256": "2525252525252525252525252525252525252525252525252525252525252525",
+  "provenance": {
+    "producer": "human-representation-p0-fixture",
+    "version": "1",
+    "created_utc": "2026-09-04T01:09:37Z",
+    "source_sha256": "2626262626262626262626262626262626262626262626262626262626262626"
+  }
+}

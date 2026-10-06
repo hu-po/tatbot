@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.dev/schemas/human-representation/surface-placement-v2.schema.json",
+  "description": "Target placement intent. Plane/cylinder coordinates are metric, with cylinder u axial and v circumferential arc length. Runtime readers also enforce the rotated canvas, margin and injective circumference bounds. No robot pose or hardware authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "content_sha256",
+    "tattoo_program_sha256",
+    "physical_scale_m",
+    "rotation_rad",
+    "mirrored",
+    "warp",
+    "review",
+    "provenance",
+    "target"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tatbot.surface-placement/2"
+    },
+    "content_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "tattoo_program_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "physical_scale_m": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "rotation_rad": {
+      "type": "number"
+    },
+    "mirrored": {
+      "type": "boolean"
+    },
+    "warp": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "max_displacement_m",
+            "parameters"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1
+            },
+            "max_displacement_m": {
+              "type": "number",
+              "minimum": 0
+            },
+            "parameters": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 0
+            }
+          }
+        }
+      ]
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reviewer",
+        "evidence_sha256"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "pending",
+            "accepted",
+            "rejected"
+          ]
+        },
+        "reviewer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "provenance": {
+      "$ref": "common.schema.json#/$defs/provenance"
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "body_identity_sha256",
+            "rest_surface_sha256",
+            "semantic_site",
+            "laterality",
+            "anchor",
+            "tangent_frame_rule",
+            "supported_domain"
+          ],
+          "properties": {
+            "kind": {
+              "const": "body"
+            },
+            "body_identity_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "rest_surface_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "semantic_site": {
+              "type": "string",
+              "minLength": 1
+            },
+            "laterality": {
+              "enum": [
+                "left",
+                "right",
+                "midline",
+                "not_applicable"
+              ]
+            },
+            "anchor": {
+              "$ref": "common.schema.json#/$defs/surfaceCoordinate"
+            },
+            "tangent_frame_rule": {
+              "type": "string",
+              "minLength": 1
+            },
+            "supported_domain": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "face_indices",
+                "margin_m"
+              ],
+              "properties": {
+                "face_indices": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 36107
+                  },
+                  "minItems": 1
+                },
+                "margin_m": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "canvas_m",
+            "anchor_uv_m",
+            "margin_m"
+          ],
+          "properties": {
+            "kind": {
+              "const": "plane"
+            },
+            "canvas_m": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "anchor_uv_m": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "number"
+              }
+            },
+            "margin_m": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "canvas_m",
+            "anchor_uv_m",
+            "margin_m",
+            "radius_m"
+          ],
+          "properties": {
+            "kind": {
+              "const": "cylinder"
+            },
+            "canvas_m": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "anchor_uv_m": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "number"
+              }
+            },
+            "margin_m": {
+              "type": "number",
+              "minimum": 0
+            },
+            "radius_m": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "plane",
+                  "cylinder"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "warp": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
+}

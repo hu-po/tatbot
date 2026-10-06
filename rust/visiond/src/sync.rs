@@ -211,6 +211,40 @@ impl FrameSynchronizer {
                 }
             }
 
+            // Aligned RGB-D is one observation. Never pair a depth frame with
+            // another color sequence merely because its timestamp is closer.
+            for name in &self.sensor_names {
+                let Some(queue) = self.buffers.get(name) else {
+                    continue;
+                };
+                let Some(aligned_to) = queue
+                    .front()
+                    .and_then(|f| f.metadata.attributes.get("aligned_to"))
+                else {
+                    continue;
+                };
+                let paired = candidates
+                    .get(aligned_to)
+                    .and_then(|(index, _)| self.buffers.get(aligned_to)?.get(*index));
+                let matched = paired.and_then(|color| {
+                    queue.iter().enumerate().find_map(|(index, depth)| {
+                        let (basis, stamp) = frame_sync_time(depth)?;
+                        (depth.metadata.sequence == color.metadata.sequence
+                            && depth.metadata.attributes.get("device_serial")
+                                == color.metadata.attributes.get("device_serial")
+                            && depth.metadata.attributes.get("capture_epoch")
+                                == color.metadata.attributes.get("capture_epoch")
+                            && basis == reference_basis
+                            && stamp.abs_diff(reference_time) <= self.tolerance_ns)
+                            .then_some((index, stamp))
+                    })
+                });
+                if let Some(candidate) = matched {
+                    candidates.insert(name.clone(), candidate);
+                } else {
+                    candidates.remove(name);
+                }
+            }
             let complete = candidates.len() == self.sensor_names.len();
             let latest_host_unix_ns = self
                 .buffers
@@ -644,5 +678,27 @@ mod tests {
         assert_eq!(sets[0].frames.len(), 3);
         assert_eq!(synchronizer.complete_sets(), 1);
         assert_eq!(synchronizer.partial_sets(), 0);
+    }
+    #[test]
+    fn aligned_depth_waits_for_the_same_color_sequence_and_epoch() {
+        let mut sync =
+            FrameSynchronizer::new(["color".to_string(), "depth".to_string()], 100, 8).unwrap();
+        let color = frame("color", 1_000);
+        let mut depth = frame("depth", 1_000);
+        depth
+            .metadata
+            .attributes
+            .insert("aligned_to".into(), "color".into());
+        depth.metadata.sequence = color.metadata.sequence + 1;
+        assert!(sync.push(color.clone()).unwrap().is_empty());
+        assert!(sync.push(depth).unwrap().is_empty());
+        let mut matching = frame("color", 1_001);
+        matching.metadata.sequence = color.metadata.sequence + 1;
+        let sets = sync.push(matching).unwrap();
+        assert_eq!(sets.len(), 1);
+        assert_eq!(
+            sets[0].frames["color"].metadata.sequence,
+            sets[0].frames["depth"].metadata.sequence
+        );
     }
 }

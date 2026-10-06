@@ -23,6 +23,22 @@ use tatbot_visiond::FrameSynchronizer;
 #[cfg(any(feature = "gstreamer", feature = "realsense"))]
 use tatbot_visiond::UnixFramePublisher;
 use tracing_subscriber::EnvFilter;
+#[cfg(any(feature = "gstreamer", feature = "realsense"))]
+use tatbot_visiond::frame_ops::{BoundedStrings, bounded_capture_event_channel};
+#[cfg(feature = "fiducials")]
+use tatbot_visiond::frame_ops::{
+    camera_reacquisition_due, decoded_frame_dimensions, fiducial_set_due,
+};
+#[cfg(feature = "gstreamer")]
+use tatbot_visiond::frame_ops::{TimingSamples, crop_video_set, parse_socket_crops, timing_summary};
+#[cfg(feature = "rerun")]
+use tatbot_visiond::frame_ops::decimate_replay_rows;
+#[cfg(any(feature = "gstreamer", feature = "rerun"))]
+use tatbot_visiond::frame_ops::scale_video_set;
+// Only capture-realsense-all's Rerun path scales depth, so this import is
+// narrower than scale_video_set's: a rerun-only build never reaches it.
+#[cfg(all(feature = "realsense", feature = "rerun"))]
+use tatbot_visiond::frame_ops::scale_depth_set;
 
 #[cfg(feature = "gstreamer")]
 use std::env;
@@ -31,7 +47,7 @@ use std::env;
 use std::fs::File;
 #[cfg(any(feature = "rerun", feature = "fiducials"))]
 use std::io::{BufRead, BufReader};
-#[cfg(any(test, feature = "gstreamer", feature = "realsense"))]
+#[cfg(any(feature = "gstreamer", feature = "realsense"))]
 use std::sync::mpsc;
 #[cfg(any(feature = "gstreamer", feature = "realsense", feature = "fiducials"))]
 use std::{
@@ -46,11 +62,14 @@ use std::{
     feature = "fiducials"
 ))]
 use std::collections::BTreeMap;
-#[cfg(any(test, feature = "gstreamer", feature = "realsense"))]
-use std::collections::VecDeque;
-#[cfg(any(feature = "rerun", feature = "gstreamer"))]
+#[cfg(any(feature = "rerun", feature = "gstreamer", feature = "fiducials"))]
 use std::time::{SystemTime, UNIX_EPOCH};
-#[cfg(any(feature = "gstreamer", feature = "realsense", feature = "rerun"))]
+#[cfg(any(
+    feature = "gstreamer",
+    feature = "realsense",
+    feature = "rerun",
+    feature = "fiducials"
+))]
 use std::{thread, time::Duration};
 
 #[cfg(any(
@@ -71,16 +90,17 @@ use tatbot_visiond::EvidenceRecorder;
 
 #[cfg(feature = "realsense")]
 use tatbot_visiond::realsense_backend::RealsenseCapture;
+#[cfg(feature = "realsense")]
+use tatbot_visiond::time::{RawClockProbeFrame, RawDeviceClockProbe, RawDeviceClockRead, RAW_DEVICE_CLOCK_SAMPLE_SCHEMA};
 
-#[cfg(all(feature = "fiducials", feature = "gstreamer"))]
+#[cfg(feature = "fiducials")]
 use tatbot_visiond::DetectionRoi;
 #[cfg(all(feature = "rerun", any(feature = "gstreamer", feature = "realsense")))]
 use tatbot_visiond::RerunSink;
 #[cfg(any(feature = "rerun", feature = "fiducials"))]
-use tatbot_visiond::SensorKind;
 #[cfg(any(feature = "gstreamer", feature = "rerun", feature = "fiducials"))]
 use tatbot_visiond::SynchronizedFrameSet;
-#[cfg(all(feature = "fiducials", feature = "gstreamer"))]
+#[cfg(feature = "fiducials")]
 use tatbot_visiond::expanded_detection_roi;
 #[cfg(any(feature = "rerun", feature = "fiducials"))]
 use tatbot_visiond::read_recording_frame;
@@ -90,13 +110,25 @@ use tatbot_visiond::{
     WristLayout,
 };
 #[cfg(feature = "rerun")]
-use tatbot_visiond::{LiveTeleopTick, RerunLayout, RerunViewer, TeleopSetup};
-#[cfg(any(feature = "gstreamer", feature = "rerun"))]
-use tatbot_visiond::{PixelFormat, RecordedPayload};
+use tatbot_visiond::{LiveTeleopTick, RerunViewer, TeleopSetup};
 
 #[derive(Debug, Parser)]
 #[command(name = "tatbot-visiond", about = "Tatbot 2.0 vision capture service")]
 struct Cli {
+    /// Publish camera-owned frames on the fleet bus; never opens another client.
+    #[cfg(feature = "zenoh")]
+    #[arg(long, global = true)]
+    zenoh: bool,
+    /// Subscribe to the persistent camera owner instead of opening hardware.
+    #[cfg(feature = "zenoh")]
+    #[arg(long, global = true)]
+    subscribe_socket: Option<PathBuf>,
+    #[cfg(feature = "zenoh")]
+    #[arg(long, global = true)]
+    bus_connect: Vec<String>,
+    #[cfg(feature = "zenoh")]
+    #[arg(long, global = true, env = "TATBOT_NODE")]
+    bus_node: Option<String>,
     #[arg(long, default_value = "info", env = "RUST_LOG")]
     log_filter: String,
     #[command(subcommand)]
@@ -104,7 +136,45 @@ struct Cli {
 }
 
 #[derive(Debug, Subcommand)]
+#[allow(clippy::large_enum_variant)] // One CLI parse at startup, never a frame queue.
 enum Command {
+    /// Cockpit subscriber: receives bus frames and joins the existing viewer.
+    #[cfg(all(feature = "zenoh", feature = "rerun"))]
+    Subscribe {
+        #[arg(long)]
+        connect: String,
+        #[arg(long)]
+        recording_id: String,
+        #[arg(long, default_value_t = 5.0)]
+        max_fps: f64,
+        #[arg(long, default_value_t = 0)]
+        duration_seconds: u64,
+        /// URDF whose visual meshes should be added to the persistent 3D scene.
+        #[arg(long, value_name = "URDF")]
+        urdf: Option<PathBuf>,
+        /// Adopted camera bundle whose calibrated frustums should be shown.
+        #[arg(long, value_name = "BUNDLE")]
+        calibration: Option<PathBuf>,
+        /// Robot-world registration for world-frame tracking overlays.
+        #[arg(long)]
+        robot_world: Option<PathBuf>,
+    },
+    /// Existing native shadow estimator, subscribing to one camera owner's socket.
+    #[cfg(feature = "fiducials")]
+    TrackSocket {
+        #[arg(long)]
+        socket: PathBuf,
+        #[arg(long)]
+        calibration: PathBuf,
+        #[arg(long)]
+        inventory: PathBuf,
+        #[arg(long)]
+        wrist_layout: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long, default_value_t = 30)]
+        duration_seconds: u64,
+    },
     /// Parse and validate a vision configuration without opening hardware.
     ValidateConfig { config: PathBuf },
     /// Print the configured sensor names and profiles.
@@ -182,9 +252,9 @@ enum Command {
         #[arg(long, value_name = "BUNDLE")]
         calibration: Option<PathBuf>,
         /// URDF link the calibration world frame is anchored to.
-        #[arg(long, default_value = "palette_tag8")]
+        #[arg(long, default_value = "")]
         calibration_anchor: String,
-        /// robot_world.json from solve_robot_world.py: places the calibration
+        /// robot-world JSON from `tatbot ros calib apply`: places the calibration
         /// frame by the MEASURED world_from_base, overriding the anchor guess.
         #[arg(long, value_name = "JSON")]
         robot_world: Option<PathBuf>,
@@ -205,6 +275,14 @@ enum Command {
         /// Spawn/connect to a local `rerun` viewer.
         #[arg(long)]
         spawn: bool,
+        /// Stream the replay to a viewer elsewhere (the fleet viewer's proxy,
+        /// e.g. rerun+http://192.0.2.90:9876/proxy) instead of a file or a
+        /// local window.
+        #[arg(long, value_name = "URL")]
+        connect: Option<String>,
+        /// Recording id to stream under with --connect (default: a new one).
+        #[arg(long)]
+        recording_id: Option<String>,
         /// Pace replay according to capture timestamps.
         #[arg(long)]
         realtime: bool,
@@ -218,10 +296,29 @@ enum Command {
         image_scale: f64,
         #[arg(long, default_value_t = 85)]
         jpeg_quality: u8,
-        /// Explicit viewer workflow. By default the recorded sensor families
-        /// and presence of teleop data select a layout with no empty panels.
-        #[arg(long, value_enum)]
-        rerun_layout: Option<RerunLayout>,
+    },
+    /// Install the fixed display blueprint in a running viewer and exit.
+    /// Only the rerun-server bootstrap uses this command
+    /// (`docs/vision.md`).
+    #[cfg(feature = "rerun")]
+    SendBlueprint {
+        /// The viewer's gRPC proxy, e.g. rerun+http://127.0.0.1:9876/proxy.
+        #[arg(long)]
+        connect: String,
+        /// Recording joined by the persistent live preview.
+        #[arg(long)]
+        recording_id: Option<String>,
+    },
+    /// Rewrite an RRD as fleet data only, dropping embedded blueprints.
+    #[cfg(feature = "rerun")]
+    #[command(hide = true)]
+    SanitizeRrd {
+        #[arg(long)]
+        input: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        recording_id: String,
     },
     /// Bridge decimated, nonblocking wxai_teleop UDP telemetry into Rerun.
     /// This process never opens an arm connection or participates in control.
@@ -243,14 +340,11 @@ enum Command {
         /// Draw calibrated camera frustums and align their world frame.
         #[arg(long, value_name = "BUNDLE")]
         calibration: Option<PathBuf>,
-        #[arg(long, default_value = "palette_tag8")]
+        #[arg(long, default_value = "")]
         calibration_anchor: String,
         /// Measured robot/world alignment, preferred over the URDF anchor.
         #[arg(long, value_name = "JSON")]
         robot_world: Option<PathBuf>,
-        /// Omit when another producer owns the shared recording blueprint.
-        #[arg(long, value_enum)]
-        rerun_layout: Option<RerunLayout>,
         #[arg(long, default_value = "left")]
         leader_prefix: String,
         #[arg(long, default_value = "right")]
@@ -299,6 +393,9 @@ enum Command {
         keyframes_only: bool,
         #[arg(long)]
         output: Option<PathBuf>,
+        /// Preserve exact decoded pixels instead of JPEG in bounded subscriber captures.
+        #[arg(long)]
+        lossless_evidence: bool,
         #[arg(long)]
         calibration: Option<PathBuf>,
         /// Canonical fiducial inventory. Enables in-process AprilTag detection.
@@ -322,17 +419,20 @@ enum Command {
         #[arg(long, default_value_t = 0.0)]
         fiducial_max_fps: f64,
         /// Minimum fresh cameras in a bounded partial tracker set. Complete
-        /// sets still emit immediately. Applies only to tracker-only no-record runs.
+        /// sets still emit immediately. Applies to a --zenoh camera owner and
+        /// to tracker-only no-record runs.
         #[cfg(feature = "fiducials")]
         #[arg(long, default_value_t = 3)]
         fiducial_min_cameras: usize,
         /// Maximum wait for a complete tracker set before a fresh partial set
-        /// may emit. Applies only to tracker-only no-record runs.
+        /// may emit. Applies to a --zenoh camera owner and to tracker-only
+        /// no-record runs.
         #[cfg(feature = "fiducials")]
         #[arg(long, default_value_t = 60)]
         fiducial_max_sync_wait_ms: u64,
         /// Tracker synchronization tolerance in milliseconds. Zero uses the
-        /// calibrated session tolerance. Applies only to tracker-only runs.
+        /// calibrated session tolerance. Applies to a --zenoh camera owner and
+        /// to tracker-only no-record runs.
         #[cfg(feature = "fiducials")]
         #[arg(long, default_value_t = 0.0)]
         fiducial_sync_tolerance_ms: f64,
@@ -371,6 +471,9 @@ enum Command {
         /// intrinsics explicitly and may not treat this as a calibrated profile.
         #[arg(long, default_value_t = 1.0)]
         socket_scale: f64,
+        /// Send full-resolution detector luma on the local socket; color bus output is unchanged.
+        #[arg(long)]
+        socket_luma: bool,
         /// Crop a decoded camera before local socket transport, as
         /// CAMERA=X,Y,WIDTH,HEIGHT in source pixels. Repeat once for every
         /// configured PoE camera; partial crop sets are refused so an omitted
@@ -402,10 +505,6 @@ enum Command {
         #[cfg(feature = "rerun")]
         #[arg(long)]
         rerun_recording_id: Option<String>,
-        /// Viewer workflow; shared recording ids never imply a layout.
-        #[cfg(feature = "rerun")]
-        #[arg(long, value_enum, default_value_t = RerunLayout::Poe)]
-        rerun_layout: RerunLayout,
         /// Add the robot model to the live 3D scene.
         #[cfg(feature = "rerun")]
         #[arg(long, value_name = "URDF")]
@@ -416,9 +515,9 @@ enum Command {
         rerun_calibration: Option<PathBuf>,
         /// URDF link the calibration world frame is anchored to.
         #[cfg(feature = "rerun")]
-        #[arg(long, default_value = "palette_tag8")]
+        #[arg(long, default_value = "")]
         calibration_anchor: String,
-        /// robot_world.json from solve_robot_world.py: places the calibration
+        /// robot-world JSON from `tatbot ros calib apply`: places the calibration
         /// frame by the MEASURED world_from_base, overriding the anchor guess.
         #[cfg(feature = "rerun")]
         #[arg(long, value_name = "JSON")]
@@ -458,11 +557,23 @@ enum Command {
         output: Option<PathBuf>,
         #[arg(long)]
         calibration: Option<PathBuf>,
+        /// This host's camera-LAN address; required for a DDS camera and
+        /// refused for a USB one.
+        #[arg(long)]
+        dds_address: Option<std::net::IpAddr>,
     },
-    /// Capture both configured RealSense devices into synchronized color/depth sets.
+    /// Capture a configured RealSense group into synchronized color/depth sets.
     #[cfg(feature = "realsense")]
     CaptureRealsenseAll {
         config: PathBuf,
+        /// Capture only these sensor names within the group (repeatable).
+        /// Omitted preserves group-wide capture; an invalid name refuses.
+        #[arg(long = "sensor")]
+        sensors: Vec<String>,
+        /// Select one manifested capture group. Required with --zenoh so wrist
+        /// and fixed overhead cameras cannot share a bus namespace.
+        #[arg(long)]
+        group: Option<String>,
         #[arg(long, default_value_t = 10)]
         duration_seconds: u64,
         #[arg(long)]
@@ -471,6 +582,11 @@ enum Command {
         calibration: Option<PathBuf>,
         #[arg(long)]
         socket: Option<PathBuf>,
+        /// This host's camera-LAN address, to which DDS discovery is bound.
+        /// Required when the selection holds a DDS camera (the D555), refused
+        /// when it holds none.
+        #[arg(long)]
+        dds_address: Option<std::net::IpAddr>,
         /// Write synchronized color/depth frames to an Rerun recording.
         #[cfg(feature = "rerun")]
         #[arg(long)]
@@ -498,13 +614,10 @@ enum Command {
         #[arg(long, default_value_t = 1.0)]
         rerun_image_scale: f64,
         /// Share this Rerun recording with other producers (the PoE-camera
-        /// node, stream-teleop, live audio) so everything lands in one viewer.
+        /// node, stream-teleop) so everything lands in one viewer.
         #[cfg(feature = "rerun")]
         #[arg(long)]
         rerun_recording_id: Option<String>,
-        #[cfg(feature = "rerun")]
-        #[arg(long, value_enum, default_value_t = RerunLayout::Realsense)]
-        rerun_layout: RerunLayout,
         /// Live-view mode: do not write evidence or a sync index to disk.
         #[arg(long)]
         no_record: bool,
@@ -524,6 +637,10 @@ struct EeDetectionReplayRow {
     detection_latency_ms: f64,
     #[serde(default)]
     detections: BTreeMap<String, Vec<FiducialDetection>>,
+    #[serde(default)]
+    input_cameras: Vec<String>,
+    #[serde(default)]
+    partial_input: Option<bool>,
 }
 
 #[cfg(feature = "fiducials")]
@@ -537,44 +654,8 @@ fn apply_positive_override(target: &mut f64, value: Option<f64>, name: &str) -> 
     Ok(())
 }
 
-#[cfg(any(test, feature = "gstreamer", feature = "realsense"))]
-fn bounded_capture_event_channel<T>(capacity: usize) -> (mpsc::SyncSender<T>, mpsc::Receiver<T>) {
-    mpsc::sync_channel(capacity.max(1))
-}
 
-#[cfg(any(test, feature = "gstreamer", feature = "realsense"))]
-#[derive(Debug)]
-/// Retains the newest diagnostic window in chronological order without hiding
-/// how many older entries were evicted.
-struct BoundedStrings {
-    values: VecDeque<String>,
-    limit: usize,
-    dropped: u64,
-}
 
-#[cfg(any(test, feature = "gstreamer", feature = "realsense"))]
-impl BoundedStrings {
-    fn new(limit: usize) -> Self {
-        assert!(limit > 0);
-        Self {
-            values: VecDeque::with_capacity(limit),
-            limit,
-            dropped: 0,
-        }
-    }
-
-    fn push(&mut self, value: String) {
-        if self.values.len() == self.limit {
-            self.values.pop_front();
-            self.dropped = self.dropped.saturating_add(1);
-        }
-        self.values.push_back(value);
-    }
-
-    fn into_vec(self) -> Vec<String> {
-        self.values.into_iter().collect()
-    }
-}
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -583,7 +664,172 @@ fn main() -> Result<()> {
         .with_target(false)
         .init();
 
+    #[cfg(all(feature = "zenoh", any(feature = "gstreamer", feature = "realsense")))]
+    let frame_publisher = if cli.zenoh {
+        let group = match &cli.command {
+            #[cfg(feature = "gstreamer")]
+            Command::CapturePoeAll { decoded: true, .. } => "poe",
+            #[cfg(feature = "realsense")]
+            Command::CaptureRealsenseAll { group, .. } => group
+                .as_deref()
+                .context("capture-realsense-all --group is required with --zenoh")?,
+            _ => anyhow::bail!("--zenoh requires decoded capture-poe-all or capture-realsense-all"),
+        };
+        anyhow::ensure!(!cli.bus_connect.is_empty(), "--bus-connect required");
+        Some(tatbot_visiond::frame_bus::FramePublisher::open(
+            &cli.bus_connect,
+            tatbot_bus::Producer {
+                node: cli
+                    .bus_node
+                    .ok_or_else(|| anyhow::anyhow!("--bus-node required"))?,
+                pid: std::process::id(),
+                sha: option_env!("TATBOT_SOURCE_COMMIT")
+                    .unwrap_or("development")
+                    .into(),
+                run_id: std::env::var("TATBOT_RUN_ID")
+                    .unwrap_or_else(|_| format!("visiond-{}", std::process::id())),
+            },
+            group,
+        )?)
+    } else {
+        None
+    };
+
+    #[cfg(all(
+        feature = "zenoh",
+        not(any(feature = "gstreamer", feature = "realsense"))
+    ))]
+    anyhow::ensure!(
+        !cli.zenoh,
+        "camera publication requires a capture backend feature"
+    );
     match cli.command {
+        #[cfg(feature = "fiducials")]
+        Command::TrackSocket {
+            socket,
+            calibration,
+            inventory,
+            wrist_layout,
+            output,
+            duration_seconds,
+        } => {
+            anyhow::ensure!(
+                duration_seconds > 0 && duration_seconds <= 3600,
+                "subscriber duration must be 1..3600 seconds"
+            );
+            let calibration = CalibrationBundle::load(calibration)?;
+            let mut pipeline = FiducialPipeline::new(
+                inventory,
+                Some(wrist_layout),
+                output,
+                Some(0.3),
+                vec![],
+                100,
+                100,
+                3,
+                5,
+                350.0,
+                calibration.clone(),
+            )?;
+            let mut client = tatbot_visiond::UnixFrameClient::connect(&socket)?;
+            client.set_read_timeout(Duration::from_secs(2))?;
+            let latest = std::sync::Arc::new(std::sync::Mutex::new(None));
+            let incoming = latest.clone();
+            let stopped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let stop = stopped.clone();
+            let (errors, error_rx) = std::sync::mpsc::sync_channel(1);
+            let reader = thread::spawn(move || {
+                while !stop.load(std::sync::atomic::Ordering::Acquire) {
+                    match client.recv() {
+                        Ok(frame) => {
+                            let old = incoming.lock().unwrap().replace(frame);
+                            drop(old);
+                        }
+                        Err(error) => {
+                            let _ = errors.try_send(error);
+                            break;
+                        }
+                    }
+                }
+            });
+            let result = (|| -> Result<()> {
+                let deadline = Instant::now() + Duration::from_secs(duration_seconds);
+                let mut last = None;
+                while Instant::now() < deadline {
+                    if let Ok(error) = error_rx.try_recv() {
+                        return Err(error);
+                    }
+                    let received = latest.lock().unwrap().take();
+                    let Some(frame) = received else {
+                        thread::sleep(Duration::from_millis(2));
+                        continue;
+                    };
+                    if !fiducial_set_due(frame.timestamp_ns, last, Some(100_000_000)) {
+                        continue;
+                    }
+                    let set = SynchronizedFrameSet {
+                        sequence: frame.sequence,
+                        timestamp_basis: frame.timestamp_basis,
+                        timestamp_ns: frame.timestamp_ns,
+                        maximum_skew_ns: frame.maximum_skew_ns,
+                        frames: frame
+                            .frames
+                            .into_iter()
+                            .map(|f| (f.metadata.sensor_name.clone(), f))
+                            .collect(),
+                    };
+                    anyhow::ensure!(
+                        set.frames
+                            .values()
+                            .all(|f| f.metadata.calibration_id.as_deref()
+                                == Some(calibration.bundle_id.as_str())),
+                        "owner calibration differs from reference"
+                    );
+                    pipeline.process(&set)?;
+                    last = Some(set.timestamp_ns);
+                }
+                pipeline.flush()?;
+                anyhow::ensure!(pipeline.rows > 0, "no reference estimates received");
+                println!(
+                    "native shadow subscriber estimates={} camera_owner_preserved=true",
+                    pipeline.rows
+                );
+                Ok(())
+            })();
+            stopped.store(true, std::sync::atomic::Ordering::Release);
+            reader
+                .join()
+                .map_err(|_| anyhow::anyhow!("reference socket reader panicked"))?;
+            result?;
+        }
+        #[cfg(all(feature = "zenoh", feature = "rerun"))]
+        Command::Subscribe {
+            connect,
+            recording_id,
+            max_fps,
+            duration_seconds,
+            urdf,
+            calibration,
+            robot_world,
+        } => {
+            anyhow::ensure!(!cli.bus_connect.is_empty(), "--bus-connect required");
+            anyhow::ensure!(
+                calibration.is_none() || robot_world.is_some(),
+                "--calibration requires --robot-world for measured placement against the robot"
+            );
+            tatbot_visiond::frame_bus::view_bus(
+                &cli.bus_connect,
+                &connect,
+                &recording_id,
+                max_fps,
+                duration_seconds,
+                tatbot_visiond::frame_bus::ViewBusScene {
+                    urdf: urdf.as_deref(),
+                    calibration: calibration.as_deref(),
+                    robot_world: robot_world.as_deref(),
+                },
+            )?;
+        }
         Command::ValidateConfig { config } => {
             let config = VisionConfig::load(config)?;
             println!(
@@ -787,6 +1033,14 @@ fn main() -> Result<()> {
                 let row: EeDetectionReplayRow = serde_json::from_str(&line).with_context(|| {
                     format!("parsing {} line {}", input.display(), line_index + 1)
                 })?;
+                let partial_input = row.partial_input.map(|partial| {
+                    partial || row.input_cameras.iter().any(|name| excluded.contains(name))
+                });
+                let input_cameras = row
+                    .input_cameras
+                    .into_iter()
+                    .filter(|name| !excluded.contains(name))
+                    .collect();
                 let detections = row
                     .detections
                     .into_values()
@@ -795,7 +1049,7 @@ fn main() -> Result<()> {
                     .collect();
                 let detector_age =
                     std::time::Duration::from_secs_f64(row.detection_latency_ms.max(0.0) / 1000.0);
-                let mut estimate = tracker.update(
+                let mut estimate = tracker.update_constrained(
                     row.sequence,
                     row.timestamp_ns,
                     row.maximum_skew_ns,
@@ -803,7 +1057,10 @@ fn main() -> Result<()> {
                     row.queue_latency_ms,
                     row.detection_latency_ms,
                     Instant::now() - detector_age,
+                    usize::from(partial_input == Some(true)) * 2,
                 );
+                estimate.input_cameras = input_cameras;
+                estimate.partial_input = partial_input;
                 estimate.latency_basis = "retained_capture_detection_plus_replay_solver".into();
                 *statuses.entry(estimate.status.clone()).or_default() += 1;
                 serde_json::to_writer(&mut writer, &estimate)?;
@@ -830,15 +1087,21 @@ fn main() -> Result<()> {
             teleop_fps,
             output,
             spawn,
+            connect,
+            recording_id,
             realtime,
             speed,
             max_fps,
             image_scale,
             jpeg_quality,
-            rerun_layout,
         } => {
-            if output.is_some() && spawn {
-                anyhow::bail!("choose either --output or --spawn, not both");
+            if [output.is_some(), spawn, connect.is_some()]
+                .iter()
+                .filter(|set| **set)
+                .count()
+                > 1
+            {
+                anyhow::bail!("choose one of --output, --spawn, --connect");
             }
             if realtime && !(speed.is_finite() && speed > 0.0) {
                 anyhow::bail!("--speed must be finite and positive");
@@ -880,33 +1143,19 @@ fn main() -> Result<()> {
                 .into_iter()
                 .map(ReplaySource::load)
                 .collect::<Result<Vec<_>>>()?;
-            let has_poe = sources
-                .iter()
-                .any(|source| source.has_sensor_kind(SensorKind::PoE));
-            let has_realsense = sources
-                .iter()
-                .any(|source| source.has_sensor_kind(SensorKind::RealSense));
-            let layout =
-                rerun_layout.unwrap_or_else(|| match (has_poe, has_realsense, teleop.is_some()) {
-                    (true, true, true) => RerunLayout::Full,
-                    (true, true, false) => RerunLayout::Cameras,
-                    (true, false, true) => RerunLayout::PoeTeleop,
-                    (false, true, true) => RerunLayout::RealsenseTeleop,
-                    (true, false, false) => RerunLayout::Poe,
-                    (false, true, false) => RerunLayout::Realsense,
-                    (false, false, true) => RerunLayout::Teleop,
-                    (false, false, false) => RerunLayout::Calibration,
-                });
             let calibration_bundle = calibration
                 .as_deref()
                 .map(CalibrationBundle::load)
                 .transpose()?;
             let mut viewer = if spawn {
-                RerunViewer::spawn(layout)?
+                RerunViewer::spawn()?
+            } else if let Some(url) = connect.as_deref() {
+                RerunViewer::connect(url, recording_id.as_deref())?
             } else {
-                let output =
-                    output.with_context(|| "ReplayRerun needs --output PATH or --spawn")?;
-                RerunViewer::save(output, layout)?
+                let output = output.with_context(
+                    || "ReplayRerun needs --output PATH, --spawn, or --connect URL",
+                )?;
+                RerunViewer::save(output)?
             };
             // Offline conversion trades CPU for ~20-50x smaller recordings.
             viewer.set_jpeg_quality(Some(jpeg_quality));
@@ -958,6 +1207,11 @@ fn main() -> Result<()> {
             if replay_rows.is_empty() && teleop.is_none() && calibration.is_none() {
                 anyhow::bail!("the supplied recording roots contain no synchronized sets");
             }
+            if replay_rows.is_empty()
+                && teleop.as_ref().is_none_or(|setup| setup.log.ticks.is_empty())
+            {
+                viewer.log_static_review_timestamp()?;
+            }
 
             let mut previous_timestamp = None;
             let mut replayed = 0_u64;
@@ -1002,6 +1256,40 @@ fn main() -> Result<()> {
             println!("replayed {replayed}/{input_rows} synchronized sets into Rerun ");
         }
         #[cfg(feature = "rerun")]
+        Command::SendBlueprint {
+            connect,
+            recording_id,
+        } => {
+            let viewer = RerunViewer::connect_with_blueprint(&connect, recording_id.as_deref())?;
+            viewer.finish()?;
+            println!(
+                "installed fixed Session / Telemetry / Calibration blueprint at {connect}{}",
+                recording_id
+                    .as_deref()
+                    .map(|id| format!(" for recording {id}"))
+                    .unwrap_or_default()
+            );
+        }
+        #[cfg(feature = "rerun")]
+        Command::SanitizeRrd {
+            input,
+            output,
+            recording_id,
+        } => {
+            let stats = tatbot_visiond::rerun_viewer::sanitize_rrd_for_fleet(
+                &input,
+                &output,
+                &recording_id,
+            )?;
+            println!(
+                "sanitized {} -> {} for {recording_id}: kept {}, dropped {} blueprint messages",
+                input.display(),
+                output.display(),
+                stats.kept_messages,
+                stats.dropped_blueprint_messages
+            );
+        }
+        #[cfg(feature = "rerun")]
         Command::StreamTeleop {
             bind,
             connect,
@@ -1011,7 +1299,6 @@ fn main() -> Result<()> {
             calibration,
             calibration_anchor,
             robot_world,
-            rerun_layout,
             leader_prefix,
             follower_prefix,
             duration_seconds,
@@ -1027,12 +1314,9 @@ fn main() -> Result<()> {
                 .with_context(|| format!("binding live teleop telemetry at {bind}"))?;
             socket.set_read_timeout(Some(Duration::from_millis(250)))?;
             let viewer = if let Some(url) = connect {
-                RerunViewer::connect(&url, Some(recording_id.as_str()), rerun_layout)?
+                RerunViewer::connect(&url, Some(recording_id.as_str()))?
             } else {
-                RerunViewer::save(
-                    output.expect("output precondition checked"),
-                    rerun_layout.unwrap_or(RerunLayout::Teleop),
-                )?
+                RerunViewer::save(output.expect("output precondition checked"))?
             };
             let calibration_bundle = calibration
                 .as_deref()
@@ -1210,6 +1494,7 @@ fn main() -> Result<()> {
         }
         #[cfg(feature = "gstreamer")]
         Command::CapturePoeAll {
+            lossless_evidence,
             config,
             stream,
             duration_seconds,
@@ -1248,6 +1533,7 @@ fn main() -> Result<()> {
             socket,
             socket_max_fps,
             socket_scale,
+            socket_luma,
             socket_crop,
             #[cfg(feature = "rerun")]
             rerun_output,
@@ -1260,8 +1546,6 @@ fn main() -> Result<()> {
             #[cfg(feature = "rerun")]
             rerun_recording_id,
             #[cfg(feature = "rerun")]
-            rerun_layout,
-            #[cfg(feature = "rerun")]
             urdf,
             #[cfg(feature = "rerun")]
             rerun_calibration,
@@ -1273,6 +1557,17 @@ fn main() -> Result<()> {
         } => {
             let config = VisionConfig::load(config)?;
             let socket_crops = parse_socket_crops(&socket_crop)?;
+            if socket_luma
+                && (socket.is_none()
+                    || socket_max_fps != 0.0
+                    || !decoded
+                    || socket_scale != 1.0
+                    || !socket_crops.is_empty())
+            {
+                anyhow::bail!(
+                    "--socket-luma requires an uncapped, unscaled, uncropped decoded --socket"
+                );
+            }
             if !(0.0..=1.0).contains(&socket_scale) || socket_scale == 0.0 {
                 anyhow::bail!("--socket-scale must be in (0, 1]");
             }
@@ -1378,7 +1673,6 @@ fn main() -> Result<()> {
                 rerun_spawn,
                 rerun_connect,
                 rerun_recording_id.as_deref(),
-                rerun_layout,
             )?;
             #[cfg(feature = "rerun")]
             if let Some(viewer) = rerun_viewer.as_ref() {
@@ -1467,16 +1761,23 @@ fn main() -> Result<()> {
                 .map(|camera| camera.name.clone())
                 .collect();
             let tolerance_ns = (config.sync.max_pairwise_skew_ms * 1_000_000.0) as u128;
-            #[cfg(feature = "rerun")]
+            #[cfg(all(feature = "rerun", feature = "fiducials"))]
             let has_rerun_consumer = rerun_sink.is_some();
-            #[cfg(not(feature = "rerun"))]
+            #[cfg(all(not(feature = "rerun"), feature = "fiducials"))]
             let has_rerun_consumer = false;
             #[cfg(feature = "fiducials")]
-            let partial_tracking = fiducial_pipeline.is_some()
-                && no_record
-                && socket.is_none()
-                && !has_rerun_consumer
-                && fiducial_min_cameras < sensor_names.len();
+            let partial_tracking = {
+                #[cfg(feature = "zenoh")]
+                let camera_owner = cli.zenoh;
+                #[cfg(not(feature = "zenoh"))]
+                let camera_owner = false;
+                camera_owner
+                    || (fiducial_pipeline.is_some()
+                        && no_record
+                        && socket.is_none()
+                        && !has_rerun_consumer
+                        && fiducial_min_cameras < sensor_names.len())
+            };
             #[cfg(not(feature = "fiducials"))]
             let partial_tracking = false;
             #[cfg(feature = "fiducials")]
@@ -1485,8 +1786,6 @@ fn main() -> Result<()> {
             } else {
                 tolerance_ns
             };
-            #[cfg(not(feature = "fiducials"))]
-            let tracking_tolerance_ns = tolerance_ns;
             let mut synchronizer = if partial_tracking {
                 #[cfg(feature = "fiducials")]
                 {
@@ -1517,11 +1816,24 @@ fn main() -> Result<()> {
                         .with_context(|| format!("opening {}", sync_index_path.display()))?,
                 ))
             };
-            let mut publisher = socket.map(UnixFramePublisher::bind).transpose()?;
+            let mut publisher = socket.as_ref().map(UnixFramePublisher::bind).transpose()?;
+            let luma_publisher = if socket_luma {
+                publisher
+                    .take()
+                    .map(tatbot_visiond::transport::LumaFramePublisher::spawn)
+            } else {
+                None
+            };
+            // The listener is bound, so `After=` consumers may connect. The
+            // RTSP connections below are deliberately not part of readiness:
+            // a subscriber needs the listener, not frames, and one camera
+            // slow to come up must not hold the whole unit's start open.
+            tatbot_visiond::systemd::notify_socket_ready(socket.as_deref());
             let socket_min_interval =
                 (socket_max_fps > 0.0).then(|| Duration::from_secs_f64(1.0 / socket_max_fps));
             let mut socket_last_published: Option<Instant> = None;
-            let deadline = Instant::now() + Duration::from_secs(duration_seconds);
+            let deadline = (duration_seconds > 0)
+                .then(|| Instant::now() + Duration::from_secs(duration_seconds));
             let expected = config.cameras.poe.len();
             // Decoded main-stream frames are about 15 MiB each.  An unbounded
             // channel let capture outrun fiducial processing during motion;
@@ -1534,94 +1846,175 @@ fn main() -> Result<()> {
             let worker_queue_capacity = expected.max(1);
             let (sender, receiver) = bounded_capture_event_channel(worker_queue_capacity);
             let mut workers = Vec::new();
-            for camera in config.cameras.poe.clone() {
-                let sender = sender.clone();
+            #[cfg(feature = "zenoh")]
+            let source_socket = cli
+                .subscribe_socket
+                .clone()
+                .or_else(|| (!cli.zenoh).then(|| PathBuf::from("/tmp/tatbot-poe-frames.sock")));
+            #[cfg(not(feature = "zenoh"))]
+            let source_socket: Option<PathBuf> = None;
+            let subscriber_only = source_socket.is_some();
+            anyhow::ensure!(
+                !lossless_evidence || (subscriber_only && decoded && !no_record && (1..=30).contains(&duration_seconds)),
+                "--lossless-evidence requires a decoded subscriber recording lasting 1..30 seconds"
+            );
+            let mut owner_failure: Option<String> = None;
+            if let Some(path) = source_socket {
+                let mut client = tatbot_visiond::UnixFrameClient::connect(path)?;
+                client.set_read_timeout(Duration::from_secs(2))?;
+                // Drain the owner independently of compression/disk work. Keep
+                // one complete pending set; replacing it never mixes cameras.
+                let pending = std::sync::Arc::new(std::sync::Mutex::new(None));
+                let incoming = pending.clone();
                 workers.push(thread::spawn(move || {
-                    let sensor = camera.name.clone();
-                    let mut capture = None;
-                    let mut had_capture = false;
-                    let mut reconnects = 0_u64;
-                    let mut recent_errors = BoundedStrings::new(16);
-                    while Instant::now() < deadline {
-                        if capture.is_none() {
-                            match env::var(&camera.password_env)
-                                .with_context(|| {
-                                    format!(
-                                        "missing password environment variable {}",
-                                        camera.password_env
-                                    )
-                                })
-                                .and_then(|password| {
-                                    PoeRtspCapture::new_with_options(
-                                        camera.clone(),
-                                        stream,
-                                        &password,
-                                        decoded,
-                                        keyframes_only,
-                                    )
-                                }) {
-                                Ok(value) => {
-                                    if had_capture {
-                                        reconnects = reconnects.saturating_add(1);
+                    let mut superseded = 0_u64;
+                    while deadline.is_none_or(|d| Instant::now() < d) {
+                        match client.recv_if_ready() {
+                            Ok(None) => continue,
+                            Ok(Some(set)) => {
+                                let old = incoming.lock().unwrap().replace(Ok(set));
+                                superseded += u64::from(old.is_some());
+                                drop(old);
+                            }
+                            Err(error) => {
+                                *incoming.lock().unwrap() = Some(Err(error));
+                                break;
+                            }
+                        }
+                    }
+                    eprintln!("subscriber_superseded_sets={superseded}");
+                }));
+                let sender = sender.clone();
+                let sensors = config
+                    .cameras
+                    .poe
+                    .iter()
+                    .map(|camera| camera.name.clone())
+                    .collect::<Vec<_>>();
+                workers.push(thread::spawn(move || {
+                    while deadline.is_none_or(|d| Instant::now() < d) {
+                        let next = pending.lock().unwrap().take();
+                        let Some(next) = next else {
+                            thread::sleep(Duration::from_millis(2));
+                            continue;
+                        };
+                        match next {
+                            Ok(set) => {
+                                for frame in set.frames {
+                                    if sender
+                                        .send(PoeWorkerEvent::Frame {
+                                            frame,
+                                            enqueued_at: Instant::now(),
+                                        })
+                                        .is_err()
+                                    {
+                                        return;
                                     }
-                                    had_capture = true;
-                                    capture = Some(value);
                                 }
+                            }
+                            Err(error) => {
+                                let _ = sender.send(PoeWorkerEvent::Error {
+                                    sensor: "camera-owner".into(),
+                                    message: error.to_string(),
+                                });
+                                break;
+                            }
+                        }
+                    }
+                    for sensor in sensors {
+                        let health = tatbot_visiond::SensorHealth::new(sensor.clone()).snapshot();
+                        let _ = sender.send(PoeWorkerEvent::Finished { sensor, health });
+                    }
+                }));
+            } else {
+                for camera in config.cameras.poe.clone() {
+                    let sender = sender.clone();
+                    workers.push(thread::spawn(move || {
+                        let sensor = camera.name.clone();
+                        let mut capture = None;
+                        let mut had_capture = false;
+                        let mut reconnects = 0_u64;
+                        let mut recent_errors = BoundedStrings::new(16);
+                        while deadline.is_none_or(|d| Instant::now() < d) {
+                            if capture.is_none() {
+                                match env::var(&camera.password_env)
+                                    .with_context(|| {
+                                        format!(
+                                            "missing password environment variable {}",
+                                            camera.password_env
+                                        )
+                                    })
+                                    .and_then(|password| {
+                                        PoeRtspCapture::new_with_options(
+                                            camera.clone(),
+                                            stream,
+                                            &password,
+                                            decoded,
+                                            keyframes_only,
+                                        )
+                                    }) {
+                                    Ok(value) => {
+                                        if had_capture {
+                                            reconnects = reconnects.saturating_add(1);
+                                        }
+                                        had_capture = true;
+                                        capture = Some(value);
+                                    }
+                                    Err(error) => {
+                                        recent_errors.push(error.to_string());
+                                        let _ = sender.send(PoeWorkerEvent::Error {
+                                            sensor: sensor.clone(),
+                                            message: error.to_string(),
+                                        });
+                                        thread::sleep(Duration::from_millis(250));
+                                        continue;
+                                    }
+                                }
+                            }
+                            let result = capture
+                                .as_mut()
+                                .expect("capture initialized")
+                                .next_frame(Duration::from_millis(1500));
+                            match result {
+                                Ok(Some(frame)) => {
+                                    if sender
+                                        .send(PoeWorkerEvent::Frame {
+                                            frame,
+                                            enqueued_at: Instant::now(),
+                                        })
+                                        .is_err()
+                                    {
+                                        break;
+                                    }
+                                }
+                                Ok(None) => {}
                                 Err(error) => {
                                     recent_errors.push(error.to_string());
                                     let _ = sender.send(PoeWorkerEvent::Error {
                                         sensor: sensor.clone(),
                                         message: error.to_string(),
                                     });
+                                    if let Some(value) = capture.take() {
+                                        let _ = value.stop();
+                                    }
                                     thread::sleep(Duration::from_millis(250));
-                                    continue;
                                 }
                             }
                         }
-                        let result = capture
-                            .as_mut()
-                            .expect("capture initialized")
-                            .next_frame(Duration::from_millis(1500));
-                        match result {
-                            Ok(Some(frame)) => {
-                                if sender
-                                    .send(PoeWorkerEvent::Frame {
-                                        frame,
-                                        enqueued_at: Instant::now(),
-                                    })
-                                    .is_err()
-                                {
-                                    break;
-                                }
-                            }
-                            Ok(None) => {}
-                            Err(error) => {
-                                recent_errors.push(error.to_string());
-                                let _ = sender.send(PoeWorkerEvent::Error {
-                                    sensor: sensor.clone(),
-                                    message: error.to_string(),
-                                });
-                                if let Some(value) = capture.take() {
-                                    let _ = value.stop();
-                                }
-                                thread::sleep(Duration::from_millis(250));
-                            }
-                        }
-                    }
-                    let mut health =
-                        capture
+                        let mut health = capture
                             .as_ref()
                             .map(PoeRtspCapture::health)
                             .unwrap_or_else(|| {
                                 tatbot_visiond::SensorHealth::new(sensor.clone()).snapshot()
                             });
-                    health.reconnects = health.reconnects.saturating_add(reconnects);
-                    health.recent_errors = recent_errors.into_vec();
-                    if let Some(value) = capture {
-                        let _ = value.stop();
-                    }
-                    let _ = sender.send(PoeWorkerEvent::Finished { sensor, health });
-                }));
+                        health.reconnects = health.reconnects.saturating_add(reconnects);
+                        health.recent_errors = recent_errors.into_vec();
+                        if let Some(value) = capture {
+                            let _ = value.stop();
+                        }
+                        let _ = sender.send(PoeWorkerEvent::Finished { sensor, health });
+                    }));
+                }
             }
             drop(sender);
 
@@ -1649,7 +2042,7 @@ fn main() -> Result<()> {
                         // an ingestion bound.  Once it expires, drain frames
                         // without expensive recording/detection so blocked
                         // workers can publish their final health and exit.
-                        if Instant::now() >= deadline {
+                        if deadline.is_some_and(|d| Instant::now() >= d) {
                             frames_discarded_after_deadline =
                                 frames_discarded_after_deadline.saturating_add(1);
                             continue;
@@ -1706,12 +2099,19 @@ fn main() -> Result<()> {
                         }
                         *frame_counts.entry(sensor.clone()).or_default() += 1;
                         if let Some(recorders) = recorders.as_mut() {
-                            recorders
+                            let recorder = recorders
                                 .get_mut(&sensor)
-                                .with_context(|| format!("no recorder for {sensor}"))?
-                                .write(&frame)?;
+                                .with_context(|| format!("no recorder for {sensor}"))?;
+                            #[cfg(feature = "zenoh")]
+                            if subscriber_only && !lossless_evidence {
+                                recorder.write_jpeg(&frame)?;
+                            } else {
+                                recorder.write(&frame)?;
+                            }
+                            #[cfg(not(feature = "zenoh"))]
+                            recorder.write(&frame)?;
                         }
-                        for set in synchronizer.push(frame).map_err(anyhow::Error::msg)? {
+                        for mut set in synchronizer.push(frame).map_err(anyhow::Error::msg)? {
                             let set_processing_unix_ns = SystemTime::now()
                                 .duration_since(UNIX_EPOCH)
                                 .unwrap_or(Duration::ZERO)
@@ -1730,6 +2130,12 @@ fn main() -> Result<()> {
                                 .max()
                                 .unwrap_or(0);
                             synchronizer_waits_ms.push(synchronizer_wait_ns as f64 / 1e6);
+                            for frame in set.frames.values_mut() {
+                                frame.metadata.attributes.insert(
+                                    "synchronized_unix_ns".into(),
+                                    set_processing_unix_ns.to_string(),
+                                );
+                            }
                             #[cfg(feature = "fiducials")]
                             if let Some(pipeline) = fiducial_pipeline.as_mut() {
                                 if fiducial_set_due(
@@ -1754,6 +2160,14 @@ fn main() -> Result<()> {
                                     }
                                 }
                             }
+                            let set = std::sync::Arc::new(set);
+                            #[cfg(feature = "zenoh")]
+                            if let Some(publisher) = &frame_publisher {
+                                publisher.submit_shared(set.clone())?;
+                            }
+                            if let Some(publisher) = &luma_publisher {
+                                publisher.submit_shared(set.clone())?;
+                            }
                             if let Some(publisher) = publisher.as_mut() {
                                 let due = match (socket_min_interval, socket_last_published) {
                                     (Some(interval), Some(last)) => last.elapsed() >= interval,
@@ -1765,7 +2179,7 @@ fn main() -> Result<()> {
                                         publisher.publish(&set)?;
                                     } else {
                                         let mut transport_set = if socket_crops.is_empty() {
-                                            set.clone()
+                                            (*set).clone()
                                         } else {
                                             crop_video_set(&set, &socket_crops, "transport")?
                                         };
@@ -1806,13 +2220,16 @@ fn main() -> Result<()> {
                                 };
                                 if due {
                                     rerun_last_logged = Some(Instant::now());
-                                    sink.submit(set);
+                                    sink.submit(std::sync::Arc::unwrap_or_clone(set));
                                 }
                             }
                             synchronized_sets = synchronized_sets.saturating_add(1);
                         }
                     }
                     Ok(PoeWorkerEvent::Error { sensor, message }) => {
+                        if sensor == "camera-owner" {
+                            owner_failure = Some(message.clone());
+                        }
                         errors.push(format!("{sensor}: {message}"));
                     }
                     Ok(PoeWorkerEvent::Finished {
@@ -1941,6 +2358,13 @@ fn main() -> Result<()> {
                 println!("transport_clients={}", publisher.client_count());
             }
             println!("manifests={}", serde_json::to_string(&manifests)?);
+            anyhow::ensure!(
+                !subscriber_only || (owner_failure.is_none() && synchronized_sets > 0),
+                "camera subscriber failed: {}",
+                owner_failure
+                    .as_deref()
+                    .unwrap_or("no synchronized frames from owner")
+            );
         }
         #[cfg(feature = "gstreamer")]
         Command::MonitorPoe {
@@ -1965,8 +2389,13 @@ fn main() -> Result<()> {
             duration_seconds,
             output,
             calibration,
+            dds_address,
         } => {
-            let config = VisionConfig::load(config)?;
+            let mut config = VisionConfig::load(config)?;
+            config
+                .select_realsense(None, std::slice::from_ref(&sensor))
+                .and_then(|()| config.bind_dds_address(dds_address))
+                .map_err(anyhow::Error::msg)?;
             let calibration = calibration.map(CalibrationBundle::load).transpose()?;
             let camera = config
                 .cameras
@@ -2014,10 +2443,13 @@ fn main() -> Result<()> {
         #[cfg(feature = "realsense")]
         Command::CaptureRealsenseAll {
             config,
+            sensors,
+            group,
             duration_seconds,
             output,
             calibration,
             socket,
+            dds_address,
             #[cfg(feature = "rerun")]
             rerun_output,
             #[cfg(feature = "rerun")]
@@ -2030,11 +2462,13 @@ fn main() -> Result<()> {
             rerun_image_scale,
             #[cfg(feature = "rerun")]
             rerun_recording_id,
-            #[cfg(feature = "rerun")]
-            rerun_layout,
             no_record,
         } => {
-            let config = VisionConfig::load(config)?;
+            let mut config = VisionConfig::load(config)?;
+            config
+                .select_realsense(group.as_deref(), &sensors)
+                .and_then(|()| config.bind_dds_address(dds_address))
+                .map_err(anyhow::Error::msg)?;
             #[cfg(feature = "rerun")]
             if !rerun_image_scale.is_finite()
                 || !(0.0..=1.0).contains(&rerun_image_scale)
@@ -2048,11 +2482,15 @@ fn main() -> Result<()> {
                 rerun_spawn,
                 rerun_connect,
                 rerun_recording_id.as_deref(),
-                rerun_layout,
             )?;
-            if config.cameras.realsense.len() < 2 {
-                anyhow::bail!("CaptureRealsenseAll requires at least two RealSense cameras");
-            }
+            anyhow::ensure!(
+                !config.cameras.realsense.is_empty(),
+                "capture-realsense-all selected no RealSense cameras{}",
+                group
+                    .as_deref()
+                    .map(|value| format!(" in group {value}"))
+                    .unwrap_or_default()
+            );
             if no_record && output.is_some() {
                 anyhow::bail!("--no-record and --output are mutually exclusive");
             }
@@ -2119,27 +2557,249 @@ fn main() -> Result<()> {
                         .with_context(|| format!("opening {}", sync_index_path.display()))?,
                 ))
             };
-            let mut publisher = socket.map(UnixFramePublisher::bind).transpose()?;
-            let deadline = Instant::now() + Duration::from_secs(duration_seconds);
+            let mut publisher = socket.as_ref().map(UnixFramePublisher::bind).transpose()?;
+            // Same contract as the PoE owner: readiness is the bind, so a
+            // caller that starts this service gets a connectable socket back
+            // rather than a process that has merely been exec'd.
+            tatbot_visiond::systemd::notify_socket_ready(socket.as_deref());
+            let deadline = (duration_seconds > 0)
+                .then(|| Instant::now() + Duration::from_secs(duration_seconds));
             let (sender, receiver) = bounded_capture_event_channel(worker_queue_capacity);
             let mut workers = Vec::new();
-            for camera in config.cameras.realsense.clone() {
+            #[cfg(feature = "zenoh")]
+            let fresh_requests = frame_publisher
+                .as_ref()
+                .and_then(tatbot_visiond::frame_bus::FramePublisher::fresh_generation);
+            #[cfg(not(feature = "zenoh"))]
+            let fresh_requests: Option<std::sync::Arc<std::sync::atomic::AtomicU64>> = None;
+            // Bumped by the supervisor on a frame timeout; every device worker
+            // answers a bump it has not seen with one hardware reset.
+            let reset_requests = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+            #[cfg(feature = "zenoh")]
+            let source_socket = cli
+                .subscribe_socket
+                .clone()
+                .or_else(|| (!cli.zenoh).then(|| PathBuf::from("/tmp/tatbot-d405-frames.sock")));
+            #[cfg(not(feature = "zenoh"))]
+            let source_socket: Option<PathBuf> = None;
+            let subscriber_only = source_socket.is_some();
+            let mut owner_failure: Option<String> = None;
+            #[cfg(feature = "zenoh")]
+            anyhow::ensure!(
+                !subscriber_only || fresh_requests.is_none(),
+                "overhead SDK queue drain requires the camera owner, not a socket subscriber"
+            );
+            if let Some(path) = source_socket {
+                let mut client = tatbot_visiond::UnixFrameClient::connect(path)?;
+                client.set_read_timeout(Duration::from_secs(2))?;
                 let sender = sender.clone();
+                let sensors = config
+                    .cameras
+                    .realsense
+                    .iter()
+                    .map(|camera| camera.name.clone())
+                    .collect::<Vec<_>>();
                 workers.push(thread::spawn(move || {
-                    let sensor = camera.name.clone();
-                    let mut capture = None;
-                    let mut had_capture = false;
-                    let mut reconnects = 0_u64;
-                    let mut recent_errors = BoundedStrings::new(16);
-                    while Instant::now() < deadline {
-                        if capture.is_none() {
-                            match RealsenseCapture::new(camera.clone()) {
-                                Ok(value) => {
-                                    if had_capture {
-                                        reconnects = reconnects.saturating_add(1);
+                    while deadline.is_none_or(|d| Instant::now() < d) {
+                        match client.recv() {
+                            Ok(set) => {
+                                for frame in set.frames {
+                                    if sender.send(RealsenseWorkerEvent::Frame(frame)).is_err() {
+                                        return;
                                     }
-                                    had_capture = true;
-                                    capture = Some(value);
+                                }
+                            }
+                            Err(error) => {
+                                let _ = sender.send(RealsenseWorkerEvent::Error {
+                                    sensor: "camera-owner".into(),
+                                    message: error.to_string(),
+                                });
+                                break;
+                            }
+                        }
+                    }
+                    for sensor in sensors {
+                        let health = tatbot_visiond::SensorHealth::new(sensor.clone()).snapshot();
+                        let _ = sender.send(RealsenseWorkerEvent::Finished { sensor, health });
+                    }
+                }));
+            } else {
+                for camera in config.cameras.realsense.clone() {
+                    let sender = sender.clone();
+                    let reset_requests = reset_requests.clone();
+                    let fresh_requests = fresh_requests.clone();
+                    workers.push(thread::spawn(move || {
+                        let sensor = camera.name.clone();
+                        let mut capture: Option<RealsenseCapture> = None;
+                        let mut had_capture = false;
+                        let mut reconnects = 0_u64;
+                        let mut recent_errors = BoundedStrings::new(16);
+                        let mut empty_results = 0_u64;
+                        let mut resets_seen = 0_u64;
+                        let mut fresh_seen = 0_u64;
+                        let mut fresh_flush = None;
+                        let mut raw_pending: Option<(u64, Instant, RawDeviceClockRead)> = None;
+                        while deadline.is_none_or(|d| Instant::now() < d) {
+                            let requested =
+                                reset_requests.load(std::sync::atomic::Ordering::Acquire);
+                            if requested != resets_seen {
+                                // The supervisor saw no event for the safety
+                                // timeout. Release the device (pipeline and
+                                // lease), put it through a hardware reset and
+                                // report what this worker had seen; the next
+                                // turn reopens it as after any transport
+                                // failure, retrying while the USB device
+                                // re-enumerates.
+                                resets_seen = requested;
+                                if let Some(mut value) = capture.take() {
+                                    value.stop();
+                                }
+                                fresh_seen = 0;
+                                fresh_flush = None;
+                                raw_pending = None;
+                                let last_error = recent_errors.values.back().cloned();
+                                let outcome =
+                                    tatbot_visiond::realsense_backend::hardware_reset(&camera)
+                                        .map_err(|error| error.to_string());
+                                if let Err(error) = &outcome {
+                                    recent_errors.push(format!("hardware reset: {error}"));
+                                }
+                                let _ = sender.send(RealsenseWorkerEvent::Reset {
+                                    sensor: sensor.clone(),
+                                    serial: camera.serial.clone(),
+                                    last_error,
+                                    empty_results,
+                                    outcome,
+                                });
+                                empty_results = 0;
+                                continue;
+                            }
+                            if capture.is_none() {
+                                match RealsenseCapture::new(camera.clone()) {
+                                    Ok(value) => {
+                                        if had_capture {
+                                            reconnects = reconnects.saturating_add(1);
+                                        }
+                                        had_capture = true;
+                                        capture = Some(value);
+                                    }
+                                    Err(error) => {
+                                        recent_errors.push(error.to_string());
+                                        let _ = sender.send(RealsenseWorkerEvent::Error {
+                                            sensor: sensor.clone(),
+                                            message: error.to_string(),
+                                        });
+                                        thread::sleep(Duration::from_millis(250));
+                                        continue;
+                                    }
+                                }
+                            }
+                            let generation = fresh_requests
+                                .as_ref()
+                                .map(|requests| requests.load(std::sync::atomic::Ordering::Acquire))
+                                .unwrap_or(0);
+                            if generation > fresh_seen {
+                                match capture
+                                    .as_mut()
+                                    .expect("RealSense capture initialized")
+                                    .drain_ready_frames()
+                                {
+                                    Ok(discarded) => {
+                                        fresh_seen = generation;
+                                        fresh_flush = Some((generation, discarded));
+                                        raw_pending = Some((
+                                            generation,
+                                            Instant::now(),
+                                            capture.as_ref().expect("RealSense capture initialized").raw_clock_read(),
+                                        ));
+                                    }
+                                    Err(error) => {
+                                        recent_errors.push(error.to_string());
+                                        let _ = sender.send(RealsenseWorkerEvent::Error {
+                                            sensor: sensor.clone(),
+                                            message: format!("fresh SDK queue drain: {error}"),
+                                        });
+                                        thread::sleep(Duration::from_millis(250));
+                                        continue;
+                                    }
+                                }
+                            }
+                            let result = capture
+                                .as_mut()
+                                .expect("RealSense capture initialized")
+                                .next_frames(Duration::from_millis(1500));
+                            match result {
+                                Ok(Some(frames)) => {
+                                    empty_results = 0;
+                                    let raw_probe = raw_pending.take().map(|(generation, started, before)| {
+                                        let after = capture.as_ref().expect("RealSense capture initialized")
+                                            .raw_clock_read();
+                                        let capture_epoch = frames.first()
+                                            .and_then(|frame| frame.metadata.attributes.get("capture_epoch"))
+                                            .cloned().unwrap_or_default();
+                                        let probe_frames = frames.iter().map(|frame| {
+                                            let attrs = &frame.metadata.attributes;
+                                            (frame.metadata.sensor_name.clone(), RawClockProbeFrame {
+                                                device_frame_number: attrs.get("frame_number").cloned(),
+                                                sensor_timestamp_us: attrs.get("sensor_timestamp_us").cloned(),
+                                                actual_exposure_us: attrs.get("actual_exposure_us").cloned(),
+                                            })
+                                        }).collect();
+                                        RawDeviceClockProbe {
+                                            schema: RAW_DEVICE_CLOCK_SAMPLE_SCHEMA.into(),
+                                            sdk_version: RealsenseCapture::raw_clock_sdk_version()
+                                                .map(str::to_owned),
+                                            generation,
+                                            capture_epoch,
+                                            frames: probe_frames,
+                                            owner_pair_monotonic_elapsed_ns:
+                                                u64::try_from(started.elapsed().as_nanos())
+                                                    .unwrap_or(u64::MAX),
+                                            before,
+                                            after,
+                                        }
+                                    });
+                                    let raw_probe = raw_probe.map(|probe| {
+                                        serde_json::to_string(&probe)
+                                            .expect("raw clock probe serialization")
+                                    });
+                                    for mut frame in frames {
+                                        if let Some((generation, discarded)) = fresh_flush {
+                                            frame.metadata.attributes.insert(
+                                                "sdk_queue_flush_generation".into(),
+                                                generation.to_string(),
+                                            );
+                                            frame.metadata.attributes.insert(
+                                                "sdk_queue_flush_discarded".into(),
+                                                discarded.to_string(),
+                                            );
+                                        }
+                                        if let Some(probe) = raw_probe.as_ref() {
+                                            frame.metadata.attributes.insert(
+                                                "raw_device_clock_probe".into(), probe.clone(),
+                                            );
+                                        }
+                                        if sender.send(RealsenseWorkerEvent::Frame(frame)).is_err()
+                                        {
+                                            return;
+                                        }
+                                    }
+                                }
+                                Ok(None) => {
+                                    // A stream whose every frameset is withheld
+                                    // must not look like a hung worker: say so
+                                    // before the safety timeout can fire.
+                                    empty_results = empty_results.saturating_add(1);
+                                    if empty_results % 20 == 0 {
+                                        let message = format!(
+                                            "{empty_results} consecutive RealSense results carried no usable frameset (debug logs name the reason)"
+                                        );
+                                        recent_errors.push(message.clone());
+                                        let _ = sender.send(RealsenseWorkerEvent::Error {
+                                            sensor: sensor.clone(),
+                                            message,
+                                        });
+                                    }
                                 }
                                 Err(error) => {
                                     recent_errors.push(error.to_string());
@@ -2147,65 +2807,58 @@ fn main() -> Result<()> {
                                         sensor: sensor.clone(),
                                         message: error.to_string(),
                                     });
-                                    thread::sleep(Duration::from_millis(250));
-                                    continue;
-                                }
-                            }
-                        }
-                        let result = capture
-                            .as_mut()
-                            .expect("RealSense capture initialized")
-                            .next_frames(Duration::from_millis(1500));
-                        match result {
-                            Ok(Some(frames)) => {
-                                for frame in frames {
-                                    if sender.send(RealsenseWorkerEvent::Frame(frame)).is_err() {
-                                        return;
+                                    if let Some(mut value) = capture.take() {
+                                        value.stop();
                                     }
+                                    fresh_seen = 0;
+                                    fresh_flush = None;
+                                    raw_pending = None;
+                                    thread::sleep(Duration::from_millis(250));
                                 }
-                            }
-                            Ok(None) => {}
-                            Err(error) => {
-                                recent_errors.push(error.to_string());
-                                let _ = sender.send(RealsenseWorkerEvent::Error {
-                                    sensor: sensor.clone(),
-                                    message: error.to_string(),
-                                });
-                                if let Some(mut value) = capture.take() {
-                                    value.stop();
-                                }
-                                thread::sleep(Duration::from_millis(250));
                             }
                         }
-                    }
-                    let mut health = capture
-                        .as_ref()
-                        .map(RealsenseCapture::health)
-                        .unwrap_or_else(|| {
-                            tatbot_visiond::SensorHealth::new(sensor.clone()).snapshot()
-                        });
-                    health.reconnects = health.reconnects.saturating_add(reconnects);
-                    health.recent_errors = recent_errors.into_vec();
-                    if let Some(mut value) = capture {
-                        value.stop();
-                    }
-                    let _ = sender.send(RealsenseWorkerEvent::Finished { sensor, health });
-                }));
+                        let mut health = capture
+                            .as_ref()
+                            .map(RealsenseCapture::health)
+                            .unwrap_or_else(|| {
+                                tatbot_visiond::SensorHealth::new(sensor.clone()).snapshot()
+                            });
+                        health.reconnects = health.reconnects.saturating_add(reconnects);
+                        health.recent_errors = recent_errors.into_vec();
+                        if let Some(mut value) = capture {
+                            value.stop();
+                        }
+                        let _ = sender.send(RealsenseWorkerEvent::Finished { sensor, health });
+                    }));
+                }
             }
             drop(sender);
 
             let expected = config.cameras.realsense.len();
             let mut finished = 0;
             let mut frame_counts = BTreeMap::<String, u64>::new();
+            // A capture object is recreated after a transport failure. Keep
+            // evidence sequences outside it so reconnects cannot reuse names.
+            let mut evidence_sequences = BTreeMap::<String, u64>::new();
             let mut errors = BoundedStrings::new(64);
             let mut health = BTreeMap::new();
             let mut synchronized_sets = 0_u64;
+            let mut timeout_policy = FrameTimeoutPolicy::default();
+            let mut hardware_resets = 0_u64;
+            // A reset request no worker has answered yet. A worker blocked
+            // inside a librealsense call (pipeline start or stop, context
+            // creation) never sees the request; the exit then says so rather
+            // than claiming a reset that was never issued.
+            let mut reset_unanswered = false;
             while finished < expected {
-                match receiver.recv_timeout(Duration::from_secs(15)) {
+                match receiver.recv_timeout(REALSENSE_FRAME_TIMEOUT) {
                     Ok(RealsenseWorkerEvent::Frame(frame)) => {
                         let mut frame = frame;
                         stamp_calibration(&mut frame, calibration.as_ref())?;
                         let sensor = frame.metadata.sensor_name.clone();
+                        let sequence = evidence_sequences.entry(sensor.clone()).or_default();
+                        frame.metadata.sequence = *sequence;
+                        *sequence = sequence.saturating_add(1);
                         *frame_counts.entry(sensor.clone()).or_default() += 1;
                         if let Some(recorder) = recorders.get_mut(&sensor) {
                             recorder.write(&frame)?;
@@ -2213,6 +2866,10 @@ fn main() -> Result<()> {
                             anyhow::bail!("no recorder for {sensor}");
                         }
                         for set in synchronizer.push(frame).map_err(anyhow::Error::msg)? {
+                            #[cfg(feature = "zenoh")]
+                            if let Some(publisher) = &frame_publisher {
+                                publisher.submit(&set)?;
+                            }
                             if let Some(publisher) = publisher.as_mut() {
                                 publisher.publish(&set)?;
                             }
@@ -2262,6 +2919,9 @@ fn main() -> Result<()> {
                         }
                     }
                     Ok(RealsenseWorkerEvent::Error { sensor, message }) => {
+                        if sensor == "camera-owner" {
+                            owner_failure = Some(message.clone());
+                        }
                         errors.push(format!("{sensor}: {message}"));
                     }
                     Ok(RealsenseWorkerEvent::Finished {
@@ -2271,10 +2931,88 @@ fn main() -> Result<()> {
                         finished += 1;
                         health.insert(sensor, value);
                     }
+                    Ok(RealsenseWorkerEvent::Reset {
+                        sensor,
+                        serial,
+                        last_error,
+                        empty_results,
+                        outcome,
+                    }) => {
+                        hardware_resets = hardware_resets.saturating_add(1);
+                        reset_unanswered = false;
+                        let outcome = match outcome {
+                            Ok(()) => "reset issued; reopening the pipeline".to_string(),
+                            Err(error) => format!("reset failed: {error}"),
+                        };
+                        tracing::warn!(
+                            sensor = %sensor,
+                            serial = %serial,
+                            last_error = ?last_error,
+                            empty_results,
+                            "RealSense hardware reset: {outcome}"
+                        );
+                        errors.push(format!("{sensor}: hardware reset ({outcome})"));
+                        #[cfg(feature = "zenoh")]
+                        if let Some(publisher) = &frame_publisher {
+                            let record = tatbot_visiond::frame_bus::CaptureHealth {
+                                event: "reset".into(),
+                                group: group.clone().unwrap_or_default(),
+                                sensor,
+                                serial,
+                                reason: format!(
+                                    "no frame, error or finish event for {} s",
+                                    REALSENSE_FRAME_TIMEOUT.as_secs()
+                                ),
+                                last_error,
+                                empty_results,
+                                outcome,
+                            };
+                            // The record is the journal of the reset; a bus
+                            // put that fails is logged, never a reason to end
+                            // an owner that is about to deliver frames again.
+                            if let Err(error) = publisher.publish_health(record) {
+                                tracing::warn!("reset record not published: {error}");
+                            }
+                        }
+                    }
                     Err(mpsc::RecvTimeoutError::Timeout) => {
-                        anyhow::bail!(
-                            "RealSense capture workers did not finish within the safety timeout"
-                        )
+                        let recent = errors.values.iter().cloned().collect::<Vec<_>>();
+                        // A subscriber owns no device: nothing to reset.
+                        let action = if subscriber_only {
+                            FrameTimeoutAction::Exit
+                        } else {
+                            timeout_policy.on_timeout(Instant::now())
+                        };
+                        match action {
+                            FrameTimeoutAction::Reset => {
+                                let message = format!(
+                                    "no frame, error or finish event for {} s: resetting the RealSense devices once",
+                                    REALSENSE_FRAME_TIMEOUT.as_secs()
+                                );
+                                tracing::warn!(recent_errors = ?recent, "{message}");
+                                errors.push(message);
+                                reset_unanswered = true;
+                                reset_requests.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                            }
+                            FrameTimeoutAction::Exit => {
+                                // The suffix states what the owner did, never
+                                // what it meant to do: a worker that never
+                                // returned from librealsense issued no reset.
+                                let suffix = if subscriber_only {
+                                    ""
+                                } else if reset_unanswered {
+                                    " with a hardware reset requested inside the last minute that no worker returned from librealsense to issue"
+                                } else {
+                                    " after a hardware reset inside the last minute"
+                                };
+                                anyhow::bail!(
+                                    "RealSense capture workers did not finish within the safety timeout: no frame, error or finish event for {} s{}; recent errors {:?}",
+                                    REALSENSE_FRAME_TIMEOUT.as_secs(),
+                                    suffix,
+                                    recent
+                                )
+                            }
+                        }
                     }
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
@@ -2305,6 +3043,7 @@ fn main() -> Result<()> {
             println!("errors_dropped={}", errors.dropped);
             println!("health={}", serde_json::to_string(&health)?);
             println!("synchronized_sets={synchronized_sets}");
+            println!("hardware_resets={hardware_resets}");
             println!("capture_event_queue_capacity={worker_queue_capacity}");
             println!(
                 "synchronizer_dropped_unmatched={}",
@@ -2314,27 +3053,18 @@ fn main() -> Result<()> {
                 println!("transport_clients={}", publisher.client_count());
             }
             println!("manifests={}", serde_json::to_string(&manifests)?);
+            anyhow::ensure!(
+                !subscriber_only || (owner_failure.is_none() && synchronized_sets > 0),
+                "camera subscriber failed: {}",
+                owner_failure
+                    .as_deref()
+                    .unwrap_or("no synchronized frames from owner")
+            );
         }
     }
     Ok(())
 }
 
-#[cfg(feature = "rerun")]
-fn decimate_replay_rows(rows: &mut Vec<(i128, usize, usize)>, source_count: usize, max_fps: f64) {
-    if max_fps == 0.0 {
-        return;
-    }
-    let interval_ns = (1e9 / max_fps).round() as i128;
-    let mut last_by_source = vec![None; source_count];
-    rows.retain(|(timestamp_ns, source_index, _)| {
-        let due =
-            last_by_source[*source_index].is_none_or(|last| *timestamp_ns - last >= interval_ns);
-        if due {
-            last_by_source[*source_index] = Some(*timestamp_ns);
-        }
-        due
-    });
-}
 
 #[cfg(all(feature = "rerun", any(feature = "gstreamer", feature = "realsense")))]
 fn open_rerun_viewer(
@@ -2342,7 +3072,6 @@ fn open_rerun_viewer(
     spawn: bool,
     connect: Option<String>,
     recording_id: Option<&str>,
-    layout: RerunLayout,
 ) -> Result<Option<tatbot_visiond::RerunViewer>> {
     if [output.is_some(), spawn, connect.is_some()]
         .iter()
@@ -2353,18 +3082,16 @@ fn open_rerun_viewer(
         anyhow::bail!("choose one of --rerun-output, --rerun-spawn, --rerun-connect");
     }
     if spawn {
-        return Ok(Some(tatbot_visiond::RerunViewer::spawn(layout)?));
+        return Ok(Some(tatbot_visiond::RerunViewer::spawn()?));
     }
     if let Some(url) = connect {
         // Remote live view: JPEG-encode color so five decoded streams fit on
         // the LAN (raw substream BGR alone would be ~100 MB/s).
-        let mut viewer = tatbot_visiond::RerunViewer::connect(&url, recording_id, Some(layout))?;
+        let mut viewer = tatbot_visiond::RerunViewer::connect(&url, recording_id)?;
         viewer.set_jpeg_quality(Some(80));
         return Ok(Some(viewer));
     }
-    output
-        .map(|path| tatbot_visiond::RerunViewer::save(path, layout))
-        .transpose()
+    output.map(tatbot_visiond::RerunViewer::save).transpose()
 }
 
 #[cfg(any(feature = "rerun", feature = "fiducials"))]
@@ -2451,13 +3178,6 @@ impl ReplaySource {
             frames,
         })
     }
-
-    fn has_sensor_kind(&self, kind: SensorKind) -> bool {
-        self.entries
-            .values()
-            .flat_map(|entries| entries.values())
-            .any(|entry| entry.metadata.sensor_kind == kind)
-    }
 }
 
 #[cfg(any(
@@ -2479,32 +3199,6 @@ struct SyncIndexEntry {
     frame_sequences: BTreeMap<String, u64>,
 }
 
-#[cfg(all(test, feature = "rerun"))]
-mod replay_tests {
-    use super::decimate_replay_rows;
-
-    #[test]
-    fn decimation_is_independent_per_recording_source() {
-        let mut rows = vec![
-            (0, 0, 0),
-            (10_000_000, 1, 0),
-            (40_000_000, 0, 1),
-            (60_000_000, 1, 1),
-            (110_000_000, 0, 2),
-            (120_000_000, 1, 2),
-        ];
-        decimate_replay_rows(&mut rows, 2, 10.0);
-        assert_eq!(
-            rows,
-            vec![
-                (0, 0, 0),
-                (10_000_000, 1, 0),
-                (110_000_000, 0, 2),
-                (120_000_000, 1, 2)
-            ]
-        );
-    }
-}
 
 #[cfg(feature = "fiducials")]
 #[derive(Debug, Serialize)]
@@ -2528,6 +3222,7 @@ struct FiducialDetectionBatch {
 
 #[cfg(feature = "fiducials")]
 impl FiducialDetectionBatch {
+    #[allow(clippy::too_many_arguments)] // Retains the existing detection log schema.
     fn new(
         set: &SynchronizedFrameSet,
         inventory_hash: &str,
@@ -2568,7 +3263,7 @@ impl FiducialDetectionBatch {
     }
 }
 
-#[cfg(all(feature = "fiducials", feature = "gstreamer"))]
+#[cfg(feature = "fiducials")]
 struct FiducialPipeline {
     inventory_hash: String,
     calibration: CalibrationBundle,
@@ -2589,8 +3284,9 @@ struct FiducialPipeline {
     rows: u64,
 }
 
-#[cfg(all(feature = "fiducials", feature = "gstreamer"))]
+#[cfg(feature = "fiducials")]
 impl FiducialPipeline {
+    #[allow(clippy::too_many_arguments)] // Preserve the existing shadow pipeline CLI contract.
     fn new(
         inventory_path: PathBuf,
         wrist_layout_path: Option<PathBuf>,
@@ -2720,6 +3416,8 @@ impl FiducialPipeline {
             estimate.partial_input = Some(set.frames.len() < self.calibration.cameras.len());
             estimate.image_prep_latency_ms = detected.image_prep_latency_ms;
             estimate.apriltag_latency_ms = detected.apriltag_latency_ms;
+            estimate.quad_detection_latency_ms = detected.quad_detection_latency_ms;
+            estimate.pose_candidate_latency_ms = detected.pose_candidate_latency_ms;
             estimate.roi_camera_count = detected.roi_camera_count;
             serde_json::to_writer(&mut self.writer, &estimate)?;
         } else {
@@ -2829,67 +3527,9 @@ impl FiducialPipeline {
     }
 }
 
-#[cfg(all(feature = "fiducials", feature = "gstreamer"))]
-fn decoded_frame_dimensions(frame: &tatbot_visiond::FrameRecord) -> Option<(usize, usize)> {
-    match &frame.payload {
-        RecordedPayload::Video { width, height, .. } => Some((*width as usize, *height as usize)),
-        _ => None,
-    }
-}
 
-#[cfg(feature = "fiducials")]
-fn fiducial_set_due(
-    timestamp_ns: i128,
-    last_processed_ns: Option<i128>,
-    min_interval_ns: Option<i128>,
-) -> bool {
-    match (last_processed_ns, min_interval_ns) {
-        // Camera periods are not exact integer nanoseconds. Comparing the raw
-        // delta made nominal 20 Hz frames at 99.9 ms miss a 10 Hz threshold
-        // and selected every third frame (~6.7 Hz). One sample per aligned
-        // interval keeps the long-run cap while accepting that second frame.
-        (Some(last), Some(interval)) if timestamp_ns >= last => {
-            timestamp_ns.div_euclid(interval) > last.div_euclid(interval)
-        }
-        _ => true,
-    }
-}
 
-#[cfg(feature = "fiducials")]
-fn camera_reacquisition_due(row: usize, camera_index: usize, period: usize) -> bool {
-    period == 0 || (row + camera_index) % period == 0
-}
 
-#[cfg(all(test, feature = "fiducials"))]
-mod fiducial_rate_tests {
-    use super::{camera_reacquisition_due, fiducial_set_due};
-
-    #[test]
-    fn rate_limit_uses_capture_timestamps_and_recovers_from_regression() {
-        assert!(fiducial_set_due(1_000, None, Some(100)));
-        assert!(!fiducial_set_due(1_099, Some(1_000), Some(100)));
-        assert!(fiducial_set_due(1_100, Some(1_000), Some(100)));
-        assert!(fiducial_set_due(900, Some(1_000), Some(100)));
-        assert!(fiducial_set_due(1_001, Some(1_000), None));
-    }
-
-    #[test]
-    fn aligned_intervals_accept_nominal_frames_just_below_raw_delta() {
-        assert!(fiducial_set_due(
-            1_149_900_000,
-            Some(1_050_000_000),
-            Some(100_000_000)
-        ));
-    }
-
-    #[test]
-    fn absent_camera_reacquisition_is_staggered_and_zero_disables_backoff() {
-        assert!(camera_reacquisition_due(10, 0, 5));
-        assert!(!camera_reacquisition_due(10, 1, 5));
-        assert!(camera_reacquisition_due(14, 1, 5));
-        assert!(camera_reacquisition_due(11, 3, 0));
-    }
-}
 
 #[cfg(any(feature = "gstreamer", feature = "realsense"))]
 fn stamp_calibration(
@@ -2910,420 +3550,17 @@ fn stamp_calibration(
     Ok(())
 }
 
-#[cfg(feature = "gstreamer")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct VideoCrop {
-    x: u32,
-    y: u32,
-    width: u32,
-    height: u32,
-}
 
-#[cfg(feature = "gstreamer")]
-fn parse_socket_crops(values: &[String]) -> Result<BTreeMap<String, VideoCrop>> {
-    let mut crops = BTreeMap::new();
-    for value in values {
-        let (camera, coordinates) = value.split_once('=').with_context(|| {
-            format!("invalid --socket-crop {value:?}; expected CAMERA=X,Y,WIDTH,HEIGHT")
-        })?;
-        if camera.is_empty() {
-            anyhow::bail!("invalid --socket-crop {value:?}; camera name is empty");
-        }
-        let parts = coordinates
-            .split(',')
-            .map(str::parse::<u32>)
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .with_context(|| format!("invalid --socket-crop {value:?}; coordinates must be u32"))?;
-        let [x, y, width, height] = parts.as_slice() else {
-            anyhow::bail!("invalid --socket-crop {value:?}; expected four coordinates");
-        };
-        if *width == 0 || *height == 0 {
-            anyhow::bail!("invalid --socket-crop {value:?}; width and height must be positive");
-        }
-        let crop = VideoCrop {
-            x: *x,
-            y: *y,
-            width: *width,
-            height: *height,
-        };
-        if crops.insert(camera.to_string(), crop).is_some() {
-            anyhow::bail!("duplicate --socket-crop for {camera}");
-        }
-    }
-    Ok(crops)
-}
 
-#[cfg(feature = "gstreamer")]
-fn crop_video_set(
-    set: &SynchronizedFrameSet,
-    crops: &BTreeMap<String, VideoCrop>,
-    purpose: &str,
-) -> Result<SynchronizedFrameSet> {
-    let mut frames = BTreeMap::new();
-    for (name, frame) in &set.frames {
-        let crop = crops
-            .get(name)
-            .with_context(|| format!("no {purpose} crop configured for {name}"))?;
-        let (format, width, height, bytes) = match &frame.payload {
-            RecordedPayload::Video {
-                format,
-                width,
-                height,
-                bytes,
-            } if matches!(format, PixelFormat::Bgr8 | PixelFormat::Rgb8) => {
-                (*format, *width, *height, bytes)
-            }
-            _ => anyhow::bail!("visual cropping requires decoded BGR/RGB frames"),
-        };
-        let x_end = crop
-            .x
-            .checked_add(crop.width)
-            .context("socket crop x extent overflowed")?;
-        let y_end = crop
-            .y
-            .checked_add(crop.height)
-            .context("socket crop y extent overflowed")?;
-        if x_end > width || y_end > height {
-            anyhow::bail!(
-                "{purpose} crop for {name} ({},{},{},{}) exceeds {width}x{height}",
-                crop.x,
-                crop.y,
-                crop.width,
-                crop.height
-            );
-        }
-        let source_stride = usize::try_from(width)? * 3;
-        let output_stride = usize::try_from(crop.width)? * 3;
-        let expected = source_stride * usize::try_from(height)?;
-        if bytes.len() != expected {
-            anyhow::bail!(
-                "decoded {name} frame has {} bytes; expected {expected}",
-                bytes.len()
-            );
-        }
-        let mut output = Vec::with_capacity(output_stride * usize::try_from(crop.height)?);
-        let x_offset = usize::try_from(crop.x)? * 3;
-        for y in crop.y..y_end {
-            let start = usize::try_from(y)? * source_stride + x_offset;
-            output.extend_from_slice(&bytes[start..start + output_stride]);
-        }
-        let mut metadata = frame.metadata.clone();
-        metadata.profile.width = crop.width;
-        metadata.profile.height = crop.height;
-        metadata.flags.push(format!("{purpose}_cropped"));
-        metadata.attributes.insert(
-            format!("{purpose}_source_dimensions"),
-            format!("{width}x{height}"),
-        );
-        metadata.attributes.insert(
-            format!("{purpose}_crop_xywh"),
-            format!("{},{},{},{}", crop.x, crop.y, crop.width, crop.height),
-        );
-        frames.insert(
-            name.clone(),
-            tatbot_visiond::FrameRecord {
-                metadata,
-                payload: RecordedPayload::Video {
-                    format,
-                    width: crop.width,
-                    height: crop.height,
-                    bytes: output,
-                },
-            },
-        );
-    }
-    Ok(SynchronizedFrameSet {
-        sequence: set.sequence,
-        timestamp_basis: set.timestamp_basis.clone(),
-        timestamp_ns: set.timestamp_ns,
-        maximum_skew_ns: set.maximum_skew_ns,
-        frames,
-    })
-}
 
-/// Nearest-neighbour downscale of a packed raster whose rows are `units`
-/// samples of `unit_bytes` each (a Z16 pixel is one 2-byte unit; a YUYV
-/// macropixel is one 4-byte unit covering two pixels). Returns the resized
-/// bytes and the new (units, rows) size; `None` if the buffer length does not
-/// match the claimed geometry.
-#[cfg(any(feature = "gstreamer", feature = "rerun"))]
-fn scale_packed_rows(
-    bytes: &[u8],
-    units: u32,
-    rows: u32,
-    unit_bytes: usize,
-    scale: f64,
-) -> Option<(Vec<u8>, u32, u32)> {
-    if bytes.len() != (units as usize) * (rows as usize) * unit_bytes {
-        return None;
-    }
-    let new_units = ((units as f64 * scale).round() as u32).max(1);
-    let new_rows = ((rows as f64 * scale).round() as u32).max(1);
-    let mut resized = Vec::with_capacity((new_units as usize) * (new_rows as usize) * unit_bytes);
-    for y in 0..new_rows {
-        let src_y = ((y as u64 * rows as u64) / new_rows as u64) as usize;
-        let row = &bytes[src_y * units as usize * unit_bytes..];
-        for x in 0..new_units {
-            let src_x = ((x as u64 * units as u64) / new_units as u64) as usize;
-            resized.extend_from_slice(&row[src_x * unit_bytes..(src_x + 1) * unit_bytes]);
-        }
-    }
-    Some((resized, new_units, new_rows))
-}
 
-#[cfg(any(feature = "gstreamer", feature = "rerun"))]
-fn note_scaled(
-    frame: &mut tatbot_visiond::FrameRecord,
-    width: u32,
-    height: u32,
-    new_width: u32,
-    new_height: u32,
-    scale: f64,
-    purpose: &str,
-) {
-    frame.metadata.profile.width = new_width;
-    frame.metadata.profile.height = new_height;
-    frame
-        .metadata
-        .flags
-        .push(format!("{purpose}_uniformly_scaled"));
-    frame.metadata.attributes.insert(
-        format!("{purpose}_source_dimensions"),
-        format!("{width}x{height}"),
-    );
-    frame
-        .metadata
-        .attributes
-        .insert(format!("{purpose}_scale"), scale.to_string());
-    frame
-        .metadata
-        .attributes
-        .insert(format!("{purpose}_resize_filter"), "nearest".into());
-}
 
-/// Nearest-neighbour downscale of every Z16 depth plane in a set (the
-/// companion of `scale_video_set`, which deliberately skips depth). Sample
-/// values are untouched, so `depth_units_m` stays valid; the scaled plane is
-/// a visualization derivative, never evidence.
-#[cfg(all(feature = "rerun", feature = "realsense"))]
-fn scale_depth_set(set: &SynchronizedFrameSet, scale: f64, purpose: &str) -> SynchronizedFrameSet {
-    let mut output = set.clone();
-    for frame in output.frames.values_mut() {
-        let RecordedPayload::Depth {
-            width,
-            height,
-            bytes,
-        } = &frame.payload
-        else {
-            continue;
-        };
-        let (width, height) = (*width, *height);
-        let Some((resized, new_width, new_height)) =
-            scale_packed_rows(bytes, width, height, 2, scale)
-        else {
-            continue;
-        };
-        frame.payload = RecordedPayload::Depth {
-            width: new_width,
-            height: new_height,
-            bytes: resized,
-        };
-        note_scaled(frame, width, height, new_width, new_height, scale, purpose);
-    }
-    output
-}
 
-#[cfg(any(feature = "gstreamer", feature = "rerun"))]
-fn scale_video_set(
-    set: &SynchronizedFrameSet,
-    scale: f64,
-    purpose: &str,
-) -> Result<SynchronizedFrameSet> {
-    let mut output = set.clone();
-    for frame in output.frames.values_mut() {
-        let (format, width, height, bytes) = match &frame.payload {
-            RecordedPayload::Video {
-                format,
-                width,
-                height,
-                bytes,
-            } if matches!(format, PixelFormat::Bgr8 | PixelFormat::Rgb8) => {
-                (*format, *width, *height, bytes)
-            }
-            // RealSense colour arrives as YUYV: two pixels share one 4-byte
-            // macropixel, so scale in macropixel units and keep the width even.
-            RecordedPayload::Video {
-                format: PixelFormat::Yuyv,
-                width,
-                height,
-                bytes,
-            } => {
-                let (width, height) = (*width, *height);
-                let Some((resized, new_macro, new_height)) =
-                    scale_packed_rows(bytes, width / 2, height, 4, scale)
-                else {
-                    anyhow::bail!("YUYV frame length does not match its dimensions");
-                };
-                let new_width = new_macro * 2;
-                frame.payload = RecordedPayload::Video {
-                    format: PixelFormat::Yuyv,
-                    width: new_width,
-                    height: new_height,
-                    bytes: resized,
-                };
-                note_scaled(frame, width, height, new_width, new_height, scale, purpose);
-                continue;
-            }
-            RecordedPayload::Depth { .. } => continue,
-            _ => anyhow::bail!("visual scaling requires decoded BGR/RGB/YUYV frames"),
-        };
-        let new_width = ((width as f64 * scale).round() as u32).max(1);
-        let new_height = ((height as f64 * scale).round() as u32).max(1);
-        let source = image::RgbImage::from_raw(width, height, bytes.clone())
-            .context("decoded frame length does not match its dimensions")?;
-        let resized = image::imageops::resize(
-            &source,
-            new_width,
-            new_height,
-            // The shadow path is latency-sensitive and AprilTag edges are
-            // binary. Nearest-neighbour preserves those edges and avoids the
-            // CPU saturation observed with five simultaneous Triangle resizes
-            // on the Jetson camera node.
-            image::imageops::FilterType::Nearest,
-        );
-        frame.payload = RecordedPayload::Video {
-            format,
-            width: new_width,
-            height: new_height,
-            bytes: resized.into_raw(),
-        };
-        frame.metadata.profile.width = new_width;
-        frame.metadata.profile.height = new_height;
-        frame
-            .metadata
-            .flags
-            .push(format!("{purpose}_uniformly_scaled"));
-        frame.metadata.attributes.insert(
-            format!("{purpose}_source_dimensions"),
-            format!("{width}x{height}"),
-        );
-        frame
-            .metadata
-            .attributes
-            .insert(format!("{purpose}_scale"), scale.to_string());
-        frame
-            .metadata
-            .attributes
-            .insert(format!("{purpose}_resize_filter"), "nearest".into());
-    }
-    Ok(output)
-}
 
-#[cfg(all(test, feature = "gstreamer"))]
-mod socket_crop_tests {
-    use super::{VideoCrop, crop_video_set, parse_socket_crops};
-    use std::collections::{BTreeMap, BTreeSet};
-    use tatbot_visiond::{
-        FrameMetadata, FrameRecord, FrameTimestamps, PixelFormat, RecordedPayload, SensorKind,
-        StreamProfile, SynchronizedFrameSet, TimestampDomain,
-    };
-
-    #[test]
-    fn parses_and_refuses_ambiguous_crop_specs() {
-        let crops =
-            parse_socket_crops(&["camera1=1,2,3,4".to_string(), "camera2=0,0,5,6".to_string()])
-                .unwrap();
-        assert_eq!(
-            crops["camera1"],
-            VideoCrop {
-                x: 1,
-                y: 2,
-                width: 3,
-                height: 4
-            }
-        );
-        assert!(parse_socket_crops(&["camera1=0,0,0,4".to_string()]).is_err());
-        assert!(
-            parse_socket_crops(&["camera1=0,0,1,1".to_string(), "camera1=1,1,1,1".to_string(),])
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn crops_without_cloning_full_frame_pixels() {
-        let frame = FrameRecord {
-            metadata: FrameMetadata {
-                sensor_name: "camera1".into(),
-                sensor_kind: SensorKind::PoE,
-                sequence: 1,
-                profile: StreamProfile {
-                    stream: "main".into(),
-                    width: 3,
-                    height: 2,
-                    fps_num: 20,
-                    fps_den: 1,
-                    format: PixelFormat::Bgr8,
-                },
-                timestamps: FrameTimestamps {
-                    source_ns: Some(10),
-                    source_domain: TimestampDomain::CameraNtp,
-                    rtp_timestamp: Some(1),
-                    pipeline_pts_ns: Some(2),
-                    pipeline_dts_ns: None,
-                    host_monotonic_ns: 3,
-                    host_unix_ns: 4,
-                    normalized_unix_ns: Some(10),
-                },
-                dropped_before: 0,
-                calibration_id: None,
-                flags: Vec::new(),
-                attributes: BTreeMap::new(),
-            },
-            payload: RecordedPayload::Video {
-                format: PixelFormat::Bgr8,
-                width: 3,
-                height: 2,
-                bytes: (0_u8..18).collect(),
-            },
-        };
-        let set = SynchronizedFrameSet {
-            sequence: 1,
-            timestamp_basis: "normalized_unix_ns".into(),
-            timestamp_ns: 10,
-            maximum_skew_ns: 0,
-            frames: BTreeMap::from([("camera1".into(), frame)]),
-        };
-        let output = crop_video_set(
-            &set,
-            &BTreeMap::from([(
-                "camera1".into(),
-                VideoCrop {
-                    x: 1,
-                    y: 0,
-                    width: 2,
-                    height: 2,
-                },
-            )]),
-            "test",
-        )
-        .unwrap();
-        let cropped = &output.frames["camera1"];
-        assert_eq!(cropped.metadata.profile.width, 2);
-        assert_eq!(cropped.metadata.profile.height, 2);
-        assert!(cropped.metadata.flags.contains(&"test_cropped".into()));
-        let RecordedPayload::Video { bytes, .. } = &cropped.payload else {
-            panic!("expected video payload");
-        };
-        assert_eq!(bytes, &[3, 4, 5, 6, 7, 8, 12, 13, 14, 15, 16, 17]);
-        assert_eq!(
-            output.frames.keys().cloned().collect::<BTreeSet<_>>(),
-            BTreeSet::from(["camera1".to_string()])
-        );
-    }
-}
 
 #[cfg(feature = "gstreamer")]
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)] // Bounded ingress; image payloads already own heap buffers.
 enum PoeWorkerEvent {
     Frame {
         frame: tatbot_visiond::FrameRecord,
@@ -3339,87 +3576,29 @@ enum PoeWorkerEvent {
     },
 }
 
-#[cfg(feature = "gstreamer")]
-#[derive(Debug, Serialize)]
-struct TimingSummary {
-    samples: usize,
-    retained_samples: usize,
-    median: f64,
-    p95: f64,
-    max: f64,
-}
 
-#[cfg(feature = "gstreamer")]
-/// At 20 Hz, 4096 values cover more than three minutes per metric while making
-/// multi-hour live views constant-space.
-const TIMING_SAMPLE_LIMIT: usize = 4096;
 
-#[cfg(feature = "gstreamer")]
-#[derive(Debug)]
-struct TimingSamples {
-    values: Vec<f64>,
-    next: usize,
-    samples: usize,
-    max: f64,
-    limit: usize,
-}
 
-#[cfg(feature = "gstreamer")]
-impl TimingSamples {
-    fn with_limit(limit: usize) -> Self {
-        assert!(limit > 0);
-        Self {
-            values: Vec::new(),
-            next: 0,
-            samples: 0,
-            max: f64::NEG_INFINITY,
-            limit,
-        }
-    }
 
-    fn push(&mut self, value: f64) {
-        self.samples = self.samples.saturating_add(1);
-        self.max = self.max.max(value);
-        if self.values.len() < self.limit {
-            self.values.push(value);
-            return;
-        }
-        self.values[self.next] = value;
-        self.next = (self.next + 1) % self.limit;
-    }
-}
 
-#[cfg(feature = "gstreamer")]
-impl Default for TimingSamples {
-    fn default() -> Self {
-        Self::with_limit(TIMING_SAMPLE_LIMIT)
-    }
-}
-
-#[cfg(feature = "gstreamer")]
-fn timing_summary(samples: &TimingSamples) -> Option<TimingSummary> {
-    if samples.values.is_empty() {
-        return None;
-    }
-    let mut sorted = samples.values.clone();
-    sorted.sort_by(f64::total_cmp);
-    let p95_index = ((sorted.len() - 1) as f64 * 0.95).round() as usize;
-    Some(TimingSummary {
-        samples: samples.samples,
-        retained_samples: sorted.len(),
-        median: sorted[sorted.len() / 2],
-        p95: sorted[p95_index],
-        max: samples.max,
-    })
-}
 
 #[cfg(feature = "realsense")]
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)] // Bounded ingress; image payloads already own heap buffers.
 enum RealsenseWorkerEvent {
     Frame(tatbot_visiond::FrameRecord),
     Error {
         sensor: String,
         message: String,
+    },
+    /// The worker answered a reset request: what it had seen and whether the
+    /// device took the reset.
+    Reset {
+        sensor: String,
+        serial: String,
+        last_error: Option<String>,
+        empty_results: u64,
+        outcome: Result<(), String>,
     },
     Finished {
         sensor: String,
@@ -3427,68 +3606,71 @@ enum RealsenseWorkerEvent {
     },
 }
 
+/// The RealSense supervisor's safety timeout: no frame, error or finish event
+/// from any worker for this long. It is the only clock the reset budget reads.
+#[cfg_attr(not(feature = "realsense"), allow(dead_code))]
+const REALSENSE_FRAME_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(feature = "realsense"), allow(dead_code))]
+enum FrameTimeoutAction {
+    Reset,
+    Exit,
+}
+
+/// A capture owner's answer to a frame timeout: reset the silent device once
+/// and reopen it; exit for systemd only on a second timeout inside one minute
+/// (four safety timeouts). The count is the bound and the existing timeout the
+/// clock, so a reset that restored frames for a minute has earned the next
+/// timeout its own reset rather than a unit restart. The 2026-09-17 owner
+/// crash-loop (five 15 s restarts, a hand-issued hardware reset the remedy)
+/// is the case this answers.
+#[derive(Debug, Default)]
+#[cfg_attr(not(feature = "realsense"), allow(dead_code))]
+struct FrameTimeoutPolicy {
+    last_reset: Option<std::time::Instant>,
+}
+
+#[cfg_attr(not(feature = "realsense"), allow(dead_code))]
+impl FrameTimeoutPolicy {
+    const RESET_WINDOW: std::time::Duration = REALSENSE_FRAME_TIMEOUT.saturating_mul(4);
+
+    fn on_timeout(&mut self, now: std::time::Instant) -> FrameTimeoutAction {
+        match self.last_reset {
+            Some(at) if now.saturating_duration_since(at) < Self::RESET_WINDOW => {
+                FrameTimeoutAction::Exit
+            }
+            _ => {
+                self.last_reset = Some(now);
+                FrameTimeoutAction::Reset
+            }
+        }
+    }
+}
+
 #[cfg(test)]
-mod retention_tests {
-    use super::{BoundedStrings, bounded_capture_event_channel};
-    #[cfg(feature = "gstreamer")]
-    use super::{TimingSamples, timing_summary};
-    use std::sync::mpsc::TrySendError;
+mod tests {
+    use super::{FrameTimeoutAction, FrameTimeoutPolicy, REALSENSE_FRAME_TIMEOUT};
+    use std::time::{Duration, Instant};
 
     #[test]
-    fn ingress_channel_backpressures_at_its_capacity() {
-        let (sender, receiver) = bounded_capture_event_channel(2);
-        sender.try_send(1).unwrap();
-        sender.try_send(2).unwrap();
-        assert_eq!(sender.try_send(3), Err(TrySendError::Full(3)));
-
-        assert_eq!(receiver.recv().unwrap(), 1);
-        sender.try_send(3).unwrap();
-    }
-
-    #[test]
-    fn ingress_channel_never_becomes_unbounded_for_zero_capacity() {
-        let (sender, _receiver) = bounded_capture_event_channel(0);
-        sender.try_send(1).unwrap();
-        assert_eq!(sender.try_send(2), Err(TrySendError::Full(2)));
-    }
-
-    #[test]
-    fn diagnostic_strings_keep_only_the_newest_entries() {
-        let mut strings = BoundedStrings::new(2);
-        strings.push("first".into());
-        strings.push("second".into());
-        strings.push("third".into());
-        assert_eq!(strings.dropped, 1);
-        assert_eq!(strings.into_vec(), vec!["second", "third"]);
-    }
-
-    #[cfg(feature = "gstreamer")]
-    #[test]
-    fn reports_order_independent_percentiles() {
-        let mut samples = TimingSamples::default();
-        for value in [4.0, 1.0, 3.0, 2.0] {
-            samples.push(value);
-        }
-        let summary = timing_summary(&samples).unwrap();
-        assert_eq!(summary.samples, 4);
-        assert_eq!(summary.retained_samples, 4);
-        assert_eq!(summary.median, 3.0);
-        assert_eq!(summary.p95, 4.0);
-        assert_eq!(summary.max, 4.0);
-    }
-
-    #[cfg(feature = "gstreamer")]
-    #[test]
-    fn bounds_retention_without_losing_total_count_or_global_max() {
-        let mut samples = TimingSamples::with_limit(3);
-        for value in [100.0, 1.0, 2.0, 3.0] {
-            samples.push(value);
-        }
-        let summary = timing_summary(&samples).unwrap();
-        assert_eq!(summary.samples, 4);
-        assert_eq!(summary.retained_samples, 3);
-        assert_eq!(summary.median, 2.0);
-        assert_eq!(summary.p95, 3.0);
-        assert_eq!(summary.max, 100.0);
+    fn realsense_frame_timeout_resets_once_then_exits() {
+        let start = Instant::now();
+        let mut policy = FrameTimeoutPolicy::default();
+        assert_eq!(policy.on_timeout(start), FrameTimeoutAction::Reset);
+        assert_eq!(
+            policy.on_timeout(start + REALSENSE_FRAME_TIMEOUT),
+            FrameTimeoutAction::Exit
+        );
+        // Frames restored for a minute give the next timeout its own reset;
+        // the one after it, inside the minute, exits.
+        let mut policy = FrameTimeoutPolicy::default();
+        assert_eq!(policy.on_timeout(start), FrameTimeoutAction::Reset);
+        let later = start + FrameTimeoutPolicy::RESET_WINDOW + Duration::from_secs(1);
+        assert_eq!(policy.on_timeout(later), FrameTimeoutAction::Reset);
+        assert_eq!(
+            policy.on_timeout(later + REALSENSE_FRAME_TIMEOUT),
+            FrameTimeoutAction::Exit
+        );
     }
 }

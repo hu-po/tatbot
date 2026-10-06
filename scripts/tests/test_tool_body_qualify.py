@@ -5,16 +5,10 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import sys
 from pathlib import Path
 
-import pytest
-
-REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "scripts"))
-sys.path.insert(0, str(REPO / "scripts" / "lib"))
-
 import il_touchoff  # noqa: E402
+import pytest
 import tool_body_qualify  # noqa: E402
 import tool_spec  # noqa: E402
 

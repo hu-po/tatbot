@@ -2,7 +2,7 @@
 # One line on stderr when a launcher is run by path instead of through the
 # `tatbot` CLI (docs/cli.md). SOURCE this file, then:
 #
-#   cli_hint::note "tatbot record"
+#   cli_hint::note "tatbot rollout run"
 #
 # Silent when the CLI is the caller (it exports TATBOT_VIA_CLI=1) or when the
 # operator sets TATBOT_NO_HINT=1. It never changes behaviour or exit status —

@@ -57,7 +57,7 @@ def load_contract(
         "policy_type": policy_type,
         "use_relative_actions": bool(policy.get("use_relative_actions", False)),
         "use_depth": use_depth,
-        "depth_encoding": "depth-v1" if policy_type == "groot" and use_depth else "",
+        "depth_encoding": "",
         "state_size": state_size,
         "use_external_effort": state_size == 14,
         "mask_external_effort": mask_external_effort,

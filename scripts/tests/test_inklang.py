@@ -1,9 +1,9 @@
-"""Inklang lexicon guards: the Python side of the language contract.
+"""InkLang configuration guards for non-TypeScript consumers.
 
-The TypeScript core (web/inkmap/src/core/lang.ts) owns parsing and realizing;
-these tests keep the lexicon files themselves honest for every non-web
-consumer (sim prompts, eval judges), so a web-only edit cannot silently break
-the robot side. Stdlib only.
+The TypeScript core (web/inkmap/src/core/inklang/) owns parsing, grounding, and
+reverse description. These tests keep the language-neutral files honest for
+every non-web consumer, so a web-only edit cannot silently break the simulator
+side. Stdlib only; this module is not another InkLang implementation.
 """
 import json
 from pathlib import Path
@@ -16,6 +16,16 @@ with open(CONFIG / "styles.json") as f:
     STYLES_LEX = json.load(f)
 with open(CONFIG / "placement.schema.json") as f:
     PLACEMENT_SCHEMA = json.load(f)
+with open(CONFIG / "inklang-intent.schema.json") as f:
+    INTENT_SCHEMA = json.load(f)
+with open(CONFIG / "region-atlas.schema.json") as f:
+    ATLAS_SCHEMA = json.load(f)
+with open(CONFIG / "inklang-resolution.schema.json") as f:
+    RESOLUTION_SCHEMA = json.load(f)
+with open(CONFIG / "inklang-errors.json") as f:
+    ERROR_VOCAB = json.load(f)
+with open(CONFIG / "examples" / "inklang" / "corpus-v1.json") as f:
+    CORPUS = json.load(f)
 
 ASPECTS = set(SITES_LEX["aspects"])
 # The ANSI/NIST-NCIC base sites inklang leaves are allowed to refine.
@@ -42,17 +52,28 @@ def test_levels_are_a_separate_slot():
 
 
 def test_region_atlases_match_the_lexicon():
-    # Every shipped atlas speaks the current lexicon and covers all 45 sites.
+    # Every shipped atlas speaks the current lexicon and carries the grounding
+    # data consumers would otherwise be tempted to recompute differently.
     bodies_dir = Path(__file__).resolve().parents[2] / "web" / "inkmap" / "public" / "bodies"
     atlases = sorted(bodies_dir.glob("*.regions.json"))
-    assert len(atlases) >= 2, "expected an atlas per shipped body"
+    assert [path.name for path in atlases] == ["mhr-soma-v1.regions.json"]
     for path in atlases:
         with open(path) as f:
             atlas = json.load(f)
-        assert atlas["inklang"] == SITES_LEX["inklang"], path.name
+        assert atlas["atlas_schema_version"] == 2, path.name
+        assert atlas["inklang_version"] == SITES_LEX["inklang"], path.name
+        assert len(atlas["body"]["rest_surface_sha256"]) == 64, path.name
+        assert len(atlas["body"]["asset_sha256"]) == 64, path.name
         assert set(atlas["sites"]) == set(SITES_LEX["sites"]), f"{path.name}: sites differ from the lexicon"
         n_sites = len(atlas["sites"])
         assert all(v == -1 or 0 <= (v >> 2) < n_sites for v in atlas["faces"]), path.name
+        assert atlas["regions"], path.name
+        for key, region in atlas["regions"].items():
+            assert region["site_id"] in SITES_LEX["sites"], f"{path.name}: {key}"
+            anchor = region["default_anchor"]
+            assert abs(sum(anchor["barycentric"]) - 1.0) <= 1e-6, f"{path.name}: {key}"
+            code = atlas["faces"][anchor["face"]]
+            assert atlas["sites"][code >> 2] == region["site_id"], f"{path.name}: {key}"
 
 
 def test_59_leaf_sites_locked():
@@ -139,11 +160,60 @@ def test_style_axes_sizes():
     assert defaults == ["machine"]
 
 
-def test_placement_schema_is_v4_with_site_language():
-    assert PLACEMENT_SCHEMA["properties"]["schema_version"]["const"] == 4
+def test_placement_schema_is_v6_with_site_language():
+    assert PLACEMENT_SCHEMA["properties"]["schema_version"]["const"] == 6
     placement = PLACEMENT_SCHEMA["properties"]["placements"]["items"]["properties"]
     assert "site" in placement and "language" in placement
-    # Additive: the v2 required set must not have grown.
     assert set(PLACEMENT_SCHEMA["properties"]["placements"]["items"]["required"]) == {
         "id", "design_id", "anchor", "rotation_rad", "size_mm", "mirror",
     }
+
+
+def test_inklang_contract_versions_are_independent():
+    assert INTENT_SCHEMA["properties"]["intent_schema_version"]["const"] == 1
+    assert ATLAS_SCHEMA["properties"]["atlas_schema_version"]["const"] == 2
+    assert RESOLUTION_SCHEMA["properties"]["resolution_schema_version"]["const"] == 2
+    assert PLACEMENT_SCHEMA["properties"]["schema_version"]["const"] == 6
+    assert "pose" not in PLACEMENT_SCHEMA["properties"]
+
+
+def test_inklang_error_vocabulary_is_unique_and_complete():
+    assert ERROR_VOCAB["schema_version"] == 1
+    records = ERROR_VOCAB["errors"]
+    codes = [record["code"] for record in records]
+    assert len(codes) == len(set(codes))
+    assert all(code.startswith("INKLANG_") for code in codes)
+    assert {record["status"] for record in records} == {"needs_choice", "rejected"}
+    required = {
+        "INKLANG_UNKNOWN_SITE",
+        "INKLANG_AMBIGUOUS_LATERALITY",
+        "INKLANG_SURFACE_MISMATCH",
+        "INKLANG_OFFSET_OUT_OF_BOUNDS",
+        "INKLANG_SEMANTIC_MISMATCH",
+    }
+    assert required <= set(codes)
+
+
+def test_normative_corpus_covers_every_leaf_and_grounding_axis_on_the_fixed_body():
+    assert CORPUS["corpus_schema_version"] == 1
+    cases = CORPUS["cases"]
+    assert len(cases) >= 120
+    ids = {case["id"] for case in cases}
+    assert all(
+        set(case["request"]) in ({"prompt"}, {"prompt", "policy", "seed"})
+        for case in cases
+    )
+    assert all(
+        case["request"].get("policy") == "seeded-v1" and isinstance(case["request"].get("seed"), int)
+        for case in cases
+        if set(case["request"]) != {"prompt"}
+    )
+    body = "mhr-soma-v1"
+    for site_id in SITES_LEX["sites"]:
+        assert any(value.startswith(f"{body}:leaf:") and value.endswith(f":{site_id}") for value in ids)
+    for aspect in ("inner", "outer", "front", "back", "side", "top"):
+        assert any(value.startswith(f"{body}:aspect:{aspect}:") for value in ids)
+    for level in ("upper", "mid", "lower"):
+        assert f"{body}:level:{level}" in ids
+    for relation in ("above", "below", "behind", "in_front", "beside", "between"):
+        assert f"{body}:relation:{relation}" in ids

@@ -41,6 +41,16 @@ def stats_line(name, vals):
     )
 
 
+def control_roles(magic, flags):
+    if magic == b"WXTLOG2\x00":
+        if flags not in (7, 31, 63):
+            raise ValueError("unsupported mirrored wrist log flags")
+        joints = "0,4,5" if flags in (31, 63) else "0"
+        mapping = "start-pose anchored" if flags == 63 else "absolute encoder angles"
+        return f"Control roles: leader=physical right, follower=physical left; mirrored joints={joints}; {mapping}"
+    return "Control roles: leader=physical left, follower=physical right"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("log")
@@ -52,7 +62,7 @@ def main():
         magic, n, period, tau, goal_time, ff_gain, abs_gripper, wall_ns = struct.unpack(
             HEADER_FMT, raw_header
         )
-        if magic != b"WXTLOG1\x00":
+        if magic not in (b"WXTLOG1\x00", b"WXTLOG2\x00"):
             sys.exit(f"not a wxai_teleop log (magic {magic!r})")
         n = int(n)
         data = array("d")
@@ -74,6 +84,7 @@ def main():
     t_cmd = col(4)
 
     duration = t_cmd[-1] - t_wake[0]
+    print(control_roles(magic, abs_gripper))
     print(f"log:        {args.log}")
     print(f"started:    {datetime.fromtimestamp(wall_ns / 1e9)}")
     print(

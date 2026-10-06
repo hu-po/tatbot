@@ -8,7 +8,7 @@ the fraction alone is the part that already looked fine.
 
 No render device needed -- the corruptor is tensor math over a depth map:
 
-    cd python/tatbot_sim && uv run python tests/test_depth_noise.py
+    cd python/tatbot_sim && uv run --with pytest pytest -q tests/test_depth_noise.py
 """
 
 from __future__ import annotations
@@ -19,6 +19,24 @@ from tatbot_sim.depth_noise import DepthCorruptor, DepthNoiseConfig
 
 B, H, W = 3, 120, 160
 DEV = torch.device("cpu")
+
+
+def test_sensor_samples_do_not_depend_on_skipped_video_frames():
+    """The same sensor tick has the same noise when a video selects fewer ticks."""
+    from tatbot_sim.depth_noise import RGBJitter
+
+    full = DepthCorruptor(1, DEV, seed=91)
+    sparse = DepthCorruptor(1, DEV, seed=91)
+    depth = torch.full((1, H, W, 1), 300, dtype=torch.int32)
+    full(depth, seed=1)
+    full(depth, seed=2)
+    assert torch.equal(full(depth, seed=3), sparse(depth, seed=3))
+    full_rgb = RGBJitter(1, DEV, seed=91)
+    sparse_rgb = RGBJitter(1, DEV, seed=91)
+    rgb = torch.full((1, H, W, 3), 128, dtype=torch.uint8)
+    full_rgb(rgb, seed=1)
+    full_rgb(rgb, seed=2)
+    assert torch.equal(full_rgb(rgb, seed=3), sparse_rgb(rgb, seed=3))
 
 
 def _flat(depth_mm=300.0, b=B):
@@ -142,15 +160,3 @@ def test_invalid_and_blind_zone_still_win_over_everything():
     assert (c(d).numpy() == 0).all()
     d0 = _flat(0.0)
     assert (_corruptor(blob_drop_frac=(0.0, 0.0))(d0).numpy() == 0).all()
-
-
-def _run_all():
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    for fn in fns:
-        fn()
-        print(f"  ok  {fn.__name__}")
-    print(f"{len(fns)} passed")
-
-
-if __name__ == "__main__":
-    _run_all()

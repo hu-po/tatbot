@@ -45,18 +45,11 @@ from pathlib import Path
 import av
 import numpy as np
 import pandas as pd
+from tatbot_contracts import observations as channels
 
-JOINTS = [
-    "joint_0",
-    "joint_1",
-    "joint_2",
-    "joint_3",
-    "joint_4",
-    "joint_5",
-    "left_carriage_joint",
-]
-ACTION_NAMES = [f"{j}.pos" for j in JOINTS]
-STATE_NAMES = [f"{j}.pos" for j in JOINTS] + [f"{j}.ext_eff" for j in JOINTS]
+JOINTS = list(channels.FOLLOWER_JOINTS)
+ACTION_NAMES = list(channels.ACTION_NAMES)
+STATE_NAMES = list(channels.STATE_NAMES)
 QUANTILES = ("q01", "q10", "q50", "q90", "q99")
 _Q_LEVELS = (0.01, 0.10, 0.50, 0.90, 0.99)
 
@@ -415,7 +408,7 @@ class LeRobotWriter:
         self,
         out_dir: str,
         fps: int = 30,
-        cameras: tuple[str, ...] = ("wrist_upper", "wrist_lower"),
+        cameras: tuple[str, ...] | None = None,
         depth: bool = False,
         image_size: tuple[int, int] = (640, 480),  # (W, H)
         task_name: str = "Draw the shape on the skin pad.",
@@ -436,6 +429,13 @@ class LeRobotWriter:
         if self.base.exists() and any(self.base.iterdir()):
             raise FileExistsError(f"output dir {self.base} is not empty")
         self.fps = fps
+        if cameras is None:
+            from wrist_cameras import describe
+
+            from tatbot_sim.repo import repo_root
+            cameras = tuple(camera.role for camera in describe(repo_root()))
+        if not cameras or len(set(cameras)) != len(cameras):
+            raise ValueError("writer requires distinct camera names")
         self.cameras = cameras
         self.w, self.h = image_size
         self.task_name = task_name
@@ -492,11 +492,9 @@ class LeRobotWriter:
         eps = []
         for i in range(batch_size):
             ep = _Episode(index=base_idx + i, task=(tasks[i] if tasks else self.task_name))
-            chunk = ep.index // self.chunks_size
             for cam in self.cameras:
-                vdir = self.base / "videos" / f"observation.images.{cam}" / f"chunk-{chunk:03d}"
-                vdir.mkdir(parents=True, exist_ok=True)
-                path = vdir / f"file-{ep.index:03d}.mp4"
+                path = self._video_path(ep.index, cam)
+                path.parent.mkdir(parents=True, exist_ok=True)
                 if self.pool:
                     sid = f"{ep.index}:{cam}"
                     self.pool.open_stream(sid, "rgb", path, self.w, self.h, self.fps,
@@ -507,9 +505,8 @@ class LeRobotWriter:
                         path, self.w, self.h, self.fps, self.codec, self.crf, self.preset))
                 ep.pixels[cam] = []
             for cam in self.depth_cams:
-                vdir = self.base / "videos" / f"observation.images.{cam}" / f"chunk-{chunk:03d}"
-                vdir.mkdir(parents=True, exist_ok=True)
-                path = vdir / f"file-{ep.index:03d}.mp4"
+                path = self._video_path(ep.index, cam)
+                path.parent.mkdir(parents=True, exist_ok=True)
                 if self.pool:
                     sid = f"{ep.index}:{cam}"
                     self.pool.open_stream(sid, "depth", path, self.w, self.h, self.fps)
@@ -573,16 +570,45 @@ class LeRobotWriter:
                 if j is not None:
                     j.result()
 
-    def close_batch(self):
+    def _video_path(self, index: int, cam: str) -> Path:
+        chunk = index // self.chunks_size
+        return (self.base / "videos" / f"observation.images.{cam}"
+                / f"chunk-{chunk:03d}" / f"file-{index:03d}.mp4")
+
+    def close_batch(self, keep: list[bool] | None = None) -> list[int | None]:
+        """Finish the open batch. ``keep[i]`` False discards episode i.
+
+        Returns the dataset index each open episode received, or None for a
+        discarded one. Discarding is what lets the generator drop a blank or
+        unreachable demonstration instead of merely warning about it
+        (2026-09-03): the episode's videos are deleted and the kept episodes
+        after it are renumbered so the dataset stays contiguous, which is
+        what LeRobot v3 requires of episode indices.
+        """
         while self._pending:
             for j in self._pending.popleft():
                 if j is not None:
                     j.result()
         for fut in [v.close() for ep in self._open for v in ep.videos.values()]:
             fut.result()
-        for ep in self._open:
+        indices: list[int | None] = []
+        for i, ep in enumerate(self._open):
+            if keep is not None and not keep[i]:
+                for cam in self.cameras + self.depth_cams:
+                    self._video_path(ep.index, cam).unlink(missing_ok=True)
+                indices.append(None)
+                continue
+            new_index = self.num_episodes
+            if new_index != ep.index:
+                for cam in self.cameras + self.depth_cams:
+                    target = self._video_path(new_index, cam)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    self._video_path(ep.index, cam).replace(target)
+                ep.index = new_index
             self._finish_episode(ep)
+            indices.append(new_index)
         self._open = []
+        return indices
 
     # -- internal -------------------------------------------------------------------
 
@@ -627,8 +653,10 @@ class LeRobotWriter:
             prefix = f"videos/observation.images.{cam}"
             meta[f"{prefix}/chunk_index"] = chunk
             meta[f"{prefix}/file_index"] = ep.index
+            # LeRobot's episode window is the video's duration, n/fps, not the
+            # last frame's timestamp: its editors assert length == (to - from) * fps.
             meta[f"{prefix}/from_timestamp"] = float(ts[0])
-            meta[f"{prefix}/to_timestamp"] = float(ts[-1])
+            meta[f"{prefix}/to_timestamp"] = float(ts[0]) + n / self.fps
         meta["meta/episodes/chunk_index"] = 0
         meta["meta/episodes/file_index"] = 0
 

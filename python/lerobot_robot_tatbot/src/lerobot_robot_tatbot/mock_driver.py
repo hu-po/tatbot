@@ -1,10 +1,9 @@
 """A hardware-free stand-in for the Trossen arm driver.
 
 The mock backend of plan Phase 2: same getter/setter surface as
-``trossen_arm.TrossenArmDriver`` for everything the tuning cockpit, golden
-loader, and recovery paths touch, holding state in plain Python. It exists so
-teleop/recording/tuning/tool code paths can run and be tested from a fresh
-clone with no vendor hardware — it is NOT a simulator and never satisfies the
+``trossen_arm.TrossenArmDriver`` for everything the golden loader and the
+recovery paths touch, holding state in plain Python. It exists so those code
+paths can run and be tested from a fresh clone with no vendor hardware — it is NOT a simulator and never satisfies the
 hardware-profile gate (use the 'example' profile with it).
 
 Values are neutral vendor-shaped placeholders, not Tatbot measurements.
@@ -58,11 +57,7 @@ class MockDriver:
     """
 
     def __init__(self):
-        self.friction_constant_terms = [0.0] * N_JOINTS
-        self.friction_coulomb_coefs = [0.0] * N_JOINTS
-        self.friction_viscous_coefs = [0.0] * N_JOINTS
-        self.friction_transition_velocities = [0.02] * N_JOINTS
-        self.effort_corrections = [1.0] * N_JOINTS
+        self.configured = False
         self.motor_parameters = [
             {trossen_arm.Mode.position: _Motor(100.0, 4.0)} for _ in range(N_JOINTS)
         ]
@@ -84,12 +79,6 @@ class MockDriver:
 
         return get, set_
 
-    get_friction_constant_terms, set_friction_constant_terms = _vec("friction_constant_terms")
-    get_friction_coulomb_coefs, set_friction_coulomb_coefs = _vec("friction_coulomb_coefs")
-    get_friction_viscous_coefs, set_friction_viscous_coefs = _vec("friction_viscous_coefs")
-    get_friction_transition_velocities, set_friction_transition_velocities = _vec(
-        "friction_transition_velocities")
-    get_effort_corrections, set_effort_corrections = _vec("effort_corrections")
     get_positions, set_positions = _vec("positions")
     get_velocities, set_velocities = _vec("velocities")
     get_external_efforts, set_external_efforts = _vec("external_efforts")
@@ -124,10 +113,13 @@ class MockDriver:
     # --- the surface recovery.land_arm touches -------------------------------
 
     def configure(self, *args, **kwargs):
-        return None
+        self.configured = True
 
     def cleanup(self, *args, **kwargs):
-        return None
+        self.configured = False
+
+    def get_is_configured(self):
+        return self.configured
 
     def get_all_positions(self):
         return list(self.positions)

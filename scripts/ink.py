@@ -34,16 +34,21 @@ code that dips, not by hand.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import os
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "scripts" / "lib"))
+sys.path.insert(0, str(REPO / "scripts/lib"))
+from tatbot_paths import bootstrap  # noqa: E402
+
+bootstrap()
 
 import ink_session  # noqa: E402
 import ink_spec  # noqa: E402
 import tool_spec  # noqa: E402
+from tatbot_cli import nodes  # noqa: E402
 
 
 def _die(msg: str) -> int:
@@ -68,7 +73,13 @@ def cmd_status(args) -> int:
     for slot_id, slot in palette.items():
         sl = load[slot_id]
         usable = slot.size.capacity_ul * slot.size.usable_frac
-        if sl.dry:
+        if not sl.fill_known and sl.cap_present is False:
+            state = 'cap absent'
+        elif not sl.fill_known and not sl.ink_id:
+            state = 'cap contents unknown'
+        elif not sl.fill_known and sl.ink_id:
+            state = f'{sl.ink_id}: volume unknown, cap present {sl.cap_present}, measured level {sl.level_lower_bound_m} m'
+        elif sl.dry:
             state = "dry"
         else:
             name = inks[sl.ink_id].display_name if sl.ink_id in inks else f"?{sl.ink_id}"
@@ -83,7 +94,8 @@ def cmd_status(args) -> int:
     for cid, c in inv["cartridges"].items():
         cnt = "?" if c.get("count") is None else c["count"]
         flag = " (retired)" if c.get("retired") else ""
-        print(f"  {cid:24s} {c.get('needle_code')}: {cnt}/{c.get('initial_count') or '?'} fits {c.get('fits') or '-'}{flag}")
+        label = c.get('needle_code') or c.get('ink') or c.get('spec')
+        print(f"  {cid:24s} {label}: {cnt}/{c.get('initial_count') or '?'} fits {c.get('fits') or '-'}{flag}")
     print("\nblank caps:")
     for kid, c in inv["caps"].items():
         cnt = "?" if c.get("count") is None else c["count"]
@@ -116,13 +128,15 @@ def cmd_load(args) -> int:
     if args.cap_stock and args.cap_stock not in inv["caps"]:
         return _die(f"unknown cap stock {args.cap_stock!r}")
     prev = load[args.slot]
+    if not prev.fill_known and prev.ink_id:
+        return _die(f'{args.slot}: volume is unknown; use the owner palette declaration for its new measured level')
     if not prev.dry and prev.ink_id != args.ink:
         return _die(f"{args.slot} still holds {prev.ink_id}; `ink.py dump {args.slot}` first")
-    ev = ink_spec.append_event("cap.fill", "real", slot=args.slot, ink_id=args.ink, ul=float(args.ul),
-                        bottle=args.bottle, cap_stock=args.cap_stock)
     load[args.slot] = ink_spec.SlotLoad(args.slot, args.ink, prev.fill_ul + float(args.ul),
-                                 args.bottle or prev.bottle, ev["utc"])
+                                 args.bottle or prev.bottle, ink_spec._utc())
     path = ink_spec.write_palette_load(load, REPO)
+    ink_spec.append_event("cap.fill", "real", slot=args.slot, ink_id=args.ink, ul=float(args.ul),
+                         bottle=args.bottle, cap_stock=args.cap_stock)
     if args.bottle and inv["bottles"][args.bottle].get("remaining_ml") is not None:
         inv["bottles"][args.bottle]["remaining_ml"] = round(
             inv["bottles"][args.bottle]["remaining_ml"] - args.ul / 1000.0, 3)
@@ -140,10 +154,10 @@ def cmd_dump(args) -> int:
     if args.slot not in palette:
         return _die(f"unknown slot {args.slot!r}")
     prev = load[args.slot]
-    ev = ink_spec.append_event("cap.dump", "real", slot=args.slot, ink_id=prev.ink_id,
-                        ul_discarded=prev.fill_ul)
-    load[args.slot] = ink_spec.SlotLoad(args.slot, None, 0.0, None, ev["utc"])
+    load[args.slot] = ink_spec.SlotLoad(args.slot, None, 0.0, None, ink_spec._utc())
     ink_spec.write_palette_load(load, REPO)
+    ink_spec.append_event("cap.dump", "real", slot=args.slot, ink_id=prev.ink_id,
+                         ul_discarded=prev.fill_ul if prev.fill_known else None)
     print(f"{args.slot}: dumped {prev.fill_ul:.0f} uL of {prev.ink_id or 'nothing'}")
     return 0
 
@@ -264,6 +278,9 @@ def cmd_reconcile(args) -> int:
         replayed = r.cap_fill_ul.get(slot_id)
         if replayed is None:
             continue
+        if not load[slot_id].fill_known and (load[slot_id].ink_id or load[slot_id].cap_present is not None):
+            print(f'  {slot_id:24s} owner cap declaration: volume unknown; unchanged by ledger reconciliation')
+            continue
         cur = load[slot_id].fill_ul
         mark = "" if abs(cur - replayed) < 1.0 else "   <-- drift"
         drift += bool(mark)
@@ -297,6 +314,8 @@ def _pairs(weighs: list[dict]) -> list[tuple[dict, dict]]:
     out = []
     for ev in weighs:
         key = ev.get("slot") or ev.get("bottle_id")
+        if not isinstance(key, str):
+            continue
         if ev.get("when") == "before":
             open_[key] = ev
         elif ev.get("when") == "after" and key in open_:
@@ -381,10 +400,14 @@ def cmd_mise(args) -> int:
     for spec in args.need or []:
         ink, _, ul = spec.partition("=")
         needs[ink] = float(ul or 0)
-    if args.strokes_mm and not needs:
-        return _die("--strokes-mm needs --need <ink>=<uL> or --ink <ink>")
+    # --ink names the colour, --strokes-mm the length: fill needs from them
+    # BEFORE demanding that needs be non-empty, or the documented
+    # `--ink X --strokes-mm N` form is refused by the guard meant for
+    # `--strokes-mm` alone.
     if args.ink and args.strokes_mm:
         needs[args.ink] = pol.stroke_ul(args.strokes_mm, args.strokes_mm / max(args.speed_mm_s, 1e-6))
+    if args.strokes_mm and not needs:
+        return _die("--strokes-mm needs --need <ink>=<uL> or --ink <ink>")
     if args.program:
         if not args.ink:
             return _die("--program needs --ink <ink_id>: a program says where, not what colour")
@@ -497,6 +520,30 @@ def cmd_session(args) -> int:
     return _die(f"unknown session verb {verb}")
 
 
+def sync_source(nmap: dict, target: str) -> tuple[str, str]:
+    """(ssh target, copy name) for a fleet node name or a user@host.
+
+    A node name resolves through config/nodes.json and names its copy; a
+    user@host at one of a fleet node's addresses names the copy after that
+    node too. Any other host names it whole: an address cut at its first dot
+    named every Tailscale 100.x.y.z target `100`, each sync overwriting the
+    last one's copy.
+    """
+    if nodes.ssh_target(nmap, target):
+        return nodes.ssh_target(nmap, target), target
+    host = target.split("@")[-1]
+    for name, rec in nmap.items():
+        known = {name, rec.get("lan"), rec.get("hostname")}
+        known.update(t.split("@")[-1] for t in (rec.get("ssh"), rec.get("ssh_lan")) if t)
+        if host in known:
+            return target, name
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return target, host.split(".")[0]
+    return target, host
+
+
 def cmd_sync(args) -> int:
     """Copy each node's ledger into <ledger dir>/remote/<node>.jsonl. The
     ledger is append-only and every event carries an id, so a copy is safe
@@ -505,11 +552,12 @@ def cmd_sync(args) -> int:
 
     rdir = ink_spec.remote_ledger_dir()
     rdir.mkdir(parents=True, exist_ok=True)
+    nmap = nodes.load(REPO)
     rc = 0
     for target in args.nodes:
-        node = target.split("@")[-1].split(".")[0]
+        ssh, node = sync_source(nmap, target)
         dest = rdir / f"{node}.jsonl"
-        src = f"{target}:{args.remote_path}"
+        src = f"{ssh}:{args.remote_path}"
         cmd = ["scp", "-q", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", src, str(dest)]
         r = subprocess.run(cmd, check=False, capture_output=True, text=True)
         if r.returncode != 0:
@@ -524,15 +572,15 @@ def cmd_sync(args) -> int:
 
 
 def _tool_arg(p: argparse.ArgumentParser) -> None:
-    """The tool in the gripper — stated on the command line, or by the CLI
+    """The tool in the mount — stated on the command line, or by the CLI
     through TATBOT_EE_TOOL (`tatbot --ee-tool <id> ink …`); never inferred."""
     p.add_argument("--ee-tool", "--tool-id", dest="tool_id", default=os.environ.get("TATBOT_EE_TOOL") or None,
-                   help="the tool in the gripper (default: $TATBOT_EE_TOOL)")
+                   help="the tool in the mount (default: $TATBOT_EE_TOOL)")
 
 
 def _require_tool(args, what: str) -> str | None:
     if not args.tool_id:
-        return f"{what} needs --ee-tool <id> (or TATBOT_EE_TOOL): name the tool in the gripper"
+        return f"{what} needs --ee-tool <id> (or TATBOT_EE_TOOL): name the tool in the mount"
     return None
 
 

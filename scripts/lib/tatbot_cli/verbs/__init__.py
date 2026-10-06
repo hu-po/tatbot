@@ -1,14 +1,24 @@
 """Importing this package registers every verb (one module per noun group)."""
 
 from tatbot_cli.verbs import (  # noqa: F401
+    body,
+    calib,
     core,
-    draw,
+    deploy,
+    design,
+    drawingbot,
     hardware,
     ink,
     live,
+    release,
+    research,
+    rig,
     rollout,
-    session,
+    ros,
+    teleop,
     train,
+    viewer,
     vision,
     web,
+    work,
 )

@@ -5,19 +5,22 @@ the graceful staged→sleep disconnect can't run because every driver call
 raises. This module's park ritual handles that case: drop the wedged
 connection, reconnect fresh with clear_error=True (which clears controller
 fault state), take control softly at the current pose, then staged pose →
-sleep pose → all motors idle → cleanup. Used by both plugins' disconnect
-fallbacks and by the standalone tune session on any error.
+sleep pose → all motors idle → cleanup. Used by the follower plugin's
+disconnect fallback and by the travel runner.
 """
 
 from __future__ import annotations
 
 import contextlib
 import logging
+import math
 import signal
 import threading
 import time
 
 import trossen_arm
+
+from lerobot_robot_tatbot.driver_lease import owned
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +33,9 @@ def sleep_pose_for(staged_positions, gripper_index):
     staged pose IS the sleep pose with the wrist rolled +90 deg so the
     fiducial cube points up; an arm that rests cube-up, and lands without a
     90 deg wrist move at the very end, is what the operator asked for. The
-    carriage goes to its staged (rest) value: nothing is gripped, and a
-    session must not inherit a retracted carriage from the last one."""
+    carriage value here is the staged one. Landing keeps the measured carriage
+    through the staged sweep, then uses this value to return it to rest during
+    the sleep phase."""
     n = len(staged_positions)
     pose = [0.0] * n
     if n > 5:
@@ -44,9 +48,12 @@ RETRY_DELAY_S = 2.0
 CONFIGURE_TIMEOUT_S = 5.0  # driver default is 20 s — far too long to hang a landing
 STAGED_TOLERANCE_RAD = 0.15
 LANDED_TOLERANCE_RAD = 0.20   # "did it actually reach the sleep pose?"
+CARRIAGE_LANDED_TOLERANCE_M = 0.0005
 LANDING_DEADLINE_S = 45.0     # whole-landing budget across retries
 HANG_ESCAPE_S = 10.0          # Ctrl+C is honoured again after this long
 ESTOP_POLL_S = 0.02
+MEASUREMENT_SETTLE_S = 0.1    # let the daemon deliver real robot output first
+MEASUREMENT_WAIT_S = 1.0
 
 
 # get_error_information() renders ErrorState as human-readable text, and a
@@ -233,22 +240,184 @@ def _apply_golden(driver, name: str) -> list[str]:
         return []
 
 
+def _golden_for_fault(driver, name: str) -> bool:
+    """Push the golden when the controller reports a fault at landing; True once it is in.
+
+    The golden matters only when the controller boots faulted against its boot
+    limits (a power cycle with the carriage on its stop). In the ordinary
+    handover the session that just ended already loaded
+    config/trossen/<arm>.yaml, and the seconds the golden takes sit between the
+    fresh session and the position-mode takeover -- the arm sagged visibly at
+    Enter on 2026-09-02. Take over first; heal only on a fault.
+    """
+    err = controller_error(driver)
+    if not err:
+        return False
+    logger.warning("%s firmware error at landing: %s", name, err)
+    applied = _apply_golden(driver, name)
+    if applied:
+        logger.warning("%s landing: golden applied (%s)", name, ", ".join(applied))
+    return bool(applied)
+
+
+def _fresh_measurement(driver, name: str) -> list[float]:
+    """The measured pose once the driver has one, as arm_recover waits for it.
+
+    configure() returns before the SDK daemon has received any robot output,
+    and until then get_all_positions() is the zero-initialised default: the
+    native landing read a carriage on its stop at -4.718 mm as 0.0000 on
+    2026-09-10. A joint counted a full turn off would pass the limit guard
+    unseen the same way.
+    """
+    started = time.monotonic()
+    while True:
+        positions = list(driver.get_all_positions())
+        elapsed = time.monotonic() - started
+        if elapsed >= MEASUREMENT_SETTLE_S and any(q != 0.0 for q in positions):
+            return positions
+        if elapsed >= MEASUREMENT_WAIT_S:
+            logger.warning("%s no live measurement within %.1f s of connecting; "
+                           "proceeding with the controller's report", name, MEASUREMENT_WAIT_S)
+            return positions
+        time.sleep(0.01)
+
+
+# Slack kept inside the controller's position limits when a hold target is
+# clamped to them (metres for the carriage, radians for the joints).
+LIMIT_MARGIN = 1e-4
+# Joints 0-5 rotate (radians); the carriage after them is linear (metres).
+ARM_JOINTS = 6
+
+
+class JointBeyondLimitsError(RuntimeError):
+    """An arm joint measured past its limits by more than the controller's tolerance.
+
+    The landing raises it before position mode, with nothing commanded, the
+    golden included. Its takeover would clamp the joint into its limits: after
+    a power cycle at the staged wrist roll the blue controller counted joint 5
+    a full turn low (-4.796 rad where it had read +1.49; 2026-09-29), and that
+    clamp is a 95 deg snap to -pi, after which staging turns the wrist and its
+    camera cable one full extra turn. arm_recover refuses the same with exit 7.
+    """
+
+
+def _controller_limits(driver):
+    """(position_min, position_max, feedback_tolerance) per joint, or None."""
+    try:
+        return [(float(jl.position_min), float(jl.position_max),
+                 float(getattr(jl, "position_tolerance", 0.0)))
+                for jl in driver.get_joint_limits()]
+    except Exception:
+        return None
+
+
+def _outside_limits(positions, limits) -> list[int]:
+    """Measured axes outside the controller's admitted feedback range."""
+    if not limits:
+        return []
+    bad = []
+    for i, (position, (lo, hi, raw_tolerance)) in enumerate(
+            zip(positions, limits, strict=False)):
+        tolerance = raw_tolerance if i < ARM_JOINTS and math.isfinite(raw_tolerance) \
+            and raw_tolerance > 0.0 else 0.0
+        if position < lo - tolerance or position > hi + tolerance:
+            bad.append(i)
+    return bad
+
+
+def _refuse_beyond_limits(name: str, positions, limits) -> None:
+    """Raise JointBeyondLimitsError for the arm joints outside their feedback band."""
+    beyond = [i for i in _outside_limits(positions, limits) if i < ARM_JOINTS]
+    if not beyond:
+        return
+    measured = "; ".join(
+        f"joint {i} at {positions[i]:+.3f} rad (limits {limits[i][0]:+.3f}..{limits[i][1]:+.3f}, "
+        f"tolerance {limits[i][2]:.3f})" for i in beyond)
+    which = f"joint{'s' if len(beyond) > 1 else ''} {', '.join(map(str, beyond))}"
+    raise JointBeyondLimitsError(
+        f"{name} landing refused, nothing commanded: {measured}. A power cycle can leave a joint "
+        "counted a full turn off, and the takeover would snap it into its limits before staging "
+        f"turns it the long way round. Power the controller off, turn {which} by hand to near 0, "
+        "power it on and retry.")
+
+
+def _clamp_to_limits(positions, limits):
+    """Hold targets clamped just inside the controller's limits."""
+    if not limits:
+        return list(positions)
+    return [min(max(float(p), lo + LIMIT_MARGIN), hi - LIMIT_MARGIN)
+            for p, (lo, hi, _tolerance) in zip(positions, limits, strict=False)]
+
+
+def _guard_measured_pose(driver, name: str, positions):
+    """Make the measured pose a legal position-mode hold before takeover, or refuse it.
+
+    A power-cycled controller boots with its own limits (carriage 0 / -4 mm
+    with tolerance) and reports NO error while its motors idle, so the
+    fault-only golden path above never fires. The empty follower carriage
+    rests on its stop at ~-4.7 mm, and the takeover then commanded a hold
+    past the boot limit: the controller idled motor 6 and every following
+    command failed with "modes different than configured modes". The
+    operator had to run `arm recover` three times on 2026-09-04 while the
+    carriage crept above -4 mm on its own. So: when the measured pose is
+    outside the controller's live limits, push the golden (which carries the
+    -6 mm limit the sessions run with) and re-read; then clamp the hold
+    target to whatever limits the controller actually enforces.
+
+    An arm joint past its limits by more than the tolerance is not clamped
+    but refused (JointBeyondLimitsError), before the golden and before any
+    command, and again against the golden's limits once they are in.
+    """
+    limits = _controller_limits(driver)
+    _refuse_beyond_limits(name, positions, limits)
+    bad = _outside_limits(positions, limits)
+    if bad:
+        logger.warning(
+            "%s measured pose outside the controller's feedback tolerance at joints %s "
+            "(%s) — applying the golden before takeover", name, bad,
+            ", ".join(f"{positions[i]:.4f} vs [{limits[i][0]:.4f}, {limits[i][1]:.4f}]"
+                      for i in bad),
+        )
+        if _apply_golden(driver, name):
+            limits = _controller_limits(driver)
+            _refuse_beyond_limits(name, positions, limits)
+            bad = _outside_limits(positions, limits)
+            if bad:
+                logger.warning(
+                    "%s still outside the golden feedback tolerance at joints %s; "
+                    "holding at the clamped target", name, bad,
+                )
+    hold = _clamp_to_limits(positions, limits)
+    moved = [i for i, (h, p) in enumerate(zip(hold, positions, strict=True)) if h != p]
+    reported = [i for i in moved if i in _outside_limits(positions, limits)]
+    if reported:
+        logger.warning(
+            "%s hold target clamped into limits at joints %s (%s)", name, reported,
+            ", ".join(f"{positions[i]:.4f}->{hold[i]:.4f}" for i in reported),
+        )
+    return hold
+
+
+@owned
 def land_arm(ip: str, end_effector, staged_positions, *, name: str = "arm",
              gripper_index: int = 6, estop=None, attempts: int = 3,
              verify: bool = True) -> bool:
     """Bring an arm safely down: fresh session, clear error, home, sleep, idle.
 
     One implementation for both arms and every caller (plugin disconnect
-    fallbacks, the standalone tune session, the cockpit's Recover). Uses a
+    fallbacks, il_recover_arm.sh, the travel runner). Uses a
     FRESH driver rather than the caller's: when a session dies mid-run its
     driver object can no longer command anything, but the controller itself
     usually still accepts a new connection.
 
-    The gripper is held at its measured position throughout, so a gripped
-    tool (the tattoo pen) is never ground against the position-mode effort
-    saturation. Ctrl+C is shielded for the duration. The landing is verified
-    rather than assumed: the arm joints must actually reach the sleep pose,
+    The carriage is held at its measured position through the staged sweep,
+    then returned to its configured rest position during the sleep phase.
+    Ctrl+C is shielded for the duration. The landing is verified rather than
+    assumed: the arm joints and carriage must actually reach the sleep pose,
     otherwise this reports failure instead of claiming success.
+
+    Raises JointBeyondLimitsError, with the session closed and nothing commanded,
+    when an arm joint is measured past its limits; it is not retried.
     """
     if estop is not None and getattr(estop, "engaged", False):
         logger.error(
@@ -271,13 +440,7 @@ def land_arm(ip: str, end_effector, staged_positions, *, name: str = "arm",
                     trossen_arm.Model.wxai_v0, end_effector, ip, True,
                     CONFIGURE_TIMEOUT_S,
                 )
-                err = controller_error(driver)
-                if err:
-                    logger.warning("%s firmware error at landing: %s", name, err)
-                applied = _apply_golden(driver, name)
-                if applied:
-                    logger.warning("%s landing: golden applied (%s)", name, ", ".join(applied))
-                if err and applied:
+                if _golden_for_fault(driver, name):
                     # The fault was judged against the boot limits. The SDK clears
                     # errors only at configure, so reconnect once now that the
                     # golden limits are in the controller.
@@ -294,12 +457,13 @@ def land_arm(ip: str, end_effector, staged_positions, *, name: str = "arm",
                     else:
                         logger.warning("%s fault cleared after applying the golden limits", name)
 
-                positions = list(driver.get_all_positions())
+                positions = _guard_measured_pose(
+                    driver, name, _fresh_measurement(driver, name))
                 staged = list(staged_positions)
-                # The carriage goes to its staged (rest) value in every phase:
-                # nothing is gripped (2026-08-30), and a retract left over from a
-                # trip must not survive into the next session.
                 sleep_pose = sleep_pose_for(staged, gripper_index)
+                # Keep the measured carriage through the staged sweep, then
+                # close it to the configured rest value at sleep.
+                staged[gripper_index] = positions[gripper_index]
 
                 driver.set_all_modes(trossen_arm.Mode.position)
                 live = [{"name": name, "driver": driver}]
@@ -315,25 +479,30 @@ def land_arm(ip: str, end_effector, staged_positions, *, name: str = "arm",
                 driver.set_all_modes(trossen_arm.Mode.idle)
 
                 landed = True
+                final_carriage = sleep_pose[gripper_index]
                 if verify:
                     final = list(driver.get_all_positions())
+                    final_carriage = final[gripper_index]
                     worst = max(
                         abs(f - s) for i, (f, s) in enumerate(zip(final, sleep_pose, strict=True))
                         if i != gripper_index
                     )
-                    landed = worst <= LANDED_TOLERANCE_RAD
+                    carriage_error = abs(final[gripper_index] - sleep_pose[gripper_index])
+                    landed = (worst <= LANDED_TOLERANCE_RAD and
+                              carriage_error <= CARRIAGE_LANDED_TOLERANCE_M)
                     if not landed:
                         logger.error(
                             "%s landing did NOT reach the sleep pose (worst "
-                            "joint off by %.2f rad) — the controller accepted "
-                            "the commands but did not execute them",
-                            name, worst,
+                            "joint off by %.2f rad, carriage off rest by %.2f "
+                            "mm) — the controller accepted the commands but "
+                            "did not execute them",
+                            name, worst, carriage_error * 1000.0,
                         )
                 driver.cleanup()
                 if landed:
                     logger.warning(
                         "%s landing complete: sleep pose, motors idle "
-                        "(carriage at rest %.4f)", name, sleep_pose[gripper_index],
+                        "(carriage at rest %.4f)", name, final_carriage,
                     )
                     return True
             except KeyboardInterrupt:
@@ -341,6 +510,10 @@ def land_arm(ip: str, end_effector, staged_positions, *, name: str = "arm",
                 with contextlib.suppress(Exception):
                     driver.cleanup()
                 return False
+            except JointBeyondLimitsError:
+                with contextlib.suppress(Exception):
+                    driver.cleanup()
+                raise
             except Exception as e:
                 logger.error("%s landing attempt %d failed: %s", name, attempt, e)
                 with contextlib.suppress(Exception):
@@ -416,6 +589,7 @@ def _run_monitored_phase(live, targets, seconds: float, estop=None) -> None:
                 return
 
 
+@owned
 def land_arms_together(arms, verify: bool = True, estop=None) -> bool:
     """Land several arms SIMULTANEOUSLY over their existing driver sessions.
 
@@ -429,9 +603,10 @@ def land_arms_together(arms, verify: bool = True, estop=None) -> bool:
     returns — and then a single sleep covers the whole fleet. Same total time
     as landing one arm, no threads, no GIL, no driver-lifecycle races.
 
-    Each arm's gripper is held at its measured position throughout, so a
-    gripped tool is never ground. Arms whose driver fails are reported and
-    skipped so one dead session cannot strand the others.
+    Each arm's carriage is held at its measured position through the staged
+    sweep and returned to configured rest during the sleep phase. Arms whose
+    driver fails are reported and skipped so one dead session cannot strand
+    the others.
     """
     live = []
     for name, driver, staged, grip_idx in arms:
@@ -439,6 +614,8 @@ def land_arms_together(arms, verify: bool = True, estop=None) -> bool:
             positions = list(driver.get_all_positions())
             staged_pose = list(staged)
             sleep_pose = sleep_pose_for(staged_pose, grip_idx)
+            # Measured through the staged sweep; configured rest at sleep.
+            staged_pose[grip_idx] = positions[grip_idx]
             driver.set_all_modes(trossen_arm.Mode.position)
             live.append({
                 "name": name, "driver": driver, "grip_idx": grip_idx,
@@ -476,10 +653,14 @@ def land_arms_together(arms, verify: bool = True, estop=None) -> bool:
                     in enumerate(zip(final, arm["sleep"], strict=True))
                     if i != arm["grip_idx"]
                 )
-                if worst > LANDED_TOLERANCE_RAD:
+                carriage_error = abs(
+                    final[arm["grip_idx"]] - arm["sleep"][arm["grip_idx"]])
+                if (worst > LANDED_TOLERANCE_RAD or
+                        carriage_error > CARRIAGE_LANDED_TOLERANCE_M):
                     logger.error(
                         "%s did NOT reach the sleep pose (worst joint off by "
-                        "%.2f rad)", arm["name"], worst,
+                        "%.2f rad, carriage off rest by %.2f mm)",
+                        arm["name"], worst, carriage_error * 1000.0,
                     )
                     ok = False
                     continue
@@ -500,9 +681,9 @@ def raise_arms_together(arms, goal_time: float = STAGED_POSE_S,
     Without this, each plugin's connect() blocks through its own staged move
     and you watch the arms lift one after another on every session.
 
-    ``arms``: (name, driver, staged_positions, gripper_index). Each arm's
-    gripper is held at its measured position rather than driven to the staged
-    value, so a tool already in the gripper is not squeezed in position mode.
+    ``arms``: (name, driver, staged_positions, gripper_index). Each arm moves
+    to its whole staged pose, carriage included: the carriage's staged value is
+    its rest, and nothing is gripped any more (since 2026-08-30).
     """
     live = []
     for name, driver, staged, grip_idx in arms:
@@ -602,16 +783,6 @@ class ArmGroup:
         for _, m in pending:  # per-arm verification + mode switches
             m["plugin"].finish_staging()
         return ok
-
-    def restage_all(self) -> bool:
-        """Re-stage every registered arm together — the safety-pause resume
-        path: after a MotionSafetyError froze the arms mid-episode and the
-        operator confirmed, lift both back to the staged pose before the
-        next attempt. Same verified move as session start."""
-        with self._lock:
-            for m in self._members.values():
-                m["pending"] = True
-        return self.stage_pending()
 
     def land(self) -> bool:
         """Land every registered arm together, once per session."""

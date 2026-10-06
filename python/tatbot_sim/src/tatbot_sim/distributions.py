@@ -33,6 +33,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+# Control steps at 30 Hz that one artwork episode may take. Raised from 3,600
+# (two minutes) to 9,000 (five minutes) on 2026-09-10 at the fleet owner's
+# direction, after a suite over generated flash refused 28 of 95 candidates for
+# exceeding it. A complete artwork must still fit: an over-budget episode is
+# refused, never truncated mid-stroke.
+#
+# Defined HERE, not in config.py, and re-exported from there: this module must
+# stay stdlib-only at module scope, because sim_dataset_audit loads it by path
+# to read the recipes without importing the package (config pulls in
+# depth_noise, which pulls in torch).
+ARTWORK_HORIZON_STEPS = 9_000
+
 BALLPOINT = "lutin-ballpoint-dot"
 LASER = "picosecond-laser-pen"
 LINER = "lutin-3rl-bugpin"
@@ -46,7 +58,7 @@ class Distribution:
     """The id a dataset records and a training mix filters on."""
 
     tool_id: str
-    """Sets TATBOT_TOOL_ID. The substrate follows from the tool's datasheet —
+    """Explicit model selection. The substrate follows from the tool's datasheet —
     naming it separately would let the two disagree."""
 
     summary: str
@@ -54,8 +66,7 @@ class Distribution:
 
     build_args: Callable[[], "object"]
     """Returns the preset generate.Args. A callable because importing generate
-    pulls in the whole render stack, and the launcher has to set the tool
-    before that import happens."""
+    pulls in the render stack; recipe inspection remains lightweight."""
 
     blockers: tuple[str, ...] = ()
     """Why this distribution cannot be generated yet. A preset that produces
@@ -63,7 +74,7 @@ class Distribution:
     that refuses: the data looks like the other two and trains like neither."""
 
     tip_calibration_jitter: bool = False
-    """Sample one session-persistent TCP offset before the factory re-execs.
+    """Sample one session-persistent TCP offset before world construction.
     Only a distribution whose fitted tool has a qualified pivot calibration
     can enable this; the measured uncertainty sets the radius."""
 
@@ -73,16 +84,12 @@ def _paper_draw():
 
     return Args(
         out_dir="",
-        distribution="paper-draw",
+        distribution="paper-draw", tool_id=BALLPOINT,
         tool_calibration_jitter=True,
-        # the sim node's gen/{final,prod,trim,notrim} runs: every shipped paper batch ran
-        # mix at horizon 900 with the default squiggle share.
-        task="mix",
-        # 1800, not 900: pacing is sampled from the real fm2 teleop band
-        # (draw p10-90 = 0.9-20.7 mm/s, ~3x slower than the old sim), so the
-        # same motifs take up to ~60 s. 900 would cut the slow half of the
-        # distribution mid-stroke and ship a dataset of fast episodes.
-        horizon=1800,
+        # Shared artwork replaces the historical mix/squiggle default.
+        task="artwork",
+        # The shared cap for complete, finite-width tattoo artwork.
+        horizon=ARTWORK_HORIZON_STEPS,
     )
     # NOTE 2026-08-31 pm: an earlier same-day revision pinned the pad to a
     # shrunken (0.22, 0.04) x z (0, 0.010) envelope. That was an artifact of
@@ -101,18 +108,20 @@ def _skin_erase():
     # had to remember is now a property of the object.
     from tatbot_sim.generate import Args
 
-    return Args(
+    args = Args(
         out_dir="",
-        distribution="skin-erase",
+        distribution="skin-erase", tool_id=LASER,
         task="erase",
         # 2000, not the 900 the other distributions use. erase_seconds samples
         # 28-60 s of episode and the control rate is 30 Hz, so a 60 s episode
         # is 1800 steps: a 900 horizon would cut the longest erases in half
         # and the dataset would look like a distribution of short ones.
-        # Recovered from the overnight run driver, the 128-episode laser-rgbd-overnight
-        # batch behind config/training/gr00t-n17-laser-rgb-vs-rgbd-20260827.json.
+        # Recovered from the overnight run driver, the 128-episode
+        # laser-rgbd-overnight batch.
         horizon=2000,
     )
+    args.dr.surface.profile = "balanced"
+    return args
 
 
 def _skin_tattoo():
@@ -145,17 +154,15 @@ def _skin_tattoo():
     """
     from tatbot_sim.generate import Args
 
-    return Args(
+    args = Args(
         out_dir="",
-        distribution="skin-tattoo",
-        # Scenes, never squiggles: a squiggle traces the printed 6 mm ruling
-        # and the skin is blank. tatbot_sim.tasks refuses the combination, so
-        # this is the paper recipe's language half with its maze half dropped.
-        task="language",
-        # follows the paper recipe (the borrow this whole preset is): pacing
-        # is sampled from the real fm2 band, so the same motifs take longer.
-        horizon=1800,
+        distribution="skin-tattoo", tool_id=LINER,
+        # Identical artwork families on the blank skin substrate.
+        task="artwork",
+        horizon=ARTWORK_HORIZON_STEPS,
     )
+    args.dr.surface.profile = "balanced"
+    return args
 
 
 def _body_tattoo():
@@ -163,9 +170,9 @@ def _body_tattoo():
 
     return Args(
         out_dir="",
-        distribution="body-tattoo",
-        task="language",
-        horizon=1800,
+        distribution="body-tattoo", tool_id=LINER,
+        task="artwork",
+        horizon=ARTWORK_HORIZON_STEPS,
         # A compiled scenario is immutable, so parallel slots are repeated
         # visual/ink draws rather than pretending to be different bodies.
         num_envs=8,
@@ -176,20 +183,20 @@ DISTRIBUTIONS: dict[str, Distribution] = {
     "paper-draw": Distribution(
         name="paper-draw",
         tool_id=BALLPOINT,
-        summary="ballpoint drawing scenes and squiggles on the ruled paper pad",
+        summary="shared tattoo artwork on the ruled paper pad",
         build_args=_paper_draw,
         tip_calibration_jitter=True,
     ),
     "skin-erase": Distribution(
         name="skin-erase",
         tool_id=LASER,
-        summary="laser removing ink from the draped silicone skin",
+        summary="laser removing ink from balanced flat/cylindrical silicone skin",
         build_args=_skin_erase,
     ),
     "skin-tattoo": Distribution(
         name="skin-tattoo",
         tool_id=LINER,
-        summary="3RL liner depositing ink on the draped silicone skin "
+        summary="3RL liner depositing ink on balanced flat/cylindrical silicone skin "
                 "(ballpoint settings — see _skin_tattoo for what that borrows)",
         build_args=_skin_tattoo,
     ),

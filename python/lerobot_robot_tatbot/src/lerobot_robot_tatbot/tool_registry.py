@@ -1,9 +1,9 @@
 """The fitted tool's datasheet, from inside the arm plugin.
 
 ``scripts/lib/tool_spec.py`` is the single implementation — the plugin is a
-separate uv project, so it loads that file by path rather than vendoring a copy
-that would drift. Same shim as ``tatbot_sim.tools``; the registry is
-stdlib-only precisely so this needs no new dependency.
+separate uv project, so it depends on that directory as ``tatbot-scriptlib``
+and imports the module normally. Same dependency as ``tatbot_sim.tools``; the
+registry is stdlib-only, so it costs the venv nothing.
 
 Until this existed the plugin was entirely tool-unaware. Since 2026-08-30 the
 tool sits in a mount rather than the gripper, so what the plugin asks the
@@ -13,9 +13,7 @@ cross-check against the calibration — no grip force any more.
 
 from __future__ import annotations
 
-import importlib.util
 import logging
-import sys
 from functools import lru_cache
 
 from .paths import repo_root
@@ -23,8 +21,6 @@ from .paths import repo_root
 logger = logging.getLogger(__name__)
 
 REPO = repo_root()
-_MODULE_NAME = "tatbot_tool_spec"
-_MODULE_PATH = REPO / "scripts" / "lib" / "tool_spec.py"
 
 
 @lru_cache(maxsize=1)
@@ -32,21 +28,16 @@ def registry():
     """The tool_spec module, or None when it is not reachable.
 
     Returning None rather than raising: a bench session with no repo checkout
-    around it should still connect, just without a tool cross-check.
+    around it should still connect, just without a tool cross-check. The
+    module is a declared dependency, so absence now means a venv assembled
+    without it rather than a missing file.
     """
-    if not _MODULE_PATH.is_file():
-        logger.warning("tool registry not found at %s; grip falls back to config",
-                       _MODULE_PATH)
+    try:
+        import tool_spec
+    except ImportError:
+        logger.warning("tool registry not importable; grip falls back to config")
         return None
-    spec = importlib.util.spec_from_file_location(_MODULE_NAME, _MODULE_PATH)
-    if spec is None or spec.loader is None:
-        logger.warning("could not load tool registry spec from %s; grip falls back to config",
-                       _MODULE_PATH)
-        return None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[_MODULE_NAME] = module          # dataclasses resolve annotations here
-    spec.loader.exec_module(module)
-    return module
+    return tool_spec
 
 
 def stated_tool(tool_id, arm: str = "right", context: str = "this run"):

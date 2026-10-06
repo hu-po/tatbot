@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://tatbot.ai/schemas/inkmap/placement/v4",
+  "$id": "https://tatbot.ai/schemas/inkmap/placement/v6",
   "title": "Inkmap placement file",
-  "description": "Tattoo placements on a canonical rest-body surface. A placement is a surface anchor (face + barycentric), a rotation about the surface normal, and a size in millimetres, referencing a vector design. The drawing frame and posed realization are derived, never stored here. v4 separates the mutable asset digest from the stable rest-surface digest; readers continue to accept v1-v3 files.",
+  "description": "Placements on the reviewed MHR/SOMA surface with frozen shared artwork. v6 stores acquired metric geometry rather than SVG materialization inputs.",
   "type": "object",
   "required": [
     "schema_version",
@@ -13,7 +13,7 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": 4
+      "const": 6
     },
     "units": {
       "type": "object",
@@ -38,30 +38,37 @@
     "body": {
       "type": "object",
       "required": [
-        "id",
-        "asset_sha256",
-        "surface_sha256",
-        "path"
+        "model_spec_id",
+        "model_spec_sha256",
+        "identity_sha256",
+        "topology_sha256",
+        "rest_surface_sha256",
+        "asset_path",
+        "asset_sha256"
       ],
       "additionalProperties": false,
       "properties": {
-        "id": {
-          "type": "string",
-          "minLength": 1
+        "model_spec_id": {
+          "const": "mhr-soma-v1"
+        },
+        "model_spec_sha256": {
+          "const": "e615b8485c367509833ee68b0405cd1e0ce6015604eaa4c1b2b699f4fc8d5144"
+        },
+        "identity_sha256": {
+          "const": "800babcf48d09f4ff1da9d2e8a0ebe266869a19849557450c7210c9a9fb9a1b6"
+        },
+        "topology_sha256": {
+          "const": "e0ca7ee25dc0b4c8d841bb2626e364bb88b7af7fae037e30854728842e320a18"
+        },
+        "rest_surface_sha256": {
+          "const": "caa66dff9b3625771c8f4c35bfe59556d30acdc3800880106f98f0ce75c49a95",
+          "description": "Digest of the canonical 18,056-vertex SOMA mid rest surface in Tatbot coordinates."
+        },
+        "asset_path": {
+          "const": "bodies/mhr-soma-v1.glb"
         },
         "asset_sha256": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$",
-          "description": "Digest of the complete body asset bytes. This is provenance and may change when rig or material data changes."
-        },
-        "surface_sha256": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$",
-          "description": "Digest of canonical non-indexed rest-surface XYZ quantized to little-endian signed integer 10-micrometre units. Face and barycentric anchors are meaningful only against this digest."
-        },
-        "path": {
-          "type": "string",
-          "minLength": 1
+          "const": "c1d0ec25c6f4708bb3e8d48811711da0d309598a6b85cf256975d49d1d46e841"
         }
       }
     },
@@ -86,7 +93,7 @@
           "design_id": {
             "type": "string",
             "minLength": 1,
-            "description": "Vector design (SVG) identifier from the design manifest."
+            "description": "Content-addressed vector design identifier. Generated designs are embedded in this file."
           },
           "anchor": {
             "type": "object",
@@ -132,7 +139,7 @@
           },
           "site": {
             "type": "object",
-            "description": "v3: the named inklang body site this placement was made against. The anchor stays the geometric truth; this records which named region it belongs to, so language and eval can refer to it. Site ids come from config/inkmap/sites.json at the given lexicon version.",
+            "description": "The named InkLang site that owns this reviewed eligible SOMA anchor.",
             "required": [
               "id",
               "lexicon"
@@ -144,13 +151,26 @@
                 "minLength": 1
               },
               "laterality": {
-                "enum": ["left", "right", "center", null]
+                "enum": [
+                  "left",
+                  "right",
+                  "center",
+                  null
+                ]
               },
               "aspect": {
-                "type": ["string", "null"]
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "level": {
-                "enum": ["upper", "lower", "mid", null]
+                "enum": [
+                  "upper",
+                  "lower",
+                  "mid",
+                  null
+                ]
               },
               "uv": {
                 "type": "array",
@@ -172,7 +192,7 @@
           },
           "language": {
             "type": "object",
-            "description": "v3: the tattoo program and its canonical realized sentence. The program is the source of truth (validated by the inklang core, not this schema); the sentence is always re-derivable from it.",
+            "description": "The language intent and exact surface-resolution provenance.",
             "required": [
               "sentence",
               "program"
@@ -185,6 +205,19 @@
               },
               "program": {
                 "type": "object"
+              },
+              "intent": {
+                "type": "object",
+                "description": "Optional canonical InkLang intent that produced this placement."
+              },
+              "resolution": {
+                "type": "object",
+                "description": "Optional canonical InkLang resolution, including body/surface, anchor, and policy provenance."
+              },
+              "consumer_policy": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Optional named downstream policy that selected among canonical resolutions."
               }
             }
           }
@@ -193,56 +226,9 @@
     },
     "designs": {
       "type": "object",
-      "description": "v2: designs referenced by placements that are not files shipped with the app (e.g. generated in the session), keyed by design id, so the file stays self-contained.",
+      "description": "Shared frozen artwork records, keyed by the placement design ID.",
       "additionalProperties": {
-        "type": "object",
-        "required": [
-          "name",
-          "svg",
-          "default_size_mm"
-        ],
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1
-          },
-          "svg": {
-            "type": "string",
-            "minLength": 5,
-            "description": "The SVG document text."
-          },
-          "default_size_mm": {
-            "type": "array",
-            "items": {
-              "type": "number",
-              "exclusiveMinimum": 0
-            },
-            "minItems": 2,
-            "maxItems": 2
-          },
-          "source": {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "additionalProperties": false,
-            "properties": {
-              "kind": {
-                "const": "generated"
-              },
-              "model": {
-                "type": "string"
-              },
-              "prompt": {
-                "type": "string"
-              },
-              "seed": {
-                "type": "integer"
-              }
-            }
-          }
-        }
+        "$ref": "https://tatbot.dev/schemas/inkmap/artwork.schema.json"
       }
     }
   }

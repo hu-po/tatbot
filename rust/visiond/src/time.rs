@@ -1,6 +1,44 @@
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+
+pub const RAW_DEVICE_CLOCK_SAMPLE_SCHEMA: &str = "tatbot.raw-device-clock-sample/1";
+
+/// One raw counter read bracketed on the camera owner's host. A failed read
+/// remains visible and never dates a selected frame's exposure.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RawDeviceClockRead {
+    pub status: String,
+    pub owner_before_unix_ns: Option<u64>,
+    pub owner_after_unix_ns: Option<u64>,
+    pub owner_monotonic_elapsed_ns: Option<u64>,
+    pub device_time_us: Option<u64>,
+}
+
+/// The SDK worker reads the same active pipeline device around one returned
+/// RGBD pair after a request-generation queue drain.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RawDeviceClockProbe {
+    pub schema: String,
+    pub sdk_version: Option<String>,
+    pub generation: u64,
+    pub capture_epoch: String,
+    pub frames: BTreeMap<String, RawClockProbeFrame>,
+    pub owner_pair_monotonic_elapsed_ns: u64,
+    pub before: RawDeviceClockRead,
+    pub after: RawDeviceClockRead,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RawClockProbeFrame {
+    pub device_frame_number: Option<String>,
+    pub sensor_timestamp_us: Option<String>,
+    pub actual_exposure_us: Option<String>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

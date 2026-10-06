@@ -8,7 +8,11 @@ Offline CLI workflows for public development and replay. Maintainers can inspect
 tatbot [global flags] <noun> [verb] [args] [-- passthrough args]
 ```
 
-Global flags go **before** the noun: `--json`, `--dry-run`, `--explain`, `-q`, `-v`.
+Global flags may appear anywhere before the first `--`, as `--flag value` or `--flag=value`, unless a declared command option owns that spelling: `--json`, `--dry-run`, `--explain`, `-q`, `-v`. Stating one twice with different values is a usage error.
+
+`--json` execution is supported only by commands declaring structured output in `schema --json`; all commands support JSON plans and explanations. Use `--output FILE` for draw report destinations. Backend flags on structured commands require `--`; tokens after it are preserved.
+
+CLI-owned exit codes are below. Executed backends and SSH retain their own exit codes and error output; backend failures are not remapped to 1.
 
 ## Exit codes
 
@@ -31,67 +35,124 @@ Global flags go **before** the noun: `--json`, `--dry-run`, `--explain`, `-q`, `
 ## Verbs
 
 
-### `tatbot estop` — simulate and inspect e-stop interfaces
+### `tatbot completion` — generate opt-in shell completion
 
 | verb | tier | runs on | wraps | summary |
 | --- | --- | --- | --- | --- |
-| `estop sim` | `offline` | this checkout | `scripts/estop_sim.py` | simulate the e-stop box on a PTY for desk testing (`--` → estop_sim.py) |
+| `completion bash` | `offline` | this checkout | native | print Bash completion generated from canonical command metadata |
 
-### `tatbot teleop` — leader→follower teleoperation and tuning
+### `tatbot body` — immutable human body model assets and cache audit
 
 | verb | tier | runs on | wraps | summary |
 | --- | --- | --- | --- | --- |
+| `body export` | `offline` | this checkout | `web/inkmap/tools/export-soma.py` | bake genuine articulated SOMA poses into the shared Inkmap and simulation catalog (`--` → export-soma.py) |
+| `body bootstrap` | `offline` | this checkout | native | copy a pinned, pre-downloaded MHR and SOMA allowlist into an explicit verified cache |
+| `body audit` | `offline` | this checkout | native | read and hash every byte in an explicit MHR and SOMA cache without deserializing it |
+
+### `tatbot teleop` — leader→follower teleoperation
+
+| verb | tier | runs on | wraps | summary |
+| --- | --- | --- | --- | --- |
+| `teleop poses` | `offline` | this checkout | `scripts/vision/teleop_poses.py` | export measured follower tip poses and host read timestamps from a flight log (`--ee-tool`) |
 | `teleop analyze` | `offline` | this checkout | `cpp/teleop/analyze_log.py` | loop-timing stats from a .wxtl without a GUI |
-| `teleop replay` | `offline` | this checkout | `cpp/teleop/rerun-importer-wxtl` | replay a flight log in Rerun |
 
 ### `tatbot rollout` — analyze policy rollouts and recorded data
 
 | verb | tier | runs on | wraps | summary |
 | --- | --- | --- | --- | --- |
 | `rollout analyze` | `offline` | this checkout | `scripts/il_analyze_rollout.py` | did the pen draw the shape, did the loop keep time (`--` → il_analyze_rollout.py) |
-| `rollout fk` | `offline` | this checkout | `scripts/eval/flight_fk.py` | FK read of a rollout flight log (lift<path>) (`--` → flight_fk.py) |
-| `rollout reconcile` | `offline` | this checkout | `scripts/eval/reconcile.py` | rollout run COUNT vs the index — count before calling anything uncommanded |
-| `rollout bench` | `offline` | this checkout | `scripts/eval/wire_bench.py`, `scripts/eval/trajectory_plausibility.py` | no-robot checks of the serving path (wire bench / plausibility) |
-| `rollout contract` | `offline` | this checkout | `scripts/eval/checkpoint_contract.py` | the input<path> contract stored with a checkpoint (`--` → checkpoint_contract.py) |
-| `rollout replay-safety` | `offline` | this checkout | `scripts/eval/replay_motion_safety.py` | replay flight CSVs through the measured-motion watchdog (hardware-free) (`--` → replay_motion_safety.py) |
+| `rollout bench` | `offline` | this checkout | `scripts/eval/wire_bench.py`, `scripts/eval/trajectory_plausibility.py` | no-robot checks of the serving path (wire bench / plausibility) (`--` → wire_bench.py / trajectory_plausibility.py) |
+| `rollout contract` | `offline` | this checkout | `scripts/eval/checkpoint_contract.py` | the input/action contract stored with a checkpoint (`--` → checkpoint_contract.py) |
 
-### `tatbot sim` — the ManiSkill data factory (x86_64 only)
+### `tatbot sim` — scenario, dataset, evaluation and render tools
 
 | verb | tier | runs on | wraps | summary |
 | --- | --- | --- | --- | --- |
 | `sim list` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/factory.py` | the named distributions the factory can generate |
 | `sim generate` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/factory.py`, `python/tatbot_sim/src/tatbot_sim/generate.py` | generate one named distribution into a LeRobot v3 dataset (`--` → tatbot_sim.generate (tyro)) |
+| `sim sample` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/cli.py` | materialize a bounded artwork suite of posed-body scenarios (`--` → tatbot_sim.inkmap.cli sample) |
 | `sim compile` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/cli.py` | compile one Inkmap placement into a replayable posed-body scenario (`--` → tatbot_sim.inkmap.cli compile) |
-| `sim sample` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/cli.py` | materialize a bounded procedural posed-body scenario suite (`--` → tatbot_sim.inkmap.cli sample) |
+| `sim perception` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/perception_dataset.py` | render audited privileged Inkmap perception labels on CPU (`--` → tatbot_sim.inkmap.cli perception) |
+| `sim perception-audit` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/perception_audit.py` | audit an existing privileged Inkmap perception corpus (`--` → tatbot_sim.inkmap.perception_audit) |
+| `sim pilot-plan` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/pilot.py`, `config/inkmap/synthetic-pilot.json` | write and audit the full Inkmap synthetic-pilot ledger (`--` → tatbot_sim.inkmap.cli pilot-plan) |
+| `sim pilot-audit` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/pilot.py` | audit an existing Inkmap synthetic-pilot ledger (`--` → tatbot_sim.inkmap.cli pilot-audit) |
+| `sim parity` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/parity_evidence.py`, `web/inkmap/tools/surface_parity.ts` | produce browser/simulator Inkmap mapping and mask parity evidence (`--` → tatbot_sim.inkmap.parity_evidence) |
+| `sim materialize` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/cli.py`, `web/inkgen/app.py` | generate and trace immutable Inkgen SVG artifacts before scenario compilation (`--` → tatbot_sim.inkmap.cli materialize-designs) |
+| `sim recipes` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/recipes.py` | expand a frozen artwork library into reproducible scenario recipes (`--` → tatbot_sim.inkmap.cli recipes) |
+| `sim recipes-status` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/recipes.py` | read a recipe ledger and audit its splits without any network (`--` → tatbot_sim.inkmap.cli recipes-status) |
+| `sim resolve` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/cli.py`, `web/inkmap/src/core/lang.ts` | resolve a typed InkLang request into one replayable posed-body scenario (`--` → tatbot_sim.inkmap.cli resolve) |
+| `sim qualify-artwork` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/artwork_qualification.py` | qualify shared artwork paint, duration, and simulated deposition (`--` → tatbot_sim.inkmap.artwork_qualification) |
+| `sim eval dataset` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/eval_cli.py` | score judged expert datasets and write a screen report (`--` → tatbot_sim.eval_cli) |
+| `sim eval policy` | `offline` | this checkout | `scripts/eval/sim_policy_eval.py` | run a checkpoint through a local ManiSkill worker and the async wire (`--` → sim_policy_eval.py) |
 | `sim preview` | `offline` | this checkout | `scripts/sim_preview.py` | preview what the factory would generate, no dataset written (`--` → sim_preview.py (tyro)) |
-| `sim rerender` | `offline` | this checkout | `scripts/sim_rerender.py` | re-render a recorded sim dataset under fresh visual draws (`--` → sim_rerender.py (tyro)) |
+| `sim reach` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/audit_reach.py` | audit tool IK reach over the domain-randomization distribution, headless (`--` → tatbot_sim.audit_reach (tyro)) |
 | `sim cinematic` | `offline` | this checkout | `scripts/sim_cinematic.py` | path-traced takes of a distribution for showing outside the lab (`--` → sim_cinematic.py (tyro)) |
-| `sim audit` | `offline` | this checkout | `scripts/sim_dataset_audit.py` | what a generated dataset / a night of shards actually is (`--` → sim_dataset_audit.py (tyro)) |
-| `sim samples` | `offline` | this checkout | `scripts/sim_dataset_samples.py` | pull frames and short clips out of an existing dataset (`--` → sim_dataset_samples.py (tyro)) |
-| `sim reach` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/audit_reach.py` | can the fitted tool reach everywhere the randomization sends it (`--` → tatbot_sim.audit_reach) |
-| `sim viewer` | `offline` | this checkout | `scripts/render_viewer.py` | build a local viewer for a directory of cinematic renders (`--` → render_viewer.py) |
+| `sim viewer` | `offline` | this checkout | `scripts/render_viewer.py` | build an HTML viewer over render directories with system Python (`--` → render_viewer.py) |
+| `sim audit` | `offline` | this checkout | `scripts/sim_dataset_audit.py` | audit a generated dataset or a night of shards (`--` → sim_dataset_audit.py (tyro)) |
+| `sim samples` | `offline` | this checkout | `scripts/sim_dataset_samples.py` | extract stills and short clips from a dataset or shards (`--` → sim_dataset_samples.py (tyro)) |
+| `sim showcase-artwork` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/showcase.py` | materialize five typed artwork previews for the Inkmap pose gallery (`--` → tatbot_sim.inkmap.showcase) |
+
+### `tatbot travel` — travel demo previews and synthetic tracing episodes
+
+| verb | tier | runs on | wraps | summary |
+| --- | --- | --- | --- | --- |
+| `travel preview` | `offline` | this checkout | native | render a travel episode and optional camera/hand inspection views without a dataset (`--` → travel preview) |
+| `travel generate` | `offline` | this checkout | native | generate travel LeRobot episodes with canonical SOMA surface-address labels (`--` → travel generate) |
+| `travel trace` | `motion-auto` | this checkout | native | scan the practice forearm with the blue wrist camera and follow a stroke of ink at the laser's hover (`--` → trace) |
+
+### `tatbot calib` — native arm measurements and retained overhead registration
+
+| verb | tier | runs on | wraps | summary |
+| --- | --- | --- | --- | --- |
+| `calib register-fit` | `offline` | this checkout | `scripts/vision/native_registration.py` | fit an unadopted overhead registration from original native holds and shared geometry |
 
 ### `tatbot vision` — offline vision processing and calibration
 
 | verb | tier | runs on | wraps | summary |
 | --- | --- | --- | --- | --- |
-| `vision handeye d405` | `offline` | this checkout | `scripts/vision/d405_handeye_plane.py` | plane-route hand-eye for the wrist D405s: fit depth planes against the touched-off paper (`--` → d405_handeye_plane.py) |
-| `vision calib fuse` | `offline` | this checkout | `scripts/vision/fuse_session.py` | fuse a sweep's streams into solver-ready samples (`--` → fuse_session.py) |
-| `vision calib solve` | `offline` | this checkout | `scripts/vision/solve_robot_world.py` | robot-world calibration from wrist tags (`--` → solve_robot_world.py) |
-| `vision calib verify` | `offline` | this checkout | `scripts/vision/verify_calibration.py` | independently verify a board-session calibration (`--` → verify_calibration.py) |
-| `vision calib board` | `offline` | this checkout | `scripts/vision/calibrate_board_session.py` | full-rig calibration from a guided board session (`--` → calibrate_board_session.py) |
+| `vision depth compare` | `offline` | this checkout | `scripts/vision/depth_compare.py` | compare filters on a retained raw scan burst |
+| `vision board witness` | `offline` | this checkout | `scripts/vision/board_witness.py`, `scripts/vision/board_mount_witness.py` | compare retained board depth with independently measured fiducial size |
+| `vision stencil generate` | `offline` | this checkout | `scripts/lib/stencil_generate.py` | generate a stencil frame: the coded flower-of-life (default) or the legacy floral frame, with print sheets |
+| `vision stencil reference` | `offline` | this checkout | `scripts/lib/stencil_reference.py` | export a tracking manifest for existing generated stencil artwork |
+| `vision stencil print` | `offline` | this checkout | `scripts/lib/stencil_print.py` | print sheets for a stencil: millimetre rulers, a pattern and size label, stencil-app PNG and paper PDFs |
+| `vision stencil replay` | `offline` | this checkout | `scripts/vision/stencil_observe.py` | replay known stencil tracking and optional advisory surface candidates |
+| `vision stencil observe` | `sensor` | this checkout | `scripts/vision/stencil_observe.py` | observe known stencils from an existing visiond owner socket |
+| `vision stencil bench` | `offline` | this checkout | `scripts/vision/stencil_bench.py` | score a stencil design and tracker in mm on seeded 2-D transfer scenes (tier 0) |
 | `vision tags print` | `offline` | this checkout | `scripts/vision/generate_wrist_tags.py` | render the wrist-tag print sheet (`--` → generate_wrist_tags.py) |
+| `vision handeye d405` | `offline` | this checkout | `scripts/vision/d405_handeye_plane.py` | plane-route hand-eye for the wrist D405s: fit depth planes against the touched-off paper (`--` → d405_handeye_plane.py) |
 
-### `tatbot inkmap`
+### `tatbot design` — an image or an SVG to a portable design, without a browser
 
 | verb | tier | runs on | wraps | summary |
 | --- | --- | --- | --- | --- |
-| `inkmap dev` | `offline` | this checkout | `scripts/inkmap_dev.sh`, `web/inkmap/package.json` | the tattoo preview app on this machine, pointed at the local generator (`--` → inkmap_dev.sh) |
-| `inkmap build` | `offline` | this checkout | `web/inkmap/package.json` | production bundle into web<path> (the generated web bundle) |
-| `inkmap check` | `offline` | this checkout | `web/inkmap/package.json` | typecheck + core tests (anchor<path>) + build (`--` → scripts<path> web) |
-| `inkmap rig` | `offline` | this checkout | `scripts/inkmap_rig.sh`, `web/inkmap/tools/rig-hbm.py`, `config/inkmap/body-rig.json` | regenerate the checked-in HBM rigs and named poses with Blender (`--` → inkmap_rig.sh) |
+| `design generate` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/design_cli.py`, `web/inkgen/app.py` | ask the generator for one tattoo-flash PNG (starting it if it is not up) (`--` → tatbot_sim.inkmap.design_cli generate) |
+| `design trace` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/design_cli.py`, `web/inkmap/tools/artwork.ts` | retired tracer: use drawingbot generate and import acquired artwork.json (`--` → tatbot_sim.inkmap.design_cli trace) |
+| `design place` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/design_cli.py`, `web/inkmap/tools/artwork.ts` | place one artwork on a plane or cylinder chart as a portable design (`--` → tatbot_sim.inkmap.design_cli place) |
+| `design check` | `offline` | this checkout | `python/tatbot_sim/src/tatbot_sim/inkmap/design_cli.py`, `web/inkmap/tools/artwork.ts` | validate a design with the browser reader and report its material footprint (`--` → tatbot_sim.inkmap.design_cli check) |
 
-### `tatbot profile`
+### `tatbot drawingbot` — DrawingBotV3 stroke experiments and preference review
+
+| verb | tier | runs on | wraps | summary |
+| --- | --- | --- | --- | --- |
+| `drawingbot generate` | `offline` | this checkout | `scripts/drawingbot.sh`, `scripts/drawingbot.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `scripts/lib/drawingbot/artifacts.py`, `scripts/lib/drawingbot/bridge.py`, `scripts/lib/drawingbot/replay.py`, `scripts/lib/drawingbot/recipe.py`, `scripts/lib/drawingbot/container.py`, `scripts/lib/drawingbot/job.py`, `scripts/lib/drawingbot/pens.py` | generate one physical DBV3 drawing with verified settings and a saved native recipe |
+| `drawingbot export` | `offline` | this checkout | `scripts/drawingbot.sh`, `scripts/drawingbot.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `scripts/lib/drawingbot/artifacts.py`, `scripts/lib/drawingbot/bridge.py`, `scripts/lib/drawingbot/replay.py`, `scripts/lib/drawingbot/recipe.py`, `scripts/lib/drawingbot/container.py` | verify and replay native SVG acquisition only, without ROS compilation |
+| `drawingbot container` | `offline` | this checkout | `scripts/drawingbot.sh`, `scripts/drawingbot.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `scripts/lib/drawingbot/artifacts.py`, `scripts/lib/drawingbot/bridge.py`, `scripts/lib/drawingbot/replay.py`, `scripts/lib/drawingbot/recipe.py`, `scripts/lib/drawingbot/container.py` | build, smoke-test or run the private mounted-app acquisition container |
+
+### `tatbot inkmap` — ground InkLang placements and preview tattoos on canonical bodies
+
+| verb | tier | runs on | wraps | summary |
+| --- | --- | --- | --- | --- |
+| `inkmap dev` | `offline` | this checkout | `scripts/inkmap_dev.sh`, `web/inkmap/package.json` | the tattoo preview app on this machine (`--` → inkmap_dev.sh) |
+| `inkmap resolve` | `offline` | this checkout | `web/inkmap/tools/resolve.ts`, `config/inkmap/inklang-resolution.schema.json`, `web/inkmap/package.json` | resolve InkLang placement text to a canonical rest-surface anchor as JSON |
+
+### `tatbot inkgen` — generate tattoo artwork for Inkmap
+
+| verb | tier | runs on | wraps | summary |
+| --- | --- | --- | --- | --- |
+| `inkgen batch` | `offline` | this checkout | `web/inkgen/batch.py`, `python/tatbot_sim/src/tatbot_sim/inkmap/inkgen_materialize.py` | run or resume a resumable artwork generation job (`--` → tatbot_sim.inkmap.cli batch) |
+| `inkgen batch-status` | `offline` | this checkout | `web/inkgen/batch.py` | read a generation job's ledger: requested, accepted, refused, failed, duplicate (`--` → tatbot_sim.inkmap.cli batch-status) |
+
+### `tatbot profile` — inspect and validate hardware profiles
 
 | verb | tier | runs on | wraps | summary |
 | --- | --- | --- | --- | --- |
@@ -99,39 +160,91 @@ Global flags go **before** the noun: `--json`, `--dry-run`, `--explain`, `-q`, `
 | `profile list` | `offline` | this checkout | `scripts/lib/tatbot_profile.py` | the profiles this checkout carries |
 | `profile check` | `offline` | this checkout | `scripts/lib/tatbot_profile.py` | can the resolved profile drive hardware? (exit 3 if not) |
 
+## Compatibility spellings
+
+These deprecated forms translate to the same canonical handler. They warn once on stderr. They remain for at least 30 days and two reviewed releases after 2026-09-05, whichever is longer; removal also requires consumer review and a release note.
+
+| deprecated form | canonical form |
+| --- | --- |
+| `tatbot sim compile --sample N` | `tatbot sim sample --count N` |
+| `tatbot sim preview --reach` | `tatbot sim reach` |
+| `tatbot sim cinematic --viewer DIR…` | `tatbot sim viewer DIR…` |
+| `tatbot sim audit --samples DATASET` | `tatbot sim samples DATASET` |
+| `tatbot sim eval --policy-rollout -- ARGS` | `tatbot sim eval policy -- ARGS` |
+| `tatbot sim eval DATASET…` | `tatbot sim eval dataset DATASET…` |
+
+## Bash completion
+
+Generate and source completion explicitly (Bash 4+):
+
+```sh
+tatbot completion bash > /tmp/tatbot-completion.bash
+source /tmp/tatbot-completion.bash
+```
+
+Generation prints shell code; it does not install anything or edit shell startup files. Completion is generated from the canonical commands, options and choices.
+
+
 ## Examples
 
 ```
-tatbot estop sim
-tatbot teleop analyze <path>
-tatbot teleop replay <path>
-tatbot rollout analyze <path>
-tatbot rollout fk <path>
-tatbot rollout reconcile snapshot
+tatbot completion bash
+tatbot body export --python '<path>' -- --help
+tatbot body bootstrap --spec config/body-models/mhr-soma-v1.json --cache-dir '<path>' --source-dir '<path>'
+tatbot body audit --spec config/body-models/mhr-soma-v1.json --cache-dir '<path>'
+tatbot teleop poses flight.wxtl --out '<path>' --urdf urdf/tatbot.urdf --workspace config/workspace.yaml
+tatbot teleop analyze '<path>'
+tatbot rollout analyze '<path>'
 tatbot rollout bench wire -- --help
-tatbot rollout contract <path>
-tatbot rollout replay-safety -- --help
+tatbot rollout contract '<path>'
 tatbot sim list
-tatbot sim generate paper-draw -- --out-dir <path> --num-episodes 8
-tatbot sim compile config<path> -- --pose reclined-left-arm-supported --output <path>
-tatbot sim sample -- --output-dir <path> --count 64
+tatbot sim generate paper-draw -- --out-dir '<path>' --num-episodes 8
+tatbot sim sample --count 3 -- --output-dir '<path>'
+tatbot sim compile config/inkmap/examples/forearm-placement-v6.json -- --pose reclined-left-arm-supported --output '<path>'
+tatbot sim perception '<path>' -- --output-dir '<path>'
+tatbot sim perception-audit '<path>'
+tatbot sim pilot-plan -- --output-dir '<path>' --seed 42
+tatbot sim pilot-audit '<path>'
+tatbot sim parity -- --output '<path>'
+tatbot sim materialize -- --help
+tatbot sim recipes -- --help
+tatbot sim recipes-status -- --help
+tatbot sim resolve 'a dbv3-orbit on the left forearm' -- --design-id dbv3-orbit --size-mm 30 30 --seed 42 --output-dir '<path>'
+tatbot sim qualify-artwork -- --output-dir '<path>'
+tatbot sim eval dataset '<path>' -- --output-dir '<path>'
+tatbot sim eval policy -- --client-mode hold-control --output-dir '<path>'
 tatbot sim preview -- --help
-tatbot sim rerender -- --help
-tatbot sim cinematic -- --help
-tatbot sim audit -- --help
-tatbot sim samples -- --help
 tatbot sim reach -- --help
-tatbot sim viewer -- --help
-tatbot vision handeye d405 --self-test
-tatbot vision calib fuse <path>
-tatbot vision calib solve <path>
-tatbot vision calib verify <path>
-tatbot vision calib board <path>
+tatbot sim cinematic -- --help
+tatbot sim viewer '<path>' '<path>'
+tatbot sim audit -- --help
+tatbot sim samples '<path>' -- --out '<path>'
+tatbot sim showcase-artwork -- --output-dir '<path>'
+tatbot travel preview -- --help
+tatbot travel generate -- --help
+tatbot travel trace -- scan
+tatbot calib register-fit --python '<path>' --arm blue --capture '<path>' --bundle '<path>' --setup-id table-setup --out '<path>'
+tatbot vision depth compare --capture capture-1.npz --settings filters.json
+tatbot vision board witness --python '<path>' --capture capture.json --inventory fiducials.json --measurement measurement.json --color-sensor wrist_color --out '<path>'
+tatbot vision stencil generate --seed 101 --output '<path>'
+tatbot vision stencil reference --settings stencil/settings.json
+tatbot vision stencil print --seed 101 --output '<path>'
+tatbot vision stencil replay --reference stencil/tracking.json --instance skin-a --frames frames.jsonl --output '<path>'
+tatbot vision stencil observe --reference stencil/tracking.json --instance skin-a --socket '<path>' --sensor rgb --output '<path>'
+tatbot vision stencil bench --seed tatbot-42 --tracker sift
 tatbot vision tags print -- --help
+tatbot vision handeye d405 --self-test
+tatbot design generate 'a swallow carrying a rose' --out '<path>'
+tatbot design trace
+tatbot design place '<path>' --target cylinder --radius-mm 40 --canvas-mm 80 110 --out '<path>'
+tatbot design check '<path>'
+tatbot drawingbot generate '<path>' --out '<path>' --app '<path>'
+tatbot drawingbot export '<path>' --out '<path>' --app '<path>'
+tatbot drawingbot container build --out '<path>'
 tatbot inkmap dev
-tatbot inkmap build
-tatbot inkmap check
-tatbot inkmap rig
+tatbot inkmap resolve --prompt 'left upper inner forearm'
+tatbot inkgen batch --output-dir '<path>' --subject 'a heron' --count 4
+tatbot inkgen batch-status --output-dir '<path>'
 tatbot profile show
 tatbot profile list
 tatbot profile check

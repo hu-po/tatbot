@@ -1,0 +1,18 @@
+{
+  "name": "Tatbot pens",
+  "type": "Tatbot",
+  "distribution_order": "Darkest first (Default)",
+  "distribution_type": "Even weighted",
+  "color_separation": "Default",
+  "pens": [
+    {
+      "id": "black",
+      "name": "Black",
+      "type": "Ballpoint",
+      "enabled": true,
+      "rgba": [0, 0, 0, 255],
+      "weight": 100,
+      "stroke_factor": 1.0
+    }
+  ]
+}

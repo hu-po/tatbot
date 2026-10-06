@@ -1,0 +1,99 @@
+{
+  "manifest": {
+    "producer": {"node": "synthetic-camera-owner", "pid": 1, "sha": "synthetic-source", "run_id": "synthetic-run"},
+    "sequence": 7,
+    "frame_selection": "sdk_queue_drained_post_request",
+    "frames": {
+      "overhead_depth_color": {
+        "metadata": {
+          "sequence": 11,
+          "attributes": {
+            "capture_epoch": "synthetic-epoch",
+            "sdk_queue_flush_generation": "4",
+            "frame_number": "11",
+            "device_serial": "synthetic-device",
+            "device_firmware": "synthetic-firmware",
+            "sensor_timestamp_us": "123400",
+            "frame_timestamp_us": "123410",
+            "actual_exposure_us": "1000",
+            "backend_timestamp_us": "123420",
+            "time_of_arrival_us": "123430"
+          },
+          "timestamps": {"source_domain": "real_sense_global", "source_ns": 123400000,
+                         "normalized_unix_ns": 123400000, "host_unix_ns": 555000000}
+        },
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "payload_bytes": 3
+      },
+      "overhead_depth_depth": {
+        "metadata": {
+          "sequence": 11,
+          "attributes": {
+            "capture_epoch": "synthetic-epoch",
+            "sdk_queue_flush_generation": "4",
+            "frame_number": "11",
+            "device_serial": "synthetic-device",
+            "device_firmware": "synthetic-firmware",
+            "sensor_timestamp_us": "123400",
+            "actual_exposure_us": "1000"
+          },
+          "timestamps": {"source_domain": "real_sense_global", "source_ns": 123400000,
+                         "normalized_unix_ns": 123400000, "host_unix_ns": 555000000}
+        },
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "payload_bytes": 2
+      }
+    }
+  },
+  "diagnostic": {
+    "schema": "tatbot.device-exposure-clock/1",
+    "status": "device_to_owner_unverified",
+    "producer": {"node": "synthetic-camera-owner", "pid": 1, "sha": "synthetic-source", "run_id": "synthetic-run"},
+    "capture_epoch": "synthetic-epoch",
+    "set_sequence": 7,
+    "frame_sequence": 11,
+    "frame_selection": "sdk_queue_drained_post_request",
+    "selection_generation": 4,
+    "device_clock_id": "realsense-frame-metadata-device-us-unverified",
+    "owner_clock_id": "systemtime-unix-realtime-ns",
+    "frames": {
+      "overhead_depth_color": {
+        "record_sequence": 11,
+        "device_frame_number": 11,
+        "device_serial": "synthetic-device",
+        "device_firmware": "synthetic-firmware",
+        "source_domain": "real_sense_global",
+        "source_ns": 123400000,
+        "normalized_unix_ns": 123400000,
+        "host_processed_unix_ns": 555000000,
+        "sensor_timestamp_us": 123400,
+        "frame_timestamp_us": 123410,
+        "actual_exposure_us": 1000,
+        "backend_timestamp_us": 123420,
+        "time_of_arrival_us": 123430,
+        "payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "payload_bytes": 3
+      },
+      "overhead_depth_depth": {
+        "record_sequence": 11,
+        "device_frame_number": 11,
+        "device_serial": "synthetic-device",
+        "device_firmware": "synthetic-firmware",
+        "source_domain": "real_sense_global",
+        "source_ns": 123400000,
+        "normalized_unix_ns": 123400000,
+        "host_processed_unix_ns": 555000000,
+        "sensor_timestamp_us": 123400,
+        "frame_timestamp_us": null,
+        "actual_exposure_us": 1000,
+        "backend_timestamp_us": null,
+        "time_of_arrival_us": null,
+        "payload_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "payload_bytes": 2
+      }
+    },
+    "owner_exposure_interval_ns": null,
+    "device_to_owner_uncertainty_ns": null,
+    "exposure_clock_authority": false
+  }
+}

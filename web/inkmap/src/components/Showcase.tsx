@@ -7,33 +7,22 @@ interface ShowcaseSlide {
   title: string;
   description: string;
   scenario: string;
-  probe_max_residual_mm: number;
+  artwork_id: string;
 }
 
 interface ShowcaseManifest {
-  schema_version: 1;
+  schema_version: 2;
   title: string;
   seed: number;
   source_commit: string;
   generated_at: string;
   validation: {
-    accepted: number;
-    attempts: number;
-    rejection_rate: number;
+    scenarios: number;
+    trace_compiler_version: number;
+    body_asset_sha256: string;
+    pose_asset_sha256: string;
     reach_audited: boolean;
-    max_skinning_error_mm: number;
-    pose_quality: {
-      max_joint_rotation_deg: number;
-      edge_length_ratio: [number, number];
-      triangle_area_ratio: [number, number];
-    };
-    anatomy: {
-      knee_angle_deg: [number, number];
-      knee_bend_offset_m: [number, number];
-      max_knee_off_axis_m: number;
-      supported_elbow_angle_deg: [number, number];
-      supported_wrist_angle_deg: [number, number];
-    };
+    visual_review: "pending" | "accepted";
   };
   coverage: { bodies: number; poses: number; sites: number; designs: number };
   slides: ShowcaseSlide[];
@@ -51,6 +40,7 @@ export function ShowcasePanel() {
   const focus = useStore((s) => s.showcaseFocus);
   const toggleFocus = useStore((s) => s.toggleShowcaseFocus);
   const setError = useStore((s) => s.setError);
+  const atlasReady = useStore((s) => Boolean(s.atlas));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -63,14 +53,16 @@ export function ShowcasePanel() {
 
   const slide = manifest?.slides[active];
   useEffect(() => {
-    if (!slide) return;
+    // A pose change reloads the atlas. Once this artwork has been admitted,
+    // that reload must not fetch it again and reset the user's camera focus.
+    if (!slide || !atlasReady || scenario?.design.id === slide.artwork_id) return;
     const controller = new AbortController();
     fetch(`showcase/${slide.scenario}`, { signal: controller.signal })
       .then((response) => response.ok ? response.json() : Promise.reject(new Error(`${slide.scenario}: HTTP ${response.status}`)))
       .then(loadScenario)
       .catch((error: Error) => { if (error.name !== "AbortError") setError(error.message); });
     return () => controller.abort();
-  }, [slide, loadScenario, setError]);
+  }, [slide, loadScenario, setError, atlasReady, scenario?.design.id]);
 
   const tracePoints = useMemo(
     () => scenario ? countTracePoints(scenario.trace.strokes) : 0,
@@ -82,9 +74,9 @@ export function ShowcasePanel() {
   return (
     <div className="showcase-panel">
       <header className="showcase-header">
-        <div className="showcase-kicker"><span className="live-dot" /> procedural sim · milestone 01</div>
+        <div className="showcase-kicker"><span className="live-dot" /> shared tattoo artwork</div>
         <h1>{manifest?.title ?? "Rigged-body tattoo scenarios"}</h1>
-        <p>Inspect the real Inkmap meshes as one surface-anchor contract moves from tattoo intent to a posed, simulation-ready toolpath.</p>
+        <p>Inspect simple tattoo designs across five body poses, with their compiled drawing paths.</p>
       </header>
 
       <section className="showcase-metrics" aria-label="delivered coverage">
@@ -120,12 +112,12 @@ export function ShowcasePanel() {
           <div className="section-label"><span>02</span> resolved scenario</div>
           <p>{slide.description}</p>
           <dl>
-            <div><dt>body</dt><dd>{scenario.body.id.replace("hbm-", "").replace("-stylized", "")}</dd></div>
+            <div><dt>body</dt><dd>MHR through SOMA</dd></div>
             <div><dt>pose</dt><dd>{scenario.pose.id.replaceAll("-", " ")}</dd></div>
             <div><dt>tattoo</dt><dd>{scenario.design.name} · {scenario.placement.size_mm.map(Math.round).join(" × ")} mm</dd></div>
             <div><dt>surface</dt><dd>{site?.laterality} {site?.id?.replaceAll("_", " ")}</dd></div>
             <div><dt>toolpath</dt><dd>{scenario.trace.strokes.length} strokes · {tracePoints.toLocaleString()} anchors</dd></div>
-            <div><dt>reach probe</dt><dd>{slide.probe_max_residual_mm.toFixed(4)} mm max</dd></div>
+            <div><dt>qualification</dt><dd>offline geometry only</dd></div>
           </dl>
           <div className="showcase-view-controls">
             <button className={focus ? "trace-toggle active" : "trace-toggle"} type="button" onClick={toggleFocus}>
@@ -143,25 +135,20 @@ export function ShowcasePanel() {
         <div className="section-label"><span>03</span> contract chain</div>
         <ol className="contract-chain">
           <li className="done"><span>Inkmap</span><small>SVG + body site</small></li>
-          <li className="done"><span>Rig</span><small>named pose</small></li>
+          <li className="done"><span>SOMA</span><small>named pose</small></li>
           <li className="done"><span>Surface</span><small>face + barycentric</small></li>
           <li className="done"><span>Trace</span><small>metric toolpath</small></li>
-          <li className="next"><span>Episode</span><small>GPU shard pending</small></li>
+          <li className="next"><span>Execution</span><small>separate measured surface</small></li>
         </ol>
       </section>
 
       {manifest && (
         <section className="evidence-card">
           <div><span className="status-pill">CPU validated</span><span>seed {manifest.seed}</span></div>
-          <strong>{manifest.validation.accepted} accepted / {manifest.validation.attempts} attempts</strong>
-          <p>{(manifest.validation.rejection_rate * 100).toFixed(2)}% explicit reach rejection · browser/Python skinning ≤ {manifest.validation.max_skinning_error_mm.toFixed(1)} mm</p>
-          <p>
-            pose gate: joints ≤ {manifest.validation.pose_quality.max_joint_rotation_deg.toFixed(1)}° · edges {manifest.validation.pose_quality.edge_length_ratio.map((value) => value.toFixed(3)).join("–")}× · areas {manifest.validation.pose_quality.triangle_area_ratio.map((value) => value.toFixed(3)).join("–")}×
-          </p>
-          <p>
-            anatomy gate: knees {manifest.validation.anatomy.knee_angle_deg.map((value) => value.toFixed(1)).join("–")}° with {manifest.validation.anatomy.knee_bend_offset_m.map((value) => Math.round(value * 1000)).join("–")} mm sagittal bend · elbows {manifest.validation.anatomy.supported_elbow_angle_deg.map((value) => value.toFixed(1)).join("–")}° · wrists {manifest.validation.anatomy.supported_wrist_angle_deg.map((value) => value.toFixed(1)).join("–")}°
-          </p>
-          <p className="qualification">Kinematic-contact validation only. No deformable skin, MediaPipe input, powered arm, or GPU episode is represented here.</p>
+          <strong>{manifest.validation.scenarios} SOMA-native scenarios · trace compiler v{manifest.validation.trace_compiler_version}</strong>
+          <p>body {manifest.validation.body_asset_sha256.slice(0, 12)}… · poses {manifest.validation.pose_asset_sha256.slice(0, 12)}…</p>
+          <p>Human visual review: {manifest.validation.visual_review}. Reach audit: {manifest.validation.reach_audited ? "recorded" : "not run"}.</p>
+          <p className="qualification">Offline nominal-body preview only. No measured-surface, reach, powered-arm, contact-mechanics, or human-use acceptance is represented here.</p>
         </section>
       )}
 

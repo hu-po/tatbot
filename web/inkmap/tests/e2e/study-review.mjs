@@ -1,0 +1,75 @@
+import { chromium } from "playwright";
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fixtureReview } from "../review-fixture.ts";
+import { canonicalDigest } from "../../src/core/human-representation/schema.ts";
+
+const url = process.argv[2] ?? "http://127.0.0.1:4181/";
+const out = process.env.INKMAP_E2E_EVIDENCE ? join(process.env.INKMAP_E2E_EVIDENCE, "study-review") : mkdtempSync(join(tmpdir(), "inkmap-review-"));
+mkdirSync(out, { recursive: true });
+const bundle = await fixtureReview();
+const path = join(out, "review.json"); writeFileSync(path, JSON.stringify(bundle));
+const browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--use-gl=swiftshader"] });
+const errors = [];
+async function open(page) {
+  await page.getByRole("button", { name: "File", exact: true }).click();
+  await page.getByRole("button", { name: "Review study…", exact: true }).click();
+  await page.getByLabel("Open review JSON", { exact: true }).setInputFiles(path);
+  await page.waitForFunction(() => document.querySelectorAll(".review-card").length === 2);
+}
+const preference = (page, index, text) => page.locator(".review-card").nth(index).getByRole("button", { name: text, exact: true });
+try {
+  const context = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+  const page = await context.newPage(); page.on("pageerror", e => errors.push(e.message));
+  await page.goto(url);
+  await page.waitForFunction(() => { const s = window.__inkmap?.getState(); return s?.projectReady && s.designs.length; }, null, { timeout: 120_000 });
+  await page.evaluate(() => { const s = window.__inkmap.getState(); s.startPlacing(s.designs[0].id); s.nudgeRotation(.2); });
+  const draft = await page.evaluate(() => { const s = window.__inkmap.getState(); return { placing: s.placing, placements: s.placements, draft: s.draft }; });
+  await open(page);
+  await preference(page, 0, "Like").click();
+  assert.equal(await preference(page, 0, "Like").getAttribute("aria-pressed"), "true");
+  await page.locator(".review-card").first().getByRole("button", { name: "Add to library" }).click();
+  await page.waitForFunction(hash => window.__inkmap.getState().designs.some(d => d.id === `art-${hash}`), bundle.entries[0].artwork_sha256);
+  await page.keyboard.press("w"); await page.keyboard.press("Escape");
+  assert.deepEqual(await page.evaluate(() => { const s = window.__inkmap.getState(); return { placing: s.placing, placements: s.placements, draft: s.draft }; }), draft, "review keys or import changed pending placement");
+  await page.reload(); await open(page);
+  assert.equal(await preference(page, 0, "Like").getAttribute("aria-pressed"), "true", "feedback lost on reload");
+  const second = await context.newPage(); await second.goto(url); await open(second);
+  await preference(second, 1, "Dislike").click();
+  await page.waitForFunction(() => document.querySelectorAll(".review-card.dislike").length === 1);
+  const download = page.waitForEvent("download"); await page.getByRole("button", { name: "Download feedback" }).click();
+  const downloaded = await download; const feedbackPath = join(out, "feedback.json"); await downloaded.saveAs(feedbackPath);
+  const feedback = JSON.parse(readFileSync(feedbackPath, "utf8"));
+  assert.equal(feedback.observations.length, 2); assert.equal(feedback.review_sha256, bundle.content_sha256);
+  assert.equal(feedback.content_sha256, await canonicalDigest(feedback));
+  await second.close();
+  await page.evaluate(() => {
+    const set = Storage.prototype.setItem;
+    window.restoreFeedbackWrites = () => { Storage.prototype.setItem = set; };
+    Storage.prototype.setItem = function(k, v) { if (k.startsWith("inkmap-review:")) throw new DOMException("Quota exhausted", "QuotaExceededError"); return set.call(this, k, v); };
+  });
+  await preference(page, 0, "Dislike").click();
+  await page.getByRole("alert").filter({ hasText: "Feedback save failed" }).waitFor();
+  assert.equal(await page.getByLabel("Open review JSON", { exact: true }).isDisabled(), true);
+  const recovery = page.waitForEvent("download"); await page.getByRole("button", { name: "Download feedback" }).click();
+  await (await recovery).saveAs(join(out, "recovery-feedback.json"));
+  assert.equal(JSON.parse(readFileSync(join(out, "recovery-feedback.json"), "utf8")).observations.length, 3);
+  await page.evaluate(() => window.restoreFeedbackWrites());
+  await page.getByRole("button", { name: "Retry feedback save" }).click();
+  assert.equal(await page.getByLabel("Open review JSON", { exact: true }).isDisabled(), false);
+  await preference(page, 0, "Clear").click();
+  assert.equal(await preference(page, 0, "Clear").getAttribute("aria-pressed"), "true");
+  const corrupted = { ...bundle, name: "Tampered" }; const bad = join(out, "bad-review.json"); writeFileSync(bad, JSON.stringify(corrupted));
+  await page.getByLabel("Open review JSON", { exact: true }).setInputFiles(bad);
+  await page.getByRole("alert").filter({ hasText: "digest differs" }).waitFor();
+  assert.equal(await page.locator(".review-card").count(), 2, "failed import discarded current review");
+  await page.screenshot({ path: join(out, "desktop.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.locator("dialog").evaluate(e => e.scrollWidth <= e.clientWidth), true, "mobile review overflows horizontally");
+  await page.screenshot({ path: join(out, "mobile.png") });
+  assert.deepEqual(errors, []);
+  writeFileSync(join(out, "result.json"), JSON.stringify({ passed: true, observations: 4, errors }, null, 2));
+  console.log(`study review browser evidence: ${out}`);
+} finally { await browser.close(); }

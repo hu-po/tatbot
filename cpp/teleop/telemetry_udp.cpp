@@ -77,8 +77,8 @@ std::pair<std::string, std::string> split_endpoint(const std::string & endpoint)
 
 }  // namespace
 
-UdpPublisher::UdpPublisher(const std::string & endpoint, double max_fps)
-: endpoint_(endpoint)
+UdpPublisher::UdpPublisher(const std::string & endpoint, double max_fps, bool right_leader)
+: right_leader_(right_leader), endpoint_(endpoint)
 {
   if (!std::isfinite(max_fps) || max_fps <= 0.0 || max_fps > 120.0) {
     throw std::runtime_error("telemetry FPS must be in (0, 120]");
@@ -138,7 +138,9 @@ void UdpPublisher::publish(
   }
   FixedJsonWriter message(payload_.data(), payload_.size());
   const bool encoded =
-    message.append("{\"magic\":\"tatbot-teleop-joints\",\"version\":1,\"timestamp_ns\":") &&
+    message.append(right_leader_ ?
+      "{\"magic\":\"tatbot-teleop-joints\",\"version\":2,\"right_leader\":true,\"timestamp_ns\":" :
+      "{\"magic\":\"tatbot-teleop-joints\",\"version\":1,\"timestamp_ns\":") &&
     message.number(timestamp_ns) && message.append(",\"sequence\":") &&
     message.number(sequence) && message.append(",\"leader_pos\":") &&
     message.array(leader_pos) && message.append(",\"follower_pos\":") &&

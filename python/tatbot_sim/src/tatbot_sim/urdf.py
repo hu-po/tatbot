@@ -2,12 +2,11 @@
 
 The stock ``wxai_follower.urdf`` already carries the UPPER D405 with exactly
 the transforms the real rig uses (verified against ``urdf/tatbot.urdf``:
-identical mount, bracket pitch, and link offsets). Two things are missing, and
-both are added here:
+identical mount, bracket pitch, and link offsets). This builder adds:
 
-1. **The lower D405.** On the real arm it is the same bracket rolled 180 deg
-   about the mount, so the chain is duplicated with ``rpy="3.14159 0 0"`` on
-   the mount joint.
+1. **The historical lower D405**, only for ``legacy-two-view``. Its bracket
+   is rolled 180 degrees about the mount. The deployment profile has one
+   camera per arm and never adds this historical camera.
 2. **The fitted tattoo tool**, built from its datasheet in ``config/tools/``
    (which one is fitted comes from ``config/workspace.yaml``; see
    :mod:`tatbot_sim.tools`). The profile of revolution in that file becomes
@@ -17,10 +16,9 @@ both are added here:
    Since 2026-08-30 the tool sits in the bore of a printed three-part chain
    (cube plate, EE base, angled pen mount) bolted to the LEFT finger
    carriage's front face; the bore runs 45 deg between the carriage's -y
-   and +x, so with the wrist rolled 90 deg (cube up, cameras a left/right
-   pair) the tip points forward-and-down. The mount transform is
+   and +x, so with the wrist rolled 90 deg (cube up) the tip points forward-and-down. The mount transform is
    GRAFTED from ``urdf/tatbot.urdf`` (``right/tool_mount_joint``, hand-placed
-   there from calipers) rather than re-derived here, so the real rig and the
+   there from the installed CAD datum) rather than re-derived here, so the real rig and the
    sim cannot disagree about where the tool is. The right finger is physically
    removed and so is the left fingertip: both finger links stay (the upstream
    agent looks them up by name, and the mount chain hangs off the left one)
@@ -31,13 +29,15 @@ both are added here:
    one small physical tip collision at its resolved TCP. Its measured mass
    belongs to the real arm's gravity compensation.
 
-The tool is welded to **link_6 at the mount's rest position**, not to the
-carriage link it rides on the real arm. The carriage joint is kept and
-position-held at ``carriage_rest_m`` (it is a real, safety-owned DOF now and
-the 7th action channel), but putting the tool downstream of it would make the
-IK chain seven-dimensional and let the solver "reach" with the carriage. In
-sim the carriage never leaves rest, so the two placements coincide; the sim
-does not model the retract.
+The tool hangs off **the carriage link it rides on the real arm**, through the
+identity ``left_gripper_joint``, so the prismatic ``left_carriage_joint`` is an
+ancestor of the TCP and the IK chain is seven-dimensional — the same chain the
+executor solves (``cpp/teleop/square_probe.cpp``, ``weighted_carriage_dls``).
+Until 2026-09-08 it was welded to ``link_6`` at the mount's rest position
+instead, to keep the chain at six; at ``carriage_rest_m`` the two placements
+are the same pose, so that weld is exactly what this reaches with the joint at
+rest. Whether the solver may *use* the extra axis is the expert's decision, not
+the URDF's. The sim still does not model the safety retract.
 
 Rather than vendoring the arm meshes, the derived URDF is written next to the
 downloaded asset so its relative mesh paths keep resolving; our two adapter
@@ -51,14 +51,14 @@ holds roughly 0.1 rad off any commanded pose no matter how stiff the servo.
 
 from __future__ import annotations
 
+import os
 import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from mani_skill import ASSET_DIR
-
 from tatbot_sim.repo import repo_root
-from tatbot_sim.tools import active_tool, arm_golden_path, tool_source_paths
+from tatbot_sim.resolved import ResolvedConfig, resolve
+from tatbot_sim.tools import arm_golden_path
 
 REPO = repo_root()
 FIDUCIAL_INVENTORY_RELPATH = "config/fiducials.json"
@@ -80,25 +80,9 @@ def rig_from_follower_base():
     copying the mount offset into the camera and benchmark code.
     """
     import numpy as np
-    from transforms3d.euler import euler2mat
+    from ink_spec import base_from_root_matrix
 
-    root = ET.parse(REPO / "urdf/tatbot.urdf").getroot()
-    matches = []
-    for joint in root.findall("joint"):
-        child = joint.find("child")
-        if child is not None and child.get("link") == "right/base_link":
-            matches.append(joint)
-    if len(matches) != 1 or matches[0].get("type") != "fixed":
-        raise ValueError("canonical URDF must have one fixed mount for right/base_link")
-    origin = matches[0].find("origin")
-    origin_xyz = origin.get("xyz", "0 0 0") if origin is not None else "0 0 0"
-    origin_rpy = origin.get("rpy", "0 0 0") if origin is not None else "0 0 0"
-    xyz = [float(value) for value in origin_xyz.split()]
-    rpy = [float(value) for value in origin_rpy.split()]
-    transform = np.eye(4)
-    transform[:3, :3] = euler2mat(*rpy)
-    transform[:3, 3] = xyz
-    return transform
+    return np.linalg.inv(base_from_root_matrix(REPO, "right"))
 
 
 def _wrist_inventory() -> tuple[tuple[int, ...], float, str, str]:
@@ -122,8 +106,12 @@ def _wrist_inventory() -> tuple[tuple[int, ...], float, str, str]:
 
 
 
-STOCK_URDF = Path(ASSET_DIR) / "robots/widowxai/wxai_follower.urdf"
-STOCK_SRDF = Path(ASSET_DIR) / "robots/widowxai/wxai_follower.srdf"
+def asset_dir() -> Path:
+    # Match ManiSkill's public cache layout without importing its runtime.
+    import os
+    return Path(os.environ.get("MS_ASSET_DIR", Path.home() / ".maniskill")) / "data"
+
+
 def derived_paths(
     tool_id: str,
     calibration_delta=None,
@@ -142,7 +130,7 @@ def derived_paths(
         suffix = "-cal" + hashlib.sha256(token.encode()).hexdigest()[:10]
     if source_fingerprint:
         suffix += "-src" + source_fingerprint[:10]
-    stem = Path(ASSET_DIR) / "robots/widowxai" / f"wxai_tatbot_{tool_id}{suffix}"
+    stem = asset_dir() / "robots/widowxai" / f"wxai_tatbot_{tool_id}{suffix}"
     return stem.with_suffix(".urdf"), stem.with_suffix(".srdf")
 MESH_SUBDIR = "meshes/tatbot_ee"
 REPO_MESHES = REPO / "urdf/meshes/ee"
@@ -168,28 +156,18 @@ def _joint_origin(root, name):
     raise ValueError(f"urdf/tatbot.urdf has no joint {name!r}")
 
 
-def mount_in_link6(carriage_m: float) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
-    """(xyz, rpy) of right/tool_mount in link_6 with the carriage at ``carriage_m``."""
-    import numpy as np
-    from transforms3d.euler import euler2mat, mat2euler
+def mount_in_gripper_left() -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    """(xyz, rpy) of right/tool_mount in its real parent, ``gripper_left``.
 
+    The carriage carries the mount on the real arm, so hanging the tool here
+    rather than composing the slide into a link_6 weld is what puts the
+    prismatic joint in the IK chain. ``left_gripper_joint`` is identity and
+    fixed in both URDFs, so this is exactly the real rig's mount origin.
+    """
     root = ET.parse(REPO / "urdf/tatbot.urdf").getroot()
-    _, c_xyz, c_rpy, c_axis = _joint_origin(root, "right/left_carriage_joint")
-    _, g_xyz, g_rpy, _ = _joint_origin(root, "right/left_gripper_joint")
-    _, m_xyz, m_rpy, _ = _joint_origin(root, "right/tool_mount_joint")
+    _, xyz, rpy, _ = _joint_origin(root, "right/tool_mount_joint")
+    return (float(xyz[0]), float(xyz[1]), float(xyz[2])), (float(rpy[0]), float(rpy[1]), float(rpy[2]))
 
-    def tf(xyz, rpy):
-        t = np.eye(4)
-        t[:3, :3] = euler2mat(*rpy)
-        t[:3, 3] = xyz
-        return t
-
-    slide = np.eye(4)
-    slide[:3, 3] = np.asarray(c_axis, float) * carriage_m
-    pose = tf(c_xyz, c_rpy) @ slide @ tf(g_xyz, g_rpy) @ tf(m_xyz, m_rpy)
-    xyz_vec = pose[:3, 3]
-    rpy_vec = mat2euler(pose[:3, :3])
-    return (float(xyz_vec[0]), float(xyz_vec[1]), float(xyz_vec[2])), (float(rpy_vec[0]), float(rpy_vec[1]), float(rpy_vec[2]))
 
 def _el(tag, **attrs):
     return ET.Element(tag, dict(attrs))
@@ -331,8 +309,8 @@ def tool_tcp_m() -> tuple[float, float, float]:
     return tool_module.resolved_geometry().tcp_offset_m
 
 
-def _add_tool(robot, spec, carriage_m: float):
-    """Weld the fitted tool to link_6 where the mount sits at carriage rest.
+def _add_tool(robot, spec, geometry):
+    """Hang the fitted tool off the carriage, exactly as the real arm does.
 
     ``tool_mount`` is the same frame as the real URDF's ``right/tool_mount``
     (bore face, +z along the bore); the tool hangs off it exactly as
@@ -348,11 +326,12 @@ def _add_tool(robot, spec, carriage_m: float):
     every dataset then records (the same cross-tool inheritance e61193e
     fixed in the metadata).
     """
-    tool_module = __import__("tatbot_sim.tools", fromlist=["resolved_geometry"])
-    geometry = tool_module.resolved_geometry(spec)
-    mount_xyz, mount_rpy = mount_in_link6(carriage_m)
+    mount_xyz, mount_rpy = mount_in_gripper_left()
     _add_link(robot, "tool_mount")
-    _add_joint(robot, "tool_mount_joint", "link_6", "tool_mount", mount_xyz, mount_rpy)
+    # gripper_left is the carriage's child, so the prismatic joint is now an EE
+    # ancestor and the IK chain is seven-dimensional. At carriage 0 this reaches
+    # the identical pose the old link_6 weld baked in.
+    _add_joint(robot, "tool_mount_joint", "gripper_left", "tool_mount", mount_xyz, mount_rpy)
     _add_link(robot, "tattoo_pen", visuals=tool_visuals(spec))
     # The point itself: the TCP for IK and for ink deposition. The link names
     # stay generic across tools — they are in every trained policy's IK chain.
@@ -373,7 +352,7 @@ EE_MOUNT_LINK = "right/ee_mount"
 
 
 def _graft_ee_mount(robot, mesh_dir: Path):
-    """Copy the printed EE mount chain (cube plate, EE base, pen mount) from
+    """Copy the installed V17 EE (cradle/brace, clamp cap, tag carrier) from
     the real URDF onto gripper_left, and strip the (removed) fingertip.
 
     The real URDF is the one place the chain is described (hole patterns from
@@ -446,44 +425,68 @@ def _drop_right_finger(robot, srdf_path: Path | None):
         for pair in list(root.findall("disable_collisions")):
             if pair.get("link1") in RIGHT_FINGER_LINKS or pair.get("link2") in RIGHT_FINGER_LINKS:
                 root.remove(pair)
-        tree.write(srdf_path, encoding="utf-8", xml_declaration=True)
+        _write_atomic(tree, srdf_path)
 
 
-# --- fiducial plates (2026-08-22) -------------------------------------------
-# The rig carries FOUR wrist fiducials (follower EE, ids 3/6/7/8): 16h5 patterns,
-# 56 mm black square on 4 mm white foamboard with ~10 mm margin (76 mm
-# plates). Tag identities and their caliper edge come from the canonical
-# config/fiducials.json inventory.
-# Jaw mounting poses come from config/wrist_tags_measured.json (see
-# _add_wrist_plates). The base-ring placeholders are only the fallback when
-# that file is absent; pending layouts may render but never benchmark.
-PLATE_SIZE = 0.076
+def _write_atomic(tree, path: Path) -> None:
+    """Write ``tree`` to ``path`` through a temp file and one rename.
+
+    Two sim processes starting together in a fresh checkout used to race
+    here: one parsed the SRDF while the other was still writing it and died
+    on ``ParseError: no element found`` (concurrent workers). A rename is
+    atomic on the same filesystem, so a reader sees the old file or the
+    complete new one, never a partial write.
+    """
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tree.write(tmp, encoding="utf-8", xml_declaration=True)
+    os.replace(tmp, path)
+
+
+# --- fiducial plates -------------------------------------------------------
+# Identity and scale come from the inventory; placement requires a measured
+# layout. One white module per side is the rendered quiet zone.
+def _wrist_pattern():
+    import json
+
+    import cv2
+    data = json.loads(_fiducial_inventory_path().read_text())
+    wrist = data['targets']['wrist']
+    family = wrist.get('family', data['family'] if data['schema_version'] == 1 else None)
+    codes = {'apriltag_16h5': cv2.aruco.DICT_APRILTAG_16H5,
+             'apriltag_36h11': cv2.aruco.DICT_APRILTAG_36H11}
+    if family not in codes:
+        raise ValueError(f'unsupported wrist family {family!r}')
+    dictionary = cv2.aruco.getPredefinedDictionary(codes[family])
+    plate_size = float(wrist['edge_m']) * (1 + 2 / (dictionary.markerSize + 2))
+    return dictionary, plate_size
+
+
 PLATE_THICK = 0.004
 
 
 def _write_plate_assets(mesh_dir: Path, ids: tuple[int, ...], tag_edge_m: float) -> None:
-    """Per tag id: a texture PNG (white plate, centred 16h5 marker) and a UV'd
+    """Per tag id: a texture PNG (white plate, centred configured marker) and a UV'd
     OBJ quad the size of the plate face. Textured URDF visuals need real UVs,
     which primitive boxes don't carry — hence the tiny mesh."""
     import cv2
     import numpy as np
 
     px_per_m = 5000  # 5 px/mm keeps the 4x4 tag modules crisp
-    plate_px = round(PLATE_SIZE * px_per_m)
+    dictionary, plate_size = _wrist_pattern()
+    plate_px = round(plate_size * px_per_m)
     tag_px = round(tag_edge_m * px_per_m)
     margin = (plate_px - tag_px) // 2
-    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_16H5)
-    half = PLATE_SIZE / 2
+    half = plate_size / 2
     for tag_id in ids:
-        png = mesh_dir / f"tag16h5_{tag_id}.png"
-        # 16h5 = 6 modules across; render at an exact multiple, resize NEAREST
-        marker = cv2.aruco.generateImageMarker(dictionary, tag_id, 6 * 100)
+        png = mesh_dir / f"tag_{tag_id}.png"
+        # Render whole modules, then resize to physical dimensions.
+        marker = cv2.aruco.generateImageMarker(dictionary, tag_id, (dictionary.markerSize + 2) * 100)
         marker = cv2.resize(marker, (tag_px, tag_px), interpolation=cv2.INTER_NEAREST)
         sheet = np.full((plate_px, plate_px), 255, dtype=np.uint8)
         sheet[margin : margin + tag_px, margin : margin + tag_px] = marker
         cv2.imwrite(str(png), sheet)
         (mesh_dir / f"plate_{tag_id}.mtl").write_text(
-            f"newmtl tagface\nKd 1 1 1\nmap_Kd tag16h5_{tag_id}.png\n"
+            f"newmtl tagface\nKd 1 1 1\nmap_Kd tag_{tag_id}.png\n"
         )
         (mesh_dir / f"plate_{tag_id}.obj").write_text(
             f"mtllib plate_{tag_id}.mtl\n"
@@ -497,10 +500,11 @@ def _write_plate_assets(mesh_dir: Path, ids: tuple[int, ...], tag_edge_m: float)
 
 def _plate_link(robot, tag_id: int) -> str:
     """One fiducial plate, tag plane at the link's z=0 facing +z, board behind."""
+    _, plate_size = _wrist_pattern()
     name = f"fiducial_plate_{tag_id}"
     _add_link(robot, name, visuals=[
         ((0, 0, -PLATE_THICK / 2), (0, 0, 0),
-         _el("box", size=f"{PLATE_SIZE} {PLATE_SIZE} {PLATE_THICK}"),
+         _el("box", size=f"{plate_size} {plate_size} {PLATE_THICK}"),
          "0.96 0.96 0.95 1"),
         ((0, 0, 0.0003), (0, 0, 0),
          _el("mesh", filename=f"{MESH_SUBDIR}/plate_{tag_id}.obj", scale="1 1 1"),
@@ -513,8 +517,7 @@ def _wrist_tag_poses() -> tuple[str, dict[int, tuple[list[float], list[float]]]]
     """Current tag poses relative to their configured rigid parent link.
 
     Calibrated files come from ``export_wrist_tags.py``. A pending file may
-    retain provisional visualization poses, but emits a warning before those
-    poses are placed into the derived simulator URDF.
+    retain historical poses, but these must not place stickers on a new mount.
     """
     import json
 
@@ -535,10 +538,11 @@ def _wrist_tag_poses() -> tuple[str, dict[int, tuple[list[float], list[float]]]]
         import warnings
 
         warnings.warn(
-            "rendering provisional wrist geometry; do not use it for tracking benchmarks",
+            "wrist placement pending calibration; omitting unmeasured tag visuals",
             RuntimeWarning,
             stacklevel=2,
         )
+        return expected_parent.removeprefix("right/"), {}
     import math
 
     poses = {}
@@ -575,32 +579,7 @@ def _add_base_plates(robot, ids: tuple[int, ...]):
                    (0.15 * math.cos(a), 0.15 * math.sin(a), PLATE_THICK), (0, 0, a))
 
 
-def build_tatbot_urdf(force: bool = False) -> str:
-    """Write (if needed) and return the path to the derived URDF."""
-    if not STOCK_URDF.exists():
-        raise FileNotFoundError(
-            f"{STOCK_URDF} missing — run `python -m mani_skill.utils.download_asset widowxai -y`"
-        )
-    tool = active_tool()
-    from tatbot_sim.tools import calibration_delta_m
-    wrist_layout_json = REPO_MESHES.parents[2] / "config" / "wrist_tags_measured.json"
-    fiducial_inventory = _fiducial_inventory_path()
-    # The public simulation fixtures and a private calibrated profile can share
-    # one ManiSkill asset cache. Key the derived robot by content so neither
-    # checkout can reuse the other's newer file merely because its mtime wins.
-    inputs = [STOCK_URDF, Path(__file__), fiducial_inventory, REPO / "urdf/tatbot.urdf",
-              arm_golden_path()] + tool_source_paths() \
-        + ([STOCK_SRDF] if STOCK_SRDF.exists() else []) \
-        + ([wrist_layout_json] if wrist_layout_json.exists() else [])
-    import hashlib
-    source_hash = hashlib.sha256()
-    for path in inputs:
-        source_hash.update(path.read_bytes())
-        source_hash.update(b"\0")
-    derived_urdf, derived_srdf = derived_paths(
-        tool.tool_id, calibration_delta_m(), source_hash.hexdigest())
-    mesh_dir = STOCK_URDF.parent / MESH_SUBDIR
-    mesh_dir.mkdir(parents=True, exist_ok=True)
+def _copy_tool_meshes(tool, mesh_dir: Path, *, force: bool) -> None:
     for stl in tool.meshes():
         src = REPO_MESHES / stl
         if not src.exists():
@@ -610,27 +589,68 @@ def build_tatbot_urdf(force: bool = False) -> str:
         if force or not dst.exists() or dst.stat().st_mtime < src.stat().st_mtime:
             shutil.copy2(src, dst)
 
+
+
+def build_tatbot_urdf(force: bool = False, *, config: ResolvedConfig | None = None,
+                      sensor_profile: str = 'deployment') -> str:
+    """Write (if needed) and return the path to the derived URDF."""
+    stock_urdf = asset_dir() / "robots/widowxai/wxai_follower.urdf"
+    stock_srdf = stock_urdf.with_suffix(".srdf")
+    if not stock_urdf.exists():
+        raise FileNotFoundError(
+            f"{stock_urdf} missing — run `python -m mani_skill.utils.download_asset widowxai -y`"
+        )
+    config = config or resolve(sensor_profile=sensor_profile)
+    config.validate_sources()
+    sensor_profile = config.sensor_profile
+    tool = config.tool
+    wrist_layout_json = REPO_MESHES.parents[2] / "config" / "wrist_tags_measured.json"
+    fiducial_inventory = _fiducial_inventory_path()
+    # The public simulation fixtures and a private calibrated profile can share
+    # one ManiSkill asset cache. Key the derived robot by content so neither
+    # checkout can reuse the other's newer file merely because its mtime wins.
+    inputs = [stock_urdf, Path(__file__), fiducial_inventory, REPO / "urdf/tatbot.urdf",
+              arm_golden_path()] + [config.repo / path for path, _ in config.sources] \
+        + ([stock_srdf] if stock_srdf.exists() else []) \
+        + ([wrist_layout_json] if wrist_layout_json.exists() else [])
+    import hashlib
+    source_hash = hashlib.sha256()
+    from wrist_cameras import SENSOR_PROFILES
+    if sensor_profile not in SENSOR_PROFILES:
+        raise ValueError(f'unknown sensor profile {sensor_profile!r}')
+    source_hash.update(sensor_profile.encode())
+    source_hash.update(repr(config.geometry).encode())
+    for path in inputs:
+        source_hash.update(path.read_bytes())
+        source_hash.update(b"\0")
+    derived_urdf, derived_srdf = derived_paths(
+        tool.tool_id, config.geometry.calibration_delta_m, source_hash.hexdigest())
+    mesh_dir = stock_urdf.parent / MESH_SUBDIR
+    mesh_dir.mkdir(parents=True, exist_ok=True)
+    _copy_tool_meshes(tool, mesh_dir, force=force)
+
     fresh = derived_urdf.exists() and derived_srdf.exists() and derived_urdf.stat().st_mtime >= max(
         p.stat().st_mtime for p in inputs
     )
     if fresh and not force:
         return str(derived_urdf)
 
-    if STOCK_SRDF.exists():
-        shutil.copy2(STOCK_SRDF, derived_srdf)
+    if stock_srdf.exists():
+        tmp = derived_srdf.with_name(f".{derived_srdf.name}.{os.getpid()}.tmp")
+        shutil.copy2(stock_srdf, tmp)
+        os.replace(tmp, derived_srdf)
 
-    tree = ET.parse(STOCK_URDF)
+    tree = ET.parse(stock_urdf)
     robot = tree.getroot()
     existing = {link.get("name") for link in robot.iter("link")}
     if "tattoo_needle" not in existing:
-        from tatbot_sim.tools import carriage_rest_m
-
         tag_ids, edge_m, _parent_frame, _inventory_hash = _wrist_inventory()
         _write_plate_assets(mesh_dir, tag_ids, edge_m)
         _drop_right_finger(robot, derived_srdf)
-        _add_lower_camera(robot)
+        if sensor_profile == 'legacy-two-view':
+            _add_lower_camera(robot)
         _graft_ee_mount(robot, mesh_dir)
-        _add_tool(robot, tool, carriage_rest_m())
+        _add_tool(robot, tool, config.geometry)
         wrist_poses = _wrist_tag_poses()
         if wrist_poses:
             parent_link, poses = wrist_poses
@@ -638,5 +658,8 @@ def build_tatbot_urdf(force: bool = False) -> str:
         else:
             _add_base_plates(robot, tag_ids)
     ET.indent(tree, space="  ")
-    tree.write(derived_urdf, encoding="utf-8", xml_declaration=True)
+    # The URDF lands last and atomically: the freshness check above keys on
+    # its mtime, so a concurrent reader either rebuilds or sees a complete
+    # URDF whose SRDF was already replaced.
+    _write_atomic(tree, derived_urdf)
     return str(derived_urdf)

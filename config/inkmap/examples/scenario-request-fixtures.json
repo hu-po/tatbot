@@ -1,0 +1,1509 @@
+{
+  "schema": "tatbot.scenario-request-fixtures/1",
+  "fixtures": [
+    {
+      "id": "valid-000",
+      "prompt": "a rose on the left forearm",
+      "pose": "compatible",
+      "support": "armrest",
+      "size_mm": [
+        20,
+        25
+      ],
+      "seed": 1000,
+      "expected": {
+        "site": "forearm",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-001",
+      "prompt": "a rose on the right forearm",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        25,
+        30
+      ],
+      "seed": 1001,
+      "expected": {
+        "site": "forearm",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-002",
+      "prompt": "a rose on the left bicep",
+      "pose": "compatible",
+      "support": "armrest",
+      "size_mm": [
+        30,
+        35
+      ],
+      "seed": 1002,
+      "expected": {
+        "site": "bicep",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-003",
+      "prompt": "a rose on the right bicep",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        35,
+        40
+      ],
+      "seed": 1003,
+      "expected": {
+        "site": "bicep",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-004",
+      "prompt": "a rose on the left shoulder cap",
+      "pose": "supine",
+      "support": "bed",
+      "size_mm": [
+        40,
+        25
+      ],
+      "seed": 1004,
+      "expected": {
+        "site": "shoulder_cap",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-005",
+      "prompt": "a rose on the right shoulder cap",
+      "pose": "supine",
+      "support": "bed",
+      "size_mm": [
+        20,
+        30
+      ],
+      "seed": 1005,
+      "expected": {
+        "site": "shoulder_cap",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-006",
+      "prompt": "a rose on the left thigh",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        25,
+        35
+      ],
+      "seed": 1006,
+      "expected": {
+        "site": "thigh",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-007",
+      "prompt": "a rose on the right thigh",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        30,
+        40
+      ],
+      "seed": 1007,
+      "expected": {
+        "site": "thigh",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-008",
+      "prompt": "a rose on the left calf",
+      "pose": "reclined-seated",
+      "support": "chair",
+      "size_mm": [
+        35,
+        25
+      ],
+      "seed": 1008,
+      "expected": {
+        "site": "calf",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-009",
+      "prompt": "a rose on the right calf",
+      "pose": "reclined-seated",
+      "support": "chair",
+      "size_mm": [
+        40,
+        30
+      ],
+      "seed": 1009,
+      "expected": {
+        "site": "calf",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-010",
+      "prompt": "a rose on the middle of the back",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        20,
+        35
+      ],
+      "seed": 1010,
+      "expected": {
+        "site": "mid_back",
+        "laterality": null
+      }
+    },
+    {
+      "id": "valid-011",
+      "prompt": "a fine line heron on the left forearm",
+      "pose": "compatible",
+      "support": "armrest",
+      "size_mm": [
+        25,
+        40
+      ],
+      "seed": 1011,
+      "expected": {
+        "site": "forearm",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-012",
+      "prompt": "a fine line heron on the right forearm",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        30,
+        25
+      ],
+      "seed": 1012,
+      "expected": {
+        "site": "forearm",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-013",
+      "prompt": "a fine line heron on the left bicep",
+      "pose": "compatible",
+      "support": "armrest",
+      "size_mm": [
+        35,
+        30
+      ],
+      "seed": 1013,
+      "expected": {
+        "site": "bicep",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-014",
+      "prompt": "a fine line heron on the right bicep",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        40,
+        35
+      ],
+      "seed": 1014,
+      "expected": {
+        "site": "bicep",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-015",
+      "prompt": "a fine line heron on the left shoulder cap",
+      "pose": "supine",
+      "support": "bed",
+      "size_mm": [
+        20,
+        40
+      ],
+      "seed": 1015,
+      "expected": {
+        "site": "shoulder_cap",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-016",
+      "prompt": "a fine line heron on the right shoulder cap",
+      "pose": "supine",
+      "support": "bed",
+      "size_mm": [
+        25,
+        25
+      ],
+      "seed": 1016,
+      "expected": {
+        "site": "shoulder_cap",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-017",
+      "prompt": "a fine line heron on the left thigh",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        30,
+        30
+      ],
+      "seed": 1017,
+      "expected": {
+        "site": "thigh",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-018",
+      "prompt": "a fine line heron on the right thigh",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        35,
+        35
+      ],
+      "seed": 1018,
+      "expected": {
+        "site": "thigh",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-019",
+      "prompt": "a fine line heron on the left calf",
+      "pose": "reclined-seated",
+      "support": "chair",
+      "size_mm": [
+        40,
+        40
+      ],
+      "seed": 1019,
+      "expected": {
+        "site": "calf",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-020",
+      "prompt": "a fine line heron on the right calf",
+      "pose": "reclined-seated",
+      "support": "chair",
+      "size_mm": [
+        20,
+        25
+      ],
+      "seed": 1020,
+      "expected": {
+        "site": "calf",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-021",
+      "prompt": "a fine line heron on the middle of the back",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        25,
+        30
+      ],
+      "seed": 1021,
+      "expected": {
+        "site": "mid_back",
+        "laterality": null
+      }
+    },
+    {
+      "id": "valid-022",
+      "prompt": "a geometric fox on the left forearm",
+      "pose": "compatible",
+      "support": "armrest",
+      "size_mm": [
+        30,
+        35
+      ],
+      "seed": 1022,
+      "expected": {
+        "site": "forearm",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-023",
+      "prompt": "a geometric fox on the right forearm",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        35,
+        40
+      ],
+      "seed": 1023,
+      "expected": {
+        "site": "forearm",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-024",
+      "prompt": "a geometric fox on the left bicep",
+      "pose": "compatible",
+      "support": "armrest",
+      "size_mm": [
+        40,
+        25
+      ],
+      "seed": 1024,
+      "expected": {
+        "site": "bicep",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-025",
+      "prompt": "a geometric fox on the right bicep",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        20,
+        30
+      ],
+      "seed": 1025,
+      "expected": {
+        "site": "bicep",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-026",
+      "prompt": "a geometric fox on the left shoulder cap",
+      "pose": "supine",
+      "support": "bed",
+      "size_mm": [
+        25,
+        35
+      ],
+      "seed": 1026,
+      "expected": {
+        "site": "shoulder_cap",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-027",
+      "prompt": "a geometric fox on the right shoulder cap",
+      "pose": "supine",
+      "support": "bed",
+      "size_mm": [
+        30,
+        40
+      ],
+      "seed": 1027,
+      "expected": {
+        "site": "shoulder_cap",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-028",
+      "prompt": "a geometric fox on the left thigh",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        35,
+        25
+      ],
+      "seed": 1028,
+      "expected": {
+        "site": "thigh",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-029",
+      "prompt": "a geometric fox on the right thigh",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        40,
+        30
+      ],
+      "seed": 1029,
+      "expected": {
+        "site": "thigh",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-030",
+      "prompt": "a geometric fox on the left calf",
+      "pose": "reclined-seated",
+      "support": "chair",
+      "size_mm": [
+        20,
+        35
+      ],
+      "seed": 1030,
+      "expected": {
+        "site": "calf",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-031",
+      "prompt": "a geometric fox on the right calf",
+      "pose": "reclined-seated",
+      "support": "chair",
+      "size_mm": [
+        25,
+        40
+      ],
+      "seed": 1031,
+      "expected": {
+        "site": "calf",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-032",
+      "prompt": "a geometric fox on the middle of the back",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        30,
+        25
+      ],
+      "seed": 1032,
+      "expected": {
+        "site": "mid_back",
+        "laterality": null
+      }
+    },
+    {
+      "id": "valid-033",
+      "prompt": "a black and grey moth on the left forearm",
+      "pose": "compatible",
+      "support": "armrest",
+      "size_mm": [
+        35,
+        30
+      ],
+      "seed": 1033,
+      "expected": {
+        "site": "forearm",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-034",
+      "prompt": "a black and grey moth on the right forearm",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        40,
+        35
+      ],
+      "seed": 1034,
+      "expected": {
+        "site": "forearm",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-035",
+      "prompt": "a black and grey moth on the left bicep",
+      "pose": "compatible",
+      "support": "armrest",
+      "size_mm": [
+        20,
+        40
+      ],
+      "seed": 1035,
+      "expected": {
+        "site": "bicep",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-036",
+      "prompt": "a black and grey moth on the right bicep",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        25,
+        25
+      ],
+      "seed": 1036,
+      "expected": {
+        "site": "bicep",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-037",
+      "prompt": "a black and grey moth on the left shoulder cap",
+      "pose": "supine",
+      "support": "bed",
+      "size_mm": [
+        30,
+        30
+      ],
+      "seed": 1037,
+      "expected": {
+        "site": "shoulder_cap",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-038",
+      "prompt": "a black and grey moth on the right shoulder cap",
+      "pose": "supine",
+      "support": "bed",
+      "size_mm": [
+        35,
+        35
+      ],
+      "seed": 1038,
+      "expected": {
+        "site": "shoulder_cap",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-039",
+      "prompt": "a black and grey moth on the left thigh",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        40,
+        40
+      ],
+      "seed": 1039,
+      "expected": {
+        "site": "thigh",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-040",
+      "prompt": "a black and grey moth on the right thigh",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        20,
+        25
+      ],
+      "seed": 1040,
+      "expected": {
+        "site": "thigh",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-041",
+      "prompt": "a black and grey moth on the left calf",
+      "pose": "reclined-seated",
+      "support": "chair",
+      "size_mm": [
+        25,
+        30
+      ],
+      "seed": 1041,
+      "expected": {
+        "site": "calf",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-042",
+      "prompt": "a black and grey moth on the right calf",
+      "pose": "reclined-seated",
+      "support": "chair",
+      "size_mm": [
+        30,
+        35
+      ],
+      "seed": 1042,
+      "expected": {
+        "site": "calf",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-043",
+      "prompt": "a black and grey moth on the middle of the back",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        35,
+        40
+      ],
+      "seed": 1043,
+      "expected": {
+        "site": "mid_back",
+        "laterality": null
+      }
+    },
+    {
+      "id": "valid-044",
+      "prompt": "a dotwork moon on the left forearm",
+      "pose": "compatible",
+      "support": "armrest",
+      "size_mm": [
+        40,
+        25
+      ],
+      "seed": 1044,
+      "expected": {
+        "site": "forearm",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-045",
+      "prompt": "a dotwork moon on the right forearm",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        20,
+        30
+      ],
+      "seed": 1045,
+      "expected": {
+        "site": "forearm",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-046",
+      "prompt": "a dotwork moon on the left bicep",
+      "pose": "compatible",
+      "support": "armrest",
+      "size_mm": [
+        25,
+        35
+      ],
+      "seed": 1046,
+      "expected": {
+        "site": "bicep",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-047",
+      "prompt": "a dotwork moon on the right bicep",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        30,
+        40
+      ],
+      "seed": 1047,
+      "expected": {
+        "site": "bicep",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-048",
+      "prompt": "a dotwork moon on the left shoulder cap",
+      "pose": "supine",
+      "support": "bed",
+      "size_mm": [
+        35,
+        25
+      ],
+      "seed": 1048,
+      "expected": {
+        "site": "shoulder_cap",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-049",
+      "prompt": "a dotwork moon on the right shoulder cap",
+      "pose": "supine",
+      "support": "bed",
+      "size_mm": [
+        40,
+        30
+      ],
+      "seed": 1049,
+      "expected": {
+        "site": "shoulder_cap",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-050",
+      "prompt": "a dotwork moon on the left thigh",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        20,
+        35
+      ],
+      "seed": 1050,
+      "expected": {
+        "site": "thigh",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-051",
+      "prompt": "a dotwork moon on the right thigh",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        25,
+        40
+      ],
+      "seed": 1051,
+      "expected": {
+        "site": "thigh",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-052",
+      "prompt": "a dotwork moon on the left calf",
+      "pose": "reclined-seated",
+      "support": "chair",
+      "size_mm": [
+        30,
+        25
+      ],
+      "seed": 1052,
+      "expected": {
+        "site": "calf",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-053",
+      "prompt": "a dotwork moon on the right calf",
+      "pose": "reclined-seated",
+      "support": "chair",
+      "size_mm": [
+        35,
+        30
+      ],
+      "seed": 1053,
+      "expected": {
+        "site": "calf",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-054",
+      "prompt": "a dotwork moon on the middle of the back",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        40,
+        35
+      ],
+      "seed": 1054,
+      "expected": {
+        "site": "mid_back",
+        "laterality": null
+      }
+    },
+    {
+      "id": "valid-055",
+      "prompt": "a japanese dragon on the left forearm",
+      "pose": "compatible",
+      "support": "armrest",
+      "size_mm": [
+        20,
+        40
+      ],
+      "seed": 1055,
+      "expected": {
+        "site": "forearm",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-056",
+      "prompt": "a japanese dragon on the right forearm",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        25,
+        25
+      ],
+      "seed": 1056,
+      "expected": {
+        "site": "forearm",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-057",
+      "prompt": "a japanese dragon on the left bicep",
+      "pose": "compatible",
+      "support": "armrest",
+      "size_mm": [
+        30,
+        30
+      ],
+      "seed": 1057,
+      "expected": {
+        "site": "bicep",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-058",
+      "prompt": "a japanese dragon on the right bicep",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        35,
+        35
+      ],
+      "seed": 1058,
+      "expected": {
+        "site": "bicep",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-059",
+      "prompt": "a japanese dragon on the left shoulder cap",
+      "pose": "supine",
+      "support": "bed",
+      "size_mm": [
+        40,
+        40
+      ],
+      "seed": 1059,
+      "expected": {
+        "site": "shoulder_cap",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-060",
+      "prompt": "a japanese dragon on the right shoulder cap",
+      "pose": "supine",
+      "support": "bed",
+      "size_mm": [
+        20,
+        25
+      ],
+      "seed": 1060,
+      "expected": {
+        "site": "shoulder_cap",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-061",
+      "prompt": "a japanese dragon on the left thigh",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        25,
+        30
+      ],
+      "seed": 1061,
+      "expected": {
+        "site": "thigh",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-062",
+      "prompt": "a japanese dragon on the right thigh",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        30,
+        35
+      ],
+      "seed": 1062,
+      "expected": {
+        "site": "thigh",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-063",
+      "prompt": "a japanese dragon on the left calf",
+      "pose": "reclined-seated",
+      "support": "chair",
+      "size_mm": [
+        35,
+        40
+      ],
+      "seed": 1063,
+      "expected": {
+        "site": "calf",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-064",
+      "prompt": "a japanese dragon on the right calf",
+      "pose": "reclined-seated",
+      "support": "chair",
+      "size_mm": [
+        40,
+        25
+      ],
+      "seed": 1064,
+      "expected": {
+        "site": "calf",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-065",
+      "prompt": "a japanese dragon on the middle of the back",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        20,
+        30
+      ],
+      "seed": 1065,
+      "expected": {
+        "site": "mid_back",
+        "laterality": null
+      }
+    },
+    {
+      "id": "valid-066",
+      "prompt": "an illustrative octopus on the left forearm",
+      "pose": "compatible",
+      "support": "armrest",
+      "size_mm": [
+        25,
+        35
+      ],
+      "seed": 1066,
+      "expected": {
+        "site": "forearm",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-067",
+      "prompt": "an illustrative octopus on the right forearm",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        30,
+        40
+      ],
+      "seed": 1067,
+      "expected": {
+        "site": "forearm",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-068",
+      "prompt": "an illustrative octopus on the left bicep",
+      "pose": "compatible",
+      "support": "armrest",
+      "size_mm": [
+        35,
+        25
+      ],
+      "seed": 1068,
+      "expected": {
+        "site": "bicep",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-069",
+      "prompt": "an illustrative octopus on the right bicep",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        40,
+        30
+      ],
+      "seed": 1069,
+      "expected": {
+        "site": "bicep",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-070",
+      "prompt": "an illustrative octopus on the left shoulder cap",
+      "pose": "supine",
+      "support": "bed",
+      "size_mm": [
+        20,
+        35
+      ],
+      "seed": 1070,
+      "expected": {
+        "site": "shoulder_cap",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-071",
+      "prompt": "an illustrative octopus on the right shoulder cap",
+      "pose": "supine",
+      "support": "bed",
+      "size_mm": [
+        25,
+        40
+      ],
+      "seed": 1071,
+      "expected": {
+        "site": "shoulder_cap",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-072",
+      "prompt": "an illustrative octopus on the left thigh",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        30,
+        25
+      ],
+      "seed": 1072,
+      "expected": {
+        "site": "thigh",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-073",
+      "prompt": "an illustrative octopus on the right thigh",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        35,
+        30
+      ],
+      "seed": 1073,
+      "expected": {
+        "site": "thigh",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-074",
+      "prompt": "an illustrative octopus on the left calf",
+      "pose": "reclined-seated",
+      "support": "chair",
+      "size_mm": [
+        40,
+        35
+      ],
+      "seed": 1074,
+      "expected": {
+        "site": "calf",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-075",
+      "prompt": "an illustrative octopus on the right calf",
+      "pose": "reclined-seated",
+      "support": "chair",
+      "size_mm": [
+        20,
+        40
+      ],
+      "seed": 1075,
+      "expected": {
+        "site": "calf",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-076",
+      "prompt": "an illustrative octopus on the middle of the back",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        25,
+        25
+      ],
+      "seed": 1076,
+      "expected": {
+        "site": "mid_back",
+        "laterality": null
+      }
+    },
+    {
+      "id": "valid-077",
+      "prompt": "a watercolor crane on the left forearm",
+      "pose": "compatible",
+      "support": "armrest",
+      "size_mm": [
+        30,
+        30
+      ],
+      "seed": 1077,
+      "expected": {
+        "site": "forearm",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-078",
+      "prompt": "a watercolor crane on the right forearm",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        35,
+        35
+      ],
+      "seed": 1078,
+      "expected": {
+        "site": "forearm",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-079",
+      "prompt": "a watercolor crane on the left bicep",
+      "pose": "compatible",
+      "support": "armrest",
+      "size_mm": [
+        40,
+        40
+      ],
+      "seed": 1079,
+      "expected": {
+        "site": "bicep",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-080",
+      "prompt": "a watercolor crane on the right bicep",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        20,
+        25
+      ],
+      "seed": 1080,
+      "expected": {
+        "site": "bicep",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-081",
+      "prompt": "a watercolor crane on the left shoulder cap",
+      "pose": "supine",
+      "support": "bed",
+      "size_mm": [
+        25,
+        30
+      ],
+      "seed": 1081,
+      "expected": {
+        "site": "shoulder_cap",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-082",
+      "prompt": "a watercolor crane on the right shoulder cap",
+      "pose": "supine",
+      "support": "bed",
+      "size_mm": [
+        30,
+        35
+      ],
+      "seed": 1082,
+      "expected": {
+        "site": "shoulder_cap",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-083",
+      "prompt": "a watercolor crane on the left thigh",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        35,
+        40
+      ],
+      "seed": 1083,
+      "expected": {
+        "site": "thigh",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-084",
+      "prompt": "a watercolor crane on the right thigh",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        40,
+        25
+      ],
+      "seed": 1084,
+      "expected": {
+        "site": "thigh",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-085",
+      "prompt": "a watercolor crane on the left calf",
+      "pose": "reclined-seated",
+      "support": "chair",
+      "size_mm": [
+        20,
+        30
+      ],
+      "seed": 1085,
+      "expected": {
+        "site": "calf",
+        "laterality": "left"
+      }
+    },
+    {
+      "id": "valid-086",
+      "prompt": "a watercolor crane on the right calf",
+      "pose": "reclined-seated",
+      "support": "chair",
+      "size_mm": [
+        25,
+        35
+      ],
+      "seed": 1086,
+      "expected": {
+        "site": "calf",
+        "laterality": "right"
+      }
+    },
+    {
+      "id": "valid-087",
+      "prompt": "a watercolor crane on the middle of the back",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        30,
+        40
+      ],
+      "seed": 1087,
+      "expected": {
+        "site": "mid_back",
+        "laterality": null
+      }
+    },
+    {
+      "id": "invalid-088",
+      "prompt": "a rose on the forearm",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        30,
+        30
+      ],
+      "seed": 1088,
+      "expected": {
+        "site": "forearm",
+        "laterality": null,
+        "error": "ambiguous_laterality"
+      }
+    },
+    {
+      "id": "invalid-089",
+      "prompt": "a rose on the left middle of the back",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        30,
+        30
+      ],
+      "seed": 1089,
+      "expected": {
+        "error": "semantic_parse"
+      }
+    },
+    {
+      "id": "invalid-090",
+      "prompt": "a rose on the flux capacitor",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        30,
+        30
+      ],
+      "seed": 1090,
+      "expected": {
+        "error": "semantic_parse"
+      }
+    },
+    {
+      "id": "invalid-091",
+      "prompt": "a rose",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        30,
+        30
+      ],
+      "seed": 1091,
+      "expected": {
+        "error": "semantic_parse"
+      }
+    },
+    {
+      "id": "invalid-092",
+      "prompt": "a rose two inches below the left forearm",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        30,
+        30
+      ],
+      "seed": 1092,
+      "expected": {
+        "site": "forearm",
+        "laterality": "left",
+        "error": "unsupported_relative_site"
+      }
+    },
+    {
+      "id": "invalid-093",
+      "prompt": "a rose on the left wrist",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        30,
+        30
+      ],
+      "seed": 1093,
+      "expected": {
+        "site": "wrist",
+        "laterality": "left",
+        "error": "unsupported_anatomy"
+      }
+    },
+    {
+      "id": "invalid-094",
+      "prompt": "a rose on the left forearm",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        -1,
+        30
+      ],
+      "seed": 1094,
+      "expected": {
+        "site": "forearm",
+        "laterality": "left",
+        "error": "invalid_size"
+      }
+    },
+  {
+    "id": "invalid-095",
+      "prompt": "a rose on the left forearm",
+    "pose": "retired-pose",
+      "support": "compatible",
+      "size_mm": [
+        30,
+        30
+      ],
+      "seed": 1095,
+      "expected": {
+        "site": "forearm",
+        "laterality": "left",
+      "error": "unknown_pose"
+      }
+    },
+    {
+      "id": "invalid-096",
+      "prompt": "a rose on the left forearm",
+      "pose": "prone",
+      "support": "bed",
+      "size_mm": [
+        30,
+        30
+      ],
+      "seed": 1096,
+      "expected": {
+        "site": "forearm",
+        "laterality": "left",
+        "error": "incompatible_pose_site"
+      }
+    },
+    {
+      "id": "invalid-097",
+      "prompt": "a rose on the middle of the back",
+      "pose": "prone",
+      "support": "chair",
+      "size_mm": [
+        30,
+        30
+      ],
+      "seed": 1097,
+      "expected": {
+        "site": "mid_back",
+        "laterality": null,
+        "error": "unsupported_support"
+      }
+    },
+    {
+      "id": "invalid-098",
+      "prompt": "a rose between the left thigh and the right thigh",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        30,
+        30
+      ],
+      "seed": 1098,
+      "expected": {
+        "site": "thigh",
+        "laterality": "left",
+        "error": "unsupported_relative_site"
+      }
+    },
+    {
+      "id": "invalid-099",
+      "prompt": "a rose on the center forearm",
+      "pose": "compatible",
+      "support": "compatible",
+      "size_mm": [
+        30,
+        30
+      ],
+      "seed": 1099,
+      "expected": {
+        "error": "semantic_parse"
+      }
+    }
+  ]
+}

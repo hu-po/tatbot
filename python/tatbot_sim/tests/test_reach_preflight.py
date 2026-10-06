@@ -22,6 +22,9 @@ class _BasinTrapIK:
     def __init__(self, rest: torch.Tensor):
         self.rest = rest
         self.solves = 0
+        # This stub's chain has no carriage, so the retry jitter has no axis to
+        # spare -- which is what the real solver does when one is absent too.
+        self.carriage_index = None
 
     def step(self, q, target_pos, target_rot, iters):
         self.solves += 1
@@ -97,3 +100,16 @@ def test_the_fitted_tool_reaches_the_pad_centre_from_the_staged_pose():
             f"({res * 1000:.1f} mm) — hardware state, not a solver bug; "
             "the factory pre-flight is the gate for this")
     assert res < 1e-3, f"pre-flight would refuse the fitted tool: {res * 1000:.1f} mm"
+
+
+def test_nominal_roll_does_not_inherit_the_measured_ballpoint_seat():
+    from dataclasses import replace
+
+    from tatbot_sim import expert
+    from tatbot_sim.resolved import resolve
+
+    config = resolve(tool_id='lutin-ballpoint-dot')
+    nominal = replace(config, geometry=replace(config.geometry, measured=False))
+    measured = replace(config, geometry=replace(config.geometry, measured=True))
+    np.testing.assert_array_equal(expert._camera_axis_world(nominal), [0.0, -1.0, 0.0])
+    np.testing.assert_array_equal(expert._camera_axis_world(measured), expert._CAM_AXIS_BY_TOOL['lutin-ballpoint-dot'])

@@ -21,6 +21,7 @@
 // config file afterwards), 'q' or Ctrl+C to quit without saving a file.
 // Changes made here are applied to the arm's EEPROM immediately either way.
 
+#include "driver_lease.hpp"
 #include <atomic>
 #include <chrono>
 #include <iostream>
@@ -64,6 +65,7 @@ int main(int argc, char ** argv)
   }
 
   try {
+    tatbot::DriverLease driver_lease;
     std::atomic<int> estop_state{tatbot::estop::disabled};
     std::unique_ptr<tatbot::estop::Monitor> estop;
     if (estop_enabled) {

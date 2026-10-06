@@ -23,19 +23,21 @@ def _golden_staged_positions() -> list[float]:
 @RobotConfig.register_subclass("tatbot_follower")
 @dataclass
 class TatbotFollowerConfig(WidowXAIFollowerConfig):
-    """WidowX AI follower with tatbot defaults and bounded-grip gripper control.
+    """WidowX AI follower with tatbot defaults and a tool carriage, not a gripper.
 
-    The gripper runs in external_effort mode under a soft proportional law
-    toward the commanded gripper position, saturating at ``grip_force`` when
-    closing. Constants mirror cpp/teleop/wxai_teleop.cpp, where they were
-    derived from measured contact stiffness (~51 N/mm) and validated on the
-    tattoo pen; keep the two in sync.
+    Since 2026-08-30 the tool sits in a bore on a mount bolted to the left
+    finger carriage, so the last joint is the tool's axis: seated at rest, its
+    effort read as the contact force, retracted on a trip. The carriage
+    constants mirror cpp/teleop/wxai_teleop.cpp; scripts/check_tool_sync.py
+    fails if the copies drift.
     """
 
-    # Follower address from the hardware profile (TATBOT_FOLLOWER_IP env
-    # override > profile driver stanza > empty, which fails at connect).
-    ip_address: str = field(default_factory=lambda: paths.driver_default(
-        "follower_ip", "TATBOT_FOLLOWER_IP"))
+    # Empty resolves the selected physical arm's profile address in __post_init__.
+    # An unresolved address remains empty and fails at connect.
+    ip_address: str = ""
+    # Physical identity is independent of the plugin's follower action interface.
+    # The rollout launcher binds this and the address from config/arms.json.
+    physical_arm: str = "right"
 
     # Bounds each commanded joint step (rad). Demo steps at 30 Hz are
     # <=0.05 rad so this never clips demonstrations; at rollout it caps a
@@ -66,8 +68,7 @@ class TatbotFollowerConfig(WidowXAIFollowerConfig):
     flight_log_dir: str = "auto:rollout"
 
     # Optional low-pass (EMA time constant, s) on the requested arm target,
-    # applied before the slew limiter. 0 disables. Keep 0 for recording
-    # (leader signal is already smooth; lag would degrade demos); rollout
+    # applied before the slew limiter. 0 disables; rollout
     # scripts set ~0.3 to average away chunk-aggregation tremor — the
     # execution-side analogue of ACT temporal ensembling.
     target_filter_tau: float = 0.0
@@ -101,10 +102,10 @@ class TatbotFollowerConfig(WidowXAIFollowerConfig):
     # Where the carriage rests, metres. The closed hard stop is the only
     # repeatable datum; the touch-off is solved with the carriage here.
     carriage_rest_m: float = 0.0
-    # Where a safety trip sends it. Firmware caps the carriage at 0.040 m
-    # (config/trossen/follower.yaml), so this is the full 40 mm of lift the
-    # mechanism has — the pen leaves the work before the arm freezes.
-    carriage_retract_m: float = 0.040
+    # Where a safety trip sends it: 32 mm, inside the firmware's 0.040 m cap
+    # (config/trossen/follower.yaml) — the pen leaves the work before the arm
+    # freezes.
+    carriage_retract_m: float = 0.032
     # Contact force above which the pen is retracted and the arm retreats:
     # the carriage effort's departure from its rest baseline, assessed only
     # while the arm moves at drawing speeds (tatbot_follower.CONTACT_STILL_RAD_S)
@@ -234,43 +235,14 @@ class TatbotFollowerConfig(WidowXAIFollowerConfig):
     clamp_abort_min_samples: int = 20
 
     # Hard workspace floor: the commanded pose is rejected if it would put the
-    # tool below this height (metres, arm base frame, ee_gripper_link origin).
-    # Unlike the overforce guard this is preventive rather than reactive — it
-    # never lets the press happen, instead of reacting once the load is real.
+    # tool tip below it. Unlike the overforce guard this is preventive rather
+    # than reactive — it never lets the press happen, instead of reacting once
+    # the load is real. It exists because the policy is not responsible for
+    # depth: sim simulates no contact at all, so a co-trained policy has never
+    # met a consequence for driving through the surface (measured 2026-08-21: a
+    # co-trained checkpoint drove ~60 mm deeper than a real-only one). Depth
+    # belongs to the controller, and this is that control.
     #
-    # It exists because the policy is not responsible for depth: sim simulates
-    # no contact at all, so a co-trained policy has never met a consequence for
-    # driving through the surface (measured 2026-08-21: a co-trained checkpoint
-    # drove ~60 mm deeper than a real-only one). Depth belongs to the
-    # controller, and this is that control.
-    #
-    # Real draw-square recordings put ee_gripper_link at z ~= 0.082 m with the
-    # pen on the paper, so 0.060 m leaves ordinary drawing untouched while
-    # stopping a runaway descent. RAISE THIS if the table is raised; lower it
-    # only with the tool clear of the work.
-    #
-    # This constant is a stand-in for a measured quantity: il_touchoff.py
-    # solves the actual surface plane (and pen tip) into config/workspace.yaml,
-    # and the fitted tool's own length is in config/tools/. Run
-    # scripts/check_tool_sync.py to see the floor those two imply. Since
-    # 2026-08-26 it does give one — that session planted its tip on the pad, so
-    # paper_plane_z is the paper rather than the palette tag it used to be.
-    #
-    # Take the derived number as a prompt, not an answer. It is
-    # `plane - reach - margin` with reach the largest component of the tip
-    # offset, which assumes the tool hangs straight down from the gripper. The
-    # laser's tip is mostly along +X (134.8 of 136.3 mm), so a scalar height on
-    # ee_gripper_link does not bound where its tip actually is; the honest
-    # bound depends on wrist orientation, which this floor cannot see.
-    #
-    # AND IT IS STILL TUNED FOR THE BALLPOINT. 0.060 came from draw-square
-    # recordings that put ee_gripper_link at ~0.082 m with a 63.7 mm pen on the
-    # paper. The fitted tool is now the laser at 136.3 mm — 73 mm longer — so
-    # the same floor lets its tip sit far deeper than the margin this number
-    # was chosen to express. Under teleop the operator's hand is the depth
-    # control and this is only a backstop; a policy rollout has no such hand,
-    # which is the case this floor exists for. Re-pick it deliberately before
-    # rolling out a policy with a long tool fitted.
     # ABSOLUTE floor on the TOOL TIP, metres in the arm base frame. Used when
     # no measured surface is available, and as the deliberate override.
     #
@@ -331,15 +303,15 @@ class TatbotFollowerConfig(WidowXAIFollowerConfig):
     # inference; teleop/recording may keep the historical hold-and-resume path.
     abort_on_estop: bool = False
 
-    # --- golden configs & tuning cockpit (docs/teleop_tuning.md) ---------
+    # --- golden configs ---------------------------------------------------
 
     # Arm golden YAML written into the controller at every connect (controller
     # state is scratch RAM that reverts on power cycle). Empty = auto:
-    # config/trossen/follower.yaml resolved from the repo checkout or
+    # the physical arm's controller_config in config/arms.json, under
     # $TATBOT_CONFIG_DIR. "-" disables loading (previous behavior).
     arm_config: str = ""
 
-    # Load config/trossen/tatbot.yaml (grip law, smoothing, slew, poses) at
+    # Load config/trossen/tatbot.yaml (carriage, smoothing, slew, poses) at
     # startup. Fields explicitly overridden on the CLI keep their CLI value.
     use_tatbot_yaml: bool = True
 
@@ -351,14 +323,9 @@ class TatbotFollowerConfig(WidowXAIFollowerConfig):
     # restore strictly per-arm behaviour.
     coordinated_arms: bool = True
 
-    # In-process tuning cockpit (HTTP + SSE). 0 or tuning_enabled=False
-    # disables. One server per process; leader and follower share it.
-    tuning_enabled: bool = True
-    tuning_port: int = 8899
-
     # EXPERIMENTAL per-arm-joint leader→follower motion scaling (gripper
     # excluded). 1.0 everywhere = stock 1:1 mapping. Scaling anchors at the
-    # pose where the scale was last changed; see docs/teleop_tuning.md.
+    # pose where the scale was last changed; see TatbotFollower._apply_motion_scale.
     motion_scale: list[float] = field(default_factory=lambda: [1.0] * 6)
 
     # Staged/idle pose. The golden (config/trossen/tatbot.yaml) is the ONE
@@ -368,6 +335,12 @@ class TatbotFollowerConfig(WidowXAIFollowerConfig):
     staged_positions: list[float] = field(default_factory=lambda: _golden_staged_positions())
 
     def __post_init__(self):
+        if self.physical_arm not in ("left", "right"):
+            raise ValueError("physical_arm must be left or right")
+        if not self.ip_address:
+            binding = paths.physical_arm(self.physical_arm)
+            self.ip_address = paths.driver_default(
+                binding.profile_ip_field, "TATBOT_" + binding.profile_ip_field.upper())
         if self.mask_external_effort and not self.include_external_effort:
             raise ValueError(
                 "mask_external_effort requires include_external_effort=True "

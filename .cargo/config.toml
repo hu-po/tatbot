@@ -1,0 +1,5 @@
+[env]
+# apriltag-sys 0.3 bundles C sources with pre-C23 function declarations.
+# GCC 15 defaults to C23; match the C17 dialect used by the capture hosts.
+# Explicit operator/toolchain flags still take precedence.
+CFLAGS = { value = "-std=gnu17", force = false }

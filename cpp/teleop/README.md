@@ -15,6 +15,12 @@ ctest --test-dir build --output-on-failure
 The executable accepts explicit controller and safety-device configuration. Do
 not hard-code a site address or bypass the e-stop in a contribution.
 
+`arm_recover` is the standalone landing routine behind `tatbot arm recover`:
+one arm, a fresh SDK session, a soft takeover at the measured pose, then
+staged → sleep → idle, verified. It shares the e-stop monitor and the
+exclusive driver lease with the teleop executor and needs no Python
+environment.
+
 ## Design invariants
 
 - The loop must preserve the leader/follower mapping and units.

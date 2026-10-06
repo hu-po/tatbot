@@ -38,6 +38,59 @@ import torch
 from tatbot_sim.surface import Surface
 
 
+def differentiable_polyline_field(
+    polylines_m: list[torch.Tensor] | tuple[torch.Tensor, ...],
+    *,
+    width_m: float,
+    height_m: float,
+    rows: int,
+    cols: int,
+    radius_m: torch.Tensor | float,
+) -> torch.Tensor:
+    """Render vector centrelines into a continuous differentiable chart field.
+
+    Unlike the control-loop splat below, this reference evaluator never rounds
+    trainable centers to texels. Discrete patch membership is chosen before the
+    call; distances, coverage, and composition stay in Torch so placement and
+    vector-control gradients remain connected.
+    """
+
+    if not polylines_m:
+        raise ValueError("at least one polyline is required")
+    first = polylines_m[0]
+    if first.ndim != 2 or first.shape[-1] != 2:
+        raise ValueError("polylines must have shape (N,2)")
+    if rows < 2 or cols < 2 or width_m <= 0 or height_m <= 0:
+        raise ValueError("chart dimensions and resolution must be positive")
+    device, dtype = first.device, first.dtype
+    ys = torch.linspace(0.0, float(height_m), rows, dtype=dtype, device=device)
+    xs = torch.linspace(0.0, float(width_m), cols, dtype=dtype, device=device)
+    yy, xx = torch.meshgrid(ys, xs, indexing="ij")
+    grid = torch.stack([xx, yy], dim=-1)
+    radius = torch.as_tensor(radius_m, dtype=dtype, device=device).clamp_min(
+        torch.finfo(dtype).eps
+    )
+    uncovered = torch.ones((rows, cols), dtype=dtype, device=device)
+    for index, line in enumerate(polylines_m):
+        if line.ndim != 2 or line.shape[-1] != 2 or len(line) == 0:
+            raise ValueError(f"polyline {index} must have shape (N,2) with N >= 1")
+        if line.device != device or line.dtype != dtype:
+            raise ValueError("all polylines must share device and dtype")
+        if len(line) == 1:
+            distance_sq = ((grid - line[0]) ** 2).sum(dim=-1)
+        else:
+            start = line[:-1]
+            delta = line[1:] - start
+            denominator = (delta * delta).sum(dim=-1).clamp_min(torch.finfo(dtype).eps)
+            offset = grid[..., None, :] - start
+            amount = (offset * delta).sum(dim=-1).div(denominator).clamp(0.0, 1.0)
+            closest = start + amount[..., None] * delta
+            distance_sq = ((grid[..., None, :] - closest) ** 2).sum(dim=-1).amin(dim=-1)
+        opacity = torch.exp(-0.5 * distance_sq / (radius * radius))
+        uncovered = uncovered * (1.0 - opacity)
+    return 1.0 - uncovered
+
+
 def kernel_half(radii_m: torch.Tensor, texel_per_m: float, profile: str, stretch: float = 1.0) -> int:
     """Texels from the centre a kernel of these radii can reach.
 
@@ -245,6 +298,8 @@ class InkField:
             device=device,
         )
         self.dirty = torch.zeros(num_envs, dtype=torch.bool, device=device)
+        self._previous_uv = torch.zeros((num_envs, 2), device=device)
+        self._previous_active = torch.zeros(num_envs, dtype=torch.bool, device=device)
 
     @property
     def field(self) -> torch.Tensor:
@@ -255,9 +310,30 @@ class InkField:
         if env_idx is None:
             self._f.zero_()
             self.dirty.zero_()
+            self._previous_active.zero_()
         else:
             self._f[env_idx] = 0.0
             self.dirty[env_idx] = False
+            self._previous_active[env_idx] = False
+
+    def deposit_segment(self, surface, uv_m, opacity, active) -> None:
+        """Sample continuous contact between control frames at half a radius.
+
+        Narrow artwork otherwise becomes separated dots at 30 Hz. Pen-up and
+        reset boundaries break the segment; no path is inferred across a lift.
+        """
+        continuous = active & self._previous_active
+        start = torch.where(continuous[:, None], self._previous_uv, uv_m)
+        distance = torch.linalg.vector_norm(uv_m - start, dim=-1)
+        counts = torch.ceil(distance / (self.pen_radius_m * .5)).long().clamp_min(1)
+        maximum = int(counts.max())
+        if maximum > 8192:
+            raise ValueError("continuous ink segment exceeds sample budget")
+        for index in range(1, maximum + 1):
+            fraction = (index / counts).clamp_max(1)[:, None]
+            self.deposit(surface, start + fraction * (uv_m - start), opacity, active & (index <= counts))
+        self._previous_uv.copy_(uv_m)
+        self._previous_active.copy_(active)
 
     def _stamp(self, surface, uv_m, radii, profile, half, weights, op, active) -> None:
         """One stamp per env at canvas-frame ``uv_m``, shaped by the surface there.
@@ -326,18 +402,31 @@ class InkField:
         """Mean pigment per env, (B,) — the ground truth for how much is on the sheet."""
         return self.field.mean(dim=(1, 2))
 
-    def composite_rgba(self, base_rgb01: torch.Tensor) -> torch.Tensor:
+    def composite_rgba(
+        self, base_rgb01: torch.Tensor, *, region: tuple[slice, slice, slice] | None = None,
+    ) -> torch.Tensor:
         """Ink over paper, (B, rows, cols, 4) uint8, ready to upload.
 
         Multiplicative over the sheet rather than a hard overwrite, so the
         printed ruling stays visible under thin ink the way real pen over
         paper does — and so a laser thinning ink reveals the ruling again
         instead of leaving a bleached patch.
+
+        A region selects batch, rows and columns without changing the blend
+        or byte conversion used for the full sheet.
         """
-        f = self.field.unsqueeze(-1)
-        rgb = base_rgb01 * (1.0 - f) + self.ink_rgb[:, None, None, :] * f
-        rgba = torch.cat([rgb, torch.ones_like(f)], dim=-1)
+        field, ink = self.field, self.ink_rgb
+        if region is not None:
+            field, base_rgb01, ink = field[region], base_rgb01[region], ink[region[0]]
+        f = field.unsqueeze(-1)
+        rgb = base_rgb01 * (1.0 - f) + ink[:, None, None, :] * f
         # round, not truncate: a cast would bias every channel down by up to
         # 1/255, which on bare paper is a visible tint shift against the
         # file-loaded sheet it replaces
-        return (rgba.clamp(0.0, 1.0) * 255.0).round().to(torch.uint8)
+        rgb.clamp_(0.0, 1.0).mul_(255.0).round_()
+        # Pack the opaque byte texture directly. A full-resolution artwork
+        # otherwise allocates several extra four-channel float images here.
+        rgba = torch.empty((*rgb.shape[:-1], 4), dtype=torch.uint8, device=rgb.device)
+        rgba[..., :3] = rgb
+        rgba[..., 3] = 255
+        return rgba

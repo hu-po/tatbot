@@ -1,0 +1,15 @@
+# Offline core profile; heavy coverage runs through scripts/check tests.
+pytest
+pytest-timeout
+# scripts/check runs the suite on every core; serial it took 13.6 min, -n 8 5.7.
+pytest-xdist
+numpy
+scipy
+# scripts/lib session modules read YAML config at import time.
+pyyaml
+# Seeded stencil PNG rendering; match the CLI's managed renderer.
+Pillow==12.1.1
+# `tatbot design` exercises the real simulator package through `uv run`; the
+# compact CPU image supplies its source through PYTHONPATH and needs this one
+# dependency beyond the test profile's transitive jsonschema stack.
+shapely==2.1.2

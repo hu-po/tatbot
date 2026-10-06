@@ -4,10 +4,13 @@
 This script only reads measurement files and, with ``--write``, updates tracked
 calibration evidence.  It never connects to or commands an arm.
 
-    scripts/tatbot --ee-tool lutin-ballpoint-dot tool qualify-body -- \
+    python3 scripts/tool_body_qualify.py --ee-tool lutin-ballpoint-dot \
       --report /path/to/body-reseat-report.json
-    scripts/tatbot --ee-tool lutin-ballpoint-dot tool qualify-body -- \
+    python3 scripts/tool_body_qualify.py --ee-tool lutin-ballpoint-dot \
       --report /path/to/body-reseat-report.json --write
+
+An optional study run by path (config/cli-orphans.txt), not a ``tatbot`` verb;
+the command help describes the procedure.
 
 The selected (last) report cycle must be the touch-off currently recorded in
 ``config/workspace.yaml``.  The body origin/+z axis must be independently
@@ -32,7 +35,10 @@ from datetime import datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "scripts" / "lib"))
+sys.path.insert(0, str(REPO / "scripts/lib"))
+from tatbot_paths import bootstrap  # noqa: E402
+
+bootstrap()
 
 import tool_spec  # noqa: E402
 
@@ -150,7 +156,9 @@ def qualify(report_path: Path, tool_id: str, *, arm: str = "right",
     sys.path.insert(0, str(repo / "scripts"))
     import il_touchoff  # noqa: PLC0415
 
-    rendered_workspace = il_touchoff.render_workspace(right).encode()
+    sections = {other: workspace.get(other) for other in ("right", "left")}
+    sections[arm] = right
+    rendered_workspace = il_touchoff.render_workspace(**sections).encode()
     _atomic_write(target_report, canonical)
     _atomic_write(workspace_path, rendered_workspace)
     written_workspace = tool_spec.parse_simple_yaml(rendered_workspace.decode())

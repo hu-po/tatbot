@@ -3,9 +3,11 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
 import "./styles.css";
 import { useStore } from "./store.ts";
+import { useUi } from "./ui.ts";
 
 // Dev/debug handle: inspect the live state from the console (window.__inkmap.getState()).
-(window as unknown as { __inkmap: typeof useStore }).__inkmap = useStore;
+// The generation and presentation stores are exposed the same way for the browser suite.
+Object.assign(window as unknown as Record<string, unknown>, { __inkmap: useStore, __inkmapUi: useUi });
 if (import.meta.env.DEV) {
   const logs: string[] = ((window as unknown as { __logs: string[] }).__logs = []);
   for (const k of ["info", "warn", "error"] as const) {

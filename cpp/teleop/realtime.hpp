@@ -17,7 +17,20 @@ struct Setup
   std::vector<int> cpus;        // CPUs the loop was pinned to (empty if not pinned)
   std::string affinity_error;   // empty when affinity_applied
   std::string fifo_error;       // empty when fifo_applied
+  // Measured, so a refusal can say what this session may do rather than only
+  // that the request failed. -1 means RLIMIT_RTPRIO could not be read at all.
+  long rtprio_soft = -1;
+  long rtprio_hard = -1;
+  // Whether the fleet's limits policy is installed. An absent file and an
+  // installed-but-ineffective one need different instructions, and telling an
+  // operator to install a file that is already there is not a diagnosis.
+  bool limits_installed = false;
+  std::string limits_path;
 };
+
+/// Where the fleet's real-time limits policy is installed.
+inline constexpr const char * limits_path_default =
+  "/etc/security/limits.d/99-tatbot-realtime.conf";
 
 /// Pick the fastest class of cores from a cpu -> cpuinfo_max_freq map.
 ///
@@ -44,7 +57,7 @@ std::map<int, long> read_max_frequencies(const std::string & sysfs_root = "/sys/
 /// Never throws or aborts. The caller decides whether a reported failure is
 /// fatal; production teleop requires fifo_applied, while --no-rt is the
 /// explicit hardware-free bench opt-out.
-Setup apply(int priority);
+Setup apply(int priority, const std::string & limits_path = limits_path_default);
 
 /// Advance a periodic deadline without running back-to-back catch-up ticks.
 /// Returns the number of scheduled wakes skipped after an overrun. A late loop

@@ -71,6 +71,16 @@ def driver_default(key: str, env: str) -> str:
     return str(profile_driver().get(key) or "")
 
 
+def physical_arm(arm: str):
+    """One registry binding shared by config defaults and the live plugin."""
+    import tatbot_paths
+
+    tatbot_paths.bootstrap(repo_root())
+    from tatbot_cli import arms
+
+    return arms.load(repo_root())[arm]
+
+
 def flight_dir(configured: str) -> Path | None:
     """Directory for flight CSVs: '' disables, 'auto:<workflow>' resolves to
     log_root()/<workflow>, anything else is an explicit path used as-is."""

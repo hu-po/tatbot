@@ -1,0 +1,32 @@
+{
+  "dataset": {"repo_id": "local/travel-ink", "root": "@DATASET@", "eval_split": 0.05, "video_backend": "pyav"},
+  "policy": {
+    "type": "flux3", "device": "cuda", "push_to_hub": false,
+    "conditioning": "history", "n_obs_steps": 8, "history_snapshots": 2, "condition_on_past_actions": true,
+    "action_representation": "delta", "delta_absolute_dims": [],
+    "chunk_size": 42, "n_action_steps": 32, "fps": 30.0,
+    "camera_layout": "single", "camera_keys": ["observation.images.wrist"], "canvas_hw": [256, 256],
+    "action_modality": "action", "action_scale": 2.0, "gripper_flip_dims": [],
+    "text_fixed_length": 320, "video_position_fps": 24.0,
+    "separate_timesteps": true, "video_logit_mean": 1.08, "video_logit_std": 1.0, "conditioning_noise_max": 0.2,
+    "loss_reduction": "modalities", "action_channel_weights": [1, 1, 1, 1, 1, 1],
+    "action_loss_weight": 0.5, "video_loss_weight": 1.0,
+    "gradient_checkpointing": false, "caption_dropout": 0.1, "augment": false,
+    "sampler": "euler", "num_inference_steps": 4, "guidance_scale": 3.0, "guidance_scale_action": null,
+    "sampler_shift": 6.93,
+    "optimizer_lr": 0.0001, "optimizer_lr_heads_multiplier": 5,
+    "optimizer_betas": [0.9, 0.999], "optimizer_weight_decay": 0, "optimizer_eps": 1e-8, "optimizer_grad_clip_norm": 1,
+    "scheduler_freeze_backbone_steps": 680, "scheduler_warmup_steps": 2000, "scheduler_warmup_steps_heads": 680,
+    "scheduler_decay_steps": 0, "scheduler_cooldown_steps": 1360,
+    "video_vae_id": "@WEIGHTS@/video_vae.safetensors", "text_encoder_id": "@WEIGHTS@/text_encoder"
+  },
+  "peft": {"method_type": "LORA", "r": 32, "lora_alpha": 32},
+  "ema": {"enable": true, "decay": 0.995},
+  "accelerator": {"mixed_precision": "bf16", "gradient_accumulation": {"steps": 4}},
+  "batch_size": 2, "steps": 10000, "save_freq": 500,
+  "seed": 42, "num_workers": 6, "prefetch_factor": 2,
+  "persistent_workers": true, "dataloader_multiprocessing_context": "spawn",
+  "log_freq": 20,
+  "env_eval_freq": 0, "eval_steps": 1000, "max_eval_samples": 256,
+  "output_dir": "@OUTPUT@"
+}

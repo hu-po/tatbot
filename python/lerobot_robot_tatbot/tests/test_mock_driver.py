@@ -1,42 +1,21 @@
 """The package mock backend drives the same code paths the tests' fakes do.
 
-Plan Phase 2 exit gate: a synthetic/mock backend passes tuning/recovery/tool
-code paths with no vendor hardware. The interface is pinned against what the
-tuning param builders actually call, so a driver-API drift breaks here, not
+Plan Phase 2 exit gate: a synthetic/mock backend passes the recovery, golden
+and tool code paths with no vendor hardware. The interface is pinned against
+the package's real driver call sites, so a driver-API drift breaks here, not
 at connect time on the rig.
 """
 
 from __future__ import annotations
 
-import trossen_arm
-from lerobot_robot_tatbot import params
 from lerobot_robot_tatbot.mock_driver import MockDriver
-
-
-def test_mock_driver_supports_every_tuning_param():
-    from lerobot_robot_tatbot.config_tatbot_follower import TatbotFollowerConfig
-
-    cfg = TatbotFollowerConfig(id="mock", use_tool_registry=False)
-
-    class _Robot:
-        config = cfg
-
-    driver = MockDriver()
-    built = list(params.build_leader_params(driver, trossen_arm))
-    built += list(params.build_follower_params(driver, cfg, trossen_arm, _Robot()))
-    assert built, "no params built"
-    for p in built:
-        if p.get_fn is None:
-            continue
-        v = p.get_fn()
-        if p.set_fn is not None:
-            p.set_fn(v)  # every driver-backed param round-trips on the mock
 
 
 def test_mock_driver_is_neutral_not_measured():
     d = MockDriver()
-    assert d.get_friction_constant_terms() == [0.0] * 7
-    assert d.get_effort_corrections() == [1.0] * 7
+    jc = d.get_joint_characteristics()
+    assert [c.friction_constant_term for c in jc] == [0.0] * 7
+    assert [c.effort_correction for c in jc] == [1.0] * 7
 
 
 def test_mock_driver_kinematic_state_round_trips():
@@ -49,7 +28,7 @@ def test_mock_driver_kinematic_state_round_trips():
 def test_mock_covers_every_method_the_codebase_calls_on_a_driver():
     """Pin the mock against real call sites: every `driver.<name>(` and
     `self.driver.<name>(` in the package must exist on MockDriver — so a
-    driver-API drift in recovery/goldens/params breaks HERE, not on the rig."""
+    driver-API drift in recovery/goldens breaks HERE, not on the rig."""
     import re
     from pathlib import Path
 
@@ -67,3 +46,12 @@ def test_mock_covers_every_method_the_codebase_calls_on_a_driver():
                 called.add(m.group(1))
     missing = sorted(n for n in called if not hasattr(MockDriver(), n))
     assert not missing, f"MockDriver lacks methods the code calls: {missing}"
+
+
+def test_mock_connection_state_is_cleared_by_cleanup():
+    d = MockDriver()
+    assert not d.get_is_configured()
+    d.configure()
+    assert d.get_is_configured()
+    d.cleanup()
+    assert not d.get_is_configured()

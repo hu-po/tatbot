@@ -48,16 +48,23 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "scripts" / "vision"))
-sys.path.insert(0, str(REPO / "scripts" / "lib"))
+sys.path.insert(0, str(REPO / "scripts/lib"))
+from tatbot_paths import bootstrap  # noqa: E402
+
+bootstrap()
 
 import numpy as np  # noqa: E402
 import tool_spec  # noqa: E402
 from teleop_log import TeleopLog  # noqa: E402
-from urdf_kinematics import UrdfChain  # noqa: E402
+from urdf_kinematics import UrdfChain, driver_joint_names  # noqa: E402
 
-TIP_LINK = tool_spec.tip_frame("right")  # right/tool_mount
-CARRIAGE_JOINT = "right/left_carriage_joint"
+ARM_IDS = ("right", "left")
+# --arm rebinds these before any solve; the default is the follower. The
+# carriage is the driver's seventh joint (the URDF's other carriage joint
+# mimics it).
+ARM = "right"
+TIP_LINK = tool_spec.tip_frame(ARM)  # right/tool_mount
+CARRIAGE_JOINT = driver_joint_names(ARM)[6]
 CARRIAGE_REST_M = 0.0
 # A hold whose carriage is further than this from rest is not a touch: the
 # pen was driven up its own axis. Half a millimetre is well above encoder
@@ -349,35 +356,59 @@ def ablation(poses):
     return rows
 
 
-def render_workspace(right):
+MOUNT_DATUM_COMMENT = {
+    "right": ("  # Frame the tip offset is solved in: right/tool_mount is the bore face",
+              "  # of the mount on the left finger carriage, +z along the bore. A file",
+              "  # naming any other frame is gripper-era and reads as no touch-off."),
+    "left": ("  # Frame the tip offset is solved in: left/tool_mount is the fat end of",
+             "  # the grip cavity of the mount on the right (thumb-side) carriage, +z",
+             "  # along the pen axis. A file naming any other frame reads as no touch-off."),
+}
+
+
+def render_workspace(right=None, left=None):
     """The whole config/workspace.yaml, regenerated. Two-level flat on purpose:
     il_analyze_rollout.py reads this with a hand-rolled parser that sees one
-    level of nesting and scalars only."""
-
-    def scalar(value, fmt="{:.6f}"):
-        return "null" if value is None else fmt.format(value)
-
+    level of nesting and scalars only. One section per fitted arm, the
+    follower first; an arm passed as None is left out."""
     lines = [
         "# workspace.yaml — measured scene geometry. NOTHING HERE MOVES THE ARM.",
         "#",
         "# Written by scripts/il_touchoff.py (touch-off) and read by",
-        "# scripts/il_analyze_rollout.py and scripts/vision/fuse_session.py.",
+        "# scripts/il_analyze_rollout.py.",
         "# Deliberately NOT part of config/trossen/tatbot.yaml — nothing here is",
         "# an arm parameter. Git history is the changelog.",
-        "right:",
+    ]
+    for arm, section in (("right", right), ("left", left)):
+        if section is not None:
+            lines += _render_section(arm, section)
+    return "\n".join(lines)
+
+
+def _render_section(arm, right):
+    def scalar(value, fmt="{:.6f}"):
+        return "null" if value is None else fmt.format(value)
+
+    touchoff = right.get("touchoff") or {}
+    lines = [
+        f"{arm}:",
         "  # Which physical tool is fitted — names a datasheet in config/tools/.",
         "  # Everything below was measured with THIS tool in the mount, so a swap",
         "  # invalidates it; il_touchoff.py --tool-id sets it as the touch-off writes.",
         f"  tool_id: {right.get('tool_id') or 'null'}",
-        "  # Frame the tip offset is solved in: right/tool_mount is the bore face",
-        "  # of the mount on the left finger carriage, +z along the bore. A file",
-        "  # naming any other frame is gripper-era and reads as no touch-off.",
+        *MOUNT_DATUM_COMMENT[arm],
         f"  tip_frame: {right.get('tip_frame') or 'null'}",
         "  # Pen tip in that frame, metres. Seated in the bore: one constant,",
         "  # measured once, valid until the tool or the mount physically changes.",
         f"  pen_tip_offset_x: {scalar(right.get('pen_tip_offset_x'))}",
         f"  pen_tip_offset_y: {scalar(right.get('pen_tip_offset_y'))}",
         f"  pen_tip_offset_z: {scalar(right.get('pen_tip_offset_z'))}",
+        "  # Contact-reference records maintained by ROS probe adoption.",
+        "  # A pivot touch-off without that reference keeps the keys null.",
+        *[f"  mechanical_contact_{axis}: {scalar(right.get('mechanical_contact_' + axis))}"
+          for axis in 'xyz'],
+        *[f"  mechanical_contact_{key}: {right.get('mechanical_contact_' + key) or 'null'}"
+          for key in ('reference', 'profile', 'status', 'session')],
         "  # Optional independent physical-body axis/origin in the same mount frame.",
         "  # Pivot touch-off qualifies the contact vector. For this axisymmetric",
         "  # profile, consumers infer the body axis from mount origin -> tip and",
@@ -428,20 +459,21 @@ def render_workspace(right):
         f"  ee_contact_z: {scalar(right.get('ee_contact_z'))}",
         "",
         "  touchoff:",
-        f"    utc: {right['touchoff'].get('utc') or 'null'}",
-        f"    session: {right['touchoff'].get('session') or 'null'}",
-        f"    n_plate: {right['touchoff'].get('n_plate', 0)}",
-        f"    n_pad: {right['touchoff'].get('n_pad', 0)}",
-        f"    cond: {scalar(right['touchoff'].get('cond'), '{:.1f}')}"
+        f"    utc: {touchoff.get('utc') or 'null'}",
+        f"    session: {touchoff.get('session') or 'null'}",
+        f"    method: {touchoff.get('method') or 'null'}",
+        f"    n_plate: {touchoff.get('n_plate') or 0}",
+        f"    n_pad: {touchoff.get('n_pad') or 0}",
+        f"    cond: {scalar(touchoff.get('cond'), '{:.1f}')}"
         "            # >50 means the wrist orientations were too uniform",
-        f"    residual_mm: {scalar(right['touchoff'].get('residual_mm'), '{:.3f}')}",
-        f"    holdout_mm: {scalar(right['touchoff'].get('holdout_mm'), '{:.3f}')}",
-        f"    tip_loo_max_mm: {scalar(right['touchoff'].get('tip_loo_max_mm'), '{:.3f}')}",
-        f"    spread_deg: {scalar(right['touchoff'].get('spread_deg'), '{:.1f}')}",
-        f"    note: \"{right['touchoff'].get('note', '')}\"",
+        f"    residual_mm: {scalar(touchoff.get('residual_mm'), '{:.3f}')}",
+        f"    holdout_mm: {scalar(touchoff.get('holdout_mm'), '{:.3f}')}",
+        f"    tip_loo_max_mm: {scalar(touchoff.get('tip_loo_max_mm'), '{:.3f}')}",
+        f"    spread_deg: {scalar(touchoff.get('spread_deg'), '{:.1f}')}",
+        f"    note: \"{touchoff.get('note') or ''}\"",
         "",
     ]
-    return "\n".join(lines)
+    return lines
 
 
 def resolve_tool(args):
@@ -463,7 +495,7 @@ def resolve_tool(args):
 def tool_refusal(spec, p):
     """Refuse a fit that does not look like the tool it is being filed under.
 
-    The datasheet says how far this tool's tip sits past the fingertips; the
+    The datasheet says how far this tool's tip sits past the mount face; the
     solve says where it actually is. Pens differ by tens of millimetres, so a
     large gap means the gripper is holding something other than what
     workspace.yaml claims — and writing that calibration under the wrong name
@@ -674,6 +706,9 @@ def main():
     ap.add_argument("target", help="session dir (touches.json / teleop.wxtl) or a .wxtl file")
     ap.add_argument("--urdf", default=str(REPO / "urdf" / "tatbot.urdf"))
     ap.add_argument("--workspace", default=str(REPO / "config" / "workspace.yaml"))
+    ap.add_argument("--arm", choices=ARM_IDS, default="right",
+                    help="which arm's mount the touches were made with; selects the "
+                         "tip frame, the carriage joint and the workspace.yaml section")
     ap.add_argument("--ee-tool", "--tool-id", dest="tool_id", required=True,
                     help="REQUIRED: which tool is in the mount (a datasheet "
                          "name in config/tools/). The solved tip is checked "
@@ -690,6 +725,10 @@ def main():
                          "(composite EE height at contact — enough for contact%%, "
                          "not for absolute height)")
     args = ap.parse_args()
+    global ARM, TIP_LINK, CARRIAGE_JOINT
+    ARM = args.arm
+    TIP_LINK = tool_spec.tip_frame(ARM)
+    CARRIAGE_JOINT = driver_joint_names(ARM)[6]
 
     target = Path(args.target).expanduser()
     session = target if target.is_dir() else target.parent
@@ -715,7 +754,7 @@ def main():
         sys.exit(f"no touches.json or teleop.wxtl in {session}")
 
     chain = UrdfChain(args.urdf)
-    names = chain.driver_joint_names("right")
+    names = chain.driver_joint_names(ARM)
     if tip_holds:
         # Guided tip holds: discrete planted stills, one pseudo-window.
         window = {"joints_seq": [h["joints"] for h in tip_holds]}
@@ -903,8 +942,13 @@ def write_workspace(args, values, plate, pad, fit, holdout, source,
         "note": "" if fit else "composite only — conditioning refusal",
     }
     workspace = Path(args.workspace).expanduser()
-    workspace.write_text(render_workspace(right))
-    print(f"wrote {workspace}")
+    arm = getattr(args, "arm", "right")
+    existing = (tool_spec.parse_simple_yaml(workspace.read_text())
+                if workspace.is_file() else {})
+    sections = {other: existing.get(other) for other in ARM_IDS}
+    sections[arm] = right
+    workspace.write_text(render_workspace(**sections))
+    print(f"wrote {workspace} ({arm})")
 
 
 if __name__ == "__main__":

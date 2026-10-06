@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import re
 import select
@@ -84,7 +85,7 @@ def sample_device(device: str, duration_s: float) -> Sample:
         os.close(fd)
 
 
-def validate_sample(sample: Sample, expect: str, min_rate_hz: float) -> list[str]:
+def validate_sample(sample: Sample, expect: str, min_rate_hz: float, max_rate_hz: float = 120.0) -> list[str]:
     errors: list[str] = []
     if not sample.sequences:
         return ["no valid heartbeat frames received"]
@@ -97,6 +98,8 @@ def validate_sample(sample: Sample, expect: str, min_rate_hz: float) -> list[str
         errors.append(f"received {sample.invalid_frames} malformed frame(s)")
     if sample.rate_hz < min_rate_hz:
         errors.append(f"heartbeat rate {sample.rate_hz:.1f} Hz is below {min_rate_hz:.1f} Hz")
+    if sample.rate_hz > max_rate_hz:
+        errors.append(f"heartbeat rate {sample.rate_hz:.1f} Hz is above {max_rate_hz:.1f} Hz")
 
     observed = set(sample.states)
     required = {
@@ -120,11 +123,14 @@ def parse_args() -> argparse.Namespace:
         help="required observed state: released=1, stopped=0, cycle=both",
     )
     parser.add_argument("--min-rate-hz", type=float, default=80.0)
+    parser.add_argument("--max-rate-hz", type=float, default=120.0)
     args = parser.parse_args()
-    if args.duration <= 0:
-        parser.error("--duration must be positive")
-    if args.min_rate_hz < 0:
-        parser.error("--min-rate-hz must be non-negative")
+    if not math.isfinite(args.duration) or args.duration <= 0:
+        parser.error("--duration must be finite and positive")
+    if not math.isfinite(args.min_rate_hz) or args.min_rate_hz < 0:
+        parser.error("--min-rate-hz must be finite and non-negative")
+    if not math.isfinite(args.max_rate_hz) or args.max_rate_hz <= args.min_rate_hz:
+        parser.error("--max-rate-hz must be finite and greater than --min-rate-hz")
     return args
 
 
@@ -137,7 +143,7 @@ def main() -> int:
         return 2
 
     observed = sorted(set(sample.states))
-    errors = validate_sample(sample, args.expect, args.min_rate_hz)
+    errors = validate_sample(sample, args.expect, args.min_rate_hz, args.max_rate_hz)
     status = "PASS" if not errors else "FAIL"
     first = sample.sequences[0] if sample.sequences else "none"
     last = sample.sequences[-1] if sample.sequences else "none"

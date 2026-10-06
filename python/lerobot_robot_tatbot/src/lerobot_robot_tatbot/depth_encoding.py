@@ -1,7 +1,7 @@
 """Deterministic policy-facing encoding for Tatbot D405 depth maps.
 
 LeRobot stores Tatbot depth as one-channel millimetres. Vision-language
-backbones expect ordinary three-channel images, and GR00T's image conversion
+backbones expect ordinary three-channel images, and image conversion
 would clamp raw millimetres to an almost entirely white image. ``depth-v1``
 keeps range, validity, and local surface relief explicit in uint8 channels.
 

@@ -1,0 +1,4 @@
+# Analytic simulation seed: wrist rolled pi/2; not a measured or safe hardware pose.
+follower:
+  carriage_rest_m: 0.0
+  staged_positions: [0.0, 0.0, 0.0, 0.0, 0.0, 1.5707963267948966, 0.0]

@@ -7,13 +7,11 @@ root raises PathConfigError naming the fix — never a silent CWD or /tmp write
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "scripts" / "lib"))
 
 import tatbot_paths as tp  # noqa: E402
 

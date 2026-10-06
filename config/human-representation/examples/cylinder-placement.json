@@ -1,0 +1,37 @@
+{
+  "content_sha256": "f04e71e06779710838b2c4d58dd5053b0adabcff051be52a25cb85c156f8403c",
+  "mirrored": false,
+  "physical_scale_m": [
+    0.08,
+    0.05
+  ],
+  "provenance": {
+    "created_utc": "2026-09-04T01:09:37Z",
+    "producer": "tatbot-human-representation-fixture",
+    "seed": 13,
+    "source_sha256": "1480fb125459cbca6cff13fbac5d846220d91cf906e466eb2842ef350878138b",
+    "version": "1"
+  },
+  "review": {
+    "evidence_sha256": "02893a5d4d7228380dbaa7653d384aa2891a5ce510dc3f0e6c70468221416a2d",
+    "reviewer": "maintainer-required",
+    "status": "pending"
+  },
+  "rotation_rad": 0.15,
+  "schema": "tatbot.surface-placement/2",
+  "target": {
+    "anchor_uv_m": [
+      0.005,
+      0.002
+    ],
+    "canvas_m": [
+      0.15,
+      0.1
+    ],
+    "kind": "cylinder",
+    "margin_m": 0.003,
+    "radius_m": 0.04
+  },
+  "tattoo_program_sha256": "6e46984c4abc85cf6588524699edb588b1701d89bac4bfffc8f9e37e593f4e0b",
+  "warp": null
+}

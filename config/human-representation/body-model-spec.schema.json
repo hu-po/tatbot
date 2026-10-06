@@ -1,0 +1,552 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.dev/schemas/human-representation/body-model-spec.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "content_sha256",
+    "name",
+    "sources",
+    "python_package",
+    "asset_source",
+    "assets",
+    "denied_prefixes",
+    "model",
+    "geometry",
+    "coordinates",
+    "software_lock",
+    "security"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tatbot.body-model-spec/1"
+    },
+    "content_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "soma_x",
+        "mhr"
+      ],
+      "properties": {
+        "soma_x": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repository",
+            "tag",
+            "commit",
+            "archive_size",
+            "archive_sha256"
+          ],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://"
+            },
+            "tag": {
+              "const": "v0.3.0"
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "archive_size": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "archive_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "mhr": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repository",
+            "tag",
+            "commit",
+            "archive_size",
+            "archive_sha256"
+          ],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://"
+            },
+            "tag": {
+              "const": "v1.0.1"
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "archive_size": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "archive_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    },
+    "python_package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "python",
+        "wheel",
+        "sdist"
+      ],
+      "properties": {
+        "name": {
+          "const": "py-soma-x"
+        },
+        "version": {
+          "const": "0.3.0"
+        },
+        "python": {
+          "const": ">=3.11,<3.13"
+        },
+        "wheel": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "filename",
+            "size",
+            "sha256"
+          ],
+          "properties": {
+            "filename": {
+              "type": "string",
+              "minLength": 1
+            },
+            "size": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "sdist": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "filename",
+            "size",
+            "sha256"
+          ],
+          "properties": {
+            "filename": {
+              "type": "string",
+              "minLength": 1
+            },
+            "size": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    },
+    "asset_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "revision",
+        "manifest"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "manifest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "size",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "size": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "size",
+          "sha256",
+          "license",
+          "reason"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "license": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "denied_prefixes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity_model_type",
+        "lod",
+        "mode",
+        "output_unit",
+        "enable_procedural_transforms",
+        "apply_correctives",
+        "shape_components",
+        "scale_parameters",
+        "public_joints",
+        "control_joints"
+      ],
+      "properties": {
+        "identity_model_type": {
+          "const": "mhr"
+        },
+        "lod": {
+          "const": "mid"
+        },
+        "mode": {
+          "const": "dense"
+        },
+        "output_unit": {
+          "const": "m"
+        },
+        "enable_procedural_transforms": {
+          "const": true
+        },
+        "apply_correctives": {
+          "const": true
+        },
+        "shape_components": {
+          "const": 45
+        },
+        "scale_parameters": {
+          "const": 68
+        },
+        "public_joints": {
+          "const": 78
+        },
+        "control_joints": {
+          "const": 77
+        }
+      }
+    },
+    "geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "vertices",
+        "triangles",
+        "topology_sha256",
+        "low_vertex_map_sha256",
+        "mirror_map_sha256",
+        "uv_sets"
+      ],
+      "properties": {
+        "vertices": {
+          "const": 18056
+        },
+        "triangles": {
+          "const": 36108
+        },
+        "topology_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "low_vertex_map_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "mirror_map_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "uv_sets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "st",
+            "st1",
+            "st2"
+          ],
+          "properties": {
+            "st": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "interpolation",
+                "values_sha256",
+                "indices_sha256"
+              ],
+              "properties": {
+                "interpolation": {
+                  "const": "faceVarying"
+                },
+                "values_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "indices_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "st1": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "interpolation",
+                "values_sha256",
+                "indices_sha256"
+              ],
+              "properties": {
+                "interpolation": {
+                  "const": "faceVarying"
+                },
+                "values_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "indices_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "st2": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "interpolation",
+                "values_sha256",
+                "indices_sha256"
+              ],
+              "properties": {
+                "interpolation": {
+                  "const": "faceVarying"
+                },
+                "values_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "indices_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "coordinates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "upstream",
+        "output",
+        "tatbot_from_soma",
+        "quantization_m",
+        "reference_rest_surface_sha256"
+      ],
+      "properties": {
+        "upstream": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "unit",
+            "handedness",
+            "up",
+            "forward"
+          ],
+          "properties": {
+            "unit": {
+              "const": "cm"
+            },
+            "handedness": {
+              "const": "right"
+            },
+            "up": {
+              "const": "+Y"
+            },
+            "forward": {
+              "const": "+Z"
+            }
+          }
+        },
+        "output": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "unit",
+            "handedness",
+            "up",
+            "front"
+          ],
+          "properties": {
+            "unit": {
+              "const": "m"
+            },
+            "handedness": {
+              "const": "right"
+            },
+            "up": {
+              "const": "+Z"
+            },
+            "front": {
+              "const": "-Y"
+            }
+          }
+        },
+        "tatbot_from_soma": {
+          "$ref": "common.schema.json#/$defs/matrix4"
+        },
+        "quantization_m": {
+          "const": 0.00001
+        },
+        "reference_rest_surface_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "software_lock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "environment",
+        "torch"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "environment": {
+          "const": "cp312-x86_64-manylinux_2_28"
+        },
+        "torch": {
+          "const": "2.13.0"
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "torchscript",
+        "npz_allow_pickle",
+        "usd_parse_stage",
+        "automatic_download",
+        "native_binary_audit"
+      ],
+      "properties": {
+        "torchscript": {
+          "enum": [
+            "weights-only",
+            "review-required"
+          ]
+        },
+        "npz_allow_pickle": {
+          "const": false
+        },
+        "usd_parse_stage": {
+          "const": "post-audit"
+        },
+        "automatic_download": {
+          "const": false
+        },
+        "native_binary_audit": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

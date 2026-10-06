@@ -75,6 +75,9 @@ name = "realsense1"
 serial = "000000000000"
 # Which wrist this camera is; consumers map by role, never by file order.
 role = "wrist_upper"
+group = "d405"
+arm = "right"
+owner_role = "realsense"
 
 [cameras.realsense.color]
 stream = "color"

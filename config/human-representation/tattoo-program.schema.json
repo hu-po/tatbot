@@ -1,0 +1,263 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.dev/schemas/human-representation/tattoo-program.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "content_sha256",
+    "canvas_m",
+    "inks",
+    "layers",
+    "negative_space_masks",
+    "semantic_intent",
+    "preview_sha256",
+    "provenance"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tatbot.tattoo-program/1"
+    },
+    "content_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "canvas_m": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "width",
+        "height"
+      ],
+      "properties": {
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "inks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "color_srgb"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "color_srgb": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "minItems": 3,
+            "maxItems": 3
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "layers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "ink_id",
+          "elements"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ink_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "elements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "kind",
+                "closed",
+                "fill",
+                "width_m",
+                "deposition"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "enum": [
+                    "path",
+                    "region",
+                    "dots",
+                    "stipple",
+                    "cubic_bezier"
+                  ]
+                },
+                "points_m": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "common.schema.json#/$defs/vec2"
+                  },
+                  "minItems": 1
+                },
+                "control_points_m": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "common.schema.json#/$defs/vec2"
+                  },
+                  "minItems": 4,
+                  "maxItems": 4
+                },
+                "closed": {
+                  "type": "boolean"
+                },
+                "fill": {
+                  "type": "boolean"
+                },
+                "width_m": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "deposition": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "oneOf": [
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "path"
+                    },
+                    "points_m": {
+                      "minItems": 2
+                    }
+                  },
+                  "required": [
+                    "points_m"
+                  ],
+                  "not": {
+                    "required": [
+                      "control_points_m"
+                    ]
+                  }
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "region"
+                    },
+                    "points_m": {
+                      "minItems": 3
+                    }
+                  },
+                  "required": [
+                    "points_m"
+                  ],
+                  "not": {
+                    "required": [
+                      "control_points_m"
+                    ]
+                  }
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "dots",
+                        "stipple"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "points_m"
+                  ],
+                  "not": {
+                    "required": [
+                      "control_points_m"
+                    ]
+                  }
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "cubic_bezier"
+                    }
+                  },
+                  "required": [
+                    "control_points_m"
+                  ],
+                  "not": {
+                    "required": [
+                      "points_m"
+                    ]
+                  }
+                }
+              ]
+            },
+            "minItems": 1
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "negative_space_masks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "points_m"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "points_m": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/vec2"
+            },
+            "minItems": 3
+          }
+        }
+      },
+      "minItems": 0
+    },
+    "semantic_intent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "preview_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "provenance": {
+      "$ref": "common.schema.json#/$defs/provenance"
+    }
+  }
+}

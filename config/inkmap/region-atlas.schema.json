@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.ai/schemas/region-atlas-v2.json",
+  "title": "InkLang SOMA region atlas",
+  "description": "A deterministic mapping from the sole canonical SOMA rest surface to InkLang regions, reviewed eligibility, and default anchors.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "atlas_schema_version",
+    "inklang_version",
+    "body",
+    "builder",
+    "frame",
+    "encoding",
+    "sites",
+    "site_status",
+    "region_meaning_count",
+    "upstream_exclusions",
+    "faces",
+    "eligible_faces",
+    "regions"
+  ],
+  "properties": {
+    "atlas_schema_version": { "const": 2 },
+    "inklang_version": { "type": "string", "minLength": 1 },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_spec_id",
+        "model_spec_sha256",
+        "identity_sha256",
+        "topology_sha256",
+        "rest_surface_sha256",
+        "asset_sha256"
+      ],
+      "properties": {
+        "model_spec_id": { "const": "mhr-soma-v1" },
+        "model_spec_sha256": { "$ref": "#/$defs/sha256" },
+        "identity_sha256": { "$ref": "#/$defs/sha256" },
+        "topology_sha256": { "$ref": "#/$defs/sha256" },
+        "rest_surface_sha256": { "$ref": "#/$defs/sha256" },
+        "asset_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "builder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "integer", "minimum": 1 },
+        "source_revision": { "type": "string", "minLength": 1 },
+        "source_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["front", "left", "up"],
+      "properties": {
+        "front": { "const": "-y" },
+        "left": { "const": "+x" },
+        "up": { "const": "+z" }
+      }
+    },
+    "encoding": { "type": "string", "minLength": 1 },
+    "sites": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z][a-z_]*$" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "site_status": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/site_status" }
+    },
+    "region_meaning_count": { "const": 99 },
+    "upstream_exclusions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset_sha256", "segments", "excluded_faces"],
+      "properties": {
+        "asset_sha256": { "$ref": "#/$defs/sha256" },
+        "segments": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "excluded_faces": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "faces": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": -1 },
+      "minItems": 1
+    },
+    "eligible_faces": {
+      "type": "array",
+      "items": { "enum": [0, 1] },
+      "minItems": 1
+    },
+    "regions": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/region" }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "vec3": {
+      "type": "array",
+      "prefixItems": [{ "type": "number" }, { "type": "number" }, { "type": "number" }],
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "range": {
+      "type": "array",
+      "prefixItems": [{ "type": "number" }, { "type": "number" }],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "site_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "face_count"],
+      "properties": {
+        "status": {
+          "enum": ["mapped_supported", "mapped_unsupported", "unsupported"]
+        },
+        "face_count": { "type": "integer", "minimum": 0 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["face", "barycentric"],
+      "properties": {
+        "face": { "type": "integer", "minimum": 0 },
+        "barycentric": {
+          "type": "array",
+          "prefixItems": [
+            { "type": "number", "minimum": 0, "maximum": 1 },
+            { "type": "number", "minimum": 0, "maximum": 1 },
+            { "type": "number", "minimum": 0, "maximum": 1 }
+          ],
+          "minItems": 3,
+          "maxItems": 3
+        }
+      }
+    },
+    "chart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mean", "normal", "u_axis", "v_axis", "u_range", "v_range"],
+      "properties": {
+        "mean": { "$ref": "#/$defs/vec3" },
+        "normal": { "$ref": "#/$defs/vec3" },
+        "u_axis": { "$ref": "#/$defs/vec3" },
+        "v_axis": { "$ref": "#/$defs/vec3" },
+        "u_range": { "$ref": "#/$defs/range" },
+        "v_range": { "$ref": "#/$defs/range" }
+      }
+    },
+    "region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["site_id", "laterality", "default_anchor", "chart"],
+      "properties": {
+        "site_id": { "type": "string", "pattern": "^[a-z][a-z_]*$" },
+        "laterality": {
+          "oneOf": [{ "enum": ["left", "right"] }, { "type": "null" }]
+        },
+        "default_anchor": { "$ref": "#/$defs/anchor" },
+        "chart": { "$ref": "#/$defs/chart" }
+      }
+    }
+  }
+}

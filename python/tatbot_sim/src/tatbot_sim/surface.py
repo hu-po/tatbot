@@ -261,58 +261,91 @@ class PlaneChart(Chart):
 
 
 class CylinderChart(Chart):
-    """A limb: a cylinder whose axis runs along canvas x, wrapped by canvas y.
+    """A cylinder chart, optionally mixed with flat members in one batch.
 
-    ``center`` is the point on the surface at (0, 0) -- the crest of the
-    cylinder -- so it plays the same role the pad's top-face centre does, and
-    ``rot``'s columns are the axis, the crest tangent and the outward normal
-    there. Canvas y is ARC LENGTH around the circumference, so the chart is
-    isometric and a stroke drawn 30 mm across the canvas is 30 mm of skin.
+    ``axis='u'`` preserves the original limb convention: canvas u is the
+    cylinder axis and canvas v is arc length around it. ``axis='v'`` wraps u,
+    which is useful for a rectangular sheet placed along a cylindrical
+    fixture. Infinite radius denotes a flat member, allowing a balanced batch
+    to share one vectorized surface without approximating flatness.
     """
 
-    def __init__(self, center: torch.Tensor, rot: torch.Tensor, radius: torch.Tensor):
+    def __init__(
+        self, center: torch.Tensor, rot: torch.Tensor, radius: torch.Tensor, axis: str = "u"
+    ):
         if bool((radius <= 0).any()):
             raise ValueError("cylinder radius must be positive (convex); got a non-positive value")
+        if axis not in ("u", "v"):
+            raise ValueError(f"cylinder axis must be 'u' or 'v', got {axis!r}")
         self.center = center  # (B, 3)
         self.rot = rot  # (B, 3, 3): axis, crest tangent, outward normal at v=0
         self.radius = radius  # (B,)
+        self.axis = axis
 
     def _theta(self, v_m: torch.Tensor) -> torch.Tensor:
         """Arc length (B, 1) -> angle (B, 1). Radius is (B,), so it must be
         unsqueezed or the division broadcasts into a (B, B) grid."""
-        return v_m / self.radius[:, None]
+        safe_radius = torch.where(torch.isinf(self.radius), torch.ones_like(self.radius), self.radius)
+        return torch.where(
+            torch.isinf(self.radius[:, None]), torch.zeros_like(v_m), v_m / safe_radius[:, None]
+        )
 
     def frame(self, uv_m: torch.Tensor):
         ex, ey, ez = self.rot[:, :, 0], self.rot[:, :, 1], self.rot[:, :, 2]
-        r = self.radius[:, None]
-        th = self._theta(uv_m[:, 1:2])
+        flat = torch.isinf(self.radius[:, None])
+        r = torch.where(flat, torch.ones_like(self.radius[:, None]), self.radius[:, None])
+        wrapped = uv_m[:, 1:2] if self.axis == "u" else uv_m[:, 0:1]
+        th = self._theta(wrapped)
         s, c = torch.sin(th), torch.cos(th)
-        point = self.center + uv_m[:, 0:1] * ex + (r * s) * ey + (r * c - r) * ez
-        d_du = ex
-        d_dv = c * ey - s * ez
-        normal = s * ey + c * ez
+        if self.axis == "u":
+            point = self.center + uv_m[:, 0:1] * ex + (r * s) * ey + (r * c - r) * ez
+            d_du = ex
+            d_dv = c * ey - s * ez
+            normal = s * ey + c * ez
+        else:
+            point = self.center + uv_m[:, 1:2] * ey + (r * s) * ex + (r * c - r) * ez
+            d_du = c * ex - s * ez
+            d_dv = ey
+            normal = s * ex + c * ez
+        plane_point = self.center + uv_m[:, 0:1] * ex + uv_m[:, 1:2] * ey
+        point = torch.where(flat, plane_point, point)
+        d_du = torch.where(flat, ex, d_du)
+        d_dv = torch.where(flat, ey, d_dv)
+        normal = torch.where(flat, ez, normal)
         return point, d_du, d_dv, normal
 
     def normal_derivatives(self, uv_m: torch.Tensor):
-        ey, ez = self.rot[:, :, 1], self.rot[:, :, 2]
-        r = self.radius[:, None]
-        th = self._theta(uv_m[:, 1:2])
+        ex, ey, ez = self.rot[:, :, 0], self.rot[:, :, 1], self.rot[:, :, 2]
+        flat = torch.isinf(self.radius[:, None])
+        r = torch.where(flat, torch.ones_like(self.radius[:, None]), self.radius[:, None])
+        wrapped = uv_m[:, 1:2] if self.axis == "u" else uv_m[:, 0:1]
+        th = self._theta(wrapped)
         s, c = torch.sin(th), torch.cos(th)
-        dn_dv = (c * ey - s * ez) / r  # = d_dv / r
-        return torch.zeros_like(ey), dn_dv
+        zero = torch.zeros_like(ey)
+        if self.axis == "u":
+            dn_dv = torch.where(flat, zero, (c * ey - s * ez) / r)
+            return zero, dn_dv
+        dn_du = torch.where(flat, zero, (c * ex - s * ez) / r)
+        return dn_du, zero
 
     def invert(self, points_w: torch.Tensor) -> torch.Tensor:
         d = points_w - self.center
         lx = (d * self.rot[:, :, 0]).sum(-1)
         ly = (d * self.rot[:, :, 1]).sum(-1)
         lz = (d * self.rot[:, :, 2]).sum(-1)
-        # the axis sits one radius below the crest, so measure the angle from there
-        theta = torch.atan2(ly, lz + self.radius)
-        return torch.stack([lx, self.radius * theta], dim=-1)
+        flat = torch.isinf(self.radius)
+        safe_radius = torch.where(flat, torch.ones_like(self.radius), self.radius)
+        wrapped_local = ly if self.axis == "u" else lx
+        theta = torch.atan2(wrapped_local, lz + safe_radius)
+        wrapped = safe_radius * theta
+        u = lx if self.axis == "u" else wrapped
+        v = wrapped if self.axis == "u" else ly
+        return torch.where(flat[:, None], torch.stack([lx, ly], dim=-1), torch.stack([u, v], dim=-1))
 
     def env_view(self, i: int, n: int) -> "CylinderChart":
         return CylinderChart(
-            self.center[i].expand(n, 3), self.rot[i].expand(n, 3, 3), self.radius[i].expand(n)
+            self.center[i].expand(n, 3), self.rot[i].expand(n, 3, 3),
+            self.radius[i].expand(n), self.axis,
         )
 
 
@@ -570,49 +603,6 @@ def random_height_field(
         by_amplitude = amplitude_m[i] / peak
         by_slope = np.tan(max_slope_rad[i]) / slope if slope > 0 else by_amplitude
         out[i] = acc * min(by_amplitude, by_slope)
-    return torch.as_tensor(out, dtype=torch.float32, device=device)
-
-
-def drape_height_field(
-    rng,
-    num_envs: int,
-    rows: int,
-    cols: int,
-    peak_m,
-    radius_u_m,
-    radius_v_m,
-    center_u_m=None,
-    center_v_m=None,
-    width_m: float = SHEET_W_M,
-    height_m: float = SHEET_H_M,
-    device: torch.device | str = "cpu",
-) -> torch.Tensor:
-    """A single broad rise: skin draped over a pad, (B, rows, cols) metres.
-
-    A raised cosine, which is what draping looks like -- flat where the skin
-    overhangs onto the table, rising smoothly to one summit, with no crease at
-    the foot because the profile leaves the flat with zero slope.
-
-    This is a SAMPLER, not a shape in the code: it fills the same displacement
-    array a depth capture or a scan would, and everything downstream still only
-    sees a grid of numbers. What it buys is a distribution centred on the
-    surface the operator actually records on, instead of a general field that
-    spends most of its range on skins nobody owns.
-    """
-    us = np.linspace(-width_m / 2, width_m / 2, cols)
-    vs = np.linspace(-height_m / 2, height_m / 2, rows)
-    vv, uu = np.meshgrid(vs, us, indexing="ij")
-    peak_m = np.asarray(peak_m, dtype=np.float64).reshape(num_envs)
-    ru = np.asarray(radius_u_m, dtype=np.float64).reshape(num_envs)
-    rv = np.asarray(radius_v_m, dtype=np.float64).reshape(num_envs)
-    cu = np.zeros(num_envs) if center_u_m is None else np.asarray(center_u_m).reshape(num_envs)
-    cv = np.zeros(num_envs) if center_v_m is None else np.asarray(center_v_m).reshape(num_envs)
-
-    out = np.zeros((num_envs, rows, cols), dtype=np.float64)
-    for i in range(num_envs):
-        r = np.hypot((uu - cu[i]) / max(ru[i], 1e-6), (vv - cv[i]) / max(rv[i], 1e-6))
-        out[i] = np.where(r < 1.0, 0.5 * peak_m[i] * (1.0 + np.cos(np.pi * np.clip(r, 0, 1))), 0.0)
-    del rng  # the caller samples the parameters; this only draws them
     return torch.as_tensor(out, dtype=torch.float32, device=device)
 
 

@@ -13,7 +13,8 @@ at the same time.
 This is also the single home of "the arm held still" and "the pen was pressing
 on something": the log carries the follower's *external* (gravity-compensated)
 efforts at 400 Hz, so a touch-off is a still interval whose effort sits above
-the log's own free-space baseline. Consumers: fuse_session.py, il_touchoff.py.
+the log's own free-space baseline. Consumers: il_touchoff.py, teleop_poses.py,
+evaluate_ee_tracker.py.
 
   python3 teleop_log.py <log.wxtl> [--tolerance-rad 0.003] [--min-still 0.5]
 """
@@ -25,14 +26,35 @@ from pathlib import Path
 import numpy as np
 
 MAGIC = b"WXTLOG1\0"
+MIRRORED_MAGIC = b"WXTLOG2\0"
 HEADER_LEN = 64
 
 
 class TeleopLog:
-    def __init__(self, path):
+    """Recorded joint snapshots and host-side timing, without resampling.
+
+    ``unix_seconds`` remains the loop wake time for existing consumers.
+    ``follower_read_unix_seconds`` and ``leader_read_unix_seconds`` are host
+    read-completion times after each arm's recorded state reads, not hardware
+    sample times. ``command_unix_seconds`` is the recorded host command time,
+    not confirmation that the arm reached its target. All absolute times use
+    the header's wall-clock origin plus recorded steady-clock offsets; they
+    do not establish synchronization with a camera's hardware clock.
+    """
+    def __init__(self, path, *, allow_reversed=False):
         raw = Path(path).expanduser().read_bytes()
-        if len(raw) < HEADER_LEN or raw[:8] != MAGIC:
+        if len(raw) < HEADER_LEN or raw[:8] not in (MAGIC, MIRRORED_MAGIC):
             raise ValueError(f"{path} is not a wxai_teleop flight log")
+        self.right_leader = raw[:8] == MIRRORED_MAGIC
+        flags = struct.unpack_from("<Q", raw, 48)[0]
+        if self.right_leader and flags not in (7, 31, 63):
+            raise ValueError('unsupported mirrored wrist log flags')
+        if self.right_leader and not allow_reversed:
+            raise ValueError('right-led wrist log requires a physical-arm-aware reader')
+        self.leader_arm = 'right' if self.right_leader else 'left'
+        self.follower_arm = 'left' if self.right_leader else 'right'
+        self.mirrored_joints = ((0, 4, 5) if flags in (31, 63) else (0,)) if self.right_leader else ()
+        self.start_pose_anchored = self.right_leader and flags == 63
         self.num_joints = struct.unpack_from("<Q", raw, 8)[0]
         if not 0 < self.num_joints <= 32:
             raise ValueError(f"implausible num_joints {self.num_joints}")
@@ -45,7 +67,11 @@ class TeleopLog:
         table = np.frombuffer(payload[:count * values * 8], dtype="<f8").reshape(count, values)
         joints = self.num_joints
         self.t_wake = table[:, 1]
+        self.t_leader_read = table[:, 2]
+        self.t_follower_read = table[:, 3]
+        self.t_cmd = table[:, 4]
         self.leader_pos = table[:, 5:5 + joints]
+        self.leader_vel = table[:, 5 + joints:5 + 2 * joints]
         self.follower_pos = table[:, 5 + 2 * joints:5 + 3 * joints]
         self.follower_vel = table[:, 5 + 3 * joints:5 + 4 * joints]
         # External (gravity-compensated) efforts: quiet in free space, elevated
@@ -55,9 +81,13 @@ class TeleopLog:
         self.follower_eff = table[:, 5 + 4 * joints:5 + 5 * joints]
         arm_cols = self.follower_eff[:, :-1] if joints > 1 else self.follower_eff
         self.arm_eff = np.abs(arm_cols).max(axis=1)
-        # Absolute wall time per tick: this is what lets camera observations,
-        # audio and joint angles meet on one timeline.
-        self.unix_seconds = self.wall_start_ns / 1e9 + self.t_wake
+        # Preserve the historical loop-wake timeline. For RGB-D correlation,
+        # use the separate read-completion timeline with its timing uncertainty.
+        origin = self.wall_start_ns / 1e9
+        self.unix_seconds = origin + self.t_wake
+        self.leader_read_unix_seconds = origin + self.t_leader_read
+        self.follower_read_unix_seconds = origin + self.t_follower_read
+        self.command_unix_seconds = origin + self.t_cmd
 
     def __len__(self):
         return len(self.t_wake)
@@ -74,19 +104,28 @@ class TeleopLog:
         put, which position deviation states directly. 0.003 rad is under a
         millimetre of wrist travel at this arm's reach.
         """
+        if arm not in ('leader', 'follower'):
+            raise ValueError('arm must name the recorded leader or follower channel')
         positions = self.follower_pos if arm == "follower" else self.leader_pos
         intervals = []
         start = 0
+        deviation = 0.0
         for index in range(1, len(positions)):
-            deviation = np.abs(positions[start:index + 1] - positions[start]).max()
+            # Earlier samples in this interval have already been checked
+            # against the same anchor. Accumulate only the new sample rather
+            # than rescanning minutes of idle telemetry on every 400 Hz tick.
+            # np.maximum preserves the prior NaN propagation semantics.
+            deviation = np.maximum(
+                deviation, np.abs(positions[index] - positions[start]).max())
             if deviation > tolerance_rad:
                 if index - 1 > start:
                     intervals.append((start, index - 1))
                 start = index
+                deviation = 0.0
         if len(positions) - 1 > start:
             intervals.append((start, len(positions) - 1))
 
-        speed = np.abs(self.follower_vel).max(axis=1)
+        speed = np.abs(self.follower_vel if arm == "follower" else self.leader_vel).max(axis=1)
         out = []
         for first, last in intervals:
             duration = float(self.unix_seconds[last] - self.unix_seconds[first])
@@ -100,47 +139,13 @@ class TeleopLog:
                 "ticks": last - first + 1,
                 # Median over hundreds of ticks: encoder noise averages away.
                 "follower_pos": np.median(self.follower_pos[first:last + 1], axis=0).tolist(),
+                "sampled_pos": np.median(positions[first:last + 1], axis=0).tolist(),
+                "sampled_role": arm,
                 "max_speed_rad_s": float(speed[first:last + 1].max()),
                 "arm_eff_med_nm": float(np.median(eff)),
                 "arm_eff_p95_nm": float(np.percentile(eff, 95)),
             })
         return out
-
-    def window_sample(self, start_unix, end_unix, span_s=0.4, tolerance_rad=0.010):
-        """The quietest joint sample inside a wall-clock window.
-
-        For GUIDED touches: the timeline says when the operator pressed, so
-        the sample is the lowest-motion `span_s` sub-window in that window —
-        with a tolerance looser than free-space stillness, because pressing a
-        pen through teleop trembles (the 2026-08-21 session left two of eight
-        touches with no 0.003 rad still interval at all). Effort rides along
-        as a diagnostic only: at pen forces it sits inside the pose-dependent
-        gravity-comp residual (0.9-7 Nm on the same log) and cannot gate.
-        Returns None when even the loose tolerance never holds.
-        """
-        mask = (self.unix_seconds >= start_unix) & (self.unix_seconds <= end_unix)
-        indices = np.nonzero(mask)[0]
-        span = max(2, int(round(span_s / max(self.period_s, 1e-4))))
-        if len(indices) < span:
-            return None
-        first, last = indices[0], indices[-1]
-        best_start, best_spread = None, tolerance_rad
-        for window_start in range(first, last - span + 2):
-            block = self.follower_pos[window_start:window_start + span]
-            spread = float((block.max(axis=0) - block.min(axis=0)).max())
-            if spread < best_spread:
-                best_start, best_spread = window_start, spread
-        if best_start is None:
-            return None
-        block = slice(best_start, best_start + span)
-        return {
-            "joints": np.median(self.follower_pos[block], axis=0).tolist(),
-            "start_unix": float(self.unix_seconds[best_start]),
-            "end_unix": float(self.unix_seconds[best_start + span - 1]),
-            "duration_s": float(span * self.period_s),
-            "spread_rad": best_spread,
-            "arm_eff_med_nm": float(np.median(self.arm_eff[block])),
-        }
 
     def classify_contacts(self, intervals, min_rise_nm=1.0, mad_k=6.0):
         """Mark which still intervals are touches, against the log's own baseline.

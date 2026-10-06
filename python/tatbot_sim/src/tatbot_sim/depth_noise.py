@@ -67,39 +67,10 @@ pixels landing in the paper band.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import torch
 import torch.nn.functional as F  # noqa: N812  (torch's own universal spelling)
 
-
-@dataclass
-class DepthNoiseConfig:
-    """Per-episode randomization ranges; each env samples its own values."""
-
-    sigma_at_ref_mm: tuple[float, float] = (1.0, 4.5)
-    ref_mm: float = 155.0
-    # fraction of the noise VARIANCE that is spatially correlated speckle
-    corr_frac: tuple[float, float] = (0.4, 0.8)
-    speckle_cells: int = 48  # correlated-noise resolution (~13 px patches)
-    warp_mm: tuple[float, float] = (0.0, 2.5)  # static calibration-warp amplitude
-    warp_cells: int = 6
-    min_z_mm: tuple[float, float] = (60.0, 90.0)  # D405 blind zone starts ~70 mm
-    edge_grad_mm: float = 6.0
-    edge_drop_prob: tuple[float, float] = (0.2, 0.8)
-    edge_dilate_px: tuple[int, int] = (1, 5)  # occlusion-band width (rounded to odd)
-    blob_drop_frac: tuple[float, float] = (0.08, 0.30)
-    blob_cells: int = 24  # dropout-grid resolution; coarser = larger holes
-    blob_static_frac: float = 0.7  # share of the blob budget that stays put all episode
-    # How strongly a hole prefers ground the sensor finds hard. Stereo fails on
-    # surfaces turned away from it and on anything far, so real dropouts sit in
-    # patches that follow the scene; weight 0 puts them anywhere and reproduces
-    # the content-blind behaviour these were built with.
-    blob_grazing_weight: tuple[float, float] = (0.3, 1.2)
-    blob_range_weight: tuple[float, float] = (0.1, 0.7)
-    # slope, as a depth gradient in mm per pixel, at which a surface counts as
-    # fully turned away — past this the grazing term saturates
-    grazing_ref_mm_px: float = 4.0
+from tatbot_sim.config import DepthNoiseConfig, RGBJitterConfig
 
 
 class DepthCorruptor:
@@ -148,7 +119,10 @@ class DepthCorruptor:
         self._blob_static = torch.randn(
             (self.num_envs, 1, c.blob_cells, c.blob_cells),
             device=self.gen.device, generator=self.gen).to(self.device)
-        self._warp_field = None  # lazily built at first frame (needs H, W)
+        # Sample the static calibration field with the episode profile. A
+        # skipped presentation frame must not choose a different static warp.
+        self._warp_coarse = self._sample('randn', (self.num_envs, 1, c.warp_cells, c.warp_cells))
+        self._warp_field = None  # interpolation needs H, W
 
     def _blobs(self, d0: torch.Tensor, gx: torch.Tensor, gy: torch.Tensor,
                shape: tuple[int, int, int]) -> torch.Tensor:
@@ -220,9 +194,11 @@ class DepthCorruptor:
         fn = torch.randn if kind == "randn" else torch.rand
         return fn(shape, device=self.gen.device, generator=self.gen).to(self.device)
 
-    def __call__(self, depth_mm: torch.Tensor) -> torch.Tensor:
+    def __call__(self, depth_mm: torch.Tensor, *, seed: int | None = None) -> torch.Tensor:
         """(B, H, W, 1) integer millimetres -> corrupted uint16-range int32."""
         self._follow(depth_mm.device)
+        if seed is not None:
+            self.gen.manual_seed(seed)
         c = self.cfg
         b, h, w, _ = depth_mm.shape
         d = depth_mm.to(torch.float32)
@@ -248,8 +224,7 @@ class DepthCorruptor:
         range_gain = (d / c.ref_mm) ** 2
         # static calibration warp: one low-frequency field per episode
         if self._warp_field is None or self._warp_field.shape[1:3] != (h, w):
-            f = self._sample("randn", (b, 1, c.warp_cells, c.warp_cells))
-            f = F.interpolate(f, size=(h, w), mode="bilinear", align_corners=False)
+            f = F.interpolate(self._warp_coarse, size=(h, w), mode="bilinear", align_corners=False)
             self._warp_field = f.permute(0, 2, 3, 1)
         d = d + self._warp_field * self.warp_amp * range_gain
         # correlated speckle (fresh each frame) + iid residue
@@ -266,19 +241,6 @@ class DepthCorruptor:
         d = d.round().clamp(0, 65535)
         d[drop] = 0
         return d.to(torch.int32)
-
-
-@dataclass
-class RGBJitterConfig:
-    """Per-episode camera-response jitter for the wrist RGB streams."""
-
-    enabled: bool = True
-    exposure: tuple[float, float] = (0.82, 1.22)
-    white_balance: tuple[float, float] = (0.93, 1.07)  # per-channel gains
-    gamma: tuple[float, float] = (0.88, 1.15)
-    # sensor grain, fresh each frame: sim renders are noiseless while a real
-    # sensor at indoor light is not (std in [0,1] units; ~2/255 at the top)
-    noise_std: tuple[float, float] = (0.0, 0.008)
 
 
 class RGBJitter:
@@ -310,10 +272,12 @@ class RGBJitter:
         self.gamma = self._u(*c.gamma, (b, 1, 1, 1))
         self.noise = self._u(*c.noise_std, (b, 1, 1, 1))
 
-    def __call__(self, rgb_uint8: torch.Tensor) -> torch.Tensor:
+    def __call__(self, rgb_uint8: torch.Tensor, *, seed: int | None = None) -> torch.Tensor:
         """(B, H, W, 3) uint8 -> jittered uint8."""
         if not self.cfg.enabled:
             return rgb_uint8
+        if seed is not None:
+            self.gen.manual_seed(seed)
         # The renderer's device can differ from the sim backend's (a cpu sim
         # still renders on the GPU); follow the frames, keep the generator on
         # its own device so sampling stays deterministic per seed.

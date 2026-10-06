@@ -1,7 +1,7 @@
 // Build the inklang region atlas for a body: label every skin face with a
 // leaf site id + laterality, deterministically, from geometry alone.
 //
-//   node --experimental-strip-types tools/build_atlas.ts <body-id>
+//   node --experimental-strip-types tools/build_atlas.ts
 //
 // Writes public/bodies/<body-id>.regions.json and prints a per-region audit.
 // The atlas is data, not code: this tool is one way to author it (geometric
@@ -13,26 +13,33 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { buildSkin, bodySpec, Y_UP_TO_Z_UP } from "../src/core/body.ts";
+import { buildRegionRecords } from "../src/core/atlas.ts";
+import {
+  BODY_SPEC,
+  buildSkin,
+  canonicalSurfaceBytes,
+  canonicalTopologyBytes,
+} from "../src/core/body.ts";
 import { sha256Hex } from "../src/core/sha256.ts";
-import { SITES, INKLANG_VERSION } from "../src/core/lang.ts";
+import { INKLANG_VERSION, SITES } from "../src/core/inklang/lexicon.ts";
+import { ATLAS_SCHEMA_VERSION } from "../src/core/inklang/types.ts";
 
-const spec = bodySpec(process.argv[2] ?? "hbm-male-stylized");
+const POSE_CATALOG = JSON.parse(
+  readFileSync(new URL("../../../config/inkmap/body-poses.json", import.meta.url), "utf8"),
+);
+const ELIGIBILITY = JSON.parse(
+  readFileSync(new URL("../../../config/body-models/mhr-soma-v1/eligibility.json", import.meta.url), "utf8"),
+);
+const SUPPORTED_SITES = new Set<string>(ELIGIBILITY.initial_supported_domain.sites);
+
+const spec = BODY_SPEC;
 const bytes = readFileSync(new URL(`../public/${spec.path}`, import.meta.url));
 const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 const gltf = await new GLTFLoader().parseAsync(buf, "");
-const skin = buildSkin(gltf.scene, spec);
+const skin = buildSkin(gltf.scene);
 const pos = skin.geometry.getAttribute("position") as THREE.BufferAttribute;
 const nFaces = pos.count / 3;
-
-// Which faces are eyes (not skin)? buildSkin merges sorted node names, Body
-// first, so the eyes are the trailing faces.
-let bodyFaces = 0;
-{
-  const obj = gltf.scene.getObjectByName("Body") as THREE.Mesh;
-  const idx = obj.geometry.getIndex();
-  bodyFaces = (idx ? idx.count : obj.geometry.getAttribute("position").count) / 3;
-}
+const bodyFaces = nFaces;
 
 // Per-face centroid and flat normal, in the app (Z-up) frame.
 const C = new Float32Array(nFaces * 3);
@@ -47,98 +54,33 @@ const N = new Float32Array(nFaces * 3);
     N[3 * f] = n.x; N[3 * f + 1] = n.y; N[3 * f + 2] = n.z;
   }
 }
-const cx = (f: number) => C[3 * f], cy = (f: number) => C[3 * f + 1], cz = (f: number) => C[3 * f + 2];
+const minZ = skin.bbox.min.z;
+const cx = (f: number) => C[3 * f], cy = (f: number) => C[3 * f + 1], cz = (f: number) => C[3 * f + 2] - minZ;
 const nx = (f: number) => N[3 * f], ny = (f: number) => N[3 * f + 1], nz = (f: number) => N[3 * f + 2];
 
-// Frame sanity: eyes forward of the head centre (front = -Y), EyeL on +X.
+// Frame sanity for the reviewed Tatbot axes: left is +X, front is -Y, up is +Z.
 {
-  const eye = (name: string) => {
-    const obj = gltf.scene.getObjectByName(name) as THREE.Mesh;
-    obj.updateWorldMatrix(true, false);
-    obj.geometry.computeBoundingBox();
-    const p = obj.geometry.boundingBox!.getCenter(new THREE.Vector3()).applyMatrix4(obj.matrixWorld);
-    return p.applyMatrix4(Y_UP_TO_Z_UP);
-  };
-  const l = eye("EyeL"), r = eye("EyeR");
-  if (!(l.y < 0 && r.y < 0)) throw new Error("frame check: eyes are not at -y — facing assumption broken");
-  if (!(l.x > 0 && r.x < 0)) throw new Error("frame check: EyeL is not on +x — left/right assumption broken");
-}
-
-const H = skin.bbox.max.z;
-const eyeZ = (() => {
-  const obj = gltf.scene.getObjectByName("EyeL") as THREE.Mesh;
-  obj.updateWorldMatrix(true, false);
-  obj.geometry.computeBoundingBox();
-  return obj.geometry.boundingBox!.getCenter(new THREE.Vector3()).applyMatrix4(obj.matrixWorld).applyMatrix4(Y_UP_TO_Z_UP).z;
-})();
-
-// ---------------------------------------------------------------------------
-// Landmark heights from horizontal slices: cluster body-face centroids in each
-// z band by gaps along x; the cluster pattern (2 legs / arm-torso-arm / one
-// mass) locates crotch, armpits and the neck.
-interface Band { z0: number; z1: number; clusters: { x0: number; x1: number; faces: number[] }[] }
-const NB = 160;
-const bands: Band[] = [];
-for (let i = 0; i < NB; i++) {
-  const z0 = (H * i) / NB, z1 = (H * (i + 1)) / NB;
-  const faces: number[] = [];
-  for (let f = 0; f < bodyFaces; f++) if (cz(f) >= z0 && cz(f) < z1) faces.push(f);
-  faces.sort((a, b) => cx(a) - cx(b));
-  const clusters: Band["clusters"] = [];
-  const GAP = 0.018 * H;
-  for (const f of faces) {
-    const last = clusters[clusters.length - 1];
-    if (!last || cx(f) - last.x1 > GAP) clusters.push({ x0: cx(f), x1: cx(f), faces: [f] });
-    else { last.x1 = cx(f); last.faces.push(f); }
+  if (!(skin.bbox.max.x > 0 && skin.bbox.min.x < 0 && skin.bbox.max.z > skin.bbox.min.z)) {
+    throw new Error("frame check: left/right or up sentinel failed");
   }
-  bands.push({ z0, z1, clusters });
+  const topFaces = Array.from({ length: nFaces }, (_, face) => face).filter((face) => cz(face) > 0.82 * (skin.bbox.max.z - minZ));
+  if (Math.min(...topFaces.map(cy)) >= 0) throw new Error("frame check: facial surface is not toward -y");
 }
-const bandAt = (z: number) => bands[Math.max(0, Math.min(NB - 1, Math.floor((z / H) * NB)))];
 
-// Crotch: lowest band in [0.30H, 0.60H] whose central mass is one cluster spanning x=0.
-let crotchZ = 0.45 * H;
-for (let i = Math.floor(0.3 * NB); i < 0.6 * NB; i++) {
-  const central = bands[i].clusters.filter((cl) => cl.x0 < 0.12 * H && cl.x1 > -0.12 * H);
-  if (central.length === 1 && central[0].x0 < -0.01 && central[0].x1 > 0.01) { crotchZ = bands[i].z0; break; }
-}
-// Armpit: highest band with >=3 clusters (arm, torso, arm).
-let armpitZ = 0.8 * H;
-for (let i = NB - 1; i >= 0; i--) {
-  if (bands[i].clusters.length >= 3) { armpitZ = bands[i].z1; break; }
-}
-// Neck base: above the armpit, where the single mass narrows to under 30% of
-// the shoulder width. Chin: where it widens again (the head).
-const shoulderBand = bandAt(armpitZ - 0.01 * H);
-const shoulderHalf = Math.max(...shoulderBand.clusters.map((c) => Math.max(Math.abs(c.x0), Math.abs(c.x1))));
-const width = (b: Band) => (b.clusters.length ? Math.max(...b.clusters.map((c) => c.x1)) - Math.min(...b.clusters.map((c) => c.x0)) : 0);
-let neckZ = armpitZ + 0.05 * H;
-for (let i = Math.floor(((armpitZ + 0.005 * H) / H) * NB); i < NB; i++) {
-  if (width(bands[i]) < 0.6 * shoulderHalf) { neckZ = bands[i].z0; break; }
-}
-const chinZ = Math.max(neckZ + 0.02 * H, eyeZ - 0.55 * (H - eyeZ));
+const H = skin.bbox.max.z - minZ;
+const eyeZ = 0.91 * H;
 
-// Arm/torso boundary per band: midpoint of the gap between the torso cluster
-// and the arm cluster (per side), extended above the armpit by its last value.
-const armCutL = new Float32Array(NB).fill(Number.POSITIVE_INFINITY);
-const armCutR = new Float32Array(NB).fill(Number.NEGATIVE_INFINITY);
-for (let i = 0; i < NB; i++) {
-  const cls = bands[i].clusters;
-  // Only above the crotch: below it the two legs are two clusters and the
-  // outer leg would masquerade as an arm, stealing thigh faces.
-  if (cls.length < 2 || bands[i].z0 < crotchZ) continue;
-  const torso = cls.reduce((best, c) => (Math.abs((c.x0 + c.x1) / 2) < Math.abs((best.x0 + best.x1) / 2) ? c : best));
-  for (const c of cls) {
-    if (c === torso) continue;
-    const mid = (c.x0 + c.x1) / 2;
-    if (mid > torso.x1) armCutL[i] = Math.min(armCutL[i], (torso.x1 + c.x0) / 2);
-    if (mid < torso.x0) armCutR[i] = Math.max(armCutR[i], (torso.x0 + c.x1) / 2);
-  }
-}
+// Stable semantic landmarks for the reviewed reference identity. Fractions
+// are checked against the generated joint audit, not inherited mesh vertices.
+const crotchZ = 0.55 * H;
+const armpitZ = 0.82 * H;
+const shoulderHalf = Math.max(Math.abs(skin.bbox.min.x), Math.abs(skin.bbox.max.x));
+const neckZ = 0.85 * H;
+const chinZ = 0.88 * H;
 const isArm = (f: number): "left" | "right" | null => {
-  const i = Math.max(0, Math.min(NB - 1, Math.floor((cz(f) / H) * NB)));
-  if (cz(f) >= armpitZ) return null;
-  if (cx(f) > armCutL[i]) return "left";
-  if (cx(f) < armCutR[i]) return "right";
+  if (cz(f) < 0.74 * H || cz(f) > 0.87 * H || Math.abs(cx(f)) < 0.09 * H) return null;
+  if (cx(f) > 0) return "left";
+  if (cx(f) < 0) return "right";
   return null;
 };
 
@@ -229,8 +171,8 @@ function armParam(side: "left" | "right") {
   for (const id of compOf.values()) sizes[id]++;
   const mainId = sizes.indexOf(Math.max(...sizes));
   const main = faces.filter((f) => compOf.get(f) === mainId);
-  const topZ = Math.max(...main.map((f) => cz(f)));
-  const sources = main.filter((f) => cz(f) > topZ - 0.02 * H);
+  const shoulderX = Math.min(...main.map((f) => Math.abs(cx(f))));
+  const sources = main.filter((f) => Math.abs(cx(f)) < shoulderX + 0.02 * H);
   const dist = geodesic(sources, allowed);
   let max = 0;
   for (const d of dist.values()) max = Math.max(max, d);
@@ -383,11 +325,12 @@ for (let f = 0; f < bodyFaces; f++) {
     else if (t < wristT - 0.035) s = "forearm";
     else if (t < wristT + 0.035) s = "wrist";
     else if (handRel < 0.5) {
-      // Hand: palm faces the body (inward); the back of the hand faces out.
-      const out = arm === "left" ? nx(f) : -nx(f);
+      // Hand: the rest surface is a T-pose with palms down, so the palm is
+      // the -z face of the hand and the back of the hand faces +z.
+      const out = nz(f);
       s = out < -0.35 ? "palm" : "hand";
     } else if (handRel < 0.65) {
-      const out = arm === "left" ? nx(f) : -nx(f);
+      const out = nz(f);
       s = out > 0.35 ? "knuckles" : handRel > 0.58 ? "fingers" : (out < -0.35 ? "palm" : "hand");
     } else s = "fingers";
     label[f] = s; lat[f] = arm;
@@ -590,6 +533,19 @@ const keyOf = (f: number) => (label[f] === null ? null : `${label[f]}|${lat[f] ?
 
 // ---------------------------------------------------------------------------
 // Audit + write.
+const exclusionBytes = readFileSync(new URL(`../public/${POSE_CATALOG.exclusion_asset.path}`, import.meta.url));
+if (
+  exclusionBytes.length !== nFaces
+  || await sha256Hex(exclusionBytes.buffer.slice(exclusionBytes.byteOffset, exclusionBytes.byteOffset + exclusionBytes.byteLength)) !== POSE_CATALOG.exclusion_asset.sha256
+) throw new Error("upstream exclusion asset does not match the pose catalog");
+for (let face = 0; face < nFaces; face += 1) {
+  if (exclusionBytes[face] === 1) {
+    label[face] = null;
+    lat[face] = null;
+  } else if (exclusionBytes[face] !== 0) {
+    throw new Error(`invalid exclusion byte on face ${face}`);
+  }
+}
 const counts = new Map<string, { n: number; left: number; right: number; cz: number }>();
 for (let f = 0; f < nFaces; f++) {
   const s = label[f];
@@ -611,21 +567,55 @@ if (missing.length) console.log("MISSING:", missing.join(", "));
 const unlabeled = label.slice(0, bodyFaces).filter((l) => l === null).length;
 console.log(`unlabeled body faces: ${unlabeled}, eye faces: ${nFaces - bodyFaces}`);
 
-const siteIds = [...counts.keys()].sort();
+const siteIds = Object.keys(SITES).sort();
 const siteIndex = new Map(siteIds.map((s, i) => [s, i]));
 const faces = new Array<number>(nFaces);
 for (let f = 0; f < nFaces; f++) {
   const s = label[f];
   faces[f] = s === null ? -1 : siteIndex.get(s)! * 4 + (lat[f] === "left" ? 1 : lat[f] === "right" ? 2 : 0);
 }
+const eligibleFaces = faces.map((code) => (
+  code >= 0 && SUPPORTED_SITES.has(siteIds[code >> 2]) ? 1 : 0
+));
+const toolBytes = readFileSync(new URL(import.meta.url));
+const toolBuffer = toolBytes.buffer.slice(toolBytes.byteOffset, toolBytes.byteOffset + toolBytes.byteLength);
 const out = {
-  inklang: INKLANG_VERSION,
-  body: { id: spec.id, sha256: await sha256Hex(buf) },
+  atlas_schema_version: ATLAS_SCHEMA_VERSION,
+  inklang_version: INKLANG_VERSION,
+  body: {
+    model_spec_id: spec.id,
+    model_spec_sha256: spec.modelSpecSha256,
+    identity_sha256: spec.identitySha256,
+    topology_sha256: await sha256Hex(canonicalTopologyBytes(skin.geometry)),
+    rest_surface_sha256: await sha256Hex(canonicalSurfaceBytes(skin.geometry)),
+    asset_sha256: await sha256Hex(buf),
+  },
+  builder: {
+    name: "web/inkmap/tools/build_atlas.ts",
+    version: 2,
+    source_sha256: await sha256Hex(toolBuffer),
+  },
   frame: { front: "-y", left: "+x", up: "+z" },
   encoding: "faces[i] = siteIndex*4 + laterality (0 none, 1 left, 2 right); -1 = not skin",
   sites: siteIds,
+  site_status: Object.fromEntries(siteIds.map((site) => [
+    site,
+    counts.has(site) && SUPPORTED_SITES.has(site)
+      ? { status: "mapped_supported", face_count: counts.get(site)!.n }
+      : counts.has(site)
+        ? { status: "mapped_unsupported", face_count: counts.get(site)!.n, reason: "outside the initial reviewed tattoo domain" }
+      : { status: "unsupported", face_count: 0, reason: "no eligible SOMA faces after upstream exclusions" },
+  ])),
+  region_meaning_count: Object.values(SITES).reduce((total, site) => total + (site.laterality === "sided" ? 2 : 1), 0),
+  upstream_exclusions: {
+    asset_sha256: POSE_CATALOG.exclusion_asset.sha256,
+    segments: POSE_CATALOG.exclusion_asset.source_segments,
+    excluded_faces: POSE_CATALOG.exclusion_asset.excluded_faces,
+  },
   faces,
+  eligible_faces: eligibleFaces,
+  regions: buildRegionRecords(siteIds, faces, skin.geometry, skin.centroids),
 };
 const dest = new URL(`../public/bodies/${spec.id}.regions.json`, import.meta.url);
 writeFileSync(dest, JSON.stringify(out));
-console.log(`wrote ${dest.pathname} (${siteIds.length} sites present)`);
+console.log(`wrote ${dest.pathname} (${counts.size}/${siteIds.length} sites mapped, 99 meanings declared)`);

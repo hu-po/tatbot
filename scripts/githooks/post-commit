@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# tatbot post-commit: a commit on an agent branch is pushed at once, no gates.
+#
+# Work is durable the moment it exists (docs/work.md). Nothing here can fail
+# the commit: an unreachable origin is reported and the sweeper retries.
+ROOT="$(git rev-parse --show-toplevel)"
+python3 "$ROOT/scripts/lib/tatbot_work.py" hook post-commit || true
+exit 0

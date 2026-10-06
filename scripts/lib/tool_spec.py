@@ -63,7 +63,6 @@ SCHEMA_VERSION = 2
 # fixed-mount-v2: tool in a bore on the left-carriage mount, wrist rolled 90
 #   deg so the cameras are a left/right pair.
 EMBODIMENT = "fixed-mount-v2"
-LEGACY_EMBODIMENT = "gripper-held-v1"
 TOOL_GEOMETRY_VERSION = "resolved-tool-v1"
 # Contact tools put material at the working point. Half a millimetre is below
 # the narrowest modelled ink line and is the largest visual/FK mismatch a
@@ -96,8 +95,8 @@ TAPER_STEPS = 16
 # for a mount whose bore actually locates the tool on its axis; a datasheet
 # whose seat has real freedom overrides it with `seat_tolerance_deg`.
 #
-# The printed mount's bore is not a precision locator: ee_pen_mount.stl has a
-# ~33 mm bore with only ~20 mm of wall around the Lutin's segmented 29 mm
+# The printed mount's bore is not a precision locator: the original printed
+# mount had a ~33 mm bore with only ~20 mm of wall around the Lutin's segmented 29 mm
 # body, so the clamp — not the bore — fixes where the tool points, and the
 # clearance grants it ~10 deg of legitimate seat freedom (measured 11.6 deg
 # on sweep-20260831_082526, with the solve's cond at 5.6 and 67.7 deg of
@@ -171,6 +170,7 @@ def parse_simple_yaml(text: str) -> dict:
         if not sep:
             raise ValueError(f"line {index}: not a `key: value` pair: {raw.strip()!r}")
         key, value = key.strip(), value.strip()
+        _unique_key(parent, key, index)
         if value in (">", ">-", "|", "|-"):
             block, index = _read_block(lines, index, indent)
             joiner = "\n" if value.startswith("|") else " "
@@ -186,6 +186,11 @@ def parse_simple_yaml(text: str) -> dict:
     if pending_key is not None:
         raise ValueError(f"unterminated array for key {pending_key!r}")
     return root
+
+
+def _unique_key(parent, key, line):
+    if key in parent:
+        raise ValueError(f"line {line}: duplicate key {key!r}")
 
 
 def _read_block(lines: list[str], index: int, indent: int) -> tuple[list[str], int]:
@@ -219,6 +224,8 @@ class ToolSpec:
     # the ballpoint only ever draws on the paper pad, the laser and the 3RL
     # only ever work on the silicone skin. See config/substrates.yaml.
     substrate: str = "paper_pad"
+    # Every substrate this tool may work on; the default above is first.
+    substrates: tuple[str, ...] = ("paper_pad",)
     rings: tuple[tuple[float, float, float], ...] = ()
     tip_mesh: str | None = None
     # Scale for tip_mesh, when the mesh was modelled at a different size than
@@ -278,11 +285,30 @@ class ToolSpec:
     body: str | None = None
     cartridge: str | None = None
     measured: dict = field(default_factory=dict)
+    # The line this tool lays on its substrate, as drawn: a deposition
+    # measurement on one substrate at one speed, recorded like `measured:`
+    # with ``{width_mm, status: measured|assumed, utc, method, substrate}``.
+    # The fill planner's planning width and the stroke schedule's dedup
+    # footprint come from here. It is not a contact model and changes no
+    # motion limit. Absent = nothing is known about the drawn line.
+    line: dict = field(default_factory=dict)
+    # Where a rotary machine's working tip travels: its stroke, and how far the tip stands out of the
+    # cartridge's tube at the top of it, where a top-down touch jams it (negative: inside the tube). The
+    # collar sets the second, so a change needs a new touch-off. A touch meets the tip at the top of its
+    # stroke, and motion.yaml pen.mode ride rides a fraction of the stroke over that (tatbot_motion.pen_down).
+    # None: not recorded; such a tool cannot ride.
+    stroke_m: float | None = None
+    tip_out_at_top_m: float | None = None
     source: Path | None = None
     sha256: str = ""
     raw: dict = field(default_factory=dict)
 
     # --- derived geometry ---
+
+    @property
+    def line_width_m(self) -> float | None:
+        """The recorded drawn-line width in metres, or None when unrecorded."""
+        return float(self.line["width_mm"]) / 1000.0 if self.line else None
 
     @property
     def back_m(self) -> float:
@@ -373,7 +399,7 @@ class ToolSpec:
                 parts.append({"kind": "cylinder", "z": (z0 + z1) / 2,
                               "length": z1 - z0, "radius": r0,
                               "color": override or self.body_color})
-            elif self.tip_mesh:
+            elif self.tip_mesh and index == len(self.profile) - 2:
                 parts.append({"kind": "mesh", "z": z0, "mesh": self.tip_mesh,
                               "scale": self.tip_mesh_scale,
                               "color": override or self.tip_color})
@@ -386,7 +412,7 @@ class ToolSpec:
                     frac = (k + 0.5) / taper_steps
                     parts.append({"kind": "cylinder", "z": z0 + step * (k + 0.5),
                                   "length": step, "radius": r0 + (r1 - r0) * frac,
-                                  "color": override or self.tip_color})
+                                  "color": override or (self.tip_color if index == len(self.profile) - 2 else self.body_color)})
         parts += self.tip_detail_parts()
         for center, half_len, extra_r in self.rings:
             parts.append({"kind": "cylinder", "z": center, "length": 2 * half_len,
@@ -766,20 +792,84 @@ def _validate(spec: ToolSpec) -> ToolSpec:
         raise ValueError(
             f"{source}: seat_residual_m must be in [0, 0.02), got "
             f"{spec.seat_residual_m} — 2 cm of seat play is a broken clamp, not a budget")
+    _validate_line(spec.line, source)
+    _validate_stroke(spec, source)
     return spec
+
+
+STROKE_MM_MAX = 6.0   # the rotary machines in use: 2.5-4.5 mm cams
+TIP_OUT_AT_TOP_MM_MAX = 6.0
+
+
+def _validate_stroke(spec: ToolSpec, source) -> None:
+    if spec.stroke_m is not None and not 0.0 < spec.stroke_m * 1000.0 <= STROKE_MM_MAX:
+        raise ValueError(f"{source}: stroke_mm must be in (0, {STROKE_MM_MAX}], got {spec.stroke_m * 1000.0:g}")
+    if spec.tip_out_at_top_m is not None and not abs(spec.tip_out_at_top_m * 1000.0) <= TIP_OUT_AT_TOP_MM_MAX:
+        raise ValueError(f"{source}: tip_out_at_top_mm must be within +-{TIP_OUT_AT_TOP_MM_MAX} mm, got "
+                         f"{spec.tip_out_at_top_m * 1000.0:g}")
+
+
+LINE_WIDTH_MM_RANGE = (0.05, 2.0)
+LINE_FIELDS = ("width_mm", "status", "utc", "method", "substrate")
+
+
+def _validate_line(line: dict, source) -> None:
+    """A `line:` block is a measurement record, complete or absent."""
+    if not line:
+        return
+    if not isinstance(line, dict):
+        raise ValueError(f"{source}: line must be a mapping {{width_mm, status, utc, method, substrate}}")
+    missing = [key for key in LINE_FIELDS if line.get(key) in (None, "")]
+    if missing:
+        raise ValueError(f"{source}: line is missing {', '.join(missing)}")
+    width = line["width_mm"]
+    low, high = LINE_WIDTH_MM_RANGE
+    if isinstance(width, bool) or not isinstance(width, (int, float)) or not low < float(width) <= high:
+        raise ValueError(f"{source}: line.width_mm must be in ({low}, {high}] mm, got {width!r}")
+    if line["status"] not in ("measured", "assumed"):
+        raise ValueError(f"{source}: line.status must be measured or assumed, got {line['status']!r}")
+    if not isinstance(line["substrate"], str) or not isinstance(line["method"], str):
+        raise ValueError(f"{source}: line.method and line.substrate must be text")
 
 
 def tools_dir(repo: Path | str = REPO) -> Path:
     return Path(repo) / TOOLS_DIRNAME
 
 
+def _substrates(data: dict, path: Path) -> tuple[str, ...]:
+    """The datasheet's admitted substrates, default first and without repeats."""
+    default = str(data.get("substrate", "paper_pad"))
+    raw = data.get("substrates")
+    if raw is None:
+        return (default,)
+    if not isinstance(raw, list) or not all(isinstance(v, str) and v for v in raw):
+        raise ValueError(f"{path}: substrates must be a list of substrate names, got {raw!r}")
+    if default not in raw:
+        raise ValueError(f"{path}: substrates {raw!r} must include the default substrate {default!r}")
+    return (default, *(v for v in dict.fromkeys(raw) if v != default))
+
+
 def list_tools(repo: Path | str = REPO) -> list[str]:
     return sorted(p.stem for p in tools_dir(repo).glob("*.yaml"))
 
 
+SUBSTRATE_SHAPES = ("pad", "cylinder")
+
+
 @dataclass(frozen=True)
 class Substrate:
-    """What a tool works on: the pad or the skin, as measured."""
+    """What a tool works on: the paper or silicone material, as measured.
+
+    ``shape`` says how the material is presented. A ``pad`` is a flat sheet:
+    its surface profile is deliberately NOT part of this record, because the
+    same sheet may be laid flat or wrapped around a support in simulation, and
+    that choice belongs to the scenario distribution. A ``cylinder`` is a
+    rigid fixture — paper glued around a tube — with one fixed ``radius_m``
+    that the scenario cannot bend or flatten; ``thickness_m`` is then its
+    diameter, so the actor origin is the axis, ``height_m`` is its length
+    along the axis and ``width_m`` is the arc the drawable band spans around
+    the crest.
+    """
 
     name: str
     display_name: str
@@ -788,30 +878,18 @@ class Substrate:
     thickness_m: float
     texel_cols: int
     texel_rows: int
-    shape: str
     surface_phrase: str
-    # How far the substrate's high point stands above its flat edges. A
-    # measured fact about the object, so the sim starts from the real shape and
-    # randomises around it rather than inventing an amplitude.
-    mound_peak_m: float = 0.0
     ruled: bool = False
     base_color: str | None = None
-    # How this substrate SITS, and how much its shape varies between setups.
-    # They belong to the object rather than to a run: a letter pad lies wherever
-    # it is put on a table, a skin draped over a wrist pad rests on the pad. The
-    # two also trade against each other, because the arm can only reach so high
-    # and a tall mound therefore has to sit low -- and only the substrate knows
-    # which of the two matters for the work done on it.
+    shape: str = "pad"
+    radius_m: float | None = None
+    # Printed square grid pitch; None when nothing is printed.
+    grid_pitch_m: float | None = None
+    rule_color: str | None = None
+    # How this material sits in the stock bench scene. Profile-specific shape
+    # is resolved separately by SurfaceDR.
     rest_z_m: tuple[float, float] = (0.0, 0.055)
-    peak_scale: tuple[float, float] = (0.85, 1.10)
-    # The UNDULATION a NEAR_FLAT substrate carries: how far it ripples, how
-    # steeply, and over what wavelength. A sheet of paper on a pad lifts by a
-    # millimetre over a hand's width; that is the shape these describe, and
-    # until 2026-08-27 they were the sim's defaults for every substrate.
-    #
-    # A `draped` substrate does NOT read them -- its shape comes from
-    # mound_peak_m and peak_scale through the drape height field -- so the
-    # defaults below stand unused on the skin rather than describing it.
+    # Optional small material undulation layered over either base profile.
     surface_amplitude_m: tuple[float, float] = (0.0004, 0.0018)
     surface_max_slope_rad: tuple[float, float] = (0.005, 0.04)
     surface_feature_m: tuple[float, float] = (0.05, 0.12)
@@ -820,6 +898,16 @@ class Substrate:
     def texel_per_m(self) -> float:
         """Texels per metre, averaged over both axes as the kernels see it."""
         return 0.5 * (self.texel_cols / self.width_m + self.texel_rows / self.height_m)
+
+    def rgb(self, field: str, default: tuple[float, float, float]) -> tuple[float, float, float]:
+        """A ``"r g b"`` colour field as floats in [0, 1]."""
+        raw = getattr(self, field)
+        if raw is None:
+            return default
+        parts = tuple(float(v) for v in str(raw).split())
+        if len(parts) != 3 or not all(0.0 <= v <= 1.0 for v in parts):
+            raise ValueError(f"substrate {self.name}: {field} must be three numbers in [0, 1], got {raw!r}")
+        return parts  # type: ignore[return-value]
 
 
 def _pair(entry: dict, key: str, default: tuple[float, float], path: Path) -> tuple[float, float]:
@@ -857,39 +945,102 @@ def load_substrate(name: str, repo: Path | str = REPO) -> Substrate:
     if not isinstance(entry, dict):
         known = ", ".join(k for k, v in data.items() if isinstance(v, dict)) or "none"
         raise ValueError(f"{path}: unknown substrate {name!r} (known: {known})")
-    return Substrate(
+    shape = str(entry.get("shape", "pad"))
+    if shape not in SUBSTRATE_SHAPES:
+        raise ValueError(f"{path}: {name}: shape must be one of {SUBSTRATE_SHAPES}, got {shape!r}")
+    ruled = bool(entry.get("ruled", False))
+    pitch = entry.get("grid_pitch_m")
+    if ruled and pitch is None:
+        raise ValueError(f"{path}: {name}: a ruled substrate needs grid_pitch_m")
+    if pitch is not None and not float(pitch) > 0:
+        raise ValueError(f"{path}: {name}: grid_pitch_m must be positive, got {pitch!r}")
+    radius = None
+    thickness = float(_require(entry, "thickness_m", path))
+    width = float(_require(entry, "width_m", path))
+    if shape == "cylinder":
+        diameter = float(_require(entry, "diameter_m", path))
+        if not diameter > 0:
+            raise ValueError(f"{path}: {name}: diameter_m must be positive, got {diameter!r}")
+        if abs(thickness - diameter) > 1e-9:
+            raise ValueError(f"{path}: {name}: a cylinder's thickness_m is its diameter "
+                             f"({diameter}), got {thickness}")
+        radius = diameter / 2.0
+        # A band that closes on itself is no longer a chart: the arc must stay
+        # short of the full circumference.
+        if width >= 2 * math.pi * radius - 1e-9:
+            raise ValueError(f"{path}: {name}: width_m {width} wraps the full "
+                             f"circumference {2 * math.pi * radius:.5f} of a {radius} m radius")
+    elif "diameter_m" in entry:
+        raise ValueError(f"{path}: {name}: diameter_m belongs to a cylinder-shaped substrate")
+    sub = Substrate(
         name=name,
         display_name=_require(entry, "display_name", path),
-        width_m=float(_require(entry, "width_m", path)),
+        width_m=width,
         height_m=float(_require(entry, "height_m", path)),
-        thickness_m=float(_require(entry, "thickness_m", path)),
+        thickness_m=thickness,
         texel_cols=int(_require(entry, "texel_cols", path)),
         texel_rows=int(_require(entry, "texel_rows", path)),
-        shape=str(_require(entry, "shape", path)),
         surface_phrase=str(_require(entry, "surface_phrase", path)),
-        mound_peak_m=float(entry.get("mound_peak_m", 0.0)),
-        ruled=bool(entry.get("ruled", False)),
+        ruled=ruled,
         base_color=entry.get("base_color"),
+        shape=shape,
+        radius_m=radius,
+        grid_pitch_m=None if pitch is None else float(pitch),
+        rule_color=entry.get("rule_color"),
         rest_z_m=_pair(entry, "rest_z_m", (0.0, 0.055), path),
-        peak_scale=_pair(entry, "peak_scale", (0.85, 1.10), path),
         surface_amplitude_m=_pair(entry, "surface_amplitude_m", (0.0004, 0.0018), path),
         surface_max_slope_rad=_pair(entry, "surface_max_slope_rad", (0.005, 0.04), path),
         surface_feature_m=_pair(entry, "surface_feature_m", (0.05, 0.12), path),
     )
+    sub.rgb("base_color", (1.0, 1.0, 1.0))
+    sub.rgb("rule_color", (0.62, 0.74, 0.90))
+    return sub
 
 
-def substrate_for(spec: "ToolSpec", repo: Path | str = REPO) -> Substrate:
-    """The substrate this tool works on. A tool and its substrate are a pair."""
-    return load_substrate(spec.substrate, repo)
+def list_substrates(repo: Path | str = REPO) -> list[str]:
+    path = substrates_path(repo)
+    data = parse_simple_yaml(path.read_text())
+    return sorted(k for k, v in data.items() if isinstance(v, dict))
 
 
-def load_tool(tool_id: str, repo: Path | str = REPO) -> ToolSpec:
-    """Load and validate one tool datasheet."""
-    path = tools_dir(repo) / f"{tool_id}.yaml"
+def substrate_for(spec: "ToolSpec", repo: Path | str = REPO, name: str | None = None) -> Substrate:
+    """The substrate this tool works on: its default, or one it admits.
+
+    A tool and its substrates are a pair on this bench. Naming one the
+    datasheet does not admit (a laser on paper) is refused here rather than
+    letting the scene follow a claim the bench cannot make.
+    """
+    chosen = name or spec.substrate
+    if chosen not in spec.substrates:
+        raise ValueError(
+            f"tool {spec.tool_id!r} does not work on substrate {chosen!r} "
+            f"(its datasheet admits: {', '.join(spec.substrates)})")
+    return load_substrate(chosen, repo)
+
+
+def _millimetres(data: dict, key: str, path: Path) -> float | None:
+    """An optional millimetre field in metres."""
+    value = data.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{path}: {key} must be a number of millimetres or null, got {value!r}")
+    return float(value) / 1000.0
+
+
+def _tool_text(path, repo, snapshot):
+    if snapshot is not None:
+        return snapshot.decode('utf-8')
     if not path.is_file():
         known = ", ".join(list_tools(repo)) or "none"
-        raise FileNotFoundError(f"unknown tool {tool_id!r}: no {path} (known tools: {known})")
-    text = path.read_text()
+        raise FileNotFoundError(f"unknown tool {path.stem!r}: no {path} (known tools: {known})")
+    return path.read_text()
+
+
+def load_tool(tool_id: str, repo: Path | str = REPO, *, snapshot: bytes | None = None) -> ToolSpec:
+    """Load and validate one tool datasheet."""
+    path = tools_dir(repo) / f"{tool_id}.yaml"
+    text = _tool_text(path, repo, snapshot)
     data = parse_simple_yaml(text)
     version = data.get("schema_version", 1)
     if version != SCHEMA_VERSION:
@@ -904,6 +1055,7 @@ def load_tool(tool_id: str, repo: Path | str = REPO) -> ToolSpec:
         tool_id=tool_id,
         kind=_require(data, "kind", path),
         substrate=data.get("substrate", "paper_pad"),
+        substrates=_substrates(data, path),
         display_name=_require(data, "display_name", path),
         prompt_phrase=_require(data, "prompt_phrase", path),
         profile=tuple((float(z), float(r)) for z, r in _require(data, "profile", path)),
@@ -931,6 +1083,9 @@ def load_tool(tool_id: str, repo: Path | str = REPO) -> ToolSpec:
         body=data.get("body"),
         cartridge=data.get("cartridge"),
         measured=data.get("measured") or {},
+        line=data.get("line") or {},
+        stroke_m=_millimetres(data, "stroke_mm", path),
+        tip_out_at_top_m=_millimetres(data, "tip_out_at_top_mm", path),
         source=path,
         sha256=hashlib.sha256(text.encode()).hexdigest(),
         raw=data,
@@ -1038,9 +1193,10 @@ def require_stated_tool(tool_id: str | None, repo: Path | str = REPO,
             f"{context}: {tool_id!r} is fitted but {WORKSPACE_RELPATH} was "
             f"measured with {calibrated!r}. Every constant under `{arm}:` "
             f"(tip offset, paper plane, pivot) belongs to {calibrated!r}, so "
-            f"running {tool_id!r} against them mixes two tools. Re-run the "
-            f"touch-off for the fitted tool:\n"
-            f"  tatbot --ee-tool {tool_id} vision calib sweep --phases tip   (= scripts/vision/calib_sweep.sh)")
+            f"running {tool_id!r} against them mixes two tools. Record "
+            f"{tool_id!r} under `{arm}:` there with its datasheet's nominal "
+            f"tip, deploy the ROS stack, and calibrate it on the station probe:\n"
+            f"  tatbot ros calib run --arm {arm}")
     return spec
 
 
@@ -1062,7 +1218,7 @@ def tip_offset_m(workspace: dict, arm: str = "right") -> tuple[float, float, flo
     and every consumer behaves as if no touch-off had been run.
     """
     side = workspace.get(arm) or {}
-    if side.get("tip_frame") != tip_frame(arm):
+    if side.get("tip_frame") != tip_frame(arm) or (side.get('tool_fit') or {}).get('status') == 'nominal':
         return None
     x = side.get("pen_tip_offset_x")
     y = side.get("pen_tip_offset_y")
@@ -1547,10 +1703,12 @@ def derive_z_floor_m(spec: ToolSpec, workspace: dict, arm: str = "right",
         reasons.append("paper_plane_z is null — no touch-off has been written")
     if measured is None:
         reasons.append("no measured tip offset")
-    if not touchoff.get("n_pad"):
+    # The pad plane keeps its own touch count once a later tip calibration
+    # (palette pits, no pad) leaves paper_plane_z as the pad touch-off wrote it.
+    pad_touches = side.get("paper_plane_touches", touchoff.get("n_pad"))
+    if not pad_touches:
         reasons.append(
-            "the touch-off recorded no pad touches (n_pad = 0), so paper_plane_z is the "
-            "palette plane, not the paper the pen draws on")
+            "no pad touches measured paper_plane_z, so it is not the paper the pen draws on")
     if plane is None or measured is None or reasons:
         return {"z_floor_m": None, "trustworthy": False, "reasons": reasons}
     reach = sum(v * v for v in measured) ** 0.5

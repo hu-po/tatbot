@@ -1,9 +1,8 @@
-"""Synthetic sweep-session artifacts for the field-calibration tests.
+"""Synthetic flight logs, cameras and poses for the tip, tracking and teleop-log tests.
 
 Builds byte-accurate .wxtl flight logs (format from cpp/teleop/wxai_teleop.cpp)
-and pinhole+Brown-Conrady cameras whose FORWARD projection mirrors the model
-fuse_session.Camera inverts — so the tests exercise the real parsing and the
-real geometry, not mocks of them.
+and pinhole+Brown-Conrady cameras, so the tests exercise the real parsing and
+the real geometry, not mocks of them.
 """
 
 from __future__ import annotations
@@ -130,3 +129,25 @@ def write_shot(session, index, unix_seconds, detections):
     (shot / "timing.json").write_text(json.dumps(
         {"unix_seconds": unix_seconds, "cameras": sorted(detections)}))
     return shot
+
+
+def vector_to_rotation(vector):
+    """Rodrigues: an axis-angle vector to a rotation matrix (the fixtures' own)."""
+    vector = np.asarray(vector, float)
+    angle = np.linalg.norm(vector)
+    if angle < 1e-12:
+        return np.eye(3)
+    axis = vector / angle
+    cross = np.array([[0, -axis[2], axis[1]],
+                      [axis[2], 0, -axis[0]],
+                      [-axis[1], axis[0], 0]])
+    return np.eye(3) + np.sin(angle) * cross + (1 - np.cos(angle)) * (cross @ cross)
+
+
+def pose_joint_values(pose, arm_prefix):
+    """A recorded pose's joints keyed by one arm's driver joint names."""
+    from urdf_kinematics import driver_joint_names
+
+    joints = pose["joints"]
+    names = pose.get("joint_names") or driver_joint_names(arm_prefix, len(joints))
+    return dict(zip(names, joints, strict=True))

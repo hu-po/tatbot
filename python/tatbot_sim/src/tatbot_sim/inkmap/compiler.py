@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import subprocess
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -11,17 +10,16 @@ from pathlib import Path
 
 import numpy as np
 
+from tatbot_sim.inkmap.artwork import artwork_preview
 from tatbot_sim.inkmap.contracts import document_sha256, validate_placement, validate_scenario
 from tatbot_sim.inkmap.rig import BODY_ASSET_ROOT, load_body_rig
 from tatbot_sim.inkmap.surface_trace import (
     SurfaceAnchor,
     anchor_frame,
-    compile_surface_trace,
 )
-from tatbot_sim.inkmap.svg_strokes import compile_svg_strokes
 from tatbot_sim.repo import repo_root
 
-SCENARIO_SCHEMA_VERSION = 1
+SCENARIO_SCHEMA_VERSION = 2
 DEFAULT_TATTOO_TARGET_WORLD_M = np.array([0.29, 0.0, 0.04])
 DEFAULT_PATCH_YAW_RAD = np.pi
 
@@ -41,29 +39,17 @@ def _sha256_file(path: Path) -> str:
 def _resolve_design(placement_file: dict, placement: dict) -> dict:
     design_id = placement["design_id"]
     embedded = placement_file.get("designs", {}).get(design_id)
-    if embedded:
-        svg = embedded["svg"]
-        return {
-            "id": design_id,
-            "name": embedded["name"],
-            "svg": svg,
-            "sha256": _sha256_bytes(svg.encode()),
-            "source": deepcopy(embedded.get("source", {"kind": "embedded"})),
-        }
-    manifest_path = BODY_ASSET_ROOT / "designs" / "manifest.json"
-    manifest = json.loads(manifest_path.read_text())
-    try:
-        design = next(item for item in manifest["designs"] if item["id"] == design_id)
-    except StopIteration as exc:
-        raise ScenarioCompileError(f"design {design_id!r} is neither embedded nor built in") from exc
-    path = BODY_ASSET_ROOT / design["path"]
-    svg = path.read_text()
+    if not embedded:
+        raise ScenarioCompileError(
+            f"design {design_id!r} is not embedded; simulator scenarios must be self-contained",
+        )
+    svg = artwork_preview(embedded)
     return {
         "id": design_id,
-        "name": design["name"],
+        "name": embedded["name"],
         "svg": svg,
-        "sha256": _sha256_bytes(svg.encode()),
-        "source": {"kind": "builtin", "path": design["path"]},
+        "sha256": embedded["source_sha256"],
+        "source": deepcopy(embedded.get("source", {"kind": "embedded"})),
     }
 
 
@@ -99,7 +85,6 @@ def compile_scenario(
     placement_id: str | None = None,
     pose_id: str = "supine",
     seed: int = 0,
-    world_from_body: np.ndarray | None = None,
     target_world_m=DEFAULT_TATTOO_TARGET_WORLD_M,
     align_patch_up: bool = True,
     patch_yaw_rad: float = DEFAULT_PATCH_YAW_RAD,
@@ -108,8 +93,23 @@ def compile_scenario(
     created_at: str | None = None,
     git_sha: str | None = None,
     generator: str = "tatbot sim compile",
+    program_binding: dict | None = None,
+    operating_budget_s: float | None = None,
 ) -> dict:
     validate_placement(placement_file)
+    if program_binding is None:
+        from tatbot_sim.inkmap.bundle import make_simulation_bundle
+        from tatbot_sim.inkmap.program_scenario import compile_simulation_bundle
+        rig = load_body_rig()
+        bundle = make_simulation_bundle(placement_file, {
+            "pose_id": pose_id, "pose_catalog_sha256": rig.catalog_sha256,
+            "support_id": support_id or rig.catalog_record["poses"][pose_id]["support_id"],
+            "tool_id": tool_id, "seed": seed, "skin_tone": "#c98f6b", "camera": None,
+            "target_world_m": np.asarray(target_world_m).tolist(),
+            "align_patch_up": align_patch_up, "patch_yaw_rad": patch_yaw_rad,
+        })
+        return compile_simulation_bundle(bundle, placement_id=placement_id, created_at=created_at, git_sha=git_sha,
+                                         generator=generator, operating_budget_s=operating_budget_s)
     placements = placement_file["placements"]
     if not placements:
         raise ScenarioCompileError("placement file contains no placements")
@@ -122,25 +122,22 @@ def compile_scenario(
             placement = next(item for item in placements if item["id"] == placement_id)
         except StopIteration as exc:
             raise ScenarioCompileError(f"unknown placement id {placement_id!r}") from exc
+    design = _resolve_design(placement_file, placement)
     body = placement_file["body"]
-    rig = load_body_rig(body["id"])
-    if body["surface_sha256"] != rig.surface_sha256:
+    rig = load_body_rig()
+    if body["rest_surface_sha256"] != rig.surface_sha256:
         raise ScenarioCompileError("placement surface digest does not match the rig rest surface")
-    body_path = BODY_ASSET_ROOT / body["path"]
+    if body["topology_sha256"] != rig.topology_sha256:
+        raise ScenarioCompileError("placement topology digest does not match SOMA mid")
+    body_path = BODY_ASSET_ROOT / body["asset_path"]
     if _sha256_file(body_path) != body["asset_sha256"]:
         raise ScenarioCompileError("placement body asset checksum mismatch")
 
-    design = _resolve_design(placement_file, placement)
-    metric = compile_svg_strokes(
-        design["svg"], placement["size_mm"], mirror=placement["mirror"], rotation_rad=0.0,
+    from tatbot_sim.inkmap.program_scenario import _trace
+    trace_record = _trace(program_binding["ink_program"])
+    world_from_body = _default_world_from_body(
+        rig, pose_id, placement, target_world_m, align_patch_up, patch_yaw_rad,
     )
-    trace = compile_surface_trace(rig, placement, metric.strokes)
-    if world_from_body is None:
-        world_from_body = _default_world_from_body(
-            rig, pose_id, placement, target_world_m, align_patch_up, patch_yaw_rad,
-        )
-    else:
-        world_from_body = np.asarray(world_from_body, dtype=np.float64)
     # Validate the transform and pose now, not on replay.
     rig.posed(pose_id, world_from_body)
     pose = rig.catalog_record["poses"][pose_id]
@@ -158,24 +155,39 @@ def compile_scenario(
         "units": {"length": "m", "tattoo_size": "mm", "angle": "rad", "up": "+z", "matrix_order": "row-major"},
         "seed": int(seed),
         "body": {
-            "id": body["id"], "path": body["path"], "asset_sha256": body["asset_sha256"],
-            "surface_sha256": rig.surface_sha256, "rig_id": rig.rig_id,
-            "rig_sha256": rig.catalog_record["sidecar_sha256"],
+            "model_spec_id": body["model_spec_id"],
+            "model_spec_sha256": body["model_spec_sha256"],
+            "identity_sha256": body["identity_sha256"],
+            "topology_sha256": body["topology_sha256"],
+            "rest_surface_sha256": rig.surface_sha256,
+            "asset_path": body["asset_path"],
+            "asset_sha256": body["asset_sha256"],
+            "pose_asset_sha256": rig.catalog_record["pose_asset"]["sha256"],
         },
         "pose": {
             "id": pose_id, "catalog_sha256": rig.catalog_sha256, "source": "named",
-            "joint_rotations": deepcopy(pose["joint_rotations"]),
+            "posed_surface_sha256": pose["surface_sha256"],
             "world_from_body": np.asarray(world_from_body).tolist(),
         },
         "placement": resolved_placement,
         "design": design,
-        "trace": trace.as_dict(),
+        "trace": trace_record,
         "robot": {
             "urdf_sha256": _sha256_file(urdf), "tool_id": tool_id,
             "world_from_robot": np.eye(4).tolist(),
         },
-        "support": {"id": support_id or pose["support_id"]},
+        "support": {
+            "id": support_id or pose["support_id"],
+            "world_from_nominal": np.eye(4).tolist(),
+        },
         "provenance": {"created_at": created_at, "git_sha": git_sha, "generator": generator},
     }
+    if program_binding is not None:
+        offset = program_binding["bundle"]["request"].get("support_offset_m", [0, 0, 0])
+        support_transform = np.eye(4)
+        support_transform[:3, 3] = offset
+        scenario["support"]["world_from_nominal"] = support_transform.tolist()
+        scenario["schema_version"] = 3
+        scenario["program_binding"] = deepcopy(program_binding)
     validate_scenario(scenario)
     return scenario

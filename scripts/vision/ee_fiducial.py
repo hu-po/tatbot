@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Vision-only multi-camera pose estimation for the follower end effector.
 
-The wrist is one rigid target made from four AprilTag 16h5 faces.  Estimating
+The wrist is one rigid target made from the configured AprilTag faces.  Estimating
 each planar tag independently throws that information away and re-introduces
 the IPPE branch flips seen during field calibration.  This module instead
 projects every known EE-frame corner into every calibrated Amcrest camera and
@@ -112,6 +112,8 @@ class WristLayout:
     # concrete URDF meaning explicit; for the current hardware it is the
     # follower left jaw, not the flange-centered ee_gripper_link.
     parent_frame: str = "right/gripper_left"
+    family: str | None = None
+    require_family_ids: frozenset[int] = frozenset()
 
     @classmethod
     def load(
@@ -119,12 +121,13 @@ class WristLayout:
         path: str | Path,
         edge_m: float | None = None,
         inventory_path: str | Path = DEFAULT_INVENTORY_PATH,
+        target: str = 'wrist',
     ) -> "WristLayout":
         path = Path(path).expanduser()
         raw = path.read_bytes()
         data = json.loads(raw)
         inventory = load_inventory(inventory_path)
-        wrist = inventory.target("wrist")
+        wrist = inventory.target(target)
         if data.get("schema_version") != 2:
             raise ValueError(
                 f"{path}: unsupported wrist layout schema {data.get('schema_version')!r}"
@@ -147,6 +150,8 @@ class WristLayout:
             raise ValueError(
                 f"{path}: inventory hash does not match {inventory.source}; regenerate the wrist layout"
             )
+        if data.get("calibration_status") != "calibrated":
+            raise ValueError(f"wrist layout is {data.get('calibration_status')}, not calibrated")
         transforms = {}
         for key, entry in data["tags"].items():
             tag_id = int(key)
@@ -168,12 +173,6 @@ class WristLayout:
         missing = expected_ids - transforms.keys()
         if missing:
             raise ValueError(f"wrist layout is missing tag ids {sorted(missing)}")
-        status = data.get("calibration_status")
-        if status != "calibrated":
-            raise ValueError(
-                f"{path}: wrist layout is {status or 'unversioned'}, not calibrated; "
-                "run the configured wrist calibration and export it before tracking"
-            )
         configured_edge_m = float(data.get("edge_m", wrist.edge_m))
         if edge_m is not None and not math.isclose(float(edge_m), configured_edge_m, abs_tol=1e-9):
             raise ValueError(
@@ -188,6 +187,8 @@ class WristLayout:
             ee_from_tag=transforms,
             layout_hash=hashlib.sha256(raw).hexdigest(),
             inventory_hash=inventory.inventory_hash,
+            family=wrist.family,
+            require_family_ids=inventory.cross_family_ids,
             parent_frame=wrist.parent_frame,
         )
 
@@ -206,7 +207,7 @@ class WristTagDetector(FiducialDetector):
 
     def __init__(self, layout: WristLayout, config: DetectorConfig | None = None):
         self.layout = layout
-        super().__init__(set(layout.ee_from_tag), config=config, keep_best_per_id=False)
+        super().__init__(set(layout.ee_from_tag), config=config, family=layout.family, keep_best_per_id=False)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -258,6 +259,8 @@ class PoseEstimate:
         inventory_hash: str | None = None,
         tracking_frame: str | None = None,
         base_from_world: np.ndarray | None = None,
+        root_from_world: np.ndarray | None = None,
+        base_frame: str | None = None,
         sequence: int | None = None,
         maximum_skew_ns: int | None = None,
         latency_ms: float | None = None,
@@ -271,6 +274,12 @@ class PoseEstimate:
             "base_from_ee": (
                 (base_from_world @ self.world_from_ee).tolist()
                 if base_from_world is not None and self.world_from_ee is not None
+                else None
+            ),
+            "base_frame": base_frame,
+            "root_from_ee": (
+                (root_from_world @ self.world_from_ee).tolist()
+                if root_from_world is not None and self.world_from_ee is not None
                 else None
             ),
             "reprojection_rmse_px": self.reprojection_rmse_px,
@@ -542,7 +551,10 @@ class MultiCameraEstimator:
         initial_world_from_ee: np.ndarray | None = None,
         initial_twist: np.ndarray | None = None,
     ) -> PoseEstimate:
-        detections = [item for item in detections if item.camera in self.cameras]
+        detections = [item for item in detections if item.camera in self.cameras
+                      and item.tag_id in self.layout.ee_from_tag
+                      and (item.family == self.layout.family or
+                           (item.family is None and item.tag_id not in self.layout.require_family_ids))]
         sources = [(item.camera, item.tag_id) for item in detections]
         duplicate_sources = sorted({source for source in sources if sources.count(source) > 1})
         if duplicate_sources:

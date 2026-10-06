@@ -1,0 +1,10 @@
+{
+  "vision-core": {"features": [], "pkg_config": []},
+  "vision-viewer": {"features": ["rerun"], "pkg_config": []},
+  "vision-viewer-bus": {"features": ["rerun", "zenoh"], "pkg_config": []},
+  "vision-poe": {"features": ["gstreamer", "rerun", "fiducials"], "pkg_config": ["gstreamer-1.0", "gstreamer-app-1.0"]},
+  "vision-poe-bus": {"features": ["gstreamer", "rerun", "fiducials", "zenoh"], "pkg_config": ["gstreamer-1.0", "gstreamer-app-1.0"]},
+  "vision-poe-depth-bus": {"features": ["gstreamer", "realsense", "rerun", "fiducials", "zenoh"], "pkg_config": ["gstreamer-1.0", "gstreamer-app-1.0", "realsense2"]},
+  "vision-wrist": {"features": ["realsense", "rerun"], "pkg_config": ["realsense2"]},
+  "vision-wrist-bus": {"features": ["realsense", "rerun", "zenoh"], "pkg_config": ["realsense2"]}
+}

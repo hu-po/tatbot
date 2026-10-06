@@ -19,25 +19,24 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import gymnasium as gym
 import numpy as np
 import tatbot_sim  # noqa: F401
-import torch
 import tyro
 from mani_skill.sensors.camera import CameraConfig
 from mani_skill.utils import sapien_utils
-from tatbot_sim import interaction, tools
+from tatbot_sim import design_scene, interaction
+from tatbot_sim.backends.maniskill import ManiSkillWorld
 from tatbot_sim.config import DRConfig
-from tatbot_sim.depth_noise import DepthCorruptor, RGBJitter
 from tatbot_sim.env import TatbotDrawEnv
+from tatbot_sim.episode import Episode
 from tatbot_sim.expert import (
     StrokeExpert,
     reachable_canvas_masks,
     reachable_height_ceiling,
 )
+from tatbot_sim.observations import ObservationBuilder
 from tatbot_sim.planning import plan_batch
 
-CAMERAS = ("wrist_upper", "wrist_lower")
 EXTRA_VIEWS = {
     "thirdperson": ((0.62, -0.42, 0.42), (0.29, 0, 0.05)),
     "topdown": ((0.29, 0.0, 0.72), (0.29, 0.0, 0.0)),
@@ -54,19 +53,16 @@ class Args:
     clip_stride: int = 4
     """Capture every Nth frame for the webp clips (30/N fps)."""
     depth: bool = True
+    sensor_profile: str = "deployment"
     dr: DRConfig = field(default_factory=DRConfig)
-    task_name: str = field(default_factory=lambda: (
-        "draw a {size_mm}mm {shape} "
-        f"{tools.active_tool().prompt_phrase} on the paper pad"
-    ))
-    """Mirrors generate's default — see generate.Args.task_name."""
-    maze_task_name: str = field(default_factory=lambda: (
-        f"draw a continuous squiggle {tools.active_tool().prompt_phrase} "
-        "on the grid lines of the paper pad."
-    ))
-    """Mirrors generate's default: the tool slot comes from the fitted tool's
-    datasheet, so a tool swap moves the preview's prompt with it. The literal
-    that used to sit here said "using pen tip" whatever was in the gripper."""
+    design: str | None = None
+    """A portable design to draw in place of the shared collection (--task
+    artwork); the same flag as generate's, see tatbot_sim.design_scene."""
+    design_placement: str = "authored"
+    """authored keeps Inkmap's placement; sampled recentres and offsets it."""
+    tool_id: str | None = None
+    task_name: str = "draw a {size_mm}mm {shape} {tool} on the paper pad"
+    maze_task_name: str = "draw a continuous squiggle {tool} on the grid lines of the paper pad."
 
 
 def main(args: Args):
@@ -81,31 +77,26 @@ def main(args: Args):
                          near=0.01, far=100)
             for n, (e, t) in EXTRA_VIEWS.items()
         ]
-    TatbotDrawEnv._default_sensor_configs = property(with_views)
 
+    from tatbot_sim.resolved import resolve
+    config = resolve(tool_id=args.tool_id, seed=args.seed, dr=args.dr,
+                     sensor_profile=args.sensor_profile)
     rng = np.random.default_rng(args.seed)
-    env = gym.make(
-        "TatbotDraw-v0", num_envs=args.num_envs,
+    env = TatbotDrawEnv(config=config, presentation_cameras=with_views, num_envs=args.num_envs,
         obs_mode="rgbd" if args.depth else "rgb", control_mode="pd_joint_pos",
         sim_backend="auto", reconfiguration_freq=1, dr=args.dr,
+        sensor_profile=args.sensor_profile,
     )
     base = env.unwrapped
+    cameras = tuple(camera.role for camera in base.agent.camera_descriptions)
     device = base.device
-    robot = base.agent.robot
-    env.reset(seed=args.seed)
-
-    # The expert is built BEFORE planning because a shaped surface has to be
-    # planned against what the arm can actually reach on it — the same masks
-    # generate computes. Without them the preview places strokes on mound
-    # flanks the wrist cannot hold the tool normal to, and renders a miss that
-    # the real generator would never have planned: the preview would libel the
-    # distribution it exists to show.
-    active = [j.name for j in robot.active_joints]
-    expert = StrokeExpert(args.num_envs, device, noise=args.dr.noise, seed=args.seed)
-    idx_ik = [active.index(n) for n in expert.ik.chain.get_joint_parameter_names()]
+    expert = StrokeExpert(args.num_envs, device, config=config, noise=args.dr.noise, seed=config.seed_for("noise"))
+    world = ManiSkillWorld(env, config, expert)
+    episode = Episode(world, ObservationBuilder(config, args.num_envs, device))
+    episode.reset(seed=args.seed)
 
     masks = ceiling = None
-    q_now = robot.get_qpos()[:, idx_ik]
+    q_now = world.positions()
     slack = args.dr.pen_lean.max_off_base_rad
     masks = reachable_canvas_masks(expert, q_now, base.surface,
                                    interaction.WORKING_OFFSET_M,
@@ -115,49 +106,32 @@ def main(args: Args):
     print(f"reachable: {np.mean([m.fraction for m in masks]):.0%} of the "
           f"{base.substrate.name}, tool ceiling {ceiling:.3f} m")
 
+    design = design_scene.from_args(args, base.substrate, config=config)
     plan = plan_batch(
-        rng, base.pad_sheets, base.surface,
+        rng, base.pad_sheets, base.surface, config=config,
         task=args.task, horizon=args.horizon, num_envs=args.num_envs,
         dr=args.dr, draw_clearance=interaction.WORKING_OFFSET_M,
         task_name=args.task_name, maze_task_name=args.maze_task_name,
-        reachable=masks, tool_ceiling=ceiling,
+        reachable=masks, tool_ceiling=ceiling, cap_rims=base.cap_rims_np(),
+        artwork_sampler=design_scene.sampler(design),
     )
-
-    if plan.preink is not None:
-        # erase episodes OPEN with the scene already inked; generate does
-        # this and the preview must too, or the laser erases a blank sheet
-        base.preink(plan.preink)
-    q_start = expert.solve_pose(plan.targets[:, 0], robot.get_qpos()[:, idx_ik],
-                                normals=plan.pen_normals[:, 0])
-    full = robot.get_qpos().clone()
-    full[:, idx_ik] = q_start
-    robot.set_qpos(full)
-    if plan.q_raised is not None:
-        full = robot.get_qpos().clone()
-        full[:, idx_ik] = torch.as_tensor(plan.q_raised, device=device)
-        robot.set_qpos(full)
-    expert.reset(plan.targets, q_start,
-                 floor_plane=(plan.surface_points, plan.surface_normals),
-                 pen_normals=plan.pen_normals,
-                 approach_from=(plan.q_raised, plan.n_app) if plan.q_raised is not None else None)
-    corruptor = DepthCorruptor(args.num_envs, device, cfg=args.dr.depth_noise, seed=args.seed) \
-        if args.depth and args.dr.corrupt_depth else None
-    jitter = RGBJitter(args.num_envs, device, cfg=args.dr.rgb, seed=args.seed)
+    episode.install(plan)
 
     clips: dict[tuple[str, int], list] = {}
-    for t in range(plan.episode_steps):
-        obs, *_ = env.step(expert.act())
+    for t in range(episode.horizon):
+        if episode.done:
+            break
+        _, observation, _ = episode.step(capture=t % args.clip_stride == 0)
+        obs = episode.last_raw
         if t % args.clip_stride:
             continue
-        for view in list(EXTRA_VIEWS) + list(CAMERAS):
-            rgb = obs["sensor_data"][view]["rgb"]
-            if view in CAMERAS:
-                rgb = jitter(rgb)
+        for view in list(EXTRA_VIEWS) + list(cameras):
+            rgb = observation.rgb[view] if view in cameras else obs["sensor_data"][view]["rgb"]
             f = rgb.cpu().numpy()
             for i in range(args.num_envs):
                 clips.setdefault((view, i), []).append(f[i])
-        if args.depth and corruptor is not None:
-            d = corruptor(obs["sensor_data"]["wrist_upper"]["depth"]).cpu().numpy()
+        if args.depth:
+            d = observation.depth_mm[cameras[0]].cpu().numpy()
             for i in range(args.num_envs):
                 mm = np.squeeze(d[i]).astype(np.float32)
                 valid = mm > 0
@@ -182,9 +156,12 @@ def main(args: Args):
 
     for i in range(args.num_envs):
         print(f"env {i}: {plan.tasks[i]}")
-    print(f"wrote {len(clips)} clips to {out} ({plan.episode_steps} steps, "
+    print(f"wrote {len(clips)} clips to {out} ({episode.step_index} steps, "
           f"n_app={plan.n_app})")
-    env.close()
+    import json
+    (out / "runtime.json").write_text(json.dumps({"resolved_config": config.metadata(),
+                                                "runtime": episode.metadata()}, indent=2) + "\n")
+    episode.close()
 
 
 if __name__ == "__main__":

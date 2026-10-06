@@ -19,6 +19,8 @@ pub struct LiveTeleopTick {
     pub version: u32,
     pub timestamp_ns: i64,
     pub sequence: u64,
+    #[serde(default)]
+    pub right_leader: bool,
     pub leader_pos: Vec<f64>,
     pub follower_pos: Vec<f64>,
     pub target: Vec<f64>,
@@ -32,8 +34,22 @@ impl LiveTeleopTick {
         Ok(tick)
     }
 
+    /// Physical left/right positions; control roles can be reversed.
+    pub fn physical_positions(&self) -> (&[f64], &[f64]) {
+        if self.right_leader {
+            (&self.follower_pos, &self.leader_pos)
+        } else {
+            (&self.leader_pos, &self.follower_pos)
+        }
+    }
+
     pub fn validate(&self) -> Result<()> {
-        if self.magic != LIVE_MAGIC || self.version != LIVE_VERSION {
+        if self.magic != LIVE_MAGIC
+            || !matches!(
+                (self.version, self.right_leader),
+                (LIVE_VERSION, false) | (2, true)
+            )
+        {
             bail!("unsupported live teleop telemetry contract");
         }
         let joints = self.leader_pos.len();
@@ -58,6 +74,7 @@ impl LiveTeleopTick {
 }
 
 const MAGIC: &[u8; 8] = b"WXTLOG1\0";
+const MAGIC_V2: &[u8; 8] = b"WXTLOG2\0";
 const HEADER_LEN: usize = 64;
 
 #[derive(Debug)]
@@ -68,6 +85,9 @@ pub struct TeleopLog {
     pub goal_time_s: f64,
     pub ff_gain: f64,
     pub abs_gripper: bool,
+    pub right_leader: bool,
+    pub mirrored_joints: Vec<usize>,
+    pub start_pose_anchored: bool,
     /// System-clock time of the first loop tick, nanoseconds since the epoch.
     pub wall_start_ns: i64,
     pub ticks: Vec<TeleopTick>,
@@ -101,7 +121,7 @@ impl TeleopLog {
         if bytes.len() < HEADER_LEN {
             bail!("file is shorter than the {HEADER_LEN}-byte header");
         }
-        if &bytes[0..8] != MAGIC {
+        if &bytes[0..8] != MAGIC && &bytes[0..8] != MAGIC_V2 {
             bail!("bad magic; not a wxai_teleop flight log");
         }
         let u64_at =
@@ -109,6 +129,10 @@ impl TeleopLog {
         let f64_at =
             |offset: usize| f64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap());
 
+        let right_leader = &bytes[0..8] == MAGIC_V2;
+        if right_leader && !matches!(u64_at(48), 7 | 31 | 63) {
+            bail!("unsupported mirrored wrist log flags");
+        }
         let num_joints = usize::try_from(u64_at(8)).context("num_joints out of range")?;
         if num_joints == 0 || num_joints > 32 {
             bail!("implausible num_joints {num_joints}");
@@ -153,7 +177,14 @@ impl TeleopLog {
             tau_s: f64_at(24),
             goal_time_s: f64_at(32),
             ff_gain: f64_at(40),
-            abs_gripper: u64_at(48) != 0,
+            abs_gripper: u64_at(48) & 1 != 0,
+            right_leader,
+            mirrored_joints: match (right_leader, u64_at(48)) {
+                (true, 31 | 63) => vec![0, 4, 5],
+                (true, 7) => vec![0],
+                _ => vec![],
+            },
+            start_pose_anchored: right_leader && u64_at(48) == 63,
             wall_start_ns: u64_at(56) as i64,
             ticks,
         })
@@ -191,6 +222,45 @@ mod tests {
         assert_eq!(log.ticks[1].t_sched, 100.0);
         assert_eq!(log.ticks[1].leader_pos[0], 105.0);
         assert_eq!(log.ticks[2].target[6], 246.0);
+    }
+
+    #[test]
+    fn mirrored_capture_preserves_control_roles_and_physical_positions() {
+        let mut bytes = sample_bytes(7, 2);
+        bytes[..8].copy_from_slice(MAGIC_V2);
+        bytes[48..56].copy_from_slice(&7_u64.to_le_bytes());
+        let log = TeleopLog::parse(&bytes).unwrap();
+        assert!(log.right_leader);
+        assert_eq!(log.mirrored_joints, vec![0]);
+        assert_eq!(log.ticks[1].leader_pos[0], 105.0);
+        bytes[48..56].copy_from_slice(&31_u64.to_le_bytes());
+        let log = TeleopLog::parse(&bytes).unwrap();
+        assert_eq!(log.mirrored_joints, vec![0, 4, 5]);
+        assert_eq!(log.ticks[1].leader_pos[0], 105.0);
+        bytes[48..56].copy_from_slice(&63_u64.to_le_bytes());
+        let log = TeleopLog::parse(&bytes).unwrap();
+        assert_eq!(log.mirrored_joints, vec![0, 4, 5]);
+        assert!(log.start_pose_anchored);
+
+        for flags in [3_u64, 15, 127] {
+            bytes[48..56].copy_from_slice(&flags.to_le_bytes());
+            assert!(TeleopLog::parse(&bytes).is_err());
+        }
+        let tick = LiveTeleopTick::parse(
+            br#"{
+            "magic":"tatbot-teleop-joints","version":2,"right_leader":true,
+            "timestamp_ns":1755536420000000000,"sequence":7,
+            "leader_pos":[1,2],"follower_pos":[3,4],
+            "target":[5,6],"follower_eff":[7,8]
+        }"#,
+        )
+        .unwrap();
+        let (left, right) = tick.physical_positions();
+        assert_eq!(left, &[3.0, 4.0]);
+        assert_eq!(right, &[1.0, 2.0]);
+        let mut invalid = tick;
+        invalid.version = 1;
+        assert!(invalid.validate().is_err());
     }
 
     #[test]

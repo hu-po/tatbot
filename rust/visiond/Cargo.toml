@@ -1,5 +1,6 @@
 [package]
 name = "tatbot-visiond"
+default-run = "tatbot-visiond"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
@@ -8,19 +9,23 @@ description = "Tatbot 2.0 sensor capture, timestamping, and evidence service"
 
 [features]
 default = []
-gstreamer = ["dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video", "dep:image"]
+zenoh = ["dep:tatbot-bus", "dep:zenoh", "dep:image"]
+gstreamer = ["dep:gstreamer", "dep:gstreamer-app", "dep:image"]
 realsense = ["dep:realsense-rust"]
-rerun = ["dep:rerun", "dep:urdf-rs", "dep:image", "dep:rayon"]
+realsense-raw-clock = ["realsense", "realsense-rust/raw-device-clock"]
+rerun = ["dep:rerun", "dep:urdf-rs", "dep:image", "dep:rayon", "dep:re_log_encoding", "dep:re_log_types"]
 fiducials = ["dep:apriltag", "dep:nalgebra", "dep:rayon"]
 
 [dependencies]
+tatbot-bus = { path = "../tatbot-bus", features = ["zenoh"], optional = true }
+zenoh = { version = "1.10", default-features = false, features = ["transport_tcp"], optional = true }
 anyhow = "1"
+libc = "0.2"
 clap = { version = "4", features = ["derive", "env"] }
 hex = "0.4"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
 sha2 = "0.10"
-thiserror = "2"
 toml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
@@ -28,8 +33,7 @@ url = "2"
 
 gstreamer = { version = "0.24", optional = true }
 gstreamer-app = { version = "0.24", optional = true }
-gstreamer-video = { version = "0.24", optional = true }
-realsense-rust = { version = "1.3", optional = true }
+realsense-rust = { version = "=1.3.0", optional = true }
 rerun = { version = "0.36.0", optional = true }
 image = { version = "0.25", optional = true, default-features = false, features = ["jpeg"] }
 rayon = { version = "1", optional = true }
@@ -37,5 +41,10 @@ urdf-rs = { version = "0.9", optional = true }
 apriltag = { version = "0.4", optional = true }
 nalgebra = { version = "0.33", optional = true }
 
+# Match the deployed Rerun wire/schema version; use upstream decoders.
+re_log_encoding = { version = "=0.36.0", optional = true, features = ["encoder", "decoder"] }
+re_log_types = { version = "=0.36.0", optional = true }
+
 [dev-dependencies]
 tempfile = "3"
+image = { version = "0.25", default-features = false, features = ["png"] }

@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>tatbot_bridge</name>
+  <version>0.1.0</version>
+  <description>zenoh and ROS: stencild page poses on the tatbot bus become /tatbot/page and tf page/PATTERN_ID; /joint_states rides the bus as tatbot.arm-joints/1.</description>
+  <maintainer email="hello@tatbot.ai">hu-po</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>tatbot_interfaces</exec_depend>
+  <exec_depend>tatbot_description</exec_depend>
+  <exec_depend>tatbot_motion</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>builtin_interfaces</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>tf2_ros_py</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <!-- zenoh-python (eclipse-zenoh 1.10, the fleet bus version) is a pip package: no rosdep key -->
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

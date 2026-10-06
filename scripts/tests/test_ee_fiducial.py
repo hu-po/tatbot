@@ -8,15 +8,16 @@ Run with:
 from __future__ import annotations
 
 import json
-import sys
+from dataclasses import replace
 from pathlib import Path
 
 import cv2
 import numpy as np
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "scripts/vision"))
 
+from calib_synth import look_at_rotation  # noqa: E402
 from ee_fiducial import (  # noqa: E402
     WRIST_IDS,
     CameraModel,
@@ -32,9 +33,6 @@ from ee_fiducial import (  # noqa: E402
     transform_from_vector,
     transform_points,
 )
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from calib_synth import look_at_rotation  # noqa: E402
 
 
 def _camera(name, position, target=(0.0, 0.0, 1.0)):
@@ -55,7 +53,7 @@ def _layout():
     side = np.eye(4)
     side[:3, :3] = transform_from_vector(np.r_[[0.0, np.pi / 2, 0.0], np.zeros(3)])[:3, :3]
     side[:3, 3] = [0.04, 0.0, 0.0]
-    return WristLayout(0.056, {0: front, 3: side}, "synthetic-layout")
+    return WristLayout(0.056, {0: front, 3: side}, "synthetic-layout", family="apriltag_16h5")
 
 
 def _detections(cameras, layout, world_from_ee, *, timestamp_ns=1_000_000_000):
@@ -114,6 +112,21 @@ def test_multicamera_estimate_recovers_rigid_wrist_pose():
     translation, rotation = _pose_error(estimate.world_from_ee, truth)
     assert translation < 1e-6
     assert rotation < 1e-4
+
+
+def test_estimator_keeps_family_identity_through_reused_ids():
+    cameras = {'camera1': _camera('camera1', [-0.35, -0.1, 0.15]),
+               'camera2': _camera('camera2', [0.35, -0.05, 0.2])}
+    layout = replace(_layout(), require_family_ids=frozenset({0, 3}))
+    truth = transform_from_vector(np.array([0.08, -0.04, 0.12, 0.01, -0.02, 1.0]))
+    legacy = _detections(cameras, layout, truth)
+    correct = [replace(item, family=layout.family) for item in legacy]
+    wrong = [replace(item, family='apriltag_36h11') for item in legacy]
+    for detections in (legacy, wrong):
+        assert MultiCameraEstimator(cameras, layout).estimate(detections, 1_000_000_000).status == 'rejected'
+    estimate = MultiCameraEstimator(cameras, layout).estimate(correct + wrong, 1_000_000_000)
+    assert estimate.status == 'measured', estimate.reason
+    assert _pose_error(estimate.world_from_ee, truth)[0] < 1e-6
 
 
 def test_bad_camera_tag_source_is_rejected_without_poisoning_pose():
@@ -248,18 +261,24 @@ def test_timestamp_aware_motion_fit_beats_static_projection():
     assert np.linalg.norm(dynamic.twist[3:] - velocity[3:]) < 0.05
 
 
-def test_repository_wrist_inventory_is_four_tags_and_calibrated():
-    assert {3, 6, 7, 8} == WRIST_IDS
-    layout = WristLayout.load(ROOT / "config/wrist_tags_measured.json")
-    assert layout.parent_frame == "right/gripper_left"
-    assert set(layout.ee_from_tag) == WRIST_IDS
+def test_repository_wrist_inventory_is_three_tags_and_status_enforced():
+    assert {2, 3, 4} == WRIST_IDS
+    path = ROOT / "config/wrist_tags_measured.json"
+    if json.loads(path.read_text())["calibration_status"] != "calibrated":
+        with pytest.raises(ValueError, match="not calibrated"):
+            WristLayout.load(path)
+    else:
+        layout = WristLayout.load(path)
+        assert layout.parent_frame == "right/gripper_left"
+        assert set(layout.ee_from_tag) == WRIST_IDS
 
 
-def test_calibrated_four_tag_layout_loads(tmp_path):
+def test_calibrated_three_tag_layout_loads(tmp_path):
     source = ROOT / "config/wrist_tags_measured.json"
     data = json.loads(source.read_text())
     data["calibration_status"] = "calibrated"
-    layout_path = tmp_path / "four-tags.json"
+    data["tags"] = {str(i): {"ee_from_tag": np.eye(4).tolist()} for i in WRIST_IDS}
+    layout_path = tmp_path / "three-tags.json"
     layout_path.write_text(json.dumps(data))
     layout = WristLayout.load(layout_path)
-    assert set(layout.ee_from_tag) == {3, 6, 7, 8}
+    assert set(layout.ee_from_tag) == WRIST_IDS

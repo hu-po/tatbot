@@ -20,6 +20,29 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
 
 
+def git_output(*args: str) -> str:
+    """`git ...` in the repo root, or "unknown" if it cannot be answered.
+
+    Seven evidence and audit generators each defined this identically to stamp a
+    revision into a manifest. Provenance that fails is recorded as "unknown"
+    rather than raised: a generator should still produce its artifact on a
+    checkout with no git, and the audit rejects an unknown revision downstream
+    where the schema requires one.
+    """
+
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=repo_root(),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+
+
 def _repository_slug(remote_url: str) -> str:
     """Return an owner/repository label without credentials or local paths."""
     value = remote_url.strip()

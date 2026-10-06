@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tatbot-contracts"
+version = "0.1.0"
+description = "Stdlib canonical JSON and immutable body asset contracts shared by Tatbot tools"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["tatbot_contracts*"]

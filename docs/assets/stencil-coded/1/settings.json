@@ -1,0 +1,60 @@
+{
+  "arcs": "full",
+  "artwork_svg_sha256": "639fcac5de8c3267c60ec17bfa3c72ad957ac86ffe649b69c7f95b27083f45ce",
+  "bit": "teardrop",
+  "black_fraction": 0.11149,
+  "border_inner_mm": [
+    19.473,
+    19.812,
+    82.211,
+    130.133
+  ],
+  "clear_center_mm": [
+    62.0,
+    112.0
+  ],
+  "coded_edges": 353,
+  "coded_print_id": "e1904cce0514929308256eac",
+  "coded_scheme": "tatbot.stencil-coded-fol/1",
+  "dpi": 300,
+  "files": {
+    "coded.json": "7965d189fd3d192fbb974ca0f5e459083761cd349c2408160a18c20557f8b1e7",
+    "stencil.png": "96cae6e310ad836ad378a7dfda69e91ee03b7b839d200319d346fb6714959d25",
+    "stencil.svg": "639fcac5de8c3267c60ec17bfa3c72ad957ac86ffe649b69c7f95b27083f45ce"
+  },
+  "frame_mm": 14.0,
+  "generator_version": "coded-fol-1",
+  "halo_mm": 1.5,
+  "height_mm": 150.0,
+  "instance_mark": null,
+  "junctions": 169,
+  "knot": "disk",
+  "knot_mm": 2.2,
+  "margin_mm": 5.0,
+  "optimize_rounds": 200,
+  "ornament": "none",
+  "ornament_rate": 0.6,
+  "physical_instance_id": null,
+  "pillow_version": "12.1.1",
+  "pixels": [
+    1181,
+    1772
+  ],
+  "seed": "1",
+  "seed_at": 0.36,
+  "spacing_mm": 6.5,
+  "stroke_mm": 0.3,
+  "teardrop_from": 0.3,
+  "teardrop_to": 0.45,
+  "width_mm": 100.0,
+  "window": {
+    "distance_min": 7,
+    "distance_p50": 11.0,
+    "edges_min": 23,
+    "edges_p50": 34,
+    "erasable_fraction_min": 0.24,
+    "erasable_fraction_p50": 0.308,
+    "relative_distance_min": 0.28
+  },
+  "window_radius": 3
+}

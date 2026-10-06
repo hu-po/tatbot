@@ -6,12 +6,33 @@ from tatbot_sim.fiducial_benchmark import POSE_JOINT_NAMES, REPO, _load_pose_ban
 from tatbot_sim.urdf import rig_from_follower_base
 
 
-def test_checked_in_pose_bank_is_finite_and_field_sourced():
+@pytest.mark.field_calibration
+def test_checked_in_pose_banks_match_the_new_carriers_and_exclude_witnesses():
     poses, metadata, digest = _load_pose_bank(REPO / "config/fiducial_benchmark_poses.json")
 
-    assert poses.shape == (11, len(POSE_JOINT_NAMES))
-    assert metadata["source_session"] == "sweep-20260825_192206"
+    assert poses.shape == (13, len(POSE_JOINT_NAMES))
+    assert metadata["source_session"] == "sweep-arm-pink-20260919_124146"
+    assert len(metadata['hold_ids']) == 13
+    assert all(not hold.startswith('witness-') for hold in metadata['hold_ids'])
     assert len(digest) == 64
+    left, left_meta, _ = _load_pose_bank(
+        REPO / 'config/fiducial_benchmark_poses_left.json', arm='left')
+    assert left.shape == (13, 7)
+    assert left_meta['source_session'] == 'sweep-arm-blue-20260919_124943'
+    assert all(not hold.startswith('witness-') for hold in left_meta['hold_ids'])
+
+
+@pytest.mark.field_calibration
+def test_both_observed_layouts_match_the_inventory_and_have_rigid_tag_poses():
+    from ee_fiducial import WristLayout
+
+    for target, filename, ids in (
+        ('wrist', 'wrist_tags_measured.json', {2, 3, 4}),
+        ('wrist_left', 'wrist_tags_measured_left.json', {1, 5, 30}),
+    ):
+        layout = WristLayout.load(REPO / 'config' / filename, target=target)
+        assert set(layout.ee_from_tag) == ids
+        assert layout.parent_frame.startswith('right/' if target == 'wrist' else 'left/')
 
 
 def test_pose_bank_rejects_wrong_joint_contract(tmp_path):

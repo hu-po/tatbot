@@ -8,10 +8,14 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 
 import numpy as np
+from shapely.geometry import Polygon, box
 
 from tatbot_sim.inkmap.rig import BodyRig, BodyRigError
 
-TRACE_COMPILER_VERSION = 1
+TRACE_COMPILER_VERSION = 2
+TRACE_CHART_STEP_M = 4.5e-4
+CHART_CLOSURE_LIMIT = 0.5
+CHART_AREA_BUDGET = 0.2
 
 
 class SurfaceTraceError(ValueError):
@@ -39,6 +43,13 @@ class SurfaceTrace:
             "sha256": self.sha256,
             "strokes": [[anchor.as_dict() for anchor in stroke] for stroke in self.strokes],
         }
+
+
+@dataclass(frozen=True)
+class ChartSeam:
+    face: int
+    neighbor: int
+    mismatch_m: float
 
 
 def _vertex_key(point) -> tuple[int, int, int]:
@@ -80,6 +91,8 @@ class UnfoldedPatch:
     face_indices: np.ndarray
     triangles_uv: np.ndarray
     adjacent: dict[int, set[int]]
+    seams: tuple[ChartSeam, ...] = ()
+    boundary_faces: tuple[int, ...] = ()
 
     def _unfold_neighbor(self, face: int, triangle_uv: np.ndarray, neighbor: int) -> np.ndarray:
         local_face = face - self.body_first_face
@@ -124,8 +137,14 @@ class UnfoldedPatch:
             edge_vertices = [index for index in range(3) if index != opposite]
             local_face = face - self.body_first_face
             edge_keys = {self.mesh_keys[local_face][index] for index in edge_vertices}
-            neighbor = next((candidate for candidate in self.adjacent.get(face, set())
-                             if edge_keys.issubset(self.mesh_keys[candidate - self.body_first_face])), None)
+            neighbor = next(
+                (
+                    candidate
+                    for candidate in sorted(self.adjacent.get(face, set()))
+                    if edge_keys.issubset(self.mesh_keys[candidate - self.body_first_face])
+                ),
+                None,
+            )
             if neighbor is None:
                 raise SurfaceTraceError(f"surface trace reached open mesh edge on face {face}")
             t = min(value for value, index in crossings if index == opposite)
@@ -166,7 +185,15 @@ def anchor_frame(vertices: np.ndarray, face: int, barycentric, rotation_rad: flo
             normals[key] += normal
     bary = np.asarray(barycentric, dtype=np.float64)
     point = bary @ vertices[face]
-    normal = sum(bary[i] * normals[keys[face][i]] / max(np.linalg.norm(normals[keys[face][i]]), 1e-20) for i in range(3))
+    # Three.js stores each normalized smooth vertex normal in a float32
+    # BufferAttribute before barycentric interpolation. Mirror that declared
+    # browser representation here so the two exact walkers share bit-level
+    # frame inputs rather than merely visually equivalent normals.
+    vertex_normals = {
+        key: (value / max(np.linalg.norm(value), 1e-20)).astype(np.float32).astype(np.float64)
+        for key, value in normals.items()
+    }
+    normal = sum(bary[i] * vertex_normals[keys[face][i]] for i in range(3))
     normal /= np.linalg.norm(normal)
     up = np.array([0.0, 0.0, 1.0])
     v = up - np.dot(up, normal) * normal
@@ -188,14 +215,15 @@ def unfold_body_patch(
     rotation_rad: float,
     radius_m: float,
 ) -> UnfoldedPatch:
-    """Unfold connected Body faces around an anchor into an isometric chart."""
+    """Unfold connected SOMA faces around an anchor into an isometric chart."""
     if radius_m <= 0:
         raise SurfaceTraceError("patch radius must be positive")
-    body_index = rig.part_names.index("Body")
-    body_start = int(rig.part_first_face[body_index])
-    body_stop = body_start + int(rig.part_face_count[body_index])
+    if rig.part_names != ("SOMA",):
+        raise SurfaceTraceError("body_model_unsupported: expected the sole SOMA surface")
+    body_start = int(rig.part_first_face[0])
+    body_stop = body_start + int(rig.part_face_count[0])
     if not body_start <= anchor.face < body_stop:
-        raise SurfaceTraceError("tattoo anchor must be on the Body mesh, not an eye or prop")
+        raise SurfaceTraceError("surface_coordinate_invalid: face is outside the SOMA surface")
     vertices = np.asarray(rig.rest_vertices[body_start:body_stop], dtype=np.float64)
     local_seed = anchor.face - body_start
     keys = [[_vertex_key(point) for point in triangle] for triangle in vertices]
@@ -229,17 +257,13 @@ def unfold_body_patch(
     seed_uv -= np.asarray(anchor.barycentric) @ seed_uv
 
     unfolded: dict[int, np.ndarray] = {local_seed: seed_uv}
+    seams_by_pair: dict[tuple[int, int], ChartSeam] = {}
     queue = deque([local_seed])
-    max_edge = float(max(np.linalg.norm(vertices[:, 1] - vertices[:, 0], axis=1).max(),
-                         np.linalg.norm(vertices[:, 2] - vertices[:, 1], axis=1).max(),
-                         np.linalg.norm(vertices[:, 0] - vertices[:, 2], axis=1).max()))
     while queue:
         face = queue.popleft()
         face_uv = unfolded[face]
         known = {keys[face][i]: face_uv[i] for i in range(3)}
-        for neighbor in adjacent_local[face]:
-            if neighbor in unfolded:
-                continue
+        for neighbor in sorted(adjacent_local[face]):
             shared = [key for key in keys[neighbor] if key in known]
             if len(shared) != 2:
                 raise SurfaceTraceError("adjacent faces do not share exactly two vertices")
@@ -260,10 +284,31 @@ def unfold_body_patch(
             qc = qa + along * unit - side * height * perp
             lookup = {ka: qa, kb: qb, kc: qc}
             candidate = np.stack([lookup[key] for key in keys[neighbor]])
-            if np.linalg.norm(candidate, axis=1).min() <= radius_m + max_edge:
+            if neighbor in unfolded:
+                mismatch = float(np.linalg.norm(candidate - unfolded[neighbor], axis=1).max())
+                pair = tuple(sorted((face, neighbor)))
+                known_seam = seams_by_pair.get(pair)
+                if known_seam is None or mismatch > known_seam.mismatch_m:
+                    seams_by_pair[pair] = ChartSeam(
+                        face=face + body_start,
+                        neighbor=neighbor + body_start,
+                        mismatch_m=mismatch,
+                    )
+                continue
+            # A triangle can reach into the disk only from within its own longest
+            # edge of it. The mesh-wide longest edge (62 mm on the SOMA torso)
+            # would walk a 16 mm patch on a finger around the whole hand and pile
+            # those faces onto the chart. Mirrors web/inkmap/src/core/unfold.ts.
+            longest_edge = float(max(
+                np.linalg.norm(candidate[1] - candidate[0]),
+                np.linalg.norm(candidate[2] - candidate[1]),
+                np.linalg.norm(candidate[0] - candidate[2]),
+            ))
+            if np.linalg.norm(candidate, axis=1).min() <= radius_m + longest_edge:
                 unfolded[neighbor] = candidate
                 queue.append(neighbor)
     ordered = np.asarray(sorted(unfolded), dtype=np.int32)
+    included = set(unfolded)
     return UnfoldedPatch(
         seed_face=anchor.face,
         body_first_face=body_start,
@@ -274,7 +319,52 @@ def unfold_body_patch(
         triangles_uv=np.stack([unfolded[int(face)] for face in ordered]),
         adjacent={face + body_start: {neighbor + body_start for neighbor in adjacent_local[face] if neighbor in unfolded}
                   for face in unfolded},
+        seams=tuple(sorted(seams_by_pair.values(), key=lambda item: item.mismatch_m, reverse=True)),
+        boundary_faces=tuple(
+            face + body_start for face in sorted(included) if len(adjacent_local[face]) < 3
+        ),
     )
+
+
+def validate_patch_footprint(patch: UnfoldedPatch, width_m: float, height_m: float) -> None:
+    """Apply the browser's flattenability/open-edge refusal to one rectangle."""
+
+    if not (width_m > 0 and height_m > 0):
+        raise SurfaceTraceError("anchor_outside_domain: design size must be positive")
+    rectangle = box(-width_m / 2, -height_m / 2, width_m / 2, height_m / 2)
+    clipped_areas: dict[int, float] = {}
+    for face, triangle in zip(patch.face_indices, patch.triangles_uv, strict=True):
+        area = float(Polygon(triangle).intersection(rectangle).area)
+        if area > 1e-14:
+            clipped_areas[int(face)] = area
+    if not clipped_areas:
+        raise SurfaceTraceError("anchor_outside_domain: design rectangle contains no connected surface triangles")
+    boundary = next((face for face in patch.boundary_faces if face in clipped_areas), None)
+    if boundary is not None:
+        raise SurfaceTraceError(f"surface_chart_overlap: design runs off open surface edge at face {boundary}")
+    requested_area = width_m * height_m
+    covered_area = sum(clipped_areas.values())
+    if abs(covered_area / requested_area - 1) > CHART_AREA_BUDGET:
+        raise SurfaceTraceError(
+            "surface_chart_overlap: intrinsic chart covers "
+            f"{100 * covered_area / requested_area:.1f}% of design area; surface is too curved to flatten"
+        )
+    diagonal = float(np.hypot(width_m, height_m))
+    seam = next(
+        (
+            item
+            for item in patch.seams
+            if item.face in clipped_areas
+            and item.neighbor in clipped_areas
+            and item.mismatch_m > CHART_CLOSURE_LIMIT * diagonal
+        ),
+        None,
+    )
+    if seam is not None:
+        raise SurfaceTraceError(
+            "surface_chart_overlap: chart meets itself inside design: "
+            f"faces {seam.face} and {seam.neighbor} develop {1000 * seam.mismatch_m:.1f} mm apart"
+        )
 
 
 def compile_surface_trace(
@@ -290,8 +380,21 @@ def compile_surface_trace(
     b0, b1, b2 = source["barycentric"]
     anchor = SurfaceAnchor(int(source["face"]), (float(b0), float(b1), float(b2)))
     radius = max(float(np.linalg.norm(point)) for stroke in metric_strokes for point in stroke) + max_step_m * 2
+    size_mm = placement.get("size_mm")
+    if size_mm is not None:
+        radius = max(radius, float(np.hypot(*size_mm)) / 2000 + 0.002)
     patch = unfold_body_patch(rig, anchor, float(placement["rotation_rad"]), radius)
-    strokes = tuple(patch.anchors(_resample(np.asarray(stroke), max_step_m)) for stroke in metric_strokes)
+    if size_mm is not None:
+        validate_patch_footprint(patch, float(size_mm[0]) / 1000, float(size_mm[1]) / 1000)
+    # The authored chart is intrinsically isometric in the rest surface, while
+    # supported SOMA poses contain bounded skinning stretch. Reserve 10% of
+    # the requested step for that deformation so the materialized trajectory
+    # remains under the caller's physical spacing limit in every named pose.
+    chart_step_m = min(max_step_m * 0.9, TRACE_CHART_STEP_M)
+    strokes = tuple(
+        patch.anchors(_resample(np.asarray(stroke), chart_step_m))
+        for stroke in metric_strokes
+    )
     payload = [[item.as_dict() for item in stroke] for stroke in strokes]
     digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return SurfaceTrace(strokes=strokes, sha256=digest)

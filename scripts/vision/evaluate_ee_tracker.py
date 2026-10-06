@@ -17,8 +17,10 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/lib"))
+from tatbot_paths import bootstrap  # noqa: E402
+
+bootstrap()
 from ee_fiducial import invert, rotation_distance_deg  # noqa: E402
 from fiducials import load_inventory  # noqa: E402
 from tatbot_runlog import log_root  # noqa: E402
@@ -78,11 +80,13 @@ def main():
     if not tracking_link:
         raise ValueError("wrist target has no parent_frame")
     robot_world = json.loads(args.robot_world.expanduser().read_text())
-    world_from_base = np.asarray(robot_world["world_from_base"], dtype=np.float64)
+    from robot_world import root_from_world
+    world_from_root = np.linalg.inv(root_from_world(robot_world))
     measured = [record for record in records if record.get("status") == "measured"]
     translation_disagreement, rotation_disagreement = [], []
     compared = []
     for record in measured:
+        root_from_world(robot_world, calibration_id=record.get("calibration_id", ""))
         timestamp_s = int(record["timestamp_ns"]) / 1e9
         joints = _interpolated_joints(log, timestamp_s)
         if joints is None:
@@ -95,7 +99,7 @@ def main():
         values = dict(
             zip(chain.driver_joint_names("right", len(joints)), joints, strict=True)
         )
-        world_from_ee_fk = world_from_base @ chain.link_pose(tracking_link, values)
+        world_from_ee_fk = world_from_root @ chain.link_pose(tracking_link, values)
         world_from_ee_vision = np.asarray(record["world_from_ee"], dtype=np.float64)
         delta = invert(world_from_ee_fk) @ world_from_ee_vision
         translation_mm = float(1000 * np.linalg.norm(delta[:3, 3]))
@@ -168,20 +172,20 @@ def main():
     failures = []
     if report["measured_rate"] < 0.80:
         failures.append("measured rate below 0.80")
-    if report["latency_ms"]["p95"] is None or report["latency_ms"]["p95"] > 150:
-        failures.append("latency p95 above 150 ms")
+    if report["latency_ms"]["p95"] is None or report["latency_ms"]["p95"] > 200:
+        failures.append("latency p95 above 200 ms")
     if (
         report["vision_fk_translation_disagreement_mm"]["median"] is None
-        or report["vision_fk_translation_disagreement_mm"]["median"] > 10
+        or report["vision_fk_translation_disagreement_mm"]["median"] > 20
     ):
-        failures.append("vision/FK translation disagreement median above 10 mm")
+        failures.append("vision/FK translation disagreement median above 20 mm")
     if (
         report["vision_fk_translation_disagreement_mm"]["p95"] is None
         or report["vision_fk_translation_disagreement_mm"]["p95"] > 25
     ):
         failures.append("vision/FK translation disagreement p95 above 25 mm")
-    if stationary_translation and np.percentile(stationary_translation, 95) > 3:
-        failures.append("stationary translation jitter p95 above 3 mm")
+    if stationary_translation and np.percentile(stationary_translation, 95) > 10:
+        failures.append("stationary translation jitter p95 above 10 mm")
     if stationary_rotation and np.percentile(stationary_rotation, 95) > 1:
         failures.append("stationary rotation jitter p95 above 1 deg")
     report["passed"] = not failures

@@ -1,0 +1,230 @@
+{
+  "data": {
+    "imagePath": "source.png",
+    "name": "",
+    "notes": "",
+    "rating": 0.0,
+    "settings": {
+      "batch_processing": {
+        "exportTasks": [
+          {
+            "exportHandler": "svg_default",
+            "extension": ".svg",
+            "perDrawing": true,
+            "perGroup": false,
+            "perPen": false
+          }
+        ],
+        "inputFolder": "",
+        "outputFolder": "",
+        "overwriteExistingFiles": false
+      },
+      "cmyk_settings": {
+        "data": {
+          "settings": {
+            "defaultBlueMultiplier": "1.0",
+            "defaultBlueOpacity": "0.2",
+            "defaultColorSplitterCleanBlack": "0.0",
+            "defaultColorSplitterCleanWhite": "0.0",
+            "defaultColorSplitterReduceOverlap": "0.0",
+            "defaultColorSplitterVibrancy": "0.5",
+            "defaultCyanMultiplier": "1.0",
+            "defaultCyanOpacity": "0.2",
+            "defaultGreenMultiplier": "1.0",
+            "defaultGreenOpacity": "0.2",
+            "defaultKeyMultiplier": "0.75",
+            "defaultKeyOpacity": "0.4",
+            "defaultMagentaMultiplier": "1.0",
+            "defaultMagentaOpacity": "0.2",
+            "defaultOrangeMultiplier": "1.0",
+            "defaultOrangeOpacity": "0.2",
+            "defaultRedMultiplier": "1.0",
+            "defaultRedOpacity": "0.2",
+            "defaultVioletMultiplier": "1.0",
+            "defaultVioletOpacity": "0.2",
+            "defaultWhiteMultiplier": "1.0",
+            "defaultWhiteOpacity": "0.4",
+            "defaultYellowMultiplier": "1.0",
+            "defaultYellowOpacity": "0.2"
+          }
+        },
+        "enabled": true,
+        "presetName": "New Preset",
+        "presetSubType": "User",
+        "presetType": "cmyk_settings",
+        "userCreated": true,
+        "version": "2.0"
+      },
+      "colour_match": {
+        "data": {
+          "settings": {
+            "Brightness Multiplier": "2.0",
+            "Colour Accuracy": "95.0",
+            "Invert Colour": "false",
+            "Pen Limit": "0",
+            "Smooth Distribution": "true",
+            "Use Canvas Colour": "true"
+          }
+        },
+        "enabled": true,
+        "presetName": "New Preset",
+        "presetSubType": "User",
+        "presetType": "colour_match",
+        "userCreated": true,
+        "version": "2.0"
+      },
+      "drawing_area": {
+        "data": {
+          "settings": {
+            "drawingAreaGang": "true",
+            "drawingAreaHeight": "30.0",
+            "drawingAreaPaddingBottom": "0.0",
+            "drawingAreaPaddingLeft": "0.0",
+            "drawingAreaPaddingRight": "0.0",
+            "drawingAreaPaddingTop": "0.0",
+            "drawingAreaWidth": "30.0",
+            "inputUnits": "mm",
+            "rescaleMode": "High Quality",
+            "scalingMode": "Crop to fit",
+            "targetPenWidth": "0.3",
+            "useOriginalSizing": "false"
+          }
+        },
+        "enabled": true,
+        "presetName": "New Preset",
+        "presetSubType": "User",
+        "presetType": "drawing_area",
+        "userCreated": true,
+        "version": "2.0"
+      },
+      "drawing_sets": {
+        "activeSet": 0,
+        "drawingSets": [
+          {
+            "colorHandler": "Default",
+            "distributionOrder": "Darkest first (Default)",
+            "distributionType": "Even weighted",
+            "name": "Tatbot pens",
+            "pens": [
+              {
+                "argb": "-16777216",
+                "colorSplitMultiplier": "1.0",
+                "colorSplitOffsetX": "0.0",
+                "colorSplitOffsetY": "0.0",
+                "colorSplitOpacity": "1.0",
+                "distributionWeight": "100",
+                "isEnabled": "true",
+                "name": "black",
+                "penNumber": "0",
+                "source": {
+                  "argb": -16777216,
+                  "distributionWeight": 100,
+                  "isEnabled": true,
+                  "name": "black",
+                  "strokeSize": 1.0,
+                  "type": "Ballpoint"
+                },
+                "strokeSize": "1.0",
+                "type": "Ballpoint"
+              }
+            ],
+            "type": "Tatbot"
+          }
+        ]
+      },
+      "image_filters": {
+        "data": {
+          "filters": []
+        },
+        "enabled": true,
+        "presetName": "New Preset",
+        "presetSubType": "User",
+        "presetType": "image_filters",
+        "userCreated": true,
+        "version": "2.0"
+      },
+      "image_settings": {
+        "cropEndX": 1024.0,
+        "cropEndY": 1536.0,
+        "cropStartX": 0.0,
+        "cropStartY": 0.0,
+        "imageFlipHorizontal": false,
+        "imageFlipVertical": false,
+        "imageRotation": "R0"
+      },
+      "masking_settings": {
+        "data": {
+          "settings": {
+            "enableMasking": "true",
+            "masks": []
+          }
+        },
+        "enabled": true,
+        "presetName": "New Preset",
+        "presetSubType": "User",
+        "presetType": "masking_settings",
+        "userCreated": true,
+        "version": "2.0"
+      },
+      "optional_data": {
+        "exportDirectory": "",
+        "importDirectory": ""
+      },
+      "pfm_settings": {
+        "pfmFactory": "Sketch Sweeping Curves",
+        "pfmSettings": {
+          "Angularity": "0.0",
+          "Clarity": "0.0",
+          "Curvature": "0.0",
+          "Directionality": "0.0",
+          "Distortion": "0.0",
+          "Edge Power": "0.0",
+          "Erase Max": "125",
+          "Erase Min": "50",
+          "Erase Radius Max": "1.0",
+          "Erase Radius Min": "1.0",
+          "Line Density": "75.0",
+          "Line Max Length": "80",
+          "Line Max Limit": "-1",
+          "Line Min Length": "20",
+          "Luminance Power": "100.0",
+          "Plotting Resolution": "1.0",
+          "Random Seed": "44",
+          "Seed Threshold": "50.0",
+          "Seed Type": "Luminance",
+          "Should Lift Pen": "true",
+          "Sobel Power": "0.0",
+          "Squiggle Max Deviation": "25.0",
+          "Squiggle Max Length": "500",
+          "Squiggle Min Length": "25",
+          "Tone": "50.0"
+        },
+        "selectedPreset": "Sketch Sweeping Curves:Default"
+      },
+      "ui_settings": {
+        "data": {
+          "settings": {
+            "backgroundColor": "-723724",
+            "blendMode": "Normal",
+            "canvasColor": "-1"
+          }
+        },
+        "enabled": true,
+        "presetName": "New Preset",
+        "presetSubType": "User",
+        "presetType": "ui_settings",
+        "userCreated": true,
+        "version": "2.0"
+      },
+      "versions": {}
+    },
+    "thumbnailID": "",
+    "timeStamp": ""
+  },
+  "enabled": true,
+  "presetName": "New Preset",
+  "presetSubType": "User",
+  "presetType": "project",
+  "userCreated": true,
+  "version": "2.0.0"
+}

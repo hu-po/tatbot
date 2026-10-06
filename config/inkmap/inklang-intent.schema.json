@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.ai/schemas/inklang-intent-v1.json",
+  "title": "InkLang placement intent",
+  "description": "A body-independent parse of one tattoo placement description.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "intent_schema_version",
+    "inklang_version",
+    "description",
+    "canonical_phrase",
+    "site",
+    "ambiguities",
+    "unknown_terms",
+    "issues"
+  ],
+  "properties": {
+    "intent_schema_version": { "const": 1 },
+    "inklang_version": { "type": "string", "minLength": 1 },
+    "description": { "type": "string", "minLength": 1 },
+    "canonical_phrase": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "site": {
+      "oneOf": [
+        { "$ref": "#/$defs/sitePhrase" },
+        { "type": "null" }
+      ]
+    },
+    "ambiguities": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ambiguity" }
+    },
+    "unknown_terms": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "issues": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/issue" }
+    }
+  },
+  "$defs": {
+    "nullableLaterality": {
+      "oneOf": [
+        { "enum": ["left", "right", "center"] },
+        { "type": "null" }
+      ]
+    },
+    "nullableAspect": {
+      "oneOf": [
+        { "enum": ["inner", "outer", "front", "back", "side", "top"] },
+        { "type": "null" }
+      ]
+    },
+    "nullableLevel": {
+      "oneOf": [
+        { "enum": ["upper", "lower", "mid"] },
+        { "type": "null" }
+      ]
+    },
+    "siteReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "laterality"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z_]*$" },
+        "laterality": { "$ref": "#/$defs/nullableLaterality" }
+      }
+    },
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["above", "below", "behind", "in_front", "beside", "between"] },
+        "offset_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 0.5 },
+        "render": { "type": "string" },
+        "other": { "$ref": "#/$defs/siteReference" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "between" } }, "required": ["kind"] },
+          "then": { "required": ["other"] },
+          "else": { "required": ["offset_m"] }
+        }
+      ]
+    },
+    "sitePhrase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "laterality", "aspect", "level"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z_]*$" },
+        "laterality": { "$ref": "#/$defs/nullableLaterality" },
+        "aspect": { "$ref": "#/$defs/nullableAspect" },
+        "level": { "$ref": "#/$defs/nullableLevel" },
+        "relation": { "$ref": "#/$defs/relation" },
+        "region_uv": {
+          "type": "array",
+          "prefixItems": [
+            { "type": "number", "minimum": 0, "maximum": 1 },
+            { "type": "number", "minimum": 0, "maximum": 1 }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        }
+      }
+    },
+    "ambiguity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "candidates"],
+      "properties": {
+        "field": { "enum": ["laterality", "zone_member", "relative_direction"] },
+        "candidates": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 2,
+          "uniqueItems": true
+        }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^INKLANG_[A-Z_]+$" },
+        "message": { "type": "string", "minLength": 1 },
+        "field": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

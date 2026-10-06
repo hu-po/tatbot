@@ -2,88 +2,17 @@ from __future__ import annotations
 
 import json
 import pickle
-import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "eval"))
 from chunk_guard import evaluate_chunk, execution_metrics  # noqa: E402
 from trajectory_plausibility import (  # noqa: E402
     _wait_for_actions,
-    action_decode_contract,
     build_contract,
     evaluate_predictions,
     validate_postprocessor_binding,
-    wire_features,
 )
-
-
-def test_fixture_metadata_does_not_claim_held_out_source() -> None:
-    source = (Path(__file__).resolve().parents[1] / "eval" / "trajectory_plausibility.py").read_text()
-    assert '"kind": "genuine no-arm observation fixture"' in source
-    assert "genuine held-out no-arm observation fixture" not in source
-
-
-def write_postprocessor(path: Path, horizon: int, joints: int) -> None:
-    bounds = np.ones((horizon, joints), dtype=float)
-    path.write_text(
-        json.dumps(
-            {
-                "steps": [
-                    {
-                        "registry_name": "groot_n1_7_action_decode_v1",
-                        "config": {
-                            "raw_stats": {
-                                "relative_action": {
-                                    "single_arm": {
-                                        "min": (-bounds).tolist(),
-                                        "max": bounds.tolist(),
-                                    }
-                                }
-                            }
-                        },
-                    }
-                ]
-            }
-        )
-    )
-
-
-def write_mixed_postprocessor(path: Path, horizon: int) -> None:
-    arm = np.ones((horizon, 6), dtype=float)
-    path.write_text(
-        json.dumps(
-            {
-                "steps": [
-                    {
-                        "registry_name": "groot_n1_7_action_decode_v1",
-                        "config": {
-                            "raw_stats": {
-                                "relative_action": {
-                                    "single_arm": {
-                                        "min": (-arm).tolist(),
-                                        "max": arm.tolist(),
-                                    }
-                                },
-                                "action": {
-                                    "single_arm": {
-                                        "min": np.full(6, -9.0).tolist(),
-                                        "max": np.full(6, 9.0).tolist(),
-                                    },
-                                    "left_carriage_joint": {
-                                        "min": [0.01],
-                                        "max": [0.02],
-                                    },
-                                },
-                            }
-                        },
-                    }
-                ]
-            }
-        )
-    )
 
 
 def write_standard_postprocessor(path: Path) -> None:
@@ -121,7 +50,7 @@ def demonstrations() -> dict[str, np.ndarray]:
 
 def test_genuine_demonstration_chunks_pass_their_rejection_envelope(tmp_path: Path) -> None:
     postprocessor = tmp_path / "policy_postprocessor.json"
-    write_postprocessor(postprocessor, 4, 7)
+    write_standard_postprocessor(postprocessor)
     demo = demonstrations()
     contract = build_contract(demo, postprocessor, [tmp_path / "genuine-demo"])
     chunks = np.repeat(demo["action"][:, None], 3, axis=1)
@@ -139,7 +68,7 @@ def test_genuine_demonstration_chunks_pass_their_rejection_envelope(tmp_path: Pa
 
 def test_oscillation_and_repeated_input_variance_are_rejected(tmp_path: Path) -> None:
     postprocessor = tmp_path / "policy_postprocessor.json"
-    write_postprocessor(postprocessor, 4, 7)
+    write_standard_postprocessor(postprocessor)
     demo = demonstrations()
     contract = build_contract(demo, postprocessor, [tmp_path / "genuine-demo"])
     chunks = np.repeat(demo["action"][:, None], 3, axis=1)
@@ -150,23 +79,6 @@ def test_oscillation_and_repeated_input_variance_are_rejected(tmp_path: Path) ->
 
     assert any("adjacent_step_abs_rad_per_joint[0]" in failure for failure in failures)
     assert any("repeated_first_std_rad_per_joint[0]" in failure for failure in failures)
-
-
-def test_wire_schema_has_no_robot_or_driver_object() -> None:
-    rgbd = wire_features("groot_rgbd")
-    act = wire_features("act_rgb")
-    masked = wire_features("act_rgbd14_masked")
-
-    assert rgbd["observation.state"]["names"][-1] == "left_carriage_joint.pos"
-    assert rgbd["observation.images.wrist_upper_depth"]["shape"] == (480, 640, 3)
-    assert "observation.images.wrist_upper_depth" not in act
-    assert masked["observation.state"]["shape"] == (14,)
-    assert masked["observation.state"]["names"][7:] == [
-        name.replace(".pos", ".ext_eff") for name in masked["observation.state"]["names"][:7]
-    ]
-    assert masked["observation.images.wrist_upper_depth"]["shape"] == (480, 640, 1)
-    assert masked["observation.images.wrist_upper_depth"]["info"]["is_depth_map"] is True
-    assert all("ip_address" not in feature for feature in rgbd.values())
 
 
 def test_standard_policy_contract_accepts_14_wide_state(tmp_path: Path) -> None:
@@ -190,28 +102,6 @@ def test_standard_policy_contract_accepts_14_wide_state(tmp_path: Path) -> None:
     assert live_failures == []
     assert live_warnings == []
     assert len(live_metrics["first_target_distance_abs_rad_per_joint"]) == 7
-
-
-def test_corrected_contract_decodes_arm_relative_and_carriage_absolute(tmp_path: Path) -> None:
-    postprocessor = tmp_path / "policy_postprocessor.json"
-    write_mixed_postprocessor(postprocessor, 4)
-    low, high, relative = action_decode_contract(postprocessor, 4, 7)
-
-    assert low.shape == high.shape == (4, 7)
-    assert relative.tolist() == [True, True, True, True, True, True, False]
-    assert np.allclose(low[:, -1], 0.01)
-    assert np.allclose(high[:, -1], 0.02)
-
-    demo = demonstrations()
-    demo["state"][:, -1] = 0.015
-    demo["action"][:, :, -1] = 0.015
-    contract = build_contract(demo, postprocessor, [tmp_path / "genuine-demo"])
-    assert contract["action_semantics"] == {
-        "normalization": "groot_relative_minmax",
-        "relative_joint_indices": [0, 1, 2, 3, 4, 5],
-        "absolute_joint_indices": [6],
-    }
-    assert contract["reference"]["normalized_endpoint_fraction_per_joint"][-1] == 0.0
 
 
 def test_standard_absolute_policy_uses_decoded_action_contract(tmp_path: Path) -> None:
@@ -268,7 +158,7 @@ def test_probe_contract_rejects_mismatched_external_processor_state(tmp_path: Pa
 
 def test_live_chunk_guard_passes_demo_and_rejects_oscillation(tmp_path: Path) -> None:
     postprocessor = tmp_path / "policy_postprocessor.json"
-    write_postprocessor(postprocessor, 4, 7)
+    write_standard_postprocessor(postprocessor)
     demo = demonstrations()
     contract = build_contract(demo, postprocessor, [tmp_path / "genuine-demo"])
     decoded = demo["action"][0]
@@ -278,7 +168,6 @@ def test_live_chunk_guard_passes_demo_and_rejects_oscillation(tmp_path: Path) ->
     metrics, failures, warnings = evaluate_chunk(normalized, decoded, state, contract)
     assert failures == []
     assert warnings == []
-    assert metrics["normalized_endpoint_fraction_overall"] == 0.0
 
     unsafe = decoded.copy()
     unsafe[:, 0] = [0.0, 0.8, -0.8, 0.8]

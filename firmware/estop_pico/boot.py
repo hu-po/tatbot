@@ -13,7 +13,9 @@
 #    noise, no second ttyACM to guess between.
 #
 # The CIRCUITPY mass-storage drive stays enabled so firmware updates remain
-# drag-and-drop. If code.py ever crashes, CircuitPython idles in safe mode,
+# drag-and-drop, followed by an explicit board reset: code.py disables runtime
+# autoreload so incidental host filesystem writes cannot interrupt heartbeat.
+# If code.py ever crashes, CircuitPython idles in safe mode,
 # frames stop, and the host treats the silence as an e-stop — fail-safe.
 
 import supervisor

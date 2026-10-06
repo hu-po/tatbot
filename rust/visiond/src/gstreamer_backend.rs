@@ -46,7 +46,7 @@ pub struct FrameObservation {
 }
 
 impl PoeStream {
-    fn profile<'a>(self, config: &'a PoeCameraConfig) -> Result<&'a StreamProfile> {
+    fn profile(self, config: &PoeCameraConfig) -> Result<&StreamProfile> {
         match self {
             Self::Main => Ok(&config.main),
             Self::Sub => config
@@ -66,6 +66,7 @@ impl PoeStream {
 
 #[derive(Debug)]
 pub struct PoeRtspCapture {
+    _lease: crate::ownership::CameraLease,
     pipeline: gst::Pipeline,
     sink: gst_app::AppSink,
     camera: PoeCameraConfig,
@@ -88,6 +89,7 @@ pub struct PoeRtspCapture {
 struct FrameTiming {
     rtp_timestamp: u32,
     source_ns: Option<i128>,
+    rtcp_source_ns: Option<i128>,
     rtsp_rtp_first_seen: Option<Instant>,
     rtsp_rtp_last_seen: Option<Instant>,
     depay_rtp_first_seen: Instant,
@@ -149,6 +151,12 @@ impl PoeRtspCapture {
         keyframes_only: bool,
         detailed_timing: bool,
     ) -> Result<Self> {
+        let lease = crate::ownership::CameraLease::camera(&format!(
+            "poe:{}:{}:{}",
+            camera.address,
+            camera.rtsp_port,
+            stream.subtype()
+        ))?;
         gst::init().context("initializing GStreamer")?;
         let mut configured_profile = stream.profile(&camera)?.clone();
         if decoded {
@@ -246,6 +254,7 @@ impl PoeRtspCapture {
             .set_state(gst::State::Playing)
             .map_err(|error| anyhow!("starting {}: {error:?}", camera.name))?;
         Ok(Self {
+            _lease: lease,
             health: SensorHealth::new(camera.name.clone()),
             pipeline,
             sink,
@@ -451,6 +460,18 @@ impl PoeRtspCapture {
         }
         let mut normalized_unix_ns = None;
         let mut clock_attributes = BTreeMap::new();
+        // Preserve both independent mappings so long-running clock drift can
+        // be distinguished from transport age. Do not change capture time to
+        // manufacture a lower latency measurement.
+        if let Some(mapped_ns) = timing.and_then(|timing| timing.rtcp_source_ns) {
+            clock_attributes.insert("rtcp_mapped_source_ns".into(), mapped_ns.to_string());
+            if let Some(selected_ns) = source_ns {
+                clock_attributes.insert(
+                    "selected_minus_rtcp_source_ns".into(),
+                    selected_ns.saturating_sub(mapped_ns).to_string(),
+                );
+            }
+        }
         if let Some(source_ns) = source_ns {
             self.clock_offset.observe(clock_sample.unix_ns, source_ns);
             let assessment = self.clock_offset.assessment();
@@ -482,6 +503,9 @@ impl PoeRtspCapture {
             // 300-500 ms.  Reject clocks that are implausibly in the future or
             // frames older than the bounded live pipeline, but do not mistake
             // transport/decode age for NTP skew.
+            if discard_stale_camera_frame(&mut self.health, host_delta_ns) {
+                return Ok(None);
+            }
             if !trusted_camera_capture_delta_is_plausible(host_delta_ns) {
                 anyhow::bail!(
                     "{} camera capture time differs from host by {:.1} ms; refusing trusted-camera-NTP mode",
@@ -702,12 +726,9 @@ fn install_reference_timestamp_probes(
     let manager_report_count = Arc::clone(&rtcp_reports_seen);
     let manager_rtp_arrivals = Arc::clone(&rtp_arrivals);
     source.connect("new-manager", false, move |args| {
-        let Some(manager) = args
+        let manager = args
             .get(1)
-            .and_then(|value| value.get::<gst::Element>().ok())
-        else {
-            return None;
-        };
+            .and_then(|value| value.get::<gst::Element>().ok())?;
         let pad_mapper = Arc::clone(&manager_mapper);
         let pad_report_count = Arc::clone(&manager_report_count);
         let pad_rtp_arrivals = Arc::clone(&manager_rtp_arrivals);
@@ -716,12 +737,9 @@ fn install_reference_timestamp_probes(
             install_rtp_arrival_probe(&pad, &pad_rtp_arrivals);
         }
         manager.connect("pad-added", false, move |pad_args| {
-            let Some(pad) = pad_args
+            let pad = pad_args
                 .get(1)
-                .and_then(|value| value.get::<gst::Pad>().ok())
-            else {
-                return None;
-            };
+                .and_then(|value| value.get::<gst::Pad>().ok())?;
             install_rtcp_probe(&pad, &pad_mapper, &pad_report_count);
             install_rtp_arrival_probe(&pad, &pad_rtp_arrivals);
             None
@@ -737,16 +755,15 @@ fn install_reference_timestamp_probes(
             if let Some(buffer) = info.buffer() {
                 if let (Some(pts), Some(map)) = (buffer.pts(), buffer.map_readable().ok()) {
                     if let Some((ssrc, rtp_timestamp)) = parse_rtp_header(map.as_slice()) {
+                        let rtcp_source_ns = input_mapper
+                            .lock()
+                            .ok()
+                            .and_then(|mapper| mapper.estimate(ssrc, rtp_timestamp))
+                            .map(|estimate| estimate.ntp_unix_ns);
                         let source_ns = buffer
                             .meta::<gst::ReferenceTimestampMeta>()
                             .map(|reference| reference.timestamp().nseconds() as i128)
-                            .or_else(|| {
-                                input_mapper
-                                    .lock()
-                                    .ok()
-                                    .and_then(|mapper| mapper.estimate(ssrc, rtp_timestamp))
-                                    .map(|estimate| estimate.ntp_unix_ns)
-                            });
+                            .or(rtcp_source_ns);
                         let now = Instant::now();
                         let arrival = input_rtp_arrivals.lock().ok().and_then(|arrivals| {
                             arrivals
@@ -763,6 +780,7 @@ fn install_reference_timestamp_probes(
                         {
                             timing.rtp_timestamp = rtp_timestamp;
                             timing.source_ns = source_ns.or(timing.source_ns);
+                            timing.rtcp_source_ns = rtcp_source_ns.or(timing.rtcp_source_ns);
                             timing.rtsp_rtp_first_seen = arrival.map(|value| value.first_seen);
                             timing.rtsp_rtp_last_seen = arrival.map(|value| value.last_seen);
                             timing.depay_rtp_last_seen = now;
@@ -772,6 +790,7 @@ fn install_reference_timestamp_probes(
                                 FrameTiming {
                                     rtp_timestamp,
                                     source_ns,
+                                    rtcp_source_ns,
                                     rtsp_rtp_first_seen: arrival.map(|value| value.first_seen),
                                     rtsp_rtp_last_seen: arrival.map(|value| value.last_seen),
                                     depay_rtp_first_seen: now,
@@ -897,24 +916,18 @@ fn install_monitor_timestamp_probes(
     let manager_mapper = Arc::clone(&clock_mapper);
     let manager_report_count = Arc::clone(&rtcp_reports_seen);
     source.connect("new-manager", false, move |args| {
-        let Some(manager) = args
+        let manager = args
             .get(1)
-            .and_then(|value| value.get::<gst::Element>().ok())
-        else {
-            return None;
-        };
+            .and_then(|value| value.get::<gst::Element>().ok())?;
         let pad_mapper = Arc::clone(&manager_mapper);
         let pad_report_count = Arc::clone(&manager_report_count);
         for pad in manager.pads() {
             install_rtcp_probe(&pad, &pad_mapper, &pad_report_count);
         }
         manager.connect("pad-added", false, move |pad_args| {
-            let Some(pad) = pad_args
+            let pad = pad_args
                 .get(1)
-                .and_then(|value| value.get::<gst::Pad>().ok())
-            else {
-                return None;
-            };
+                .and_then(|value| value.get::<gst::Pad>().ok())?;
             install_rtcp_probe(&pad, &pad_mapper, &pad_report_count);
             None
         });
@@ -945,16 +958,15 @@ fn install_monitor_timestamp_probes(
             let Some((ssrc, rtp_timestamp)) = parse_rtp_header(map.as_slice()) else {
                 return gst::PadProbeReturn::Ok;
             };
+            let rtcp_source_ns = input_mapper
+                .lock()
+                .ok()
+                .and_then(|mapper| mapper.estimate(ssrc, rtp_timestamp))
+                .map(|estimate| estimate.ntp_unix_ns);
             let source_ns = buffer
                 .meta::<gst::ReferenceTimestampMeta>()
                 .map(|reference| reference.timestamp().nseconds() as i128)
-                .or_else(|| {
-                    input_mapper
-                        .lock()
-                        .ok()
-                        .and_then(|mapper| mapper.estimate(ssrc, rtp_timestamp))
-                        .map(|estimate| estimate.ntp_unix_ns)
-                });
+                .or(rtcp_source_ns);
             let now = Instant::now();
             let mut timings = input_timings.lock().expect("timestamp probe mutex");
             timings.push_back((
@@ -962,6 +974,7 @@ fn install_monitor_timestamp_probes(
                 FrameTiming {
                     rtp_timestamp,
                     source_ns,
+                    rtcp_source_ns,
                     rtsp_rtp_first_seen: None,
                     rtsp_rtp_last_seen: None,
                     depay_rtp_first_seen: now,
@@ -1297,8 +1310,22 @@ fn pipeline_capture_time(host_unix_ns: i128, running_ns: u64, pts_ns: u64) -> (i
     (age_ns, host_unix_ns.saturating_sub(age_ns))
 }
 
+fn discard_stale_camera_frame(health: &mut SensorHealth, host_delta_ns: i128) -> bool {
+    if host_delta_ns >= -2_000_000_000 {
+        return false;
+    }
+    // Reconnecting can replay the same stale RTSP startup window. Discard
+    // without publishing or changing the timestamp, then drain this connection.
+    health.frame_dropped(1);
+    health.error(format!(
+        "discarded stale camera frame ({:.1} ms old)",
+        -(host_delta_ns as f64) / 1e6
+    ));
+    true
+}
+
 fn trusted_camera_capture_delta_is_plausible(host_delta_ns: i128) -> bool {
-    host_delta_ns <= 250_000_000 && host_delta_ns >= -2_000_000_000
+    (-2_000_000_000..=250_000_000).contains(&host_delta_ns)
 }
 
 fn effective_jitter_latency_ms(configured: u32) -> Result<u32> {
@@ -1431,6 +1458,25 @@ mod tests {
             pipeline_capture_time(1_700_000_000_500_000_000, 900_000_000, 550_000_000);
         assert_eq!(age_ns, 350_000_000);
         assert_eq!(capture_unix_ns, 1_700_000_000_150_000_000);
+    }
+
+    #[test]
+    fn stale_startup_frames_are_counted_without_reconnecting_or_admitting_future_time() {
+        let mut health = SensorHealth::new("camera");
+        for delta in [-2_269_800_000, -2_000_000_001] {
+            assert!(discard_stale_camera_frame(&mut health, delta));
+        }
+        for delta in [-2_000_000_000, -450_000_000, 20_000_000] {
+            assert!(!discard_stale_camera_frame(&mut health, delta));
+            assert!(trusted_camera_capture_delta_is_plausible(delta));
+        }
+        assert!(!discard_stale_camera_frame(&mut health, 250_000_001));
+        assert!(!trusted_camera_capture_delta_is_plausible(250_000_001));
+        let snapshot = health.snapshot();
+        assert_eq!(snapshot.frames_dropped, 2);
+        assert_eq!(snapshot.frames_received, 0);
+        assert_eq!(snapshot.reconnects, 0);
+        assert_eq!(snapshot.recent_errors.len(), 2);
     }
 
     #[test]

@@ -1,0 +1,59 @@
+{
+  "clear_center_uv": [
+    0.19,
+    0.12666666666666668,
+    0.81,
+    0.8733333333333333
+  ],
+  "coded": {
+    "file": "coded.json",
+    "print_id": "1173b01276fe02dd0f477e04",
+    "scheme": "tatbot.stencil-coded-fol/1",
+    "sha256": "168d83cf876b373ccf3898c02e0fb7a5dd9cc4f43a4944fd2088246cbbf1caf4"
+  },
+  "coordinates": {
+    "domain": "whole_page",
+    "origin": "page_top_left",
+    "pixel_centers": "uv=((x+0.5)/width,(y+0.5)/height)",
+    "u_direction": "right",
+    "uv_to_print_mm": [
+      [
+        100.0,
+        0,
+        0
+      ],
+      [
+        0,
+        150.0,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "v_direction": "down"
+  },
+  "dimensions_measured": false,
+  "generator": {
+    "generator_version": "coded-fol-1",
+    "svg_sha256": "1d7071822af0e6912fea0c42264ab46a50924299b82f5ffbbd8bda7a0fbf74fc"
+  },
+  "image": {
+    "file": "stencil.png",
+    "height": 1772,
+    "sha256": "447cc4e2a5eef02da1e37cb9548e411fe5cf05ceafb9caa22c8584670dba7389",
+    "width": 1181
+  },
+  "page_mm": [
+    100.0,
+    150.0
+  ],
+  "pattern_id": "stencil-9a7d03d10ffc51dbff244adf8207a475eb750b1fd07c103ec1cba77688289b09",
+  "physical_instance_encoded": true,
+  "physical_instance_id": "1173b01276fe02dd0f477e04",
+  "reference_id": "c1bab1141553ddf243b9bb81469672d072271261df0b673c68ee4f3054a49e9f",
+  "schema": "tatbot.stencil-reference/1",
+  "seed": "3"
+}

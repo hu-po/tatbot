@@ -3,21 +3,23 @@
 No hardware and no lerobot imports: the shim is deliberately stdlib-only so it
 can be exercised anywhere.
 
-What matters here is the seam. ``scripts/lib/tool_spec.py`` is loaded by PATH
-from a sibling uv project, so a directory move or a rename breaks tool
-resolution at connect time on the robot — the worst possible place to find out.
-These tests fail in CI instead.
+What matters here is the seam. ``scripts/lib/tool_spec.py`` is the one
+implementation, reached through the ``tatbot-scriptlib`` dependency, so a venv
+assembled without it breaks tool resolution at connect time on the robot — the
+worst possible place to find out. These tests fail in CI instead.
 """
+
+from pathlib import Path
 
 from lerobot_robot_tatbot import tool_registry
 
 
 def test_the_registry_is_reachable_from_inside_the_plugin():
-    """Guards the path arithmetic in tool_registry.REPO."""
-    assert tool_registry._MODULE_PATH.is_file(), (
-        f"tool registry not at {tool_registry._MODULE_PATH} — the plugin resolves it "
-        "by path from a sibling project, so moving either breaks the tool check at connect")
-    assert tool_registry.registry() is not None
+    """The dependency resolves, and to the repo's own file rather than a
+    vendored copy that could drift from what the scripts run."""
+    registry = tool_registry.registry()
+    assert registry is not None
+    assert Path(registry.__file__) == tool_registry.REPO / "scripts" / "lib" / "tool_spec.py"
 
 
 def test_the_stated_tool_has_a_mount():

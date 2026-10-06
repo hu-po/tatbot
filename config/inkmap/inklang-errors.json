@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "namespace": "inklang",
+  "errors": [
+    {
+      "code": "INKLANG_PARSE_SYNTAX",
+      "status": "rejected",
+      "meaning": "The placement description does not match the deterministic grammar."
+    },
+    {
+      "code": "INKLANG_UNKNOWN_SITE",
+      "status": "rejected",
+      "meaning": "The description names no known InkLang site or zone."
+    },
+    {
+      "code": "INKLANG_INVALID_LATERALITY",
+      "status": "rejected",
+      "meaning": "The requested side is incompatible with the named site."
+    },
+    {
+      "code": "INKLANG_INVALID_ASPECT",
+      "status": "rejected",
+      "meaning": "The requested aspect is not allowed for the named site."
+    },
+    {
+      "code": "INKLANG_INVALID_LEVEL",
+      "status": "rejected",
+      "meaning": "The requested level is invalid or cannot refine the named site."
+    },
+    {
+      "code": "INKLANG_INVALID_RELATION",
+      "status": "rejected",
+      "meaning": "The relation is malformed or its metric offset is outside the supported range."
+    },
+    {
+      "code": "INKLANG_AMBIGUOUS_LATERALITY",
+      "status": "needs_choice",
+      "meaning": "A sided site was requested without choosing left or right."
+    },
+    {
+      "code": "INKLANG_AMBIGUOUS_ZONE",
+      "status": "needs_choice",
+      "meaning": "A composite zone names several valid leaf-site locations."
+    },
+    {
+      "code": "INKLANG_AMBIGUOUS_RELATION",
+      "status": "needs_choice",
+      "meaning": "The relation has more than one geometrically meaningful direction or target."
+    },
+    {
+      "code": "INKLANG_UNKNOWN_BODY",
+      "status": "rejected",
+      "meaning": "The caller named no supported canonical body."
+    },
+    {
+      "code": "INKLANG_MISSING_ATLAS",
+      "status": "rejected",
+      "meaning": "The named body has no available region atlas."
+    },
+    {
+      "code": "INKLANG_BODY_MISMATCH",
+      "status": "rejected",
+      "meaning": "The loaded atlas belongs to a different body."
+    },
+    {
+      "code": "INKLANG_SURFACE_MISMATCH",
+      "status": "rejected",
+      "meaning": "The atlas and loaded canonical rest surface have different digests."
+    },
+    {
+      "code": "INKLANG_VERSION_MISMATCH",
+      "status": "rejected",
+      "meaning": "The intent, lexicon, atlas, or resolver versions are incompatible."
+    },
+    {
+      "code": "INKLANG_NO_REGION",
+      "status": "rejected",
+      "meaning": "The atlas has no faces or valid candidate for the requested region."
+    },
+    {
+      "code": "INKLANG_OFFSET_OUT_OF_BOUNDS",
+      "status": "rejected",
+      "meaning": "A relative surface walk cannot reach the requested offset on tattooable connected skin."
+    },
+    {
+      "code": "INKLANG_ANCHOR_INVALID",
+      "status": "rejected",
+      "meaning": "The resolved face or barycentric coordinates are invalid."
+    },
+    {
+      "code": "INKLANG_SEMANTIC_MISMATCH",
+      "status": "rejected",
+      "meaning": "Description, intent, site, anchor, or reverse description disagree."
+    }
+  ]
+}

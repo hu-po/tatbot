@@ -1,0 +1,22 @@
+{
+  "schema_version": 2,
+  "revision": "calibration_palette_v11",
+  "urdf": "urdf/palette.urdf",
+  "frame": "palette_root",
+  "installed": false,
+  "rim_measurement_utc": null,
+  "rim_z_m": {},
+  "viewer_mesh": "urdf/meshes/palette/calibration_palette_v11.glb",
+  "simulation_root_xyz_m": [
+    0.126,
+    0,
+    0.085
+  ],
+  "simulation_root_quaternion_wxyz": [
+    1,
+    0,
+    0,
+    0
+  ],
+  "simulation_pose_note": "Synthetic test scene placement; no hardware measurements."
+}

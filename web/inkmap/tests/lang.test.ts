@@ -5,6 +5,7 @@ import {
   parseSentence, realize, validateProgram, isZone,
   type TattooProgram,
 } from "../src/core/lang.ts";
+import requestFixtures from "../../../config/inkmap/examples/scenario-request-fixtures.json" with { type: "json" };
 
 test("the lexicon has the 59 leaf sites of lexicon v0.3", () => {
   assert.equal(Object.keys(SITES).length, 59);
@@ -148,26 +149,26 @@ test("relative phrases: measures, relations, between", () => {
   const p = parseSentence("a rose two inches below the left collarbone");
   assert.deepEqual(p.site, {
     id: "collarbone", laterality: "left", aspect: null, level: null,
-    rel: { kind: "below", offset_m: 2 * 0.0254, render: "two inches" },
+    relation: { kind: "below", offset_m: 2 * 0.0254, render: "two inches" },
   });
   assert.equal(realize(p), "a rose two inches below the left collarbone");
   assert.equal(realize(parseSentence(realize(p))), realize(p));
 
   const j = parseSentence("a star just above the navel");
-  assert.equal(j.site.rel!.offset_m, 0.03);
+  assert.equal(j.site.relation!.offset_m, 0.03);
   assert.equal(realize(j), "a star just above the navel");
 
   const cm = parseSentence("a dot 3 cm behind the left ear");
-  assert.ok(Math.abs(cm.site.rel!.offset_m! - 0.03) < 1e-9);
+  assert.ok(Math.abs(cm.site.relation!.offset_m! - 0.03) < 1e-9);
 
   const b = parseSentence("a moth between the shoulder blades");
   assert.equal(b.site.id, "shoulder_blade");
-  assert.deepEqual(b.site.rel, { kind: "between", other: { id: "shoulder_blade", laterality: "right" } });
+  assert.deepEqual(b.site.relation, { kind: "between", other: { id: "shoulder_blade", laterality: "right" } });
   assert.equal(realize(b), "a moth between the left shoulder blade and the right shoulder blade");
 
   const b2 = parseSentence("a sun between the navel and the sternum");
   assert.equal(b2.site.id, "navel");
-  assert.equal(b2.site.rel!.other!.id, "sternum");
+  assert.equal(b2.site.relation!.other!.id, "sternum");
 
   // "behind the ear" is a site, not a relation.
   assert.equal(parseSentence("a star behind the ear").site.id, "behind_ear");
@@ -184,4 +185,24 @@ test("aspect-first phrasing: 'outside of the left shin'", () => {
   assert.equal(realize(parseSentence(realize(p))), realize(p));
   assert.deepEqual(parseSentence("a koi on the inside of the right calf").site, { id: "calf", laterality: "right", aspect: "inner", level: null });
   assert.deepEqual(parseSentence("a sun on the back of the left thigh").site, { id: "thigh", laterality: "left", aspect: "back", level: null });
+});
+
+test("the 100 typed scenario-request fixtures preserve semantic parse outcomes", () => {
+  assert.equal(requestFixtures.fixtures.length, 100);
+  const poses = new Set<string>();
+  const supports = new Set<string>();
+  const sizes = new Set<string>();
+  for (const fixture of requestFixtures.fixtures) {
+    poses.add(fixture.pose); supports.add(fixture.support);
+    sizes.add(fixture.size_mm.join("x"));
+    if (fixture.expected.error === "semantic_parse") {
+      assert.throws(() => parseSentence(fixture.prompt), /tattoo request parse/,
+        `${fixture.id} should fail semantic parsing`);
+      continue;
+    }
+    const program = parseSentence(fixture.prompt);
+    assert.equal(program.site.id, fixture.expected.site, fixture.id);
+    assert.equal(program.site.laterality, fixture.expected.laterality, fixture.id);
+  }
+  assert.ok(poses.size >= 4 && supports.size >= 4 && sizes.size >= 5);
 });

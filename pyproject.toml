@@ -1,14 +1,25 @@
 # Tool configuration only — this repo no longer ships a root Python package.
 # Installable Python code lives in python/lerobot_robot_tatbot (own pyproject).
 
-[tool.isort]
-profile = "black"
-line_length = 88
-
 [tool.ruff]
 line-length = 110
-target-version = "py311"
-fix = true
+# The floor is the most constrained runtime this lints, not the newest one:
+# scripts/tatbot and the verbs under scripts/lib are stdlib-only and run on
+# whatever system python3 a bare clone finds (">= 3.10", scripts/tatbot), and
+# python/tatbot_contracts declares >=3.10 for the same reason. A higher target
+# lets ruff green-light — and, with UP selected, actively rewrite to — syntax
+# those runtimes do not have: at py311 it offers `datetime.UTC` in eight files
+# under scripts/. Roots with a higher floor (sim >=3.11, the plugin >=3.12) lose
+# only newer idiom suggestions, which is the cheap side of this trade.
+target-version = "py310"
+# Mutation is opt-in. With `fix = true` a bare `uvx ruff check .` rewrites the
+# tree instead of reporting on it: it once applied 274 fixes across 132 files,
+# including stripping a load-bearing
+# `# noqa: SIM105 -- CircuitPython has no contextlib` from the e-stop firmware.
+# In a shared checkout with a shared index that is somebody else's commit. Every
+# automated caller already passes --no-fix (scripts/check, .github/workflows/ci.yml);
+# pass --fix by hand when you actually want the edits.
+fix = false
 show-fixes = true
 exclude = ["*_pb2.py", "*_pb2_grpc.py"]
 

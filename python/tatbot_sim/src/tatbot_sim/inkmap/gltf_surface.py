@@ -1,9 +1,9 @@
-"""Read Inkmap's canonical rest surface directly from a binary glTF asset.
+"""Read the one checked-in SOMA mid browser surface without Three.js.
 
-Inkmap anchors index the exact non-indexed geometry produced by `buildSkin`:
-named mesh nodes sorted by name, expanded in primitive index order, transformed
-through their node hierarchy, then converted from glTF Y-up to Tatbot Z-up.
-This small reader mirrors that recipe without depending on Blender or Three.js.
+The GLB is a rendering view: vertices are expanded at UV seams, but every
+corner carries ``_SOMA_VERTEX``. Reconstructing that attribute proves both
+the upstream triangle order and the canonical 18,056-vertex rest surface used
+by Python contracts and browser placements.
 """
 
 from __future__ import annotations
@@ -15,6 +15,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+
+MODEL_ID = "mhr-soma-v1"
+MODEL_SPEC_SHA256 = "e615b8485c367509833ee68b0405cd1e0ce6015604eaa4c1b2b699f4fc8d5144"
+TOPOLOGY_SHA256 = "e0ca7ee25dc0b4c8d841bb2626e364bb88b7af7fae037e30854728842e320a18"
+REST_SURFACE_SHA256 = "caa66dff9b3625771c8f4c35bfe59556d30acdc3800880106f98f0ce75c49a95"
 
 _COMPONENTS = {
     5120: np.dtype("i1"),
@@ -28,7 +33,24 @@ _WIDTHS = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT4": 16}
 
 
 class GlbSurfaceError(ValueError):
-    pass
+    """The derived browser asset does not implement its locked surface contract."""
+
+
+def _array_digest(value: np.ndarray) -> str:
+    array = np.ascontiguousarray(value)
+    dimensions = ",".join(str(item) for item in array.shape)
+    header = f"dtype={array.dtype.str};shape={dimensions};order=C\n".encode()
+    return hashlib.sha256(header + array.tobytes(order="C")).hexdigest()
+
+
+def _topology_digest(faces: np.ndarray) -> str:
+    return _array_digest(np.asarray(faces, dtype="<i4"))
+
+
+def _surface_digest(vertices: np.ndarray) -> str:
+    quantized = np.rint(np.asarray(vertices) / 0.00001).astype("<i8")
+    header = b"dtype=<i8;shape=18056,3;order=C;quantization_m=0.00001;axes=x,-z,y\n"
+    return hashlib.sha256(header + quantized.tobytes(order="C")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -41,17 +63,23 @@ class CanonicalPart:
 @dataclass(frozen=True)
 class CanonicalSurface:
     vertices: np.ndarray
-    """Non-indexed float32 vertices, shape (faces, 3, 3), Z-up metres."""
+    """Face-expanded float32 vertices, shape ``(36108, 3, 3)``."""
+
+    indexed_vertices: np.ndarray
+    """Canonical SOMA mid vertices, shape ``(18056, 3)``."""
+
+    faces: np.ndarray
+    """Canonical SOMA mid triangle indices, shape ``(36108, 3)``."""
 
     parts: tuple[CanonicalPart, ...]
 
     @property
     def sha256(self) -> str:
-        # JavaScript Math.round(x) is floor(x + 0.5), including negative ties.
-        # Hash signed 10-micrometre units so harmless cross-runtime float ULPs do not
-        # redefine a face/barycentric anchor.
-        units_10um = np.floor(np.asarray(self.vertices, dtype=np.float64) * 1e5 + 0.5).astype("<i4")
-        return hashlib.sha256(units_10um.tobytes()).hexdigest()
+        return _surface_digest(self.indexed_vertices)
+
+    @property
+    def topology_sha256(self) -> str:
+        return _topology_digest(self.faces)
 
 
 def _load_glb(path: Path) -> tuple[dict, bytes]:
@@ -64,9 +92,13 @@ def _load_glb(path: Path) -> tuple[dict, bytes]:
     offset = 12
     chunks: dict[int, bytes] = {}
     while offset < len(raw):
+        if offset + 8 > len(raw):
+            raise GlbSurfaceError(f"{path}: truncated GLB chunk header")
         length, kind = struct.unpack_from("<II", raw, offset)
         offset += 8
-        chunks[kind] = raw[offset:offset + length]
+        if offset + length > len(raw):
+            raise GlbSurfaceError(f"{path}: truncated GLB chunk")
+        chunks[kind] = raw[offset : offset + length]
         offset += length
     try:
         document = json.loads(chunks[0x4E4F534A].decode("utf-8"))
@@ -77,43 +109,57 @@ def _load_glb(path: Path) -> tuple[dict, bytes]:
 
 
 def _accessor(document: dict, binary: bytes, index: int) -> np.ndarray:
-    accessor = document["accessors"][index]
+    try:
+        accessor = document["accessors"][index]
+        view = document["bufferViews"][accessor["bufferView"]]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise GlbSurfaceError(f"invalid accessor {index}") from exc
     if "sparse" in accessor:
         raise GlbSurfaceError("sparse glTF accessors are not supported")
-    view = document["bufferViews"][accessor["bufferView"]]
-    dtype = _COMPONENTS.get(accessor["componentType"])
-    width = _WIDTHS.get(accessor["type"])
+    dtype = _COMPONENTS.get(accessor.get("componentType"))
+    width = _WIDTHS.get(accessor.get("type"))
     if dtype is None or width is None:
-        raise GlbSurfaceError(f"unsupported accessor {accessor['componentType']}/{accessor['type']}")
-    count = accessor["count"]
+        raise GlbSurfaceError(
+            f"unsupported accessor {accessor.get('componentType')}/{accessor.get('type')}"
+        )
+    count = accessor.get("count")
+    if not isinstance(count, int) or count <= 0:
+        raise GlbSurfaceError("accessor count must be a positive integer")
     offset = view.get("byteOffset", 0) + accessor.get("byteOffset", 0)
     packed = dtype.itemsize * width
     stride = view.get("byteStride", packed)
-    if offset + (count - 1) * stride + packed > len(binary):
+    if stride < packed or offset + (count - 1) * stride + packed > len(binary):
         raise GlbSurfaceError("accessor extends beyond BIN chunk")
     if stride == packed:
-        out = np.frombuffer(binary, dtype=dtype, count=count * width, offset=offset).reshape(count, width)
+        out = np.frombuffer(binary, dtype=dtype, count=count * width, offset=offset).reshape(
+            count, width
+        )
     else:
-        out = np.ndarray((count, width), dtype=dtype, buffer=binary, offset=offset, strides=(stride, dtype.itemsize))
+        out = np.ndarray(
+            (count, width),
+            dtype=dtype,
+            buffer=binary,
+            offset=offset,
+            strides=(stride, dtype.itemsize),
+        )
     return out.copy()
 
 
-def _quat_matrix(q: list[float]) -> np.ndarray:
-    x, y, z, w = q
-    n = x * x + y * y + z * z + w * w
-    if n < 1e-20:
-        return np.eye(4)
-    s = 2.0 / n
-    xx, yy, zz = x * x * s, y * y * s, z * z * s
-    xy, xz, yz = x * y * s, x * z * s, y * z * s
-    wx, wy, wz = w * x * s, w * y * s, w * z * s
-    out = np.eye(4)
-    out[:3, :3] = [
-        [1 - yy - zz, xy - wz, xz + wy],
-        [xy + wz, 1 - xx - zz, yz - wx],
-        [xz - wy, yz + wx, 1 - xx - yy],
-    ]
-    return out
+def _quat_matrix(value: list[float]) -> np.ndarray:
+    x, y, z, w = value
+    norm = x * x + y * y + z * z + w * w
+    if norm < 1e-20:
+        raise GlbSurfaceError("node quaternion is zero")
+    scale = 2.0 / norm
+    return np.asarray(
+        [
+            [1 - scale * (y * y + z * z), scale * (x * y - w * z), scale * (x * z + w * y), 0],
+            [scale * (x * y + w * z), 1 - scale * (x * x + z * z), scale * (y * z - w * x), 0],
+            [scale * (x * z - w * y), scale * (y * z + w * x), 1 - scale * (x * x + y * y), 0],
+            [0, 0, 0, 1],
+        ],
+        dtype=np.float64,
+    )
 
 
 def _node_matrix(node: dict) -> np.ndarray:
@@ -131,60 +177,92 @@ def _world_matrices(document: dict) -> list[np.ndarray]:
     parents: dict[int, int] = {}
     for parent, node in enumerate(nodes):
         for child in node.get("children", []):
+            if child in parents:
+                raise GlbSurfaceError(f"node {child} has multiple parents")
             parents[child] = parent
     cache: dict[int, np.ndarray] = {}
 
-    def world(index: int) -> np.ndarray:
+    def world(index: int, active: frozenset[int] = frozenset()) -> np.ndarray:
+        if index in active:
+            raise GlbSurfaceError("node hierarchy contains a cycle")
         if index not in cache:
             local = _node_matrix(nodes[index])
-            cache[index] = world(parents[index]) @ local if index in parents else local
+            cache[index] = world(parents[index], active | {index}) @ local if index in parents else local
         return cache[index]
 
-    return [world(i) for i in range(len(nodes))]
+    return [world(index) for index in range(len(nodes))]
 
 
-def load_canonical_surface(path: str | Path, skin_nodes: tuple[str, ...] = ("Body", "EyeL", "EyeR")) -> CanonicalSurface:
+def load_canonical_surface(path: str | Path) -> CanonicalSurface:
     path = Path(path)
     document, binary = _load_glb(path)
+    extras = document.get("extras")
+    expected_extras = {
+        "schema": "tatbot.soma-browser-surface/1",
+        "model_spec_id": MODEL_ID,
+        "model_spec_sha256": MODEL_SPEC_SHA256,
+        "surface_sha256": REST_SURFACE_SHA256,
+        "topology_sha256": TOPOLOGY_SHA256,
+        "coordinate_frame": "tatbot-z-up-front-minus-y-metres",
+        "face_order": "SOMA-mid-upstream",
+        "uv_set": "st-face-varying",
+    }
+    if not isinstance(extras, dict) or any(
+        extras.get(key) != value for key, value in expected_extras.items()
+    ):
+        raise GlbSurfaceError(f"{path}: model, frame, or digest metadata is not reviewed")
+    nodes = document.get("nodes", [])
+    matching = [index for index, node in enumerate(nodes) if node.get("name") == "SOMA"]
+    if len(matching) != 1:
+        raise GlbSurfaceError(f"{path}: expected exactly one SOMA node")
+    node_index = matching[0]
+    try:
+        primitives = document["meshes"][nodes[node_index]["mesh"]]["primitives"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise GlbSurfaceError(f"{path}: SOMA node has no valid mesh") from exc
+    if len(primitives) != 1 or primitives[0].get("mode", 4) != 4:
+        raise GlbSurfaceError(f"{path}: SOMA must contain one triangle primitive")
+    primitive = primitives[0]
+    attributes = primitive.get("attributes", {})
+    required = {"POSITION", "NORMAL", "TEXCOORD_0", "_SOMA_VERTEX"}
+    if set(attributes) != required or "indices" not in primitive:
+        raise GlbSurfaceError(f"{path}: SOMA primitive attributes differ from the reviewed set")
+    positions = _accessor(document, binary, attributes["POSITION"]).astype(np.float64)
+    normals = _accessor(document, binary, attributes["NORMAL"])
+    uvs = _accessor(document, binary, attributes["TEXCOORD_0"])
+    source = _accessor(document, binary, attributes["_SOMA_VERTEX"]).reshape(-1)
+    indices = _accessor(document, binary, primitive["indices"]).reshape(-1)
+    if not (
+        positions.shape == (108_324, 3)
+        and normals.shape == (108_324, 3)
+        and uvs.shape == (108_324, 2)
+        and source.shape == (108_324,)
+        and indices.shape == (108_324,)
+        and np.array_equal(indices, np.arange(108_324))
+    ):
+        raise GlbSurfaceError(f"{path}: accessor shapes or invariant corner indices changed")
     worlds = _world_matrices(document)
-    by_name = {node.get("name"): i for i, node in enumerate(document.get("nodes", []))}
-    # Match THREE.Matrix4.makeRotationX(Math.PI / 2) bit-for-bit.  Its cosine
-    # is the tiny IEEE value ~6.12e-17, not a hand-written zero; preserving it
-    # matters because surface_sha256 is over the resulting float32 bytes.
-    c, s = np.cos(np.pi / 2), np.sin(np.pi / 2)
-    faces: list[np.ndarray] = []
-    parts: list[CanonicalPart] = []
-    first_face = 0
-    for name in sorted(skin_nodes):
-        try:
-            node_index = by_name[name]
-            mesh = document["meshes"][document["nodes"][node_index]["mesh"]]
-        except (KeyError, IndexError) as exc:
-            raise GlbSurfaceError(f"{path}: skin node {name!r} is missing or has no mesh") from exc
-        part_faces: list[np.ndarray] = []
-        for primitive in mesh["primitives"]:
-            if primitive.get("mode", 4) != 4:
-                raise GlbSurfaceError(f"{path}: {name} contains a non-triangle primitive")
-            positions = _accessor(document, binary, primitive["attributes"]["POSITION"]).astype(np.float64)
-            ones = np.ones((len(positions), 1), dtype=np.float64)
-            world = (worlds[node_index] @ np.concatenate([positions, ones], axis=1).T).T
-            # Spell out Three.Vector3.applyMatrix4's operation order instead
-            # of using BLAS: fused/reassociated matrix arithmetic can move a
-            # float32 result by one ULP and therefore change the digest.
-            positions_z = np.stack([
-                world[:, 0],
-                c * world[:, 1] - s * world[:, 2],
-                s * world[:, 1] + c * world[:, 2],
-            ], axis=1)
-            if "indices" in primitive:
-                indices = _accessor(document, binary, primitive["indices"]).reshape(-1)
-            else:
-                indices = np.arange(len(positions_z))
-            if len(indices) % 3:
-                raise GlbSurfaceError(f"{path}: {name} triangle index count is not divisible by three")
-            part_faces.append(positions_z[indices].reshape(-1, 3, 3))
-        combined = np.concatenate(part_faces).astype("<f4", copy=False)
-        faces.append(combined)
-        parts.append(CanonicalPart(name=name, first_face=first_face, face_count=len(combined)))
-        first_face += len(combined)
-    return CanonicalSurface(vertices=np.concatenate(faces), parts=tuple(parts))
+    points = np.concatenate([positions, np.ones((len(positions), 1))], axis=1)
+    expanded = (worlds[node_index] @ points.T).T[:, :3].astype("<f4")
+    if not np.isfinite(expanded).all() or int(source.min()) != 0 or int(source.max()) != 18_055:
+        raise GlbSurfaceError(f"{path}: surface contains invalid values or source indices")
+    faces = np.asarray(source, dtype="<i4").reshape(36_108, 3)
+    indexed = np.empty((18_056, 3), dtype="<f4")
+    seen = np.zeros(18_056, dtype=bool)
+    for corner, vertex_index in enumerate(source):
+        index = int(vertex_index)
+        if seen[index] and not np.array_equal(indexed[index], expanded[corner]):
+            raise GlbSurfaceError(f"{path}: source vertex {index} has inconsistent corner positions")
+        indexed[index] = expanded[corner]
+        seen[index] = True
+    if not seen.all():
+        raise GlbSurfaceError(f"{path}: not every SOMA mid vertex is referenced")
+    result = CanonicalSurface(
+        vertices=expanded.reshape(36_108, 3, 3),
+        indexed_vertices=indexed,
+        faces=faces,
+        parts=(CanonicalPart(name="SOMA", first_face=0, face_count=36_108),),
+    )
+    if result.sha256 != REST_SURFACE_SHA256 or result.topology_sha256 != TOPOLOGY_SHA256:
+        raise GlbSurfaceError(f"{path}: reconstructed canonical digest mismatch")
+    return result

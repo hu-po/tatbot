@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>tatbot_calib</name>
+  <version>0.1.0</version>
+  <description>Probe-station calibration. Its core is pure Python and numpy, no ROS import. It starts with the station's pose measured fresh from its fiducials.</description>
+  <maintainer email="hello@tatbot.ai">hu-po</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>tatbot_description</exec_depend>
+  <exec_depend>tatbot_interfaces</exec_depend>
+  <exec_depend>tatbot_motion</exec_depend>
+  <exec_depend>tatbot_bridge</exec_depend>
+  <exec_depend>tatbot_session</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>python3-scipy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

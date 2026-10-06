@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import os
 import re
+import secrets
+import socket
 import time
 from pathlib import Path
 
@@ -25,7 +27,8 @@ ESTOP_OVERRIDES = (
 )
 
 ARM_TOKEN = Path("/tmp/tatbot-arm-token")
-NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+TAG_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+LAUNCH_ID_RE = re.compile(r"^\d{8}T\d{6}Z-[A-Za-z0-9_-]{1,16}-[0-9a-f]{4}(?:-[A-Za-z0-9_-]{1,64})?$")
 
 
 def estop_overrides(args: list[str]) -> list[str]:
@@ -43,32 +46,88 @@ def known_tools(repo: Path) -> list[str]:
     return sorted(p.stem for p in d.glob("*.yaml")) if d.is_dir() else []
 
 
-def resolve_tool(repo: Path, stated: str | None) -> tuple[str | None, str | None]:
-    """(tool_id, error). Stated on the command line or in TATBOT_EE_TOOL — never inferred."""
-    tool = stated or os.environ.get("TATBOT_EE_TOOL")
-    known = ", ".join(known_tools(repo)) or "none"
-    if not tool:
-        return None, f"--ee-tool <id> is required: name the tool in the mount (known: {known})"
-    if tool not in known_tools(repo):
-        return None, f"unknown tool '{tool}' (known: {known})"
-    return tool, None
+# Where a resolved tool identity came from, most explicit first. Rendered in
+# startup notices, plans and diagnostics so a default is never mistaken for a
+# statement about what is physically in the mount.
+TOOL_SOURCES = {"flag": "--ee-tool", "environment": "TATBOT_EE_TOOL",
+                "configured": "the configured fitted tool"}
+FLAG_HINT = "state it with --ee-tool <id>; `tatbot tool list` names them"
 
 
-def nonce_error(nonce: str | None) -> str | None:
-    if not nonce:
-        return (
-            "--nonce <literal> is required for autonomous motion: a unique literal you type "
-            "now (never $RANDOM or $(date), which a replayed shell re-evaluates); each nonce is "
-            "single-use and ledgered by scripts/lib/arm_gate.sh"
-        )
-    if not NONCE_RE.match(nonce):
-        return "nonce must be 1-128 chars of [A-Za-z0-9_-]"
+def configured_tool(repo: Path, arm: str = "right") -> tuple[str | None, str | None]:
+    """(tool_id, problem) — the fitted-tool pointer, read through tool_spec.
+
+    One pointer, written by a touch-off. This never copies it, and reading it
+    is not evidence that the physical tool was inspected.
+    """
+    try:
+        import tool_spec
+    except ImportError as exc:  # a checkout without the datasheet library
+        return None, f"cannot read the fitted-tool pointer ({exc})"
+    try:
+        return tool_spec.active_tool_id(repo, arm), None
+    except (OSError, ValueError) as exc:
+        return None, f"the fitted-tool pointer is unreadable ({exc})"
+
+
+def resolve_tool(repo: Path, stated: str | None, *, arm: str = "right") -> tuple[str | None, str, str | None]:
+    """(tool_id, source, error) for the tool in the mount.
+
+    Precedence, most explicit first: the ``--ee-tool`` flag, then an
+    invocation's ``TATBOT_EE_TOOL``, then the execution owner's configured
+    fitted tool. An explicit value that is wrong is a refusal, never a silent
+    fall back to the default — the whole point of stating a tool is that a swap
+    becomes visible. Resolving a default changes nothing on disk and does not
+    establish that the tool was inspected; the datasheet-versus-calibration
+    check in tool_spec.require_stated_tool still runs at connect.
+    """
+    known = known_tools(repo)
+    listing = ", ".join(known) or "none"
+    for value, source in ((stated, "flag"), (os.environ.get("TATBOT_EE_TOOL"), "environment")):
+        if value:
+            if value not in known:
+                return None, source, f"unknown tool '{value}' from {TOOL_SOURCES[source]} (known: {listing})"
+            return value, source, None
+    configured, problem = configured_tool(repo, arm)
+    if problem:
+        return None, "configured", f"{problem}; {FLAG_HINT}"
+    if not configured:
+        return None, "configured", ("no tool stated and no fitted tool is configured; "
+                                    f"{FLAG_HINT} (known: {listing})")
+    if configured not in known:
+        return None, "configured", (f"the configured fitted tool '{configured}' has no datasheet in "
+                                    f"config/tools/ (known: {listing}); {FLAG_HINT}")
+    return configured, "configured", None
+
+
+def tag_error(tag: str | None) -> str | None:
+    """--tag is optional; a given value must survive the launcher's `tr -cd 'A-Za-z0-9_-'` intact."""
+    if tag is None:
+        return None
+    if not TAG_RE.match(tag):
+        return "--tag must be 1-64 chars of [A-Za-z0-9_-]"
     return None
 
 
-def write_nonce(nonce: str) -> None:
-    """Exactly what `echo <nonce> > /tmp/tatbot-arm-token` does, immediately before exec."""
-    ARM_TOKEN.write_text(nonce + "\n")
+def short_hostname() -> str:
+    host = socket.gethostname().split(".")[0].lower()
+    return re.sub(r"[^A-Za-z0-9_-]", "", host)[:16] or "node"
+
+
+def mint_launch_id(tag: str | None = None, *, now: float | None = None) -> str:
+    """`<UTC %Y%m%dT%H%M%SZ>-<short hostname>-<4 hex>[-<tag>]`: the id every autonomous
+    launch carries. arm_gate.sh ledgers and audits it (pid chain, SSH origin); a repeat is
+    audited, never refused. Minted on the node that execs, right before the exec."""
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(now))
+    parts = [stamp, short_hostname(), secrets.token_hex(2)]
+    if tag:
+        parts.append(tag)
+    return "-".join(parts)
+
+
+def write_launch_id(launch_id: str) -> None:
+    """Exactly what `echo <id> > /tmp/tatbot-arm-token` does, immediately before exec."""
+    ARM_TOKEN.write_text(launch_id + "\n")
     now = time.time()
     os.utime(ARM_TOKEN, (now, now))
 
@@ -78,11 +137,15 @@ def train_root() -> Path:
 
 
 def busy_reasons() -> list[str]:
-    """What would make a hardware or training verb refuse with exit 6."""
+    """Point-in-time hints; launchers own their actual lock and refusal codes."""
+    from tatbot_cli.locks import held
     reasons = []
     root = train_root()
     if (root / "SWEEP_PAUSE").exists():
         reasons.append(f"SWEEP_PAUSE present at {root / 'SWEEP_PAUSE'}")
-    if (root / ".tatbot-training.lock").exists():
-        reasons.append(f"training lock held at {root / '.tatbot-training.lock'}")
+    try:
+        if held(root / ".tatbot-training.lock"):
+            reasons.append(f"training lock held at {root / '.tatbot-training.lock'}")
+    except (OSError, ValueError) as exc:
+        reasons.append(f"training lock ownership unknown: {exc}")
     return reasons

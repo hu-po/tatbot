@@ -1,33 +1,174 @@
-// The region atlas: which named inklang site every skin face belongs to, and
-// the per-region (u,v) chart that grounds "upper inner forearm" in an anchor.
-// The atlas is data (public/bodies/<id>.regions.json, written by
-// tools/build_atlas.ts today, a Blender pass tomorrow); this module only
-// indexes and queries it. No React, no DOM.
+// Canonical InkLang region-atlas index. The checked-in atlas carries the
+// default anchors and chart parameters; consumers do not invent them again.
 import * as THREE from "three";
 import type { Anchor } from "./anchor.ts";
-import { SITES, ZONES, INKLANG_VERSION, type SitePhrase, type Laterality, type Level } from "./lang.ts";
+import { InkLangError } from "./inklang/errors.ts";
+import { INKLANG_VERSION, SITES, ZONES } from "./inklang/lexicon.ts";
+import {
+  ATLAS_SCHEMA_VERSION,
+  type Laterality,
+  type Level,
+  type RelativeWalk,
+  type SitePhrase,
+} from "./inklang/types.ts";
 
-export interface AtlasData {
-  inklang: string;
-  body: { id: string; sha256: string };
-  sites: string[];
-  /** Per face: siteIndex*4 + laterality (0 none, 1 left, 2 right); -1 = not skin. */
-  faces: number[];
+export interface AtlasRegionData {
+  site_id: string;
+  laterality: "left" | "right" | null;
+  default_anchor: Anchor;
+  chart: {
+    mean: [number, number, number];
+    normal: [number, number, number];
+    u_axis: [number, number, number];
+    v_axis: [number, number, number];
+    u_range: [number, number];
+    v_range: [number, number];
+  };
 }
 
-export function parseAtlas(x: unknown, expectFaces?: number): AtlasData {
-  const fail = (m: string): never => { throw new Error(`region atlas: ${m}`); };
-  if (typeof x !== "object" || x === null) fail("not an object");
-  const a = x as Record<string, unknown>;
-  if (a.inklang !== INKLANG_VERSION) fail(`lexicon ${String(a.inklang)} (app speaks ${INKLANG_VERSION}) — regenerate with tools/build_atlas.ts`);
-  const body = a.body as Record<string, unknown> | undefined;
-  if (!body || typeof body.id !== "string" || typeof body.sha256 !== "string") return fail("body needs id and sha256");
-  if (!Array.isArray(a.sites) || !(a.sites as unknown[]).every((s) => typeof s === "string" && s in SITES)) fail("sites must be known leaf site ids");
-  if (!Array.isArray(a.faces)) fail("faces must be an array");
-  if (expectFaces !== undefined && (a.faces as unknown[]).length !== expectFaces) {
-    fail(`face count ${(a.faces as unknown[]).length} does not match the loaded body (${expectFaces})`);
+export interface AtlasData {
+  atlas_schema_version: number;
+  inklang_version: string;
+  body: {
+    model_spec_id: string;
+    model_spec_sha256: string;
+    identity_sha256: string;
+    topology_sha256: string;
+    rest_surface_sha256: string;
+    asset_sha256: string;
+  };
+  builder: { name: string; version: number; source_sha256?: string };
+  frame: { front: "-y"; left: "+x"; up: "+z" };
+  encoding: string;
+  sites: string[];
+  site_status: Record<string, { status: "mapped_supported" | "mapped_unsupported" | "unsupported"; face_count: number; reason?: string }>;
+  region_meaning_count: number;
+  upstream_exclusions: { asset_sha256: string; segments: string[]; excluded_faces: number };
+  /** Per face: siteIndex*4 + laterality (0 none, 1 left, 2 right); -1 = not skin. */
+  faces: number[];
+  /** One only for faces inside the reviewed initial tattoo domain. */
+  eligible_faces: number[];
+  regions: Record<string, AtlasRegionData>;
+}
+
+const failAtlas = (message: string): never => {
+  throw new InkLangError("INKLANG_VERSION_MISMATCH", `region atlas: ${message}`);
+};
+
+function isVec(value: unknown, length: number): value is number[] {
+  return Array.isArray(value) && value.length === length && value.every((item) => typeof item === "number" && Number.isFinite(item));
+}
+
+function validAnchor(value: unknown): value is Anchor {
+  if (typeof value !== "object" || value === null) return false;
+  const anchor = value as Record<string, unknown>;
+  return Number.isInteger(anchor.face)
+    && (anchor.face as number) >= 0
+    && isVec(anchor.barycentric, 3)
+    && (anchor.barycentric as number[]).every((item) => item >= 0 && item <= 1)
+    && Math.abs((anchor.barycentric as number[]).reduce((sum, item) => sum + item, 0) - 1) <= 1e-6;
+}
+
+export function parseAtlas(value: unknown, expectFaces?: number): AtlasData {
+  if (typeof value !== "object" || value === null) failAtlas("not an object");
+  const atlas = value as Record<string, unknown>;
+  if (atlas.atlas_schema_version !== ATLAS_SCHEMA_VERSION) {
+    failAtlas(`schema ${String(atlas.atlas_schema_version)} (reader accepts ${ATLAS_SCHEMA_VERSION})`);
   }
-  return a as unknown as AtlasData;
+  if (atlas.inklang_version !== INKLANG_VERSION) {
+    failAtlas(`lexicon ${String(atlas.inklang_version)} (app speaks ${INKLANG_VERSION})`);
+  }
+  const body = atlas.body as Record<string, unknown> | undefined;
+  if (
+    !body
+    || typeof body.model_spec_id !== "string"
+    || typeof body.model_spec_sha256 !== "string"
+    || !/^[0-9a-f]{64}$/.test(body.model_spec_sha256)
+    || typeof body.identity_sha256 !== "string"
+    || !/^[0-9a-f]{64}$/.test(body.identity_sha256)
+    || typeof body.topology_sha256 !== "string"
+    || !/^[0-9a-f]{64}$/.test(body.topology_sha256)
+    || typeof body.rest_surface_sha256 !== "string"
+    || !/^[0-9a-f]{64}$/.test(body.rest_surface_sha256)
+    || typeof body.asset_sha256 !== "string"
+    || !/^[0-9a-f]{64}$/.test(body.asset_sha256)
+  ) {
+    failAtlas("body needs the v2 model, identity, topology, surface, and asset digests");
+  }
+  const builder = atlas.builder as Record<string, unknown> | undefined;
+  if (!builder || typeof builder.name !== "string" || !Number.isInteger(builder.version)) {
+    failAtlas("builder needs name and integer version");
+  }
+  const rawSites = atlas.sites;
+  if (!Array.isArray(rawSites) || !rawSites.every((site) => typeof site === "string" && site in SITES)) {
+    failAtlas("sites must be known leaf ids");
+  }
+  const rawFaces = atlas.faces;
+  if (!Array.isArray(rawFaces) || !rawFaces.every((code) => Number.isInteger(code) && (code as number) >= -1)) {
+    failAtlas("faces must be integer region codes");
+  }
+  const sites = rawSites as string[];
+  if (sites.length !== Object.keys(SITES).length || !Object.keys(SITES).every((site) => sites.includes(site))) {
+    failAtlas("all semantic site names must be declared, including unsupported sites");
+  }
+  if (atlas.region_meaning_count !== 99) failAtlas("region_meaning_count must be 99");
+  const faces = rawFaces as number[];
+  const eligibleFaces = atlas.eligible_faces;
+  if (
+    !Array.isArray(eligibleFaces)
+    || eligibleFaces.length !== faces.length
+    || !eligibleFaces.every((value) => value === 0 || value === 1)
+  ) failAtlas("eligible_faces must be a zero/one value for every face");
+  if (expectFaces !== undefined && faces.length !== expectFaces) {
+    failAtlas(`face count ${faces.length} does not match loaded body (${expectFaces})`);
+  }
+  const nSites = sites.length;
+  if (!faces.every((code) => code === -1 || (code >> 2) < nSites)) {
+    failAtlas("face code references an unknown site index");
+  }
+  if (typeof atlas.regions !== "object" || atlas.regions === null || Array.isArray(atlas.regions)) {
+    failAtlas("regions must be an object");
+  }
+  for (const [key, raw] of Object.entries(atlas.regions as Record<string, unknown>)) {
+    if (typeof raw !== "object" || raw === null) failAtlas(`region ${key} is not an object`);
+    const record = raw as Record<string, unknown>;
+    const chart = record.chart as Record<string, unknown> | undefined;
+    if (
+      typeof record.site_id !== "string"
+      || !(record.site_id in SITES)
+      || !["left", "right", null].includes(record.laterality as "left" | "right" | null)
+      || !validAnchor(record.default_anchor)
+      || !chart
+      || !isVec(chart.mean, 3)
+      || !isVec(chart.normal, 3)
+      || !isVec(chart.u_axis, 3)
+      || !isVec(chart.v_axis, 3)
+      || !isVec(chart.u_range, 2)
+      || !isVec(chart.v_range, 2)
+    ) {
+      failAtlas(`region ${key} has an invalid anchor or chart`);
+    }
+  }
+  return value as AtlasData;
+}
+
+/** Bind atlas eligibility to the separately hashed upstream segment mask. */
+export function validateExclusionMask(atlas: AtlasData, bytes: ArrayBuffer): void {
+  const mask = new Uint8Array(bytes);
+  if (mask.length !== atlas.faces.length) failAtlas("upstream exclusion mask has the wrong face count");
+  let excluded = 0;
+  for (let face = 0; face < mask.length; face++) {
+    if (mask[face] !== 0 && mask[face] !== 1) failAtlas(`upstream exclusion mask byte ${face} is not zero or one`);
+    if (mask[face] === 1) {
+      excluded += 1;
+      if (atlas.faces[face] !== -1 || atlas.eligible_faces[face] !== 0) {
+        failAtlas(`upstream-excluded face ${face} remains labeled or eligible`);
+      }
+    }
+  }
+  if (excluded !== atlas.upstream_exclusions.excluded_faces) {
+    failAtlas(`upstream exclusion count ${excluded} differs from ${atlas.upstream_exclusions.excluded_faces}`);
+  }
 }
 
 export interface RegionRef {
@@ -35,289 +176,632 @@ export interface RegionRef {
   laterality: "left" | "right" | null;
 }
 
-interface Region {
+interface Region extends RegionRef {
   key: string;
-  id: string;
-  laterality: "left" | "right" | null;
   faces: number[];
   mean: THREE.Vector3;
   normal: THREE.Vector3;
-  /** Chart axes: u proximal→distal (down the body), v medial→lateral. */
   uAxis: THREE.Vector3;
   vAxis: THREE.Vector3;
   uRange: [number, number];
   vRange: [number, number];
+  defaultAnchor: Anchor;
 }
 
-const rkey = (id: string, lat: "left" | "right" | null) => (lat ? `${id}:${lat}` : id);
+const regionKey = (id: string, laterality: "left" | "right" | null): string => (
+  laterality ? `${id}:${laterality}` : id
+);
 
-/** Face-level site index over one loaded body. */
+function faceNormals(geometry: THREE.BufferGeometry): Float32Array {
+  const position = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const output = new Float32Array(position.count);
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const normal = new THREE.Vector3();
+  for (let face = 0; face < position.count / 3; face++) {
+    a.fromBufferAttribute(position, 3 * face);
+    b.fromBufferAttribute(position, 3 * face + 1);
+    c.fromBufferAttribute(position, 3 * face + 2);
+    normal.subVectors(b, a).cross(c.sub(a)).normalize();
+    output.set([normal.x, normal.y, normal.z], 3 * face);
+  }
+  return output;
+}
+
+function centroidVector(centroids: Float32Array, face: number): THREE.Vector3 {
+  return new THREE.Vector3(centroids[3 * face], centroids[3 * face + 1], centroids[3 * face + 2]);
+}
+
+function normalVector(normals: Float32Array, face: number): THREE.Vector3 {
+  return new THREE.Vector3(normals[3 * face], normals[3 * face + 1], normals[3 * face + 2]);
+}
+
+function membership(sites: string[], faces: number[]): Map<string, RegionRef & { faces: number[] }> {
+  const output = new Map<string, RegionRef & { faces: number[] }>();
+  for (let face = 0; face < faces.length; face++) {
+    const code = faces[face];
+    if (code < 0) continue;
+    const id = sites[code >> 2];
+    const laterality = (code & 3) === 1 ? "left" as const : (code & 3) === 2 ? "right" as const : null;
+    const key = regionKey(id, laterality);
+    const region = output.get(key) ?? { id, laterality, faces: [] };
+    region.faces.push(face);
+    output.set(key, region);
+  }
+  return output;
+}
+
+function computeChart(
+  entry: RegionRef & { faces: number[] },
+  centroids: Float32Array,
+  normals: Float32Array,
+): Omit<AtlasRegionData, "site_id" | "laterality" | "default_anchor">["chart"] {
+  const mean = new THREE.Vector3();
+  const normal = new THREE.Vector3();
+  for (const face of entry.faces) {
+    mean.add(centroidVector(centroids, face));
+    normal.add(normalVector(normals, face));
+  }
+  mean.divideScalar(entry.faces.length);
+  if (normal.lengthSq() < 1e-12) normal.set(0, -1, 0);
+  else normal.normalize();
+  const covariance = [0, 0, 0, 0, 0, 0];
+  const delta = new THREE.Vector3();
+  for (const face of entry.faces) {
+    delta.copy(centroidVector(centroids, face)).sub(mean);
+    covariance[0] += delta.x * delta.x;
+    covariance[1] += delta.x * delta.y;
+    covariance[2] += delta.x * delta.z;
+    covariance[3] += delta.y * delta.y;
+    covariance[4] += delta.y * delta.z;
+    covariance[5] += delta.z * delta.z;
+  }
+  const uAxis = new THREE.Vector3(0.3, 0.4, 0.87);
+  for (let iteration = 0; iteration < 24; iteration++) {
+    uAxis.set(
+      covariance[0] * uAxis.x + covariance[1] * uAxis.y + covariance[2] * uAxis.z,
+      covariance[1] * uAxis.x + covariance[3] * uAxis.y + covariance[4] * uAxis.z,
+      covariance[2] * uAxis.x + covariance[4] * uAxis.y + covariance[5] * uAxis.z,
+    );
+    if (uAxis.lengthSq() < 1e-20) {
+      uAxis.set(0, 0, -1);
+      break;
+    }
+    uAxis.normalize();
+  }
+  if (Math.abs(uAxis.z) > 0.25 ? uAxis.z > 0 : uAxis.y > 0) uAxis.negate();
+  const vAxis = new THREE.Vector3().crossVectors(normal, uAxis).normalize();
+  if (vAxis.lengthSq() < 1e-12) vAxis.set(1, 0, 0);
+  const side = (entry.laterality ?? (mean.x >= 0 ? "left" : "right")) === "left" ? 1 : -1;
+  if (vAxis.x * side < 0) vAxis.negate();
+  let uMin = Infinity;
+  let uMax = -Infinity;
+  let vMin = Infinity;
+  let vMax = -Infinity;
+  for (const face of entry.faces) {
+    delta.copy(centroidVector(centroids, face)).sub(mean);
+    const u = delta.dot(uAxis);
+    const v = delta.dot(vAxis);
+    uMin = Math.min(uMin, u);
+    uMax = Math.max(uMax, u);
+    vMin = Math.min(vMin, v);
+    vMax = Math.max(vMax, v);
+  }
+  return {
+    mean: mean.toArray() as [number, number, number],
+    normal: normal.toArray() as [number, number, number],
+    u_axis: uAxis.toArray() as [number, number, number],
+    v_axis: vAxis.toArray() as [number, number, number],
+    u_range: [uMin, uMax],
+    v_range: [vMin, vMax],
+  };
+}
+
+function defaultAnchor(
+  entry: RegionRef & { faces: number[] },
+  chart: AtlasRegionData["chart"],
+  centroids: Float32Array,
+): Anchor {
+  const hint = SITES[entry.id]?.anchor;
+  if (hint === "extremum_back" || hint === "extremum_front") {
+    let best = entry.faces[0];
+    let bestY = hint === "extremum_back" ? -Infinity : Infinity;
+    for (const face of entry.faces) {
+      const y = centroids[3 * face + 1];
+      if (hint === "extremum_back" ? y > bestY : y < bestY) {
+        best = face;
+        bestY = y;
+      }
+    }
+    return { face: best, barycentric: [1 / 3, 1 / 3, 1 / 3] };
+  }
+  const mean = new THREE.Vector3(...chart.mean);
+  if (SITES[entry.id]?.laterality === "midline") mean.x = 0;
+  let best = entry.faces[0];
+  let bestDistance = Infinity;
+  for (const face of entry.faces) {
+    const distance = centroidVector(centroids, face).distanceToSquared(mean);
+    if (distance < bestDistance || (distance === bestDistance && face < best)) {
+      best = face;
+      bestDistance = distance;
+    }
+  }
+  return { face: best, barycentric: [1 / 3, 1 / 3, 1 / 3] };
+}
+
+/** Generate the data every runtime needs from one already-labeled atlas. */
+export function buildRegionRecords(
+  sites: string[],
+  faces: number[],
+  geometry: THREE.BufferGeometry,
+  centroids: Float32Array,
+): Record<string, AtlasRegionData> {
+  const normals = faceNormals(geometry);
+  const records: Record<string, AtlasRegionData> = {};
+  for (const [key, entry] of [...membership(sites, faces)].sort(([left], [right]) => left.localeCompare(right))) {
+    const chart = computeChart(entry, centroids, normals);
+    records[key] = {
+      site_id: entry.id,
+      laterality: entry.laterality,
+      default_anchor: defaultAnchor(entry, chart, centroids),
+      chart,
+    };
+  }
+  return records;
+}
+
+function buildAdjacency(geometry: THREE.BufferGeometry): number[][] {
+  const position = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const adjacency: number[][] = Array.from({ length: position.count / 3 }, () => []);
+  const owners = new Map<string, number>();
+  const vertexKey = (index: number): string => [
+    Math.round(position.getX(index) * 1e5),
+    Math.round(position.getY(index) * 1e5),
+    Math.round(position.getZ(index) * 1e5),
+  ].join(",");
+  for (let face = 0; face < position.count / 3; face++) {
+    const keys = [vertexKey(3 * face), vertexKey(3 * face + 1), vertexKey(3 * face + 2)];
+    for (let edge = 0; edge < 3; edge++) {
+      const key = [keys[edge], keys[(edge + 1) % 3]].sort().join("|");
+      const other = owners.get(key);
+      if (other === undefined) owners.set(key, face);
+      else if (other !== face) {
+        adjacency[face].push(other);
+        adjacency[other].push(face);
+      }
+    }
+  }
+  for (const neighbors of adjacency) neighbors.sort((left, right) => left - right);
+  return adjacency;
+}
+
+class MinHeap {
+  private values: [number, number][] = [];
+
+  push(distance: number, face: number): void {
+    this.values.push([distance, face]);
+    let index = this.values.length - 1;
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (this.values[parent][0] < distance || (this.values[parent][0] === distance && this.values[parent][1] <= face)) break;
+      [this.values[parent], this.values[index]] = [this.values[index], this.values[parent]];
+      index = parent;
+    }
+  }
+
+  pop(): [number, number] | undefined {
+    if (!this.values.length) return undefined;
+    const first = this.values[0];
+    const last = this.values.pop()!;
+    if (this.values.length) {
+      this.values[0] = last;
+      let index = 0;
+      for (;;) {
+        const left = 2 * index + 1;
+        const right = left + 1;
+        let best = index;
+        for (const child of [left, right]) {
+          if (child >= this.values.length) continue;
+          const a = this.values[child];
+          const b = this.values[best];
+          if (a[0] < b[0] || (a[0] === b[0] && a[1] < b[1])) best = child;
+        }
+        if (best === index) break;
+        [this.values[index], this.values[best]] = [this.values[best], this.values[index]];
+        index = best;
+      }
+    }
+    return first;
+  }
+}
+
+/** Face-level index over one canonical rest surface. */
 export class AtlasIndex {
   readonly atlas: AtlasData;
   private readonly regionByFace: (RegionRef | null)[];
   private readonly regions = new Map<string, Region>();
   private readonly faceNormals: Float32Array;
   private readonly centroids: Float32Array;
+  private readonly adjacency: number[][];
+  private readonly maxEdge: number;
 
   constructor(atlas: AtlasData, geometry: THREE.BufferGeometry, centroids: Float32Array) {
     this.atlas = atlas;
     this.centroids = centroids;
-    const pos = geometry.getAttribute("position") as THREE.BufferAttribute;
-    const nFaces = pos.count / 3;
-    if (atlas.faces.length !== nFaces) throw new Error(`region atlas: ${atlas.faces.length} faces for a ${nFaces}-face body`);
-
-    this.faceNormals = new Float32Array(nFaces * 3);
-    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3();
-    for (let f = 0; f < nFaces; f++) {
-      a.fromBufferAttribute(pos, 3 * f); b.fromBufferAttribute(pos, 3 * f + 1); c.fromBufferAttribute(pos, 3 * f + 2);
-      n.subVectors(b, a).cross(c.sub(a)).normalize();
-      this.faceNormals[3 * f] = n.x; this.faceNormals[3 * f + 1] = n.y; this.faceNormals[3 * f + 2] = n.z;
-    }
-
-    this.regionByFace = new Array(nFaces).fill(null);
-    for (let f = 0; f < nFaces; f++) {
-      const v = atlas.faces[f];
-      if (v < 0) continue;
-      const id = atlas.sites[v >> 2];
-      const laterality = (v & 3) === 1 ? "left" as const : (v & 3) === 2 ? "right" as const : null;
-      this.regionByFace[f] = { id, laterality };
-      const key = rkey(id, laterality);
-      let r = this.regions.get(key);
-      if (!r) {
-        r = { key, id, laterality, faces: [], mean: new THREE.Vector3(), normal: new THREE.Vector3(), uAxis: new THREE.Vector3(), vAxis: new THREE.Vector3(), uRange: [0, 0], vRange: [0, 0] };
-        this.regions.set(key, r);
-      }
-      r.faces.push(f);
-    }
-    for (const r of this.regions.values()) this.buildChart(r);
-  }
-
-  private cvec(f: number): THREE.Vector3 {
-    return new THREE.Vector3(this.centroids[3 * f], this.centroids[3 * f + 1], this.centroids[3 * f + 2]);
-  }
-  private nvec(f: number): THREE.Vector3 {
-    return new THREE.Vector3(this.faceNormals[3 * f], this.faceNormals[3 * f + 1], this.faceNormals[3 * f + 2]);
-  }
-
-  /** u along the region's dominant extent, oriented down the body (or forward
-   *  when the region is horizontal, like a foot); v perpendicular in the
-   *  tangent plane, oriented toward the body's outside. */
-  private buildChart(r: Region): void {
-    for (const f of r.faces) { r.mean.add(this.cvec(f)); r.normal.add(this.nvec(f)); }
-    r.mean.divideScalar(r.faces.length);
-    if (r.normal.lengthSq() < 1e-12) r.normal.set(0, -1, 0); else r.normal.normalize();
-    // Dominant covariance axis by power iteration.
-    const cov = [0, 0, 0, 0, 0, 0]; // xx, xy, xz, yy, yz, zz
-    const d = new THREE.Vector3();
-    for (const f of r.faces) {
-      d.copy(this.cvec(f)).sub(r.mean);
-      cov[0] += d.x * d.x; cov[1] += d.x * d.y; cov[2] += d.x * d.z;
-      cov[3] += d.y * d.y; cov[4] += d.y * d.z; cov[5] += d.z * d.z;
-    }
-    const u = new THREE.Vector3(0.3, 0.4, 0.87);
-    for (let i = 0; i < 24; i++) {
-      u.set(
-        cov[0] * u.x + cov[1] * u.y + cov[2] * u.z,
-        cov[1] * u.x + cov[3] * u.y + cov[4] * u.z,
-        cov[2] * u.x + cov[4] * u.y + cov[5] * u.z,
+    if (atlas.faces.length !== centroids.length / 3) {
+      throw new InkLangError(
+        "INKLANG_SURFACE_MISMATCH",
+        `region atlas has ${atlas.faces.length} faces for a ${centroids.length / 3}-face body`,
       );
-      if (u.lengthSq() < 1e-20) { u.set(0, 0, -1); break; }
-      u.normalize();
     }
-    // Orient: down the body when the region is at all vertical, else forward.
-    if (Math.abs(u.z) > 0.25 ? u.z > 0 : u.y > 0) u.negate();
-    r.uAxis.copy(u);
-    r.vAxis.crossVectors(r.normal, u).normalize();
-    if (r.vAxis.lengthSq() < 1e-12) r.vAxis.set(1, 0, 0);
-    // Toward the outside: +x on the left half, -x on the right.
-    const lateral = (r.laterality ?? (r.mean.x >= 0 ? "left" : "right")) === "left" ? 1 : -1;
-    if (r.vAxis.x * lateral < 0) r.vAxis.negate();
-    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
-    for (const f of r.faces) {
-      d.copy(this.cvec(f)).sub(r.mean);
-      const pu = d.dot(r.uAxis), pv = d.dot(r.vAxis);
-      u0 = Math.min(u0, pu); u1 = Math.max(u1, pu);
-      v0 = Math.min(v0, pv); v1 = Math.max(v1, pv);
+    this.faceNormals = faceNormals(geometry);
+    this.adjacency = buildAdjacency(geometry);
+    this.regionByFace = new Array(atlas.faces.length).fill(null);
+    const members = membership(atlas.sites, atlas.faces);
+    for (let face = 0; face < atlas.faces.length; face++) {
+      const code = atlas.faces[face];
+      if (code < 0) continue;
+      this.regionByFace[face] = {
+        id: atlas.sites[code >> 2],
+        laterality: (code & 3) === 1 ? "left" : (code & 3) === 2 ? "right" : null,
+      };
     }
-    r.uRange = [u0, u1]; r.vRange = [v0, v1];
+    for (const [key, entry] of members) {
+      const data = atlas.regions[key];
+      if (!data || data.site_id !== entry.id || data.laterality !== entry.laterality) {
+        throw new InkLangError("INKLANG_VERSION_MISMATCH", `atlas region record ${key} is missing or mismatched`);
+      }
+      if (!entry.faces.includes(data.default_anchor.face)) {
+        throw new InkLangError("INKLANG_SEMANTIC_MISMATCH", `atlas default anchor for ${key} is outside the region`);
+      }
+      this.regions.set(key, {
+        key,
+        id: entry.id,
+        laterality: entry.laterality,
+        faces: entry.faces,
+        mean: new THREE.Vector3(...data.chart.mean),
+        normal: new THREE.Vector3(...data.chart.normal),
+        uAxis: new THREE.Vector3(...data.chart.u_axis),
+        vAxis: new THREE.Vector3(...data.chart.v_axis),
+        uRange: data.chart.u_range,
+        vRange: data.chart.v_range,
+        defaultAnchor: data.default_anchor,
+      });
+    }
+    let maxEdge = 0;
+    for (let face = 0; face < this.adjacency.length; face++) {
+      for (const neighbor of this.adjacency[face]) {
+        maxEdge = Math.max(maxEdge, this.cvec(face).distanceTo(this.cvec(neighbor)));
+      }
+    }
+    this.maxEdge = maxEdge;
+  }
+
+  private cvec(face: number): THREE.Vector3 {
+    return centroidVector(this.centroids, face);
+  }
+
+  private nvec(face: number): THREE.Vector3 {
+    return normalVector(this.faceNormals, face);
   }
 
   regionOf(face: number): RegionRef | null {
     return this.regionByFace[face] ?? null;
   }
 
-  /** All faces of a leaf site (or zone) on one side; null side = every side. */
   facesOf(id: string, laterality: "left" | "right" | null): number[] {
     const leaves = ZONES[id] ? ZONES[id].members : [id];
-    const out: number[] = [];
+    const output: number[] = [];
     for (const leaf of leaves) {
-      for (const r of this.regions.values()) {
-        if (r.id !== leaf) continue;
-        if (laterality !== null && r.laterality !== null && r.laterality !== laterality) continue;
-        out.push(...r.faces);
+      for (const region of this.regions.values()) {
+        if (region.id !== leaf) continue;
+        if (laterality !== null && region.laterality !== null && region.laterality !== laterality) continue;
+        output.push(...region.faces.filter((face) => this.atlas.eligible_faces[face] === 1));
       }
     }
-    return out;
+    return output;
   }
 
-  /** The (u,v) chart coordinate of a face inside its own region, each in [0,1]. */
   uvOf(face: number): [number, number] | null {
     const ref = this.regionByFace[face];
     if (!ref) return null;
-    const r = this.regions.get(rkey(ref.id, ref.laterality))!;
-    const d = this.cvec(face).sub(r.mean);
-    const nu = (d.dot(r.uAxis) - r.uRange[0]) / Math.max(1e-9, r.uRange[1] - r.uRange[0]);
-    const nv = (d.dot(r.vAxis) - r.vRange[0]) / Math.max(1e-9, r.vRange[1] - r.vRange[0]);
-    return [Math.min(1, Math.max(0, nu)), Math.min(1, Math.max(0, nv))];
+    const region = this.regions.get(regionKey(ref.id, ref.laterality))!;
+    const delta = this.cvec(face).sub(region.mean);
+    const u = (delta.dot(region.uAxis) - region.uRange[0]) / Math.max(1e-9, region.uRange[1] - region.uRange[0]);
+    const v = (delta.dot(region.vAxis) - region.vRange[0]) / Math.max(1e-9, region.vRange[1] - region.vRange[0]);
+    return [Math.min(1, Math.max(0, u)), Math.min(1, Math.max(0, v))];
   }
 
-  /** Does this face's aspect (from its normal) match, for aspects the site declares? */
   private aspectOf(face: number, ref: RegionRef): string | null {
     const allowed = SITES[ref.id]?.aspects ?? [];
-    if (allowed.length === 0) return null;
-    const n = this.nvec(face);
-    const scored: [string, number][] = [];
-    for (const a of allowed) {
-      let s = -1;
-      if (a === "front") s = -n.y;
-      else if (a === "back") s = n.y;
-      else if (a === "top") s = n.z;
-      else if (a === "side") s = Math.abs(n.x) - 0.2;
-      else if (a === "inner" || a === "outer") {
-        const lat = ref.laterality ?? (this.cvec(face).x >= 0 ? "left" : "right");
-        const inward = lat === "left" ? -n.x : n.x;
-        s = a === "inner" ? inward : -inward;
+    if (!allowed.length) return null;
+    const normal = this.nvec(face);
+    const scores: [string, number][] = allowed.map((aspect) => {
+      let score = -1;
+      if (aspect === "front") score = -normal.y;
+      else if (aspect === "back") score = normal.y;
+      // `top of the hand` means the dorsal hand, not world-up on a hanging
+      // neutral pose. The atlas already separates dorsal `hand` from `palm`.
+      else if (aspect === "top") score = ref.id === "hand" ? 1 : normal.z;
+      else if (aspect === "side") score = Math.abs(normal.x) - 0.2;
+      else if (aspect === "inner" || aspect === "outer") {
+        const laterality = ref.laterality ?? (this.cvec(face).x >= 0 ? "left" : "right");
+        const inward = laterality === "left" ? -normal.x : normal.x;
+        score = aspect === "inner" ? inward : -inward;
       }
-      scored.push([a, s]);
-    }
-    scored.sort((x, y) => y[1] - x[1]);
-    return scored[0][1] > 0.35 ? scored[0][0] : null;
+      return [aspect, score];
+    });
+    scores.sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+    return scores[0][1] > 0.35 ? scores[0][0] : null;
   }
 
-  /** Resolve a parsed site phrase to a concrete anchor. A sided site with no
-   *  laterality defaults to the left (deterministic; the UI says so). */
-  anchorFor(site: Pick<SitePhrase, "id"> & Partial<SitePhrase> & { uv?: [number, number] | null }): Anchor {
+  anchorFor(site: Pick<SitePhrase, "id"> & Partial<SitePhrase>): Anchor {
     const spec = SITES[site.id] ?? ZONES[site.id];
-    if (!spec) throw new Error(`region atlas: unknown site "${site.id}"`);
-    let lat: "left" | "right" | null = site.laterality === "left" || site.laterality === "right" ? site.laterality : null;
-    if (lat === null && spec.laterality === "sided") lat = "left";
-    let faces = this.facesOf(site.id, lat);
-    if (faces.length === 0) throw new Error(`region atlas: no faces for ${lat ?? ""} ${site.id}`.trim());
+    if (!spec) throw new InkLangError("INKLANG_UNKNOWN_SITE", `unknown site "${site.id}"`);
+    let laterality: "left" | "right" | null = site.laterality === "left" || site.laterality === "right"
+      ? site.laterality
+      : null;
+    if (laterality === null && spec.laterality === "sided") {
+      throw new InkLangError("INKLANG_AMBIGUOUS_LATERALITY", `${site.id} requires a left or right choice`);
+    }
+    let faces = this.facesOf(site.id, laterality);
+    if (!faces.length) {
+      throw new InkLangError("INKLANG_NO_REGION", `no faces for ${laterality ?? "center"} ${site.id}`);
+    }
     const aspect = site.aspect ?? null;
     if (aspect) {
-      const filtered = faces.filter((f) => this.aspectOf(f, this.regionByFace[f]!) === aspect);
-      if (filtered.length > 0) faces = filtered;
+      const filtered = faces.filter((face) => this.aspectOf(face, this.regionByFace[face]!) === aspect);
+      if (!filtered.length) {
+        throw new InkLangError("INKLANG_NO_REGION", `no ${aspect} partition for ${laterality ?? "center"} ${site.id}`);
+      }
+      faces = filtered;
     }
     const level: Level | null = site.level ?? null;
-    if (aspect === null && level === null && !site.uv) {
-      // No refinement: an anchor hint places the point where people actually
-      // point — "the elbow" is the olecranon (the backmost point), "the knee"
-      // the kneecap — and everything else centres on the region.
-      const hint = (SITES[site.id] as { anchor?: string } | undefined)?.anchor;
-      if (hint === "extremum_back" || hint === "extremum_front") {
-        let best = faces[0], bv = hint === "extremum_back" ? -Infinity : Infinity;
-        for (const f of faces) {
-          const y = this.centroids[3 * f + 1];
-          if (hint === "extremum_back" ? y > bv : y < bv) { bv = y; best = f; }
-        }
-        return { face: best, barycentric: [1 / 3, 1 / 3, 1 / 3] };
-      }
-      // The visually-centered spot is the face nearest the selection's 3D
-      // centroid — not the (u,v) chart middle, which lands off on thin or
-      // two-lobed regions (the chest panel around the sternum).
-      const mean = new THREE.Vector3();
-      for (const f of faces) mean.add(this.cvec(f));
-      mean.divideScalar(faces.length);
-      // A midline site's centre is on the midline, even when its lobes are
-      // uneven (the chest panel flanks the sternum).
-      if (spec.laterality === "midline") mean.x = 0;
-      let best = faces[0], bd = Infinity;
-      for (const f of faces) {
-        const d = this.cvec(f).distanceToSquared(mean);
-        if (d < bd) { bd = d; best = f; }
-      }
-      return { face: best, barycentric: [1 / 3, 1 / 3, 1 / 3] };
+    const regionUv = site.region_uv;
+    if (!aspect && !level && !regionUv && !ZONES[site.id]) {
+      const record = this.regions.get(regionKey(site.id, laterality));
+      if (!record) throw new InkLangError("INKLANG_NO_REGION", `no region record for ${site.id}`);
+      if (this.atlas.eligible_faces[record.defaultAnchor.face] === 1) return record.defaultAnchor;
+      // Semantic labels remain available for review on unsupported anatomy,
+      // but only reviewed eligible faces may become placement anchors.
     }
-    const target: [number, number] = site.uv ?? [level === "upper" ? 0.22 : level === "lower" ? 0.78 : 0.5, 0.5];
+    const target: [number, number] = regionUv
+      ?? [level === "upper" ? 0.22 : level === "lower" ? 0.78 : 0.5, 0.5];
     if (level) {
-      const band = faces.filter((f) => {
-        const uv = this.uvOf(f);
+      const band = faces.filter((face) => {
+        const uv = this.uvOf(face);
         if (!uv) return false;
-        return level === "upper" ? uv[0] < 0.45 : level === "lower" ? uv[0] > 0.55 : uv[0] > 0.28 && uv[0] < 0.72;
+        if (level === "upper") return uv[0] < 0.45;
+        if (level === "lower") return uv[0] > 0.55;
+        return uv[0] > 0.28 && uv[0] < 0.72;
       });
-      if (band.length > 0) faces = band;
+      if (!band.length) throw new InkLangError("INKLANG_NO_REGION", `no ${level} partition for ${site.id}`);
+      faces = band;
     }
-    let best = faces[0], bd = Infinity;
-    for (const f of faces) {
-      const uv = this.uvOf(f);
+    let best = faces[0];
+    let bestDistance = Infinity;
+    for (const face of faces) {
+      const uv = this.uvOf(face);
       if (!uv) continue;
-      const d = (uv[0] - target[0]) ** 2 + (uv[1] - target[1]) ** 2;
-      if (d < bd) { bd = d; best = f; }
+      const distance = (uv[0] - target[0]) ** 2 + (uv[1] - target[1]) ** 2;
+      if (distance < bestDistance || (distance === bestDistance && face < best)) {
+        best = face;
+        bestDistance = distance;
+      }
     }
     return { face: best, barycentric: [1 / 3, 1 / 3, 1 / 3] };
   }
 
-  /** Name where an anchor actually is — the truthful caption's site phrase. */
-  describe(anchor: Anchor): (SitePhrase & { uv: [number, number] }) | null {
+  describe(anchor: Anchor): SitePhrase | null {
     const ref = this.regionByFace[anchor.face];
     if (!ref) return null;
-    const uv = this.uvOf(anchor.face)!;
+    const regionUv = this.uvOf(anchor.face)!;
     const spec = SITES[ref.id];
     const laterality: Laterality | null = spec.laterality === "midline" ? null : ref.laterality;
-    const level: Level | null = spec.geometry === "crease" ? null : uv[0] < 0.3 ? "upper" : uv[0] > 0.7 ? "lower" : null;
-    return { id: ref.id, laterality, aspect: this.aspectOf(anchor.face, ref), level, uv };
+    const level: Level | null = spec.geometry === "crease"
+      ? null
+      : regionUv[0] < 0.3
+        ? "upper"
+        : regionUv[0] > 0.7
+          ? "lower"
+          : null;
+    return {
+      id: ref.id,
+      laterality,
+      aspect: this.aspectOf(anchor.face, ref),
+      level,
+      region_uv: regionUv,
+    };
   }
 
-  /** Is the anchor inside the named site (zone members count)? Laterality must
-   *  match when both sides state one. */
   contains(site: Pick<SitePhrase, "id" | "laterality">, anchor: Anchor): boolean {
     const ref = this.regionByFace[anchor.face];
     if (!ref) return false;
     const leaves = ZONES[site.id] ? ZONES[site.id].members : [site.id];
-    // A child leaf counts as inside its parent: the navel is on the stomach.
     const parent = SITES[ref.id]?.parent;
     if (!leaves.includes(ref.id) && (parent === undefined || !leaves.includes(parent))) return false;
-    const want = site.laterality === "left" || site.laterality === "right" ? site.laterality : null;
-    return want === null || ref.laterality === null || ref.laterality === want;
+    const requested = site.laterality === "left" || site.laterality === "right" ? site.laterality : null;
+    return requested === null || ref.laterality === null || ref.laterality === requested;
   }
 
-  /** Nearest labeled skin face to a world point. */
-  private nearestFace(p: THREE.Vector3): number {
-    let best = 0, bd = Infinity;
-    for (let f = 0; f < this.regionByFace.length; f++) {
-      if (!this.regionByFace[f]) continue;
-      const dx = this.centroids[3 * f] - p.x, dy = this.centroids[3 * f + 1] - p.y, dz = this.centroids[3 * f + 2] - p.z;
-      const d = dx * dx + dy * dy + dz * dz;
-      if (d < bd) { bd = d; best = f; }
+  isValidAnchor(anchor: Anchor): boolean {
+    return Number.isInteger(anchor.face)
+      && anchor.face >= 0
+      && anchor.face < this.regionByFace.length
+      && this.regionByFace[anchor.face] !== null
+      && this.atlas.eligible_faces[anchor.face] === 1
+      && anchor.barycentric.length === 3
+      && anchor.barycentric.every((value) => Number.isFinite(value) && value >= 0 && value <= 1)
+      && Math.abs(anchor.barycentric.reduce((sum, value) => sum + value, 0) - 1) <= 1e-6;
+  }
+
+  private shortestPath(start: number, stop?: number, limit = Infinity): {
+    distance: Float64Array;
+    previous: Int32Array;
+  } {
+    const distance = new Float64Array(this.regionByFace.length).fill(Infinity);
+    const previous = new Int32Array(this.regionByFace.length).fill(-1);
+    const queue = new MinHeap();
+    distance[start] = 0;
+    queue.push(0, start);
+    for (;;) {
+      const next = queue.pop();
+      if (!next) break;
+      const [currentDistance, face] = next;
+      if (currentDistance !== distance[face]) continue;
+      if (currentDistance > limit || face === stop) break;
+      for (const neighbor of this.adjacency[face]) {
+        if (!this.regionByFace[neighbor] || this.atlas.eligible_faces[neighbor] !== 1) continue;
+        const candidate = currentDistance + this.cvec(face).distanceTo(this.cvec(neighbor));
+        if (
+          candidate < distance[neighbor]
+          || (candidate === distance[neighbor] && face < previous[neighbor])
+        ) {
+          distance[neighbor] = candidate;
+          previous[neighbor] = face;
+          queue.push(candidate, neighbor);
+        }
+      }
     }
-    return best;
+    return { distance, previous };
   }
 
-  /** Resolve a full site phrase, relations included: "two inches below the
-   *  left collarbone" walks from the base anchor; "between" takes the
-   *  midpoint of the two anchors. Plain phrases fall through to anchorFor. */
-  anchorForPhrase(p: SitePhrase & { uv?: [number, number] | null }): Anchor {
-    const rel = p.rel;
-    if (!rel) return this.anchorFor(p);
-    const base = this.anchorFor({ id: p.id, laterality: p.laterality, aspect: p.aspect, level: p.level });
-    const basePos = this.cvec(base.face);
-    let target: THREE.Vector3;
-    if (rel.kind === "between") {
-      const other = this.anchorFor({ id: rel.other!.id, laterality: rel.other!.laterality, aspect: null, level: null });
-      target = basePos.add(this.cvec(other.face)).multiplyScalar(0.5);
-    } else {
-      const m = rel.offset_m ?? 0.05;
-      const dir = rel.kind === "above" ? new THREE.Vector3(0, 0, m)
-        : rel.kind === "below" ? new THREE.Vector3(0, 0, -m)
-        : rel.kind === "behind" ? new THREE.Vector3(0, m, 0)
-        : rel.kind === "in_front" ? new THREE.Vector3(0, -m, 0)
-        : new THREE.Vector3(Math.sign(basePos.x || 1) * m, 0, 0); // beside: outboard
-      target = basePos.add(dir);
+  private walkDirection(
+    start: number,
+    direction: THREE.Vector3,
+    offset: number,
+  ): { anchor: Anchor; achieved_m: number } {
+    direction.normalize();
+    const limit = offset + 2 * this.maxEdge;
+    const { distance } = this.shortestPath(start, undefined, limit);
+    const origin = this.cvec(start);
+    const displacement = new THREE.Vector3();
+    let best = -1;
+    let bestScore = Infinity;
+    const minimumDistance = Math.max(offset * 0.65, offset - 1.5 * this.maxEdge);
+    for (let face = 0; face < distance.length; face++) {
+      const walked = distance[face];
+      if (!Number.isFinite(walked) || walked < minimumDistance || walked > limit) continue;
+      displacement.copy(this.cvec(face)).sub(origin);
+      const projection = displacement.dot(direction);
+      if (projection <= 0) continue;
+      const perpendicular = Math.sqrt(Math.max(0, displacement.lengthSq() - projection * projection));
+      const score = Math.abs(walked - offset) + 1.5 * perpendicular + 0.25 * Math.max(0, offset - projection);
+      if (score < bestScore || (score === bestScore && face < best)) {
+        best = face;
+        bestScore = score;
+      }
     }
-    return { face: this.nearestFace(target), barycentric: [1 / 3, 1 / 3, 1 / 3] };
+    if (best < 0) {
+      throw new InkLangError(
+        "INKLANG_OFFSET_OUT_OF_BOUNDS",
+        `surface walk from face ${start} cannot reach ${offset.toFixed(4)} m in the requested direction`,
+      );
+    }
+    return { anchor: { face: best, barycentric: [1 / 3, 1 / 3, 1 / 3] }, achieved_m: distance[best] };
   }
 
-  /** Site ids present in this atlas (for UI palettes). */
+  private between(start: number, stop: number): { anchor: Anchor; achieved_m: number } {
+    const { distance, previous } = this.shortestPath(start, stop);
+    if (!Number.isFinite(distance[stop])) {
+      throw new InkLangError("INKLANG_OFFSET_OUT_OF_BOUNDS", `faces ${start} and ${stop} are disconnected`);
+    }
+    const path: number[] = [];
+    for (let face = stop; face >= 0; face = previous[face]) {
+      path.push(face);
+      if (face === start) break;
+    }
+    if (path.at(-1) !== start) {
+      throw new InkLangError("INKLANG_OFFSET_OUT_OF_BOUNDS", `no surface path between faces ${start} and ${stop}`);
+    }
+    const target = distance[stop] / 2;
+    let best = start;
+    let bestDifference = Infinity;
+    for (const face of path) {
+      const difference = Math.abs(distance[face] - target);
+      if (difference < bestDifference || (difference === bestDifference && face < best)) {
+        best = face;
+        bestDifference = difference;
+      }
+    }
+    return { anchor: { face: best, barycentric: [1 / 3, 1 / 3, 1 / 3] }, achieved_m: distance[best] };
+  }
+
+  anchorForPhrase(site: SitePhrase, besideDirection?: -1 | 1): Anchor {
+    return this.anchorForPhraseDetailed(site, besideDirection).anchor;
+  }
+
+  /**
+   * Resolve relations by a bounded walk over connected canonical-rest faces,
+   * reporting the surface distance the walk actually covered so a caller can
+   * check it against the distance that was asked for.
+   */
+  anchorForPhraseDetailed(
+    site: SitePhrase,
+    besideDirection?: -1 | 1,
+  ): { anchor: Anchor; relative: RelativeWalk | null } {
+    const relation = site.relation;
+    if (!relation) return { anchor: this.anchorFor(site), relative: null };
+    const base = this.anchorFor({
+      id: site.id,
+      laterality: site.laterality,
+      aspect: site.aspect,
+      level: site.level,
+      region_uv: site.region_uv,
+    });
+    if (relation.kind === "between") {
+      const other = this.anchorFor({
+        id: relation.other!.id,
+        laterality: relation.other!.laterality,
+        aspect: null,
+        level: null,
+      });
+      const midpoint = this.between(base.face, other.face);
+      return {
+        anchor: midpoint.anchor,
+        relative: {
+          kind: "between",
+          requested_m: null,
+          achieved_m: midpoint.achieved_m,
+          reference_face: base.face,
+        },
+      };
+    }
+    const offset = relation.offset_m!;
+    let direction: THREE.Vector3;
+    if (relation.kind === "above") direction = new THREE.Vector3(0, 0, 1);
+    else if (relation.kind === "below") direction = new THREE.Vector3(0, 0, -1);
+    else if (relation.kind === "behind") direction = new THREE.Vector3(0, 1, 0);
+    else if (relation.kind === "in_front") direction = new THREE.Vector3(0, -1, 0);
+    else {
+      const sign = besideDirection ?? Math.sign(this.cvec(base.face).x);
+      if (sign === 0) {
+        throw new InkLangError("INKLANG_AMBIGUOUS_RELATION", `beside ${site.id} needs a left or right direction`);
+      }
+      direction = new THREE.Vector3(sign, 0, 0);
+    }
+    const walked = this.walkDirection(base.face, direction, offset);
+    return {
+      anchor: walked.anchor,
+      relative: {
+        kind: relation.kind,
+        requested_m: offset,
+        achieved_m: walked.achieved_m,
+        reference_face: base.face,
+      },
+    };
+  }
+
+  /**
+   * Longest centroid-to-centroid step in the connected face graph. A relative
+   * walk cannot resolve finer than this, so it bounds how closely `achieved_m`
+   * can ever match a requested offset.
+   */
+  surfaceStepLimit(): number {
+    return this.maxEdge;
+  }
+
   presentSites(): string[] {
     return this.atlas.sites;
   }

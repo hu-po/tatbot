@@ -1,0 +1,35 @@
+# A guarded touch (ros/README.md sections 4.3 and 7). Served by tatbot_session at /tatbot/touch.
+# The driver's guard (tip lag, or the station probe) stops the descent and holds; this is a stop, not a fault.
+
+uint8 GUARD_TIP_LAG=1  # commanded-minus-measured tip over the lag threshold (0.8 mm held 0.15 s)
+uint8 GUARD_PROBE=2    # the station probe's trigger edge (M2)
+
+uint8 MODE_SINGLE=0    # one touch from start_pose along direction
+uint8 MODE_PAGE=1      # three touches spread over the page clear center; result carries the plane
+uint8 MODE_MOVE=2      # no touch: travel to start_pose under the guard and hold there (a view of the station);
+                       # a guard trip on the way is an error
+
+# Goal
+uint8 mode
+string arm                                # "right"
+geometry_msgs/PoseStamped start_pose      # MODE_SINGLE: TCP start pose in <arm>/base_link; a zero quaternion keeps
+                                          # the tool's measured orientation
+geometry_msgs/Vector3 direction           # MODE_SINGLE: unit vector in start_pose's frame
+float64 max_travel_m                      # 0 = motion.yaml touch.max_travel_m
+float64 speed_m_s                         # 0 = motion.yaml touch.slow_m_s (probe.slow_m_s under GUARD_PROBE)
+uint8 guard                               # GUARD_*; 0 = GUARD_TIP_LAG
+float64 prior_distance_m                  # MODE_SINGLE: the expected contact this far along direction from the start
+                                          # (0 = none: the slow leg covers touch.search_m). GUARD_PROBE needs it, and
+                                          # caps the travel past it (motion.yaml probe)
+---
+# Result
+bool tripped                              # every touch tripped its guard
+geometry_msgs/PoseStamped[] contact_poses # TCP pose at each trip (FK of trip_joints), in <arm>/base_link
+float64[] joints                          # trip joints of the last touch: 6 revolute (rad) then carriage (m)
+float64[] plane                           # MODE_PAGE: [nx, ny, nz, d] in <arm>/base_link, n unit, out of the paper, n.p + d = 0
+string run_dir                            # ~/tatbot-logs/ros-touch/<run-id>/
+string message
+---
+# Feedback
+uint32 touch_index                        # 0-based touch number
+float64 travel_m                          # travel so far along direction

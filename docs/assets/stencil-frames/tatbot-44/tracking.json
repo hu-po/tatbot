@@ -1,0 +1,52 @@
+{
+  "clear_center_uv": [
+    0.19,
+    0.12666666666666668,
+    0.81,
+    0.8733333333333333
+  ],
+  "coordinates": {
+    "domain": "whole_page",
+    "origin": "page_top_left",
+    "pixel_centers": "uv=((x+0.5)/width,(y+0.5)/height)",
+    "u_direction": "right",
+    "uv_to_print_mm": [
+      [
+        100.0,
+        0,
+        0
+      ],
+      [
+        0,
+        150.0,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "v_direction": "down"
+  },
+  "dimensions_measured": false,
+  "generator": {
+    "generator_version": "1",
+    "svg_sha256": "290bb0f6f4b03178d4111c41c316fee0519a7115760c3f2be5e196dd9b97bf2f"
+  },
+  "image": {
+    "file": "stencil.png",
+    "height": 1772,
+    "sha256": "e3a6588d7c19a3cc4c6089f4ca68af3c00e5a4129145ebb282fdd3c057732c16",
+    "width": 1181
+  },
+  "page_mm": [
+    100.0,
+    150.0
+  ],
+  "pattern_id": "stencil-e2bc78d2f372d88c31cd549b057b8c7679b9edd7b93d3f47bd6e29221a2e4daf",
+  "physical_instance_encoded": false,
+  "reference_id": "24b7d3e9f03087f1c7106cc4ee0777cc8d578e6bf8724ac7ef0e0f3fa4bf6055",
+  "schema": "tatbot.stencil-reference/1",
+  "seed": "tatbot-44"
+}

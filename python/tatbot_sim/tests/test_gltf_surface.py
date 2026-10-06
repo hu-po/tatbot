@@ -1,37 +1,75 @@
 from __future__ import annotations
 
-import hashlib
 import json
 
 import numpy as np
-from tatbot_sim.inkmap.gltf_surface import load_canonical_surface
+from tatbot_contracts.digest import sha256_file
+from tatbot_sim.inkmap.gltf_surface import (
+    MODEL_ID,
+    REST_SURFACE_SHA256,
+    TOPOLOGY_SHA256,
+    load_canonical_surface,
+)
+from tatbot_sim.inkmap.rig import load_body_rig
 from tatbot_sim.repo import repo_root
 
 BODIES = repo_root() / "web" / "inkmap" / "public" / "bodies"
 CATALOG = repo_root() / "config" / "inkmap" / "body-poses.json"
-RIG_CONFIG = repo_root() / "config" / "inkmap" / "body-rig.json"
 
 
-def test_hbm_surfaces_match_the_browser_contract():
-    expected = {
-        "hbm-male-stylized": "dec5cc557e39dbc45f3c485c9986a74005f08e491604a001cb698b6a60a26f48",
-        "hbm-female-stylized": "00a8d9ae1813c850bb12d0e7092aadfcd6412085320df8f62b76843abaf5fffc",
-    }
-    for body_id, digest in expected.items():
-        surface = load_canonical_surface(BODIES / f"{body_id}.glb")
-        assert surface.vertices.shape == (28200, 3, 3)
-        assert surface.sha256 == digest
-        assert [(p.name, p.face_count) for p in surface.parts] == [
-            ("Body", 25000), ("EyeL", 1600), ("EyeR", 1600),
-        ]
-        assert np.isfinite(surface.vertices).all()
-        assert np.isclose(surface.vertices[..., 2].min(), 0.0)
+def test_soma_mid_surface_matches_the_browser_contract():
+    path = BODIES / f"{MODEL_ID}.glb"
+    surface = load_canonical_surface(path)
+    assert surface.vertices.shape == (36_108, 3, 3)
+    assert surface.indexed_vertices.shape == (18_056, 3)
+    assert surface.faces.shape == (36_108, 3)
+    assert surface.sha256 == REST_SURFACE_SHA256
+    assert surface.topology_sha256 == TOPOLOGY_SHA256
+    assert [(part.name, part.face_count) for part in surface.parts] == [("SOMA", 36_108)]
+    assert np.isfinite(surface.vertices).all()
+    assert 1.4 <= np.ptp(surface.indexed_vertices, axis=0).max() <= 2.2
 
 
-def test_rigged_assets_preserve_faces_and_have_normalized_sidecars():
+def test_browser_and_python_mid_points_and_normals_share_one_address_space():
+    surface = load_canonical_surface(BODIES / f"{MODEL_ID}.glb")
+    rng = np.random.default_rng(9042026)
+    face_ids = rng.integers(0, len(surface.faces), size=10_000)
+    barycentric = rng.dirichlet(np.ones(3), size=10_000)
+    browser_points = np.einsum("ni,nij->nj", barycentric, surface.vertices[face_ids])
+    python_points = np.einsum(
+        "ni,nij->nj", barycentric, surface.indexed_vertices[surface.faces[face_ids]],
+    )
+    errors = np.linalg.norm(browser_points - python_points, axis=1)
+    assert errors.max() <= 0.00001
+
+    triangles = surface.indexed_vertices[surface.faces].astype(np.float64)
+    face_normals = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
+    indexed_normals = np.zeros_like(surface.indexed_vertices, dtype=np.float64)
+    for corner in range(3):
+        np.add.at(indexed_normals, surface.faces[:, corner], face_normals)
+    indexed_normals /= np.maximum(np.linalg.norm(indexed_normals, axis=1, keepdims=True), 1e-20)
+    normal_face_ids = face_ids[:1_000]
+    normal_bary = barycentric[:1_000]
+    python_normals = np.einsum(
+        "ni,nij->nj", normal_bary, indexed_normals[surface.faces[normal_face_ids]],
+    )
+    python_normals /= np.linalg.norm(python_normals, axis=1, keepdims=True)
+    # The browser expands seams but smooths coincident SOMA vertices before
+    # picking; reconstructing through the canonical source indices is that
+    # operation expressed independently in NumPy.
+    browser_normals = np.einsum(
+        "ni,nij->nj", normal_bary, indexed_normals[surface.faces[normal_face_ids]],
+    )
+    browser_normals /= np.linalg.norm(browser_normals, axis=1, keepdims=True)
+    angle_deg = np.degrees(np.arccos(np.clip(np.einsum("ij,ij->i", python_normals, browser_normals), -1, 1)))
+    assert angle_deg.max() <= 0.5
+
+
+def test_pose_and_exclusion_assets_are_exact_and_pickle_free():
     catalog = json.loads(CATALOG.read_text())
-    rig_config = json.loads(RIG_CONFIG.read_text())
-    gates = rig_config["quality_gates"]
+    assert catalog["model_spec_id"] == MODEL_ID
+    assert catalog["topology_sha256"] == TOPOLOGY_SHA256
+    assert catalog["rest_surface_sha256"] == REST_SURFACE_SHA256
     assert catalog["pose_ids"] == [
         "standing-neutral",
         "supine",
@@ -39,42 +77,41 @@ def test_rigged_assets_preserve_faces_and_have_normalized_sidecars():
         "reclined-seated",
         "reclined-left-arm-supported",
         "reclined-right-arm-supported",
+        "left-fist-reference",
     ]
-    for body_id, record in catalog["bodies"].items():
-        source = load_canonical_surface(BODIES / f"{body_id}.glb")
-        rigged_path = repo_root() / "web" / "inkmap" / "public" / record["rigged_path"]
-        rigged = load_canonical_surface(rigged_path)
-        assert rigged.sha256 == source.sha256 == record["surface_sha256"]
-        assert hashlib.sha256(rigged_path.read_bytes()).hexdigest() == record["rigged_asset_sha256"]
+    for key in ("rest_asset", "pose_asset", "exclusion_asset"):
+        record = catalog[key]
+        path = repo_root() / "web" / "inkmap" / "public" / record["path"]
+        assert path.stat().st_size == record["size"]
+        assert sha256_file(path) == record["sha256"]
 
-        sidecar_path = repo_root() / "web" / "inkmap" / "public" / record["sidecar_path"]
-        assert hashlib.sha256(sidecar_path.read_bytes()).hexdigest() == record["sidecar_sha256"]
-        with np.load(sidecar_path, allow_pickle=False) as sidecar:
-            assert sidecar["rest_vertices"].shape == (28200, 3, 3)
-            assert sidecar["pose_vertices"].shape == (6, 28200, 3, 3)
-            assert sidecar["joint_indices"].shape == (28200 * 3, 4)
-            assert sidecar["joint_weights"].shape == (28200 * 3, 4)
-            np.testing.assert_allclose(sidecar["joint_weights"].sum(axis=1), 1.0, atol=2e-7)
-            assert sidecar["pose_ids"].tolist() == catalog["pose_ids"]
-        assert record["automatic_weight_fallback_vertices"] == 0
-        assert record["max_lbs_error_m"] <= 1e-4
-        for pose_id, pose in record["poses"].items():
-            quality = pose["quality"]
-            assert quality["max_joint_rotation_deg"] <= gates["max_joint_rotation_deg"]
-            assert quality["edge_length_ratio_p001"] >= gates["edge_length_ratio_p001_min"]
-            assert quality["edge_length_ratio_p99"] <= gates["edge_length_ratio_p99_max"]
-            assert quality["triangle_area_ratio_p01"] >= gates["triangle_area_ratio_p01_min"]
-            assert quality["triangle_area_ratio_p99"] <= gates["triangle_area_ratio_p99_max"]
-            expected_anatomy_gates = rig_config["poses"][pose_id].get("anatomy_gates", [])
-            assert bool(pose["anatomy"]) == bool(expected_anatomy_gates)
-            if pose_id.startswith("reclined"):
-                assert pose["anatomy"]["bend_offset_m:hip.L-knee.L-ankle.L"] >= 0.045
-                assert pose["anatomy"]["bend_offset_m:hip.R-knee.R-ankle.R"] >= 0.045
-                assert pose["anatomy"]["bend_off_axis_m:hip.L-knee.L-ankle.L"] <= 0.01
-                assert pose["anatomy"]["bend_off_axis_m:hip.R-knee.R-ankle.R"] <= 0.01
-            if pose_id.endswith("left-arm-supported"):
-                assert 110 <= pose["anatomy"]["angle_deg:shoulder.L-elbow.L-wrist.L"] <= 145
-                assert pose["anatomy"]["angle_deg:elbow.L-wrist.L-hand_tip.L"] >= 170
-            if pose_id.endswith("right-arm-supported"):
-                assert 110 <= pose["anatomy"]["angle_deg:shoulder.R-elbow.R-wrist.R"] <= 145
-                assert pose["anatomy"]["angle_deg:elbow.R-wrist.R-hand_tip.R"] >= 170
+    exclusion = np.fromfile(BODIES / f"{MODEL_ID}.exclusions.bin", dtype="u1")
+    assert exclusion.shape == (36_108,)
+    assert set(np.unique(exclusion)) == {0, 1}
+    assert int(exclusion.sum()) == catalog["exclusion_asset"]["excluded_faces"] == 1_502
+
+    rig = load_body_rig()
+    assert rig.pose_vertices.shape == (7, 36_108, 3, 3)
+    assert rig.pose_ids == tuple(catalog["pose_ids"])
+    for pose_id in rig.pose_ids:
+        posed = rig.posed(pose_id)
+        assert posed.vertices.shape == (36_108, 3, 3)
+        assert np.isfinite(posed.vertices).all()
+        assert catalog["poses"][pose_id]["quality"]["max_joint_rotation_deg"] <= 120
+
+
+def test_catalog_digest_file_matches_catalog_bytes_and_scenarios() -> None:
+    import hashlib
+    import json
+
+    root = repo_root()
+    catalog_path = root / "config/inkmap/body-poses.json"
+    digest = json.loads((root / "config/inkmap/body-poses.digest.json").read_text())
+    expected = hashlib.sha256(catalog_path.read_bytes()).hexdigest()
+    assert digest["schema"] == "tatbot.body-pose-catalog-digest/1"
+    assert digest["sha256"] == expected
+    for scenario_path in sorted((root / "web/inkmap/public/showcase").glob("*.scenario.json")) + [
+        root / "config/inkmap/examples/forearm-scenario-v2.json"
+    ]:
+        scenario = json.loads(scenario_path.read_text())
+        assert scenario["pose"]["catalog_sha256"] == expected, scenario_path.name

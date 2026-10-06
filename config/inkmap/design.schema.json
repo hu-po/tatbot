@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.dev/schemas/inkmap/design.schema.json",
+  "description": "Frozen artwork and ordered target placements. Contains no measured registration, tool supply, or motion authority.",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "content_sha256", "name", "artworks", "placements"],
+  "properties": {
+    "schema": {"const": "tatbot.inkmap-design/1"},
+    "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "name": {"type": "string", "minLength": 1, "maxLength": 1000},
+    "artworks": {
+      "type": "object", "minProperties": 1, "maxProperties": 100,
+      "propertyNames": {"$ref": "#/$defs/id"},
+      "additionalProperties": {"$ref": "artwork.schema.json"}
+    },
+    "placements": {
+      "type": "array", "minItems": 1, "maxItems": 100,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "artwork_id", "placement"],
+        "properties": {
+          "id": {"$ref": "#/$defs/id"},
+          "artwork_id": {"$ref": "#/$defs/id"},
+          "placement": {"$ref": "../human-representation/surface-placement-v2.schema.json"}
+        }
+      }
+    }
+  },
+  "$defs": {"id": {"type": "string", "minLength": 1, "maxLength": 1000}}
+}

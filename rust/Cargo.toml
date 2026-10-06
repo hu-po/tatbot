@@ -1,3 +1,6 @@
 [workspace]
-members = ["visiond"]
+members = ["visiond", "tatbot-bus", "tatbot-arm", "fleetctl", "trackd", "trossen-arm-sys"]
 resolver = "2"
+
+[patch.crates-io]
+realsense-rust = { path = "vendor/realsense-rust" }

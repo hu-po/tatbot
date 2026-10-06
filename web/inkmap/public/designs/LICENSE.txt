@@ -1,0 +1,2 @@
+The original raster sources and acquired examples in dbv3-acquired-v1 are dedicated
+to the public domain under CC0-1.0. Application software is not included.

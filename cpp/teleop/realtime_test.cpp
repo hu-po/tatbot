@@ -75,6 +75,23 @@ int main()
   require(deadline == clock::time_point{} + 20ms,
     "invalid period should reset the deadline to now");
 
+  // A refusal has to be able to tell an absent limits policy from an installed
+  // one that did not take effect: the two need different instructions, and
+  // "install it again" is not a diagnosis of the second.
+  const auto missing = tatbot::realtime::apply(1, "/nonexistent/tatbot-limits.conf");
+  require(!missing.limits_installed, "a missing limits file must not report as installed");
+  require(missing.limits_path == "/nonexistent/tatbot-limits.conf",
+    "the reported limits path must be the one that was checked");
+  const auto present = tatbot::realtime::apply(1, "/proc/self/cmdline");
+  require(present.limits_installed, "an existing limits path must report as installed");
+  // Measured, not assumed: an unreadable limit stays -1 rather than becoming 0,
+  // which would read as "this session may not use real-time scheduling".
+  require(present.rtprio_soft >= -1 && present.rtprio_hard >= -1,
+    "RLIMIT_RTPRIO must be measured or explicitly unknown");
+  if (!present.fifo_applied) {
+    require(!present.fifo_error.empty(), "a failed SCHED_FIFO request must say why");
+  }
+
   std::cout << "realtime_test: ok" << std::endl;
   return 0;
 }

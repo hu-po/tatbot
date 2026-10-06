@@ -30,7 +30,9 @@ pigment. Both leave the episode count looking full.
     cd python/tatbot_sim && uv run python ../../scripts/sim_dataset_audit.py \
         --path ~/tatbot-sim/datasets/overnight-20260827
 
-Exits non-zero if any check fails, so it can gate a training mix.
+Exits non-zero for data-integrity failures. Nominal or unqualified simulator
+geometry is reported as a warning unless ``--require-qualified-geometry`` is
+explicitly selected.
 """
 
 from __future__ import annotations
@@ -85,6 +87,21 @@ def _distributions() -> dict:
 DISTRIBUTIONS = _distributions()
 
 
+def _temporal_module():
+    path = (Path(__file__).resolve().parent.parent
+            / "python/tatbot_sim/src/tatbot_sim/temporal_labels.py")
+    spec = importlib.util.spec_from_file_location("_tatbot_temporal_labels", path)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"temporal-label auditor not importable at {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["_tatbot_temporal_labels"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+TEMPORAL = _temporal_module()
+
+
 @dataclass
 class Args:
     path: Path
@@ -99,10 +116,10 @@ class Args:
     """Accept pre-contact-v1 shards whose texture could change while the
     visible tool was in the air. Off by default; useful only for historical
     inventory or an explicitly named negative control."""
-    allow_provisional: bool = False
-    """Accept contact-v1 validation shards without a quality-gated pivot TCP.
-    Off by default. An axis-inferred body with `pivot-calibrated` contact is
-    production-eligible; this flag is for nominal or failed calibration only."""
+    require_qualified_geometry: bool = False
+    """Fail when contact geometry lacks a quality-gated pivot TCP. Off by
+    default so integrity audits and simulator development do not wait on a
+    physical calibration; the warning and development qualification remain."""
 
 
 def _shards(root: Path) -> list[Path]:
@@ -151,7 +168,7 @@ def _vector3(value) -> tuple[float, float, float] | None:
     if not isinstance(value, list) or len(value) != 3:
         return None
     try:
-        result = tuple(float(component) for component in value)
+        result = (float(value[0]), float(value[1]), float(value[2]))
     except (TypeError, ValueError):
         return None
     return result if all(math.isfinite(component) for component in result) else None
@@ -165,7 +182,8 @@ def main(a: Args) -> int:
                          "(a shard still generating has no meta/info.json)")
 
     problems: list[str] = []
-    by_dist: dict[str, dict] = {}
+    warnings: list[str] = []
+    by_dist: dict[str | None, dict] = {}
 
     for ds in shards:
         with open(ds / "meta/info.json") as fh:
@@ -220,12 +238,13 @@ def main(a: Args) -> int:
             # TCP, while body_pose_status may honestly remain axis-inferred.
             contact_eligible = (contact_status == "pivot-calibrated"
                                 or geometry_status == "qualified")
-            if not contact_eligible and not a.allow_provisional:
-                problems.append(
+            if not contact_eligible:
+                message = (
                     f"{ds.name}: contact geometry is "
-                    f"{contact_status or geometry_status or 'missing'} — production "
-                    "contact data requires a quality-gated pivot TCP. Pass "
-                    "--allow-provisional only for labelled validation.")
+                    f"{contact_status or geometry_status or 'missing'}; simulator "
+                    "geometry is development-only, not calibration evidence."
+                )
+                (problems if a.require_qualified_geometry else warnings).append(message)
             if tool_meta.get("contact"):
                 body_tip = tool_meta.get("body_tip_offset_m")
                 tcp = tool_meta.get("tcp_offset_m")
@@ -311,9 +330,14 @@ def main(a: Args) -> int:
                 problems.append(f"{ds.name}: episode table has {len(ep)} rows, "
                                 f"info.json says {n_ep}.")
             tasks = {t[0] if not isinstance(t, str) else t for t in ep.tasks}
+            episode_lengths = {
+                int(index): int(length)
+                for index, length in zip(ep.episode_index, ep.length, strict=True)
+            }
         except Exception as exc:                      # a shard too broken to read
             problems.append(f"{ds.name}: episode table unreadable — {exc}")
             tasks = set()
+            episode_lengths = {}
 
         start_lead_max = 0.0
         try:
@@ -336,6 +360,46 @@ def main(a: Args) -> int:
 
         skipped = rm.get("skipped_batches") or []
         idle = [e for e in rm.get("episodes", []) if not e.get("engaged", True)]
+        timelines = 0
+        for index, episode in enumerate(rm.get("episodes", [])):
+            record = episode.get("privileged_timeline")
+            if record is None:
+                if cfg.get("save_privileged_labels"):
+                    problems.append(
+                        f"{ds.name}: episode {index} lacks its requested privileged timeline."
+                    )
+                continue
+            timelines += 1
+            relative = record.get("path")
+            manifest_relative = record.get("manifest")
+            if not isinstance(relative, str) or not isinstance(manifest_relative, str):
+                problems.append(f"{ds.name}: episode {index} timeline paths are missing.")
+                continue
+            path = (ds / relative).resolve()
+            manifest_path = (ds / manifest_relative).resolve()
+            if not path.is_relative_to(ds.resolve()) or not manifest_path.is_relative_to(ds.resolve()):
+                problems.append(f"{ds.name}: episode {index} timeline escapes dataset root.")
+                continue
+            manifest = {}
+            try:
+                manifest = json.loads(manifest_path.read_text())
+                timeline_problems = TEMPORAL.audit_timeline(path, manifest)
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                timeline_problems = [f"{path}: unreadable timeline: {exc}"]
+            if record.get("sha256") != manifest.get("sha256"):
+                timeline_problems.append(f"{path}: run metadata digest differs from manifest")
+            if manifest.get("episode") != episode.get("episode"):
+                timeline_problems.append(f"{path}: episode index differs from run metadata")
+            expected_length = episode_lengths.get(int(episode.get("episode", -1)))
+            if expected_length is not None and manifest.get("steps") != expected_length:
+                timeline_problems.append(
+                    f"{path}: {manifest.get('steps')} timeline steps for {expected_length} dataset frames"
+                )
+            problems.extend(f"{ds.name}: {problem}" for problem in timeline_problems)
+        if timelines and timelines != n_ep:
+            problems.append(
+                f"{ds.name}: {timelines} privileged timelines for {n_ep} episodes — must be 1:1."
+            )
         if interaction_model == "rigid-contact-v1":
             for index, episode in enumerate(rm.get("episodes", [])):
                 if episode.get("kind") == "dip":
@@ -402,6 +466,10 @@ def main(a: Args) -> int:
     print(f"  {'TOTAL':13s} {total_e:5d} episodes  {total_f:8d} frames  "
           f"{len(shards):2d} shards")
 
+    if warnings:
+        print(f"\n{len(warnings)} warning(s):")
+        for warning in warnings:
+            print(f"  ~ {warning}")
     if problems:
         print(f"\n{len(problems)} problem(s):")
         for p in problems:

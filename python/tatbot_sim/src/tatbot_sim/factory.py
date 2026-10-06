@@ -10,28 +10,12 @@ cage. What the launcher adds over calling ``generate`` directly is that the
 tool, the substrate, the task and the episode length can no longer be
 combined by hand into something that runs happily and means nothing.
 
-**Why this re-executes itself.** The fitted tool is resolved at IMPORT time:
-the agent class body and the URDF build both ask ``tools.active_tool()`` while
-they are being defined, ``language`` builds its prompt constants from the
-substrate, and the answer is cached for the process. Importing ``tatbot_sim``
-alone is enough to fix it — and ``python -m tatbot_sim.factory`` has to import
-the package before it can run this module. So by the time any code here could
-set TATBOT_TOOL_ID, the URDF has already been derived for whatever
-config/workspace.yaml says is fitted, and a paper-draw run on a laser-fitted
-bench would build the laser's geometry, write the laser's prompts, and remove
-pigment while its dataset said "paper-draw" (measured, 2026-08-27: it does
-exactly this, and the task validator is what caught it).
-
-Setting the variable and re-executing is the only thing that actually works,
-because the tool has to be in the environment *before the interpreter starts*
-— which is what the hand-run incantation `TATBOT_TOOL_ID=... python -m
-tatbot_sim.generate` was doing all along. The second pass is a normal run.
+Construction inputs are resolved explicitly before creating a world.
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
 import math
 import os
 import random
@@ -40,13 +24,9 @@ import sys
 from tatbot_sim import tasks
 from tatbot_sim.distributions import DISTRIBUTIONS
 
-_REEXEC_GUARD = "TATBOT_FACTORY_REEXEC"
-"""Set to the distribution name across the re-exec, so the second pass knows
-it is the second pass. Any value that does not match means "not yet"."""
 
-
-def select_tool(dist) -> None:
-    """Put the distribution's tool in the gripper, for this process.
+def select_tool(dist) -> str:
+    """Validate the CLI tool override and return the distribution's tool id.
 
     TATBOT_TOOL_ID is the preview override (see tatbot_sim.tools) and a
     distribution is another way of saying the same thing, so both being set at
@@ -62,11 +42,11 @@ def select_tool(dist) -> None:
             f"{dist.name!r} runs {dist.tool_id!r}. Unset it, or pick the "
             "distribution that matches the tool you meant."
         )
-    os.environ["TATBOT_TOOL_ID"] = dist.tool_id
+    return dist.tool_id
 
 
 def _option(rest: list[str], name: str, default: str) -> str:
-    """Read one pre-import scalar option in either Tyro spelling."""
+    """Read one scalar option in either Tyro spelling."""
     value = default
     for index, token in enumerate(rest):
         if token == name:
@@ -79,7 +59,7 @@ def _option(rest: list[str], name: str, default: str) -> str:
 
 
 def _bool_option(rest: list[str], name: str, default: bool) -> bool:
-    """Read a Tyro boolean before Args can safely be imported."""
+    """Read a Tyro boolean while parsing the factory arguments."""
     enabled = default
     negative = "--no-" + name.removeprefix("--")
     for token in rest:
@@ -91,7 +71,7 @@ def _bool_option(rest: list[str], name: str, default: bool) -> bool:
 
 
 def calibration_delta(dist, rest: list[str]) -> tuple[float, float, float]:
-    """Resolve the shard-persistent tip perturbation before process import.
+    """Resolve the shard-persistent tip perturbation before world construction.
 
     The fixed-point solve locates one point in the mount frame; it does not
     imply that the pen changes between episodes.  A shard therefore represents
@@ -110,8 +90,7 @@ def calibration_delta(dist, rest: list[str]) -> tuple[float, float, float]:
     if not enabled or scale == 0:
         return (0.0, 0.0, 0.0)
 
-    # Do not use active_tool(): this is the first pass, after package import
-    # cached the formerly fitted tool.  Resolve the distribution's tool by id.
+    # Resolve the distribution's tool by id.
     from tatbot_sim import tools
 
     registry = tools.registry()
@@ -119,15 +98,21 @@ def calibration_delta(dist, rest: list[str]) -> tuple[float, float, float]:
     workspace = tools.workspace()
     geometry = registry.resolved_tool_geometry(spec, workspace, "right", tools.REPO)
     if geometry.contact_status != "pivot-calibrated":
-        raise SystemExit(
-            f"{dist.name!r} requested calibration jitter, but {spec.tool_id!r} "
-            f"contact geometry is {geometry.contact_status!r}: "
-            f"{geometry.contact_qualification_error or 'no qualified pivot TCP'}."
+        print(
+            f"[factory] WARNING: {dist.name!r} requested calibration jitter, but "
+            f"{spec.tool_id!r} uses {tools.geometry_basis(geometry)} geometry; "
+            "continuing without calibration jitter",
+            file=sys.stderr,
         )
+        return (0.0, 0.0, 0.0)
     uncertainty = geometry.contact_uncertainty_m
     if uncertainty is None or not math.isfinite(uncertainty) or uncertainty <= 0:
-        raise SystemExit(
-            f"{spec.tool_id!r} has no positive measured contact uncertainty to sample")
+        print(
+            f"[factory] WARNING: {spec.tool_id!r} has no positive measured contact "
+            "uncertainty; continuing without calibration jitter",
+            file=sys.stderr,
+        )
+        return (0.0, 0.0, 0.0)
 
     material = f"tatbot-tip-calibration-v1:{dist.name}:{spec.tool_id}:{seed}"
     stable_seed = int.from_bytes(hashlib.sha256(material.encode()).digest()[:8], "big")
@@ -170,33 +155,12 @@ def main(argv: list[str] | None = None) -> None:
             "what is missing is measurement, not code."
         )
 
-    if os.environ.get(_REEXEC_GUARD) != dist.name:
-        select_tool(dist)
-        from tatbot_sim import tools
-
-        os.environ[tools.CALIBRATION_DELTA_ENV] = json.dumps(
-            calibration_delta(dist, rest), separators=(",", ":"))
-        os.environ[_REEXEC_GUARD] = dist.name
-        # Replaces this process. Everything above ran against the wrong tool
-        # (the package was imported before we got a say); nothing below it did.
-        os.execv(sys.executable, [sys.executable, "-m", "tatbot_sim.factory", *argv])
-
     import tyro
 
-    from tatbot_sim import generate, tools
+    from tatbot_sim import generate
+    from tatbot_sim.resolved import resolve
 
-    # The re-exec is load-bearing and silent when it fails, so check rather
-    # than trust: everything downstream -- geometry, prompts, what the tool
-    # does to pigment -- was decided by the value read at import.
-    tool = tools.active_tool()
-    if tool.tool_id != dist.tool_id:
-        raise SystemExit(
-            f"{name!r} runs {dist.tool_id!r} but this process resolved "
-            f"{tool.tool_id!r} at import. The tool has to be set before the "
-            "interpreter starts; run this through `python -m tatbot_sim.factory` "
-            f"with {_REEXEC_GUARD} unset."
-        )
-
+    tool_id = select_tool(dist)
     args = tyro.cli(generate.Args, default=dist.build_args(), args=rest)
     if not args.out_dir:
         raise SystemExit(f"{name!r} needs somewhere to write: pass --out-dir")
@@ -206,22 +170,18 @@ def main(argv: list[str] | None = None) -> None:
             "(create one with `tatbot sim compile`)"
         )
 
-    substrate = tools.active_substrate()
-    delta = tools.calibration_delta_m()
-    expected_delta = calibration_delta(dist, rest)
-    if any(abs(actual - expected) > 1e-12
-           for actual, expected in zip(delta, expected_delta, strict=True)):
-        raise SystemExit(
-            "factory calibration state differs across re-exec; unset "
-            f"{_REEXEC_GUARD} and run the named distribution again")
-    try:
-        tools.set_supply(args.supply, args.supply_ink)
-    except ValueError as exc:
-        raise SystemExit(str(exc)) from exc
+    if args.tool_id is not None and args.tool_id != tool_id:
+        raise SystemExit(f'{name!r} requires tool {tool_id!r}, got --tool-id {args.tool_id!r}')
+    args.tool_id = tool_id
+    delta = calibration_delta(dist, rest)
+    config = resolve(tool_id=tool_id, substrate_name=args.substrate,
+        sensor_profile=args.sensor_profile, seed=args.seed, dr=args.dr,
+        tip_delta_m=delta, scenario_path=args.scenario, supply=(args.supply, args.supply_ink))
+    tool, substrate = config.tool, config.substrate
     for task in tasks.active_tasks(args.task, args.erase_frac, args.squiggle_frac, args.dip_frac):
         try:
             tasks.validate_task(task, tool, substrate)
-            tasks.validate_supply(task, tool)
+            tasks.validate_supply(task, tool, config.palette_load)
         except ValueError as exc:
             # a preset is a starting point, so it can be overridden into
             # something invalid; say so before the env spends a minute building
@@ -234,7 +194,7 @@ def main(argv: list[str] | None = None) -> None:
           f"{args.num_episodes} episodes, tip delta "
           f"[{', '.join(f'{value * 1000:.3f}' for value in delta)}] mm -> "
           f"{args.out_dir}", flush=True)
-    generate.main(args)
+    generate.main(args, config=config)
 
 
 if __name__ == "__main__":

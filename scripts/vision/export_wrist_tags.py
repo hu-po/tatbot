@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""Validate and publish one canonical wrist layout plus its generated URDF.
+"""Validate and publish one arm's canonical wrist layout plus its generated URDF block.
 
-New calibration:
+New calibration (the target names the physical arm's tag set):
 
-    python scripts/vision/export_wrist_tags.py SESSION/robot_world.json --write
+    python scripts/vision/export_wrist_tags.py SESSION/robot_world.json --write --target wrist_left
 
-Repository consistency:
+Repository consistency, every target that declares a layout:
 
     python scripts/vision/export_wrist_tags.py --check
 
-The generated layout stores transforms from the one parent frame declared by
-``targets.wrist.parent_frame``. URDF origins and simulator poses are derived
-representations, never separately calibrated values. ``--refresh-existing``
-migrates a legacy/provisional layout without claiming that its transforms are
-calibrated.
+Each generated layout stores transforms from the one parent frame declared by
+``targets.<target>.parent_frame``; the shared URDF carries one generated block
+per target, so re-exporting one arm leaves the other arm's block byte for
+byte. URDF origins and simulator poses are derived representations, never
+separately calibrated values. ``--refresh-existing`` migrates a
+legacy/provisional layout without claiming that its transforms are calibrated.
 """
 
 from __future__ import annotations
@@ -29,16 +30,43 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/lib"))
+from tatbot_paths import bootstrap  # noqa: E402
+
+bootstrap()
 from fiducials import load_inventory  # noqa: E402
+from urdf_wrist_blocks import (  # noqa: E402
+    DEFAULT_TARGET,
+    END_MARKER,
+    block_begin,
+    replace_urdf_block,
+)
 
 REPO = Path(__file__).resolve().parents[2]
-LAYOUT_PATH = REPO / "config" / "wrist_tags_measured.json"
 URDF_PATH = REPO / "urdf" / "tatbot.urdf"
-BEGIN_PREFIX = "  <!-- BEGIN GENERATED WRIST FIDUCIALS"
-END_MARKER = "  <!-- END GENERATED WRIST FIDUCIALS -->"
-LEGACY_BEGIN = "  <!-- Provisional geometry for the new three-fiducial wrist mount"
-LEGACY_END = '  <joint name="right/realsense_depth_joint"'
+
+
+def target_layout_path(inventory, target: str) -> Path:
+    layout = inventory.target(target).layout
+    if not layout:
+        raise ValueError(f"fiducial target {target!r} declares no layout file")
+    return REPO / layout
+
+
+def wrist_link_prefix(record: dict) -> str:
+    parent = record.get("parent_frame") or ""
+    prefix = parent.split("/", 1)[0]
+    if prefix not in ("left", "right"):
+        raise ValueError(f"wrist parent frame {parent!r} is not on a physical arm")
+    return prefix
+
+
+def marker_asset_relpath(family: str, tag_id: int, edge_m: float) -> str:
+    edge_mm = edge_m * 1000
+    if not float(edge_mm).is_integer():
+        raise ValueError(f"viewer assets require an integer-mm black edge, got {edge_mm:g}")
+    short_family = family.removeprefix("apriltag_")
+    return f"meshes/tags/{short_family}_{tag_id:03d}_{int(edge_mm)}mm/tag.glb"
 
 
 def utcnow() -> str:
@@ -53,11 +81,17 @@ def rpy_extrinsic_xyz(rotation):
     return roll, pitch, yaw
 
 
-def validate_record(record: dict, inventory, *, require_calibrated: bool) -> None:
-    wrist = inventory.target("wrist")
+def _empty_pending_layout(record, require_calibrated):
+    return (not require_calibrated and record.get("calibration_status") == "pending_recalibration"
+            and not record.get("tags"))
+
+
+def validate_record(record: dict, inventory, *, require_calibrated: bool, target: str = DEFAULT_TARGET,
+                    allow_stale_hash: bool = False) -> None:
+    wrist = inventory.target(target)
     if record.get("schema_version") != 2:
         raise ValueError(f"wrist layout schema must be 2, got {record.get('schema_version')!r}")
-    if record.get("inventory_hash") != inventory.inventory_hash:
+    if record.get("inventory_hash") != inventory.inventory_hash and not allow_stale_hash:
         raise ValueError("wrist layout inventory hash is stale")
     if not wrist.parent_frame:
         raise ValueError("canonical wrist target has no parent_frame")
@@ -73,7 +107,7 @@ def validate_record(record: dict, inventory, *, require_calibrated: bool) -> Non
     if require_calibrated and record.get("calibration_status") != "calibrated":
         raise ValueError(f"wrist layout is {record.get('calibration_status')}, not calibrated")
     tag_ids = {int(tag_id) for tag_id in record.get("tags", {})}
-    if tag_ids != set(declared):
+    if tag_ids != set(declared) and not _empty_pending_layout(record, require_calibrated):
         raise ValueError(f"wrist layout tag transforms must be exactly {list(declared)}")
     for tag_id, entry in record["tags"].items():
         transform = np.asarray(entry.get("ee_from_tag"), dtype=np.float64)
@@ -132,8 +166,8 @@ def quality_gate(solved: dict, wrist) -> None:
         )
 
 
-def record_from_solve(solved: dict, source: Path, inventory) -> dict:
-    wrist = inventory.target("wrist")
+def record_from_solve(solved: dict, source: Path, inventory, target: str = DEFAULT_TARGET) -> dict:
+    wrist = inventory.target(target)
     quality_gate(solved, wrist)
     link = solved["link"]
     parent = wrist.parent_frame
@@ -182,12 +216,12 @@ def record_from_solve(solved: dict, source: Path, inventory) -> dict:
         },
         "tags": tags,
     }
-    validate_record(record, inventory, require_calibrated=True)
+    validate_record(record, inventory, require_calibrated=True, target=target)
     return record
 
 
-def normalize_existing(record: dict, inventory) -> dict:
-    wrist = inventory.target("wrist")
+def normalize_existing(record: dict, inventory, target: str = DEFAULT_TARGET) -> dict:
+    wrist = inventory.target(target)
     if (
         record.get("calibration_status") == "calibrated"
         and record.get("parent_frame") != wrist.parent_frame
@@ -195,10 +229,15 @@ def normalize_existing(record: dict, inventory) -> dict:
         raise ValueError(
             "refusing to relabel calibrated wrist transforms into a different parent frame"
         )
+    if record.get("calibration_status") == "calibrated":
+        # A refresh re-stamps the inventory hash; the transforms stay valid as
+        # long as the geometry the hash guards (ids, edge, parent) is unchanged,
+        # which the remaining checks establish.
+        validate_record(record, inventory, require_calibrated=True, target=target, allow_stale_hash=True)
     tags = {
         str(tag_id): {"ee_from_tag": record["tags"][str(tag_id)]["ee_from_tag"]}
         for tag_id in wrist.ids
-    }
+    } if record.get("tags") else {}
     normalized = {
         "schema_version": 2,
         "calibration_status": record.get("calibration_status", "pending_recalibration"),
@@ -209,53 +248,55 @@ def normalize_existing(record: dict, inventory) -> dict:
         "parent_frame": wrist.parent_frame,
         "note": record.get("note"),
         "source": record.get("source") or record.get("provisional_source"),
+        "source_link": record.get("source_link"),
+        "source_metrics": record.get("source_metrics"),
         "tags": tags,
     }
     normalized = {key: value for key, value in normalized.items() if value is not None}
-    validate_record(normalized, inventory, require_calibrated=False)
+    validate_record(normalized, inventory, require_calibrated=False, target=target)
     return normalized
 
 
-def render_urdf_block(record: dict, layout_sha256: str) -> str:
+def render_urdf_block(
+    record: dict,
+    layout_sha256: str,
+    target: str = DEFAULT_TARGET,
+    family: str = "apriltag_36h11",
+) -> str:
     status = record["calibration_status"]
+    prefix = wrist_link_prefix(record)
     lines = [
-        f"{BEGIN_PREFIX} layout_sha256={layout_sha256} -->",
+        f"{block_begin(target)} layout_sha256={layout_sha256} -->",
         f"  <!-- status={status}; generated by scripts/vision/export_wrist_tags.py -->",
     ]
+    if status != "calibrated":
+        lines.append("  <!-- Tag placement withheld until fresh calibration; stored poses are historical/provisional. -->")
+        lines.append(END_MARKER)
+        return "\n".join(lines) + "\n"
     for tag_id, entry in sorted(record["tags"].items(), key=lambda item: int(item[0])):
+        numeric_id = int(tag_id)
         transform = np.asarray(entry["ee_from_tag"], dtype=np.float64)
         roll, pitch, yaw = rpy_extrinsic_xyz(transform[:3, :3])
         x, y, z = transform[:3, 3]
         lines.extend(
             [
-                f'  <link name="right/wrist_tag{tag_id}"/>',
-                f'  <joint name="right/wrist_tag{tag_id}_joint" type="fixed">',
+                f'  <link name="{prefix}/wrist_tag{tag_id}">',
+                '    <visual>',
+                '      <origin rpy="0 0 0" xyz="0 0 0.0002"/>',
+                f'      <geometry><mesh filename="{marker_asset_relpath(family, numeric_id, record["edge_m"])}"/></geometry>',
+                f'      <material name="fiducial_{tag_id}"><color rgba="1 1 1 1"/></material>',
+                '    </visual>',
+                '  </link>',
+                f'  <joint name="{prefix}/wrist_tag{tag_id}_joint" type="fixed">',
                 f'    <origin rpy="{roll:.8f} {pitch:.8f} {yaw:.8f}" '
                 f'xyz="{x:.8f} {y:.8f} {z:.8f}"/>',
                 f'    <parent link="{record["parent_frame"]}"/>',
-                f'    <child link="right/wrist_tag{tag_id}"/>',
+                f'    <child link="{prefix}/wrist_tag{tag_id}"/>',
                 "  </joint>",
             ]
         )
     lines.append(END_MARKER)
     return "\n".join(lines) + "\n"
-
-
-def replace_urdf_block(text: str, block: str) -> str:
-    begin = text.find(BEGIN_PREFIX)
-    if begin >= 0:
-        end = text.find(END_MARKER, begin)
-        if end < 0:
-            raise ValueError("URDF generated wrist block has no end marker")
-        end += len(END_MARKER)
-        if end < len(text) and text[end] == "\n":
-            end += 1
-        return text[:begin] + block + text[end:]
-    begin = text.find(LEGACY_BEGIN)
-    end = text.find(LEGACY_END, begin)
-    if begin < 0 or end < 0:
-        raise ValueError("URDF has neither generated nor recognized legacy wrist block")
-    return text[:begin] + block + text[end:]
 
 
 def atomic_write(path: Path, text: str) -> None:
@@ -270,22 +311,48 @@ def serialized(record: dict) -> str:
     return json.dumps(record, indent=2) + "\n"
 
 
-def check(layout_path: Path, urdf_path: Path, inventory) -> None:
+def check(layout_path: Path, urdf_path: Path, inventory, target: str = DEFAULT_TARGET) -> None:
     raw = layout_path.read_bytes()
     record = json.loads(raw)
-    validate_record(record, inventory, require_calibrated=False)
+    validate_record(record, inventory, require_calibrated=False, target=target)
+    spec = inventory.target(target)
+    for tag_id in spec.ids:
+        # The marker meshes are tracked beside the repository URDF. A solve's
+        # candidate copy (<capture>/candidate-config/urdf/tatbot.urdf) names
+        # them by the same relative path and is only ever adopted onto that
+        # URDF, so the repository's assets satisfy it too.
+        relpath = marker_asset_relpath(spec.family, tag_id, spec.edge_m)
+        if not any((base / relpath).is_file() for base in (urdf_path.parent, URDF_PATH.parent)):
+            raise ValueError(f"missing viewer marker asset {urdf_path.parent / relpath}")
     expected = replace_urdf_block(
-        urdf_path.read_text(), render_urdf_block(record, hashlib.sha256(raw).hexdigest())
+        urdf_path.read_text(),
+        render_urdf_block(record, hashlib.sha256(raw).hexdigest(), target, spec.family),
+        target,
     )
     if expected != urdf_path.read_text():
-        raise ValueError("generated wrist URDF block is stale; run --refresh-existing")
+        raise ValueError(f"generated {target} URDF block is stale; run --refresh-existing --target {target}")
+
+
+def check_all(urdf_path: Path, inventory) -> list[str]:
+    """Every target that declares a layout must agree with the shared URDF."""
+    checked = []
+    for name, target in inventory.targets.items():
+        if target.layout:
+            check(REPO / target.layout, urdf_path, inventory, name)
+            checked.append(name)
+    if not checked:
+        raise ValueError("no fiducial target declares a wrist layout")
+    return checked
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("robot_world", nargs="?", type=Path)
     parser.add_argument("--inventory", type=Path, default=REPO / "config" / "fiducials.json")
-    parser.add_argument("--layout", type=Path, default=LAYOUT_PATH)
+    parser.add_argument("--target", default=DEFAULT_TARGET,
+                        help="fiducial target (physical arm's tag set); default: the right arm's `wrist`")
+    parser.add_argument("--layout", type=Path, default=None,
+                        help="layout file (default: the target's declared layout)")
     parser.add_argument("--urdf", type=Path, default=URDF_PATH)
     parser.add_argument("--write", action="store_true", help="publish a quality-gated calibrated layout")
     parser.add_argument(
@@ -296,34 +363,46 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="verify layout and generated URDF agree")
     args = parser.parse_args()
     inventory = load_inventory(args.inventory)
+    target = args.target
+    if args.layout is None:
+        args.layout = target_layout_path(inventory, target)
 
     if args.check:
-        check(args.layout, args.urdf, inventory)
-        print(f"ok: {args.layout} and generated wrist URDF agree")
+        if args.target != DEFAULT_TARGET or args.layout != target_layout_path(inventory, DEFAULT_TARGET):
+            check(args.layout, args.urdf, inventory, target)
+            print(f"ok: {args.layout} and the generated {target} URDF block agree")
+            return 0
+        checked = check_all(args.urdf, inventory)
+        print(f"ok: generated wrist URDF blocks agree with their layouts ({', '.join(checked)})")
         return 0
     if args.refresh_existing:
         if args.robot_world:
             parser.error("--refresh-existing does not take robot_world")
-        record = normalize_existing(json.loads(args.layout.read_text()), inventory)
+        record = normalize_existing(json.loads(args.layout.read_text()), inventory, target)
     elif args.robot_world:
         record = record_from_solve(
-            json.loads(args.robot_world.read_text()), args.robot_world, inventory
+            json.loads(args.robot_world.read_text()), args.robot_world, inventory, target
         )
     else:
         parser.error("provide robot_world, --refresh-existing, or --check")
 
     layout_text = serialized(record)
     layout_sha256 = hashlib.sha256(layout_text.encode()).hexdigest()
-    urdf_text = replace_urdf_block(args.urdf.read_text(), render_urdf_block(record, layout_sha256))
+    family = inventory.target(target).family
+    urdf_text = replace_urdf_block(
+        args.urdf.read_text(),
+        render_urdf_block(record, layout_sha256, target, family),
+        target,
+    )
     print(json.dumps(record, indent=2))
-    print("\nURDF generated wrist block:\n")
-    print(render_urdf_block(record, layout_sha256), end="")
+    print(f"\nURDF generated {target} block:\n")
+    print(render_urdf_block(record, layout_sha256, target, family), end="")
     if not (args.write or args.refresh_existing):
         print("\ndry run — pass --write to update the layout and URDF")
         return 0
     atomic_write(args.layout, layout_text)
     atomic_write(args.urdf, urdf_text)
-    check(args.layout, args.urdf, inventory)
+    check(args.layout, args.urdf, inventory, target)
     print(f"\nwrote {args.layout} and {args.urdf}")
     return 0
 

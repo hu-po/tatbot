@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from tatbot_sim.generate import _current_robot_and_joint_indices
+from tatbot_sim.backends.maniskill import bind_articulation
 
 
 class _Joint:
@@ -22,9 +22,9 @@ def test_live_robot_is_resolved_again_after_agent_reconfiguration() -> None:
     new_robot = _Robot(names)
     env = SimpleNamespace(agent=SimpleNamespace(robot=old_robot))
 
-    first, idx7, idx_ik = _current_robot_and_joint_indices(env, names[:6])
+    first, idx7, idx_ik = bind_articulation(env, names[:6])
     env.agent = SimpleNamespace(robot=new_robot)
-    second, new_idx7, new_idx_ik = _current_robot_and_joint_indices(env, names[:6])
+    second, new_idx7, new_idx_ik = bind_articulation(env, names[:6])
 
     assert first is old_robot
     assert second is new_robot

@@ -10,10 +10,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[3]
 
 
-def test_generate_and_audit_one_episode(tmp_path, monkeypatch):
+@pytest.mark.slow
+def test_generate_and_audit_one_episode(tmp_path, monkeypatch, sim_profile):
     out = tmp_path / "example-ds"
     import dataclasses
 
@@ -46,15 +49,34 @@ def test_generate_and_audit_one_episode(tmp_path, monkeypatch):
 
     info = json.loads((out / "meta" / "info.json").read_text())
     assert info["total_episodes"] == 1
+    from wrist_cameras import describe
+
+    cameras = tuple(camera.role for camera in describe(REPO))
+    assert {name.removeprefix("observation.images.") for name in info["features"]
+            if name.startswith("observation.images.")} == set(cameras) | {f"{c}_depth" for c in cameras}
     run_meta = json.loads((out / "meta" / "run_meta.json").read_text())
+    assert run_meta["sensor_profile"]["name"] == "deployment"
     assert run_meta["schema_version"] == 2
     assert len(run_meta["software"]["revision_start"]) == 40
     assert run_meta["software"]["revision_end"] == run_meta["software"]["revision_start"]
     assert run_meta["config"]["seed"] == 7
-    assert run_meta["tool"]["geometry_status"] == "contact-qualified"
-    assert run_meta["tool"]["contact_geometry_status"] == "pivot-calibrated"
-    assert run_meta["tool"]["body_pose_status"] == "axis-inferred"
-    assert run_meta["tool"]["provisional_geometry_override"] is False
+    from tatbot_sim.tools import registry, workspace
+    current_workspace = workspace()
+    fitted_tool = registry().active_tool_id(REPO, workspace=current_workspace)
+    measured_tip = (registry().tip_offset_m(current_workspace)
+                    if fitted_tool == run_meta["tool"]["tool_id"] else None)
+    if sim_profile == "public" or measured_tip is None:
+        assert run_meta["tool"]["geometry_status"] == "nominal"
+        assert run_meta["tool"]["contact_geometry_status"] == "unqualified"
+        assert run_meta["tool"]["geometry_basis"] == "nominal-datasheet"
+        assert run_meta["tool"]["geometry_warnings"]
+    else:
+        assert run_meta["tool"]["geometry_status"] == "contact-qualified"
+        assert run_meta["tool"]["contact_geometry_status"] == "pivot-calibrated"
+        assert run_meta["tool"]["body_pose_status"] == "axis-inferred"
+        assert run_meta["tool"]["geometry_basis"] == "measured-pivot"
+        assert run_meta["tool"]["qualification"] == "qualified"
+        assert run_meta["tool"]["geometry_warnings"] == []
 
     # The real audit tool, driven by the dataset's own metadata.
     r = subprocess.run(

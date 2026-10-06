@@ -8,8 +8,7 @@ approximately undoing it.
 
 Torch + numpy only, no render device:
 
-    cd python/tatbot_sim && uv run python tests/test_inkfield.py
-    # or: uv run python -m pytest tests/ -q
+    cd python/tatbot_sim && uv run --with pytest pytest -q tests/test_inkfield.py
 """
 
 from __future__ import annotations
@@ -207,7 +206,8 @@ def test_where_a_stamp_lands_does_not_depend_on_the_margin():
     — ink placement quietly coupled to an allocation detail."""
     surface = _flat_surface(1)
     centre = torch.tensor([[0.0, 0.0]])  # the canvas centre falls on a boundary
-    assert float(surface.canvas_to_px(centre)[0, 0]) % 1.0 == 0.5
+    # float32: 190.5 mm over 452 texels does not land on the half exactly
+    assert abs(float(surface.canvas_to_px(centre)[0, 0]) % 1.0 - 0.5) < 1e-4
     seen = {}
     for laser_r in (0.0015, 0.0019):  # different radii, different margin
         fld = _field(surface, 1, laser_r=laser_r)
@@ -325,6 +325,23 @@ def test_composite_endpoints():
     assert int(full[0, 5, 5, 0]) == round(0.05 * 255)
 
 
+def test_mixed_precision_ink_preserves_rounding_at_a_byte_boundary():
+    """Higher-precision ink must survive blending with float32 paper.
+
+    This color is just above byte intensity 100.5. Rounding the blend down to
+    float32 before byte conversion instead produces 100 via the even tie.
+    """
+    surface = _flat_surface(1)
+    paper = float(torch.tensor(0.4, dtype=torch.float32))
+    ink = torch.full((1, 3), 2 * (100.5 / 255 + 1e-10) - paper, dtype=torch.float64)
+    radius = torch.tensor([0.0015])
+    field = InkField(1, surface, radius, radius, ink)
+    field.field[:] = 0.5
+    base = torch.full((1, surface.rows, surface.cols, 3), paper, dtype=torch.float32)
+    rgba = field.composite_rgba(base)
+    assert torch.equal(rgba, torch.tensor([101, 101, 101, 255], dtype=torch.uint8).expand_as(rgba))
+
+
 def test_laser_eta_scales_with_incidence():
     e = laser_eta(torch.tensor([0.2, 0.2]), torch.tensor([1.0, 0.5]))
     assert abs(float(e[0]) - 0.2) < 1e-6
@@ -393,7 +410,8 @@ def test_erase_prompts_are_definite_and_name_the_verb():
     assert prog["verb"] == "erase"
     assert prog["lexicon"] == LEXICON_VERSION
     assert prog["prompt"].startswith("remove the ")
-    assert " a " not in prog["prompt"], prog["prompt"]
+    target = prog["prompt"].replace(prog["tool"], "")   # the fitted tool's own phrase may say "a 3RL liner"
+    assert " a " not in target, prog["prompt"]
 
 
 def test_a_pre_inked_scene_is_the_thing_the_laser_clears():
@@ -414,15 +432,3 @@ def test_a_pre_inked_scene_is_the_thing_the_laser_clears():
     end = float(fld.coverage()[0])
     assert end < 0.25 * start, (start, end)
     assert float(fld.field.min()) >= 0.0
-
-
-def _run_all():
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    for fn in fns:
-        fn()
-        print(f"  ok  {fn.__name__}")
-    print(f"{len(fns)} passed")
-
-
-if __name__ == "__main__":
-    _run_all()

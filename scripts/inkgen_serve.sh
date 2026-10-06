@@ -8,7 +8,7 @@ set -euo pipefail
 repo=$(cd "$(dirname "$0")/.." && pwd)
 # shellcheck source=scripts/lib/cli_hint.sh
 source "$repo/scripts/lib/cli_hint.sh"; cli_hint::note "tatbot inkgen serve"
-port=8600; host=0.0.0.0; model=""; cpu=0
+port=8600; host=127.0.0.1; model=""; cpu=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --port) port="$2"; shift 2 ;;

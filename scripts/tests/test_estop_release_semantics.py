@@ -22,7 +22,7 @@ def test_estop_release_never_moves_the_follower_unannounced() -> None:
         Path(__file__).parents[2] / "cpp" / "teleop" / "wxai_teleop.cpp"
     ).read_text()
     resume = source.split("if (choice == StopChoice::resume) {", 1)[1].split(
-        "stop_baseline = g_stop_signals.load();", 1
+        "stop_baseline = resume_signals;", 1
     )[0]
 
     # The e-stop path lowers the confirmation bar to 2 deg, regardless of the

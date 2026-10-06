@@ -1,0 +1,540 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.dev/schemas/inkmap/project.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "content_sha256",
+    "name",
+    "placement_file",
+    "editor",
+    "history",
+    "edit_before",
+    "selected_id",
+    "chart",
+    "chart_parked"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tatbot.inkmap-project/3"
+    },
+    "content_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "placement_file": {
+      "$ref": "https://tatbot.ai/schemas/inkmap/placement/v6"
+    },
+    "editor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pose_id",
+        "skin_tone",
+        "show_atlas",
+        "camera"
+      ],
+      "properties": {
+        "pose_id": {
+          "type": "string"
+        },
+        "skin_tone": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "show_atlas": {
+          "type": "boolean"
+        },
+        "camera": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "position",
+                "target",
+                "fov"
+              ],
+              "properties": {
+                "position": {
+                  "type": "array",
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "items": {
+                    "type": "number",
+                    "minimum": -100,
+                    "maximum": 100
+                  }
+                },
+                "target": {
+                  "type": "array",
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "items": {
+                    "type": "number",
+                    "minimum": -100,
+                    "maximum": 100
+                  }
+                },
+                "fov": {
+                  "type": "number",
+                  "minimum": 10,
+                  "maximum": 100
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "history": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "past",
+        "future"
+      ],
+      "properties": {
+        "past": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "allOf": [
+              {
+                "$ref": "https://tatbot.ai/schemas/inkmap/placement/v6#/properties/placements"
+              },
+              {
+                "maxItems": 100
+              }
+            ]
+          }
+        },
+        "future": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "allOf": [
+              {
+                "$ref": "https://tatbot.ai/schemas/inkmap/placement/v6#/properties/placements"
+              },
+              {
+                "maxItems": 100
+              }
+            ]
+          }
+        }
+      }
+    },
+    "edit_before": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "https://tatbot.ai/schemas/inkmap/placement/v6#/properties/placements"
+            },
+            {
+              "maxItems": 100
+            }
+          ]
+        }
+      ]
+    },
+    "selected_id": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "minLength": 1
+        }
+      ]
+    },
+    "chart": {
+      "description": "v2 only: the paper/cylinder editor's working draft, so a view switch or a browser reload does not discard it. Frozen artwork bytes travel here; derived records are rebuilt on load. Null when that editor has nothing in it.",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "kind",
+            "width_mm",
+            "height_mm",
+            "radius_mm",
+            "margin_mm",
+            "selected_id",
+            "artwork",
+            "items"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "kind": {
+              "enum": [
+                "plane",
+                "cylinder"
+              ]
+            },
+            "width_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 2000
+            },
+            "height_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 2000
+            },
+            "radius_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 2000
+            },
+            "margin_mm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "selected_id": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "string",
+                  "minLength": 1
+                }
+              ]
+            },
+            "artwork": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "https://tatbot.dev/schemas/inkmap/artwork.schema.json"
+              }
+            },
+            "items": {
+              "type": "array",
+              "maxItems": 100,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "artwork_id",
+                  "size_mm",
+                  "uv_mm",
+                  "rotation_rad",
+                  "mirror",
+                  "review",
+                  "provenance"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "artwork_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "size_mm": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "maximum": 2000
+                    }
+                  },
+                  "uv_mm": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                      "type": "number",
+                      "minimum": -2000,
+                      "maximum": 2000
+                    }
+                  },
+                  "mirror": {
+                    "type": "boolean"
+                  },
+                  "rotation_rad": {
+                    "type": "number",
+                    "minimum": -7,
+                    "maximum": 7
+                  },
+                  "review": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "status",
+                      "reviewer",
+                      "evidence_sha256"
+                    ],
+                    "properties": {
+                      "status": {
+                        "enum": [
+                          "pending",
+                          "accepted",
+                          "rejected"
+                        ]
+                      },
+                      "reviewer": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "evidence_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      }
+                    }
+                  },
+                  "provenance": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "producer",
+                      "version",
+                      "created_utc",
+                      "source_sha256"
+                    ],
+                    "properties": {
+                      "producer": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40
+                      },
+                      "created_utc": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40
+                      },
+                      "source_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "chart_parked": {
+      "description": "v2 only: the other surface's draft (paper or cylinder), parked while `chart` is the one showing. Paper and cylinder are separate drafts in one project. Absent in projects written before it existed; null when that surface has nothing in it.",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "kind",
+            "width_mm",
+            "height_mm",
+            "radius_mm",
+            "margin_mm",
+            "selected_id",
+            "artwork",
+            "items"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "kind": {
+              "enum": [
+                "plane",
+                "cylinder"
+              ]
+            },
+            "width_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 2000
+            },
+            "height_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 2000
+            },
+            "radius_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 2000
+            },
+            "margin_mm": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "selected_id": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "string",
+                  "minLength": 1
+                }
+              ]
+            },
+            "artwork": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "https://tatbot.dev/schemas/inkmap/artwork.schema.json"
+              }
+            },
+            "items": {
+              "type": "array",
+              "maxItems": 100,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "artwork_id",
+                  "size_mm",
+                  "uv_mm",
+                  "rotation_rad",
+                  "mirror",
+                  "review",
+                  "provenance"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "artwork_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "size_mm": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "maximum": 2000
+                    }
+                  },
+                  "uv_mm": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                      "type": "number",
+                      "minimum": -2000,
+                      "maximum": 2000
+                    }
+                  },
+                  "mirror": {
+                    "type": "boolean"
+                  },
+                  "rotation_rad": {
+                    "type": "number",
+                    "minimum": -7,
+                    "maximum": 7
+                  },
+                  "review": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "status",
+                      "reviewer",
+                      "evidence_sha256"
+                    ],
+                    "properties": {
+                      "status": {
+                        "enum": [
+                          "pending",
+                          "accepted",
+                          "rejected"
+                        ]
+                      },
+                      "reviewer": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "evidence_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      }
+                    }
+                  },
+                  "provenance": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "producer",
+                      "version",
+                      "created_utc",
+                      "source_sha256"
+                    ],
+                    "properties": {
+                      "producer": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40
+                      },
+                      "created_utc": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40
+                      },
+                      "source_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

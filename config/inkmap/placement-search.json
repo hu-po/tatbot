@@ -1,0 +1,18 @@
+{
+  "schema": "tatbot.placement-search-config/1",
+  "probe_points": 32,
+  "ik_tolerance_m": 0.001,
+  "non_tool_clearance_m": 0.01,
+  "tool_shaft_clearance_m": 0.005,
+  "workspace_center_m": [0.31, 0.005, 0.04],
+  "yaw_candidates_rad": [3.141592653589793, 4.71238898038469, 0.0, 1.5707963267948966],
+  "offset_candidates": [
+    { "body_xy_m": [0.0, 0.0], "support_xyz_m": [0.0, 0.0, 0.0] },
+    { "body_xy_m": [-0.02, 0.0], "support_xyz_m": [0.0, 0.0, 0.0] },
+    { "body_xy_m": [0.02, 0.0], "support_xyz_m": [0.0, 0.0, 0.0] },
+    { "body_xy_m": [0.0, -0.02], "support_xyz_m": [0.0, 0.0, 0.0] },
+    { "body_xy_m": [0.0, 0.02], "support_xyz_m": [0.0, 0.0, 0.0] },
+    { "body_xy_m": [0.0, 0.0], "support_xyz_m": [0.0, -0.01, 0.0] },
+    { "body_xy_m": [0.0, 0.0], "support_xyz_m": [0.0, 0.01, 0.0] }
+  ]
+}

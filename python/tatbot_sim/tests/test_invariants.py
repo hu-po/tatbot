@@ -6,8 +6,7 @@ says must be what is on the sheet. They run without SAPIEN or a GPU
 (strokes/language/textures are numpy + cv2), so they are cheap to run
 before any regeneration:
 
-    cd python/tatbot_sim && .venv/bin/python tests/test_invariants.py
-    # or, with pytest available: .venv/bin/python -m pytest tests/ -q
+    cd python/tatbot_sim && uv run --with pytest pytest -q tests/test_invariants.py
 """
 
 from __future__ import annotations
@@ -15,7 +14,6 @@ from __future__ import annotations
 import dataclasses
 
 import numpy as np
-from tatbot_sim import language
 from tatbot_sim.language import MOTIFS, SIZES, sample_scene
 from tatbot_sim.strokes import (
     MazeConfig,
@@ -93,10 +91,13 @@ def test_shapes_fit_by_shrinking():
 
 def test_language_scene_invariants():
     """Separation, legibility, stroke bookkeeping, prompt shape."""
+    from tatbot_sim.resolved import resolve
+
+    config = resolve()
     sheets = grid_paper_sheets(8)
     rng = np.random.default_rng(3)
     for i in range(100):
-        strokes, prog = sample_scene(rng, sheets[i % 8], 20.0)
+        strokes, prog = sample_scene(rng, sheets[i % 8], 20.0, config=config)
         # n_strokes bookkeeping must partition the stroke list exactly
         assert sum(m["n_strokes"] for m in prog["motifs"]) == len(strokes)
         # motifs must not overlap: >= 6 mm of clear sheet between any two
@@ -121,7 +122,7 @@ def test_language_scene_invariants():
         # the surface slot follows the fitted substrate, so read it rather
         # than hardcoding the pad — this file used to fail the moment a
         # skin-bound tool was fitted
-        assert p.startswith("draw ") and p.endswith(language.SURFACE_PHRASE)
+        assert p.startswith("draw ") and p.endswith(config.substrate.surface_phrase)
         assert "  " not in p
 
 
@@ -159,7 +160,7 @@ def test_letters():
 
 
 def test_engaged_rejects_an_episode_that_never_touched_the_sheet():
-    from tatbot_sim.generate import _engaged
+    from tatbot_sim.judge import engaged as _engaged
 
     # an erase that cleared nothing and a draw that deposited nothing both
     # carry a prompt describing work the episode does not show
@@ -178,11 +179,3 @@ def test_language_budget_respected():
     for i in range(100):
         _, prog = sample_scene(rng, sheets[i % 8], 12.0)
         assert prog["est_cost_s"] <= 12.0 + 1e-6
-
-
-if __name__ == "__main__":
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    for fn in fns:
-        fn()
-        print(f"PASS {fn.__name__}")
-    print(f"{len(fns)}/{len(fns)} invariant tests passed")

@@ -1,0 +1,16 @@
+# The arm node's ROS 2 router (rmw_zenohd). Installed by `tatbot ros deploy` (sudo); @USER@ and
+# @HOME@ are filled at install. Listens on 127.0.0.1:7450 (env.sh), never on the tatbot bus port.
+[Unit]
+Description=tatbot ROS 2 zenoh router (rmw_zenohd)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+ExecStart=/bin/bash -c 'source @HOME@/tatbot-ros/env.sh && ZENOH_CONFIG_OVERRIDE="$ZENOH_ROUTER_OVERRIDE" exec ros2 run rmw_zenoh_cpp rmw_zenohd'
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

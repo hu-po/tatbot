@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.ai/schemas/inklang-resolution-v2.json",
+  "title": "InkLang body resolution",
+  "description": "The result of grounding one placement intent on one named canonical body rest surface.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "resolution_schema_version",
+    "status",
+    "intent",
+    "body",
+    "atlas_schema_version",
+    "resolver",
+    "anchor",
+    "actual",
+    "candidates",
+    "issues"
+  ],
+  "properties": {
+    "resolution_schema_version": { "const": 2 },
+    "status": { "enum": ["resolved", "needs_choice", "rejected"] },
+    "intent": { "$ref": "inklang-intent.schema.json" },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "surface_sha256"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "surface_sha256": {
+          "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+        }
+      }
+    },
+    "atlas_schema_version": { "type": "integer", "minimum": 1 },
+    "resolver": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "policy"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "integer", "minimum": 1 },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "seed"],
+          "properties": {
+            "id": { "enum": ["interactive", "seeded-v1"] },
+            "seed": {
+              "oneOf": [
+                { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+                { "type": "null" }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "anchor": {
+      "oneOf": [{ "$ref": "#/$defs/anchor" }, { "type": "null" }]
+    },
+    "actual": {
+      "oneOf": [{ "$ref": "#/$defs/actual" }, { "type": "null" }]
+    },
+    "candidates": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/candidate" }
+    },
+    "issues": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/issue" }
+    },
+    "choice": {
+      "$ref": "#/$defs/candidate"
+    },
+    "relative": {
+      "$ref": "#/$defs/relative_walk"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "resolved" } }, "required": ["status"] },
+      "then": {
+        "properties": {
+          "anchor": { "$ref": "#/$defs/anchor" },
+          "actual": { "$ref": "#/$defs/actual" },
+          "candidates": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "needs_choice" } }, "required": ["status"] },
+      "then": {
+        "properties": {
+          "anchor": { "type": "null" },
+          "actual": { "type": "null" },
+          "candidates": { "minItems": 2 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "rejected" } }, "required": ["status"] },
+      "then": {
+        "properties": {
+          "anchor": { "type": "null" },
+          "actual": { "type": "null" },
+          "issues": { "minItems": 1 }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "relative_walk": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What a resolved relative placement's surface walk actually covered.",
+      "required": ["kind", "requested_m", "achieved_m", "reference_face"],
+      "properties": {
+        "kind": {
+          "enum": ["above", "below", "behind", "in_front", "beside", "between"]
+        },
+        "requested_m": {
+          "description": "Requested surface offset in metres; null for between, which has no offset.",
+          "oneOf": [{ "type": "number", "exclusiveMinimum": 0 }, { "type": "null" }]
+        },
+        "achieved_m": {
+          "description": "Surface path length from reference_face to the resolved anchor.",
+          "type": "number",
+          "minimum": 0
+        },
+        "reference_face": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["face", "barycentric"],
+      "properties": {
+        "face": { "type": "integer", "minimum": 0 },
+        "barycentric": {
+          "type": "array",
+          "prefixItems": [
+            { "type": "number", "minimum": 0, "maximum": 1 },
+            { "type": "number", "minimum": 0, "maximum": 1 },
+            { "type": "number", "minimum": 0, "maximum": 1 }
+          ],
+          "minItems": 3,
+          "maxItems": 3
+        }
+      }
+    },
+    "actual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["site_id", "laterality", "aspect", "level", "region_uv", "canonical_phrase"],
+      "properties": {
+        "site_id": { "type": "string", "pattern": "^[a-z][a-z_]*$" },
+        "laterality": {
+          "oneOf": [{ "enum": ["left", "right", "center"] }, { "type": "null" }]
+        },
+        "aspect": {
+          "oneOf": [{ "enum": ["inner", "outer", "front", "back", "side", "top"] }, { "type": "null" }]
+        },
+        "level": {
+          "oneOf": [{ "enum": ["upper", "lower", "mid"] }, { "type": "null" }]
+        },
+        "region_uv": {
+          "type": "array",
+          "prefixItems": [
+            { "type": "number", "minimum": 0, "maximum": 1 },
+            { "type": "number", "minimum": 0, "maximum": 1 }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "canonical_phrase": { "type": "string", "minLength": 1 }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "site_id", "laterality", "anchor"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1 },
+        "site_id": { "type": "string", "pattern": "^[a-z][a-z_]*$" },
+        "laterality": {
+          "oneOf": [{ "enum": ["left", "right", "center"] }, { "type": "null" }]
+        },
+        "anchor": { "$ref": "#/$defs/anchor" }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^INKLANG_[A-Z_]+$" },
+        "message": { "type": "string", "minLength": 1 },
+        "field": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

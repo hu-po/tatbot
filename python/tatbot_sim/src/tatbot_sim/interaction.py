@@ -15,10 +15,6 @@ PHYSICS_CONTACT_OFFSET_M = 0.0002
 TRAVEL_FLOOR_M = 0.001
 
 
-def within_contact_band(distance_m: float) -> bool:
-    return -MAX_PENETRATION_M <= distance_m <= CONTACT_ABOVE_TOLERANCE_M
-
-
 def model_for(*, collision: bool) -> str:
     """Name the model that actually constrained substrate interaction."""
     return INTERACTION_MODEL if collision else KINEMATIC_INTERACTION_MODEL

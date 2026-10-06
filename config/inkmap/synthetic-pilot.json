@@ -1,0 +1,158 @@
+{
+  "schema": "tatbot.inkmap-synthetic-pilot-spec/1",
+  "views_per_scene": 3,
+  "drawing_episode_count": 12,
+  "identity_ids": [
+    "reference",
+    "mixed-positive-2sigma",
+    "mixed-negative-2sigma"
+  ],
+  "cells": [
+    {
+      "id": "left-forearm-armrest",
+      "site": "forearm",
+      "laterality": "left",
+      "pose": "reclined-left-arm-supported",
+      "support": "tattoo-chair-left-armrest-v1"
+    },
+    {
+      "id": "right-forearm-armrest",
+      "site": "forearm",
+      "laterality": "right",
+      "pose": "reclined-right-arm-supported",
+      "support": "tattoo-chair-right-armrest-v1"
+    },
+    {
+      "id": "left-shin-supine",
+      "site": "shin",
+      "laterality": "left",
+      "pose": "supine",
+      "support": "tattoo-bed-v1"
+    },
+    {
+      "id": "right-shin-reclined",
+      "site": "shin",
+      "laterality": "right",
+      "pose": "reclined-seated",
+      "support": "tattoo-chair-v1"
+    },
+    {
+      "id": "left-thigh-supine",
+      "site": "thigh",
+      "laterality": "left",
+      "pose": "supine",
+      "support": "tattoo-bed-v1"
+    },
+    {
+      "id": "right-thigh-prone",
+      "site": "thigh",
+      "laterality": "right",
+      "pose": "prone",
+      "support": "tattoo-bed-v1"
+    }
+  ],
+  "artworks": [
+    {
+      "id": "dbv3-orbit",
+      "path": "web/inkmap/public/designs/dbv3-orbit/artwork.json",
+      "size_mm": [
+        30,
+        30
+      ]
+    },
+    {
+      "id": "dbv3-sprout",
+      "path": "web/inkmap/public/designs/dbv3-sprout/artwork.json",
+      "size_mm": [
+        30,
+        30
+      ]
+    },
+    {
+      "id": "dbv3-ridges",
+      "path": "web/inkmap/public/designs/dbv3-ridges/artwork.json",
+      "size_mm": [
+        30,
+        30
+      ]
+    }
+  ],
+  "appearances": [
+    {
+      "id": "neutral-light",
+      "skin_tone": "#c98f6b",
+      "lighting": "neutral",
+      "occlusion_fraction": 0.0
+    },
+    {
+      "id": "bounded-challenge",
+      "skin_tone": "#70452f",
+      "lighting": "oblique",
+      "occlusion_fraction": 0.15
+    }
+  ],
+  "episode_variants": [
+    {
+      "id": "blank-start",
+      "expected_outcome": "nominal",
+      "status": "implemented"
+    },
+    {
+      "id": "stencil-start",
+      "expected_outcome": "nominal",
+      "status": "implemented_separate_appearance_label"
+    },
+    {
+      "id": "missed-stroke",
+      "expected_outcome": "missed",
+      "status": "implemented_failure_injection"
+    },
+    {
+      "id": "interrupted",
+      "expected_outcome": "interrupted",
+      "status": "implemented_failure_injection"
+    },
+    {
+      "id": "partial-coverage",
+      "expected_outcome": "partial",
+      "status": "implemented_failure_injection"
+    },
+    {
+      "id": "dry-tool",
+      "expected_outcome": "dry",
+      "status": "implemented_supply_model"
+    },
+    {
+      "id": "occluded",
+      "expected_outcome": "occluded",
+      "status": "implemented_visibility_model"
+    }
+  ],
+  "challenges": [
+    {
+      "id": "shoulder-curvature",
+      "category": "stress_review",
+      "expected": "accounted_not_substituted"
+    },
+    {
+      "id": "anatomical-fold",
+      "category": "stress_review",
+      "expected": "accounted_not_substituted"
+    },
+    {
+      "id": "excessive-girth",
+      "category": "surface_chart_overlap",
+      "expected": "refused"
+    },
+    {
+      "id": "excluded-region",
+      "category": "unsupported_anatomy",
+      "expected": "refused"
+    },
+    {
+      "id": "impossible-support",
+      "category": "unsupported_support",
+      "expected": "refused"
+    }
+  ]
+}

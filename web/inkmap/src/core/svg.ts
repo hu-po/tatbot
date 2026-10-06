@@ -4,11 +4,27 @@
 // and a global cache both leaked inactive GPU textures and let one placement
 // change another placement's appearance.
 import * as THREE from "three";
+import type { ArtworkRecord } from "./artwork-record.ts";
+import type { DesignMeta } from "./schema.ts";
+import { frozenArtwork } from "./frozen-artwork.ts";
+import { tattooProgramToSvg } from "./human-representation/program-svg.ts";
 
 const RASTER_PX = 1024;
 
-export function svgTexture(url: string): Promise<THREE.CanvasTexture> {
-  return rasterise(url);
+export type PreviewArtwork = DesignMeta | ArtworkRecord;
+
+/** Rebuild typed artwork at placement size; stretching its stored SVG would
+ * incorrectly stretch the pen width too. Unconverted stock remains an image.
+ */
+export async function artworkPreviewUrl(source: PreviewArtwork, sizeMm: readonly [number, number]): Promise<string> {
+  if (!("program" in source) && !source.embedded) return source.path;
+  const record = "program" in source ? source : await frozenArtwork(source.id, source.embedded!);
+  const svg = await tattooProgramToSvg(record.program, [sizeMm[0] / 1000, sizeMm[1] / 1000]);
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+export async function artworkTexture(source: PreviewArtwork, sizeMm: readonly [number, number]): Promise<THREE.CanvasTexture> {
+  return rasterise(await artworkPreviewUrl(source, sizeMm));
 }
 
 async function rasterise(url: string): Promise<THREE.CanvasTexture> {

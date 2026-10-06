@@ -1,0 +1,400 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.ai/schemas/inkmap/tattoo-scenario/v3",
+  "title": "Tatbot posed tattoo scenario",
+  "description": "Typed program-driven simulation scenario. Original source bundle, canonical surface placement and InkProgram are bound and revalidated; no physical execution authority.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "units",
+    "seed",
+    "body",
+    "pose",
+    "placement",
+    "design",
+    "trace",
+    "robot",
+    "support",
+    "provenance",
+    "program_binding"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 3
+    },
+    "units": {
+      "type": "object",
+      "required": [
+        "length",
+        "tattoo_size",
+        "angle",
+        "up",
+        "matrix_order"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "length": {
+          "const": "m"
+        },
+        "tattoo_size": {
+          "const": "mm"
+        },
+        "angle": {
+          "const": "rad"
+        },
+        "up": {
+          "const": "+z"
+        },
+        "matrix_order": {
+          "const": "row-major"
+        }
+      }
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "body": {
+      "type": "object",
+      "required": [
+        "model_spec_id",
+        "model_spec_sha256",
+        "identity_sha256",
+        "topology_sha256",
+        "rest_surface_sha256",
+        "asset_path",
+        "asset_sha256",
+        "pose_asset_sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "model_spec_id": {
+          "const": "mhr-soma-v1"
+        },
+        "model_spec_sha256": {
+          "const": "e615b8485c367509833ee68b0405cd1e0ce6015604eaa4c1b2b699f4fc8d5144"
+        },
+        "identity_sha256": {
+          "const": "800babcf48d09f4ff1da9d2e8a0ebe266869a19849557450c7210c9a9fb9a1b6"
+        },
+        "topology_sha256": {
+          "const": "e0ca7ee25dc0b4c8d841bb2626e364bb88b7af7fae037e30854728842e320a18"
+        },
+        "rest_surface_sha256": {
+          "const": "caa66dff9b3625771c8f4c35bfe59556d30acdc3800880106f98f0ce75c49a95"
+        },
+        "asset_path": {
+          "const": "bodies/mhr-soma-v1.glb"
+        },
+        "asset_sha256": {
+          "const": "c1d0ec25c6f4708bb3e8d48811711da0d309598a6b85cf256975d49d1d46e841"
+        },
+        "pose_asset_sha256": {
+          "const": "8270809809ca874efed77257c96eb6b36be3afe50d126c177b8fade44e7329d3"
+        }
+      }
+    },
+    "pose": {
+      "type": "object",
+      "required": [
+        "id",
+        "catalog_sha256",
+        "source",
+        "posed_surface_sha256",
+        "world_from_body"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "catalog_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source": {
+          "const": "named"
+        },
+        "posed_surface_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "world_from_body": {
+          "$ref": "#/$defs/matrix4"
+        }
+      }
+    },
+    "placement": {
+      "type": "object",
+      "required": [
+        "source_sha256",
+        "id",
+        "design_id",
+        "anchor",
+        "rotation_rad",
+        "size_mm",
+        "mirror"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "source_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "design_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "anchor": {
+          "$ref": "#/$defs/anchor"
+        },
+        "rotation_rad": {
+          "type": "number"
+        },
+        "size_mm": {
+          "$ref": "#/$defs/sizeMm"
+        },
+        "mirror": {
+          "type": "boolean"
+        }
+      }
+    },
+    "design": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "svg",
+        "sha256",
+        "source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "svg": {
+          "type": "string",
+          "pattern": "<svg"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source": {
+          "type": "object"
+        }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "required": [
+        "compiler",
+        "compiler_version",
+        "sha256",
+        "strokes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "compiler": {
+          "const": "tatbot_sim.surface_trace"
+        },
+        "compiler_version": {
+          "const": 3
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "strokes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "$ref": "#/$defs/anchor"
+            }
+          }
+        }
+      }
+    },
+    "robot": {
+      "type": "object",
+      "required": [
+        "urdf_sha256",
+        "tool_id",
+        "world_from_robot"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "urdf_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tool_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "world_from_robot": {
+          "$ref": "#/$defs/matrix4"
+        }
+      }
+    },
+    "support": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "world_from_nominal": {
+          "$ref": "#/$defs/matrix4"
+        }
+      }
+    },
+    "placement_optimization": {
+      "type": "object",
+      "required": [
+        "schema",
+        "selected",
+        "candidates"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "schema": {
+          "const": "tatbot.placement-search/1"
+        },
+        "selected": {
+          "type": "object",
+          "required": [
+            "world_from_body",
+            "world_from_support"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "world_from_body": {
+              "$ref": "#/$defs/matrix4"
+            },
+            "world_from_support": {
+              "$ref": "#/$defs/matrix4"
+            }
+          }
+        },
+        "candidates": {
+          "type": "array",
+          "minItems": 1
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "created_at",
+        "git_sha",
+        "generator"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "git_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,40}$"
+        },
+        "generator": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "program_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bundle",
+        "placement_id",
+        "ink_program",
+        "tool_profile_sha256"
+      ],
+      "properties": {
+        "bundle": {
+          "$ref": "https://tatbot.dev/schemas/inkmap/sim-bundle.schema.json"
+        },
+        "placement_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ink_program": {
+          "$ref": "https://tatbot.dev/schemas/human-representation/ink-program.schema.json"
+        },
+        "tool_profile_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "matrix4": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "array",
+        "minItems": 4,
+        "maxItems": 4,
+        "items": {
+          "type": "number"
+        }
+      }
+    },
+    "sizeMm": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      }
+    },
+    "anchor": {
+      "type": "object",
+      "required": [
+        "face",
+        "barycentric"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "face": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "barycentric": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      }
+    }
+  }
+}

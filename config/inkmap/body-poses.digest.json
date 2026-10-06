@@ -1,0 +1,5 @@
+{
+  "catalog_path": "config/inkmap/body-poses.json",
+  "schema": "tatbot.body-pose-catalog-digest/1",
+  "sha256": "e1fd20ba2ce88319116eaba5bcbdb8836c6578b1bcebc9eb11cc524ca28e2e17"
+}

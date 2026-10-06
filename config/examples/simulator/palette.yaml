@@ -1,0 +1,47 @@
+# Synthetic six-slot fixture for urdf/palette.urdf (calibration palette v11):
+# slot names match its inkcap_* frames; no physical inventory or calibration.
+schema_version: 1
+
+sizes:
+  large:
+    product: "Example 15 mm large ink cap"
+    diameter_m: 0.015
+    height_m: 0.014
+    wall_m: 0.0005
+    capacity_ul: 2078.16
+    usable_frac: 0.7
+  medium:
+    product: "Example 11 mm medium ink cap"
+    diameter_m: 0.011
+    height_m: 0.01
+    wall_m: 0.0005
+    capacity_ul: 746.13
+    usable_frac: 0.7
+  small:
+    product: "Example 8 mm small ink cap"
+    diameter_m: 0.008
+    height_m: 0.01
+    wall_m: 0.0005
+    capacity_ul: 365.6
+    usable_frac: 0.7
+
+slots:
+  # the crescent from +Y to -Y: L-M-S-S-M-L
+  inkcap_large_1:
+    size: large
+    arm: right
+  inkcap_medium_1:
+    size: medium
+    arm: right
+  inkcap_small_1:
+    size: small
+    arm: right
+  inkcap_small_2:
+    size: small
+    arm: right
+  inkcap_medium_2:
+    size: medium
+    arm: right
+  inkcap_large_2:
+    size: large
+    arm: right

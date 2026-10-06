@@ -1,0 +1,90 @@
+<?xml version="1.0"?>
+<!-- One arm's <ros2_control> system (ros/README.md §13 "ros2_control"). Rendered once per arm by
+     tatbot_description.ros2_control_xml(), which fills every argument from names.py and the
+     checkout's config, so nothing here repeats a name or a number:
+       arm              left | right
+       hardware         mock -> mock_components/GenericSystem (GPIO estop_ok 1, the rest 0;
+                                joint positions start at `initial`, the staged pose)
+                        fake -> tatbot_hardware/TatbotArm, sdk=fake (every interlock live, no network)
+                        real -> tatbot_hardware/TatbotArm, sdk=real (the Trossen SDK, driver lock)
+       joints           the seven controlled joints, controller order (names.joint_names)
+       initial          mock only: one initial position per joint
+       safety_states    names.SAFETY_STATE_INTERFACES, in order
+       safety_commands  names.SAFETY_COMMAND_INTERFACES
+       params           TatbotArm parameters as "name=value;name=value" (hardware_params) -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="tatbot_ros2_control">
+  <xacro:arg name="arm" default="right"/>
+  <xacro:arg name="hardware" default="mock"/>
+  <xacro:arg name="joints" default=""/>
+  <xacro:arg name="initial" default=""/>
+  <xacro:arg name="safety_states" default=""/>
+  <xacro:arg name="safety_commands" default=""/>
+  <xacro:arg name="params" default=""/>
+
+  <xacro:property name="arm" value="$(arg arm)"/>
+  <xacro:property name="mock" value="${xacro.arg('hardware') == 'mock'}"/>
+
+  <xacro:macro name="params" params="items">
+    <xacro:if value="${len(items) > 0}">
+      <param name="${items[0].split('=', 1)[0]}">${items[0].split('=', 1)[1]}</param>
+      <xacro:params items="${items[1:]}"/>
+    </xacro:if>
+  </xacro:macro>
+
+  <!-- Commands position + velocity (JTC's feed-forward); states position, velocity, effort. -->
+  <xacro:macro name="joints" params="names initial">
+    <xacro:if value="${len(names) > 0}">
+      <joint name="${names[0]}">
+        <command_interface name="position"/>
+        <command_interface name="velocity"/>
+        <state_interface name="position">
+          <xacro:if value="${len(initial) > 0}">
+            <param name="initial_value">${initial[0]}</param>
+          </xacro:if>
+        </state_interface>
+        <state_interface name="velocity"/>
+        <state_interface name="effort"/>
+      </joint>
+      <xacro:joints names="${names[1:]}" initial="${initial[1:]}"/>
+    </xacro:if>
+  </xacro:macro>
+
+  <xacro:macro name="gpio_states" params="names">
+    <xacro:if value="${len(names) > 0}">
+      <state_interface name="${names[0]}">
+        <xacro:if value="${mock}">
+          <param name="initial_value">${1 if names[0] == 'estop_ok' else 0}</param>
+        </xacro:if>
+      </state_interface>
+      <xacro:gpio_states names="${names[1:]}"/>
+    </xacro:if>
+  </xacro:macro>
+
+  <xacro:macro name="gpio_commands" params="names">
+    <xacro:if value="${len(names) > 0}">
+      <command_interface name="${names[0]}">
+        <xacro:if value="${mock}">
+          <param name="initial_value">0</param>
+        </xacro:if>
+      </command_interface>
+      <xacro:gpio_commands names="${names[1:]}"/>
+    </xacro:if>
+  </xacro:macro>
+
+  <ros2_control name="${arm}_arm" type="system">
+    <hardware>
+      <xacro:if value="${mock}">
+        <plugin>mock_components/GenericSystem</plugin>
+      </xacro:if>
+      <xacro:unless value="${mock}">
+        <plugin>tatbot_hardware/TatbotArm</plugin>
+        <xacro:params items="${[p for p in xacro.arg('params').split(';') if p]}"/>
+      </xacro:unless>
+    </hardware>
+    <xacro:joints names="${xacro.arg('joints').split()}" initial="${xacro.arg('initial').split()}"/>
+    <gpio name="${arm}_safety">
+      <xacro:gpio_commands names="${xacro.arg('safety_commands').split()}"/>
+      <xacro:gpio_states names="${xacro.arg('safety_states').split()}"/>
+    </gpio>
+  </ros2_control>
+</robot>

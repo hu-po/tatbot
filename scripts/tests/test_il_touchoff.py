@@ -18,11 +18,7 @@ import numpy as np
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "scripts"))
-sys.path.insert(0, str(REPO / "scripts" / "vision"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import il_analyze_rollout  # noqa: E402
 import il_touchoff  # noqa: E402
 import tool_spec  # noqa: E402
 from calib_synth import NUM_JOINTS, write_wxtl  # noqa: E402
@@ -33,7 +29,7 @@ PLANE_TRUE = 0.041                          # plate height, base frame
 
 def touch_pose(rotation_vector, rng):
     """EE pose whose tip (at P_TRUE) lies exactly on the plate."""
-    from solve_robot_world import vector_to_rotation
+    from calib_synth import vector_to_rotation
     pose = np.eye(4)
     pose[:3, :3] = vector_to_rotation(np.asarray(rotation_vector, float))
     pose[:2, 3] = rng.uniform(-0.15, 0.15, 2)
@@ -66,8 +62,9 @@ def test_vertical_touches_are_unidentifiable():
     assert fit["spread_deg"] < 2.0
 
 
-def test_workspace_roundtrip_through_analyzer_parser(tmp_path, monkeypatch):
-    """What the writer renders, il_analyze_rollout.load_workspace must read."""
+def test_workspace_roundtrip_through_analyzer_parser(tmp_path):
+    """What the writer renders, the one workspace reader (tool_spec.read_workspace,
+    which il_analyze_rollout and the vision scripts all go through) must read."""
     right = {
         "pen_tip_offset_x": 0.012, "pen_tip_offset_y": -0.004,
         "pen_tip_offset_z": 0.087, "paper_plane_z": 0.0405,
@@ -82,8 +79,7 @@ def test_workspace_roundtrip_through_analyzer_parser(tmp_path, monkeypatch):
     workspace.parent.mkdir()
     workspace.write_text(text)
 
-    monkeypatch.setattr(il_analyze_rollout, "REPO", tmp_path)
-    parsed = il_analyze_rollout.load_workspace()["right"]
+    parsed = tool_spec.read_workspace(tmp_path)["right"]
     assert parsed["pen_tip_offset_x"] == 0.012
     assert parsed["pen_tip_offset_y"] == -0.004
     assert parsed["pen_tip_offset_z"] == 0.087
@@ -92,6 +88,43 @@ def test_workspace_roundtrip_through_analyzer_parser(tmp_path, monkeypatch):
     assert parsed["ee_contact_z"] is None
     assert tool_spec.parse_simple_yaml(text)["right"]["touchoff"]["tip_loo_max_mm"] == 0.3
 
+
+
+def test_workspace_renders_one_section_per_fitted_arm():
+    """A second arm's section rides alongside the follower's, and rendering
+    only the follower is byte-identical to the single-arm file."""
+    right = {"tool_id": "pen-a", "tip_frame": "right/tool_mount",
+             "pen_tip_offset_x": 0.001, "pen_tip_offset_y": 0.002, "pen_tip_offset_z": 0.07,
+             "touchoff": {"utc": "2026-09-15T00:00:00Z", "session": "s", "n_plate": 1,
+                          "n_pad": 9, "cond": 7.4, "residual_mm": 1.828, "note": ""}}
+    left = {"tool_id": "pen-b", "tip_frame": "left/tool_mount", "touchoff": {}}
+    both = il_touchoff.render_workspace(right=right, left=left)
+    parsed = tool_spec.parse_simple_yaml(both)
+    assert list(parsed) == ["right", "left"]
+    assert parsed["right"]["tool_id"] == "pen-a" and parsed["left"]["tool_id"] == "pen-b"
+    assert tool_spec.tip_offset_m(parsed, "right") == (0.001, 0.002, 0.07)
+    assert tool_spec.tip_offset_m(parsed, "left") is None
+    assert parsed["left"]["touchoff"]["n_pad"] == 0
+    assert both.startswith(il_touchoff.render_workspace(right=right))
+    # the renderer is the reverse of the parser for whatever it wrote
+    again = il_touchoff.render_workspace(right=parsed["right"], left=parsed["left"])
+    assert again == both
+
+
+def test_contact_records_survive_rendering_and_missing_references_remain_null():
+    right = {'tool_id': 'pen-a', 'mechanical_contact_x': .001,
+             'mechanical_contact_y': -.002, 'mechanical_contact_z': .07,
+             'mechanical_contact_reference': 'working_tip',
+             'mechanical_contact_profile': 'probe-station-ballpoint',
+             'mechanical_contact_status': 'fit_passed',
+             'mechanical_contact_session': 'synthetic-fit'}
+    rendered = il_touchoff.render_workspace(right=right, left={'tool_id': 'pen-b'})
+    parsed = tool_spec.parse_simple_yaml(rendered)
+    for key, value in right.items():
+        assert parsed['right'][key] == value
+    keys = [key for key in parsed['right'] if key.startswith('mechanical_contact_')]
+    assert len(keys) == 7 and all(parsed['left'][key] is None for key in keys)
+    assert il_touchoff.render_workspace(right=parsed['right'], left=parsed['left']) == rendered
 
 
 def test_labels_from_events():
@@ -177,7 +210,7 @@ def test_cli_requires_a_stated_tool_id(tmp_path):
 
 def pivot_poses(rotation_scale, count, rng, slip_indices=()):
     """Synthetic planted-tip roll: R_i varied, t_i = P - R_i p (+ slip)."""
-    from solve_robot_world import vector_to_rotation
+    from calib_synth import vector_to_rotation
     pivot_true = np.array([0.21, -0.04, 0.041])
     poses = []
     for index in range(count):

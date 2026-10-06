@@ -5,6 +5,14 @@
 # system python3 (>= 3.10), standard library only. Everything
 # heavy is delegated to the script or launcher that owns it.
 #
-# To have `tatbot` on PATH:  ln -s "$(pwd)/scripts/tatbot" ~/.local/bin/tatbot
-# — the symlink is resolved, so lib/ is found next to the real file.
-exec python3 "$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)/lib/tatbot_cli" "$@"
+# Fleet deployments install /usr/local/bin/tatbot as a symlink to this file.
+# A bare, undeployed clone can always invoke scripts/tatbot directly.
+tatbot_cli_dir="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+# shellcheck source=scripts/lib/fleet_toolchain.sh
+source "$tatbot_cli_dir/lib/fleet_toolchain.sh"
+# uv, cargo and rerun live in the per-user bins, which only a login shell puts
+# on PATH. Every launcher this CLI execs inherits our PATH, so put them there
+# once, here, instead of each launcher discovering `uv: command not found`.
+fleet_toolchain::user_bins
+fleet_toolchain::use "$(dirname "$tatbot_cli_dir")"
+exec python3 "$tatbot_cli_dir/lib/tatbot_cli" "$@"

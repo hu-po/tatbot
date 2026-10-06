@@ -59,13 +59,41 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: inkmap
+        # The web tests' pretest step compiles the showcase scenarios with
+        # python/tatbot_sim/.venv, whose simulator import builds the tool URDF
+        # from ManiSkill's WidowX AI asset. A hosted runner rasterises in
+        # software, so the editor's workstation latency budget is relaxed.
+        env:
+          MS_ASSET_DIR: ${{ runner.temp }}/tatbot-sim-assets
+          INKMAP_E2E_LATENCY_BUDGET_MS: "1000"
         run: |
           if [ -f web/inkmap/package.json ]; then
+            uv sync --project python/tatbot_sim --extra maniskill
+            uv run --project python/tatbot_sim --extra maniskill python -m mani_skill.utils.download_asset widowxai -y
             cd web/inkmap && npm ci && npm run check
           fi
+
+  simulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --prefix web/inkmap
+      - name: Simulator robot assets
+        run: uv run --project python/tatbot_sim python -m mani_skill.utils.download_asset widowxai -y
+      - name: Portable simulator tests with public fixtures
+        run: |
+          uv run --project python/tatbot_sim --with pytest --with pytest-timeout \
+            pytest -ra --timeout=120 python/tatbot_sim/tests --sim-profile public

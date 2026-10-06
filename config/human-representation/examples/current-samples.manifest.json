@@ -1,0 +1,49 @@
+{
+  "schema": "tatbot.draw-samples-manifest/1",
+  "content_sha256": "f955c5276cec27cdfc8a771ae4e9c5afe36f8d7d3089a6c27529a9efc2bb2fa3",
+  "samples": {
+    "schema": "tatbot.draw-samples/1",
+    "path": "current-samples.csv",
+    "sha256": "484962efd080f9063e17fc1cbd66ae7e2b2e4508bf06166724a719061d438197"
+  },
+  "compiler": {
+    "name": "human-representation-p0-fixture",
+    "version": "1",
+    "sha256": "38f86c62d7189567e3db91d83aad8f78df9a4df1f641f7e29b3ace845e89770a"
+  },
+  "inputs": {
+    "ink_program_sha256": "5d720cb39a1c990e8e4aa03f03df8e37afeabe18aaa4f581970054f422a249dd",
+    "body_state_sha256": "93ff21cbb19fc061f0c97e5556a00fddbfe619c1dcab31e2ab7d42924567be98",
+    "surface_registration_sha256": "e172991374c279676fe2e3541a899b51c48672cf5852eb011f043b0ae0c5e22c",
+    "measured_surface_sha256": "93befe916c6fef5af853976cd7c2c2a8b7ded088b5d530cc0ccdaaf50ab681c9",
+    "tool_datasheet_sha256": "45ec7cab30d3863afa5e5fd5f57f4a2449d4a4d2dc5061c862c5b469ac760ca4",
+    "robot_urdf_sha256": "b0344e1db6b1aac4050a7c3864be8f2c67c5da9c997f3ea9115dcb36e772eb88",
+    "support_configuration_sha256": "5fd0ec323a65c95c7eba0ae6c3e15819bd6443a701576e65c36d960e3c59f69c",
+    "palette_snapshot_sha256": "b66b625d4db814533d1e0557e9604f64faa7a99f603f274f19e9216a1aff76b8",
+    "palette_load_state_sha256": "988d8da7852bf981bdc63fb7cb3742a1c4d50b1dcf3182f5957882c092e5363d",
+    "calibration_sha256": "c94919d7f2ce44ff1d9768c9cde0cc742caccf0147893d8fc1b312e61a09e5ce",
+    "policy_sha256": "386f06c0090d04de4b83085da07c0aa09e935b793c345420597fafca807af7cb"
+  },
+  "preflight": {
+    "mode": "fixture-only",
+    "motion_authorized": false,
+    "observed_cells_only": true,
+    "registration_sigma_m": 0.00001,
+    "surface_sigma_m": 0.00001,
+    "max_surface_age_s": 60
+  },
+  "sample_ranges": [
+    {
+      "ink_event_index": 1,
+      "kind": "stroke",
+      "start": 0,
+      "stop": 2
+    }
+  ],
+  "provenance": {
+    "producer": "human-representation-p0-fixture",
+    "version": "1",
+    "created_utc": "2026-09-04T01:09:37Z",
+    "source_sha256": "484962efd080f9063e17fc1cbd66ae7e2b2e4508bf06166724a719061d438197"
+  }
+}

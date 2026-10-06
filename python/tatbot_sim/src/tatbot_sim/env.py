@@ -45,28 +45,30 @@ from mani_skill.envs.sapien_env import BaseEnv
 from mani_skill.sensors.camera import CameraConfig
 from mani_skill.utils import sapien_utils
 from mani_skill.utils.building.ground import build_ground
-from mani_skill.utils.registration import register_env
 from mani_skill.utils.structs.actor import Actor
 from mani_skill.utils.structs.pose import Pose
 from mani_skill.utils.structs.types import SceneConfig, SimConfig
 from transforms3d.euler import euler2mat, euler2quat
-from transforms3d.quaternions import mat2quat
+from transforms3d.quaternions import mat2quat, quat2mat
 
 from tatbot_sim import capmesh, interaction, tasks, tools
 from tatbot_sim.agent import TatbotWXAI
-from tatbot_sim.config import DRConfig
+from tatbot_sim.calibration import world_from_follower_base
+from tatbot_sim.config import MAX_TOOL_Z_CENTER, PAD_CENTER, DRConfig
 from tatbot_sim.inkfield import InkField, laser_eta
 from tatbot_sim.inkmap.contracts import load_scenario
 from tatbot_sim.inkmap.mesh_patch_surface import MeshPatchSurface
 from tatbot_sim.inkmap.scenario_scene import build_scenario_actors
+from tatbot_sim.resolved import ResolvedConfig, resolve
 from tatbot_sim.surface import (
+    CylinderChart,
     DisplacedSurface,
     PlanarSurface,
     PlaneChart,
-    drape_height_field,
     random_height_field,
 )
 from tatbot_sim.textures import (
+    BAND_SHELL_M,
     TEX_DIR,
     environment_face_sets,
     floor_textures,
@@ -74,19 +76,6 @@ from tatbot_sim.textures import (
     skin_sheets,
     write_surface_mesh,
 )
-from tatbot_sim.urdf import rig_from_follower_base
-
-
-def _quat_mul(a, b):
-    """Hamilton product of two wxyz quaternions (numpy)."""
-    aw, ax, ay, az = a
-    bw, bx, by, bz = b
-    return np.array([
-        aw * bw - ax * bx - ay * by - az * bz,
-        aw * bx + ax * bw + ay * bz - az * by,
-        aw * by - ax * bz + ay * bw + az * bx,
-        aw * bz + ax * by - ay * bx + az * bw,
-    ])
 
 
 def _invert_transform(transform):
@@ -109,8 +98,7 @@ def amcrest_camera_configs(calibration_path, robot_world_path, scale=0.5):
     # The calibration solve uses the dual-arm URDF root. This environment's
     # robot root is the follower base, so include its fixed rig mount before
     # expressing world cameras in the simulated base frame.
-    world_from_rig = np.asarray(robot_world["world_from_base"], dtype=float)
-    world_from_base = world_from_rig @ rig_from_follower_base()
+    world_from_base = world_from_follower_base(bundle, robot_world)
     base_from_world = _invert_transform(world_from_base)
     configs = []
     for name, entry in sorted(bundle["cameras"].items()):
@@ -153,7 +141,53 @@ def _close_rgb(a, b, tol: float = 0.02) -> bool:
     return all(abs(float(x) - float(y)) <= tol for x, y in zip(a[:3], b[:3], strict=False))
 
 
-@register_env("TatbotDraw-v0", max_episode_steps=2000)
+def sample_surface_profiles(rng, count: int, profile: str, radius_m) -> tuple[list[str], np.ndarray]:
+    """Resolve one explicit profile per vectorized environment.
+
+    Balanced means balanced in every batch when there are at least two slots;
+    the odd slot and single-env batches alternate stochastically across scene
+    rebuilds. Flat radii are represented by infinity in the vectorized chart,
+    where infinity is handled exactly as a plane rather than as a huge-radius
+    approximation.
+    """
+    if profile not in ("flat", "cylinder", "balanced"):
+        raise ValueError(
+            f"surface profile must be flat, cylinder, or balanced; got {profile!r}"
+        )
+    lo, hi = (float(radius_m[0]), float(radius_m[1]))
+    if not np.isfinite([lo, hi]).all() or lo <= 0 or hi < lo:
+        raise ValueError(f"cylinder_radius_m must be a positive ordered range, got {radius_m!r}")
+    if profile == "balanced":
+        n_cylinder = count // 2
+        if count % 2 and rng.random() < 0.5:
+            n_cylinder += 1
+        profiles = ["cylinder"] * n_cylinder + ["flat"] * (count - n_cylinder)
+        rng.shuffle(profiles)
+    else:
+        profiles = [profile] * count
+    radii = np.full(count, np.inf, dtype=np.float32)
+    curved = np.asarray([name == "cylinder" for name in profiles])
+    radii[curved] = rng.uniform(lo, hi, int(curved.sum()))
+    return profiles, radii
+
+
+def add_palette_body(builder, scene, material) -> None:
+    """The printed palette and its sticker, in the palette URDF's body frame.
+
+    ``scene`` is a :class:`tatbot_sim.palette.PaletteScene`: the body mesh at
+    the URDF's scale, and the tag where its ``palette_tag`` frame puts it --
+    the in-plane turn included, which is what a camera reads the pose from.
+    """
+    builder.add_visual_from_file(
+        str(tools.REPO / scene.mesh), scale=list(scene.mesh_scale), material=material)
+    if scene.collision_mesh:
+        builder.add_nonconvex_collision_from_file(
+            str(tools.REPO / scene.collision_mesh), scale=list(scene.mesh_scale))
+    builder.add_visual_from_file(
+        str(tools.REPO / scene.tag_mesh),
+        pose=sapien.Pose(p=list(scene.tag_xyz_m), q=euler2quat(*scene.tag_rpy, "sxyz")))
+
+
 class TatbotDrawEnv(BaseEnv):
     """Drawing env for scripted data generation. No reward, no success."""
 
@@ -164,12 +198,13 @@ class TatbotDrawEnv(BaseEnv):
     # forward kinematics on those joint trajectories puts link_6 at
     # (0.288, 0.003, 0.238) with its x-axis straight down, so the arm works
     # directly in front of itself rather than at the rig's design origin.
-    PAD_CENTER = np.array([0.29, 0.0])
+    PAD_CENTER = np.array(PAD_CENTER)
     PAD_TOP_Z = 0.028  # nominal only; per-episode height is randomized
     # Extent and thickness come from the SUBSTRATE the fitted tool works on
-    # (config/substrates.yaml) — a letter pad under the ballpoint, a 140 x 185
-    # silicone skin under the laser and the 3RL. Sizing the geometry and the
-    # texture from one record is what keeps them from drifting apart.
+    # (config/substrates.yaml) — a 7.5 x 11 in gridded pad or an 85 mm paper
+    # cylinder under the ballpoint, a 140 x 185 silicone skin under the laser
+    # and the 3RL. Sizing the geometry and the texture from one record is what
+    # keeps them from drifting apart.
 
     INTERACTION_MODEL = interaction.INTERACTION_MODEL
     CONTACT_ABOVE_TOLERANCE_M = interaction.CONTACT_ABOVE_TOLERANCE_M
@@ -181,7 +216,7 @@ class TatbotDrawEnv(BaseEnv):
     # not degrade, it fails outright; ~0.11 m over the pad centre, with a
     # little margin here). Sampling ranges are trimmed to fit underneath
     # rather than generating poses the arm cannot hold.
-    MAX_TOOL_Z_CENTER = 0.105
+    MAX_TOOL_Z_CENTER = MAX_TOOL_Z_CENTER
 
     def __init__(
         self,
@@ -196,8 +231,20 @@ class TatbotDrawEnv(BaseEnv):
         fiducial_robot_world: str | None = None,
         fiducial_camera_scale: float = 0.5,
         scenario_path: str | None = None,
+        ink_pixels_per_m: int | None = None,
+        sensor_profile: str = 'deployment',
+        config: ResolvedConfig | None = None,
+        presentation_cameras=None,
+        presentation_lighting=None,
+        presentation_surfaces=None,
         **kwargs,
     ):
+        self.presentation_cameras = presentation_cameras
+        self.presentation_lighting = presentation_lighting
+        self.presentation_surfaces = presentation_surfaces
+        self.config = config or resolve(sensor_profile=sensor_profile, dr=dr, scenario_path=scenario_path)
+        self.sensor_profile = self.config.sensor_profile
+        scenario_path = self.config.scenario_path
         self.contact_above_tolerance_m = float(contact_above_tolerance_m)
         self.max_penetration_m = float(max_penetration_m)
         if not 0 <= self.contact_above_tolerance_m <= 0.0005:
@@ -205,14 +252,24 @@ class TatbotDrawEnv(BaseEnv):
         if not 0 <= self.max_penetration_m <= 0.0005:
             raise ValueError("max_penetration_m must be in [0, 0.0005]")
         self.texture_refresh_steps = max(1, int(texture_refresh_steps))
+        if ink_pixels_per_m is not None and not 4000 <= ink_pixels_per_m <= 24000:
+            raise ValueError("ink resolution must be 4000–24000 pixels/m")
+        self.ink_pixels_per_m = ink_pixels_per_m
         # what is in the gripper decides what the tool does to the field
-        self.tool = tools.active_tool()
-        self.substrate = tools.active_substrate()
+        self.tool = self.config.tool
+        self.substrate = self.config.substrate
         # ... and whether it carries ink between dips (scripts/lib/ink_spec.py)
-        self.ink_policy = tools.active_ink_policy()
+        self.ink_policy = self.config.ink_policy
         self.pad_half_x = self.substrate.width_m / 2
         self.pad_half_y = self.substrate.height_m / 2
+        # For a cylinder-shaped substrate this is the DIAMETER: the actor
+        # origin sits a half-thickness below the crest, i.e. on the axis.
         self.pad_thickness = self.substrate.thickness_m
+        self.substrate_is_cylinder = getattr(self.substrate, "shape", "pad") == "cylinder"
+        # The writable sheet on a rigid cylinder is a paper-thin shell over the
+        # textured fixture; extruding it by the diameter would push a second
+        # solid out through the far side of the tube.
+        self.sheet_thickness = BAND_SHELL_M if self.substrate_is_cylinder else self.pad_thickness
         self._tool_kind_warned = False
         self.num_textures = num_textures
         self.fiducial_calibration = fiducial_calibration
@@ -231,22 +288,40 @@ class TatbotDrawEnv(BaseEnv):
                 raise ValueError("scenario robot URDF checksum does not match this checkout")
         # every randomization range lives in the DR tree (tatbot_sim.config);
         # the env carries no tuning literals of its own
-        self.dr = (dr or DRConfig()).resolve_for(self.substrate)
+        self.dr = self.config.dr
         # Where the substrate sits: the DR override when a recipe placed it
         # (see PadDR.center_xy), the class constant otherwise.
         self.pad_center = np.asarray(
             self.dr.pad.center_xy if self.dr.pad.center_xy is not None
             else self.PAD_CENTER, dtype=np.float64)
-        self._rng = np.random.default_rng()
+        self._reset_index = 0
         super().__init__(*args, robot_uids=robot_uids, **kwargs)
+
+    def reset(self, seed=None, options=None):
+        # Scene construction and episode placement have separate streams:
+        # retaining an existing scene must not consume placement randomness.
+        if self._reset_index == 0:
+            # BaseEnv bootstraps with its own fixed seed; construction belongs
+            # to our resolved scene, including clients that retain its assets.
+            seed = self.config.seed
+        elif seed is None:
+            seed = self.config.seed + self._reset_index
+        self._reset_index += 1
+        self.episode_seed = tuple(int(value) for value in np.atleast_1d(seed))
+        token = ",".join(map(str, self.episode_seed))
+        self._rng = np.random.default_rng(self.config.seed_for(f'placement:{token}'))
+        self._scene_rng = np.random.default_rng(self.config.seed_for(f'layout:{token}'))
+        self._lighting_rng = np.random.default_rng(self.config.seed_for(f'lighting:{token}'))
+        self._camera_seed = self.config.seed_for(f'camera:{token}')
+        return super().reset(seed=seed, options=options)
 
     @property
     def _default_sim_config(self):
         # Millimetre-scale contact cannot use the old 10 mm broad-phase offset:
         # it made collision proximity larger than the entire drawing contract.
         return SimConfig(
-            sim_freq=120,
-            control_freq=30,
+            sim_freq=self.config.timing.physics_hz,
+            control_freq=self.config.timing.control_hz,
             scene_config=SceneConfig(
                 contact_offset=self.PHYSICS_CONTACT_OFFSET_M,
                 solver_position_iterations=8,
@@ -256,6 +331,8 @@ class TatbotDrawEnv(BaseEnv):
 
     @property
     def _default_sensor_configs(self):
+        if self.presentation_cameras is not None:
+            return self.presentation_cameras(self)
         if self.fiducial_calibration or self.fiducial_robot_world:
             if not self.fiducial_calibration or not self.fiducial_robot_world:
                 raise ValueError("fiducial calibration and robot-world paths must be supplied together")
@@ -274,11 +351,10 @@ class TatbotDrawEnv(BaseEnv):
         )
 
     def _load_agent(self, options: dict):
-        # camera mounting tolerance: the agent reads these when it builds its
-        # sensors, redrawing the jitter at every scene build
-        TatbotWXAI.CAM_JITTER_POS_M = self.dr.camera.mount_jitter_mm / 1000.0
-        TatbotWXAI.CAM_JITTER_ROT_RAD = float(np.radians(self.dr.camera.mount_jitter_deg))
-        super()._load_agent(options, sapien.Pose())
+        self.agent = TatbotWXAI(
+            self.scene, self._control_freq, self._control_mode,
+            initial_pose=sapien.Pose(), config=self.config, camera_seed=self._camera_seed,
+        )
         self._polish_ee_materials()
 
     def _polish_ee_materials(self):
@@ -332,12 +408,17 @@ class TatbotDrawEnv(BaseEnv):
         environment map's image-based ambience stacked on top: the first cut
         blew ~1/3 of frames to pure white, and a sheet with an invisible
         ruling has no stencil to trace."""
+        self.lighting_sample = {"mode": "presentation" if self.presentation_lighting else "default"}
+        if self.presentation_lighting is not None:
+            return self.presentation_lighting(self, options)
         if not self.dr.lighting.enabled:
             return super()._load_lighting(options)
-        rng = self._rng
+        rng = self._lighting_rng
         lighting = self.dr.lighting
         amb = rng.uniform(*lighting.ambient)
-        self.scene.set_ambient_light([amb, amb, amb * rng.uniform(0.9, 1.1)])
+        ambient = [amb, amb, amb * rng.uniform(0.9, 1.1)]
+        self.scene.set_ambient_light(ambient)
+        self.lighting_sample = {"mode": "randomized", "ambient": ambient, "lights": []}
 
         def tint(level):
             warmth = rng.uniform(-lighting.warmth, lighting.warmth)
@@ -355,40 +436,48 @@ class TatbotDrawEnv(BaseEnv):
                 direction = [rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(-1.0, -0.2)]
                 shadow = shadow_left > 0
                 shadow_left -= shadow
+                color = tint(rng.uniform(*lighting.directional_level))
+                self.lighting_sample["lights"].append({"env": i, "type": "directional", "direction": direction, "color": color, "shadow": bool(shadow and self.enable_shadow)})
                 self.scene.add_directional_light(
-                    direction, tint(rng.uniform(*lighting.directional_level)),
+                    direction, color,
                     shadow=shadow and self.enable_shadow,
                     shadow_scale=5, shadow_map_size=2048, scene_idxs=idxs,
                 )
             for _ in range(n_point):
                 pos = [0.29 + rng.uniform(-0.6, 0.6), rng.uniform(-0.7, 0.7), rng.uniform(0.25, 1.0)]
+                color = tint(rng.uniform(*lighting.point_level))
+                self.lighting_sample["lights"].append({"env": i, "type": "point", "position": pos, "color": color})
                 self.scene.add_point_light(
-                    pos, tint(rng.uniform(*lighting.point_level)), scene_idxs=idxs
+                    pos, color, scene_idxs=idxs
                 )
             for _ in range(n_spot):
                 pos = [0.29 + rng.uniform(-0.5, 0.5), rng.uniform(-0.6, 0.6), rng.uniform(0.4, 1.1)]
                 aim = np.array([0.29 + rng.uniform(-0.15, 0.15), rng.uniform(-0.15, 0.15), 0.0])
                 d = aim - np.array(pos)
                 inner = rng.uniform(0.2, 0.7)
+                direction = (d / np.linalg.norm(d)).tolist()
+                outer = inner + rng.uniform(0.1, 0.6)
+                color = tint(rng.uniform(*lighting.spot_level))
+                self.lighting_sample["lights"].append({"env": i, "type": "spot", "position": pos, "direction": direction, "inner": inner, "outer": outer, "color": color})
                 self.scene.add_spot_light(
-                    pos, (d / np.linalg.norm(d)).tolist(), inner,
-                    inner + rng.uniform(0.1, 0.6), tint(rng.uniform(*lighting.spot_level)),
+                    pos, direction, inner, outer, color,
                     scene_idxs=idxs,
                 )
 
     def _load_scene(self, options: dict):
-        rng = self._rng
+        self.scene_seed = self.episode_seed
+        rng = self._scene_rng
         if self.dr.background.enabled:
             # a procedural cube map per env: image-based ambience plus a
             # non-void background wherever no geometry covers the frame
-            env_sets = environment_face_sets(max(self.num_textures, 8))
+            env_sets = (self.presentation_surfaces[1] if self.presentation_surfaces else environment_face_sets)(max(self.num_textures, 8))
             for sub in self.scene.sub_scenes:
                 sub.set_environment_map_from_files(
                     *env_sets[int(rng.integers(len(env_sets)))]
                 )
             # per-env floor: visual-only textured slab (nothing collides with
             # the ground; the arm base is fixed and pad/dots are kinematic)
-            floors = floor_textures(max(self.num_textures, 8))
+            floors = (self.presentation_surfaces[0] if self.presentation_surfaces else floor_textures)(max(self.num_textures, 8))
             for env_idx in range(self.num_envs):
                 fb = self.scene.create_actor_builder()
                 fmat = sapien.render.RenderMaterial(
@@ -412,7 +501,7 @@ class TatbotDrawEnv(BaseEnv):
         # here has to know which surface it is laying strokes on.
         if self.substrate.ruled:
             sheets = grid_paper_sheets(
-                self.num_textures,
+                self.num_textures, self.substrate,
                 wear_variants=self.dr.sheet.variants if self.dr.sheet.enabled else 0,
             )
         else:
@@ -423,11 +512,31 @@ class TatbotDrawEnv(BaseEnv):
         # all six faces and cannot carry it (see textures.py) — and each env
         # remembers its sheet's line geometry so strokes can trace the ruling.
         self.pad_sheets: list[dict] = []
-        self.pad_height = self._sample_skin_shape(rng)
+        self.surface_profiles, self.surface_radius_m = sample_surface_profiles(
+            rng, self.num_envs, self.dr.surface.profile, self.dr.surface.cylinder_radius_m
+        )
+        self.surface_height = self._sample_surface_height(rng)
+        self.surface_has_contact_collision = bool(
+            self.tool.contact
+            and self.tool.contact_radius_m is not None
+            and self.surface_height is None
+            and all(profile == "flat" for profile in self.surface_profiles)
+        )
         pad_actors = []
+        fixture_actors = []
         for env_idx in range(self.num_envs):
             sheet = sheets[int(rng.integers(len(sheets)))]
             self.pad_sheets.append(sheet)
+            if self.substrate_is_cylinder:
+                # The rigid tube under the band: its own kinematic actor, so the
+                # band's writable texture stays the pad's only textured shape
+                # (_bind_sheet_textures binds the first one it finds). It is
+                # posed with the pad every reset; both share the axis origin.
+                fixture = self.scene.create_actor_builder()
+                fixture.add_visual_from_file(sheet["fixture_obj"])
+                fixture.set_scene_idxs([env_idx])
+                fixture.initial_pose = sapien.Pose(p=[*self.pad_center, self.PAD_TOP_Z])
+                fixture_actors.append(fixture.build_kinematic(name=f"fixture_{env_idx}"))
             builder = self.scene.create_actor_builder()
             tint = rng.uniform(0.82, 1.0)
             mat = sapien.render.RenderMaterial(
@@ -435,15 +544,15 @@ class TatbotDrawEnv(BaseEnv):
                 roughness=float(rng.uniform(0.55, 0.95)),
                 specular=float(rng.uniform(0.02, 0.25)),
             )
-            # A shaped substrate is ONE solid: its own top, rim and underside.
-            # A flat box body under a 25 mm mound would show through it, and
-            # modelling a pad beneath is more scene than the shape is worth.
-            if self.pad_height is None:
+            # A curved or displaced substrate is one solid: top, rim and
+            # underside. A flat profile retains the cheaper box and UV quad.
+            shaped = self.surface_profiles[env_idx] == "cylinder" or self.surface_height is not None
+            if not shaped:
                 builder.add_box_visual(
                     half_size=[self.pad_half_x, self.pad_half_y, self.pad_thickness / 2],
                     material=mat,
                 )
-                if self.tool.contact and self.tool.contact_radius_m is not None:
+                if self.surface_has_contact_collision:
                     builder.add_box_collision(
                         half_size=[self.pad_half_x, self.pad_half_y, self.pad_thickness / 2],
                     )
@@ -455,70 +564,9 @@ class TatbotDrawEnv(BaseEnv):
             builder.initial_pose = sapien.Pose(p=[*self.pad_center, self.PAD_TOP_Z])
             pad_actors.append(builder.build_kinematic(name=f"pad_{env_idx}"))
         self.pad = Actor.merge(pad_actors, name="pad")
+        self.fixture = Actor.merge(fixture_actors, name="fixture") if fixture_actors else None
         self._load_palette(rng)
         self._bind_sheet_textures(pad_actors)
-
-        # The table under the pad. Without it the depth cameras see a 20 cm
-        # cliff past the sheet edges where the real scene has a surface about
-        # a centimetre below the paper — exactly the range band the depth
-        # plan cares about. One slab per env, random extent and texture; the
-        # pad lies flush on it (same tilt), repositioned every episode.
-        tables = floor_textures(max(self.num_textures, 8))
-        self.table_half = np.zeros((self.num_envs, 3), dtype=np.float32)
-        table_actors = []
-        for env_idx in range(self.num_envs):
-            hx = float(rng.uniform(*self.dr.background.table_half_x))
-            hy = float(rng.uniform(*self.dr.background.table_half_y))
-            hz = float(rng.uniform(*self.dr.background.table_half_z))
-            self.table_half[env_idx] = (hx, hy, hz)
-            tb = self.scene.create_actor_builder()
-            tmat = sapien.render.RenderMaterial(
-                base_color=[1, 1, 1, 1],
-                roughness=float(rng.uniform(0.25, 0.9)),
-                specular=float(rng.uniform(0.0, 0.6)),
-            )
-            tmat.set_base_color_texture(sapien.render.RenderTexture2D(
-                tables[int(rng.integers(len(tables)))]))
-            tb.add_box_visual(half_size=[hx, hy, hz], material=tmat)
-            tb.set_scene_idxs([env_idx])
-            tb.initial_pose = sapien.Pose(p=[*self.pad_center, self.PAD_TOP_Z - 0.05])
-            table_actors.append(tb.build_kinematic(name=f"table_{env_idx}"))
-        self.table = Actor.merge(table_actors, name="table")
-
-        # Clutter: distractor objects on the table around the pad. Shapes and
-        # colours redraw per build; poses are set per episode (they sit on the
-        # table's top face, clear of the pad). Visual-only — no collision —
-        # so they can never foul the arm, but they show in RGB and depth.
-        clutter_cfg = self.dr.clutter
-        self.clutter: list[list] = []
-        for env_idx in range(self.num_envs):
-            objs = []
-            n_obj = (
-                int(rng.integers(0, clutter_cfg.max_objects + 1))
-                if clutter_cfg.enabled
-                else 0
-            )
-            for k in range(n_obj):
-                cb = self.scene.create_actor_builder()
-                cmat = sapien.render.RenderMaterial(
-                    base_color=[*rng.uniform(0.05, 0.95, 3), 1.0],
-                    roughness=float(rng.uniform(0.2, 0.95)),
-                    metallic=float(rng.uniform(0.0, 0.6)),
-                )
-                if rng.random() < 0.5:
-                    hs = rng.uniform(clutter_cfg.half_size[0], clutter_cfg.half_size[1], 3)
-                    hs[2] = min(hs[2], 0.035)
-                    cb.add_box_visual(half_size=hs.tolist(), material=cmat)
-                    half_z, ext = float(hs[2]), float(np.hypot(hs[0], hs[1]))
-                else:  # a lying cylinder (pen, tape roll, marker...)
-                    r = float(rng.uniform(clutter_cfg.half_size[0], 0.02))
-                    hl = float(rng.uniform(0.015, 0.06))
-                    cb.add_cylinder_visual(radius=r, half_length=hl, material=cmat)
-                    half_z, ext = r, hl
-                cb.set_scene_idxs([env_idx])
-                cb.initial_pose = sapien.Pose(p=[0, 0, -3.0 - k])
-                objs.append((cb.build_kinematic(name=f"clutter_{env_idx}_{k}"), half_z, ext))
-            self.clutter.append(objs)
 
         # Ink and laser appearance, redrawn per build. Unlike the dot pool
         # these are PER ENV — a field costs nothing to vary env-to-env, where
@@ -527,6 +575,14 @@ class TatbotDrawEnv(BaseEnv):
 
     def _configure_ink_field(self, rng):
         ink = self.dr.ink
+        radius_range = ink.radius_m
+        if self.body_scenario and self.body_scenario.get("schema_version") == 3:
+            widths = {round(float(event["curve"]["width_m"]), 12)
+                      for event in self.body_scenario["program_binding"]["ink_program"]["events"]
+                      if event["kind"] == "stroke"}
+            if len(widths) != 1:
+                raise ValueError("typed episode requires one declared footprint width; mixed widths need per-stroke deposition")
+            radius_range = (next(iter(widths)) / 2,) * 2
         lvl = rng.uniform(*ink.level, size=self.num_envs)
         ink_rgb = torch.as_tensor(
             np.stack([lvl, lvl, np.minimum(1.0, lvl * 1.3)], axis=1), dtype=torch.float32
@@ -539,7 +595,7 @@ class TatbotDrawEnv(BaseEnv):
         ).to(self.device)
         self._field_build = {
             "pen_radius_m": torch.as_tensor(
-                rng.uniform(*ink.radius_m, size=self.num_envs), dtype=torch.float32
+                rng.uniform(*radius_range, size=self.num_envs), dtype=torch.float32
             ),
             "laser_radius_m": torch.as_tensor(
                 rng.uniform(*self.dr.laser.spot_radius_m, size=self.num_envs),
@@ -548,31 +604,39 @@ class TatbotDrawEnv(BaseEnv):
             "ink_rgb": ink_rgb,
         }
         self.ink_field = None  # built with the surface, at episode init
+        self._robot_anchor_pose = sapien.Pose()
 
     def _load_body_scene(self, rng):
-        """Scenario branch: full posed visual, local ink patch, proxies, support."""
+        """Scenario branch: full posed visual, local ink patch, and body proxies."""
         if self.body_scenario is None:
             raise RuntimeError("_load_body_scene requires self.body_scenario to be set")
         sheets = skin_sheets(self.num_textures, self.substrate)
         self.pad_sheets = [sheets[int(rng.integers(len(sheets)))] for _ in range(self.num_envs)]
-        bodies, patches, supports, geometry = build_scenario_actors(
+        bodies, patches, geometry = build_scenario_actors(
             self.scene, self.body_scenario, self.num_envs,
         )
         self.body_actor = Actor.merge(bodies, name="posed_body")
         self.pad = Actor.merge(patches, name="tattoo_patch")
-        self.table = Actor.merge(supports, name="body_support")
+        self.fixture = None
         self._scenario_geometry = geometry
-        self.pad_height = None
-        self.table_half = np.zeros((self.num_envs, 3), dtype=np.float32)
-        self.clutter = [[] for _ in range(self.num_envs)]
+        self.surface_height = None
+        self.surface_profiles = ["body_mesh"] * self.num_envs
+        self.surface_radius_m = np.full(self.num_envs, np.nan, dtype=np.float32)
+        self.surface_has_contact_collision = False
         self._load_palette(rng)
         self._bind_sheet_textures(
             patches,
             texture_size=(geometry.surface.cols, geometry.surface.rows),
+            base_rgba=geometry.blank_skin_rgba if geometry.target is not None else None,
         )
         self._configure_ink_field(rng)
 
-    def _bind_sheet_textures(self, pad_actors, texture_size: tuple[int, int] | None = None):
+    def _bind_sheet_textures(
+        self,
+        pad_actors,
+        texture_size: tuple[int, int] | None = None,
+        base_rgba: np.ndarray | None = None,
+    ):
         """Give each pad a WRITABLE copy of its sheet texture.
 
         The quad loaded from the sheet OBJ is the pad's only textured render
@@ -587,6 +651,8 @@ class TatbotDrawEnv(BaseEnv):
         rigid-body components behind ``links_map`` in _polish_ee_materials.
         """
         self._sheet_tex = []
+        if texture_size is None and self.ink_pixels_per_m is not None:
+            texture_size = self._sheet_dims()[2:]
         bases = []
         for env_idx, actor in enumerate(pad_actors):
             entity = actor._objs[0]
@@ -602,22 +668,35 @@ class TatbotDrawEnv(BaseEnv):
             )
             if material is None:
                 raise RuntimeError(f"pad {env_idx} has no textured sheet quad")
-            bgr = cv2.imread(self.pad_sheets[env_idx]["png"])
-            if texture_size is not None:
-                bgr = cv2.resize(bgr, texture_size, interpolation=cv2.INTER_AREA)
-            rgba = np.ascontiguousarray(
-                np.concatenate(
-                    [bgr[..., ::-1], np.full(bgr.shape[:2] + (1,), 255, np.uint8)], axis=-1
+            if base_rgba is None:
+                bgr = cv2.imread(self.pad_sheets[env_idx]["png"])
+                if texture_size is not None:
+                    bgr = cv2.resize(bgr, texture_size, interpolation=cv2.INTER_AREA)
+                rgba = np.ascontiguousarray(
+                    np.concatenate(
+                        [bgr[..., ::-1], np.full(bgr.shape[:2] + (1,), 255, np.uint8)], axis=-1
+                    )
                 )
-            )
+            else:
+                size = texture_size or (int(base_rgba.shape[1]), int(base_rgba.shape[0]))
+                rgba = np.ascontiguousarray(cv2.resize(base_rgba, size, interpolation=cv2.INTER_NEAREST))
+            # ``edge`` rather than SAPIEN's default ``repeat``: the body patch
+            # mesh reaches past the field's raster (its UVs leave [0, 1]), and
+            # a repeating texture stamped the drawn design across the whole
+            # limb in every wrist camera (seen 2026-09-03). Paper and pad
+            # quads sit inside [0, 1], so the mode changes nothing there.
             tex = sapien.render.RenderTexture2D(
-                array=rgba, format="R8G8B8A8Unorm", srgb=True
+                array=rgba, format="R8G8B8A8Unorm", srgb=True, address_mode="edge",
             )
             material.set_base_color_texture(tex)
             self._sheet_tex.append(tex)
             bases.append(rgba[..., :3].astype(np.float32) / 255.0)
         # the paper the field composites over, kept on device
         self._sheet_base = torch.as_tensor(np.stack(bases), dtype=torch.float32).to(self.device)
+        self._sheet_rgba = None
+        self._stencil_base = None
+        self._stencil_coverage = None
+        self._stencil_fraction = np.zeros(self.num_envs, dtype=np.float32)
 
     def _refresh_sheet_textures(self, force: bool = False):
         """Upload the composited sheet for every env whose field moved.
@@ -630,11 +709,94 @@ class TatbotDrawEnv(BaseEnv):
         dirty = self.ink_field.dirty
         if not force and not bool(dirty.any()):
             return
-        rgba = self.ink_field.composite_rgba(self._sheet_base).cpu().numpy()
+        base = self._stencil_base if self._stencil_base is not None else self._sheet_base
+        self._update_sheet_composite(base, force)
         for env_idx, tex in enumerate(self._sheet_tex):
             if force or bool(dirty[env_idx]):
-                tex.upload(np.ascontiguousarray(rgba[env_idx]))
+                tex.upload(np.ascontiguousarray(self._sheet_rgba[env_idx]))
         self.ink_field.dirty.zero_()
+
+    def _update_sheet_composite(self, base, force):
+        """Keep the full byte image; recompute exactly the changed pigment rows."""
+        ink = self.ink_field.ink_rgb
+        # Inference tensors have no mutation counter. Preserve full blending
+        # for those callers rather than trusting a cache that cannot be checked.
+        untracked = torch.is_inference(base) or torch.is_inference(ink)
+        key = None if untracked else (id(base), base._version, id(ink), ink._version)
+        if force or untracked or self._sheet_rgba is None or self._sheet_composite_key != key:
+            self._sheet_rgba = self.ink_field.composite_rgba(base).cpu().numpy()
+            self._sheet_ink = self.ink_field.field.clone()
+            self._sheet_composite_key = key
+            # Retain the tensors so replacing a source cannot recycle its id.
+            self._sheet_composite_sources = (base, ink)
+            return
+        for env_idx in range(self.num_envs):
+            if bool(self.ink_field.dirty[env_idx]):
+                self._composite_changed_rows(base, env_idx)
+
+    def _composite_changed_rows(self, base, env_idx):
+        current = self.ink_field.field[env_idx]
+        previous = self._sheet_ink[env_idx]
+        rows = (current != previous).any(dim=1).nonzero().flatten()
+        if rows.numel() == 0:
+            return
+        first, last = rows[[0, -1]].cpu().tolist()
+        band = slice(first, last + 1)
+        region = (slice(env_idx, env_idx + 1), band, slice(None))
+        rgba = self.ink_field.composite_rgba(base, region=region).cpu().numpy()[0]
+        self._sheet_rgba[env_idx, band] = rgba
+        previous[band].copy_(current[band])
+
+    def set_stencil(self, coverage=None):
+        """Render a transfer stencil below pigment without changing InkField.
+
+        The blue-violet guide is appearance only. Its soft coverage remains a
+        separate privileged label and never counts as deposited ink.
+        """
+        if coverage is None:
+            self._stencil_base = None
+            self._stencil_coverage = None
+            self._stencil_fraction = np.zeros(self.num_envs, dtype=np.float32)
+        else:
+            stencil = torch.as_tensor(coverage, dtype=torch.float32, device=self.device)
+            if stencil.shape != self._sheet_base.shape[:3]:
+                raise ValueError(
+                    f"stencil shape {tuple(stencil.shape)} differs from sheet {tuple(self._sheet_base.shape[:3])}"
+                )
+            stencil = stencil.clamp(0, 1)
+            alpha = (0.24 * stencil).unsqueeze(-1)
+            color = torch.tensor([0.18, 0.30, 0.78], dtype=torch.float32, device=self.device)
+            self._stencil_base = self._sheet_base * (1 - alpha) + color * alpha
+            self._stencil_coverage = stencil
+            self._stencil_fraction = stencil.mean(dim=(1, 2)).detach().cpu().numpy()
+        if self.ink_field is not None:
+            self.ink_field.dirty[:] = True
+            self._refresh_sheet_textures(force=True)
+
+    @property
+    def stencil_fraction(self) -> np.ndarray:
+        """Stencil area as a fraction of the sheet; constant for the episode."""
+        return self._stencil_fraction.copy()
+
+    def stencil_visible_fraction(self, deposited=None) -> np.ndarray:
+        """Stencil still showing after pigment covers it: mean(stencil x (1 - ink)).
+
+        Falls as the drawing progresses, so it is the per-step label; the
+        constant guide area is ``stencil_fraction``.
+        """
+        if self._stencil_coverage is None:
+            return np.zeros(self.num_envs, dtype=np.float32)
+        if deposited is None:
+            if self.ink_field is None:
+                raise RuntimeError("ink_field is unavailable for the stencil visibility label")
+            deposited = self.ink_field.field
+        deposited = torch.as_tensor(deposited, dtype=torch.float32, device=self.device).clamp(0, 1)
+        if deposited.shape != self._stencil_coverage.shape:
+            raise ValueError(
+                f"deposited shape {tuple(deposited.shape)} differs from stencil {tuple(self._stencil_coverage.shape)}"
+            )
+        visible = self._stencil_coverage * (1 - deposited)
+        return visible.mean(dim=(1, 2)).detach().cpu().numpy().astype(np.float32)
 
     def preink(self, strokes_per_env):
         """Open the episode on a sheet that already carries these strokes.
@@ -650,6 +812,35 @@ class TatbotDrawEnv(BaseEnv):
             )
         self.ink_field.rasterize(self.surface, strokes_per_env, self.ink_opacity)
         self._refresh_sheet_textures(force=True)
+
+    def _surface_pose(self, b):
+        fixed = self.config.surface_pose
+        if fixed is not None:
+            center = torch.tensor(fixed.position_m, dtype=torch.float32).repeat(b, 1)
+            rotation = torch.tensor(quat2mat(fixed.quaternion_wxyz), dtype=torch.float32).repeat(b, 1, 1)
+            quaternion = torch.tensor(fixed.quaternion_wxyz, dtype=torch.float32).repeat(b, 1)
+            return center, rotation, quaternion
+        pad_cfg = self.dr.pad
+        xy = torch.rand(b, 2) * 2 * pad_cfg.xy_range - pad_cfg.xy_range
+        yaw = torch.rand(b) * 2 * pad_cfg.yaw_range - pad_cfg.yaw_range
+        z_range = pad_cfg.z_range or tuple(self.substrate.rest_z_m)
+        lo, hi = z_range
+        top_z = torch.rand(b) * (hi - lo) + lo
+        # A few degrees of roll and pitch: the surface is a plane, not a
+        # height. Rotation order Rz(yaw) @ Ry(pitch) @ Rx(roll).
+        roll = torch.rand(b) * 2 * pad_cfg.tilt_range - pad_cfg.tilt_range
+        pitch = torch.rand(b) * 2 * pad_cfg.tilt_range - pad_cfg.tilt_range
+        rot = np.zeros((b, 3, 3), dtype=np.float32)
+        quat = np.zeros((b, 4), dtype=np.float32)
+        for i in range(b):
+            rot[i] = euler2mat(float(roll[i]), float(pitch[i]), float(yaw[i]), "sxyz")
+            quat[i] = euler2quat(float(roll[i]), float(pitch[i]), float(yaw[i]), "sxyz")
+        rot_t = torch.as_tensor(rot)
+        top_center = torch.zeros(b, 3)
+        top_center[:, 0] = self.pad_center[0] + xy[:, 0]
+        top_center[:, 1] = self.pad_center[1] + xy[:, 1]
+        top_center[:, 2] = top_z
+        return top_center, rot_t, torch.as_tensor(quat)
 
     def _initialize_episode(self, env_idx: torch.Tensor, options: dict):
         # NOTE: like the upstream drawing envs, partial resets are unsupported
@@ -672,81 +863,20 @@ class TatbotDrawEnv(BaseEnv):
             )
             self.agent.robot.set_qpos(qpos)
             self.agent.robot.set_pose(sapien.Pose())
+            self._robot_anchor_pose = sapien.Pose()
 
-            pad_cfg = self.dr.pad
-            xy = torch.rand(b, 2) * 2 * pad_cfg.xy_range - pad_cfg.xy_range
-            yaw = torch.rand(b) * 2 * pad_cfg.yaw_range - pad_cfg.yaw_range
-            z_range = pad_cfg.z_range or tuple(self.substrate.rest_z_m)
-            lo, hi = z_range
-            top_z = torch.rand(b) * (hi - lo) + lo
-            # A few degrees of roll and pitch: the surface is a plane, not a
-            # height. Rotation order Rz(yaw) @ Ry(pitch) @ Rx(roll).
-            roll = torch.rand(b) * 2 * pad_cfg.tilt_range - pad_cfg.tilt_range
-            pitch = torch.rand(b) * 2 * pad_cfg.tilt_range - pad_cfg.tilt_range
-            rot = np.zeros((b, 3, 3), dtype=np.float32)
-            quat = np.zeros((b, 4), dtype=np.float32)
-            for i in range(b):
-                rot[i] = euler2mat(float(roll[i]), float(pitch[i]), float(yaw[i]), "sxyz")
-                quat[i] = euler2quat(float(roll[i]), float(pitch[i]), float(yaw[i]), "sxyz")
-            rot_t = torch.as_tensor(rot)
-            top_center = torch.zeros(b, 3)
-            top_center[:, 0] = self.pad_center[0] + xy[:, 0]
-            top_center[:, 1] = self.pad_center[1] + xy[:, 1]
-            top_center[:, 2] = top_z
+            top_center, rot_t, quat = self._surface_pose(b)
             # box centre sits half a thickness below the top face, along the normal
             p = top_center - rot_t[:, :, 2] * (self.pad_thickness / 2)
             self.pad_pose = Pose.create_from_pq(p, torch.as_tensor(quat))
             self.pad.set_pose(self.pad_pose)
+            if self.fixture is not None:
+                self.fixture.set_pose(self.pad_pose)
 
-            # table flush under the pad, sharing its tilt; the pad lands at a
-            # random spot on it (kept fully on the slab)
-            th = torch.as_tensor(self.table_half)
-            max_dx = (th[:, 0] - self.pad_half_x - 0.02).clamp(min=0.0)
-            max_dy = (th[:, 1] - self.pad_half_y - 0.02).clamp(min=0.0)
-            dx = (torch.rand(b) * 2 - 1) * max_dx
-            dy = (torch.rand(b) * 2 - 1) * max_dy
-            offset = (
-                rot_t[:, :, 0] * dx.unsqueeze(1)
-                + rot_t[:, :, 1] * dy.unsqueeze(1)
-                - rot_t[:, :, 2] * (self.pad_thickness + th[:, 2]).unsqueeze(1)
-            )
-            self.table.set_pose(Pose.create_from_pq(top_center + offset, torch.as_tensor(quat)))
             self.pad_top_center = top_center  # (B, 3) top-face centre
             self._place_palette(b)
             self._reset_ink(b)
             self.pad_rot = rot_t  # (B, 3, 3) canvas frame; column 2 is the normal
-
-            # scatter each env's clutter on its table top, clear of the pad.
-            # The pad sits at (-dx, -dy) in the table-top frame; objects
-            # rejection-sample outside its footprint plus a margin, and an
-            # object that finds no spot on a small table stays parked below.
-            rng = self._rng
-            tc_np, rot_np = top_center.cpu().numpy(), rot
-            th_np = self.table_half
-            dxy = np.stack([dx.cpu().numpy(), dy.cpu().numpy()], axis=1)
-            for i in range(b):
-                # table top face centre = pad top - pad thickness, offset by dxy
-                face = tc_np[i] + rot_np[i] @ np.array(
-                    [dxy[i, 0], dxy[i, 1], -self.pad_thickness], dtype=np.float32
-                )
-                for actor, half_z, ext in self.clutter[i]:
-                    placed = False
-                    for _ in range(20):
-                        cx = rng.uniform(-1, 1) * max(th_np[i, 0] - ext - 0.01, 0.0)
-                        cy = rng.uniform(-1, 1) * max(th_np[i, 1] - ext - 0.01, 0.0)
-                        # pad centre sits at -(dx, dy) in the table frame
-                        px, py = cx + dxy[i, 0], cy + dxy[i, 1]
-                        if (abs(px) < self.pad_half_x + ext + 0.02
-                                and abs(py) < self.pad_half_y + ext + 0.02):
-                            continue
-                        p = face + rot_np[i] @ np.array([cx, cy, half_z], dtype=np.float32)
-                        yaw_q = euler2quat(0, 0, rng.uniform(0, 2 * np.pi))
-                        actor.set_pose(sapien.Pose(p=p.tolist(),
-                                                   q=_quat_mul(quat[i], yaw_q).tolist()))
-                        placed = True
-                        break
-                    if not placed:
-                        actor.set_pose(sapien.Pose(p=[0, 0, -3.0]))
 
         # The canvas moved, so the surface is rebuilt and the sheet starts
         # bare. Both live outside the torch.device block: they hold their own
@@ -770,6 +900,7 @@ class TatbotDrawEnv(BaseEnv):
             qpos = torch.from_numpy(self.agent.keyframes["rest"].qpos).float().to(self.device).repeat(b, 1)
             self.agent.robot.set_qpos(qpos)
             self.agent.robot.set_pose(sapien.Pose())
+            self._robot_anchor_pose = sapien.Pose()
             base = self._scenario_geometry.surface
             self.surface = MeshPatchSurface(
                 [base.patches[0]] * b,
@@ -800,39 +931,19 @@ class TatbotDrawEnv(BaseEnv):
             self.ink_field.reset()
         self._refresh_sheet_textures(force=True)
 
-    def _sample_skin_shape(self, rng):
-        """Per-env displacement grid, (B, rows, cols) metres, or None when flat.
+    def _sample_surface_height(self, rng):
+        """Optional per-env displacement over the flat/cylinder base profile.
 
         Drawn at scene build because the shape is baked into the sheet mesh —
-        see SurfaceDR. Returns None rather than a grid of zeros so the flat
-        path keeps the cheaper PlanarSurface and stays bit-for-bit what it was.
+        see SurfaceDR. Returns None rather than a grid of zeros so an ordinary
+        flat profile keeps the cheaper PlanarSurface path.
         """
         cfg = self.dr.surface
-        draped = self.substrate.shape == "draped"
-        if not (cfg.enabled or draped):
+        if not cfg.enabled:
             return None
-        if cfg.chart != "plane":
-            raise NotImplementedError(
-                f"surface chart {cfg.chart!r}: the geometry supports it but the pad body is "
-                "still a flat box, so the picture and the model would disagree"
-            )
         cols = int(cfg.grid_cols)
         rows = int(round(cols * self.substrate.height_m / self.substrate.width_m)) | 1
         n = self.num_envs
-        if draped:
-            # One broad rise, centred on the mound the skin actually has. The
-            # summit is a measured fact; what varies is how the skin sits on
-            # its pad from session to session.
-            peak_scale = cfg.peak_scale or tuple(self.substrate.peak_scale)
-            return drape_height_field(
-                rng, n, rows, cols,
-                peak_m=self.substrate.mound_peak_m * rng.uniform(*peak_scale, n),
-                radius_u_m=rng.uniform(*cfg.radius_u_m, n),
-                radius_v_m=rng.uniform(*cfg.radius_v_m, n),
-                center_u_m=rng.uniform(-cfg.center_jitter_m, cfg.center_jitter_m, n),
-                center_v_m=rng.uniform(-cfg.center_jitter_m, cfg.center_jitter_m, n),
-                width_m=self.substrate.width_m, height_m=self.substrate.height_m,
-            )
         feature_m = cfg.feature_m or tuple(self.substrate.surface_feature_m)
         max_slope_rad = cfg.max_slope_rad or tuple(self.substrate.surface_max_slope_rad)
         amplitude_m = cfg.amplitude_m or tuple(self.substrate.surface_amplitude_m)
@@ -854,37 +965,71 @@ class TatbotDrawEnv(BaseEnv):
         and the tool orientation are computed from. Deriving the picture
         separately from a height formula is exactly how the two would drift.
         """
-        if self.pad_height is None:
+        profile = self.surface_profiles[env_idx]
+        if profile == "flat" and self.surface_height is None:
             return sheet["obj"]
-        rows, cols = self.pad_height.shape[1:]
+        if self.surface_height is None:
+            cols = int(self.dr.surface.grid_cols)
+            rows = int(round(cols * self.substrate.height_m / self.substrate.width_m)) | 1
+            height = torch.zeros(1, rows, cols)
+        else:
+            rows, cols = self.surface_height.shape[1:]
+            height = self.surface_height[env_idx][None]
+        center = torch.zeros(1, 3)
+        rot = torch.eye(3)[None]
+        chart = (
+            PlaneChart(center, rot)
+            if profile == "flat"
+            else CylinderChart(
+                center,
+                rot,
+                torch.tensor([float(self.surface_radius_m[env_idx])]),
+                self.dr.surface.cylinder_axis,
+            )
+        )
         local = DisplacedSurface(
-            PlaneChart(torch.zeros(1, 3), torch.eye(3)[None]), self.pad_height[env_idx][None],
-            *self._sheet_dims(),
+            chart, height, *self._sheet_dims(),
         )
         us = torch.linspace(-self.pad_half_x, self.pad_half_x, cols)
         vs = torch.linspace(-self.pad_half_y, self.pad_half_y, rows)
         vv, uu = torch.meshgrid(vs, us, indexing="ij")
         uv = torch.stack([uu.reshape(-1), vv.reshape(-1)], dim=-1)
         point, _, _, normal = local.env_view(0, uv.shape[0]).frame(uv)
-        stem = Path(sheet["obj"]).with_name(f"shaped_{self.substrate.name}_{env_idx:02d}")
+        stem = Path(sheet["obj"]).with_name(
+            f"profile_{profile}_{self.substrate.name}_{env_idx:02d}"
+        )
         return write_surface_mesh(
             stem, Path(sheet["obj"]).stem,
             point.cpu().numpy(), normal.cpu().numpy(), rows, cols,
-            thickness_m=self.pad_thickness,
+            thickness_m=self.sheet_thickness,
         )
 
     def _sheet_dims(self):
         """The substrate's extent and texture resolution, as Surface takes them."""
         sub = self.substrate
-        return sub.width_m, sub.height_m, sub.texel_cols, sub.texel_rows
+        ppm = self.ink_pixels_per_m or 0
+        return (sub.width_m, sub.height_m, max(sub.texel_cols, int(np.ceil(sub.width_m * ppm))),
+                max(sub.texel_rows, int(np.ceil(sub.height_m * ppm))))
 
     def _build_surface(self):
         center = self.pad_top_center.to(self.device)
         rot = self.pad_rot.to(self.device)
         dims = self._sheet_dims()
-        if self.pad_height is None:
+        if all(profile == "flat" for profile in self.surface_profiles) and self.surface_height is None:
             return PlanarSurface(center, rot, *dims)
-        return DisplacedSurface(PlaneChart(center, rot), self.pad_height.to(self.device), *dims)
+        if self.surface_height is None:
+            cols = int(self.dr.surface.grid_cols)
+            rows = int(round(cols * self.substrate.height_m / self.substrate.width_m)) | 1
+            height = torch.zeros(self.num_envs, rows, cols, device=self.device)
+        else:
+            height = self.surface_height.to(self.device)
+        radii = torch.as_tensor(self.surface_radius_m, dtype=torch.float32, device=self.device)
+        chart = (
+            PlaneChart(center, rot)
+            if bool(torch.isinf(radii).all())
+            else CylinderChart(center, rot, radii, self.dr.surface.cylinder_axis)
+        )
+        return DisplacedSurface(chart, height, *dims)
 
     @property
     def canvas_frame_np(self):
@@ -898,6 +1043,16 @@ class TatbotDrawEnv(BaseEnv):
     def _after_control_step(self):
         if self.gpu_sim_enabled:
             self.scene._gpu_fetch_all()
+            # The PhysX GPU pipeline lets a fixed-base articulation's root
+            # creep: measured 3.1 mm in +x/+z over 30 s on an IDLE arm,
+            # quadratic in time, identical in every env, zero on the CPU
+            # backend (RTX 3070). The tool then rides the
+            # drift out of the 0.5 mm contact band on every later stroke
+            # while its joint state still says it is on the sheet. Re-pin
+            # the root where the episode placed it, every control step;
+            # the per-step creep is a few microns and the apply below
+            # pushes the correction before the next physics step.
+            self.agent.robot.set_pose(self._robot_anchor_pose)
 
         tcp = self.agent.tcp.pose.p
         uv, dist, incidence = self.surface.project(tcp)
@@ -918,8 +1073,9 @@ class TatbotDrawEnv(BaseEnv):
         self.interaction_sum_m += torch.where(touching, dist, torch.zeros_like(dist))
         self.interaction_frames += touching.long()
         self._ink_step(tcp, touching, step)
-        if bool(touching.any()):
-            self._apply_tool(uv, incidence, touching)
+        # Inactive frames break continuous deposition. Skipping this call
+        # would connect the previous stroke to the next across a pen lift.
+        self._apply_tool(uv, incidence, touching)
 
         self._pulse_emitter()
         self._step_count += 1
@@ -961,7 +1117,7 @@ class TatbotDrawEnv(BaseEnv):
         rgb = [float(v) for v in str(detail.get("color")).split()[:3]]
         hz = float(detail.get("hz", 9.0))
         peak = float(detail.get("peak", 22.0))
-        phase = 2 * np.pi * hz * self._step_count / 30.0
+        phase = 2 * np.pi * hz * self._step_count / float(self.control_freq)
         # sharpened sine: mostly dark with a brief bright spike, which is what
         # a pulsed emitter looks like; a plain sine reads as a throbbing lamp
         level = 0.06 + 0.94 * (0.5 + 0.5 * np.sin(phase)) ** 4
@@ -990,29 +1146,35 @@ class TatbotDrawEnv(BaseEnv):
                 self.surface, uv, laser_eta(self.laser_clearance, incidence), touching
             )
         else:
-            self.ink_field.deposit(self.surface, uv, self.ink_opacity * self._charge_factor(),
-                                   touching)
+            self.ink_field.deposit_segment(self.surface, uv, self.ink_opacity * self._charge_factor(),
+                                           touching)
 
     # --- the palette, and the ink the tool carries ---------------------------------
 
     def _load_palette(self, rng):
-        """The ink-cap rack: a dark slab with the ten caps standing in it, at
-        the arc the URDF's inkcap_* frames describe, placed where the measured
-        palette hold says the rack is (config.PaletteDR). Built per env so
-        the rack can be re-placed per episode like the pad; posed in
-        _place_palette."""
+        """Freestanding CAD palette, independently placed per episode.
+
+        Unmeasured physical rim heights use explicit simulation estimates.
+        """
         self.palette = None
         self._cap_rims: dict[str, torch.Tensor] = {}
         self._dip_mask = None
         self._dip_credit = None
+        self._palette_rotation = np.eye(3)
+        self.palette_pose_source = None
         if not self.dr.palette.enabled:
             return
+        from tatbot_sim import palette as sim_palette
+
         ink = tools.ink_registry()
+        scene = self.config.palette_scene
+        self.palette_pose_source, transform = sim_palette.base_transform(tools.REPO, scene)
+        self._palette_rotation = np.asarray(transform[:3, :3], dtype=np.float64)
         if self.dr.palette.center_m is None:
-            self.dr.palette.center_m = tuple(ink.palette_root_in_base(tools.REPO))
-        self._palette_slots = ink.load_palette(tools.REPO)
-        self._palette_layout = ink.palette_layout_from_urdf(tools.REPO)
-        self._palette_load = tools.palette_load()
+            self.dr.palette.center_m = tuple(float(v) for v in transform[:3, 3])
+        self._palette_slots = self.config.palette
+        self._palette_layout = scene.rims
+        self._palette_load = self.config.palette_load
         inks = ink.load_inks(tools.REPO)
         self._cap_mesh_dir = TEX_DIR / "inkcaps"
         actors = []
@@ -1021,38 +1183,18 @@ class TatbotDrawEnv(BaseEnv):
             builder = self.scene.create_actor_builder()
             slab = sapien.render.RenderMaterial(
                 base_color=[0.05, 0.05, 0.055, 1.0], roughness=0.6, specular=0.2)
-            # The rack itself: the URDF's palette visual (meshes/frame/palette.stl,
-            # millimetres, yawed 90 deg about palette_root) — the same part the
-            # real rig carries, so a render shows the bench's rack and not a
-            # stand-in slab. The plate's top face is at z = 3 mm in the STL
-            # (measured from its upward-facing triangles; the lettering and
-            # bosses reach 6 mm), the inkcap_* frames are the cap RIMS, and the
-            # rims stand ~1 mm proud of the plate (operator, 2026-08-28) — so
-            # the mesh hangs 4 mm under the frames and only a cap's flange
-            # shows above the plate. The 20x20 framing the rack bolts to is
-            # not modelled (operator: not needed).
-            rack = tools.REPO / "urdf" / "meshes" / "frame" / "palette.stl"
-            if rack.is_file():
-                builder.add_visual_from_file(
-                    str(rack), scale=[0.001, 0.001, 0.001], material=slab,
-                    pose=sapien.Pose(p=[0.0, 0.0, -0.004], q=[0.7071068, 0.0, 0.0, 0.7071068]))
-            else:
-                builder.add_box_visual(half_size=[0.075, 0.085, 0.003], material=slab,
-                                       pose=sapien.Pose(p=[0.0, 0.0, -0.003]))
+            add_palette_body(builder, scene, slab)
             for slot_id, slot in self._palette_slots.items():
                 off = self._palette_layout.get(slot_id)
                 if off is None:
                     continue
-                depth = slot.size.depth_m
                 cap_mat = sapien.render.RenderMaterial(
                     base_color=[0.93, 0.93, 0.9, 1.0], roughness=0.35, specular=0.4)
-                # A hollow cup with a flange at the rim and a hole down the
-                # middle (capmesh) — the rim is the frame, the cup hangs below.
+                # A hollow cup (capmesh) — the rim is the frame, the cup hangs below.
                 builder.add_visual_from_file(
-                    str(capmesh.cap_mesh_path(self._cap_mesh_dir, slot.size.size_id,
-                                              slot.size.diameter_m, depth)),
+                    str(capmesh.cap_mesh_path(self._cap_mesh_dir, slot.size)),
                     material=cap_mat,
-                    pose=sapien.Pose(p=[off[0], off[1], self.dr.palette.rim_above_tag_m]))
+                    pose=sapien.Pose(p=[off[0], off[1], off[2] + self.dr.palette.rim_above_tag_m]))
                 load = self._palette_load.get(slot_id)
                 if load is not None and not load.dry and load.ink_id in inks:
                     wet[slot_id] = [c / 255.0 for c in inks[load.ink_id].rgb]
@@ -1074,7 +1216,7 @@ class TatbotDrawEnv(BaseEnv):
                 ink_mat = sapien.render.RenderMaterial(
                     base_color=[*rgb, 1.0], roughness=0.12, specular=0.7)
                 b.add_cylinder_visual(
-                    radius=slot.size.diameter_m / 2 - 0.0001, half_length=0.0002, material=ink_mat,
+                    radius=slot.size.bore_diameter_m / 2 - 0.0001, half_length=0.0002, material=ink_mat,
                     pose=sapien.Pose(q=[0.7071068, 0.0, -0.7071068, 0.0]))
                 b.set_scene_idxs([env_idx])
                 b.initial_pose = sapien.Pose(p=[0.0, 0.0, -1.0])
@@ -1093,11 +1235,14 @@ class TatbotDrawEnv(BaseEnv):
                 continue
             slot = self._palette_slots[slot_id]
             rims = self._cap_rims[slot_id].clone()
-            for env_idx in range(rims.shape[0]):
-                fill = self._cap_fills[env_idx].get(slot_id, 0.0) if self._cap_fills else 0.0
-                rims[env_idx, 2] += capmesh.ink_level_z(slot.size.depth_m, slot.size.diameter_m, fill)
-            quat = torch.tensor([[1.0, 0.0, 0.0, 0.0]]).repeat(rims.shape[0], 1)
-            actor.set_pose(Pose.create_from_pq(rims, quat))
+            levels = [capmesh.ink_level_z(
+                slot.size, self._cap_fills[i].get(slot_id, 0.0) if self._cap_fills else 0.0)
+                for i in range(rims.shape[0])]
+            normal = torch.as_tensor(self._palette_normals, dtype=rims.dtype, device=rims.device)
+            level = torch.as_tensor(levels, dtype=rims.dtype, device=rims.device)
+            rims += normal * level[:, None]
+            quaternion = torch.as_tensor(self._palette_quats, dtype=rims.dtype, device=rims.device)
+            actor.set_pose(Pose.create_from_pq(rims, quaternion))
 
     def _drain_cap(self, env_idx: int, slot_id: str, ul: float) -> None:
         """A dip took ``ul`` out of this env's cap: the fill is per env (each
@@ -1118,16 +1263,21 @@ class TatbotDrawEnv(BaseEnv):
         centre[:, :2] += rng.uniform(-pdr.xy_jitter_m, pdr.xy_jitter_m, (b, 2))
         centre[:, 2] += rng.uniform(-pdr.z_jitter_m, pdr.z_jitter_m, b)
         yaw = rng.uniform(-pdr.yaw_jitter_rad, pdr.yaw_jitter_rad, b)
-        quat = np.stack([euler2quat(0.0, 0.0, float(y), "sxyz") for y in yaw]).astype(np.float32)
-        self.palette.set_pose(Pose.create_from_pq(torch.as_tensor(centre), torch.as_tensor(quat)))
+        # The rack's own orientation, then this episode's wander on top of it.
+        # Compose the episode's yaw with the scene pose, including any tilt.
+        # Cap rims and ink discs must follow that same orientation.
+        matrices = np.stack([euler2mat(0.0, 0.0, float(y), "sxyz") @ self._palette_rotation
+                             for y in yaw])
+        rotations = np.stack([mat2quat(m) for m in matrices]).astype(np.float32)
+        self._palette_quats = rotations
+        self._palette_normals = matrices[:, :, 2].astype(np.float32)
+        self.palette.set_pose(Pose.create_from_pq(torch.as_tensor(centre),
+                                                  torch.as_tensor(rotations)))
         self._cap_rims = {}
         for slot_id, off in self._palette_layout.items():
-            c, s = np.cos(yaw), np.sin(yaw)
-            x = centre[:, 0] + c * off[0] - s * off[1]
-            y = centre[:, 1] + s * off[0] + c * off[1]
-            z = centre[:, 2] + off[2] + pdr.rim_above_tag_m
-            self._cap_rims[slot_id] = torch.as_tensor(
-                np.stack([x, y, z], axis=1).astype(np.float32))
+            local = np.asarray(off, dtype=np.float64) + np.array([0, 0, pdr.rim_above_tag_m])
+            point = centre + np.einsum("bij,j->bi", matrices, local)
+            self._cap_rims[slot_id] = torch.as_tensor(point.astype(np.float32))
 
     def cap_rims_np(self) -> dict | None:
         """``{slot: (B, 3)}`` world rim centres for this episode, or None
@@ -1215,7 +1365,7 @@ class TatbotDrawEnv(BaseEnv):
         else:
             moved_mm = torch.linalg.norm(tcp - self._prev_tcp, dim=1) * 1000.0
         self._prev_tcp = tcp.clone()
-        dt = 1.0 / 30.0
+        dt = 1.0 / float(self.control_freq)
         debit = torch.where(
             touching, pol.deposit_ul_per_mm * moved_mm + pol.bleed_ul_per_s * dt,
             torch.zeros_like(moved_mm))

@@ -256,9 +256,9 @@ def evaluate_chunk(
     ):
         raise ValueError("plausibility guard received non-finite values")
 
-    # GR00T's saved relative-action decoder clips to [-1, 1].  Applying that
-    # same operation here makes the normalized metrics exactly comparable to
-    # the inverse-decoded genuine demonstrations used to derive the contract.
+    # A saved relative-action decoder clips to [-1, 1].  Applying that same
+    # operation here makes the normalized metrics exactly comparable to the
+    # inverse-decoded genuine demonstrations used to derive the contract.
     metrics: dict[str, Any] = {
         "adjacent_step_abs_rad_per_joint": np.abs(np.diff(decoded, axis=0))
         .max(axis=0)
@@ -272,8 +272,8 @@ def evaluate_chunk(
         model = validate_execution_model(contract)
         metrics.update(execution_metrics(decoded, position_state, model))
     if normalized_required:
-        # GR00T's saved relative-action decoder clips to [-1, 1]. Applying the
-        # same operation here matches its inverse-decoded demonstration contract.
+        # A saved relative-action decoder clips to [-1, 1]. Applying the same
+        # operation here matches its inverse-decoded demonstration contract.
         clipped = np.clip(normalized, -1.0, 1.0)
         endpoint = np.abs(clipped) >= 1.0 - 1e-6
         metrics.update(

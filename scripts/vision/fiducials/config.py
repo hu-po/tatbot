@@ -19,7 +19,8 @@ DEFAULT_INVENTORY_PATH = (
     if _private_inventory.is_file()
     else REPO / "config" / "examples" / "fiducials.json"
 )
-SUPPORTED_FAMILIES = frozenset({"apriltag_16h5"})
+FAMILY_CAPACITY = {"apriltag_16h5": 30, "apriltag_36h11": 587}
+SUPPORTED_FAMILIES = frozenset(FAMILY_CAPACITY)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -36,6 +37,7 @@ class TargetSpec:
     role: str
     ids: tuple[int, ...]
     edge_m: float
+    family: str
     layout: str | None = None
     parent_frame: str | None = None
     minimum_acquisition_ids: int | None = None
@@ -73,23 +75,62 @@ class FiducialInventory:
     def known_ids(self) -> frozenset[int]:
         return frozenset(tag_id for target in self.targets.values() for tag_id in target.ids)
 
-    @property
-    def printed_ids(self) -> frozenset[int]:
-        return self.known_ids | frozenset(self.spare_ids)
+    def ids_by_family(self, target_name: str | None = None, *, include_spares: bool = False) -> dict[str, frozenset[int]]:
+        targets = [self.target(target_name)] if target_name else self.targets.values()
+        result: dict[str, set[int]] = {}
+        for target in targets:
+            result.setdefault(target.family, set()).update(target.ids)
+        if target_name is None and include_spares:
+            result.setdefault(self.family, set()).update(self.spare_ids)
+        return {family: frozenset(ids) for family, ids in result.items() if ids}
 
-    def size_hypotheses(self, tag_id: int) -> tuple[float, ...]:
+    def size_hypotheses(self, tag_id: int, family: str | None = None) -> tuple[float, ...]:
         return tuple(
-            sorted({target.edge_m for target in self.targets.values() if tag_id in target.ids})
+            sorted({target.edge_m for target in self.targets.values()
+                    if tag_id in target.ids and (family is None or target.family == family)})
         )
 
-    def owners(self, tag_id: int) -> tuple[str, ...]:
+    def owners(self, tag_id: int, family: str | None = None) -> tuple[str, ...]:
         """Physical target instances that carry one decoded numeric id."""
-        return tuple(name for name, target in self.targets.items() if tag_id in target.ids)
+        return tuple(name for name, target in self.targets.items()
+                     if tag_id in target.ids and (family is None or target.family == family))
 
     def exclusive_ids(self, target_name: str) -> tuple[int, ...]:
         """Ids with exactly one mounted physical instance, on ``target_name``."""
         target = self.target(target_name)
-        return tuple(tag_id for tag_id in target.ids if self.owners(tag_id) == (target_name,))
+        return tuple(tag_id for tag_id in target.ids if self.owners(tag_id, target.family) == (target_name,))
+
+    @property
+    def cross_family_ids(self) -> frozenset[int]:
+        return frozenset(tag_id for tag_id in self.known_ids
+                         if len({t.family for t in self.targets.values() if tag_id in t.ids}) > 1)
+
+
+def _validate_owners(path, targets):
+    owners: dict[int, list[TargetSpec]] = {}
+    for target in targets.values():
+        for tag_id in target.ids:
+            owners.setdefault(tag_id, []).append(target)
+    for tag_id, matching in owners.items():
+        if len(matching) < 2:
+            continue
+        for family in {target.family for target in matching}:
+            instances = [target for target in matching if target.family == family]
+            groups = {target.ambiguity_group for target in instances}
+            if len(instances) > 1 and (None in groups or len(groups) != 1):
+                names = ", ".join(target.name for target in instances)
+                raise ValueError(
+                    f"{path}: id {tag_id} is shared by {names} without one explicit ambiguity_group"
+                )
+    for name, target in targets.items():
+        if target.calibration_root_id is not None and len([
+            t for t in owners[target.calibration_root_id] if t.family == target.family
+        ]) != 1:
+            raise ValueError(
+                f"{path}: targets.{name}.calibration_root_id must identify one physical instance"
+            )
+
+    return owners
 
 
 def _profile(name: str, raw: dict) -> DetectorProfile:
@@ -114,7 +155,7 @@ def load_inventory(path: str | Path = DEFAULT_INVENTORY_PATH) -> FiducialInvento
     path = Path(path).expanduser().resolve()
     raw_bytes = path.read_bytes()
     data = json.loads(raw_bytes)
-    if data.get("schema_version") != 1:
+    if data.get("schema_version") not in (1, 2):
         raise ValueError(f"{path}: unsupported fiducial schema {data.get('schema_version')!r}")
     family = str(data.get("family", ""))
     if family not in SUPPORTED_FAMILIES:
@@ -122,9 +163,14 @@ def load_inventory(path: str | Path = DEFAULT_INVENTORY_PATH) -> FiducialInvento
 
     targets = {}
     for name, entry in data.get("targets", {}).items():
+        target_family = entry.get("family", family if data["schema_version"] == 1 else None)
+        if target_family not in SUPPORTED_FAMILIES:
+            raise ValueError(f"{path}: targets.{name}.family must explicitly name a supported family")
         ids = tuple(int(tag_id) for tag_id in entry.get("ids", ()))
         if not ids or len(set(ids)) != len(ids) or any(tag_id < 0 for tag_id in ids):
             raise ValueError(f"{path}: targets.{name}.ids must be unique non-negative ids")
+        if any(tag_id >= FAMILY_CAPACITY[target_family] for tag_id in ids):
+            raise ValueError(f"{path}: targets.{name}.ids exceed {target_family} capacity")
         edge_m = float(entry.get("edge_m", 0))
         if not math.isfinite(edge_m) or edge_m <= 0:
             raise ValueError(f"{path}: targets.{name}.edge_m must be positive")
@@ -195,6 +241,7 @@ def load_inventory(path: str | Path = DEFAULT_INVENTORY_PATH) -> FiducialInvento
             role=str(entry.get("role", "")),
             ids=ids,
             edge_m=edge_m,
+            family=target_family,
             layout=entry.get("layout"),
             parent_frame=parent_frame,
             minimum_acquisition_ids=int(minimum) if minimum is not None else None,
@@ -233,24 +280,7 @@ def load_inventory(path: str | Path = DEFAULT_INVENTORY_PATH) -> FiducialInvento
         if target.role == "rigid_ee" and not target.parent_frame:
             raise ValueError(f"{path}: targets.{name}.parent_frame is required for rigid_ee")
 
-    owners: dict[int, list[TargetSpec]] = {}
-    for target in targets.values():
-        for tag_id in target.ids:
-            owners.setdefault(tag_id, []).append(target)
-    for tag_id, matching in owners.items():
-        if len(matching) < 2:
-            continue
-        groups = {target.ambiguity_group for target in matching}
-        if None in groups or len(groups) != 1:
-            names = ", ".join(target.name for target in matching)
-            raise ValueError(
-                f"{path}: id {tag_id} is shared by {names} without one explicit ambiguity_group"
-            )
-    for name, target in targets.items():
-        if target.calibration_root_id is not None and len(owners[target.calibration_root_id]) != 1:
-            raise ValueError(
-                f"{path}: targets.{name}.calibration_root_id must identify one physical instance"
-            )
+    owners = _validate_owners(path, targets)
 
     detector_profiles = {
         name: _profile(name, entry) for name, entry in data.get("detector", {}).items()
@@ -260,7 +290,7 @@ def load_inventory(path: str | Path = DEFAULT_INVENTORY_PATH) -> FiducialInvento
         raise ValueError(f"{path}: missing detector profiles {sorted(missing_profiles)}")
     spare_ids = tuple(int(tag_id) for tag_id in data.get("printing", {}).get("spare_ids", ()))
     if (
-        any(tag_id < 0 for tag_id in spare_ids)
+        any(not 0 <= tag_id < FAMILY_CAPACITY[family] for tag_id in spare_ids)
         or len(set(spare_ids)) != len(spare_ids)
         or set(spare_ids) & set(owners)
     ):
@@ -268,7 +298,7 @@ def load_inventory(path: str | Path = DEFAULT_INVENTORY_PATH) -> FiducialInvento
             f"{path}: spare ids must be non-negative, unique, and absent from mounted targets"
         )
     return FiducialInventory(
-        schema_version=1,
+        schema_version=data["schema_version"],
         family=family,
         targets=targets,
         detector_profiles=detector_profiles,

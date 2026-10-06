@@ -36,9 +36,7 @@ import tyro
 from transforms3d.euler import euler2mat
 
 from tatbot_sim import tools
-from tatbot_sim.agent import TatbotWXAI
-from tatbot_sim.config import DRConfig
-from tatbot_sim.env import TatbotDrawEnv
+from tatbot_sim.config import MAX_TOOL_Z_CENTER, PAD_CENTER, DRConfig
 from tatbot_sim.expert import StrokeExpert
 from tatbot_sim.language import REACH
 from tatbot_sim.planning import lean_normals
@@ -54,7 +52,7 @@ class Args:
     purpose: a bigger miss still marks the sheet somewhere plausible."""
     buckets: int = 6
     """Pad-height buckets to report the pass rate across."""
-    max_tool_z: float = TatbotDrawEnv.MAX_TOOL_Z_CENTER
+    max_tool_z: float = MAX_TOOL_Z_CENTER
     """World-z ceiling on the tool, which caps the episode's start height.
     An arg rather than the class constant so it can be ablated: 0.105 was
     measured holding a TATTOO PEN perpendicular, and a longer tool has its
@@ -64,10 +62,26 @@ class Args:
     reach: float = REACH
     """Radius of the canvas area motifs are placed in, m. language.REACH is
     0.06 — the flat-reach envelope measured for a tattoo pen."""
-    pad_center_x: float = float(TatbotDrawEnv.PAD_CENTER[0])
+    pad_center_x: float = float(PAD_CENTER[0])
     """How far in front of the base the pad sits, m. Where the operator puts
     the pad, not a free parameter — but it is a lever, because reaching far
     forward is what a long tool cannot do."""
+    palette: bool = True
+    """Also audit the DIP approach at every ink cap, for a tool that dips.
+
+    The pad audit above says nothing about the palette: it samples a disc
+    around the pad centre, and the rack is somewhere else entirely. A dip is
+    the one motion that leaves the sheet, and on a large design it is most of
+    the episode -- 20 dips of ~350 steps against 4,500 steps of drawing, in a
+    flower-of-life take measured 2026-09-09.
+    """
+    palette_samples: int = 200
+    """Palette-jitter draws per cap and height (config.PaletteDR)."""
+    axis_tolerance_deg: float = 5.0
+    """How far the tool axis may sit off the cap's entry axis. The dip plan
+    enters along the palette normal (scripts/lib/dip_motion.py); the simulator
+    drives the tip down and leaves the axis to IK, so this is the number that
+    tells them apart."""
     ablate: bool = False
     """Zero one randomization at a time and report what each is costing."""
     recommend: bool = False
@@ -115,7 +129,7 @@ def sample_poses(rng: np.random.Generator, args: Args, n: int):
         rot = euler2mat(roll[i], pitch[i], yaw[i], "sxyz")
         top = np.array([
             args.pad_center_x + xy[i, 0],
-            TatbotDrawEnv.PAD_CENTER[1] + xy[i, 1],
+            PAD_CENTER[1] + xy[i, 1],
             top_z[i],
         ])
         targets[i] = top + rot @ np.array([cx[i], cy[i], cz[i]])
@@ -138,8 +152,13 @@ def pass_rate(expert, rng: np.random.Generator, args: Args, tol: float):
     """
     targets, axes, seeds, seed_axes, top_z, kind = sample_poses(rng, args, args.samples)
     n = len(targets)
-    q_rest = torch.as_tensor(
-        TatbotWXAI.keyframes["rest"].qpos[:6], dtype=torch.float32
+    # Build the seed in the IK chain's OWN joint order. The carriage became a
+    # seventh solved axis on 2026-09-08, so a fixed six-value slice of the rest
+    # keyframe silently stopped matching the chain and this audit could not run.
+    names = expert.ik.chain.get_joint_parameter_names()
+    staged = dict(zip((f"joint_{i}" for i in range(6)), tools.staged_pose()[:6], strict=True))
+    q_rest = torch.tensor(
+        [[staged.get(name, tools.carriage_rest_m()) for name in names]], dtype=torch.float32
     ).repeat(n, 1)
     q_seed = expert.ik.step(
         q_rest, torch.as_tensor(seeds), expert.target_rotations(seed_axes, n),
@@ -149,6 +168,131 @@ def pass_rate(expert, rng: np.random.Generator, args: Args, tol: float):
     q = expert.ik.step(q_seed, t, expert.target_rotations(axes, n), iters=args.iters)
     res = torch.linalg.norm(expert.ik.fk(q)[:, :3, 3] - t, dim=-1).numpy()
     return res, res <= tol, top_z, kind
+
+
+def _warm_seed(expert, n: int, args: Args):
+    """The pose a dip departs from: the pad centre at the draw plane.
+
+    pass_rate warm-starts the same way, and for the same reason — seeding from
+    the rest keyframe measures the solver's basin of attraction rather than
+    the arm's reach.
+    """
+    names = expert.ik.chain.get_joint_parameter_names()
+    staged = dict(zip((f"joint_{i}" for i in range(6)), tools.staged_pose()[:6], strict=True))
+    q_rest = torch.tensor(
+        [[staged.get(name, tools.carriage_rest_m()) for name in names]], dtype=torch.float32
+    ).repeat(n, 1)
+    pad = np.repeat(
+        np.array([[args.pad_center_x, float(PAD_CENTER[1]), 0.034]],
+                 dtype=np.float32), n, axis=0)
+    up = np.repeat(np.array([[0.0, 0.0, 1.0]]), n, axis=0)
+    return expert.ik.step(q_rest, torch.as_tensor(pad),
+                          expert.target_rotations(up, n), iters=args.iters)
+
+
+def _solve_and_score(expert, args: Args, targets: np.ndarray, axes: np.ndarray, q_seed):
+    """(position residual m, tool-axis error rad, achieved tip m) at each target."""
+    n = len(targets)
+    t = torch.as_tensor(targets.astype(np.float32))
+    rot = expert.target_rotations(axes, n)
+    q = expert.ik.step(q_seed, t, rot, iters=args.iters)
+    pose = expert.ik.fk(q)
+    tip = pose[:, :3, 3].numpy().astype(np.float64)
+    achieved = pose[:, :3, :3].numpy().astype(np.float64)
+    # The local direction the commanded rotation maps onto the entry axis; the
+    # same vector carried through the achieved rotation is where the tool
+    # actually points.
+    commanded = rot.numpy().astype(np.float64)
+    local = np.einsum("bji,bj->bi", commanded, axes)
+    pointing = np.einsum("bij,bj->bi", achieved, local)
+    pointing /= np.linalg.norm(pointing, axis=1, keepdims=True)
+    angle = np.arccos(np.clip((pointing * axes).sum(1), -1.0, 1.0))
+    return np.linalg.norm(tip - targets, axis=1), angle, tip
+
+
+def run_palette(expert, args: Args, tol: float):
+    """Can this tool actually enter every cap it may be sent to?
+
+    Reports the two things a dip has to get right and the pad audit never
+    looks at: the tip inside the cap's own radius, and the tool along the
+    cap's entry axis. Containment is the harder gate — a small cap is 8 mm
+    across, so a 5 mm miss is already outside it, while the same miss on the
+    sheet would only move a stroke.
+    """
+    ink = tools.ink_registry()
+    policy = tools.active_ink_policy()
+    if not policy.dips:
+        print(f"\npalette: {tools.active_tool().tool_id} never dips — nothing to audit.")
+        return
+    from tatbot_sim import palette as sim_palette
+
+    scene = sim_palette.load(tools.REPO)
+    layout = scene.rims
+    slots = scene.palette
+    source, transform = sim_palette.base_transform(tools.REPO, scene)
+    # One definition of which way a cap faces, shared with the arm. dip_motion
+    # names the axis INTO the cap; this audit measures against the approach,
+    # which is the sign the simulator's surface normals carry.
+    entry = -tools.dip_motion().palette_entry_axis(transform)
+    root = np.asarray(transform[:3, 3], dtype=np.float64)
+
+    print(f"\npalette dip approach — pose {source.upper()}"
+          f", root {np.round(root, 4).tolist()} in the arm base frame")
+    if source != "measured":
+        print("  this is config/palette_geometry.json's synthetic scene placement,"
+              " which is not where the rack is.")
+    print(f"  entry axis {np.round(entry, 4).tolist()}, "
+          f"hover {args.dr.palette.hover_m * 1000:.0f} mm, "
+          f"axis tolerance {args.axis_tolerance_deg:.1f} deg")
+
+    rng = np.random.default_rng(args.seed)
+    n = args.palette_samples
+    q_seed = _warm_seed(expert, n, args)
+    axes = np.repeat(entry[None, :], n, axis=0)
+    axis_tol = np.radians(args.axis_tolerance_deg)
+    # the supply the planner would see, so the plunge depth matches the dip it plans
+    load = tools.palette_load()
+
+    print(f"\n{'slot':>18} {'height':>7} {'pos med mm':>11} {'pos max mm':>11} "
+          f"{'axis med d':>11} {'axis max d':>11} {'in cap':>7} {'axis ok':>8}")
+    worst_contained, worst_axis = 1.0, 1.0
+    for name in sorted(layout):
+        slot = slots[name]
+        radius = slot.size.bore_diameter_m / 2.0   # the tool enters the bore, not the envelope
+        fill = load[name].fill_ul if name in load else 0.0
+        plunge = ink.dip_plunge_m(policy, slot, fill)
+        # cap offsets are in the palette body frame, so they turn with the rack
+        nominal = root + transform[:3, :3] @ np.array(layout[name], dtype=np.float64)
+        # PaletteDR moves the whole rack, so every cap on it moves together.
+        jitter = np.zeros((n, 3))
+        if args.dr.palette.enabled:
+            jitter[:, :2] = rng.uniform(-args.dr.palette.xy_jitter_m,
+                                        args.dr.palette.xy_jitter_m, (n, 2))
+            jitter[:, 2] = rng.uniform(-args.dr.palette.z_jitter_m,
+                                       args.dr.palette.z_jitter_m, n)
+        rims = nominal[None, :] + jitter
+        for label, offset in (("hover", args.dr.palette.hover_m), ("plunge", -plunge)):
+            targets = rims + entry[None, :] * offset
+            res, ang, tip = _solve_and_score(expert, args, targets, axes, q_seed)
+            # lateral miss about the cap axis is what decides containment
+            delta = tip - targets
+            lateral = np.linalg.norm(delta - np.outer(delta @ entry, entry), axis=1)
+            inside = float((lateral < radius).mean())
+            axis_ok = float((ang <= axis_tol).mean())
+            if label == "plunge":
+                worst_contained = min(worst_contained, inside)
+                worst_axis = min(worst_axis, axis_ok)
+            print(f"{name:>18} {label:>7} {np.median(res) * 1000:11.2f} "
+                  f"{res.max() * 1000:11.2f} {np.degrees(np.median(ang)):11.2f} "
+                  f"{np.degrees(ang.max()):11.2f} {100 * inside:6.1f}% {100 * axis_ok:7.1f}%")
+
+    print(f"\n  worst cap, at full plunge: {100 * worst_contained:.1f}% of draws put the tip "
+          f"inside the cap, {100 * worst_axis:.1f}% hold the axis within "
+          f"{args.axis_tolerance_deg:.1f} deg")
+    if worst_contained < args.target_pass or worst_axis < args.target_pass:
+        print("  this palette placement is NOT dip-qualified for this tool: a scheduled dip"
+              "\n  can be credited with the tip outside the cap. Fix the placement or the"
+              "\n  tool before generating dip episodes; tatbot_sim.env credits by step index.")
 
 
 def run_ablation(expert, args: Args, tol: float):
@@ -231,7 +375,7 @@ def run_recommend(expert, args: Args, tol: float):
         _, z_cap, cx = best
         print(f"\n  use: --dr.pad.z-range 0.0 {z_cap:.3f}  with the pad "
               f"{cx:.3f} m in front of the base "
-              f"(TatbotDrawEnv.PAD_CENTER x is {TatbotDrawEnv.PAD_CENTER[0]:.3f})")
+              f"(PAD_CENTER x is {PAD_CENTER[0]:.3f})")
 
 
 def main(args: Args):
@@ -288,6 +432,8 @@ def main(args: Args):
         print("highest all-pass ceiling over these samples: "
               + (f"{best:.3f} m" if best is not None else "none — even the floor fails"))
 
+    if args.palette:
+        run_palette(expert, args, tol)
     if args.ablate:
         run_ablation(expert, args, tol)
     if args.recommend:

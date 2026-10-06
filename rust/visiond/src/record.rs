@@ -44,6 +44,10 @@ impl RecordedPayload {
                 format: crate::PixelFormat::H264,
                 ..
             } => "h264",
+            Self::Encoded {
+                format: crate::PixelFormat::Jpeg,
+                ..
+            } => "jpg",
             Self::Encoded { .. } => "bin",
             Self::Video {
                 format: crate::PixelFormat::Bgr8,
@@ -104,6 +108,67 @@ impl EvidenceRecorder {
             sensor_name: sensor_name.to_owned(),
             metadata: BufWriter::new(metadata),
             frame_count: 0,
+        })
+    }
+
+    /// Subscriber evidence retains full image dimensions but bounds disk traffic
+    /// with explicitly labelled JPEG rather than writing decoded main-stream RGB.
+    #[cfg(feature = "zenoh")]
+    pub fn write_jpeg(&mut self, frame: &FrameRecord) -> Result<PathBuf> {
+        frame.validate().map_err(anyhow::Error::msg)?;
+        let RecordedPayload::Video {
+            format,
+            width,
+            height,
+            bytes,
+        } = &frame.payload
+        else {
+            return self.write(frame);
+        };
+        anyhow::ensure!(
+            matches!(
+                format,
+                crate::PixelFormat::Rgb8 | crate::PixelFormat::Bgr8 | crate::PixelFormat::Y8
+            ),
+            "JPEG evidence requires RGB/BGR/Y8"
+        );
+        let mut rgb = bytes.clone();
+        if *format == crate::PixelFormat::Bgr8 {
+            for pixel in rgb.chunks_exact_mut(3) {
+                pixel.swap(0, 2);
+            }
+        }
+        let mut bytes = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, 95).encode(
+            &rgb,
+            *width,
+            *height,
+            if *format == crate::PixelFormat::Y8 {
+                image::ExtendedColorType::L8
+            } else {
+                image::ExtendedColorType::Rgb8
+            },
+        )?;
+        let mut metadata = frame.metadata.clone();
+        metadata.profile.format = crate::PixelFormat::Jpeg;
+        metadata
+            .attributes
+            .insert("evidence.encoding".into(), "jpeg-quality-95".into());
+        metadata.attributes.insert(
+            "evidence.source_format".into(),
+            match format {
+                crate::PixelFormat::Y8 => "y8",
+                crate::PixelFormat::Bgr8 => "bgr8",
+                _ => "rgb8",
+            }
+            .into(),
+        );
+        self.write(&FrameRecord {
+            metadata,
+            payload: RecordedPayload::Encoded {
+                format: crate::PixelFormat::Jpeg,
+                bytes,
+            },
         })
     }
 
@@ -214,8 +279,8 @@ pub fn read_recording_frame(
         anyhow::bail!("payload checksum mismatch for {}", payload_path.display());
     }
     let payload = match entry.metadata.profile.format {
-        crate::PixelFormat::H264 => crate::RecordedPayload::Encoded {
-            format: crate::PixelFormat::H264,
+        crate::PixelFormat::H264 | crate::PixelFormat::Jpeg => crate::RecordedPayload::Encoded {
+            format: entry.metadata.profile.format,
             bytes,
         },
         crate::PixelFormat::Bgr8
@@ -233,10 +298,30 @@ pub fn read_recording_frame(
             bytes,
         },
     };
-    let frame = FrameRecord {
+    #[allow(unused_mut)]
+    let mut frame = FrameRecord {
         metadata: entry.metadata.clone(),
         payload,
     };
+    #[cfg(any(feature = "zenoh", feature = "rerun", feature = "gstreamer"))]
+    if frame.metadata.profile.format == crate::PixelFormat::Jpeg {
+        use image::ImageDecoder;
+        let decoder =
+            image::codecs::jpeg::JpegDecoder::new(std::io::Cursor::new(frame.payload.bytes()))?;
+        anyhow::ensure!(
+            decoder.dimensions() == (frame.metadata.profile.width, frame.metadata.profile.height)
+                && decoder.total_bytes() <= 128 * 1024 * 1024,
+            "JPEG recording dimensions mismatch or limit exceeded"
+        );
+        let rgb = image::DynamicImage::from_decoder(decoder)?.to_rgb8();
+        frame.metadata.profile.format = crate::PixelFormat::Rgb8;
+        frame.payload = RecordedPayload::Video {
+            format: crate::PixelFormat::Rgb8,
+            width: rgb.width(),
+            height: rgb.height(),
+            bytes: rgb.into_raw(),
+        };
+    }
     frame.validate().map_err(anyhow::Error::msg)?;
     Ok(frame)
 }
@@ -297,5 +382,56 @@ mod tests {
             read_recording_frame(directory.path().join("camera1/frames.jsonl"), &entries[0])
                 .unwrap();
         assert_eq!(loaded.payload, frame.payload);
+        #[cfg(feature = "zenoh")]
+        {
+            let jpeg_dir = tempfile::tempdir().unwrap();
+            let mut recorder = EvidenceRecorder::create(jpeg_dir.path(), "camera1").unwrap();
+            let mut rgb = frame.clone();
+            rgb.metadata.profile.format = PixelFormat::Rgb8;
+            rgb.payload = RecordedPayload::Video {
+                format: PixelFormat::Rgb8,
+                width: 2,
+                height: 1,
+                bytes: vec![240, 0, 0, 240, 0, 0],
+            };
+            let path = recorder.write_jpeg(&rgb).unwrap();
+            recorder.finish().unwrap();
+            assert_eq!(path.extension().unwrap(), "jpg");
+            let metadata = jpeg_dir.path().join("camera1/frames.jsonl");
+            let entries = read_recording_entries(&metadata).unwrap();
+            assert_eq!(entries[0].metadata.profile.format, PixelFormat::Jpeg);
+            let decoded = read_recording_frame(&metadata, &entries[0]).unwrap();
+            assert_eq!(decoded.metadata.profile.format, PixelFormat::Rgb8);
+            assert_eq!(decoded.metadata.timestamps, rgb.metadata.timestamps);
+            assert_eq!(decoded.payload.bytes().len(), 6);
+            assert!(decoded.payload.bytes()[0] > 230);
+            std::fs::write(path, b"corrupted").unwrap();
+            assert!(read_recording_frame(&metadata, &entries[0]).is_err());
+            // The always-on owner supplies luma to calibration subscribers.
+            // Preserve that source provenance while replay remains RGB.
+            let gray_dir = tempfile::tempdir().unwrap();
+            let mut recorder = EvidenceRecorder::create(gray_dir.path(), "camera1").unwrap();
+            let mut gray = rgb.clone();
+            gray.metadata.profile.format = PixelFormat::Y8;
+            gray.payload = RecordedPayload::Video {
+                format: PixelFormat::Y8,
+                width: 2,
+                height: 1,
+                bytes: vec![110; 2],
+            };
+            recorder.write_jpeg(&gray).unwrap();
+            recorder.finish().unwrap();
+            let metadata = gray_dir.path().join("camera1/frames.jsonl");
+            let entries = read_recording_entries(&metadata).unwrap();
+            assert_eq!(
+                entries[0].metadata.attributes["evidence.source_format"],
+                "y8"
+            );
+            let decoded = read_recording_frame(&metadata, &entries[0]).unwrap();
+            assert_eq!(decoded.metadata.timestamps, gray.metadata.timestamps);
+            assert_eq!(decoded.metadata.profile.format, PixelFormat::Rgb8);
+            assert_eq!(decoded.payload.bytes().len(), 6);
+            assert!(decoded.payload.bytes().iter().all(|v| v.abs_diff(110) <= 3));
+        }
     }
 }

@@ -4,9 +4,9 @@
     d405_handeye_plane.py <capture-dir>... [--out DIR] [--roi 0.5] [--paper-z Z]
     d405_handeye_plane.py --self-test
 
-Input: capture-*.npz files (docs/draw.md "Capture handshake") taken with the
+Input: capture-*.npz files (docs/surface-formats.md "Wrist captures") taken with the
 D405s looking at the touched-off paper plane from many wrist orientations —
-a `tatbot draw scan` orbit, or `draw_capture.py once` at hand-guided poses.
+`tatbot vision capture once` at hand-guided poses.
 For each capture and camera the central depth ROI is fitted with a plane
 (RANSAC + least squares) in the camera optical frame. The nominal URDF chain
 root_from_camera(joints) predicts where that plane is in root; the truth is
@@ -40,18 +40,20 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/lib"))
+from tatbot_paths import bootstrap  # noqa: E402
+
+bootstrap()
 from urdf_kinematics import UrdfChain, driver_joint_names  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 URDF = REPO / "urdf/tatbot.urdf"
 WORKSPACE = REPO / "config/workspace.yaml"
 LINK6 = "right/link_6"
-OPTICAL_FRAME = {
-    "wrist_upper": "right/realsense_depth_optical_frame",
-    "wrist_lower": "right/realsense_lower_depth_optical_frame",
-}
-MOUNT_JOINT = {"wrist_upper": "right/realsense_mount_joint", "wrist_lower": "right/realsense_lower_mount_joint"}
+from wrist_cameras import optical_frames  # noqa: E402
+
+OPTICAL_FRAME = optical_frames(REPO, arm="right", stream="depth")
+MOUNT_JOINT = dict.fromkeys(OPTICAL_FRAME, "right/realsense_mount_joint")
 TRUE_NORMAL = np.array([0.0, 0.0, 1.0])
 D405_RANGE_M = (0.07, 0.5)
 OFFSET_SCALE_M = 0.15  # 1 rad of normal error ~ 150 mm of offset at the working standoff
@@ -376,8 +378,7 @@ def self_test(tmp=None, noise_m=0.0):
     paper_z = 0.005945
     intr = np.array([385.0, 385.0, 320.0, 240.0, 640.0, 480.0])
     units_m = 1e-4
-    truth = {"wrist_upper": np.array([np.radians(0.5), np.radians(-0.3), np.radians(0.2), 0, 0, 0.002]),
-             "wrist_lower": np.array([np.radians(-0.4), np.radians(0.6), np.radians(-0.25), 0, 0, -0.0015])}
+    truth = {"wrist_upper": np.array([np.radians(0.5), np.radians(-0.3), np.radians(0.2), 0, 0, 0.002])}
     tilts = [(0, 0, 0), (0.25, 0, 0.3), (-0.25, 0, -0.3), (0, 0.25, 1.0), (0, -0.25, -1.0), (0.18, 0.18, 2.0),
              (-0.18, 0.18, -2.0)]
     tmp = Path(tmp or tempfile.mkdtemp(prefix="d405-handeye-selftest-"))

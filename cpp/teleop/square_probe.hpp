@@ -2,88 +2,58 @@
 
 #include <array>
 #include <cstddef>
-#include <deque>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "motion_constants.hpp"
+
 namespace tatbot::square
 {
 
-using Pose = std::array<double, 6>;
 using JointPose = std::array<double, 6>;
 using FullJointPose = std::array<double, 7>;
 
-inline constexpr double CARRIAGE_IK_BIAS_M = 0.002;
-inline constexpr double CARRIAGE_IK_MIN_M = 0.0005;
-inline constexpr double CARRIAGE_IK_MAX_M = 0.0035;
+// The carriage-IK drawing envelope, shared with the Python planner through
+// config/motion_constants.json (motion_constants.hpp is generated from it).
+inline constexpr double CARRIAGE_IK_BIAS_M = tatbot::motion_constants::CARRIAGE_IK_BIAS_M;
+inline constexpr double CARRIAGE_IK_MIN_M = tatbot::motion_constants::CARRIAGE_IK_MIN_M;
+inline constexpr double CARRIAGE_IK_MAX_M = tatbot::motion_constants::CARRIAGE_IK_MAX_M;
+inline constexpr double CARRIAGE_IK_PEN_UP_MIN_M = tatbot::motion_constants::CARRIAGE_IK_PEN_UP_MIN_M;
+inline constexpr double CARRIAGE_IK_PEN_UP_MAX_M = tatbot::motion_constants::CARRIAGE_IK_PEN_UP_MAX_M;
 
-// Four Cartesian targets which return to start. The first X and Y edges point
-// toward the base-frame origin so a hand-guided start near the workspace edge
-// does not ask the IK solver to extend farther outward. Orientation and Z
-// remain exactly as the operator left them at the trigger point.
-std::array<Pose, 4> targets(const Pose & start, double side_m);
-
-double translation_error_mm(const Pose & measured, const Pose & target);
-
-struct SegmentSample
-{
-  Pose position;
-  Pose feedforward_velocity;
-};
-
-// Time-scaled quintic segment: position, velocity and acceleration are all
-// continuous at the corners, with zero endpoint velocity and acceleration.
-SegmentSample quintic_segment(
-  const Pose & start, const Pose & target, double elapsed_s, double duration_s);
-
-struct JointPlan
-{
-  std::vector<JointPose> positions;
-  std::vector<JointPose> velocities;
-  std::vector<std::array<double, 3>> cartesian_references;
-  std::array<size_t, 4> edge_end_ticks{};
-  double max_joint_velocity_rad_s = 0.0;
-  double max_cartesian_velocity_m_s = 0.0;
-  double path_length_m = 0.0;
-  double max_model_error_mm = 0.0;
-  double max_orientation_error_rad = 0.0;
-};
-
-// Minimal WXAI FK used only by the one-shot probe. Its geometry mirrors
-// urdf/tatbot.urdf right/joint_0..5 plus right/ee_gripper. Before motion,
-// wxai_teleop compares this result to the vendor SDK's live FK and refuses a
-// mismatch, so a stale duplicated constant fails closed.
+// Minimal WXAI FK used by the path planner. Its geometry mirrors
+// urdf/tatbot.urdf right/joint_0..5 plus right/ee_gripper. A caller
+// selecting another prefix must prove equivalent URDF/controller geometry.
+// Nothing compares it with the vendor SDK's live FK any more: that gate left
+// with wxai_teleop's square-probe mode, and wxai_teleop no longer
+// links this library. The ROS CLIK parity test, which SKIPs until
+// path_plan_check is built, holds it to the URDF instead.
 std::array<double, 3> wxai_tcp_translation(const JointPose & joints);
 
-// Ballpoint contact point through the measured right/tool_mount chain. This is
-// used only by the explicitly gated carriage-IK A/B mode; the ordinary square
-// and spiral retain the vendor SDK TCP model above.
+// Ballpoint contact point through the measured right/tool_mount chain: the tip
+// model of every seven-DOF path.
 std::array<double, 3> wxai_ballpoint_tip_translation(
   const JointPose & joints, double carriage_m);
 
-// Precompute the complete square as a joint-position trajectory with damped
-// least-squares differential IK. Nothing is sent to the arm until every sample
-// has passed model tracking, joint velocity and joint-limit checks.
-JointPlan plan_joint_square(
-  const JointPose & start_joints,
-  const std::array<Pose, 4> & cartesian_targets,
-  double edge_s,
-  double period_s);
-
-// Precompute one Archimedean spiral about the trigger point. Radius and angle
-// follow an approximately constant arc-length speed, with a short quintic
-// speed ease at each end so velocity and acceleration meet the stationary
-// hold continuously. The tip stays at trigger Z/orientation; the final point
-// is radius_m along +base-X from the center.
-JointPlan plan_joint_spiral(
-  const JointPose & start_joints,
-  double radius_m,
-  double turns,
-  double duration_s,
-  double ease_s,
-  double period_s);
+// The tool the seven-axis planner steers: its working point in link 6 at
+// carriage zero and the unit axis the carriage moves it along. The follower's
+// ballpoint is the compiled default (BALLPOINT_TIP_IN_LINK6, carriage +Y). A
+// samples file may declare another configured WXAI arm: its tool mount must
+// ride a +Y carriage in link 6, and its tip comes from the file because only
+// the right follower has a compiled tool constant. The caller must establish
+// that the arm has this WXAI chain before passing an expected prefix below.
+struct ToolModel
+{
+  std::array<double, 3> tip_in_link6{};
+  std::array<double, 3> carriage_axis_in_link6{};
+};
+ToolModel ballpoint_tool_model();
+ToolModel declared_wxai_tool_model(const std::array<double, 3> & tip_in_link6);
+// Working point of `tool` in the base frame at `joints` and `carriage_m`.
+std::array<double, 3> wxai_tool_tip_translation(
+  const JointPose & joints, double carriage_m, const ToolModel & tool);
 
 struct CarriageJointPlan
 {
@@ -92,8 +62,10 @@ struct CarriageJointPlan
   std::vector<std::array<double, 3>> cartesian_references;
   // (tick index, capture index) for every sample that asks for a capture.
   std::vector<std::pair<size_t, size_t>> capture_ticks;
+  std::vector<std::pair<size_t, size_t>> dip_ticks;   // (tick, k): where ink dip k bottoms out
   size_t endpoint_tick = 0;
   double max_joint_velocity_rad_s = 0.0;
+  double max_joint_acceleration_rad_s2 = 0.0;   // planned velocity change per tick; reported, never a cap
   double max_carriage_velocity_m_s = 0.0;
   double max_carriage_acceleration_m_s2 = 0.0;
   double min_carriage_m = CARRIAGE_IK_BIAS_M;
@@ -112,8 +84,7 @@ Rotation wxai_link6_rotation(const JointPose & joints);
 
 // One control tick of a Cartesian tip path: where the ballpoint tip must be,
 // how fast it is moving, and the link-6 rotation to hold there. `capture` > 0
-// marks a row where the executor must hold still and request a wrist-camera
-// capture of that index before advancing (draw orbit only).
+// marks the row that requests wrist-camera capture k (orbit files).
 struct PathSample
 {
   double t_s = 0.0;
@@ -122,103 +93,63 @@ struct PathSample
   Rotation rotation{};
   bool pen = false;
   size_t capture = 0;
+  size_t dip = 0;   // k > 0 on the row where ink dip k bottoms out (2026-09-03)
 };
 
-// A samples file (`orbit.csv` / `path.csv`, contract in docs/draw.md) as the
-// executor sees it. `report` keeps the free-form header keys for printing.
+// A samples file (`orbit.csv` / `path.csv`, contract in docs/surface-formats.md) as
+// parsed. `report` keeps the free-form header keys for printing.
+// `constants_sha` is the planner's config/motion_constants.json digest: an
+// orbit or path file must carry it and it must equal motion_constants::SHA.
 struct PathFile
 {
   std::string kind;
+  std::string constants_sha;
   double period_s = 0.0;
   std::array<double, 3> tip_in_link6{};
+  // header `arm` (right unless declared): the physical URDF prefix whose base
+  // frame the samples are in and whose tool the planner steers.
+  std::string arm = "right";
+  ToolModel tool{};
   size_t capture_count = 0;
+  size_t dip_count = 0;
   double start_tolerance_m = 0.001;
   bool carriage_ik = true;  // header `carriage_ik,0` keeps the carriage locked while drawing
   std::vector<std::pair<std::string, std::string>> report;
   std::vector<PathSample> samples;
 };
 
-// Parse and validate a samples file. Refuses an unknown schema, a frame other
-// than right/base_link, a period that differs from `period_s`, a tip model
-// that differs from the ballpoint constant by more than 0.1 mm, a
-// non-orthonormal rotation, a non-finite value, or a capture index out of
-// sequence.
-PathFile load_path_file(const std::string & path, double period_s);
+// Parse and validate a samples file. With no expected prefix it accepts only
+// the installed right/left WXAI prefixes; offline callers may
+// supply a configured WXAI chain's physical URDF prefix explicitly. This is
+// an identity assertion, not proof of chain equivalence or motion authority.
+// Refuses an unknown schema, a frame other than `<arm>/base_link`, a period
+// that differs from `period_s`, a right-arm tip model that differs from the
+// ballpoint constant by more than 0.1 mm (other tips are declared and bounded), a
+// non-orthonormal rotation, a non-finite value, a capture index out of
+// sequence, or (kind orbit / path) a missing or different `constants_sha`:
+// the samples writer and this parser must have been built from the same
+// config/motion_constants.json.
+// An offline caller may instead bind a compatible WXAI chain's tool tip
+// independently of the CSV. Its explicit prefix is required, the working
+// point remains bounded to 50..450 mm, and CSV parity is checked at 1 nm.
+// This model declaration grants no calibration or hardware authority.
+PathFile load_path_file(
+  const std::string & path, double period_s, const std::string & expected_wxai_prefix = "",
+  const std::optional<std::array<double, 3>> & expected_tip_in_link6 = std::nullopt);
 
-// Seven-DOF ballpoint tip path plan: the carriage-IK spiral's planner with the
-// reference position, feedforward velocity and target rotation taken from the
-// samples instead of generated inline. Refuses unless the first sample is
-// within `start_tolerance_m` / 0.02 rad of the start pose. Every existing cap
-// (joint speed, model error, orientation error, carriage envelope, carriage
-// speed and acceleration, joint limits) applies unchanged.
+// Seven-DOF ballpoint tip path plan, with the reference position, feedforward
+// velocity and target rotation taken from the samples. Refuses unless the
+// first tip sample is within `start_tolerance_m`; the path's orientation cap
+// also applies at sample 0. Every cap (joint speed, model error, orientation
+// error, carriage envelope, carriage speed and acceleration, joint limits)
+// comes from motion_constants.hpp.
 CarriageJointPlan plan_joint_path(
   const JointPose & start_joints,
   double start_carriage_m,
   const std::vector<PathSample> & samples,
   double period_s,
   double start_tolerance_m = 0.001,
-  bool carriage_ik = true);
-
-// Archimedean spiral about `center` at fixed `rotation`, as one control-tick
-// sample per period: the exact reference the carriage-IK A/B streamed.
-std::vector<PathSample> spiral_path_samples(
-  const std::array<double, 3> & center,
-  const Rotation & rotation,
-  double radius_m,
-  double turns,
-  double duration_s,
-  double ease_s,
-  double period_s);
-
-// Seven-DOF ballpoint-only A/B candidate. The carriage begins at a positive
-// 2 mm bias established before the operator approaches the paper, remains in
-// a tightly guarded 0.5..3.5 mm drawing envelope, and returns toward its bias
-// through a null-space objective while the measured tool tip follows the same
-// spiral reference as the six-joint plan. Since the draw executor landed this
-// is spiral_path_samples + plan_joint_path; it is kept as the paper baseline.
-CarriageJointPlan plan_joint_spiral_with_carriage(
-  const JointPose & start_joints,
-  double start_carriage_m,
-  double radius_m,
-  double turns,
-  double duration_s,
-  double ease_s,
-  double period_s);
-
-struct GuardTrip
-{
-  std::string code;
-  size_t joint = 0;
-  double value = 0.0;
-  double limit = 0.0;
-};
-
-// Script-only measured-motion backstop. The normal carriage contact cap and
-// hardware E-stop stay active in wxai_teleop; this adds the same 2.5 rad/s and
-// rolling 9 Nm envelopes used by the LeRobot follower.
-class MotionGuard
-{
-public:
-  MotionGuard(
-    double velocity_limit = 2.5,
-    double overforce_limit = 9.0,
-    double overforce_window_s = 0.5,
-    double overforce_fraction = 0.5,
-    size_t overforce_min_samples = 8);
-
-  void reset();
-  std::optional<GuardTrip> observe(
-    double now_s,
-    const std::vector<double> & arm_velocities,
-    const std::vector<double> & arm_efforts);
-
-private:
-  double velocity_limit_;
-  double overforce_limit_;
-  double overforce_window_s_;
-  double overforce_fraction_;
-  size_t overforce_min_samples_;
-  std::deque<std::pair<double, bool>> overforce_;
-};
+  bool carriage_ik = true,
+  const ToolModel & tool = ballpoint_tool_model());
 
 }  // namespace tatbot::square

@@ -6,19 +6,27 @@
   "//5": "required for --on), roles (list, gates which verbs run here),",
   "//6": "arch (informational), hostname (optional alias when `hostname -s`",
   "//7": "differs from the node name), checkout (optional remote repo path).",
+  "//7b": "Every role the code resolves is held by some node here (the Rust",
+  "//7c": "workspace compiles this map in), split as a two-host rig: the",
+  "//7d": "workstation plans, serves and conducts, the robot host owns the arm",
+  "//7e": "and every camera.",
   "//8": "The reference rig runs 7 cameras: 5 PoE IP cameras (__cameras__ below)",
   "//9": "plus 2 USB RealSense D405 depth cameras attached to the node holding",
   "//10": "the 'realsense' role - USB devices are addressed by serial in the",
   "//11": "vision config, not listed here.",
+  "//12": "__rig__ names the rig's own subnet and gateway: cameras, arm",
+  "//13": "controllers and every ssh_lan/lan address live in it, and",
+  "//14": "`tatbot check nodes` holds the vision config, driver profile and",
+  "//15": "controller YAMLs to it, so renumbering the rig is one edit here.",
   "workstation": {
     "arch": "x86_64",
     "ssh": "user@203.0.113.10",
-    "roles": ["viewer", "sim"]
+    "roles": ["operator", "sim", "calib-conductor", "design", "inkgen", "rerun-server", "serve", "bus-router", "tb-hub", "ci-supervisor"]
   },
   "robot-host": {
     "arch": "x86_64",
     "ssh": "user@203.0.113.20",
-    "roles": ["arm", "estop", "realsense", "audio", "ink", "cameras-lan"]
+    "roles": ["arm", "estop", "realsense", "cameras-lan", "poe-cameras", "overhead-depth", "track"]
   },
   "trainer": {
     "arch": "aarch64",
@@ -26,6 +34,7 @@
     "roles": ["train"],
     "checkout": "~/tatbot"
   },
+  "__rig__": {"subnet": "192.0.2.0/24", "gateway": "192.0.2.1"},
   "__cameras__": {
     "camera1": "192.0.2.91",
     "camera2": "192.0.2.92",

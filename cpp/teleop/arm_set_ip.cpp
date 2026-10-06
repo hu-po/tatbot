@@ -2,6 +2,7 @@
 // write a new manual IP (+ sane LAN gateway/dns/subnet), then reboot the
 // controller so it takes effect.
 //   arm_set_ip <current_ip> <new_ip>
+#include "driver_lease.hpp"
 #include <cstdlib>
 #include <iostream>
 #include "libtrossen_arm/trossen_arm.hpp"
@@ -9,6 +10,7 @@ int main(int argc, char ** argv)
 {
   if (argc != 3) { std::cerr << "usage: arm_set_ip <current_ip> <new_ip>\n"; return 1; }
   try {
+    tatbot::DriverLease driver_lease;
     trossen_arm::TrossenArmDriver driver;
     driver.configure(
       trossen_arm::Model::wxai_v0,

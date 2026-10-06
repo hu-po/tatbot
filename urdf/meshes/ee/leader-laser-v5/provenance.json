@@ -1,0 +1,96 @@
+{
+  "revision": "leader-laser-v5",
+  "units": "mm",
+  "frame": "left/carriage_right",
+  "installed_placement": {
+    "parent": "left/carriage_left",
+    "child": "left/ee_mount",
+    "rpy": [
+      3.141592653589793,
+      0.0,
+      0.0
+    ],
+    "xyz_m": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "evidence": "the 2026-09-16 wrist_left layout (sweep-arm-blue-20260916_132711, solved in left/carriage_right) lands on the carrier's three faces within 6 mm only in this placement, and the CAD pen axis then points straight down in every palette contact hold of that session; the pre-2026-09-17 identity placement under left/carriage_right drew the mount upside down on the other carriage",
+    "note": "the meshes and every datum below stay in the CAD frame (`frame`); urdf/tatbot.urdf applies this placement in left/ee_mount_joint and carries tool_datum through it in left/tool_mount_joint. Which physical finger that carriage held (thumb or index by the operator's report) was not re-checked; the M3 pattern is symmetric under the roll."
+  },
+  "representation": "nominal visual model of the installed laser attachment, in its CAD frame; see installed_placement",
+  "mounting_evidence": "mirrored CAD carriage interface; installed laser identity confirmed by operator; mount seen installed on all five fixed cameras 2026-09-15, print revision not verified; placement on the wrist measured through the wrist_left fiducial layout 2026-09-16 (installed_placement)",
+  "physical_fit_validated": false,
+  "collision_qualified": false,
+  "tcp": null,
+  "tool_datum": {
+    "link": "left/tool_mount",
+    "clamp_fat_center_carriage_mm": [
+      38.110806929235416,
+      -65.90719127076459,
+      -0.564
+    ],
+    "tool_axis_carriage": [
+      0.7071067811865476,
+      0.7071067811865476,
+      0.0
+    ],
+    "note": "CAD datum: the fat end of the 35 mm oval grip cavity, +z along the pen axis toward the nose, in the CAD frame; left/tool_mount is this datum carried through installed_placement. The pen's axial station in the cavity is measured by the palette calibration (config/tools/picosecond-laser-pen.yaml measured block): the lens face 129.5 mm out along the mount axis, the tail 84.5 mm behind the fat end against the design assumption of 65 mm."
+  },
+  "nominal_tag_faces": {
+    "A": {
+      "center_carriage_mm": [
+        -8.0,
+        -142.0,
+        -29.564
+      ],
+      "normal": [
+        0,
+        0,
+        -1
+      ]
+    },
+    "B": {
+      "center_carriage_mm": [
+        -8.0,
+        -194.0,
+        22.436
+      ],
+      "normal": [
+        0,
+        -1,
+        0
+      ]
+    },
+    "C": {
+      "center_carriage_mm": [
+        -64.0,
+        -142.0,
+        22.436
+      ],
+      "normal": [
+        -1,
+        0,
+        0
+      ]
+    }
+  },
+  "installed_tags": {
+    "inventory_target": "wrist_left",
+    "note": "Identity and size live in config/fiducials.json. Wrist poses are pending after the carrier and sticker replacement."
+  },
+  "note": "Only the grip contour is surveyed; the pen's axial seat in the cradle is measured by the palette calibration (config/tools/picosecond-laser-pen.yaml measured block). Face letters are CAD placeholders. No optical working point, collision mass or motion acceptance are supplied here.",
+  "source_hashes": {
+    "cad/leader-laser-v1/build.py": "020d3e4d9442f9452e6b9780588dfd42cd49f3ff040ffc1fd32ce0beb6f756b5",
+    "cad/leader-laser-v1/design.json": "a473666612e378d73ac00e53499be1ac8d3d042d58630bd0293257a74cf7c06d",
+    "urdf/meshes/ee/v17/01_cradle_and_brace.stl": "0c3020d3d6de6060eca87244d93b32979497be3eaa67b4a4fed229ca2d71f6f8",
+    "urdf/meshes/ee/v17/03_raised_tag_carrier.stl": "dceb34e3cb71ab33f8eeff7cf55681e5fb53b7e9dfdda4a331c2046babd526b7"
+  },
+  "meshes": {
+    "01_leader_cradle.stl": "4d6b7f3181ec92d607d7b16b4cd8bc2c2bab250dbffd874e34dae8d4fe741427",
+    "02_oval_clamp_cap.stl": "cafe34a0148277c974ee7c86a383df387e3e3a0bc1041a286c0ce0b7c2fdc2be",
+    "03_mirrored_tag_carrier.stl": "1b39fee6fa7f0fa08740de35e8ca92344e98d4caf080252da87130f8d0b7e369"
+  },
+  "installed_carrier": "urdf/meshes/ee/fiducial-cubes-47mm-rear/provenance.json",
+  "carrier_note": "The original carrier mesh and nominal faces in this build record are historical CAD references. The installed carrier was replaced on 2026-09-19."
+}

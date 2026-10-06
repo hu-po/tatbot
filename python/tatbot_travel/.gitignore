@@ -1,0 +1,2 @@
+# MuJoCo writes its warning log into the working directory.
+MUJOCO_LOG.TXT

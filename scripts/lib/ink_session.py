@@ -3,13 +3,13 @@
 An episode is 30 s of one task; a tattoo is hours of many, with the same
 needle carrying the same charge across all of them, dipping when it runs
 dry. The sim's per-episode charge (tatbot_sim.env) and the robot's
-per-invocation ``Charge`` (scripts/il_dip.py) both forgot this: nothing on
+per-invocation ``Charge`` (scripts/il_dip.py, since deleted) both forgot this: nothing on
 the bench held "how much ink is on the needle right now" between one
 rollout and the next, so a dip was always a session start and a stroke was
 never debited. This module is that memory.
 
 One file per node, ``<log root>/ink/session.json``, holding the OPEN
-session (there is at most one per node — one tool in one gripper). Every
+session (there is at most one per node — one tool in the mount). Every
 mutation is also a ledger event (scripts/lib/ink_spec.py), so the session
 file is a cache of the ledger's tail, not a second source of truth:
 ``rebuild()`` recovers it from the events.
@@ -19,9 +19,9 @@ file is a cache of the ledger's tail, not a second source of truth:
     apply_stroke(s, contact_mm, contact_s) # after a rollout is analysed
     end(s)                                 # session.end with the totals
 
-A launcher that says ``--no-ink`` never touches this; one that says ``--dip``
-opens a session if none is open. A rollout with neither leaves the session
-as it found it, and its analysis debits the open one if there is one.
+A launcher that says ``--no-ink`` never touches this. A rollout without it
+leaves the session as it found it, and its analysis debits the open one if
+there is one.
 """
 
 from __future__ import annotations
@@ -38,25 +38,14 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import ink_spec
 else:
-    try:  # scripts/lib on sys.path
-        import ink_spec
-    except ImportError as err:  # loaded by path
-        import importlib.util
-        import sys
-
-        _p = Path(__file__).resolve().with_name("ink_spec.py")
-        _s = importlib.util.spec_from_file_location("ink_spec", _p)
-        if _s is None or _s.loader is None:
-            raise ImportError(f"Cannot load module spec for {_p}") from err
-        ink_spec = importlib.util.module_from_spec(_s)
-        sys.modules["ink_spec"] = ink_spec
-        _s.loader.exec_module(ink_spec)
+    import ink_spec
 
 SCHEMA_VERSION = 1
 
 
 def _utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    from ink_spec import utc_stamp
+    return utc_stamp()
 
 
 def session_path() -> Path:

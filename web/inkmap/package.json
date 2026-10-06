@@ -10,18 +10,25 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
+    "pretest": "node tools/prepare-showcase.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:e2e": "node tests/e2e/run_sentence.mjs",
+    "test:e2e:production": "node tests/e2e/run_sentence.mjs --production",
+    "atlas:contact-sheet": "node --experimental-strip-types tools/atlas_contact_sheet.ts",
+    "atlas:review-sheet": "node --experimental-strip-types tools/atlas_review_sheet.ts",
+    "surface:parity": "node --experimental-strip-types tools/surface_parity.ts",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "npm run typecheck && npm run test && npm run build"
+    "check": "npm run typecheck && npm run test && npm run build && npm run test:e2e && npm run test:e2e:production"
   },
   "dependencies": {
+    "ajv": "8.20.0",
+    "@xmldom/xmldom": "0.9.12",
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "three": "^0.185.1",
-    "three-subdivide": "^1.1.5",
     "zustand": "^5.0.15"
   },
   "devDependencies": {

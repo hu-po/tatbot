@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run a trained policy on the follower arm with GPU inference on the serve node.
+# Run a trained policy on the physical left arm with GPU inference on the serve node.
 #
 #   scripts/il_rollout_async.sh [duration] [server_policy_dir] [policy_type] [extra robot_client args...]
 #
@@ -17,7 +17,7 @@
 # The client streams observations to the server and receives action chunks;
 # overlapping chunks are blended (weighted average), which removes the
 # chunk-boundary jolts of local CPU inference. The robot runs through the
-# same tatbot_follower class as recording. Ctrl+C stops the client (the
+# tatbot_follower class. Ctrl+C stops the client (the
 # robot is then disconnected and returns staged -> sleep).
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -34,14 +34,12 @@ profile_env::require || exit $?
 source "$REPO/scripts/lib/nodes.sh"
 # shellcheck source=scripts/lib/ee_tool.sh
 source "$REPO/scripts/lib/ee_tool.sh"
-# shellcheck source=scripts/lib/dip_hook.sh
-source "$REPO/scripts/lib/dip_hook.sh"
-# Strip --ee-tool, --dip and --no-ink before the positionals; the rest passes through untouched.
+# shellcheck source=scripts/lib/ink_hook.sh
+source "$REPO/scripts/lib/ink_hook.sh"
+# Strip --ee-tool and --no-ink before the positionals; the rest passes through untouched.
 ee_tool::strip "$@"; set -- "${EE_TOOL_ARGS[@]}"
-dip_hook::strip "$@" || exit $?; set -- "${DIP_HOOK_ARGS[@]}"
+ink_hook::strip "$@"; set -- "${INK_HOOK_ARGS[@]}"
 
-# shellcheck source=scripts/il_audio_record.sh
-source "$REPO/scripts/il_audio_record.sh"
 export TATBOT_CONFIG_DIR="${TATBOT_CONFIG_DIR:-$REPO/config/trossen}"
 
 # The venv interpreter, used for everything below. Deliberately NOT `uv run`:
@@ -71,12 +69,31 @@ for arg in "$@"; do
     --robot.include_external_effort|--robot.include_external_effort=*|\
     --robot.mask_external_effort|--robot.mask_external_effort=*|\
     --robot.depth_policy_encoding|--robot.depth_policy_encoding=*|\
+    --robot.physical_arm|--robot.physical_arm=*|\
+    --robot.ip_address|--robot.ip_address=*|\
+    --robot.arm_config|--robot.arm_config=*|\
     --robot.cameras|--robot.cameras=*)
-      echo "checkpoint-controlled rollout option cannot be overridden: $arg" >&2
+      echo "launcher-controlled rollout option cannot be overridden: $arg" >&2
       exit 2
       ;;
   esac
 done
+
+# Physical controller identity comes from the same registry as its camera arm.
+ROLLOUT_BINDING="$(python3 - "$REPO" <<'PY'
+import os, shlex, sys
+from pathlib import Path
+repo = Path(sys.argv[1])
+sys.path.insert(0, str(repo / 'scripts/lib'))
+from tatbot_cli import arms
+arm = arms.load(repo)['left']
+address = os.environ['TATBOT_' + arm.profile_ip_field.upper()]
+for name, value in {'ROLLOUT_ARM': arm.id, 'ROLLOUT_IP': address,
+                    'ROLLOUT_CONFIG': str(repo / arm.controller_config)}.items():
+    print(f'{name}={shlex.quote(value)}')
+PY
+)"
+eval "$ROLLOUT_BINDING"
 
 # Default: the serve node from config/nodes.json (empty -> must be stated).
 SERVER="${TATBOT_POLICY_SERVER:-$(tatbot_nodes::target serve | sed "s/.*@//"):8080}"
@@ -159,24 +176,24 @@ MASK_EXT_EFF_BOOL=$([ "$MASK_EXT_EFF" = 1 ] && echo true || echo false)
 
 # Wrist depth cameras by ROLE from the visiond sensor registry (never file
 # order); use_depth follows the checkpoint contract resolved above.
-WRIST_CAMERAS="$(USE_DEPTH="$USE_DEPTH" python3 - "$REPO" <<'PY'
-import os, sys, tomllib
+WRIST_CAMERAS="$(USE_DEPTH="$USE_DEPTH" POLICY_CAMERA_CONFIG="$POLICY_CONFIG_JSON" python3 - "$REPO" "$ROLLOUT_ARM" <<'PY'
+import json, os, sys
 from pathlib import Path
-reg = tomllib.loads((Path(sys.argv[1]) / "rust/visiond/config/vision.toml").read_text())
-by_role = {c["role"]: c["serial"] for c in reg.get("cameras", {}).get("realsense", []) if c.get("role")}
-missing = [r for r in ("wrist_upper", "wrist_lower") if r not in by_role]
-if missing:
-    sys.exit(f"sensor registry has no role= for {', '.join(missing)}")
-depth = os.environ["USE_DEPTH"]
-print("{" + ", ".join(
-    f"{r}: {{type: intelrealsense, serial_number_or_name: '{by_role[r]}', "
-    f"width: 640, height: 480, fps: 30, use_depth: {depth}}}"
-    for r in ("wrist_upper", "wrist_lower")) + "}")
+repo = Path(sys.argv[1])
+sys.path.insert(0, str(repo / 'scripts/lib'))
+from tatbot_cli import nodes
+from wrist_cameras import lerobot_config
+try:
+    print(lerobot_config(repo, sys.argv[2], nodes.this_node(nodes.load(repo)),
+                         use_depth=os.environ['USE_DEPTH'] == 'true',
+                         checkpoint=json.loads(os.environ['POLICY_CAMERA_CONFIG'])))
+except (OSError, ValueError, KeyError) as exc:
+    sys.exit(f'il_rollout: {exc}')
 PY
 )"
 
-# All checkpoint/wire checks precede the tool and single-use motion gates, so
-# a malformed policy cannot consume an operator nonce.
+# All checkpoint/wire checks precede the tool gate and the launch-id ledger, so
+# a malformed policy never consumes a launch id.
 ee_tool::require || exit $?
 # shellcheck source=scripts/lib/arm_gate.sh
 source "$REPO/scripts/lib/arm_gate.sh"
@@ -191,7 +208,6 @@ CONTROLLER_VELOCITY="${TATBOT_POLICY_CONTROLLER_VELOCITY:-0.75}"
 # INFER_MS is the measured server-side cost used for the budget check.
 case "$POLICY_TYPE" in
   act)            FRACTION=0.60; THRESH=0.5; FALLBACK=60;  INFER_MS=14  ;;
-  groot)          FRACTION=1.00; THRESH=0.6; FALLBACK=16;  INFER_MS=250 ;;
   multi_task_dit) FRACTION=1.00; THRESH=0.6; FALLBACK=24;  INFER_MS=350 ;;
   evo1)           FRACTION=1.00; THRESH=0.5; FALLBACK=50;  INFER_MS=382 ;;
   *)              FRACTION=1.00; THRESH=0.6; FALLBACK=24;  INFER_MS=350 ;;
@@ -268,6 +284,7 @@ echo "refill budget: ${BUDGET_MS} ms vs ~${INFER_MS} ms server inference"
 # a record of when and why. Everything from here — the arm check, the patch
 # report, the client's output, the landing narration — lands in console.log.
 runlog::init rollout_async \
+  --set physical_arm="$ROLLOUT_ARM" \
   --set policy="$POLICY" --set policy_type="$POLICY_TYPE" --set server="$SERVER" \
   --set duration_s="$DURATION" --set task="$TASK" --set chunk="$CHUNK" \
   --set chunk_source="$CHUNK_SOURCE" --set n_action_steps="${SERVED:-unknown}" \
@@ -275,13 +292,12 @@ runlog::init rollout_async \
   --set infer_ms="$INFER_MS" --set use_depth="$USE_DEPTH" \
   --set depth_encoding="${DEPTH_ENCODING:-none}" --set include_ext_eff="$INCLUDE_EXT_EFF" \
   --set mask_ext_eff="$MASK_EXT_EFF_BOOL"
-# --dip / --no-ink: the ink hook (scripts/lib/dip_hook.sh), after the run is
-# open so a dip's ledger events are mirrored into this run's ink.jsonl.
-dip_hook::run || exit $?
+# --no-ink: the ink hook (scripts/lib/ink_hook.sh) stamps the open run.
+ink_hook::stamp
 
 # Fail fast and friendly if the arms are not powered on.
-ping -c1 -W1 "$TATBOT_FOLLOWER_IP" >/dev/null 2>&1 || {
-  echo "Arm at $TATBOT_FOLLOWER_IP is not reachable — is it powered on? (arms take ~20 s to boot)" >&2
+ping -c1 -W1 "$ROLLOUT_IP" >/dev/null 2>&1 || {
+  echo "Policy arm at $ROLLOUT_IP is not reachable — is it powered on? (arms take ~20 s to boot)" >&2
   exit 1
 }
 
@@ -321,8 +337,8 @@ CLIENT_CWD="${RUN_DIR:-$PWD}"
 # driving the arm on its own.
 # Bracketed pattern: a bare `pgrep -f il_client_shield.py` also matches any
 # shell whose command line merely CONTAINS that string — the wrapper that
-# launched this script, an ssh one-liner, a grep. calib_sweep.sh learned this
-# the hard way and its fix is the same; see 189db8a. A false positive here
+# launched this script, an ssh one-liner, a grep. The calibration sweep learned
+# this the hard way and its fix was the same; see 189db8a. A false positive here
 # refuses a legitimate rollout, which is annoying rather than dangerous, but
 # it is still wrong.
 if pgrep -f "[i]l_client_shield.py" >/dev/null 2>&1; then
@@ -332,17 +348,12 @@ if pgrep -f "[i]l_client_shield.py" >/dev/null 2>&1; then
   exit 1
 fi
 
-# Contact-mic capture (opt-in). Started only after every preflight above has
-# passed, so an aborted launch never leaves a recorder running; between here
-# and audio::stop there is no exit path, and the -d cap inside audio::start
-# bounds the recorder even if this shell is SIGKILLed. Evidence, never a gate.
-if [ "${TATBOT_AUDIO:-0}" = 1 ]; then
-  audio::start "${RUN_DIR:-$PWD}" "$(( DURATION + 75 ))"
-  runlog::event audio_start device="${AUDIO_DEV:-none}"
-fi
-
 STATUS=0
 cd "$CLIENT_CWD"
+# shellcheck source=scripts/lib/d405_owner.sh
+source "$REPO/scripts/lib/d405_owner.sh"
+trap 'd405_owner::finish "$?" d405_owner::restore' EXIT
+d405_owner::borrow
 "$VENV_PY" "$REPO/scripts/il_client_shield.py" lerobot.async_inference.robot_client \
   --server_address="$SERVER" \
   --policy_type="$POLICY_TYPE" \
@@ -350,8 +361,10 @@ cd "$CLIENT_CWD"
   --policy_device=cuda \
   --robot.type=tatbot_follower \
   --robot.ee_tool="$EE_TOOL" \
-  --robot.ip_address="$TATBOT_FOLLOWER_IP" \
-  --robot.id=tatbot_follower_right \
+  --robot.physical_arm="$ROLLOUT_ARM" \
+  --robot.ip_address="$ROLLOUT_IP" \
+  --robot.arm_config="$ROLLOUT_CONFIG" \
+  --robot.id="tatbot_policy_$ROLLOUT_ARM" \
   --robot.estop_required=true \
   --robot.abort_on_estop=true \
   --robot.require_z_floor=true \
@@ -459,24 +472,12 @@ if pgrep -f "[i]l_client_shield.py" >/dev/null 2>&1; then
   STATUS=137
 fi
 
-if [ "${TATBOT_AUDIO:-0}" = 1 ]; then
-  audio::stop
-  if [ -n "${RUN_DIR:-}" ] && [ -f "$RUN_DIR/audio.wav" ]; then
-    runlog::artifact "$RUN_DIR/audio.wav"
-    runlog::artifact "$RUN_DIR/audio_start.json"
-  fi
-fi
-
 # Analysis is a REPORT, never a gate: bounded, non-fatal, and it cannot change
 # the exit code. It runs here rather than in the robot class because that code
 # path is the emergency landing — see scripts/il_analyze_rollout.py.
 if [ "${TATBOT_ANALYZE:-1}" != 0 ] && [ -n "${RUN_DIR:-}" ]; then
   timeout 60 "$VENV_PY" "$REPO/scripts/il_analyze_rollout.py" "$RUN_DIR" \
     || echo "analysis failed (non-fatal) — rerun: scripts/il_analyze_rollout.py $RUN_DIR" >&2
-fi
-if [ "${TATBOT_ANALYZE:-1}" != 0 ] && [ -n "${RUN_DIR:-}" ] && [ -f "$RUN_DIR/audio.wav" ]; then
-  timeout 60 "$VENV_PY" "$REPO/scripts/il_analyze_audio.py" "$RUN_DIR" \
-    || echo "audio analysis failed (non-fatal) — rerun: scripts/il_analyze_audio.py $RUN_DIR" >&2
 fi
 
 exit "$STATUS"

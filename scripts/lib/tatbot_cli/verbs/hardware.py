@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 
 from tatbot_cli import EXIT_HW_UNREACHABLE, EXIT_OK, EXIT_USAGE
@@ -44,9 +43,8 @@ def _profile_args(p):
     p.add_argument("name", nargs="?", help="profile to inspect (default: the resolved one)")
 
 
-@verb(noun="profile", verb="show", tier=OFFLINE, summary="the resolved hardware profile: backend, arms, e-stop, provenance",
-      wraps=("scripts/lib/tatbot_profile.py",), args=_profile_args, example=(), doc="docs/robot.md",
-      invariants=("Reads config/profiles/; opens nothing and moves nothing.",))
+@verb(effects=('read_files',), visibility="public", native=True, output="json", noun="profile", verb="show", tier=OFFLINE, summary="the resolved hardware profile: backend, arms, e-stop, provenance",
+      wraps=("scripts/lib/tatbot_profile.py",), args=_profile_args, example=(), doc="docs/robot.md")
 def profile_show(ctx, ns, rest):
     import tatbot_profile
     try:
@@ -73,21 +71,27 @@ def profile_show(ctx, ns, rest):
     return EXIT_OK
 
 
-@verb(noun="profile", verb="list", tier=OFFLINE, summary="the profiles this checkout carries",
+@verb(effects=('read_files',), visibility="public", native=True, output="json", noun="profile", verb="list", tier=OFFLINE, summary="the profiles this checkout carries",
       wraps=("scripts/lib/tatbot_profile.py",), example=(), doc="docs/robot.md")
 def profile_list(ctx, ns, rest):
     import tatbot_profile
+    profiles = []
     for name in tatbot_profile.available(ctx.repo):
         try:
             p = tatbot_profile.load(ctx.repo, name)
             mark = "hardware" if not tatbot_profile.hardware_errors(p) else "synthetic/incomplete"
         except tatbot_profile.ProfileError as e:
             mark = f"INVALID: {e}"
-        print(f"{name:<16} {mark}")
+        profiles.append({"name": name, "status": mark})
+    if ctx.json:
+        print(json.dumps({"schema": "tatbot.profiles/1", "profiles": profiles}))
+    else:
+        for p in profiles:
+            print(f"{p['name']:<16} {p['status']}")
     return EXIT_OK
 
 
-@verb(noun="profile", verb="check", tier=OFFLINE, summary="can the resolved profile drive hardware? (exit 3 if not)",
+@verb(effects=('read_files',), visibility="public", native=True, output="json", noun="profile", verb="check", tier=OFFLINE, summary="can the resolved profile drive hardware? (exit 3 if not)",
       wraps=("scripts/lib/tatbot_profile.py",), args=_profile_args, example=(), doc="docs/robot.md",
       invariants=("The same validation the motion gate runs, without starting anything.",))
 def profile_check(ctx, ns, rest):
@@ -103,45 +107,26 @@ def profile_check(ctx, ns, rest):
     if errs:
         print(f"profile '{p['name']}' cannot drive hardware: " + "; ".join(errs), file=sys.stderr)
         return EXIT_GATE_REFUSED
-    print(f"profile '{p['name']}' is complete: " +
-          ", ".join(f"{k}={v}" for k, v in tatbot_profile.env_exports(p).items()))
+    if ctx.json:
+        print(json.dumps({"schema": "tatbot.profile-check/1", "name": p["name"], "complete": True,
+                          "env": tatbot_profile.env_exports(p)}))
+    else:
+        print(f"profile '{p['name']}' is complete: " +
+              ", ".join(f"{k}={v}" for k, v in tatbot_profile.env_exports(p).items()))
     return EXIT_OK
 
 
 # --- estop ---------------------------------------------------------------------
 
 
-@verb(noun="estop", verb="check", tier=SENSOR, summary="bench-check the Pico e-stop without touching an arm",
+@verb(effects=('sensor_read',), noun="estop", verb="check", tier=SENSOR, summary="bench-check the Pico e-stop",
       role="estop", wraps=("scripts/estop_check.py",), passthrough="estop_check.py", example=(), doc="docs/estop.md",
       invariants=("Heartbeat silence = STOP; the box freezes every connected arm and never cuts power.",))
 def estop_check(ctx, ns, rest):
     return py(ctx, "scripts/estop_check.py", *rest)
 
 
-@verb(noun="estop", verb="sim", tier=OFFLINE, summary="simulate the e-stop box on a PTY for desk testing",
-      wraps=("scripts/estop_sim.py",), passthrough="estop_sim.py", example=(), doc="docs/estop.md")
-def estop_sim(ctx, ns, rest):
-    return py(ctx, "scripts/estop_sim.py", *rest)
-
-
 # --- arm -----------------------------------------------------------------------
-
-
-@verb(noun="arm", verb="ping", tier=SENSOR, summary="are both arm controllers reachable (they boot in ~20 s)",
-      role="arm", example=())
-def arm_ping(ctx, ns, rest):
-    if ctx.dry_run:
-        return Plan(argv=["ping", "-c1", "-W1", *ARMS.values()])
-    bad = []
-    for role, ip in ARMS.items():
-        ok = subprocess.run(["ping", "-c", "1", "-W", "1", ip], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
-        print(f"{role:<9} {ip:<14} {'reachable' if ok else 'UNREACHABLE'}")
-        if not ok:
-            bad.append(role)
-    if bad:
-        print(f"arm: {', '.join(bad)} not reachable — powered on? (arms take ~20 s to boot)", file=sys.stderr)
-        return EXIT_HW_UNREACHABLE
-    return EXIT_OK
 
 
 def _recover_args(p):
@@ -150,13 +135,14 @@ def _recover_args(p):
     p.add_argument("--ip", help="override the controller IP (requires an explicit role)")
 
 
-@verb(noun="arm", verb="recover", tier=MOTION_HUMAN,
-      summary="clear controller faults and land both arms staged→sleep→idle",
-      role="arm", wraps=("scripts/il_recover_arms.sh", "scripts/il_recover_arm.sh"),
+@verb(effects=('read_files', 'network', 'human_motion', 'stop_process'), noun="arm", verb="recover", tier=MOTION_HUMAN,
+      summary="stop active arm sessions, clear faults and land both arms staged→sleep→idle",
+      role="arm", wraps=("scripts/il_recover_arms.sh", "scripts/il_recover_arm.sh", "cpp/teleop/arm_recover.cpp"),
       args=_recover_args, example=(), doc="docs/robot.md",
-      invariants=("With no role, recovers follower first and then leader; an explicit role recovers only that arm.",
+      invariants=("With no role, recovers follower first; leader starts only after follower success. An explicit role recovers only that arm.",
+                  "Stops existing driver lease holders (SIGTERM, then SIGKILL after 10 seconds if needed) before acquiring exclusive ownership; this can stop a session using both arms even with an explicit role.",
                   "Keep the workspace clear: each arm moves slowly through staged and sleep.",
-                  "Same landing routine the plugins use on a failed disconnect (recovery.land_arm)."))
+                  "Runs on the C++ arm stack (cpp/teleop/arm_recover, built by `scripts/check cpp`), not the LeRobot environment; same landing ritual the plugins use on a failed disconnect."))
 def arm_recover(ctx, ns, rest):
     if ns.role is None:
         if ns.ip:
@@ -171,7 +157,7 @@ def arm_recover(ctx, ns, rest):
     return sh(ctx, "scripts/il_recover_arm.sh", ip, ns.role, *rest)
 
 
-@verb(noun="arm", verb="set-ip", tier=MUTATES_CONFIG, summary="set a Trossen controller's IP (cpp/teleop arm_set_ip)",
+@verb(effects=('network', 'device_config'), noun="arm", verb="set-ip", tier=MUTATES_CONFIG, summary="set a Trossen controller's IP address",
       role="arm", wraps=("cpp/teleop/arm_set_ip.cpp",), passthrough="arm_set_ip", example=("--", "--help"))
 def arm_set_ip(ctx, ns, rest):
     return Plan(argv=[ctx.path("cpp/teleop/build/arm_set_ip"), *rest],
@@ -181,12 +167,16 @@ def arm_set_ip(ctx, ns, rest):
 # --- tool ----------------------------------------------------------------------
 
 
-@verb(noun="tool", verb="list", tier=OFFLINE, summary="the tool datasheets in config/tools/",
+@verb(effects=('read_files',), native=True, output="json", noun="tool", verb="list", tier=OFFLINE, summary="the tool datasheets in config/tools/",
       wraps=("scripts/lib/tool_spec.py",), example=(), doc="docs/tools.md")
 def tool_list(ctx, ns, rest):
     from tatbot_cli import gates
-    for t in gates.known_tools(ctx.repo):
-        print(t)
+    tools = list(gates.known_tools(ctx.repo))
+    if ctx.json:
+        print(json.dumps({"schema": "tatbot.tools/1", "tools": tools}))
+    else:
+        for t in tools:
+            print(t)
     return EXIT_OK
 
 
@@ -194,31 +184,19 @@ def _tool_show_args(p):
     p.add_argument("tool_id", nargs="*")
 
 
-@verb(noun="tool", verb="show", tier=OFFLINE, summary="print a datasheet as the code sees it",
-      wraps=("scripts/lib/tool_spec.py",), args=_tool_show_args, example=("picosecond-laser-pen",), doc="docs/tools.md")
+@verb(effects=('read_files',), noun="tool", verb="show", tier=OFFLINE, summary="print a datasheet as the code sees it",
+      wraps=("scripts/lib/tool_spec.py",), args=_tool_show_args, example=("lutin-ballpoint-dot",), doc="docs/tools.md")
 def tool_show(ctx, ns, rest):
     return py(ctx, "scripts/lib/tool_spec.py", *ns.tool_id, *rest)
 
 
-@verb(noun="tool", verb="sync", tier=OFFLINE, summary="datasheet ↔ code agreement (carriage constants, measured tip)",
+@verb(effects=('read_files',), noun="tool", verb="sync", tier=OFFLINE, summary="datasheet ↔ code agreement (carriage constants, measured tip)",
       wraps=("scripts/check_tool_sync.py",), passthrough="check_tool_sync.py", example=(), doc="docs/tools.md")
 def tool_sync(ctx, ns, rest):
     return py(ctx, "scripts/check_tool_sync.py", *tool_flag(ctx), *rest)
 
 
-@verb(noun="tool", verb="qualify-body", tier=MUTATES_CONFIG,
-      summary="bind a five-reseat independent body-axis report to the current touch-off",
-      wraps=("scripts/tool_body_qualify.py", "scripts/lib/tool_spec.py"),
-      passthrough="tool_body_qualify.py", example=("--", "--report", "study.json"),
-      doc="docs/tools.md", needs_tool=True,
-      invariants=("Reads measurements only; never connects to or commands an arm.",
-                  "The selected last cycle must match workspace.yaml's current touch-off.",
-                  "Without --write this is a dry-run; failures write nothing."))
-def tool_qualify_body(ctx, ns, rest):
-    return py(ctx, "scripts/tool_body_qualify.py", *tool_flag(ctx), *rest)
-
-
-@verb(noun="tool", verb="urdf", tier=MUTATES_CONFIG, summary="put the fitted tool into urdf/tatbot.urdf so FK sees it",
+@verb(effects=('read_files', 'write_config'), noun="tool", verb="urdf", tier=MUTATES_CONFIG, summary="put the fitted tool into urdf/tatbot.urdf so FK sees it",
       wraps=("scripts/gen_tool_urdf.py",), passthrough="gen_tool_urdf.py", example=("--", "--check"), doc="docs/tools.md")
 def tool_urdf(ctx, ns, rest):
     return py(ctx, "scripts/gen_tool_urdf.py", *rest)

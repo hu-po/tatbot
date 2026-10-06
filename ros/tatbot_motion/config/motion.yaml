@@ -1,0 +1,160 @@
+# Motion tuning; SI units.
+# Sources: config/motion_constants.json and scripts/lib/pen_path.py (proven on hardware),
+# cpp/teleop/square_probe.cpp (CLIK). Each value is a starting point to be re-measured on the bench.
+format: tatbot-motion
+version: 1
+
+control_rate_hz: 400              # the planner integrates the CLIK at the controller rate (motion_constants period_s)
+knot_rate_hz: 100                 # FollowJointTrajectory knots (50-100 Hz)
+
+joint_speed:                      # CLIK caps; a plan over them is slowed down, never sent (motion_constants planner.*)
+  pen_down_rad_s: 0.375
+  pen_up_rad_s: 1.0
+tip_speed:
+  pen_down_max_m_s: 0.020         # pen_path TIP_SPEED_CAP_M_S; the program speed is clamped to it
+  pen_up_max_m_s: 0.120           # pen_path TIP_SPEED_CAP_PEN_UP_M_S (travel chord cap)
+  draw_default_m_s: 0.0035
+
+approach:
+  standoff_m: 0.010               # pen-up height above the stroke start/end (motion_constants orbit.no_scan_lift_mm)
+  descend_m_s: 0.010              # pen_path DESCENT_SPEED_M_S
+  final_m: 0.005                  # the last 5 mm of the descent (pen_path FINAL_DESCENT_M)...
+  final_m_s: 0.003                # ...at 3 mm/s (FINAL_DESCENT_SPEED_M_S), also the gentle stretch of a lift
+  lift_m_s: 0.010                 # pen_path LIFT_SPEED_M_S
+  omega_max_rad_s: 0.1396         # 8 deg/s rotation cap on pen-up travel (pen_path APPROACH_OMEGA_MAX_RAD_S)
+  angular_accel_rad_s2: 0.1       # rotary budget of a turning pen-up leg (pen_path RETIME_ANGULAR_ACCEL_RAD_S2)
+
+draw:
+  ease_s: 2.0                     # quintic end ease of a stroke (the retired draw CLI's ease_s)
+  short_ease_fraction: 0.45       # a short stroke's ease is at most this fraction of length / speed (pen_path)
+  min_ease_s: 0.05                # the shortest ease (pen_path MIN_STROKE_EASE_S); a dot dwells twice this
+
+pen:                              # pen-down path relative to the touch-derived page (tatbot_motion.pen_down)
+  mode: ride                      # the block below that draws: ride for the ballpoint and for a 3RL whose needle
+                                  # reach is recorded; hover rehearses without a mark (a resource may still ride: a ladder)
+  hover:                          # the tattoo machine off, the path held over the page: a rehearsal that marks nothing
+    height_m: 0.006               # over the measured page; a running 3RL reaches ~2 mm past its tube's end
+    settle_s: 0.0
+  press:                          # the tattoo machine off: the stopped tip pressed onto the paper on the arm's give
+    lift_m: -0.002                # the path above the page (negative presses), |x| <= 3 mm (pen_path.pen_offsets). -2 mm:
+                                  # the arm and EE mount give ~1.5 N/mm; -1 mm drew in the air (bench 2026-09-26)
+    settle_s: 1.0                 # the dwell at touchdown before drawing (pen_path DESCENT_SETTLE_S)
+  ride:                           # the machine running (stack.yaml machine): the tip meets the paper within its stroke
+    fraction: 0.75                # the 3RL (fitted 2026-10-05): its tube's end 3.0 mm over the skin, of its 4.0 mm stroke,
+                                  # the needles 1.0 mm in at the bottom (the last 25%: operator); the operator judged
+                                  # 3.0 mm best on a ride ladder. Put 1.057 back with the ballpoint:
+                                  # this fraction of fitted stroke_mm over the page the wrist gauge measures: 3.70 mm for
+                                  # the 3.5 mm stroke (2026-10-05: a fresh black pressed hard at 3.5 on a traced-twice
+                                  # outline; the operator trimmed to 3.7 and it still inked). A ladder on gauge-measured paper (2026-10-03, close-up scored)
+                                  # left nothing at 4.5 and 4.1 mm, a broken line at 3.7, solid lines at 3.3, 2.9 and
+                                  # 2.5. 3.3 drew a cat and a swirl; at 2.9 the purple cartridge pressed too hard
+                                  # (operator). At 3.3 an outline's out-and-back retrace tore thin paper and dragged
+                                  # the sheet (2026-10-04), so the pen presses less. The old 1.1 (3.85 mm) rested on
+                                  # touch heights the guard tripped in the air; tune on ink, not FK
+    settle_s: 0.0                 # a running tip that dwells dots the page
+  trim:                           # the operator's height trim over that path, kept per cartridge for the run
+                                  # (tatbot_motion.trim; the numpad on the ros node: 8 up, 2 down, 5 back to 0)
+    step_m: 0.0001                # one key press. The ladder (2026-10-03) drew solid from 3.3 down to 2.5 mm and
+                                  # pressed too hard at 2.9 with a swapped cartridge: 0.4 mm already shows
+    limit_m: 0.002                # the trim stays within +-this (operator, 2026-10-04); the first-order map to
+                                  # joints is within 18 um of its target at 2 mm on the pink arm's drawing poses
+    speed_m_s: 0.002              # a change's peak speed along the depth axis (the final descent runs 3 mm/s)...
+    min_s: 0.2                    # ...and its shortest ramp
+    lead_s: 0.1                   # a change mid-goal starts this far ahead of now: the replacement goal reaches
+                                  # the controller before the trajectories part
+
+corners:
+  velocity_change_m_s2: 0.010     # pen-down corner slow-down budget and ramp (pen_path RETIME_CORNER_ACCEL_M_S2)
+  pen_up_m_s2: 0.010              # pen-up legs (RETIME_PEN_UP_ACCEL_M_S2)
+  s_curve_s: 0.2                  # S-curve time constant (RETIME_RAMP_S)
+  touchdown_m_s2: 0.003           # the last final_m into and out of the page (RETIME_TOUCHDOWN_ACCEL_M_S2)
+  end_ease: quintic
+
+touch:                            # motion_constants touchoff.*
+  fast_m_s: 0.010                 # to slow_above_m above the prior
+  slow_above_m: 0.010             # slow throughout descent from start_above_m; unloaded baseline needs separate validation
+  slow_m_s: 0.0002                # slow: more force and fiducial samples through contact (operator, 2026-09-26)
+  wiggle_amplitude_m: 0.0         # across the direction, faded in and out over a quarter period. 0: on the
+                                  # pink arm's compliant mat a pressed, wiggling tip slipped sideways and
+                                  # dragged the mat (bench 2026-09-26); the wiggle also put +-0.3 mm into the lag
+  wiggle_hz: 0.5
+  search_m: 0.025                 # the slow cover without a prior
+  max_travel_m: 0.025             # the whole guarded leg is planned before each touch (~7 s of CLIK at 40 mm);
+                                  # the touches needed 12-17 mm from their start (bench 2026-09-27)
+  settle_s: 0.5                   # touchoff.settle_s: hold at the start before the descent
+  give_n_m: 1500.0                # the arm's and EE mount's give at the tip: 0.5 -> 31 N over 20 mm (bench 2026-09-26)
+  start_above_m: 0.010             # each touch starts this far above the prior page (last touched, else camera)
+  confirm_back_m: 0.003           # after a trip, the next descent starts this far over the lowest: the guard's torque
+                                  # force also trips in the air (11 of 16 trips, 2026-10-03), so a trip counts once
+  confirm_tol_m: 0.0025           # another lies within this of the lowest (the paper's own trips spread 2.2 mm with
+                                  # the turns, every one on it by the wrist camera, 2026-10-03);
+                                  # two when the paper is known, three when it is not (two in the air met within 1.3)
+  confirm_turn_deg: 20.0          # each further descent turns the tool about its axis, alternating sides: the
+                                  # joints and the cables' pull change, the page does not (cable trips repeat by pose)
+  confirm_trips: 6                # trips at one point before the touch is refused
+  known_above_m: 0.004            # with the paper known (the last accepted touches on this page), descents start
+  known_band_m: 0.003             # this far over it, and a trip more than this over it is in the air, not counted
+  first_contact_max_m: 0.005      # a first-contact estimate further over its trip is dropped (the arm gives ~2 mm
+                                  # before a trip; the overhead fiducials once put one 21 mm over, 2026-10-03)
+  lift_m: 0.020                   # after a trip, back up this far before the next touch (10 mm looked like
+                                  # no retraction on the bench, 2026-09-26)
+
+probe:                            # touches on the station probe's ball (Touch GUARD_PROBE). The unsafe state: a stylus pushed
+                                  # past its overtravel (2 mm axial, 4 mm sideways on the listing) is damaged
+  axial_cap_m: 0.0010             # travel past the expected contact: at most this along the stylus (base z)
+  lateral_cap_m: 0.0025           # and this across it. Reaching the cap untriggered is a missing trigger, not a fault
+  slow_m_s: 0.001                 # the slow leg, inside the probe's rated 0.8-3.3 mm/s feed
+  back_off_m: 0.003               # after a trigger, back out this far the way the tip came; then the probe must
+                                  # read released
+  clearance_m: 0.030              # every approach goes up to this far over its start, across, and down onto it:
+                                  # never a straight line past the ball
+
+collision:                        # the arms keep apart (tatbot_motion.collision.Guard; ros/README.md section 8).
+                                  # The unsafe state: one arm, or a cable it carries, meeting the other
+  arms_m: 0.020                   # the least planned gap between the two arms' bodies (link hulls, tool capsules)
+                                  # beyond a wrist's bubble: tracking lag and the model's own error
+  wrist_m: 0.080                  # each arm's wrist and end effector bubbled out this far: the reach of its cable
+                                  # loops (tied along the forearm, looped to the tool and the wrist D405 so the wrist
+                                  # can turn). A pair keeps the larger of its two bubbles: a loop must not reach the
+                                  # other arm's rigid parts; two loops may brush. 2026-09-29: the pink wrist's loops
+                                  # caught on the landed blue arm at a view planned 83-87 mm from it (pen to laser
+                                  # prop); views at 133-147 mm did not. A wrist keeps 100 mm from anything of the
+                                  # other arm, rigid links 20 mm from each other. 100 mm until 2026-09-30, when at
+                                  # palette v11, 12 cm from where blue lands, it left pink two headings by 1 mm each;
+                                  # 80 at the operator's call opens five with 15 mm to spare, above the snag
+  wrist_bodies: [link_5, link_6, carriage, realsense, tool]   # the padded bodies, by name after "<arm>/"
+  self_m: 0.010                   # the least planned gap between two of one arm's own bodies (Scene.self_pairs,
+                                  # the wrist tag cube among them), no bubbles. 2026-09-30: an inspection view folded
+                                  # the pink cube 11 mm into link_2 in the model; the arm met itself there
+  step_rad: 0.010                 # a planned way is checked wherever a joint has moved this far (7 mm at full reach)
+
+# Dip entry/withdrawal values belong to the measured ink.ros_profiles record
+# frozen by preparation. No generic dip values qualify an unmeasured tool/cap.
+
+dispatch_drift:                   # re-plan when the measured pose drifted this far from the plan's seed
+  pen_down_rad: 0.010
+  pen_down_m: 0.0005
+  pen_up_rad: 0.020
+  pen_up_m: 0.002
+  start_tolerance_m: 0.001        # a continuing stroke joins its start pen-down within this (pen_path START_TOLERANCE_M)
+resume_reapproach_m: 0.0005       # an aborted stroke re-approaches when the tip is this far off its path
+
+carriage:                         # config/motion_constants.json carriage_ik / planner.*carriage*
+  ik: false                       # the carriage stays out of the solve; true = the paper A/B
+  bias_m: 0.002                   # pen-up travel brings the carriage here
+  window_m: [0.0005, 0.0035]      # the drawing window when ik is true
+  max_m_s: 0.001
+  max_m_s2: 0.02
+  travel_m_s: 0.010               # carriage speed while travel restores the bias (new; the trip retract runs 53 mm/s)
+
+clik:                             # cpp/teleop square_probe.cpp damped least squares (motion_constants planner.*)
+  damping: 0.02
+  position_gain_s: 4.0
+  orientation_gain_s: 2.0
+  carriage_weight: 2.0
+  carriage_center_gain_s: 2.0
+  joint_limit_margin_rad: 0.0333
+  max_model_error_m: 0.0015       # a plan whose tip trails its reference farther is an error (max_model_error_draw_m)
+  max_orientation_error_rad: 0.005  # ...or whose tool axis lags farther (motion_constants planner.max_orientation_error_rad)
+  slowdown_tries: 5
+  model_error_cap_m: 0.0001       # parity with path_plan_check: FK tip agreement (test_clik_parity)

@@ -18,7 +18,7 @@ exact oracles for height, gradient, normal and metric — no tolerance fudging.
 
 Torch + numpy only, no render device:
 
-    cd python/tatbot_sim && uv run python tests/test_surface.py
+    cd python/tatbot_sim && uv run --with pytest pytest -q tests/test_surface.py
 """
 
 from __future__ import annotations
@@ -133,6 +133,34 @@ def test_cylinder_inverse_round_trips():
     rng = np.random.default_rng(6)
     uv = torch.as_tensor(rng.uniform(-0.05, 0.05, (b, 2)), dtype=torch.float32)
     point, _, _, _ = chart.frame(uv)
+    assert torch.allclose(chart.invert(point), uv, atol=1e-5)
+
+
+def test_cylinder_can_wrap_u_around_an_axis_along_v():
+    b = 16
+    center, rot = _tilted_frames(b, seed=15)
+    chart = CylinderChart(center, rot, torch.full((b,), 0.075), axis="v")
+    rng = np.random.default_rng(16)
+    uv = torch.as_tensor(rng.uniform(-0.05, 0.05, (b, 2)), dtype=torch.float32)
+    point, d_du, d_dv, normal = chart.frame(uv)
+    assert torch.allclose(chart.invert(point), uv, atol=1e-5)
+    assert torch.allclose(d_du.norm(dim=-1), torch.ones(b), atol=1e-6)
+    assert torch.allclose(d_dv, rot[:, :, 1], atol=1e-6)
+    assert torch.allclose((normal * d_du).sum(-1), torch.zeros(b), atol=1e-6)
+
+
+def test_infinite_radius_members_are_exact_planes_in_a_mixed_batch():
+    center, rot = _tilted_frames(4, seed=17)
+    chart = CylinderChart(center, rot, torch.tensor([float("inf"), 0.08, float("inf"), 0.1]), axis="v")
+    uv = torch.tensor([[0.03, -0.02], [0.03, -0.02], [-0.04, 0.01], [-0.04, 0.01]])
+    point, d_du, d_dv, normal = chart.frame(uv)
+    plane = PlaneChart(center, rot)
+    plane_point, plane_du, plane_dv, plane_normal = plane.frame(uv)
+    for i in (0, 2):
+        assert torch.equal(point[i], plane_point[i])
+        assert torch.equal(d_du[i], plane_du[i])
+        assert torch.equal(d_dv[i], plane_dv[i])
+        assert torch.equal(normal[i], plane_normal[i])
     assert torch.allclose(chart.invert(point), uv, atol=1e-5)
 
 
@@ -482,15 +510,3 @@ def test_the_rendered_mesh_is_the_surface_the_ink_model_uses():
     assert np.allclose(uvs[-1], [1.0, 0.0], atol=1e-6)
     # and the mesh really is displaced, or it proves nothing
     assert np.ptp(verts[:, 2]) > 0.002, np.ptp(verts[:, 2])
-
-
-def _run_all():
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    for fn in fns:
-        fn()
-        print(f"  ok  {fn.__name__}")
-    print(f"{len(fns)} passed")
-
-
-if __name__ == "__main__":
-    _run_all()

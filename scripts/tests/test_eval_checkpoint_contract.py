@@ -13,34 +13,6 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
-def test_groot_rgbd_contract(tmp_path: Path) -> None:
-    checkpoint = tmp_path / "checkpoint"
-    checkpoint.mkdir()
-    (checkpoint / "config.json").write_text(
-        json.dumps(
-            {
-                "type": "groot",
-                "use_relative_actions": True,
-                "input_features": {
-                    "observation.state": {"shape": [7]},
-                    "observation.images.wrist_upper": {"shape": [3, 480, 640]},
-                    "observation.images.wrist_upper_depth": {"shape": [3, 480, 640]},
-                },
-            }
-        )
-    )
-
-    assert MODULE.load_contract(str(checkpoint)) == {
-        "policy_type": "groot",
-        "use_relative_actions": True,
-        "use_depth": True,
-        "depth_encoding": "depth-v1",
-        "state_size": 7,
-        "use_external_effort": False,
-        "mask_external_effort": False,
-    }
-
-
 def _act_rgbd_checkpoint(tmp_path: Path, sidecar: dict | None = None) -> Path:
     checkpoint = tmp_path / "checkpoint"
     checkpoint.mkdir(parents=True)
@@ -128,47 +100,15 @@ def test_declare_stamps_every_checkpoint_and_reads_back(tmp_path: Path) -> None:
         assert contract["mask_external_effort"] is True
 
 
-def test_rollout_launchers_pass_contract_mask_to_the_robot_client() -> None:
-    sync = (REPO / "scripts" / "il_rollout.sh").read_text()
+def test_rollout_launcher_passes_contract_mask_to_the_robot_client() -> None:
+    # il_rollout_async.sh is the one rollout launcher (the synchronous
+    # il_rollout.sh and il_compare_policies.sh were retired 2026-09-02: the
+    # first could not run the flagship, the second could not pass arm_gate
+    # past its first launch).
     async_ = (REPO / "scripts" / "il_rollout_async.sh").read_text()
-    compare = (REPO / "scripts" / "il_compare_policies.sh").read_text()
 
-    assert "--robot.mask_external_effort=$MASK_EXT_EFF_BOOL" in sync
     assert "--robot.mask_external_effort=$MASK_EXT_EFF_BOOL" in async_
-    assert 'TATBOT_MASK_EXT_EFF="$mask_ext_eff"' in compare
-    assert "checkpoint-controlled rollout option cannot be overridden" in sync
-    assert "checkpoint-controlled rollout option cannot be overridden" in async_
-    assert "Teach the client to zero" not in sync + async_ + compare
-
-
-def test_sync_launcher_rejects_relative_groot_before_arm_gate(tmp_path: Path) -> None:
-    (tmp_path / "config.json").write_text(
-        json.dumps(
-            {
-                "type": "groot",
-                "use_relative_actions": True,
-                "input_features": {"observation.state": {"shape": [7]}},
-            }
-        )
-    )
-    result = subprocess.run(
-        [str(REPO / "scripts" / "il_rollout.sh"), str(tmp_path), "1"],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 2
-    assert "full-chunk async inference" in result.stderr
-
-
-def test_sync_launcher_has_no_legacy_default() -> None:
-    result = subprocess.run(
-        [str(REPO / "scripts" / "il_rollout.sh")],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 2
-    assert "GR00T flagship" in result.stderr
+    assert "launcher-controlled rollout option cannot be overridden" in async_
+    assert "Teach the client to zero" not in async_
+    assert not (REPO / "scripts" / "il_rollout.sh").exists()
+    assert not (REPO / "scripts" / "il_compare_policies.sh").exists()

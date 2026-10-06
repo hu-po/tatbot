@@ -65,6 +65,10 @@ export interface TraceOptions {
   fill?: string;
 }
 
+/** Shared paint-preserving trace: spline fitting can distort holes without throwing. */
+export const TRACE_LADDER: TraceOptions[] = [{ mode: "polygon", filterSpeckle: 0, pathPrecision: 3 }];
+export const TRACE_ALGORITHM = "inkmap-vtracer-otsu-v2";
+
 let ready: Promise<void> | null = null;
 
 /**
@@ -115,7 +119,6 @@ export function traceSvg(bin: Pixels, o: TraceOptions = {}): string {
 
 /** True after a wasm panic: the module must be re-instantiated before the next trace. */
 let poisoned = false;
-export function tracerPoisoned(): boolean { return poisoned; }
 export function resetTracer(): void { poisoned = false; ready = null; }
 
 /** Crop the SVG's viewBox to the ink (plus margin) so a design's aspect is the drawing's, not the canvas's. */

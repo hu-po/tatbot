@@ -8,6 +8,7 @@ that mix via require_stated_tool; the sim must make the same call.
 
 from __future__ import annotations
 
+import pytest
 from tatbot_sim import urdf
 from tatbot_sim.tools import active_tool, registry
 
@@ -33,11 +34,15 @@ def test_the_measured_tip_belongs_to_the_calibrated_tool_only():
         "no touch-off at all falls back to the datasheet nominal")
 
 
+@pytest.mark.field_calibration
 def test_the_rendered_contact_point_and_tcp_share_one_resolved_geometry():
     reg, spec = registry(), active_tool()
     workspace = reg.read_workspace(urdf.REPO)
     geometry = reg.resolved_tool_geometry(spec, workspace, "right", urdf.REPO)
-    assert geometry.measured
+    assert geometry.measured == (reg.tip_offset_m(workspace) is not None)
+    if not geometry.measured:
+        assert geometry.source == "datasheet-nominal"
+        assert geometry.contact_status == "unqualified"
     assert geometry.body_tip_offset_m == geometry.tcp_offset_m
     assert geometry.alignment_error_m <= reg.CONTACT_ALIGNMENT_TOLERANCE_M
     assert urdf.tool_tcp_m() == geometry.tcp_offset_m
@@ -59,3 +64,28 @@ def test_source_profile_gets_a_distinct_derived_robot_path():
     public = urdf.derived_paths("pen", source_fingerprint="b" * 64)
     assert private != public
     assert "-src" in private[0].stem
+
+
+def test_camera_profile_selects_geometry_without_changing_the_installed_model():
+    import xml.etree.ElementTree as ET
+
+    current = urdf.build_tatbot_urdf()
+    historical = urdf.build_tatbot_urdf(sensor_profile="legacy-two-view")
+    assert current != historical
+    current_links = {link.get("name") for link in ET.parse(current).getroot().findall("link")}
+    historical_links = {link.get("name") for link in ET.parse(historical).getroot().findall("link")}
+    assert "camera_lower_link" not in current_links
+    assert "camera_lower_link" in historical_links
+    assert "camera_link" in current_links
+
+
+def test_nominal_contact_point_and_tcp_share_one_geometry(monkeypatch):
+    from tatbot_sim import tools
+    monkeypatch.setenv("TATBOT_TOOL_ID", tools.active_tool().tool_id)
+    monkeypatch.setattr(tools, "workspace", lambda: {})
+    geometry = tools.resolved_geometry()
+    assert not geometry.measured
+    assert geometry.source == "datasheet-nominal"
+    assert geometry.body_tip_offset_m == geometry.tcp_offset_m
+    assert geometry.alignment_error_m <= tools.registry().CONTACT_ALIGNMENT_TOLERANCE_M
+    assert urdf.tool_tcp_m() == geometry.tcp_offset_m

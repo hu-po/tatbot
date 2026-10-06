@@ -1,0 +1,271 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.dev/schemas/human-representation/tissue-patch.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "content_sha256",
+    "material_chart_sha256",
+    "rest_surface_sha256",
+    "deformed_surface_sha256",
+    "layer_prior_fields",
+    "constitutive_model",
+    "parameters",
+    "uncertainty",
+    "damping",
+    "relaxation",
+    "friction",
+    "boundary_conditions",
+    "support_sha256",
+    "tool_geometry_sha256",
+    "indentation",
+    "force",
+    "calibration_sha256",
+    "batch_sha256",
+    "provenance"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tatbot.tissue-patch/1"
+    },
+    "content_sha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "material_chart_sha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "rest_surface_sha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "deformed_surface_sha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "layer_prior_fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "role",
+          "unit",
+          "values_sha256",
+          "uncertainty_sha256"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "enum": [
+              "measured-layer",
+              "generic-prior"
+            ]
+          },
+          "unit": {
+            "type": "string",
+            "minLength": 1
+          },
+          "values_sha256": {
+            "$ref": "common.schema.json#/$defs/sha256"
+          },
+          "uncertainty_sha256": {
+            "$ref": "common.schema.json#/$defs/sha256"
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "constitutive_model": {
+      "enum": [
+        "rigid-contact-v1",
+        "compliant-heightfield-v1",
+        "compliant-shell-v1",
+        "volumetric-tissue-v1"
+      ]
+    },
+    "parameters": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/parameterEstimate"
+      }
+    },
+    "uncertainty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "posterior_sha256",
+        "out_of_distribution_policy_sha256",
+        "confidence"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "posterior_sha256": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        },
+        "out_of_distribution_policy_sha256": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "damping": {
+      "$ref": "#/$defs/parameterEstimate"
+    },
+    "relaxation": {
+      "$ref": "#/$defs/parameterEstimate"
+    },
+    "friction": {
+      "$ref": "#/$defs/parameterEstimate"
+    },
+    "boundary_conditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "definition_sha256"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "definition_sha256": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        }
+      }
+    },
+    "support_sha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "tool_geometry_sha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "indentation": {
+      "$ref": "#/$defs/traceBindings"
+    },
+    "force": {
+      "$ref": "#/$defs/traceBindings"
+    },
+    "calibration_sha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "batch_sha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "provenance": {
+      "$ref": "common.schema.json#/$defs/provenance"
+    }
+  },
+  "$defs": {
+    "parameterEstimate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "sigma",
+        "unit",
+        "identified"
+      ],
+      "properties": {
+        "value": {
+          "type": "number"
+        },
+        "sigma": {
+          "type": "number",
+          "minimum": 0
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "identified": {
+          "type": "boolean"
+        }
+      }
+    },
+    "traceBindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unit",
+        "commanded_trace_sha256",
+        "estimated_trace_sha256",
+        "measured_trace_sha256"
+      ],
+      "properties": {
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commanded_trace_sha256": {
+          "oneOf": [
+            {
+              "$ref": "common.schema.json#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "estimated_trace_sha256": {
+          "oneOf": [
+            {
+              "$ref": "common.schema.json#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "measured_trace_sha256": {
+          "oneOf": [
+            {
+              "$ref": "common.schema.json#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "commanded_trace_sha256": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "properties": {
+            "estimated_trace_sha256": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "properties": {
+            "measured_trace_sha256": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

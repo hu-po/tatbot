@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Score a rollout: did the pen draw the shape, and did the control loop keep time?
 
-    il_analyze_rollout.py <run-dir | flight.csv> [--paper-z MM] [--settle S]
+    il_analyze_rollout.py <run-dir | flight.csv> [--paper-z MM] [--settle S] [--lift-mm MM]
     il_analyze_rollout.py --compare <analysis.json>...      # the sweep table
 
 Reads the follower's flight-recorder CSV, pushes the six arm joints through the
@@ -9,8 +9,7 @@ URDF with scripts/vision/urdf_kinematics.py, and reports what the pen tip did.
 Writes analysis.json beside the CSV and prints one table.
 
 WHAT THIS CAN AND CANNOT MEASURE. Forward kinematics stops at
-`right/ee_gripper_link`. The tattoo pen extends past that and the URDF does
-not model it; once scripts/il_touchoff.py has measured the tip offset it is
+the selected arm's `tool_mount`. Its measured working-tip offset is
 applied to the FK path here, and ABSOLUTE height above paper is meaningful.
 Until then every height is relative.
 Without one this still reports every height number, but marks contact_basis
@@ -33,7 +32,10 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "scripts" / "vision"))
+sys.path.insert(0, str(REPO / "scripts/lib"))
+from tatbot_paths import bootstrap  # noqa: E402
+
+bootstrap()
 
 try:
     import numpy as np
@@ -42,6 +44,7 @@ except ImportError:  # a bare system python3 has no numpy; uv always can get it.
              "  uv run --no-project --with numpy python scripts/il_analyze_rollout.py "
              + " ".join(sys.argv[1:]))
 
+import tool_spec  # noqa: E402
 from urdf_kinematics import UrdfChain  # noqa: E402
 
 # --- window ---------------------------------------------------------------
@@ -79,7 +82,6 @@ STALL_S = 0.05
 
 ARM_JOINTS = ["joint_0", "joint_1", "joint_2", "joint_3", "joint_4", "joint_5"]
 CARRIAGE = "left_carriage_joint"
-TIP_LINK = "right/tool_mount"  # the frame workspace.yaml's tip offset lives in
 
 
 def load_rows(csv_path: Path) -> list[dict]:
@@ -93,12 +95,13 @@ def pen_path(rows, chain, names, tip_offset_m=None):
     would go wrong the moment the wrist tilts, since the tip swings on the
     lever arm of its x/y components."""
     offset = np.zeros(3) if tip_offset_m is None else np.asarray(tip_offset_m, float)
+    arm = names[0].split('/', 1)[0]
     out = []
     for r in rows:
         q = {n: float(r["pos_" + j]) for n, j in zip(names, ARM_JOINTS, strict=True)}
         # the mount rides the carriage: a retracted pen is a lifted tip
-        q["right/" + CARRIAGE] = float(r.get("pos_" + CARRIAGE) or 0.0)
-        pose = chain.link_pose(TIP_LINK, q)
+        q[arm + "/" + CARRIAGE] = float(r.get("pos_" + CARRIAGE) or 0.0)
+        pose = chain.link_pose(arm + "/tool_mount", q)
         out.append((pose[:3, :3] @ offset + pose[:3, 3]) * 1000.0)
     return np.array(out)
 
@@ -147,36 +150,6 @@ def hull_area(xy) -> float:
     h = np.array(hull)
     return float(abs(np.dot(h[:, 0], np.roll(h[:, 1], -1))
                      - np.dot(h[:, 1], np.roll(h[:, 0], -1))) / 2.0)
-
-
-def load_workspace() -> dict:
-    path = REPO / "config" / "workspace.yaml"
-    if not path.is_file():
-        return {}
-    # Deliberately not importing yaml: the analyzer has to run under bare
-    # interpreters that have numpy and nothing else. Only reads the scalars it
-    # needs — top-level section, one level of indent — and ignores anything
-    # deeper (the touchoff: block) rather than flattening it into the parent.
-    out, section = {}, None
-    for line in path.read_text().splitlines():
-        raw = line.rstrip()
-        if not raw.strip() or raw.strip().startswith("#"):
-            continue
-        indent = len(raw) - len(raw.lstrip())
-        if indent == 0:
-            section = raw.split(":")[0].strip()
-            out[section] = {}
-        elif section and indent == 2:
-            key, _, val = raw.strip().partition(":")
-            val = val.split("#")[0].strip()
-            if val in ("null", ""):
-                out[section][key] = None
-            else:
-                try:
-                    out[section][key] = float(val)
-                except ValueError:
-                    out[section][key] = val.strip('"')
-    return out
 
 
 def sparc(speed, fs, fc=10.0, amp_th=0.05):
@@ -301,7 +274,23 @@ def descent_stats(z_full, t_full, floor_mm, band_mm=3.0, min_start_mm=20.0):
     }}
 
 
-def analyze(target: Path, paper_z=None, settle=SETTLE_S, window_s=None) -> dict:
+def physical_arm(meta: dict, arm: str | None = None) -> str:
+    """Select recorded geometry; older logs can explicitly name their arm."""
+    recorded = meta.get('key', {}).get('physical_arm')
+    if recorded is None:
+        recorded_arms = {entry['physical_arm'] for entry in meta.get('hardware', {}).get('arms', [])
+                         if entry.get('physical_arm')}
+        if len(recorded_arms) == 1:
+            recorded = recorded_arms.pop()
+    if arm is not None and recorded is not None and arm != recorded:
+        raise SystemExit('selected arm contradicts the recorded physical arm')
+    arm = recorded or arm or 'right'  # historical flight logs predate physical-arm metadata
+    if arm not in ('left', 'right'):
+        raise SystemExit('rollout analysis requires physical arm left or right')
+    return arm
+
+
+def analyze(target: Path, paper_z=None, settle=SETTLE_S, window_s=None, lift_mm=6.0, arm=None) -> dict:
     run_dir = target if target.is_dir() else target.parent
     if target.is_dir():
         candidates = sorted(target.glob("flight-*.csv")) or sorted(target.glob("*.csv"))
@@ -314,8 +303,11 @@ def analyze(target: Path, paper_z=None, settle=SETTLE_S, window_s=None) -> dict:
     meta = {}
     meta_path = run_dir / "meta.json"
     if meta_path.is_file():
-        with __import__("contextlib").suppress(Exception):
+        with contextlib.suppress(Exception):
             meta = json.loads(meta_path.read_text())
+
+    arm = physical_arm(meta, arm)
+    tip_link = f'{arm}/tool_mount'
 
     rows = load_rows(csv_path)
     if len(rows) < 30:
@@ -325,7 +317,7 @@ def analyze(target: Path, paper_z=None, settle=SETTLE_S, window_s=None) -> dict:
     t -= t[0]
     dt = np.diff(t)
     chain = UrdfChain(str(REPO / "urdf" / "tatbot.urdf"))
-    names = chain.arm_joint_names("right")
+    names = chain.arm_joint_names(arm)
 
     win = t >= settle
     if window_s:
@@ -340,11 +332,11 @@ def analyze(target: Path, paper_z=None, settle=SETTLE_S, window_s=None) -> dict:
     # zs are then PEN TIP heights, and the touch-off's paper plane is directly
     # comparable to them. Without an offset, zs are ee_gripper_link heights,
     # which is exactly what the ee_contact_z composite fallback measures.
-    ws = load_workspace().get("right", {})
+    ws = tool_spec.read_workspace(REPO).get(arm) or {}
     tip_offset = None
     # tip_frame gates it: a gripper-era offset is in a frame the tool no
     # longer has any relation to, so it reads as no touch-off at all.
-    if ws.get("pen_tip_offset_z") is not None and ws.get("tip_frame") == TIP_LINK:
+    if ws.get("pen_tip_offset_z") is not None and ws.get("tip_frame") == tip_link:
         tip_offset = [float(ws.get("pen_tip_offset_x") or 0.0),
                       float(ws.get("pen_tip_offset_y") or 0.0),
                       float(ws["pen_tip_offset_z"])]
@@ -436,7 +428,8 @@ def analyze(target: Path, paper_z=None, settle=SETTLE_S, window_s=None) -> dict:
                              1.0 / float(np.median(np.diff(tw)))), 3),
         "ldj": round(log_dimensionless_jerk(tip, float(np.median(np.diff(tw)))), 2),
         **pad_dwell(zs),
-        **lift_stats(zs, tw),
+        **lift_stats(zs, tw, clearance_mm=lift_mm),
+        "lift_threshold_mm": float(lift_mm),
         **descent_stats(tip_full[:, 2], t, float(np.percentile(zs, 2))),
         "turn_deg_per_sample": round(turn_s, 1), "reversal_pct_per_sample": round(rev_s, 1),
         "grip_cmd_peak_n": round(float(grip_cmd.max()), 2),
@@ -451,6 +444,7 @@ def analyze(target: Path, paper_z=None, settle=SETTLE_S, window_s=None) -> dict:
         "schema": "tatbot.rollout.analysis/1",
         "run_id": meta.get("run_id") or run_dir.name,
         "flight_csv": str(csv_path),
+        "physical_arm": arm,
         "git_sha": meta.get("git", {}).get("short"),
         "window": {"settle_s": settle, "end_s": round(float(tw[-1]), 1),
                    "run_duration_s": round(float(t[-1]), 1),
@@ -462,9 +456,9 @@ def analyze(target: Path, paper_z=None, settle=SETTLE_S, window_s=None) -> dict:
                      "plane_z_mm": round(plane, 2), "plane_source": src,
                      "pen_tip_offset_mm": ([round(v * 1000.0, 2) for v in tip_offset]
                                            if tip_offset is not None else None),
-                     "link": TIP_LINK, "contact_tol_mm": CONTACT_TOL_MM,
+                     "link": tip_link, "contact_tol_mm": CONTACT_TOL_MM,
                      "caveat": None if valid else
-                     "no touch-off in right/tool_mount; absolute height is not measured"},
+                     f"no touch-off in {tip_link}; absolute height is not measured"},
         "config": _run_config(meta),
         "metrics": m,
     }
@@ -573,7 +567,7 @@ def print_report(a: dict) -> None:
           f"   (less negative = smoother)")
     print(f"  dwell      {m['dwell_pct']:.0f}% at its floor {m['floor_mm']:.1f} mm"
           f"   hover {m['hover_mm']:.1f}  drop {m['drop_mm']:.1f} mm")
-    print(f"  lifts      {m['lift_events']} sustained (>6 mm, >0.3 s)"
+    print(f"  lifts      {m['lift_events']} sustained (>{m.get('lift_threshold_mm', 6.0):g} mm, >0.3 s)"
           f"   airborne {m['lift_s']:.1f}s of {a['window']['scored_s']:.0f}s")
     d = m.get("descent")
     if d is not None:
@@ -698,7 +692,7 @@ def _short_host(name: str | None) -> str | None:
 
 def run_ink_tracking(run_dir: Path) -> tuple[bool, str]:
     """Did this run take part in ink accounting? The run's own stamp
-    ($RUN_DIR/ink.json, written by scripts/lib/dip_hook.sh) outranks the
+    ($RUN_DIR/ink.json, written by scripts/lib/ink_hook.sh) outranks the
     environment: TATBOT_INK lives one shell, the stamp lives with the run."""
     import os
 
@@ -743,7 +737,6 @@ def debit_ink_session(run_dir: Path, a: dict, log=print) -> dict | None:
     if not tracking:
         return {"skipped": f"--no-ink ({basis})"}
     try:
-        sys.path.insert(0, str(REPO / "scripts" / "lib"))
         import ink_session
         import ink_spec
         import tool_spec
@@ -790,9 +783,13 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("target", nargs="*", help="run directory or flight CSV")
+    ap.add_argument('--arm', choices=('left', 'right'),
+                    help='physical arm for historical logs without arm metadata')
     ap.add_argument("--paper-z", type=float, default=None,
                     help="paper plane in mm (overrides the workspace/inferred basis)")
     ap.add_argument("--settle", type=float, default=SETTLE_S)
+    ap.add_argument("--lift-mm", type=float, default=6.0,
+                    help="clearance above the floor (p2) that counts as a sustained lift")
     ap.add_argument("--window", type=float, default=None,
                     help="seconds of run to score after the settle window; use this "
                          "to align runs of different duration")
@@ -808,7 +805,7 @@ def main() -> int:
     rc = 0
     for target in args.target:
         a = analyze(Path(target).expanduser(), paper_z=args.paper_z,
-                    settle=args.settle, window_s=args.window)
+                    settle=args.settle, window_s=args.window, lift_mm=args.lift_mm, arm=args.arm)
         run_dir = Path(target) if Path(target).is_dir() else Path(target).parent
         a["ink"] = debit_ink_session(run_dir, a, log=(lambda *_: None) if args.json else print)
         out = run_dir / "analysis.json"

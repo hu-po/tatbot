@@ -1,0 +1,13 @@
+# The licensed app is a read-only runtime mount, never part of this build context.
+FROM docker.io/library/ubuntu@sha256:496754492fb28b4d3049432f2ca787449331e23fb14f0dd3fffea86bf5a93eb4
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-21-jdk-headless python3 xvfb xauth libgtk-3-0t64 libxtst6 libxi6 \
+    libxrender1 libgl1 libasound2t64 fontconfig fonts-dejavu-core ca-certificates \
+    && mkdir -p /opt/tatbot \
+    && dpkg-query -W > /opt/tatbot/runtime-packages.txt \
+    && rm -rf /var/lib/apt/lists/*
+COPY scripts /opt/tatbot/scripts
+COPY python/tatbot_contracts/src /opt/tatbot/python/tatbot_contracts/src
+ENV PYTHONDONTWRITEBYTECODE=1
+USER 1000:1000
+ENTRYPOINT ["python3", "/opt/tatbot/scripts/drawingbot.py"]

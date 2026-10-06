@@ -1,0 +1,222 @@
+# The drawing stack's own configuration (ros/README.md "Names"). One format/version pair, no legacy
+# readers. `tatbot ros up` flags and stack.launch.py arguments override the keys they name.
+# Geometry is NOT here: the TCP is config/workspace.yaml <arm> pen_tip_offset_{x,y,z} in
+# <arm>/tool_mount, carriage and landing poses are config/trossen/tatbot.yaml, arm addresses resolve
+# through config/arms.json and config/profiles/<profile>.json, motion numbers are
+# tatbot_motion/config/motion.yaml.
+format: tatbot-ros-stack
+version: 1
+
+arms: [right]           # this stack never connects to the left arm unless this says so
+hardware: mock          # mock | fake | real
+fake:
+  page_z: 0.0037        # hardware fake only: base-frame z (m) of a simulated paper plane the fake tip
+                        # cannot pass, so Touch trips its tip-lag guard; page.fixed.right's z. One plane for
+                        # every arm: the left's fixed page lies 30 mm above it. null = none
+  page_stiffness_n_m: 1500   # the page gives like the arm and EE mount (~1.5 N/mm): the tip passes and
+                        # the joints report its force, so Touch trips the contact guard; 0 = a hard stop
+profile: tatbot         # config/profiles/<profile>.json names each arm's controller address
+
+rt:
+  priority: 80          # SCHED_FIFO for the SDK threads and the 400 Hz loop (cpp/teleop wxai_teleop default)
+  cpus: []              # empty = the driver's SDK threads on the fastest core class (cpp/teleop
+                        # realtime::fastest_cpus) and controller_manager unpinned; set = both pinned here
+
+estop:
+  source: udp                   # none | serial | udp (the palette button through the relay); plain configuration
+  serial_device: /dev/tatbot-estop
+  serial_timeout_s: 0.10        # Pico frames at 100 Hz; cpp/teleop estop_monitor HEARTBEAT_TIMEOUT_MS
+  udp_port: 7640                # the driver binds 0.0.0.0:<udp_port>
+  udp_timeout_s: 0.15           # relay path budget (decision 11)
+  relay_addr: ""                # "" = config/nodes.json role estop-relay `lan`, resolved by the CLI
+  # The palette Pi's GPIO line for the button's NC contact (header pin 11; COM to GND, pin 9);
+  # "" = a Pico on its USB. `tatbot ros relay-install` bakes it into the relay's unit.
+  relay_gpio: GPIO17
+  debounce_frames: 3            # cpp/teleop estop_monitor DEBOUNCE_FRAMES
+
+probe:                          # the palette's touch probe: PRB1 frames
+  enabled: false                # from its own relay instance (`tatbot ros relay-install --probe`), never the e-stop's.
+                                # false: no socket, and GUARD_PROBE refuses to arm
+  relay_gpio: GPIO27            # header pin 13, through a 10 kOhm pull-up and a Schottky diode (bench 2026-09-25)
+  udp_port: 7641                # the driver binds 0.0.0.0:<udp_port>
+  relay_addr: ""                # "" = config/nodes.json role estop-relay `lan` (the palette Pi), resolved by the CLI
+  timeout_s: 0.2                # no frame this long (they come at 50 Hz): the probe is unknown and cannot be armed
+
+machine:                        # the tattoo machine's power switch (ros/README.md 4.4): motion.yaml pen.mode ride runs the
+                                # machine through it
+  switch: pi                    # none | pi (the palette Pi's machine relay, `tatbot ros relay-install --machine`) |
+                                # sim (answers at once: mock and fake hardware)
+  arm: right                    # the arm whose machine it switches
+  addr: ""                      # "" = config/nodes.json role estop-relay `lan` (the palette Pi), resolved by the CLI
+  gpio: GPIO22                  # header pin 15; HIGH = commanded on, LOW = commanded off
+  port: 7642                    # MCH1 commands to the Pi, answered with MCS1 to the sender
+  estop_port: 7643              # the e-stop relay's EST1 to the machine relay, on the Pi's loopback (always sent)
+  period_s: 0.02                # a command every 20 ms, off as well as on
+  timeout_s: 0.2                # the Pi powers the machine off when the commands stop this long (a dead session)
+  confirm_s: 1.0                # a machine not reported running this long after it was asked for pauses the run
+
+keypad:                         # the operator's USB numpad on this host (tatbot_session.keypad, ros/README.md 4.4):
+                                # 8 lifts the pen a motion.yaml pen.trim step, 2 presses it, 5 resets, Enter continues
+  device: /dev/tatbot-keypad    # config/udev/99-tatbot-keypad.rules; "" runs no keypad node. An absent pad is waited for
+  arm: right                    # the arm whose pen it trims
+
+safety:                         # tatbot_hardware parameters; README section 8
+  step_limit_rad: 0.05          # no-step: first command and unlatch
+  step_limit_m: 0.005           # the carriage's step limit
+  feedback_warmup_s: 0.10       # non-zero feedback before the first command
+  stall_error_rad: 0.35
+  stall_time_s: 2.0
+  stall_progress_rad: 0.05
+  over_velocity_rad_s: 3.0      # 1.5 x the follower's 2.0 rad/s teleop cap (config/trossen/tatbot.yaml)
+  over_velocity_m_s: 0.25       # the carriage's controller velocity_max (config/trossen/follower.yaml)
+  carriage:                     # cap, deflection and retract from config/trossen/tatbot.yaml follower
+    baseline_samples: 800       # rust/tatbot-arm contact.rs
+    trip_ticks: 40
+    settle_ticks: 120           # the force is not judged while the carriage target moves, nor 0.3 s after
+    rebaseline_samples: 200     # then a 0.5 s rest median at the held target is the new baseline
+    judge_below_rad_s: 0.3
+    retract_s: 0.6
+  tip_lag:                      # bench 2026-09-26: the in-air lag along the tool axis swings +-0.35-0.45 mm
+    trip_m: 0.0008              # at 0.5 mm/s (0.45-1.0 mm even averaged over 0.4 s), so 0.25 mm tripped in air
+    hold_s: 0.15                # (bench 2026-09-26); 0.8 mm presses a rigid pen 1.5-2 mm into
+                                # the page's mat (same bench). Compliance: the sprung holder
+    arm_after_s: 1.5            # the approach rings ~1.5 s after the fast leg (bench 2026-09-26); the baseline follows
+  contact:                      # guarded touch stop; first-contact estimation is separate
+    force_n: 3.0                # estimated axial force rise from the pose's baseline
+    hold_s: 0.10                # require a persistent rise rather than a transient torque sample
+    baseline_s: 0.3             # baseline averaging after guard warmup; does not prove an unloaded tip
+  landing:                      # cpp/teleop arm_recover; poses from config/trossen/tatbot.yaml staged_positions
+    takeover_s: 0.5
+    staged_s: 4.0
+    sleep_s: 3.0
+    verify_rad: 0.2
+    verify_carriage_m: 0.0005
+    budget_s: 45.0
+
+page:
+  source: stencil               # stencil | fixed
+  pattern_id: stencil-d7c2a76fa84519b2599d8466472bdd5ce52bdcf49eb97d76a754053a98bb0c9d   # coded seed 102, W design
+  # (spacing 7, knot 2.6, halo 1.0, teardrop_to 0.5), a violet thermal transfer on the silicone skin (2026-10-04)
+  size_m: [0.100, 0.150]        # the page, a fallback: `ros up` takes the page's size, clear centre and inner border
+  clear_m: [0.062, 0.112]       # edges (inner_edges_m: x of the left and right, y of the bottom and top, where the
+                                # wrist border fit scans, README 4.3) from the print installed as pattern_id
+                                # (tracking.json and settings.json under <log root>/stencils/references), so a print
+                                # of any size is drawn on as generated. These hold only when none is (a mock, a bench)
+  replan_translation_m: 0.050   # a run stops (never adopts the new pose) when the page moved more since its touches.
+  replan_rotation_rad: 0.17     # Smaller: tracking jumped ~13 mm twice with the arm over the page (2026-09-26);
+                                # a false match 112 mm and a quarter turn away was adopted on 2026-09-30
+  carry_max_s: 43200.0          # the paper the last accepted touches found (~/tatbot-logs/page-touched-<arm>.json)
+  carry_move_m: 0.015           # starts the next touches while this young and the cameras' page this near it
+  max_lost_s: 5.0               # a draw refuses a lost page whose last measurement is older: the pose it stands
+                                # for may be another page (a one-off reading of a page being placed stood for an hour)
+  wait_s: 240.0                 # a draw or touch waits this long at run start for a fresh measurement before refusing:
+                                # a coded print is decoded again 1-3 min after the arm uncovers it (3.3 min after a
+                                # held inspection, 2026-09-28), so a paired draw's second side found it lost at once
+  fixed:                        # page.source fixed: nominal <arm>/base_link <- page pose (mock, bench fallback)
+    right: {xyz: [0.3242, 0.0409, 0.0037], rpy: [0.0, 0.0, -1.553]}   # the demo table's page: the overhead artwork match's
+                                # centre and turn (the print's top away from the arm), the gauged paper height (2026-10-05
+                                # re-layout; the wrist locate put the print 3.1 / 4.6 mm from this centre)
+    left: {xyz: [0.371, 0.231, 0.0334], rpy: [0.0, 0.0, 0.0]}     # a placeholder, the old rig's right page mirrored:
+                                # the blue arm does not draw here (it calibrates on the station probe, decision 21),
+                                # but every stacked arm needs one
+  locate:                       # the page pose fused from the overhead cameras and the wrist D405 (README 4.3)
+    wrist: true                 # before the touches, look at the printed border with the wrist camera
+    holds: true                 # after them, where each gauge hold's wrist frames put the tip on the print (camera
+                                # geometry only) moves the page onto it: the far views above left a half-skin print
+                                # 5 mm off in y (2026-10-06)
+    poses: 3                    # rest-near views from the arm's own side of the page (inspect.aim)
+    frames: 5                   # per view, median-stacked
+    settle_s: 0.8
+    clearance_m: 0.015          # the pen at least this far over the page in a view pose
+    free_scale: [true, false]   # page x, y scale solved per view. The top border sits at the far edge of these
+                                # views: 1-4 segments, often the pen cone (47.4 mm, view 1, five runs) or the bead
+                                # band's outer edge; a y scale fitted to them (1.04-1.23 while x repeats 0.91-0.98
+                                # per pose) moved the page 2.6-10.1 mm in y between runs on an unmoved page. Held
+                                # at 1, seven runs on two pages agreed within 1.4 and 0.3 mm (2026-09-28).
+    side_margin_m: 0.0          # camera and wrist links at base y <= the page centre's minus this
+    serial: ""                  # the wrist D405; "" = the one attached to the ros node
+    overhead_sigma_m: 0.004     # the fixed-camera chain: registration median ~4 mm (README 4.3)
+    overhead_sigma_rad: 0.026   # 1.5 deg: the two arms' registrations disagreed by 2.6 deg
+    wrist_floor_m: 0.002        # the wrist camera's CAD mount pose, not yet measured (the post-draw
+    wrist_floor_rad: 0.0175     # inspect's ink-vs-plan shift measures it); floors on the fit's sigma
+  track:                        # stencil tracking (README 4.4, tatbot_session.track): off | log | correct
+    mode: correct               # log: the wrist D405 stays open through a draw's strokes and finds the pen tip on the
+                                # print after every lift (an event and <run>/track.jsonl). correct: also moves each
+                                # stroke's points by the residual field those fits and the gauge holds give
+    tip_offset_m: [0.00260, 0.00072]           # where the pen inks from the gauge's tip point at hover_height_m
+    tip_offset_contact_m: [0.00369, 0.00041]   # (11 mm) and at contact (3.2 mm), linear between, along the wrist
+    hover_height_m: 0.011                      # camera's x axis on the print and 90 deg from it: it rides with the
+    contact_height_m: 0.0032                   # pen, not the sheet. A 3 x 3 dot test (2026-10-04): the hover's
+                                               # tip over each dot's start against the ink's centroid, less the
+                                               # dot's own start-to-centre (0.44 mm rms about it); contact while
+                                               # inking, 0.26 mm rms. Two later runs: 0.34 and 0.32 mm about
+                                               # their own means, x 0.2 and 0.6 mm over this
+    hover_stop: true            # correct: stop over each stroke's start and measure before it descends, so the
+                                # stroke takes the field at its own start (a sheet moved between strokes too)
+    second_view_m: 0.005        # a jump there is measured again this far toward the page centre: one view
+                                # cannot tell a lattice misfit from a moved sheet
+    reach_m: 0.010              # the wrist fit finds the print about two lattice steps from its page: a sheet the
+    reach_rad: 0.05             # overhead sees moved farther is set up again (on resume, or when a hover finds no print)
+    replan_m: 0.0003            # a pre-plan whose correction moved more than this by its dispatch is planned again
+    field:                      # track.Field: an affine fit of the samples (a slid, turned sheet) by age, plus what
+      sigma_m: 0.03             # it leaves averaged by distance (the arm's position-dependent error)
+      tau_s: 180.0
+      spread_m: 0.005           # the samples must span this both ways for the affine part; else their mean
+      cap_m: 0.060              # a stroke's correction: the page-moved stop (50 mm, 0.17 rad) at the drawing's
+                                # far edge. 15 mm cut short a 13 mm slide with a 7 deg turn (2026-10-04)
+  inspect:                      # the post-draw wrist views (tatbot ros inspect)
+    ink_prior_m: [-0.0065, -0.0005]   # the ink-vs-plan shift the right arm draws with (the wrist mount plus
+                                # the arm; a page trim moves ink and plan together): -5.2..-8.0 x, -1.7..0 y
+                                # in every well-registered view (bench 2026-09-27)
+    ink_gate_m: 0.003           # a view farther than this from it is not used (misregistered, or it matched
+                                # other ink); none nearer: every view is used and the line says so
+    closeup: true               # then hold the pen low over the drawing and score each stroke's ink (closeup.py):
+    closeup_hover_m: 0.012      # the far views (~2.5 px/mm, CAD camera pose) do not show a 0.5 mm line; held this
+    closeup_approach_m: 0.040   # high the camera is ~170 mm from the paper (~3.9 px/mm), its pose pinned by the
+    closeup_step_m: 0.012       # wrist gauge; holds at the drawing's centre and this far to each side of it
+    closeup_tol_m: 0.0015       # ink within this of the plan counts for it
+  height:                       # the page height along its normal, fused from every sensor (README 4.3)
+    overhead_sigma_m: 0.010     # the overhead page in the arm frame: plane RMS ~1 mm, but the arm registration puts
+                                # it 1-5 mm above the touched page (two runs on 2026-09-26),
+                                # and ~9 mm over repeated runs on 2026-10-02: the touches carry the height
+    wrist_depth_bias_m: 0.0107  # the wrist D405's locate-view page plane over the paper the wrist gauge finds: +10.5
+                                # to +10.8 mm over six gauge runs on 2026-10-04 with the adopted joint offsets, median
+                                # 10.7 (9.3 before them, from runs spread 8.4-9.5). It sets where the gauge's hovers and
+                                # touches start; every run logs it ("planes:") and names a move over 2 mm
+    wrist_depth_sigma_m: 0.003  # before touches only: 0.5 mm plane RMS, two views 0.5 mm apart
+    touch_sigma_m: 0.002        # each touch's first contact: the torque force drifts ~+-2 N in air (~1.5 mm)
+    gauge: use                  # the wrist gauge (README 4.3, tatbot_session.gauge): off | check (held where each
+                                # touch starts, recorded beside it) | use (the page from the gauge, no descent). At
+                                # one heading its hover and its trips in the air put the paper within 0.1-0.4 mm of
+                                # each other; the arm's own tip height moves ~1.3 mm per 20 deg of the tool's turn
+    gauge_frames: 5             # depth frames per gauge hold; their median
+    gauge_spread_m: 0.0005      # a hold whose frames disagree more is taken again 4 mm to either side (good: <0.3 mm)
+    gauge_residual_m: 0.0005    # of the five gauge points, one this far off the others' plane is dropped
+    gauge_max_tilt_deg: 5.0     # a gauge plane tilting more from the overhead's is not believed: its tilt kept
+    warn_m: 0.002               # a source farther than this from the fused height is named in a warning
+  trim:                         # per-arm page trim in the page frame, metres, from the drawn centre cross
+    right: [0.0, 0.0]           # page.locate.holds measures where the tool lands on each sheet; a trim adds to that.
+                                # Before them it was empirical and per sheet (+6.6, -2.4, +2.6 mm in x, 2026-10-03/04)
+
+registration:                   # adopted world <- <arm>/base_link; `tatbot ros deploy` copies these
+  right: ~/tatbot-ros/calib/arm-registration-right-current.json
+  left: ~/tatbot-ros/calib/arm-registration-left-current.json
+
+touch:
+  enabled: true                 # three page touches at the start of every run (README 4.3): the contact
+                                # guard stops ~1.2 mm into the arm's give and the session fits first contact
+  points: 3
+  fit_tilt: false               # true: tilt from the three touches; false: the camera's tilt, the touches' height
+  spread_m: 0.020               # touches at (-s,-s) (s,-s) (0,s) about the page centre (a drawing shrinks it to fit
+                                # inside itself): 40 mm sees a 0.5 deg tilt; 30 mm touched the printed border (2026-09-26)
+
+session:
+  resume_timeout_s: 300         # released and undecided this long: announce and land
+  knot_rate_hz: 100             # FollowJointTrajectory knots; JTC interpolates at 400 Hz
+
+rerun:
+  enabled: false
+  max_hz: 30
+
+record: false                   # stack-wide MCAP (names.bag_topics) in the ros-stack run's bag/;
+                                # each Draw and Touch run records its own bag regardless

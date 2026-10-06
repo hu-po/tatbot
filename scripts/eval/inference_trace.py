@@ -36,7 +36,6 @@ def write_inference_trace(
     observation_state: Any,
     normalized_action: Any,
     decoded_action: Any,
-    fixed_noise_seed: str | None,
 ) -> dict[str, Any]:
     """Persist exactly what entered inference and what could reach the wire.
 
@@ -84,11 +83,13 @@ def write_inference_trace(
 
     digest = hashlib.sha256(destination.read_bytes()).hexdigest()
     metadata = {
-        "schema_version": 1,
+        # 2: fixed_noise_seed dropped with the GR00T integration (2026-09-09).
+        # It recorded the seed that made a stochastic flow-matching draw
+        # reproducible; no remaining policy has one.
+        "schema_version": 2,
         "kind": "policy inference evidence",
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "timestep": int(timestep),
-        "fixed_noise_seed": fixed_noise_seed,
         "npz": str(destination),
         "npz_sha256": digest,
         "observation_key_map": key_map,

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.dev/schemas/human-representation/surface-curve.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "content_sha256",
+    "coordinates",
+    "rest_surface_arc_length_m",
+    "width_m",
+    "deposition",
+    "direction",
+    "source_primitive_sha256",
+    "compiler_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tatbot.surface-curve/1"
+    },
+    "content_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "coordinates": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/surfaceCoordinate"
+      },
+      "minItems": 2
+    },
+    "rest_surface_arc_length_m": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "width_m": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "deposition": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "direction": {
+      "enum": [
+        "forward",
+        "reverse"
+      ]
+    },
+    "source_primitive_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "compiler_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

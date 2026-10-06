@@ -1,0 +1,40 @@
+[package]
+name = "realsense-rust"
+version = "1.3.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = [
+    "jerry73204 <jerry73204@gmail.com>",
+    "Jeremy Steward <jeremy.steward@tangramvision.com>",
+    "Brandon Minor <brandon@tangramvision.com>",
+    "Paul Jakob Schroeder <paul.schroeder@tangramvision.com>",
+]
+description = "High-level RealSense library in Rust"
+repository = "https://gitlab.com/tangram-vision/oss/realsense-rust"
+readme = "README.md"
+
+# Local copy of the pinned 1.3.0 source. The only Tatbot addition is the
+# feature-gated raw-clock method on Device and its SDK version check.
+[features]
+default = []
+buildtime-bindgen = ["realsense-sys/buildtime-bindgen"]
+docs-only = ["realsense-sys/docs-only"]
+test-single-device = []
+raw-device-clock = []
+
+[dependencies]
+anyhow = "1.0"
+num-derive = "0.4"
+num-traits = "0.2"
+realsense-sys = "=2.56.5"
+thiserror = "1.0"
+
+[build-dependencies]
+pkg-config = "0.3"
+
+[lints.rust]
+warnings = "deny"
+missing_docs = "deny"
+
+[lints.clippy]
+missing_docs_in_private_items = "deny"

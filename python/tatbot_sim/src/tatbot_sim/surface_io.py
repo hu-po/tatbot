@@ -1,6 +1,6 @@
-"""Load a mapped ``surface.npz`` (``docs/draw.md``) into the sim's ``DisplacedSurface``.
+"""Load a mapped ``surface.npz`` (``docs/surface-formats.md``) into the sim's ``DisplacedSurface``.
 
-The drawing stages map a real pad or limb with ``scripts/lib/draw_surface.py``
+The drawing stages map a real pad or limb with ``scripts/lib/surface_model.py``
 (numpy) and write ``tatbot.surface/1``. This is the sim side of that contract:
 the same chart and the same height grid, as a batch-1 ``DisplacedSurface``, so
 a policy can be rehearsed on the surface that was actually measured. The file

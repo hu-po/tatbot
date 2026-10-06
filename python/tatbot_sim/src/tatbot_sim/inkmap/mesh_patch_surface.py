@@ -107,7 +107,13 @@ class MeshPatchSurface(Surface):
         uv_np = uv_m.detach().cpu().numpy().astype(np.float64)
         points, derivatives_u, derivatives_v, normals = [], [], [], []
         mapped = self._mapped(uv_np)
-        self._last_mapping = mapped
+        # A sequential env_view represents one known chart trajectory. In
+        # that special case project(frame(uv)) can reuse the exact developed
+        # triangles from the same call, preserving the path-dependent local
+        # unfolding on a curved mesh. The live environment is not sequential
+        # and must perform an independent world-space projection below.
+        if self.sequential:
+            self._last_mapping = mapped
         for env, (anchor, triangle_uv) in enumerate(mapped):
             triangle = self.posed_vertices[env][anchor.face]
             bary = np.asarray(anchor.barycentric)
@@ -135,23 +141,45 @@ class MeshPatchSurface(Surface):
         uv_values, distances, incidences = [], [], []
         for env, point in enumerate(points_np):
             patch = self.patches[env]
-            if hasattr(self, "_last_mapping") and len(self._last_mapping) == len(points_np):
+            if (
+                self.sequential
+                and hasattr(self, "_last_mapping")
+                and len(self._last_mapping) == len(points_np)
+            ):
                 anchor, triangle_uv = self._last_mapping[env]
                 face = anchor.face
                 triangle = self.posed_vertices[env][face]
                 bary = _closest_barycentric(point, triangle)
                 closest_point = bary @ triangle
                 uv_values.append(bary @ triangle_uv)
-            else:
-                faces = patch.face_indices
-                triangles = self.posed_vertices[env][faces]
-                barycentrics = np.stack([_closest_barycentric(point, triangle) for triangle in triangles])
-                closest = np.einsum("fi,fij->fj", barycentrics, triangles)
-                choice = int(np.argmin(np.linalg.norm(closest - point, axis=1)))
-                bary = barycentrics[choice]
-                face = int(faces[choice])
-                closest_point = closest[choice]
-                uv_values.append(bary @ patch.triangles_uv[choice])
+                normal = bary @ self.normals[env][face]
+                normal /= np.linalg.norm(normal)
+                distances.append(np.dot(point - closest_point, normal))
+                if axis_w is None:
+                    incidences.append(1.0)
+                else:
+                    axis = axis_w[env].detach().cpu().numpy()
+                    incidences.append(np.clip(abs(np.dot(axis, normal)), 0.0, 1.0))
+                continue
+            # ``frame`` maps chart coordinates to one known triangle, while
+            # ``project`` receives only a world point.  A prior version reused
+            # frame's most recent mapping when the batch lengths happened to
+            # match.  Episode initialization calls frame once at the chart
+            # origin, so every later TCP point in a one-env body replay was
+            # projected onto that single initialization triangle.  Resolve
+            # the closest triangle every time; call order must not change the
+            # physical contact result.
+            faces = patch.face_indices
+            triangles = self.posed_vertices[env][faces]
+            barycentrics = np.stack(
+                [_closest_barycentric(point, triangle) for triangle in triangles]
+            )
+            closest = np.einsum("fi,fij->fj", barycentrics, triangles)
+            choice = int(np.argmin(np.linalg.norm(closest - point, axis=1)))
+            bary = barycentrics[choice]
+            face = int(faces[choice])
+            closest_point = closest[choice]
+            uv_values.append(bary @ patch.triangles_uv[choice])
             normal = bary @ self.normals[env][face]
             normal /= np.linalg.norm(normal)
             distances.append(np.dot(point - closest_point, normal))
@@ -191,22 +219,29 @@ class MeshPatchSurface(Surface):
 def mesh_patch_from_scenario(scenario: dict, *, device: torch.device | str = "cpu") -> MeshPatchSurface:
     """Rebuild the simulator surface only after scenario identities validate."""
     validate_scenario(scenario)
-    rig = load_body_rig(scenario["body"]["id"])
-    if scenario["body"]["surface_sha256"] != rig.surface_sha256:
+    rig = load_body_rig()
+    if scenario["body"]["rest_surface_sha256"] != rig.surface_sha256:
         raise ValueError("scenario body surface does not match installed rig")
-    if scenario["body"]["rig_sha256"] != rig.catalog_record["sidecar_sha256"]:
-        raise ValueError("scenario rig checksum does not match installed rig")
+    if scenario["body"]["topology_sha256"] != rig.topology_sha256:
+        raise ValueError("scenario topology does not match installed SOMA mid")
+    if scenario["body"]["pose_asset_sha256"] != rig.catalog_record["pose_asset"]["sha256"]:
+        raise ValueError("scenario pose asset does not match installed cache")
     if scenario["pose"]["catalog_sha256"] != rig.catalog_sha256:
         raise ValueError("scenario pose catalog checksum does not match installed catalog")
+    if scenario["pose"]["posed_surface_sha256"] != rig.catalog_record["poses"][scenario["pose"]["id"]]["surface_sha256"]:
+        raise ValueError("scenario posed surface does not match installed catalog")
     placement = scenario["placement"]
     source = placement["anchor"]
-    anchor = SurfaceAnchor(int(source["face"]), tuple(float(value) for value in source["barycentric"]))
+    b0, b1, b2 = source["barycentric"]
+    anchor = SurfaceAnchor(int(source["face"]), (float(b0), float(b1), float(b2)))
     size_m = np.asarray(placement["size_mm"], dtype=float) / 1000
     radius = float(np.linalg.norm(size_m / 2)) + 0.003
     patch = unfold_body_patch(rig, anchor, float(placement["rotation_rad"]), radius)
     posed = rig.posed(scenario["pose"]["id"], np.asarray(scenario["pose"]["world_from_body"]))
     metres_per_texel = 4.2e-4
     pixels_per_metre = max(1 / metres_per_texel, 128 / float(size_m.min()))
+    if scenario.get("schema_version") == 3:
+        pixels_per_metre = max(pixels_per_metre, 16_000)
     cols = int(np.ceil(size_m[0] * pixels_per_metre))
     rows = int(np.ceil(size_m[1] * pixels_per_metre))
     return MeshPatchSurface(

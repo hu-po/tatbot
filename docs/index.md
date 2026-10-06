@@ -1,7 +1,7 @@
 ---
 summary: Public Tatbot developer and artist documentation
 tags: [index, public]
-updated: 2026-09-01
+updated: 2026-09-03
 audience: [dev, artist, contributor]
 ---
 
@@ -24,17 +24,27 @@ person. Use simulation or an instrumented non-human fixture while developing.
 - [Overview and installation](development.md)
 - [Run the simulation](simulation.md)
 - [For artists: design and placement data](design-format.md)
+- [Turn placement words into a body location with InkLang](inklang.md)
 - [For developers: architecture](architecture.md)
 - [Contributing](contributing.md)
+- [Work: worktrees, landing, the sweeper](work.md)
 
 ## Public systems
 
 - [Robot model and kinematics](robot.md)
 - [Teleoperation](teleop_tuning.md)
 - [Vision and fiducials](vision.md)
+- [Printable seeded stencil frames](stencil-frames.md)
+- [Stencil design bench (tier 0)](stencil-bench.md)
+- [Rig sleep and wake](rig.md)
+- [Fleet deploy, releases and services](fleet.md)
 - [Imitation-learning interfaces](imitation_learning.md)
 - [Inkmap preview](inkmap.md)
+- [Designs from images, headless](design.md)
+- [DrawingBotV3 stroke experiments](drawingbot.md)
+- [InkLang placement grounding](inklang.md)
 - [Tools and configuration](tools.md)
+- [Bill of materials](bill-of-materials.md)
 - [Run-log format](run_logs.md)
 
 ## Safety and reference
@@ -56,16 +66,30 @@ simulation
 design-format
 architecture
 contributing
+work
 robot
 teleop_tuning
-draw
+fleet
+surface-formats
 vision
+stencil-frames
+stencil-bench
+rig
+demo-stack
 fiducials
+ordered_fiducials
 ee_fiducial_tracking
 imitation_learning
 inkmap
+human-representation
+design
+drawingbot
+research
+inklang
 ink
+palette
 tools
+bill-of-materials
 run_logs
 safety
 estop

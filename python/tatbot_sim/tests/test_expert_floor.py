@@ -14,14 +14,14 @@ which never inks — which is why this is worth a test rather than an eyeball.
 
 Needs the URDF and pytorch_kinematics, no render device:
 
-    cd python/tatbot_sim && uv run python tests/test_expert_floor.py
+    cd python/tatbot_sim && uv run --with pytest pytest -q tests/test_expert_floor.py
 """
 
 from __future__ import annotations
 
 import numpy as np
 import torch
-from tatbot_sim import interaction
+from tatbot_sim import interaction, tools
 from tatbot_sim.config import NoiseDR
 from tatbot_sim.expert import StrokeExpert, _per_step
 from tatbot_sim.planning import canvas_to_world
@@ -57,7 +57,12 @@ def _scene(lift_m: float):
 
 def _clamped(floor, targets):
     expert = _quiet_expert()
-    q0 = torch.zeros(B, 6)
+    # Warm the reachable chart centre so this test measures floor selection,
+    # not the cold IK basin at the first point of the stroke.
+    staged = torch.tensor([tools.staged_pose()[:6]] * B, dtype=torch.float32)
+    centre = targets[:, T // 2]
+    q0 = expert.solve_pose(centre, staged, normals=np.tile([0., 0., 1.], (B, 1)))
+    np.testing.assert_allclose(expert.ik.fk(q0)[:, :3, 3], centre, atol=.0003, rtol=0)
     expert.reset(targets, q0, floor_plane=floor, batch_iters=30, sweep_iters=2)
     return expert.clamped_fraction
 
@@ -110,15 +115,3 @@ def test_a_floor_longer_than_its_trajectory_is_refused():
         assert "9 steps" in str(exc)
         return
     raise AssertionError("a mismatched floor must raise")
-
-
-def _run_all():
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    for fn in fns:
-        fn()
-        print(f"  ok  {fn.__name__}")
-    print(f"{len(fns)} passed")
-
-
-if __name__ == "__main__":
-    _run_all()

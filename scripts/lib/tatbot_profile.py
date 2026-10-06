@@ -21,6 +21,7 @@ STDLIB ONLY — loaded by path from every interpreter, like tatbot_runlog.py.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -71,14 +72,16 @@ def load(repo: Path, stated: str | None = None) -> dict:
         known = ", ".join(available(repo)) or "none found"
         raise ProfileError(f"profile '{name}' not found at {path}. Known: {known}")
     try:
-        p = json.loads(path.read_text())
+        raw = path.read_bytes()
+        p = json.loads(raw)
     except (OSError, json.JSONDecodeError) as e:
         raise ProfileError(f"profile {path} unreadable: {e}") from e
     if p.get("schema") != SCHEMA:
         raise ProfileError(f"profile {path}: unsupported schema {p.get('schema')!r}")
     if not p.get("name"):
         raise ProfileError(f"profile {path}: missing name")
-    p["_path"] = str(path)
+    p["_path"] = str(path.resolve())
+    p["_sha256"] = hashlib.sha256(raw).hexdigest()
     return p
 
 
@@ -131,6 +134,9 @@ def env_exports(p: dict) -> dict[str, str]:
     """Environment the launchers and drivers consume, from a gated profile."""
     driver = p.get("driver") or {}
     out = {ENV: p["name"]}
+    if p.get("_path") and p.get("_sha256"):
+        out["TATBOT_PROFILE_PATH"] = p["_path"]
+        out["TATBOT_PROFILE_SHA256"] = p["_sha256"]
     if driver.get("leader_ip"):
         out["TATBOT_LEADER_IP"] = str(driver["leader_ip"])
     if driver.get("follower_ip"):

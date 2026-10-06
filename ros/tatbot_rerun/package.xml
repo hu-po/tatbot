@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>tatbot_rerun</name>
+  <version>0.1.0</version>
+  <description>ROS -> Rerun bridge for the fleet viewer (through scripts/lib/tatbot_rerun.py, the only rr.init).</description>
+  <maintainer email="hello@tatbot.ai">hu-po</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>tatbot_interfaces</exec_depend>
+  <exec_depend>tatbot_description</exec_depend>
+  <exec_depend>tatbot_bridge</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <!-- rerun-sdk 0.36 (the fleet pin) is a pip package, needed only when rerun is enabled -->
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>tf2_ros_py</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

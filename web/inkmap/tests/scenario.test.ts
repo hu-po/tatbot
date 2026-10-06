@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { SCENARIO_SCHEMA_VERSION, validateTattooScenario } from "../src/core/scenario.ts";
 
-const fixtureUrl = new URL("../../../config/inkmap/examples/forearm-scenario-v1.json", import.meta.url);
+const fixtureUrl = new URL("../../../config/inkmap/examples/forearm-scenario-v2.json", import.meta.url);
 const schemaUrl = new URL("../../../config/inkmap/tattoo-scenario.schema.json", import.meta.url);
 const fixture = JSON.parse(readFileSync(fixtureUrl, "utf8"));
 const schema = JSON.parse(readFileSync(schemaUrl, "utf8"));
@@ -15,8 +15,8 @@ test("the shared posed scenario fixture validates", () => {
 
 test("scenario geometry and transforms fail closed", () => {
   const brokenDigest = structuredClone(fixture);
-  brokenDigest.body.surface_sha256 = "not-a-digest";
-  assert.throws(() => validateTattooScenario(brokenDigest), /surface_sha256/);
+  brokenDigest.body.rest_surface_sha256 = "not-a-digest";
+  assert.throws(() => validateTattooScenario(brokenDigest), /unsupported schema\/model/);
 
   const brokenMatrix = structuredClone(fixture);
   brokenMatrix.pose.world_from_body = [[1, 0], [0, 1]];

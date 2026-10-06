@@ -1,0 +1,13 @@
+# Land arms to idle through the driver's landing sequence (staged pose, sleep pose, verify, idle).
+# Served by tatbot_session at /tatbot/land. Idle only follows a verified landing.
+
+# Goal
+string[] arms         # empty = every arm the stack runs
+---
+# Result
+bool[] landed         # per arm in goal order (or the stack's arm order when empty)
+string message
+---
+# Feedback
+string arm
+string text

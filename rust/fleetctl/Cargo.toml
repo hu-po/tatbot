@@ -1,0 +1,12 @@
+[package]
+name = "fleetctl"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[dependencies]
+tatbot-bus = { path = "../tatbot-bus", features = ["zenoh"] }
+zenoh = { version = "1.10", default-features = false, features = ["transport_tcp"] }
+clap = { version = "4", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"

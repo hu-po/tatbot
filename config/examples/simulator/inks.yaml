@@ -1,0 +1,23 @@
+# Synthetic colors for the existing example program IDs; no product or stock data.
+schema_version: 1
+
+nighthawk_black:
+  display_name: Synthetic nighthawk_black
+  rgb: [0, 0, 0]
+  vendor: null
+  product: Synthetic test pigment
+  bottle_ml: null
+
+bright_red:
+  display_name: Synthetic bright_red
+  rgb: [200, 30, 30]
+  vendor: null
+  product: Synthetic test pigment
+  bottle_ml: null
+
+true_blue:
+  display_name: Synthetic true_blue
+  rgb: [30, 30, 200]
+  vendor: null
+  product: Synthetic test pigment
+  bottle_ml: null

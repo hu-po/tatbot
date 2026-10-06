@@ -10,6 +10,8 @@ from dataclasses import dataclass
 import numpy as np
 
 _TOKEN = re.compile(r"[AaCcHhLlMmQqSsTtVvZz]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?")
+_NUMBER = r"[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?"
+_TRANSFORM = re.compile(r"([A-Za-z]+)\s*\(([^)]*)\)")
 
 
 class SvgCompileError(ValueError):
@@ -204,10 +206,67 @@ def _circle(cx, cy, rx, ry, tolerance):
     return np.stack([cx + rx * np.cos(theta), cy + ry * np.sin(theta)], axis=1)
 
 
+def _transform_matrix(value: str | None) -> np.ndarray:
+    """Parse an SVG affine transform list into a homogeneous 3x3 matrix.
+
+    SVG composes a transform list by post-multiplication. With column vectors,
+    ``translate(10) scale(2)`` therefore maps ``p`` as ``T @ S @ p``. Keeping
+    this in one strict parser is important: generated tracer output commonly
+    wraps paths in one or more transformed groups, but malformed or unknown
+    transforms must still fail by name.
+    """
+    result = np.eye(3, dtype=np.float64)
+    if not value:
+        return result
+    position = 0
+    for match in _TRANSFORM.finditer(value):
+        if value[position:match.start()].strip(" \t\r\n,"):
+            raise SvgCompileError(f"invalid SVG transform syntax near {value[position:match.start()]!r}")
+        name = match.group(1)
+        raw = match.group(2)
+        tokens = re.findall(_NUMBER, raw)
+        remainder = re.sub(_NUMBER, "", raw).strip(" \t\r\n,")
+        if remainder:
+            raise SvgCompileError(f"invalid numeric arguments in SVG transform {name!r}")
+        values = [float(token) for token in tokens]
+        if not np.isfinite(values).all():
+            raise SvgCompileError(f"SVG transform {name!r} contains a non-finite value")
+        matrix = np.eye(3, dtype=np.float64)
+        if name == "matrix" and len(values) == 6:
+            a, b, c, d, e, f = values
+            matrix = np.array([[a, c, e], [b, d, f], [0.0, 0.0, 1.0]])
+        elif name == "translate" and len(values) in (1, 2):
+            matrix[:2, 2] = [values[0], values[1] if len(values) == 2 else 0.0]
+        elif name == "scale" and len(values) in (1, 2):
+            matrix[0, 0] = values[0]
+            matrix[1, 1] = values[1] if len(values) == 2 else values[0]
+        elif name == "rotate" and len(values) in (1, 3):
+            angle = math.radians(values[0])
+            c, s = math.cos(angle), math.sin(angle)
+            rotation = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+            if len(values) == 3:
+                cx, cy = values[1:]
+                before = np.array([[1.0, 0.0, cx], [0.0, 1.0, cy], [0.0, 0.0, 1.0]])
+                after = np.array([[1.0, 0.0, -cx], [0.0, 1.0, -cy], [0.0, 0.0, 1.0]])
+                matrix = before @ rotation @ after
+            else:
+                matrix = rotation
+        elif name in ("skewX", "skewY") and len(values) == 1:
+            tangent = math.tan(math.radians(values[0]))
+            matrix[0 if name == "skewX" else 1, 1 if name == "skewX" else 0] = tangent
+        else:
+            raise SvgCompileError(
+                f"unsupported SVG transform {name!r} with {len(values)} argument(s)",
+            )
+        result = result @ matrix
+        position = match.end()
+    if value[position:].strip(" \t\r\n,") or position == 0:
+        raise SvgCompileError(f"invalid SVG transform syntax near {value[position:]!r}")
+    return result
+
+
 def _shape_strokes(element: ET.Element, tolerance: float) -> list[np.ndarray]:
     tag = element.tag.rsplit("}", 1)[-1]
-    if element.get("transform"):
-        raise SvgCompileError(f"unsupported SVG transform on <{tag}>")
 
     def get(name: str, default: str = "") -> str:
         value = element.get(name)
@@ -268,6 +327,30 @@ def _shape_strokes(element: ET.Element, tolerance: float) -> list[np.ndarray]:
     raise SvgCompileError(f"unsupported SVG element <{tag}>")
 
 
+def _walk_strokes(element: ET.Element, parent: np.ndarray, tolerance: float) -> list[np.ndarray]:
+    """Walk visible SVG geometry while carrying the complete affine stack."""
+    tag = element.tag.rsplit("}", 1)[-1]
+    if tag in ("defs", "title", "desc", "metadata"):
+        return []
+    transform = parent @ _transform_matrix(element.get("transform"))
+    linear_scale = float(np.linalg.svd(transform[:2, :2], compute_uv=False).max())
+    local_tolerance = tolerance / max(linear_scale, 1e-12)
+    strokes = _shape_strokes(element, local_tolerance)
+    result = []
+    for stroke in strokes:
+        homogeneous = np.concatenate([stroke, np.ones((len(stroke), 1))], axis=1)
+        transformed = (transform @ homogeneous.T).T
+        if not np.isfinite(transformed).all() or np.any(np.abs(transformed[:, 2]) < 1e-12):
+            raise SvgCompileError("SVG transform produced invalid coordinates")
+        result.append(transformed[:, :2] / transformed[:, 2, None])
+    if tag in ("svg", "g", "a", "switch"):
+        for child in element:
+            result.extend(_walk_strokes(child, transform, tolerance))
+    elif len(element):
+        raise SvgCompileError(f"unsupported child geometry inside <{tag}>")
+    return result
+
+
 def compile_svg_strokes(
     svg: str,
     size_mm: tuple[float, float] | list[float],
@@ -295,9 +378,7 @@ def compile_svg_strokes(
         raise SvgCompileError("size_mm must contain two positive finite values")
     scale = size / 1000 / np.array([view_w, view_h])
     tolerance_units = chord_error_m / max(scale)
-    raw_strokes = []
-    for element in root.iter():
-        raw_strokes.extend(_shape_strokes(element, tolerance_units))
+    raw_strokes = _walk_strokes(root, np.eye(3, dtype=np.float64), tolerance_units)
     if not raw_strokes:
         raise SvgCompileError("SVG contains no supported drawable geometry")
     c, s = math.cos(rotation_rad), math.sin(rotation_rad)

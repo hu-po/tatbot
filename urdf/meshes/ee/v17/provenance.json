@@ -1,0 +1,67 @@
+{
+  "revision": "v17-coplanar-blade-branding",
+  "units": "mm",
+  "frame": "right/gripper_left",
+  "source": "installed V17 assembly, operator confirmed 2026-09-07",
+  "meshes": {
+    "03_raised_tag_carrier.stl": "dceb34e3cb71ab33f8eeff7cf55681e5fb53b7e9dfdda4a331c2046babd526b7",
+    "02_clamp_cap.stl": "9947ee1fd8e2138b3d7b3d33a4adb6141fa8ae84613f1f62bf5030b45902e5ec",
+    "01_cradle_and_brace.stl": "0c3020d3d6de6060eca87244d93b32979497be3eaa67b4a4fed229ca2d71f6f8"
+  },
+  "nominal_tag_faces": {
+    "A": {
+      "center_carriage_mm": [
+        -8.0,
+        142.0,
+        -29.564
+      ],
+      "x_axis": [
+        -1,
+        0,
+        0
+      ],
+      "normal": [
+        0,
+        0,
+        -1
+      ]
+    },
+    "B": {
+      "center_carriage_mm": [
+        -8.0,
+        194,
+        22.436
+      ],
+      "x_axis": [
+        0,
+        0,
+        1
+      ],
+      "normal": [
+        0,
+        1,
+        0
+      ]
+    },
+    "C": {
+      "center_carriage_mm": [
+        -64,
+        142.0,
+        22.436
+      ],
+      "x_axis": [
+        0,
+        0,
+        1
+      ],
+      "normal": [
+        -1,
+        0,
+        0
+      ]
+    }
+  },
+  "note": "CAD labels were placeholders; physical inventory is config/fiducials.json. Fresh calibration required.",
+  "installed_carrier": "urdf/meshes/ee/fiducial-cubes-47mm-rear/provenance.json",
+  "carrier_note": "The original carrier mesh and nominal faces in this build record are historical CAD references. The installed carrier was replaced on 2026-09-19."
+}

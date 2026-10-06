@@ -17,7 +17,7 @@ Both halves are silent when wrong, which is why they are tested here:
 
 Pure config logic, no render device:
 
-    cd python/tatbot_sim && uv run python tests/test_distributions.py
+    cd python/tatbot_sim && uv run --with pytest pytest -q tests/test_distributions.py
 """
 
 from __future__ import annotations
@@ -129,23 +129,17 @@ def test_resolving_for_the_paper_pad_reproduces_the_shipped_paper_ranges():
     assert dr.surface.max_slope_rad == (0.005, 0.04), dr.surface.max_slope_rad
     assert dr.surface.feature_m == (0.05, 0.12), dr.surface.feature_m
     assert dr.pad.z_range == (0.0, 0.055), dr.pad.z_range
-    assert dr.surface.peak_scale == (0.85, 1.10), dr.surface.peak_scale
 
 
-def test_the_skin_resolves_to_its_own_rest_height_and_mound():
-    """What actually shapes a draped substrate is its mound, not the ripple
-    ranges: _sample_skin_shape sends `draped` through drape_height_field, which
-    reads peak_scale and never touches amplitude/slope/feature. So the skin
-    owns the fields that reach it, and the ones that do not stand at the paper
-    pad's values rather than at invented skin ones."""
+def test_the_skin_resolves_to_its_own_rest_height_without_implying_a_profile():
+    """The material record owns placement, while the recipe owns profile."""
     from tatbot_sim.config import DRConfig
 
     skin = _substrate(LASER)
     dr = DRConfig().resolve_for(skin)
     assert dr.pad.z_range == tuple(skin.rest_z_m), dr.pad.z_range
-    assert dr.surface.peak_scale == (0.95, 1.00), dr.surface.peak_scale
-    # the laser's proven overnight run resolved to exactly this envelope
     assert dr.pad.z_range == (0.0, 0.002), dr.pad.z_range
+    assert dr.surface.profile == "flat"
 
 
 def test_sheet_wear_follows_the_ruling():
@@ -213,6 +207,15 @@ def test_body_tattoo_is_scenario_driven_and_separate_from_silicone_pad_tattoo():
     assert body.num_envs == 8
     assert pad.distribution == "skin-tattoo"
     assert pad.scenario is None
+    assert pad.dr.surface.profile == "balanced"
+
+
+def test_both_skin_recipes_balance_flat_and_cylindrical_profiles():
+    from tatbot_sim import distributions
+
+    assert distributions.DISTRIBUTIONS["skin-erase"].build_args().dr.surface.profile == "balanced"
+    assert distributions.DISTRIBUTIONS["skin-tattoo"].build_args().dr.surface.profile == "balanced"
+    assert distributions.DISTRIBUTIONS["paper-draw"].build_args().dr.surface.profile == "flat"
 
 
 def test_a_blocked_distribution_refuses_to_run_and_says_why():
@@ -259,7 +262,8 @@ def test_the_tattoo_recipe_is_the_paper_one_on_the_skin():
     assert tattoo.horizon == paper.horizon
     assert tattoo.dr.ink == paper.dr.ink
     # the one deliberate difference: no squiggles on a blank skin
-    assert tattoo.task == "language" and paper.task == "mix"
+    assert tattoo.task == paper.task == "artwork"
+    assert tattoo.squiggle_frac == paper.squiggle_frac == 0
 
 
 def test_the_erase_recipe_can_hold_its_longest_episode():
@@ -286,18 +290,19 @@ def test_the_paper_preset_only_departs_from_the_defaults_deliberately():
         f.name for f in dataclasses.fields(generate.Args)
         if getattr(preset, f.name) != getattr(base, f.name)
     }
-    assert differs == {"horizon", "distribution", "tool_calibration_jitter"}, differs
+    assert differs == {"distribution", "tool_id", "tool_calibration_jitter"}, differs
 
 
-def test_distribution_and_args_agree_about_preimport_calibration_jitter():
-    """The factory must decide before it is safe to construct Args."""
+def test_distribution_and_args_agree_about_calibration_jitter():
+    """Named recipes and explicit construction use the same jitter selection."""
     from tatbot_sim import distributions
 
     for dist in distributions.DISTRIBUTIONS.values():
         assert dist.build_args().tool_calibration_jitter == dist.tip_calibration_jitter
 
 
-def test_paper_calibration_delta_is_seeded_persistent_and_bounded():
+def test_paper_calibration_delta_is_seeded_persistent_and_bounded(monkeypatch):
+    _synthetic_calibration(monkeypatch)
     from tatbot_sim import factory
 
     dist = factory.DISTRIBUTIONS["paper-draw"]
@@ -310,7 +315,8 @@ def test_paper_calibration_delta_is_seeded_persistent_and_bounded():
     assert 0.0 < radius <= 0.004637
 
 
-def test_calibration_jitter_can_be_disabled_or_scaled():
+def test_calibration_jitter_can_be_disabled_or_scaled(monkeypatch):
+    _synthetic_calibration(monkeypatch)
     from tatbot_sim import factory
 
     dist = factory.DISTRIBUTIONS["paper-draw"]
@@ -323,6 +329,18 @@ def test_calibration_jitter_can_be_disabled_or_scaled():
     assert half == tuple(value * 0.5 for value in full)
 
 
+def test_unqualified_tool_calibration_is_advisory(capsys):
+    from tatbot_sim import factory
+
+    dist = factory.DISTRIBUTIONS["body-tattoo"]
+    assert factory.calibration_delta(
+        dist, ["--tool-calibration-jitter", "--seed", "19"],
+    ) == (0.0, 0.0, 0.0)
+    warning = capsys.readouterr().err
+    assert "WARNING" in warning
+    assert "continuing without calibration jitter" in warning
+
+
 def test_a_distribution_names_itself_in_its_dataset():
     from tatbot_sim import distributions
 
@@ -332,35 +350,17 @@ def test_a_distribution_names_itself_in_its_dataset():
         assert dist.build_args().distribution == name
 
 
-def test_the_tool_cannot_be_chosen_after_import_which_is_why_factory_reexecs():
-    """The load-bearing fact behind factory.main's os.execv.
+def test_configuration_keeps_its_tool_when_environment_defaults_change(monkeypatch):
+    from tatbot_sim.resolved import resolve
 
-    The fitted tool is resolved while the package is being imported -- the
-    agent class body and the URDF build both ask for it as they are defined --
-    and cached for the process. Importing `tatbot_sim` is enough to fix it, and
-    `python -m tatbot_sim.factory` cannot run a line of its own code before
-    that import happens. A paper-draw run on a laser-fitted bench therefore
-    built the laser's geometry and wrote the laser's prompts (measured
-    2026-08-27) until the launcher started setting the variable and
-    re-executing.
-
-    If this test ever fails, active_tool() has become late-bound and the
-    re-exec can be simplified away. Until then it cannot.
-    """
-    fitted = tools.active_tool().tool_id
-    other = BALLPOINT if fitted != BALLPOINT else LASER
-    prior = os.environ.get("TATBOT_TOOL_ID")
-    os.environ["TATBOT_TOOL_ID"] = other
-    try:
-        assert tools.active_tool().tool_id == fitted, (
-            "active_tool() now responds to a late TATBOT_TOOL_ID — see the "
-            "docstring: factory's re-exec may be removable"
-        )
-    finally:
-        if prior is None:
-            os.environ.pop("TATBOT_TOOL_ID", None)
-        else:
-            os.environ["TATBOT_TOOL_ID"] = prior
+    monkeypatch.setenv('TATBOT_TOOL_ID', BALLPOINT)
+    pen = resolve()
+    monkeypatch.setenv('TATBOT_TOOL_ID', LASER)
+    laser = resolve()
+    assert pen.tool.tool_id == BALLPOINT
+    assert laser.tool.tool_id == LASER
+    assert pen.substrate.name != laser.substrate.name
+    assert pen.geometry.tcp_offset_m != laser.geometry.tcp_offset_m
 
 
 def test_the_launcher_refuses_to_fight_an_existing_tool_override():
@@ -521,13 +521,10 @@ def test_tip_parts_survive_the_urdf_writers():
         assert len(off_axis) == (3 if tool_id == LINER else 0), tool_id
 
 
-def _run_all():
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    for fn in fns:
-        fn()
-        print(f"  ok  {fn.__name__}")
-    print(f"{len(fns)} passed")
+def _synthetic_calibration(monkeypatch):
+    """Exercise sampling with a unit-test double; never write a calibration receipt."""
+    from types import SimpleNamespace
 
-
-if __name__ == "__main__":
-    _run_all()
+    from tatbot_sim import tools
+    monkeypatch.setattr(tools.registry(), "resolved_tool_geometry", lambda *a, **kw:
+                        SimpleNamespace(contact_status="pivot-calibrated", contact_uncertainty_m=0.004637))

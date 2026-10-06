@@ -3,12 +3,14 @@
 Dual Trossen WXAI arms, imitation learning with LeRobot. Independent build
 roots, no root Python package:
 
+- `ros/`: the ROS 2 Jazzy drawing stack (colcon), the only drawing path; its
+  design is `ros/README.md`.
 - `cpp/teleop/`: 400 Hz leader→follower teleop. CMake; the Trossen SDK is
   fetched at configure time and the hardware-independent libraries build and
   test without it.
 - `rust/visiond/`: camera ingestion, sync, recording, replay. Cargo. Sensors
   are described in a registry file — see `rust/visiond/config/vision.example.toml`.
-- `python/lerobot_robot_tatbot/`: LeRobot leader/follower plugins. uv,
+- `python/lerobot_robot_tatbot/`: the LeRobot follower plugin. uv,
   Python 3.12. `mock_driver.MockDriver` is the hardware-free backend.
 - `python/tatbot_sim/`: ManiSkill data factory (x86_64 only).
 - `web/inkmap/`, `web/inkgen/`: tattoo mapping and design generation.

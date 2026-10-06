@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Scan tatbot cameras for AprilTag 16h5 markers (OpenCV aruco).
+"""Scan tatbot cameras for configured AprilTag markers (OpenCV aruco).
 
 Grabs fresh frames from the Amcrest RTSP streams (credentials from
-~/.config/tatbot/cameras.env), detects DICT_APRILTAG_16H5, and writes per
+~/.config/tatbot/cameras.env), detects the inventory families, and writes per
 camera: the raw frame (PNG), an annotated JPEG, and a JSON report with corner
 coordinates and (optionally) IPPE_SQUARE pose estimates under one or more tag
 size hypotheses using provisional intrinsics.
@@ -21,6 +21,7 @@ Usage (on any node with LAN access to the cameras):
 import argparse
 import json
 import os
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -41,41 +42,54 @@ INVENTORY = load_inventory()
 WRIST_TARGET = INVENTORY.target("wrist")
 BOARD_TARGET = INVENTORY.target("board")
 PALETTE_TARGET = INVENTORY.target("palette")
-PRINTED_IDS = set(INVENTORY.printed_ids)
 BOARD_IDS = set(BOARD_TARGET.ids)
 PALETTE_IDS = set(PALETTE_TARGET.ids)
 WRIST_IDS = set(WRIST_TARGET.ids)
 # These IDs occur only on the board and provide geometric context when a
 # reused board/EE/palette ID appears more than once in one image.
-BOARD_UNIQUE_IDS = BOARD_IDS - WRIST_IDS - PALETTE_IDS
+BOARD_UNIQUE_IDS = set(INVENTORY.exclusive_ids("board"))
 SIZE_HYPOTHESES_M = {
     f"{target.name}_{target.edge_m * 1000:g}mm": target.edge_m
-    for target in (WRIST_TARGET, BOARD_TARGET, PALETTE_TARGET)
-}
-BOARD_TAG_SIZE_M = BOARD_TARGET.edge_m
-PALETTE_TAG_SIZE_M = PALETTE_TARGET.edge_m
-KNOWN_SIZES_M = {
-    tag_id: sizes[0]
-    for tag_id in PRINTED_IDS
-    if len(sizes := INVENTORY.size_hypotheses(tag_id)) == 1
+    for target in INVENTORY.targets.values()
 }
 _CALIBRATION_PROFILE = INVENTORY.detector_profiles["calibration"]
-_DETECTOR = FiducialDetector(
-    PRINTED_IDS,
+_DETECTOR = FiducialDetector.from_inventory(
+    INVENTORY,
     DetectorConfig.from_profile(_CALIBRATION_PROFILE),
-    family=INVENTORY.family,
+    include_spares=True,
 )
 
 
 def _camera_address(n: int) -> str:
     """Address of PoE camera `n` from the visiond sensor registry."""
-    import tomllib
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        import tomli as tomllib  # Python 3.10 camera nodes; requirements-scan.txt
     reg = tomllib.loads(
         (Path(__file__).resolve().parents[2] / "rust/visiond/config/vision.toml").read_text())
     for cam in reg.get("cameras", {}).get("poe", []):
         if cam.get("name") == f"camera{n}":
             return str(cam["address"])
     raise SystemExit(f"sensor registry has no camera{n}")
+
+
+def load_camera_credentials(path=None):
+    """Read assignment-only cameras.env; never execute shell or print secrets."""
+    path = Path(path or "~/.config/tatbot/cameras.env").expanduser()
+    if not path.is_file():
+        return
+    for line in path.read_text().splitlines():
+        fields = shlex.split(line, comments=True)
+        if fields[:1] == ["export"]:
+            fields = fields[1:]
+        if not fields:
+            continue
+        if len(fields) != 1 or "=" not in fields[0]:
+            raise ValueError("cameras.env must contain literal KEY=value assignments")
+        key, value = fields[0].split("=", 1)
+        if key.startswith("TATBOT_CAMERA_PASSWORD_CAMERA"):
+            os.environ.setdefault(key, value)
 
 
 def rtsp_url(camera: str, stream: str) -> str:
@@ -108,8 +122,27 @@ def grab_frame(camera: str, stream: str, warmup: int) -> np.ndarray | None:
     return frame
 
 
+def detect_records(frame: np.ndarray):
+    return _DETECTOR.detect("scan", frame, 0)
+
+
 def detect(frame: np.ndarray):
-    return [(item.tag_id, item.corners_px) for item in _DETECTOR.detect("scan", frame, 0)]
+    # Numeric-only compatibility callers cannot identify a reused family/id.
+    return [(item.tag_id, item.corners_px) for item in detect_records(frame)
+            if item.tag_id not in INVENTORY.cross_family_ids]
+
+
+def family_groups(records):
+    result = {}
+    for family in sorted({item.family for item in records}):
+        candidates = detection_candidates([(item.tag_id, item.corners_px) for item in records
+                                           if item.family == family])
+        found, _ = resolve_candidate_groups(candidates, family=family)
+        result[family] = {
+            'ids': sorted(found), 'corners': {str(i): c.tolist() for i, c in found.items()},
+            'candidates': {str(i): [c.tolist() for c in group] for i, group in candidates.items()},
+        }
+    return result
 
 
 def detection_candidates(detections):
@@ -120,27 +153,28 @@ def detection_candidates(detections):
     return by_id
 
 
-def resolve_candidate_groups(by_id):
+def resolve_candidate_groups(by_id, *, family=None):
     """Resolve repeated physical IDs using board-only tags as context.
 
-    The EE reuses board ids 3/6/7/8 and the palette also uses id 8. Keying by
-    id alone would silently swap physical objects. The board copy is nearest
-    its unique 4/5/9/10/11 context. A second id-8 candidate is retained as
-    legacy palette metadata; other non-board duplicates are dropped.
+    In legacy single-family inventories, several physical targets reused
+    board IDs. The board copy is nearest its exclusive board context. A
+    second palette candidate is retained as legacy metadata. Families are
+    resolved separately in current captures.
 
     This is only a duplicate guard. A lone reused ID cannot be assigned to a
     physical target from pixels, so calibration and tracking still require
     phase/scene separation.
     """
+    board_ids = BOARD_IDS if family in (None, BOARD_TARGET.family) else set()
     siblings = [
-        c[0].mean(axis=0) for i, c in by_id.items() if i in BOARD_UNIQUE_IDS and len(c) == 1
+        c[0].mean(axis=0) for i, c in by_id.items() if i in board_ids & BOARD_UNIQUE_IDS and len(c) == 1
     ]
     board, palette = {}, None
     for tag_id, candidates in by_id.items():
         if len(candidates) == 1:
             board[tag_id] = candidates[0]
             continue
-        if siblings and tag_id in BOARD_IDS:
+        if siblings and tag_id in board_ids:
             centroid = np.mean(siblings, axis=0)
             order = sorted(candidates,
                            key=lambda c: np.linalg.norm(c.mean(axis=0) - centroid))
@@ -151,7 +185,7 @@ def resolve_candidate_groups(by_id):
             # No siblings to judge against: keep none rather than guess wrong.
             continue
     palette_id = next(iter(PALETTE_IDS))
-    if palette_id in board and siblings and palette is None:
+    if palette_id in board_ids and palette_id in board and siblings and palette is None:
         centroid = np.mean(siblings, axis=0)
         # A lone palette-id candidate far from the board context is not board.
         if np.linalg.norm(board[palette_id].mean(axis=0) - centroid) > 400:
@@ -192,12 +226,14 @@ def scan_camera(camera: str, stream: str, frames: int, outdir: Path) -> dict:
     result["intrinsics_nominal"] = intrinsics.tolist()
     cv2.imwrite(str(outdir / f"{camera}_{stream}.png"), frame)
     annotated = frame.copy()
-    for tag_id, corners in detect(frame):
-        det = {"id": tag_id, "corners_px": corners.tolist(),
+    for item in detect_records(frame):
+        tag_id, corners = item.tag_id, item.corners_px
+        det = {"family": item.family, "id": tag_id, "corners_px": corners.tolist(),
                "side_px": float(np.mean([np.linalg.norm(corners[k] - corners[(k + 1) % 4])
                                          for k in range(4)])),
-               "known_size_m": KNOWN_SIZES_M.get(tag_id),
-               "size_hypotheses_m": list(INVENTORY.size_hypotheses(tag_id)),
+               "known_size_m": (INVENTORY.size_hypotheses(tag_id, item.family)[0]
+                                   if len(INVENTORY.size_hypotheses(tag_id, item.family)) == 1 else None),
+               "size_hypotheses_m": list(INVENTORY.size_hypotheses(tag_id, item.family)),
                "poses_provisional": {}}
         for name, size in SIZE_HYPOTHESES_M.items():
             p = pose_report(corners, size, intrinsics)
@@ -219,10 +255,11 @@ def main():
     ap.add_argument("--cameras", default="camera1,camera2,camera3,camera4,camera5")
     ap.add_argument("--stream", default="main", choices=["main", "sub"])
     ap.add_argument("--frames", type=int, default=5, help="frames to drain before using one")
-    ap.add_argument("--outdir", required=True)
+    ap.add_argument("--outdir", default="~/tatbot-logs/vision/tag-scan")
     ap.add_argument("--image", help="detect on an existing image instead of RTSP")
     args = ap.parse_args()
 
+    capture_started = time.time()
     ts = time.strftime("%Y%m%d_%H%M%S")
     outdir = Path(os.path.expanduser(args.outdir)) / ts
     outdir.mkdir(parents=True, exist_ok=True)
@@ -237,10 +274,12 @@ def main():
         intrinsics = nominal_intrinsics(w, h)
         r = {"camera": name, "ok": True, "resolution": [w, h], "detections": []}
         annotated = frame.copy()
-        for tag_id, corners in detect(frame):
-            det = {"id": tag_id, "corners_px": corners.tolist(),
-                   "known_size_m": KNOWN_SIZES_M.get(tag_id),
-                   "size_hypotheses_m": list(INVENTORY.size_hypotheses(tag_id)),
+        for item in detect_records(frame):
+            tag_id, corners = item.tag_id, item.corners_px
+            det = {"family": item.family, "id": tag_id, "corners_px": corners.tolist(),
+                   "known_size_m": (INVENTORY.size_hypotheses(tag_id, item.family)[0]
+                                   if len(INVENTORY.size_hypotheses(tag_id, item.family)) == 1 else None),
+                   "size_hypotheses_m": list(INVENTORY.size_hypotheses(tag_id, item.family)),
                    "poses_provisional": {}}
             for hname, size in SIZE_HYPOTHESES_M.items():
                 p = pose_report(corners, size, intrinsics)
@@ -252,6 +291,7 @@ def main():
         cv2.imwrite(str(outdir / f"{name}_annotated.jpg"), annotated)
         reports.append(r)
     else:
+        load_camera_credentials()
         for cam in args.cameras.split(","):
             r = scan_camera(cam.strip(), args.stream, args.frames, outdir)
             ids = [d["id"] for d in r["detections"]]
@@ -259,7 +299,7 @@ def main():
             reports.append(r)
 
     with open(outdir / "report.json", "w") as f:
-        json.dump({"timestamp": ts, "reports": reports}, f, indent=2)
+        json.dump({"timestamp": ts, "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(capture_started)), "reports": reports}, f, indent=2)
     print(outdir)
 
 

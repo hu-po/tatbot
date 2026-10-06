@@ -1,47 +1,38 @@
 """Access to the repo's tool registry from inside the sim package.
 
-``scripts/lib/tool_spec.py`` is the single implementation — the sim is a
-separate uv project, so it loads that file by path rather than vendoring a
-second copy that would drift. The registry is stdlib-only precisely so this
-works without adding a dependency.
+``scripts/lib`` holds the single implementation of the tool, ink and dip
+contracts. The sim is a separate uv project, so it depends on that directory
+as ``tatbot-scriptlib`` and imports the modules normally; they are the same
+files the scripts run from a bare clone, so neither side can drift.
+
+The accessors below stay functions because callers hold them, not because the
+import is expensive.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import math
 import os
-import sys
-from functools import lru_cache
 from pathlib import Path
+
+import ink_spec as _ink_spec
+import tool_spec as _tool_spec
 
 from tatbot_sim.repo import repo_root
 
 REPO = repo_root()
-_MODULE_NAME = "tatbot_tool_spec"
-_MODULE_PATH = REPO / "scripts" / "lib" / "tool_spec.py"
 CALIBRATION_DELTA_ENV = "TATBOT_SIM_TIP_DELTA_M"
 SIM_WORKSPACE_RELPATH = "config/examples/workspace.yaml"
 ARM_GOLDEN_RELPATH = "config/trossen/tatbot.yaml"
 SIM_ARM_GOLDEN_RELPATH = "config/examples/tatbot-sim.yaml"
 
 
-@lru_cache(maxsize=1)
 def registry():
     """The tool_spec module itself, for ToolSpec/load_tool/dataset metadata."""
-    spec = importlib.util.spec_from_file_location(_MODULE_NAME, _MODULE_PATH)
-    if spec is None or spec.loader is None:
-        raise FileNotFoundError(f"tool registry not importable at {_MODULE_PATH}")
-    module = importlib.util.module_from_spec(spec)
-    # Registered before exec: the module's dataclasses use postponed
-    # annotations, which dataclasses resolves through sys.modules.
-    sys.modules[_MODULE_NAME] = module
-    spec.loader.exec_module(module)
-    return module
+    return _tool_spec
 
 
-@lru_cache(maxsize=1)
 def active_tool():
     """The tool config/workspace.yaml says is fitted to the follower.
 
@@ -50,8 +41,8 @@ def active_tool():
     It changes nothing on disk, and deliberately cannot: the fitted tool is a
     calibration fact and only a touch-off gets to write it.
 
-    Cached: the URDF build and the agent class body both ask at import time,
-    and one process cannot swap tools mid-run anyway.
+    This is an input resolver. Runtime constructors retain an explicit
+    resolved configuration instead of caching process-wide tool selection.
     """
     override = os.environ.get("TATBOT_TOOL_ID")
     if override:
@@ -59,15 +50,20 @@ def active_tool():
     return registry().load_active_tool(REPO, workspace=workspace())
 
 
-def active_substrate():
-    """What the fitted tool works on: the paper pad, or the silicone skin.
+SUBSTRATE_ENV = "TATBOT_SUBSTRATE"
 
-    A tool and a substrate are a pair on this bench, so the scene follows the
-    gripper — swapping to the laser swaps the whole working surface, its size
-    and its appearance, rather than leaving a letter-size ruled pad under a
-    tool that never touches one.
+
+def active_substrate():
+    """What the fitted tool works on: a paper fixture, or the silicone skin.
+
+    A tool and its substrates are a pair on this bench, so the scene follows
+    the gripper — swapping to the laser swaps the whole working surface, its
+    size and its appearance, rather than leaving a gridded pad under a tool
+    that never touches one. ``TATBOT_SUBSTRATE`` picks among the substrates
+    the fitted tool's datasheet admits (the ballpoint: the paper pad or the
+    paper cylinder); naming one it does not admit is refused, not substituted.
     """
-    return registry().substrate_for(active_tool(), REPO)
+    return registry().substrate_for(active_tool(), REPO, name=os.environ.get(SUBSTRATE_ENV) or None)
 
 
 def workspace_path() -> Path:
@@ -86,7 +82,7 @@ def calibration_delta_m() -> tuple[float, float, float]:
 
     A physical seat persists for a session, so one simulator shard gets one
     draw rather than changing the tool between episodes.  The factory sets the
-    value before re-exec/import so the derived URDF, IK and metadata all see
+    value during configuration resolution so the derived URDF, IK and metadata all see
     the same geometry.
     """
     raw = os.environ.get(CALIBRATION_DELTA_ENV)
@@ -104,12 +100,35 @@ def calibration_delta_m() -> tuple[float, float, float]:
 
 
 def resolved_geometry(spec=None, ws: dict | None = None):
-    """The exact per-process geometry shared by URDF, IK and metadata."""
+    """Resolve default-input geometry; runtimes retain ResolvedConfig.geometry."""
     reg = registry()
     active = spec or active_tool()
     current = workspace() if ws is None else ws
     return reg.resolved_tool_geometry(
         active, current, "right", REPO, tip_delta_m=calibration_delta_m())
+
+
+def geometry_basis(geometry=None) -> str:
+    """Truthful, stable provenance label for offline geometry selection."""
+    resolved = geometry or resolved_geometry()
+    if resolved.contact_status == "pivot-calibrated":
+        return "measured-pivot"
+    if resolved.source == "datasheet-nominal":
+        return "nominal-datasheet"
+    return "synthetic-development"
+
+
+def geometry_warnings(spec=None, geometry=None) -> list[str]:
+    """Warnings that never prevent offline simulation by themselves."""
+    active = spec or active_tool()
+    resolved = geometry or resolved_geometry(active)
+    if not active.contact or resolved.contact_status == "pivot-calibrated":
+        return []
+    detail = resolved.contact_qualification_error or "no quality-gated pivot TCP"
+    return [
+        f"{active.tool_id} uses {geometry_basis(resolved)} geometry in simulation: "
+        f"contact status is {resolved.contact_status} ({detail})",
+    ]
 
 
 def arm_golden_path() -> Path:
@@ -118,7 +137,6 @@ def arm_golden_path() -> Path:
     return live if live.is_file() else REPO / SIM_ARM_GOLDEN_RELPATH
 
 
-@lru_cache(maxsize=1)
 def arm_golden() -> dict:
     """The selected follower profile for the staged pose and carriage rest.
 
@@ -144,44 +162,31 @@ def carriage_rest_m() -> float:
     return float(arm_golden()["carriage_rest_m"])
 
 
-def tool_source_paths() -> list[Path]:
-    """Files whose edits invalidate a derived URDF."""
-    tool = active_tool()
-    paths = [workspace_path()]
-    if tool.source is not None:
-        paths.append(Path(tool.source))
-    return [p for p in paths if p.exists()]
-
-
 # --- ink: the fourth leg of (task, tool, substrate, ink) -----------------------------
 
-_INK_MODULE_NAME = "tatbot_ink_spec"
-_INK_MODULE_PATH = REPO / "scripts" / "lib" / "ink_spec.py"
-
-
-@lru_cache(maxsize=1)
 def ink_registry():
-    """``scripts/lib/ink_spec.py``, loaded by path like the tool registry.
-    Registering the tool registry first lets ink_spec find it in sys.modules."""
-    registry()
-    spec = importlib.util.spec_from_file_location(_INK_MODULE_NAME, _INK_MODULE_PATH)
-    if spec is None or spec.loader is None:
-        raise FileNotFoundError(f"ink registry not importable at {_INK_MODULE_PATH}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[_INK_MODULE_NAME] = module
-    spec.loader.exec_module(module)
-    return module
+    """``ink_spec``: which dips happen, and the charge model behind them."""
+    return _ink_spec
 
 
-@lru_cache(maxsize=1)
+def dip_motion():
+    """``dip_motion``: the cap entry geometry the arm uses, so the simulator
+    hovers and plunges along the same axis rather than its own idea of down."""
+    import dip_motion
+
+    return dip_motion
+
+
 def active_ink_policy():
     """The fitted tool's ``ink:`` block: real (3RL), rehearsal (ballpoint),
-    or none (laser). Cached with the tool, for the same reason."""
+    or none (laser)."""
     return ink_registry().policy_for(active_tool())
 
 
 def palette():
-    return ink_registry().load_palette(REPO)
+    from tatbot_sim.palette import load
+
+    return load(REPO).palette
 
 
 # The sim's ink SUPPLY: which palette load the planner, the validator and the
@@ -220,4 +225,4 @@ def palette_load():
     by ``set_supply``."""
     ink = ink_registry()
     kind, ink_id = _SUPPLY
-    return ink.supply_load(kind, ink.load_palette(REPO), ink_id, REPO)
+    return ink.supply_load(kind, palette(), ink_id, REPO)

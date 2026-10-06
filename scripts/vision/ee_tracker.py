@@ -26,8 +26,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/lib"))
+from tatbot_paths import bootstrap  # noqa: E402
+
+bootstrap()
 from ee_fiducial import (  # noqa: E402
     DetectorConfig,
     EstimatorConfig,
@@ -35,13 +37,15 @@ from ee_fiducial import (  # noqa: E402
     VisionOnlyTracker,
     WristLayout,
     WristTagDetector,
-    invert,
     load_calibration,
 )
 from fiducials import load_inventory  # noqa: E402
 from fiducials.detector import Detection  # noqa: E402
+from robot_world import root_from_world  # noqa: E402
 from tatbot_runlog import log_root  # noqa: E402
-from visiond_wire import decode_video, latest_socket_sets  # noqa: E402
+from urdf_kinematics import UrdfChain  # noqa: E402
+from visiond_wire import latest_socket_sets  # noqa: E402
+from visiond_wire import read_evidence_frame as _read_evidence_frame  # noqa: E402
 
 
 def _git_identity(repo: Path) -> dict:
@@ -94,21 +98,6 @@ def _load_recording_index(capture: Path) -> dict[str, dict[int, dict]]:
     return output
 
 
-def _read_evidence_frame(camera_dir: Path, entry: dict) -> dict:
-    path = camera_dir / entry["payload_file"]
-    payload = path.read_bytes()
-    if len(payload) != int(entry["payload_bytes"]):
-        raise ValueError(f"payload length mismatch for {path}")
-    if hashlib.sha256(payload).hexdigest() != entry["sha256"]:
-        raise ValueError(f"payload checksum mismatch for {path}")
-    metadata = entry["metadata"]
-    profile = metadata["profile"]
-    descriptor = {
-        "format": profile["format"],
-        "width": profile["width"],
-        "height": profile["height"],
-    }
-    return {"metadata": metadata, "image": decode_video(payload, descriptor)}
 
 
 def evidence_sets(capture: Path):
@@ -152,6 +141,7 @@ def detection_sets(path: Path):
                     corners_px=np.asarray(item["corners_px"], dtype=np.float64),
                     timestamp_ns=int(item.get("timestamp_ns", timestamp_ns)),
                     side_px=float(item["side_px"]),
+                    family=item.get("family"),
                 )
                 for item in items
             ]
@@ -211,6 +201,25 @@ def _expanded_roi(detections, width: int, height: int, margin_px: int):
     )
 
 
+def _merge_camera_profiles(active, observed):
+    """Retain calibrated models across partial sets; reject a real resize."""
+    for name, camera in observed.items():
+        previous = active.get(name)
+        if previous is not None and (previous.width, previous.height) != (camera.width, camera.height):
+            raise ValueError(f"active camera profile changed for {name}")
+    active.update(observed)
+
+
+def registered_output_frames(bundle, registration, urdf, base_frame):
+    """Bind world estimates to both the rig root and the named arm base."""
+    identity = bundle.get('bundle_id')
+    if not identity or registration.get('calibration_id') != identity:
+        raise ValueError('camera and robot-world calibration IDs differ')
+    root = root_from_world(registration)
+    base = np.linalg.inv(UrdfChain(urdf).link_pose(base_frame)) @ root
+    return root, base
+
+
 def main():
     repo = Path(__file__).resolve().parents[2]
     default_logs = log_root() / "vision"
@@ -222,6 +231,9 @@ def main():
     ap.add_argument("--calibration", type=Path, default=default_logs / "calibration-current.json")
     ap.add_argument("--robot-world", type=Path, default=default_logs / "robot-world-current.json")
     ap.add_argument("--wrist-layout", type=Path, default=repo / "config/wrist_tags_measured.json")
+    ap.add_argument("--urdf", type=Path, default=repo / "urdf/tatbot.urdf")
+    ap.add_argument("--base-frame", choices=("left/base_link", "right/base_link"),
+                    default="right/base_link")
     ap.add_argument("--output", type=Path, required=True)
     ap.add_argument("--detector-scale", type=float, default=live_profile.scale)
     ap.add_argument("--adaptive-window-max", type=int, default=live_profile.adaptive_window_max)
@@ -256,6 +268,7 @@ def main():
         "--exclude-cameras", default="", help="comma-separated ablation list, e.g. camera1,camera5"
     )
     ap.add_argument("--max-fps", type=float, default=10.0)
+    ap.add_argument("--duration-s", type=float, help="bounded socket subscription duration")
     ap.add_argument("--max-sets", type=int, default=0, help="0 runs until EOF/Ctrl+C")
     ap.add_argument("--annotated-dir", type=Path)
     ap.add_argument("--dry-run", action="store_true", help="validate inputs without consuming frames")
@@ -264,7 +277,8 @@ def main():
     cameras, bundle = load_calibration(args.calibration)
     layout = WristLayout.load(args.wrist_layout, inventory_path=inventory.source)
     robot_world = json.loads(args.robot_world.expanduser().read_text())
-    base_from_world = invert(np.asarray(robot_world["world_from_base"], dtype=np.float64))
+    root_from_world_matrix, base_from_world = registered_output_frames(
+        bundle, robot_world, args.urdf, args.base_frame)
     detector_config = DetectorConfig(
         scale=args.detector_scale,
         adaptive_window_max=args.adaptive_window_max,
@@ -312,6 +326,8 @@ def main():
         or args.full_scan_period < 0
     ):
         raise ValueError("rate, count, and ROI arguments must be finite and non-negative")
+    if args.duration_s is not None and (args.source_kind != "socket" or not np.isfinite(args.duration_s) or args.duration_s <= 0):
+        raise ValueError("duration-s requires a socket source and a finite positive duration")
     run_manifest = {
         "schema_version": 1,
         "source_kind": args.source_kind,
@@ -320,6 +336,9 @@ def main():
         "calibration_id": bundle["bundle_id"],
         "robot_world": str(args.robot_world.expanduser()),
         "robot_world_sha256": hashlib.sha256(args.robot_world.expanduser().read_bytes()).hexdigest(),
+        "urdf_sha256": hashlib.sha256(args.urdf.expanduser().read_bytes()).hexdigest(),
+        "base_frame": args.base_frame,
+        "root_frame": "root",
         "wrist_layout": str(args.wrist_layout.expanduser()),
         "wrist_layout_hash": layout.layout_hash,
         "fiducial_inventory": str(inventory.source),
@@ -328,6 +347,7 @@ def main():
         "estimator_config": dataclasses.asdict(estimator_config),
         "excluded_cameras": sorted(item.strip() for item in args.exclude_cameras.split(",") if item.strip()),
         "max_fps": args.max_fps,
+        "duration_s": args.duration_s,
         "latency_basis": {
             "socket": "capture_to_estimate",
             "evidence": "offline_processing_only",
@@ -349,7 +369,7 @@ def main():
     if args.source_kind == "evidence":
         source = evidence_sets(args.source.expanduser())
     elif args.source_kind == "socket":
-        source = latest_socket_sets(args.source.expanduser())
+        source = latest_socket_sets(args.source.expanduser(), duration_s=args.duration_s)
     else:
         source = detection_sets(args.source.expanduser())
     detector = None if args.source_kind == "detections" else WristTagDetector(layout, detector_config)
@@ -358,7 +378,7 @@ def main():
     if unknown_exclusions:
         raise ValueError(f"unknown excluded cameras: {sorted(unknown_exclusions)}")
     tracker = None
-    active_shape = None
+    active_cameras = {}
     output_path = args.output.expanduser()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if output_path.exists():
@@ -395,12 +415,9 @@ def main():
             else:
                 _check_calibration_ids(frame_set, bundle["bundle_id"])
                 scaled = _scaled_cameras(cameras, frame_set)
-            shape = tuple((name, cam.width, cam.height) for name, cam in sorted(scaled.items()))
+            _merge_camera_profiles(active_cameras, scaled)
             if tracker is None:
-                tracker = VisionOnlyTracker(MultiCameraEstimator(scaled, layout, estimator_config))
-                active_shape = shape
-            elif shape != active_shape:
-                raise ValueError(f"active camera profile changed: {active_shape} -> {shape}")
+                tracker = VisionOnlyTracker(MultiCameraEstimator(active_cameras, layout, estimator_config))
             detections = []
             by_camera = {}
             detection_rois = {}
@@ -459,6 +476,8 @@ def main():
                 inventory_hash=layout.inventory_hash,
                 tracking_frame=layout.parent_frame,
                 base_from_world=base_from_world,
+                root_from_world=root_from_world_matrix,
+                base_frame=args.base_frame,
                 sequence=frame_set["sequence"],
                 maximum_skew_ns=frame_set["maximum_skew_ns"],
                 latency_ms=latency_ms,
@@ -503,6 +522,8 @@ def main():
             )
             if args.max_sets and processed >= args.max_sets:
                 break
+    if args.duration_s is not None and processed == 0:
+        raise RuntimeError("no estimates received during bounded subscription")
     print(f"wrote {processed} estimates to {output_path}; manifest {manifest_path}")
 
 

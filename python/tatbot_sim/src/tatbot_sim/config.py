@@ -19,7 +19,51 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from tatbot_sim.depth_noise import DepthNoiseConfig, RGBJitterConfig
+# The artwork episode cap lives in distributions.py (stdlib-only, loaded by
+# path from sim_dataset_audit) and is re-exported here as its documented home.
+from tatbot_sim.distributions import ARTWORK_HORIZON_STEPS  # noqa: F401
+
+
+@dataclass
+class DepthNoiseConfig:
+    """Per-episode randomization ranges; each env samples its own values."""
+
+    sigma_at_ref_mm: tuple[float, float] = (1.0, 4.5)
+    ref_mm: float = 155.0
+    # fraction of the noise VARIANCE that is spatially correlated speckle
+    corr_frac: tuple[float, float] = (0.4, 0.8)
+    speckle_cells: int = 48  # correlated-noise resolution (~13 px patches)
+    warp_mm: tuple[float, float] = (0.0, 2.5)  # static calibration-warp amplitude
+    warp_cells: int = 6
+    min_z_mm: tuple[float, float] = (60.0, 90.0)  # D405 blind zone starts ~70 mm
+    edge_grad_mm: float = 6.0
+    edge_drop_prob: tuple[float, float] = (0.2, 0.8)
+    edge_dilate_px: tuple[int, int] = (1, 5)  # occlusion-band width (rounded to odd)
+    blob_drop_frac: tuple[float, float] = (0.08, 0.30)
+    blob_cells: int = 24  # dropout-grid resolution; coarser = larger holes
+    blob_static_frac: float = 0.7  # share of the blob budget that stays put all episode
+    # How strongly a hole prefers ground the sensor finds hard. Stereo fails on
+    # surfaces turned away from it and on anything far, so real dropouts sit in
+    # patches that follow the scene; weight 0 puts them anywhere and reproduces
+    # the content-blind behaviour these were built with.
+    blob_grazing_weight: tuple[float, float] = (0.3, 1.2)
+    blob_range_weight: tuple[float, float] = (0.1, 0.7)
+    # slope, as a depth gradient in mm per pixel, at which a surface counts as
+    # fully turned away — past this the grazing term saturates
+    grazing_ref_mm_px: float = 4.0
+
+
+@dataclass
+class RGBJitterConfig:
+    """Per-episode camera-response jitter for the wrist RGB streams."""
+
+    enabled: bool = True
+    exposure: tuple[float, float] = (0.82, 1.22)
+    white_balance: tuple[float, float] = (0.93, 1.07)  # per-channel gains
+    gamma: tuple[float, float] = (0.88, 1.15)
+    # sensor grain, fresh each frame: sim renders are noiseless while a real
+    # sensor at indoor light is not (std in [0,1] units; ~2/255 at the top)
+    noise_std: tuple[float, float] = (0.0, 0.008)
 
 
 @dataclass
@@ -44,14 +88,12 @@ class PadDR:
 
 @dataclass
 class SurfaceDR:
-    """The SHAPE of the skin, re-sampled when the scene is rebuilt.
+    """Surface profile and optional small undulation, sampled at scene build.
 
-    Off by default. The ranges that are safe to draw from are the ones the
-    reach audit says the arm can hold the tool perpendicular over, and that
-    measurement has not been made for the laser yet -- it is only at 63% within
-    a millimetre on a flat pad over the default pad heights, and curvature
-    costs both height and lean. Turning this on is a deliberate CLI override
-    made against an audit, not a default anybody inherits.
+    Material and profile are independent: paper and silicone may each be flat
+    or cylindrical. ``balanced`` assigns both profiles within every vectorized
+    batch. The cylinder axis follows canvas v, so the sheet wraps across its
+    shorter u dimension like paper or practice skin around a limb fixture.
 
     Sampled at scene build rather than per episode because the shape is baked
     into the sheet's mesh: the renderer has to show the surface the ink model
@@ -59,26 +101,18 @@ class SurfaceDR:
     with reconfiguration_freq=1, so this is per batch.
     """
 
-    # A DRAPED substrate is shaped whether anyone asks or not — the skin has
-    # its mound in the room. This switch is for the near-flat ones, where a
-    # millimetre of paper lift is genuinely optional.
+    profile: str = "flat"  # flat | cylinder | balanced
+    # Sampled per cylinder member. A cylinder-SHAPED substrate (the rigid
+    # paper cylinder) is not a scenario axis: resolve_for pins the profile to
+    # "cylinder" and this range to the fixture's own radius.
+    cylinder_radius_m: tuple[float, float] = (0.075, 0.110)
+    cylinder_axis: str = "v"  # axis direction; the other canvas axis wraps
+    # Optional displacement on top of the selected base profile.
     enabled: bool = False
-    chart: str = "plane"                             # "plane"; "cylinder" awaits a pad body
-    # Randomisation AROUND the substrate's measured mound, not instead of it:
-    # the summit varies a little between drapes, and the footprint and where it
-    # sits under the skin vary more. None = the substrate's own range, which is
-    # the only place that knows whether its shape is the training signal or an
-    # incidental millimetre of lift.
-    peak_scale: tuple[float, float] | None = None
-    radius_u_m: tuple[float, float] = (0.050, 0.065)
-    radius_v_m: tuple[float, float] = (0.065, 0.085)
-    center_jitter_m: float = 0.012
     # How far the surface ripples, how steeply, and over what wavelength.
     # None = the substrate's own ranges, per config/substrates.yaml. These
     # described the PAPER PAD for every substrate until 2026-08-27; the numbers
-    # did not change, they moved to the object they were always about. Read
-    # only on the near_flat path: a draped substrate is shaped by its mound
-    # (see _sample_skin_shape), so setting these does nothing to the skin.
+    # did not change, they moved to the object they were always about.
     # Set one here only to override the substrate deliberately.
     feature_m: tuple[float, float] | None = None     # wavelength of the undulation
     max_slope_rad: tuple[float, float] | None = None
@@ -133,7 +167,7 @@ class LightingDR:
 
 @dataclass
 class BackgroundDR:
-    """Environment cube maps, floors, and the table under the pad."""
+    """Environment cube maps and floors; table sizes are legacy no-op fields."""
 
     enabled: bool = True
     table_half_x: tuple[float, float] = (0.25, 0.45)
@@ -162,11 +196,7 @@ class SheetWearDR:
 
 @dataclass
 class ClutterDR:
-    """Distractor objects strewn on the table around the pad, redrawn per
-    scene build and repositioned per episode. Real tables carry pens, tape
-    and tools; a policy should key on the pad, not on an empty table. The
-    objects are visual-only (no collision — they can never foul the arm)
-    and keep a margin off the pad, but they appear in RGB and depth."""
+    """Legacy tabletop clutter settings, retained for config compatibility."""
 
     enabled: bool = True
     max_objects: int = 4          # per env; the count draws 0..max per build
@@ -223,17 +253,11 @@ class InkDR:
 
 @dataclass
 class PaletteDR:
-    """Where the ink-cap rack sits, and how much it wanders.
+    """Independent palette in the follower base frame.
 
-    The rack is a fixed fixture on the real bench, so the ranges are the
-    millimetres it is re-placed by between sessions, not a pad's freedom.
-    ``center_m`` is ``palette_root`` in the FOLLOWER BASE frame; None (the
-    default) derives it from the URDF (ink_spec.palette_root_in_base), where
-    the rack and the arm mount are both fixed joints off the rig root. That
-    puts it at about (0.126, 0.268, 0.085): between the two arms, to the
-    right arm's left. The measured palette hold (config/poses.yaml
-    palette_center, 2026-08-26, ROOT frame — not base) lands within 3 cm of
-    it, which the jitter below covers.
+    None uses config/palette_geometry.json's synthetic scene placement.
+    Jitter describes a simulation distribution, not measured gooseneck limits.
+    Hardware always requires a measured full pose.
     """
 
     enabled: bool = True
@@ -242,9 +266,10 @@ class PaletteDR:
     z_jitter_m: float = 0.003
     yaw_jitter_rad: float = 0.05
     rim_above_tag_m: float = 0.0
-    """Cap rims sit this far above the tag face. The caps stand in holes in
-    the rack so their rims are near flush; measure and set if not."""
-    hover_m: float = 0.02
+    """Legacy option name: additive simulation rim-height perturbation.
+    Nominal rims already include support floor and size-specific cap depth.
+    """
+    hover_m: float = 0.01
     """Clearance above a cap rim for the approach and the retract."""
     plunge_speed: float = 0.02
     """m/s into and out of the cap — a dip is a slow, deliberate motion."""
@@ -288,10 +313,10 @@ class CameraDR:
 class PenLeanDR:
     # Furthest the tool is held from the SUBSTRATE's own normal, whatever the
     # local surface asks for. A tool does not have to be exactly perpendicular
-    # to skin to work it, and on a mound's flanks exactly perpendicular is a
+    # to skin to work it, and on a cylinder's flanks exactly perpendicular is a
     # pose the arm cannot make -- it returns a best effort tens of millimetres
     # away and the labels never say so. Measured: the laser reaches 71% of a
-    # 25 mm mound held exactly normal, 82% allowed 20 degrees of slack.
+    # Earlier curved-surface tests improved substantially with 20 degrees of slack.
     max_off_base_rad: float = 0.35  # 20 degrees
     """Continuous lean of the pen off the surface normal along each path."""
 
@@ -370,8 +395,6 @@ class DRConfig:
         """
         if self.pad.z_range is None:
             self.pad.z_range = tuple(substrate.rest_z_m)
-        if self.surface.peak_scale is None:
-            self.surface.peak_scale = tuple(substrate.peak_scale)
         if self.surface.amplitude_m is None:
             self.surface.amplitude_m = tuple(substrate.surface_amplitude_m)
         if self.surface.max_slope_rad is None:
@@ -380,4 +403,20 @@ class DRConfig:
             self.surface.feature_m = tuple(substrate.surface_feature_m)
         if self.sheet.enabled is None:
             self.sheet.enabled = bool(substrate.ruled)
+        if getattr(substrate, "shape", "pad") == "cylinder":
+            # A rigid fixture has one shape. "balanced" would ask for flat
+            # members of a tube, so it is refused; "flat" is the untouched
+            # default and simply gives way to what the object is.
+            if self.surface.profile == "balanced":
+                raise ValueError(
+                    f"substrate {substrate.name!r} is a rigid cylinder; a balanced "
+                    "flat/cylinder profile cannot be drawn on it")
+            radius = float(substrate.radius_m)
+            self.surface.profile = "cylinder"
+            self.surface.cylinder_radius_m = (radius, radius)
+            self.surface.cylinder_axis = "v"
         return self
+
+# Synthetic scene/planning height ceiling, in the follower base frame.
+MAX_TOOL_Z_CENTER = 0.105
+PAD_CENTER = (0.29, 0.0)

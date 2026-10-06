@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <string>
+#include <mutex>
 #include <thread>
 
 namespace tatbot::estop
@@ -26,12 +27,25 @@ public:
 private:
   int open_device();
   void run();
+  struct Snapshot {
+    int state{fault};
+    long sequence{-1};
+    double heartbeat_age_ms{-1};
+    double updated_unix{0};
+  };
+  void capture_status(long sequence, double heartbeat_age_ms);
+  void status_loop();
+  void publish_status(const Snapshot & snapshot);
+  void remove_status();
 
   std::string device_;
   std::atomic<int> & state_;
   int fd_{-1};
   std::atomic<bool> stop_{false};
   std::thread thread_;
+  std::thread status_thread_;
+  std::mutex snapshot_mutex_;
+  Snapshot snapshot_;
 };
 
 enum class WaitResult { resume, emergency };

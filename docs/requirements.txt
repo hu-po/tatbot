@@ -13,3 +13,5 @@ furo                # html_theme
 myst-parser         # Markdown sources
 sphinx-copybutton   # extensions
 sphinx-design       # extensions (grid/card directives used across docs/)
+
+sphinxcontrib-mermaid

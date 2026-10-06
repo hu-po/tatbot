@@ -1,74 +1,729 @@
 {
-  "schema_version": 1,
-  "title": "Supported tattoo-session poses",
-  "seed": 20260901,
-  "source_commit": "f23d95c",
-  "generated_at": "2026-09-01T19:50:00Z",
+  "schema_version": 2,
+  "title": "Acquired DBV3 artwork across five poses",
+  "seed": 904,
+  "source_commit": "a95eb1ab78d797aa77eb6640f7a4a3928873f12e",
+  "generated_at": "2026-10-02T00:00:00Z",
   "validation": {
-    "accepted": 64,
-    "attempts": 68,
-    "rejection_rate": 0.058823529411764705,
-    "reach_audited": true,
-    "max_skinning_error_mm": 0.1,
-    "pose_quality": {
-      "max_joint_rotation_deg": 64.9568379730502,
-      "edge_length_ratio": [0.5680859088897705, 1.208474576473234],
-      "triangle_area_ratio": [0.7145648950338364, 1.2631458353996246]
-    },
-    "anatomy": {
-      "knee_angle_deg": [151.32262644057818, 159.18203895113675],
-      "knee_bend_offset_m": [0.05924001266248534, 0.08358880062587556],
-      "max_knee_off_axis_m": 4.363458207046578E-8,
-      "supported_elbow_angle_deg": [128.69583929515633, 129.31672204902523],
-      "supported_wrist_angle_deg": [179.97872823347365, 180.0]
-    }
+    "scenarios": 5,
+    "trace_compiler_version": 3,
+    "body_asset_sha256": "c1d0ec25c6f4708bb3e8d48811711da0d309598a6b85cf256975d49d1d46e841",
+    "pose_asset_sha256": "8270809809ca874efed77257c96eb6b36be3afe50d126c177b8fade44e7329d3",
+    "reach_audited": false,
+    "visual_review": "pending"
   },
   "coverage": {
-    "bodies": 2,
+    "bodies": 1,
     "poses": 5,
-    "sites": 6,
-    "designs": 10
+    "sites": 4,
+    "designs": 3
   },
   "slides": [
     {
-      "id": "supine-shoulder-heart",
-      "eyebrow": "female · on back · tattoo bed",
-      "title": "Heart on left shoulder",
-      "description": "The body lies supine on a visible bed proxy while the shoulder design remains attached to its canonical face and barycentric coordinates.",
-      "scenario": "supine-shoulder-heart.scenario.json",
-      "probe_max_residual_mm": 0.00008078384894361079
+      "id": "supine-shin",
+      "eyebrow": "SOMA \u00b7 supine \u00b7 tattoo bed",
+      "title": "dbv3-orbit on left shin",
+      "description": "The shared dbv3-orbit artwork is placed on the named supine pose. Preview paint and the typed material trace retain the same frozen source.",
+      "scenario": "supine-shin.scenario.json",
+      "artwork_id": "dbv3-orbit",
+      "artwork_sha256": "2ced08732e600fc99b642a1f55f0c69398c7952ed231279d80888a319c015f00",
+      "pose_id": "supine",
+      "placement": {
+        "anchor": {
+          "barycentric": [
+            0.3333333333333333,
+            0.3333333333333333,
+            0.3333333333333333
+          ],
+          "face": 10866
+        },
+        "design_id": "dbv3-orbit",
+        "id": "showcase-supine-shin-dbv3-orbit",
+        "language": {
+          "consumer_policy": "simulation-exposed-grid-v1",
+          "intent": {
+            "ambiguities": [],
+            "canonical_phrase": "on the left shin",
+            "description": "sampled shin placement",
+            "inklang_version": "0.3",
+            "intent_schema_version": 1,
+            "issues": [],
+            "site": {
+              "aspect": null,
+              "id": "shin",
+              "laterality": "left",
+              "level": null,
+              "region_uv": [
+                0.5,
+                0.5
+              ]
+            },
+            "unknown_terms": []
+          },
+          "program": {
+            "color": null,
+            "inklang": "0.3",
+            "motif": "dbv3-orbit",
+            "secondary": [],
+            "site": {
+              "aspect": null,
+              "id": "shin",
+              "laterality": "left",
+              "level": null,
+              "region_uv": [
+                0.5,
+                0.5
+              ]
+            },
+            "style": null,
+            "technique": null
+          },
+          "resolution": {
+            "actual": {
+              "aspect": "inner",
+              "canonical_phrase": "on the left shin",
+              "laterality": "left",
+              "level": null,
+              "region_uv": [
+                0.4865418760053199,
+                0.4785857981314222
+              ],
+              "site_id": "shin"
+            },
+            "anchor": {
+              "barycentric": [
+                0.3333333333333333,
+                0.3333333333333333,
+                0.3333333333333333
+              ],
+              "face": 10866
+            },
+            "atlas_schema_version": 2,
+            "body": {
+              "asset_sha256": "c1d0ec25c6f4708bb3e8d48811711da0d309598a6b85cf256975d49d1d46e841",
+              "identity_sha256": "800babcf48d09f4ff1da9d2e8a0ebe266869a19849557450c7210c9a9fb9a1b6",
+              "model_spec_id": "mhr-soma-v1",
+              "model_spec_sha256": "e615b8485c367509833ee68b0405cd1e0ce6015604eaa4c1b2b699f4fc8d5144",
+              "rest_surface_sha256": "caa66dff9b3625771c8f4c35bfe59556d30acdc3800880106f98f0ce75c49a95",
+              "topology_sha256": "e0ca7ee25dc0b4c8d841bb2626e364bb88b7af7fae037e30854728842e320a18"
+            },
+            "candidates": [],
+            "intent": {
+              "ambiguities": [],
+              "canonical_phrase": "on the left shin",
+              "description": "sampled shin placement",
+              "inklang_version": "0.3",
+              "intent_schema_version": 1,
+              "issues": [],
+              "site": {
+                "aspect": null,
+                "id": "shin",
+                "laterality": "left",
+                "level": null,
+                "region_uv": [
+                  0.5,
+                  0.5
+                ]
+              },
+              "unknown_terms": []
+            },
+            "issues": [],
+            "resolution_schema_version": 2,
+            "resolver": {
+              "name": "inklang-typescript",
+              "policy": {
+                "id": "seeded-v1",
+                "seed": 3
+              },
+              "version": 1
+            },
+            "status": "resolved"
+          },
+          "sentence": "a dbv3-orbit on the left shin"
+        },
+        "mirror": true,
+        "rotation_rad": 2.993435894153511,
+        "site": {
+          "aspect": null,
+          "id": "shin",
+          "laterality": "left",
+          "level": null,
+          "lexicon": "0.3",
+          "uv": [
+            0.4865418760053199,
+            0.4785857981314222
+          ]
+        },
+        "size_mm": [
+          30,
+          30
+        ]
+      }
     },
     {
-      "id": "prone-thigh-wave",
-      "eyebrow": "male · on front · tattoo bed",
-      "title": "Wave on right thigh",
-      "description": "The prone pose supports posterior access without bending or twisting the limbs; the compiled wave follows the exact thigh surface in the posed mesh.",
-      "scenario": "prone-thigh-wave.scenario.json",
-      "probe_max_residual_mm": 0.0000906701274061561
+      "id": "prone-thigh",
+      "eyebrow": "SOMA \u00b7 prone \u00b7 tattoo bed",
+      "title": "dbv3-sprout on left thigh",
+      "description": "The shared dbv3-sprout artwork is placed on the named prone pose. Preview paint and the typed material trace retain the same frozen source.",
+      "scenario": "prone-thigh.scenario.json",
+      "artwork_id": "dbv3-sprout",
+      "artwork_sha256": "eccfa367788cfa62f8f2731f4a3eeca73f018a814a080a1a3b2770d091e52064",
+      "pose_id": "prone",
+      "placement": {
+        "anchor": {
+          "barycentric": [
+            0.3333333333333333,
+            0.3333333333333333,
+            0.3333333333333333
+          ],
+          "face": 7845
+        },
+        "design_id": "dbv3-sprout",
+        "id": "showcase-prone-thigh-dbv3-sprout",
+        "language": {
+          "consumer_policy": "simulation-exposed-grid-v1",
+          "intent": {
+            "ambiguities": [],
+            "canonical_phrase": "on the left thigh",
+            "description": "sampled thigh placement",
+            "inklang_version": "0.3",
+            "intent_schema_version": 1,
+            "issues": [],
+            "site": {
+              "aspect": null,
+              "id": "thigh",
+              "laterality": "left",
+              "level": null,
+              "region_uv": [
+                0.5,
+                0.34
+              ]
+            },
+            "unknown_terms": []
+          },
+          "program": {
+            "color": null,
+            "inklang": "0.3",
+            "motif": "dbv3-sprout",
+            "secondary": [],
+            "site": {
+              "aspect": null,
+              "id": "thigh",
+              "laterality": "left",
+              "level": null,
+              "region_uv": [
+                0.5,
+                0.34
+              ]
+            },
+            "style": null,
+            "technique": null
+          },
+          "resolution": {
+            "actual": {
+              "aspect": "back",
+              "canonical_phrase": "on the left thigh",
+              "laterality": "left",
+              "level": null,
+              "region_uv": [
+                0.4962802873313543,
+                0.34038661057300035
+              ],
+              "site_id": "thigh"
+            },
+            "anchor": {
+              "barycentric": [
+                0.3333333333333333,
+                0.3333333333333333,
+                0.3333333333333333
+              ],
+              "face": 7845
+            },
+            "atlas_schema_version": 2,
+            "body": {
+              "asset_sha256": "c1d0ec25c6f4708bb3e8d48811711da0d309598a6b85cf256975d49d1d46e841",
+              "identity_sha256": "800babcf48d09f4ff1da9d2e8a0ebe266869a19849557450c7210c9a9fb9a1b6",
+              "model_spec_id": "mhr-soma-v1",
+              "model_spec_sha256": "e615b8485c367509833ee68b0405cd1e0ce6015604eaa4c1b2b699f4fc8d5144",
+              "rest_surface_sha256": "caa66dff9b3625771c8f4c35bfe59556d30acdc3800880106f98f0ce75c49a95",
+              "topology_sha256": "e0ca7ee25dc0b4c8d841bb2626e364bb88b7af7fae037e30854728842e320a18"
+            },
+            "candidates": [],
+            "intent": {
+              "ambiguities": [],
+              "canonical_phrase": "on the left thigh",
+              "description": "sampled thigh placement",
+              "inklang_version": "0.3",
+              "intent_schema_version": 1,
+              "issues": [],
+              "site": {
+                "aspect": null,
+                "id": "thigh",
+                "laterality": "left",
+                "level": null,
+                "region_uv": [
+                  0.5,
+                  0.34
+                ]
+              },
+              "unknown_terms": []
+            },
+            "issues": [],
+            "resolution_schema_version": 2,
+            "resolver": {
+              "name": "inklang-typescript",
+              "policy": {
+                "id": "seeded-v1",
+                "seed": 1
+              },
+              "version": 1
+            },
+            "status": "resolved"
+          },
+          "sentence": "a dbv3-sprout on the left thigh"
+        },
+        "mirror": false,
+        "rotation_rad": -2.1258464533312136,
+        "site": {
+          "aspect": null,
+          "id": "thigh",
+          "laterality": "left",
+          "level": null,
+          "lexicon": "0.3",
+          "uv": [
+            0.4962802873313543,
+            0.34038661057300035
+          ]
+        },
+        "size_mm": [
+          30,
+          30
+        ]
+      }
     },
     {
-      "id": "reclined-legs-shoulder-anchor",
-      "eyebrow": "female · reclined · legs supported",
-      "title": "Anchor on right shoulder",
-      "description": "A 30-degree treatment-chair recline keeps the torso and legs supported while presenting the shoulder to the robot-relative placement solver.",
-      "scenario": "reclined-legs-shoulder-anchor.scenario.json",
-      "probe_max_residual_mm": 0.00009723293459273918
+      "id": "reclined-shin",
+      "eyebrow": "SOMA \u00b7 reclined \u00b7 tattoo chair",
+      "title": "dbv3-ridges on right shin",
+      "description": "The shared dbv3-ridges artwork is placed on the named reclined-seated pose. Preview paint and the typed material trace retain the same frozen source.",
+      "scenario": "reclined-shin.scenario.json",
+      "artwork_id": "dbv3-ridges",
+      "artwork_sha256": "b2b62950288ebb4b1eb1533b095511a05a255b10688cfb0ce7050edbd4876394",
+      "pose_id": "reclined-seated",
+      "placement": {
+        "anchor": {
+          "barycentric": [
+            0.3333333333333333,
+            0.3333333333333333,
+            0.3333333333333333
+          ],
+          "face": 28916
+        },
+        "design_id": "dbv3-ridges",
+        "id": "showcase-reclined-shin-dbv3-ridges",
+        "language": {
+          "consumer_policy": "simulation-exposed-grid-v1",
+          "intent": {
+            "ambiguities": [],
+            "canonical_phrase": "on the right shin",
+            "description": "sampled shin placement",
+            "inklang_version": "0.3",
+            "intent_schema_version": 1,
+            "issues": [],
+            "site": {
+              "aspect": null,
+              "id": "shin",
+              "laterality": "right",
+              "level": null,
+              "region_uv": [
+                0.5,
+                0.5
+              ]
+            },
+            "unknown_terms": []
+          },
+          "program": {
+            "color": null,
+            "inklang": "0.3",
+            "motif": "dbv3-ridges",
+            "secondary": [],
+            "site": {
+              "aspect": null,
+              "id": "shin",
+              "laterality": "right",
+              "level": null,
+              "region_uv": [
+                0.5,
+                0.5
+              ]
+            },
+            "style": null,
+            "technique": null
+          },
+          "resolution": {
+            "actual": {
+              "aspect": "inner",
+              "canonical_phrase": "on the right shin",
+              "laterality": "right",
+              "level": null,
+              "region_uv": [
+                0.4640837754924231,
+                0.4878864386454642
+              ],
+              "site_id": "shin"
+            },
+            "anchor": {
+              "barycentric": [
+                0.3333333333333333,
+                0.3333333333333333,
+                0.3333333333333333
+              ],
+              "face": 28916
+            },
+            "atlas_schema_version": 2,
+            "body": {
+              "asset_sha256": "c1d0ec25c6f4708bb3e8d48811711da0d309598a6b85cf256975d49d1d46e841",
+              "identity_sha256": "800babcf48d09f4ff1da9d2e8a0ebe266869a19849557450c7210c9a9fb9a1b6",
+              "model_spec_id": "mhr-soma-v1",
+              "model_spec_sha256": "e615b8485c367509833ee68b0405cd1e0ce6015604eaa4c1b2b699f4fc8d5144",
+              "rest_surface_sha256": "caa66dff9b3625771c8f4c35bfe59556d30acdc3800880106f98f0ce75c49a95",
+              "topology_sha256": "e0ca7ee25dc0b4c8d841bb2626e364bb88b7af7fae037e30854728842e320a18"
+            },
+            "candidates": [],
+            "intent": {
+              "ambiguities": [],
+              "canonical_phrase": "on the right shin",
+              "description": "sampled shin placement",
+              "inklang_version": "0.3",
+              "intent_schema_version": 1,
+              "issues": [],
+              "site": {
+                "aspect": null,
+                "id": "shin",
+                "laterality": "right",
+                "level": null,
+                "region_uv": [
+                  0.5,
+                  0.5
+                ]
+              },
+              "unknown_terms": []
+            },
+            "issues": [],
+            "resolution_schema_version": 2,
+            "resolver": {
+              "name": "inklang-typescript",
+              "policy": {
+                "id": "seeded-v1",
+                "seed": 4
+              },
+              "version": 1
+            },
+            "status": "resolved"
+          },
+          "sentence": "a dbv3-ridges on the right shin"
+        },
+        "mirror": false,
+        "rotation_rad": -0.2534793709434786,
+        "site": {
+          "aspect": null,
+          "id": "shin",
+          "laterality": "right",
+          "level": null,
+          "lexicon": "0.3",
+          "uv": [
+            0.4640837754924231,
+            0.4878864386454642
+          ]
+        },
+        "size_mm": [
+          30,
+          30
+        ]
+      }
     },
     {
-      "id": "reclined-left-bicep-snake",
-      "eyebrow": "male · reclined · left arm supported",
-      "title": "Snake on left bicep",
-      "description": "The left forearm is lowered onto its armrest to stabilize the exposed upper arm, and the sampler only pairs this pose with a tattoo site on that same supported side.",
-      "scenario": "reclined-left-bicep-snake.scenario.json",
-      "probe_max_residual_mm": 0.00008965884745748554
+      "id": "reclined-left-bicep",
+      "eyebrow": "SOMA \u00b7 left arm supported",
+      "title": "dbv3-orbit on left bicep",
+      "description": "The shared dbv3-orbit artwork is placed on the named reclined-left-arm-supported pose. Preview paint and the typed material trace retain the same frozen source.",
+      "scenario": "reclined-left-bicep.scenario.json",
+      "artwork_id": "dbv3-orbit",
+      "artwork_sha256": "2ced08732e600fc99b642a1f55f0c69398c7952ed231279d80888a319c015f00",
+      "pose_id": "reclined-left-arm-supported",
+      "placement": {
+        "anchor": {
+          "barycentric": [
+            0.3333333333333333,
+            0.3333333333333333,
+            0.3333333333333333
+          ],
+          "face": 6188
+        },
+        "design_id": "dbv3-orbit",
+        "id": "showcase-reclined-left-bicep-dbv3-orbit",
+        "language": {
+          "consumer_policy": "simulation-exposed-grid-v1",
+          "intent": {
+            "ambiguities": [],
+            "canonical_phrase": "on the left bicep",
+            "description": "sampled bicep placement",
+            "inklang_version": "0.3",
+            "intent_schema_version": 1,
+            "issues": [],
+            "site": {
+              "aspect": null,
+              "id": "bicep",
+              "laterality": "left",
+              "level": null,
+              "region_uv": [
+                0.34,
+                0.5
+              ]
+            },
+            "unknown_terms": []
+          },
+          "program": {
+            "color": null,
+            "inklang": "0.3",
+            "motif": "dbv3-orbit",
+            "secondary": [],
+            "site": {
+              "aspect": null,
+              "id": "bicep",
+              "laterality": "left",
+              "level": null,
+              "region_uv": [
+                0.34,
+                0.5
+              ]
+            },
+            "style": null,
+            "technique": null
+          },
+          "resolution": {
+            "actual": {
+              "aspect": null,
+              "canonical_phrase": "on the left bicep",
+              "laterality": "left",
+              "level": null,
+              "region_uv": [
+                0.3837792443160603,
+                0.5154680679797278
+              ],
+              "site_id": "bicep"
+            },
+            "anchor": {
+              "barycentric": [
+                0.3333333333333333,
+                0.3333333333333333,
+                0.3333333333333333
+              ],
+              "face": 6188
+            },
+            "atlas_schema_version": 2,
+            "body": {
+              "asset_sha256": "c1d0ec25c6f4708bb3e8d48811711da0d309598a6b85cf256975d49d1d46e841",
+              "identity_sha256": "800babcf48d09f4ff1da9d2e8a0ebe266869a19849557450c7210c9a9fb9a1b6",
+              "model_spec_id": "mhr-soma-v1",
+              "model_spec_sha256": "e615b8485c367509833ee68b0405cd1e0ce6015604eaa4c1b2b699f4fc8d5144",
+              "rest_surface_sha256": "caa66dff9b3625771c8f4c35bfe59556d30acdc3800880106f98f0ce75c49a95",
+              "topology_sha256": "e0ca7ee25dc0b4c8d841bb2626e364bb88b7af7fae037e30854728842e320a18"
+            },
+            "candidates": [],
+            "intent": {
+              "ambiguities": [],
+              "canonical_phrase": "on the left bicep",
+              "description": "sampled bicep placement",
+              "inklang_version": "0.3",
+              "intent_schema_version": 1,
+              "issues": [],
+              "site": {
+                "aspect": null,
+                "id": "bicep",
+                "laterality": "left",
+                "level": null,
+                "region_uv": [
+                  0.34,
+                  0.5
+                ]
+              },
+              "unknown_terms": []
+            },
+            "issues": [],
+            "resolution_schema_version": 2,
+            "resolver": {
+              "name": "inklang-typescript",
+              "policy": {
+                "id": "seeded-v1",
+                "seed": 2
+              },
+              "version": 1
+            },
+            "status": "resolved"
+          },
+          "sentence": "a dbv3-orbit on the left bicep"
+        },
+        "mirror": true,
+        "rotation_rad": 0.8637355307957373,
+        "site": {
+          "aspect": null,
+          "id": "bicep",
+          "laterality": "left",
+          "level": null,
+          "lexicon": "0.3",
+          "uv": [
+            0.3837792443160603,
+            0.5154680679797278
+          ]
+        },
+        "size_mm": [
+          30,
+          30
+        ]
+      }
     },
     {
-      "id": "reclined-right-bicep-star",
-      "eyebrow": "female · reclined · right arm supported",
-      "title": "Star on right bicep",
-      "description": "The mirrored chair setup stabilizes the right arm and carries the chair, body, tattoo anchors, and reach-audited toolpath through one replayable scenario contract.",
-      "scenario": "reclined-right-bicep-star.scenario.json",
-      "probe_max_residual_mm": 0.00010062836963697919
+      "id": "reclined-right-forearm",
+      "eyebrow": "SOMA \u00b7 right arm supported",
+      "title": "dbv3-sprout on right forearm",
+      "description": "The shared dbv3-sprout artwork is placed on the named reclined-right-arm-supported pose. Preview paint and the typed material trace retain the same frozen source.",
+      "scenario": "reclined-right-forearm.scenario.json",
+      "artwork_id": "dbv3-sprout",
+      "artwork_sha256": "eccfa367788cfa62f8f2731f4a3eeca73f018a814a080a1a3b2770d091e52064",
+      "pose_id": "reclined-right-arm-supported",
+      "placement": {
+        "anchor": {
+          "barycentric": [
+            0.3333333333333333,
+            0.3333333333333333,
+            0.3333333333333333
+          ],
+          "face": 25640
+        },
+        "design_id": "dbv3-sprout",
+        "id": "showcase-reclined-right-forearm-dbv3-sprout",
+        "language": {
+          "consumer_policy": "simulation-exposed-grid-v1",
+          "intent": {
+            "ambiguities": [],
+            "canonical_phrase": "on the right forearm",
+            "description": "sampled forearm placement",
+            "inklang_version": "0.3",
+            "intent_schema_version": 1,
+            "issues": [],
+            "site": {
+              "aspect": null,
+              "id": "forearm",
+              "laterality": "right",
+              "level": null,
+              "region_uv": [
+                0.5,
+                0.18
+              ]
+            },
+            "unknown_terms": []
+          },
+          "program": {
+            "color": null,
+            "inklang": "0.3",
+            "motif": "dbv3-sprout",
+            "secondary": [],
+            "site": {
+              "aspect": null,
+              "id": "forearm",
+              "laterality": "right",
+              "level": null,
+              "region_uv": [
+                0.5,
+                0.18
+              ]
+            },
+            "style": null,
+            "technique": null
+          },
+          "resolution": {
+            "actual": {
+              "aspect": null,
+              "canonical_phrase": "on the right forearm",
+              "laterality": "right",
+              "level": null,
+              "region_uv": [
+                0.4910715026329362,
+                0.19378173095871154
+              ],
+              "site_id": "forearm"
+            },
+            "anchor": {
+              "barycentric": [
+                0.3333333333333333,
+                0.3333333333333333,
+                0.3333333333333333
+              ],
+              "face": 25640
+            },
+            "atlas_schema_version": 2,
+            "body": {
+              "asset_sha256": "c1d0ec25c6f4708bb3e8d48811711da0d309598a6b85cf256975d49d1d46e841",
+              "identity_sha256": "800babcf48d09f4ff1da9d2e8a0ebe266869a19849557450c7210c9a9fb9a1b6",
+              "model_spec_id": "mhr-soma-v1",
+              "model_spec_sha256": "e615b8485c367509833ee68b0405cd1e0ce6015604eaa4c1b2b699f4fc8d5144",
+              "rest_surface_sha256": "caa66dff9b3625771c8f4c35bfe59556d30acdc3800880106f98f0ce75c49a95",
+              "topology_sha256": "e0ca7ee25dc0b4c8d841bb2626e364bb88b7af7fae037e30854728842e320a18"
+            },
+            "candidates": [],
+            "intent": {
+              "ambiguities": [],
+              "canonical_phrase": "on the right forearm",
+              "description": "sampled forearm placement",
+              "inklang_version": "0.3",
+              "intent_schema_version": 1,
+              "issues": [],
+              "site": {
+                "aspect": null,
+                "id": "forearm",
+                "laterality": "right",
+                "level": null,
+                "region_uv": [
+                  0.5,
+                  0.18
+                ]
+              },
+              "unknown_terms": []
+            },
+            "issues": [],
+            "resolution_schema_version": 2,
+            "resolver": {
+              "name": "inklang-typescript",
+              "policy": {
+                "id": "seeded-v1",
+                "seed": 0
+              },
+              "version": 1
+            },
+            "status": "resolved"
+          },
+          "sentence": "a dbv3-sprout on the right forearm"
+        },
+        "mirror": false,
+        "rotation_rad": -0.9756880300627571,
+        "site": {
+          "aspect": null,
+          "id": "forearm",
+          "laterality": "right",
+          "level": null,
+          "lexicon": "0.3",
+          "uv": [
+            0.4910715026329362,
+            0.19378173095871154
+          ]
+        },
+        "size_mm": [
+          30,
+          30
+        ]
+      }
     }
-  ]
+  ],
+  "source_dirty": true
 }

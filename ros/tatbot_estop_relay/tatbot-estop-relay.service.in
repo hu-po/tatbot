@@ -1,0 +1,18 @@
+# The palette Pi's e-stop relay. Installed by `tatbot ros relay-install` (sudo on the relay node);
+# @USER@, @DIR@ and @ARGS@ (the source, then --dest <ros node rig address>:7640 [--bind ADDR]) are
+# filled at install.
+[Unit]
+Description=tatbot drawing e-stop relay (EST1 -> UDP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+ExecStart=/usr/bin/python3 @DIR@/tatbot_estop_relay.py @ARGS@
+Restart=always
+RestartSec=1
+Nice=-10
+
+[Install]
+WantedBy=multi-user.target

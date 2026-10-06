@@ -19,26 +19,20 @@ import hashlib
 import json
 import math
 import subprocess
-import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
 
 import cv2
-import gymnasium as gym
 import numpy as np
 import torch
 import tyro
 from scipy.spatial.transform import Rotation
 
-import tatbot_sim  # noqa: F401  (registers the robot and environment)
-from tatbot_sim.agent import TatbotWXAI
 from tatbot_sim.config import DRConfig
 from tatbot_sim.repo import repo_root
-from tatbot_sim.urdf import rig_from_follower_base
 
 REPO = repo_root()
-sys.path.insert(0, str(REPO / "scripts/vision"))
 from ee_fiducial import (  # noqa: E402
     DetectorConfig,
     EstimatorConfig,
@@ -93,16 +87,20 @@ POSE_JOINT_NAMES = tuple(f"right/joint_{index}" for index in range(6)) + (
 )
 
 
-def _load_pose_bank(path: str | Path) -> tuple[np.ndarray, dict, str]:
+def _load_pose_bank(path: str | Path, *, arm: str = 'right') -> tuple[np.ndarray, dict, str]:
     source = Path(path).expanduser()
     raw = source.read_bytes()
     data = json.loads(raw)
     if data.get("schema_version") != 1:
         raise ValueError(f"{source}: unsupported pose-bank schema {data.get('schema_version')!r}")
-    if tuple(data.get("joint_names", ())) != POSE_JOINT_NAMES:
-        raise ValueError(f"{source}: pose-bank joints must be {list(POSE_JOINT_NAMES)}")
+    if arm not in ('left', 'right'):
+        raise ValueError(f'{source}: unknown pose-bank arm {arm!r}')
+    joint_names = tuple(f'{arm}/joint_{index}' for index in range(6)) + (
+        f'{arm}/left_carriage_joint',)
+    if tuple(data.get("joint_names", ())) != joint_names:
+        raise ValueError(f"{source}: pose-bank joints must be {list(joint_names)}")
     poses = np.asarray(data.get("poses", ()), dtype=np.float64)
-    if poses.ndim != 2 or poses.shape[0] < 3 or poses.shape[1] != len(POSE_JOINT_NAMES):
+    if poses.ndim != 2 or poses.shape[0] < 3 or poses.shape[1] != len(joint_names):
         raise ValueError(f"{source}: pose bank must contain at least three 7-joint poses")
     if not np.isfinite(poses).all():
         raise ValueError(f"{source}: pose bank contains non-finite values")
@@ -284,6 +282,7 @@ def _perturb_models(cameras, layout, rng, split):
             layout.layout_hash + f":sim-{split}",
             layout.inventory_hash,
             layout.parent_frame,
+            family=layout.family,
         ),
         report,
     )
@@ -351,6 +350,9 @@ def _annotate(image: np.ndarray, detections, status: str) -> np.ndarray:
 
 
 def main(args: Args):
+    from tatbot_sim.agent import TatbotWXAI
+    from tatbot_sim.env import TatbotDrawEnv
+
     if args.split not in SPLIT_SEEDS:
         raise ValueError(f"unknown split {args.split}; choose {sorted(SPLIT_SEEDS)}")
     if args.num_frames <= 0 or args.save_failure_frames < 0:
@@ -386,12 +388,11 @@ def main(args: Args):
     pose_bank, pose_bank_metadata, pose_bank_hash = _load_pose_bank(args.pose_bank)
     cameras, layout, model_perturbations = _perturb_models(true_cameras, true_layout, rng, args.split)
     robot_world = json.loads(Path(args.robot_world).expanduser().read_text())
-    world_from_rig = np.asarray(robot_world["world_from_base"], dtype=np.float64)
-    world_from_base = world_from_rig @ rig_from_follower_base()
+    from tatbot_sim.calibration import world_from_follower_base
+    world_from_base = world_from_follower_base(bundle, robot_world)
     distortion_maps = {name: _distortion_maps(camera) for name, camera in true_cameras.items()}
 
-    env = gym.make(
-        "TatbotDraw-v0",
+    env = TatbotDrawEnv(
         num_envs=1,
         obs_mode="rgb",
         control_mode="pd_joint_pos",

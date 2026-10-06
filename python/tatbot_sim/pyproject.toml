@@ -10,21 +10,44 @@ authors = [{ name = "Hugo Ponte" }]
 license = "MIT"
 requires-python = ">=3.11,<3.13"
 dependencies = [
-  # widowxai agent + drawing-task infrastructure landed after the 3.0.1 tag;
-  # the nightly wheel tracks main. SAPIEN ships x86_64 wheels only, so this
-  # package installs on x86_64 hosts only.
-  "mani-skill-nightly",
+  "tatbot-contracts==0.1.0",
+  "tatbot-scriptlib==0.1.0",
+  # CPU preparation and numerical geometry have no physics-engine dependency.
+  "numpy",
+  "scipy",
+  "pyyaml",
+  "pillow",
+  "trimesh",
+  "torch",
   "pytorch-kinematics",
   "transforms3d",
   "av",
   "opencv-python",
   "h5py",
+  "jsonschema>=4.23,<5",
+  "shapely==2.1.2",
   "pandas",
   "pyarrow",
   "tyro",
   "tqdm",
 ]
 
+[project.optional-dependencies]
+# The engine and renderer are opt-in; the arm node installs only preparation.
+# The nightly contains the WidowX AI agent used by this adapter.
+maniskill = ["mani-skill-nightly; platform_machine == 'x86_64'"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["tatbot_sim*"]
+
+[tool.uv]
+# The lock must resolve for the arm node too, where the simulator is skipped.
+required-environments = [
+  "sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "sys_platform == 'linux' and platform_machine == 'aarch64'",
+]
+
+[tool.uv.sources]
+tatbot-contracts = { path = "../tatbot_contracts", editable = true }
+tatbot-scriptlib = { path = "../../scripts/lib", editable = true }

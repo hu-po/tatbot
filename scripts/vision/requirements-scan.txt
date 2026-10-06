@@ -1,0 +1,3 @@
+numpy
+opencv-contrib-python>=4.7
+tomli>=2; python_version < "3.11"

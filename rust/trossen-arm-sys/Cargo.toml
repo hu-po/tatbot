@@ -1,0 +1,17 @@
+[package]
+name = "trossen-arm-sys"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+links = "tatbot_trossen_bridge"
+
+[features]
+default = []
+sdk = ["dep:cxx", "dep:cxx-build"]
+
+[dependencies]
+cxx = { version = "1.0", optional = true }
+
+[build-dependencies]
+cxx-build = { version = "1.0", optional = true }
+sha2 = "0.10"

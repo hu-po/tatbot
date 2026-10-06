@@ -32,6 +32,10 @@
 
 # **tatbot**: tattoo robot
 
+Tatbot is an open robotics project exploring robot-assisted tattoo design and
+placement. The repository contains the software, data formats, and examples
+used by developers and artists contributing to the project.
+
 📚 Read the [documentation](https://hu-po.github.io/tatbot/)
 
 🎥 Watch the [livestream](https://youtube.com/live/ym27ZHPMaec)

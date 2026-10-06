@@ -12,7 +12,6 @@ def _config(**overrides) -> TatbotFollowerConfig:
         "use_tatbot_yaml": False,
         "use_tool_registry": False,
         "coordinated_arms": False,
-        "tuning_enabled": False,
         "estop_device": "",
         "estop_required": False,
     }

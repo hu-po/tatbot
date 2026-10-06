@@ -45,7 +45,8 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 
-# BEGIN LAYOUT — docs/run_logs.md literalincludes this block; keep it true.
+# BEGIN LAYOUT — the run directory as written; scripts/tests/test_runlog.py
+# fails when a run writes a file this block does not name.
 # <log-root>/<workflow>/<run-id>/      (log root: see module docstring)
 #   meta.json     run identity: git sha, versions, hardware, argv, exit code
 #   console.log   byte-for-byte what the terminal showed
@@ -53,7 +54,6 @@ SCHEMA_VERSION = 1
 #   run.jsonl     structured events, append-only
 #   KEEP          optional operator marker: this run is never pruned
 #   ...           workflow artifacts: flight-*.csv, analysis.json,
-#                 audio.wav, audio_start.json, audio_analysis.json,
 #                 teleop.wxtl, poe/, rs/, session.rrd
 #
 # <log-root>/index.jsonl               one row per run state transition
@@ -88,15 +88,13 @@ DEFAULT_CONFIG = {
         "teleop": {"class": "text", "keep_days": 90, "keep_runs": 500},
         "record": {"class": "text", "keep_days": 90, "keep_runs": 200},
         "tune": {"class": "text", "keep_days": 30, "keep_runs": 100},
-        "netmon": {"class": "text", "keep_days": 90, "keep_runs": 500},
         "train": {"class": "text", "keep_days": 180, "keep_runs": 200},
-        "camera_config": {"class": "text", "keep_days": 90, "keep_runs": 200},
         "vision": {"class": "media", "keep_days": 7, "keep_runs": 5},
         "calib": {"class": "media", "keep_days": 30, "keep_runs": 20},
         "selftest": {"class": "text", "keep_days": 1, "keep_runs": 5},
         # Pre-runlog vision evidence (hundreds of GB) lives under the same
-        # workflow directories. It is indexed for visibility but NEVER pruned
-        # without a human typing --legacy --yes.
+        # workflow directories. `reindex --legacy` indexes it for visibility;
+        # prune never deletes it (why_not_deletable refuses non-run-id names).
         "legacy": {"enabled": False},
     },
 }
@@ -117,9 +115,22 @@ def _iso(dt: datetime | None = None) -> str:
     return (dt or _utcnow()).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
+_HOST_NODE: str | None = None
+
+
 def _node() -> str:
-    return (os.environ.get("TATBOT_NODE")
-            or socket.gethostname().split(".")[0].lower())
+    """TATBOT_NODE, else `hostname -s` mapped through a `hostname` alias in
+    config/nodes.json, as tatbot_cli.nodes.this_node does (a node's hostname
+    need not be its name). Resolved once per process: every index row asks."""
+    global _HOST_NODE
+    env = os.environ.get("TATBOT_NODE")
+    if env:
+        return env
+    if _HOST_NODE is None:
+        host = socket.gethostname().split(".")[0].lower()
+        _HOST_NODE = next((name for name, rec in _fleet_map().items()
+                           if isinstance(rec, dict) and str(rec.get("hostname", "")).lower() == host), host)
+    return _HOST_NODE
 
 
 def _run(cmd, cwd=None, timeout=5) -> str | None:
@@ -135,7 +146,17 @@ def _run(cmd, cwd=None, timeout=5) -> str | None:
 def _repo_root(start: Path | None = None) -> Path | None:
     here = (start or Path(__file__)).resolve()
     for parent in here.parents:
-        if (parent / ".git").exists() and (parent / "AGENTS.md").exists():
+        # Session releases and the viewer overlay are git archives. Their
+        # checked-in retention policy must resolve exactly as in a checkout;
+        # requiring .git silently sends services to a different log index.
+        archive_layout = (
+            (parent / "scripts/lib/tatbot_runlog.py").is_file()
+            and (parent / "scripts/tatbot").is_file()
+            and (parent / "config/runlog.json").is_file()
+        )
+        if (parent / "AGENTS.md").is_file() and (
+            (parent / ".git").exists() or archive_layout
+        ):
             return parent
     return None
 
@@ -167,16 +188,51 @@ def load_config() -> dict:
     return cfg
 
 
-def _fleet_nodes() -> list[str]:
-    """Node names from config/nodes.json; empty when there is none."""
-    repo = _repo_root()
-    if repo is None:
-        return []
+def _fleet_module():
+    """tatbot_cli.nodes — the `--on` hop's reading of config/nodes.json — or None.
+
+    tatbot_cli is stdlib-only and sits next to this file, so the import costs
+    nothing this file's four interpreters lack; it is deferred and guarded
+    because the writer entry points must never depend on it."""
     try:
-        data = json.loads((repo / "config" / "nodes.json").read_text())
-    except (OSError, json.JSONDecodeError):
-        return []
-    return [k for k in data if not k.startswith("//") and not k.startswith("__")]
+        from tatbot_cli import nodes
+    except ImportError:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        try:
+            from tatbot_cli import nodes
+        except ImportError:
+            return None
+    return nodes
+
+
+def _fleet_map() -> dict:
+    """config/nodes.json as `tatbot --on` reads it; {} without a fleet."""
+    repo = _repo_root()
+    fleet = _fleet_module()
+    if repo is None or fleet is None:
+        return {}
+    try:
+        return fleet.load(repo)
+    except (OSError, ValueError):
+        return {}
+
+
+def _sweep_nodes(cfg: dict, nmap: dict | None = None) -> tuple[list[str], list[str]]:
+    """(nodes to sweep, retired nodes left out) for `--all-nodes`.
+
+    env > runlog config > config/nodes.json keys. No hardcoded node names in
+    code (plan Phase 1): the fleet is config, not a constant. A node with no
+    roles is retired — nothing runs there and it is usually off — and is left
+    out the way `tatbot status --fleet` leaves it out: a retired node cost
+    every sweep a connect timeout and a non-zero exit until 2026-09-17.
+    TATBOT_NODES is an explicit request and is swept as given."""
+    env = os.environ.get("TATBOT_NODES")
+    if env:
+        return env.split(), []
+    nmap = _fleet_map() if nmap is None else nmap
+    wanted = cfg.get("nodes") or list(nmap)
+    retired = [n for n in wanted if n in nmap and not nmap[n].get("roles")]
+    return [n for n in wanted if n not in retired], retired
 
 
 def log_root(cfg: dict | None = None) -> Path:
@@ -325,6 +381,36 @@ def _atomic_write_json(path: Path, payload: dict) -> None:
     os.replace(tmp, path)
 
 
+@contextlib.contextmanager
+def _flocked(path: Path, flags: int):
+    """An fd on the file `path` names, holding its exclusive flock.
+
+    `logs compact` replaces the index under this lock, so a caller that opened
+    the old file and then waited for the lock reopens instead of writing into
+    an unlinked inode. The third attempt keeps whatever it opened.
+    """
+    for attempt in range(3):
+        fd = os.open(path, flags, 0o644)
+        try:
+            with contextlib.suppress(OSError):
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            if attempt < 2 and not _names(path, fd):
+                continue
+            yield fd
+            return
+        finally:
+            with contextlib.suppress(OSError):
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+
+
+def _names(path: Path, fd: int) -> bool:
+    try:
+        return os.path.samestat(os.fstat(fd), os.stat(path))
+    except OSError:
+        return False
+
+
 def _append_line(path: Path, obj: dict) -> None:
     """One kernel-atomic append. Concurrent workflows share these files, so the
     line must fit in a single write and the lock is held only for the write."""
@@ -338,15 +424,8 @@ def _append_line(path: Path, obj: dict) -> None:
         line = json.dumps(obj, default=str)
     data = (line + "\n").encode()
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
-    try:
-        with contextlib.suppress(OSError):
-            fcntl.flock(fd, fcntl.LOCK_EX)
+    with _flocked(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND) as fd:
         os.write(fd, data)
-    finally:
-        with contextlib.suppress(OSError):
-            fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
 
 
 # --------------------------------------------------------------------------
@@ -491,13 +570,6 @@ class RunLog:
             _deep_update(meta, fields)
             _atomic_write_json(self.meta_path, meta)
 
-    def child_env(self, env: dict | None = None) -> dict:
-        out = dict(env if env is not None else os.environ)
-        out.update({"TATBOT_RUN_DIR": str(self.dir),
-                    "TATBOT_RUN_ID": self.run_id,
-                    "TATBOT_RUN_WORKFLOW": self.workflow})
-        return out
-
     # -- logging ----------------------------------------------------------
     def attach_logging(self, console_level=logging.INFO,
                        file_level=logging.DEBUG) -> None:
@@ -558,11 +630,8 @@ class RunLog:
                 # counter useful; Python workflows emit structured events and
                 # therefore already have a nonzero counter here.
                 if not counters.get("estop"):
-                    with contextlib.suppress(Exception):
-                        counters["estop"] = sum(
-                            line.startswith("E-STOP:")
-                            for line in console.read_text(errors="replace").splitlines()
-                        )
+                    with contextlib.suppress(Exception), console.open(errors="replace") as stream:
+                        counters["estop"] = sum(line.startswith("E-STOP:") for line in stream)
             _atomic_write_json(self.meta_path, meta)
             self.event("run.end", status=status, exit_code=exit_code,
                        duration_s=duration)
@@ -630,13 +699,17 @@ def index_append(run: "RunLog", meta: dict, terminal: bool = False,
         _append_line(index_path(cfg), row)
 
 
-def index_rows(cfg: dict | None = None, limit: int | None = None) -> list[dict]:
+def index_rows(cfg: dict | None = None, limit: int | None = None, *, strict: bool = False) -> list[dict]:
     path = index_path(cfg)
-    if not path.is_file():
+    if not strict and not path.is_file():
         return []
     try:
         lines = path.read_text(errors="replace").splitlines()
+    except FileNotFoundError:
+        return []
     except Exception:
+        if strict:
+            raise
         return []
     if limit:
         lines = lines[-limit * 4:]
@@ -644,15 +717,21 @@ def index_rows(cfg: dict | None = None, limit: int | None = None) -> list[dict]:
     for line in lines:
         line = line.strip()
         if line:
+            if strict:
+                row = json.loads(line)
+                if not isinstance(row, dict) or not row.get("run_id"):
+                    raise ValueError(f"invalid run-index row in {path}")
+                rows.append(row)
+                continue
             with contextlib.suppress(Exception):
                 rows.append(json.loads(line))
     return rows
 
 
-def index_runs(cfg: dict | None = None, workflow: str | None = None) -> list[dict]:
+def index_runs(cfg: dict | None = None, workflow: str | None = None, *, strict: bool = False) -> list[dict]:
     """Collapse the transition rows into one record per run, newest last."""
     merged: dict[str, dict] = {}
-    for row in index_rows(cfg):
+    for row in index_rows(cfg, strict=strict):
         rid = row.get("run_id")
         if not rid:
             continue
@@ -664,23 +743,30 @@ def index_runs(cfg: dict | None = None, workflow: str | None = None) -> list[dic
     return runs
 
 
-def _pid_alive(pid) -> bool:
-    with contextlib.suppress(Exception):
+def _pid_alive(pid, *, strict: bool = False) -> bool:
+    try:
+        if strict and (isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0):
+            raise ValueError("run pid must be a positive integer")
         os.kill(int(pid), 0)
         return True
-    return False
+    except ProcessLookupError:
+        return False
+    except Exception:
+        if strict:
+            raise
+        return False
 
 
-def resolve_status(row: dict) -> str:
+def resolve_status(row: dict, *, node: str | None = None, strict: bool = False) -> str:
     """A 'running' row only means running if it is this host and the pid lives."""
     status = row.get("status") or "unknown"
     if status != "running":
         return status
     if row.get("data_present") is False:
         return "pruned"
-    if row.get("node") != _node():
+    if row.get("node") != (node or _node()):
         return "running (elsewhere)"
-    return "running" if _pid_alive(row.get("pid")) else "crashed (no finalize)"
+    return "running" if _pid_alive(row.get("pid"), strict=strict) else "crashed (no finalize)"
 
 
 # --------------------------------------------------------------------------
@@ -787,7 +873,7 @@ def prune(workflow: str, cfg: dict | None = None, dry_run: bool = True,
             removed.append(entry)
             if verbose:
                 print(f"prune: WOULD remove {run_dir.name} "
-                      f"({workflow}, {_human(size)})")
+                      f"({workflow}, {_human(size)})", file=sys.stderr)
             continue
         # Record first, delete second: a crash mid-rmtree then leaves a
         # half-empty directory the next prune finishes, with the record already
@@ -808,8 +894,10 @@ def prune(workflow: str, cfg: dict | None = None, dry_run: bool = True,
             continue
         removed.append(entry)
         if verbose:
+            # stderr, never stdout: `begin` runs this and runlog.sh captures its stdout as
+            # RUN_DIR (a 60-run prune once became a 6 KB "log path", exit 130).
             print(f"prune: removed {run_dir.name} ({workflow}, {_human(size)}, "
-                  f"ended {entry['ended_at']}, status {entry['status']})")
+                  f"ended {entry['ended_at']}, status {entry['status']})", file=sys.stderr)
     return removed
 
 
@@ -880,7 +968,7 @@ def init(workflow: str, *, meta: dict | None = None,
     if attach_logging:
         run.attach_logging(console_level=console_level, file_level=file_level)
     if emit_banner:
-        _emit(banner("start", run_id, f"pid={os.getpid()} log={run_dir}"))
+        _emit(banner("start", run_id, f"pid={payload['node']['pid']} log={run_dir}"))
     if prune_first:
         # Before any hardware connection, and synchronous on purpose: the
         # deletions then land in THIS run's console.log where an agent will
@@ -941,13 +1029,14 @@ def _update_latest(workflow_dir: Path, run_dir: Path) -> None:
 SSH = ["ssh", "-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
        "-o", "StrictHostKeyChecking=accept-new"]
 
-HELP = f"""tatbot-logs — find and read the full log of any tatbot run.
+HELP = """tatbot-logs — find and read the full log of any tatbot run.
 
   tatbot-logs last rollout              the most recent run of a workflow
   tatbot-logs show <run-id>             one run: meta, errors, console tail
   tatbot-logs tail <run-id> -f          follow a run that is still going
   tatbot-logs list [workflow]           recent runs, newest last
   tatbot-logs fetch <run-id>            copy a remote run here (skips media)
+  tatbot-logs count rollout_async       how many launches the index holds (reconcile before/after)
 
 A run id carries its node, so it is self-locating:
 
@@ -957,11 +1046,14 @@ A run id carries its node, so it is self-locating:
   tatbot-logs show 20260821T164233Z-<node>-a3f1  # ssh's to that node by itself
   tatbot-logs list --all-nodes                   # sweep every known node
 
-Runs live in {DEFAULT_CONFIG['log_root']}/<workflow>/<run-id>/ on the node that
-produced them. console.log holds more than the terminal showed. Workflows:
-teleop, record, rollout, rollout_async, tune, train, vision, calib, netmon.
+Runs live in <log root>/<workflow>/<run-id>/ on the node that produced them
+(`root` prints the log root). console.log holds more than the terminal showed.
+`list` shows which workflows this node holds runs for.
 
 Other commands: du, prune [--yes], reindex [--legacy], compact, selftest.
+`count <workflow> --expect N --before M` exits 1 unless exactly N launches were
+added since the snapshot M: reconcile run COUNT before calling any launch
+uncommanded (the 2026-08-24 lesson).
 """
 
 
@@ -970,11 +1062,31 @@ def _node_of(run_id: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _remote_argv(node: str, args: list[str], nmap: dict | None = None) -> list[str]:
+    """The ssh command that runs this same CLI on `node`.
+
+    The target and the checkout come from config/nodes.json through
+    tatbot_cli.nodes, exactly as `tatbot --on <node>` resolves them; a node
+    the map does not know is dialed by name and assumed at the public repo's
+    conventional path. It used to glob `$(cd ~/tatbot* && pwd)`, which is
+    empty wherever the log root or a second checkout sits beside the checkout
+    (`cd` refuses two arguments), so two nodes answered
+    `can't open file '/scripts/lib/tatbot_runlog.py'` (2026-09-17)."""
+    nmap = _fleet_map() if nmap is None else nmap
+    fleet = _fleet_module()
+    if fleet is not None and node in nmap:
+        target = fleet.ssh_target(nmap, node) or node
+        checkout = fleet.remote_checkout(nmap, node)
+    else:
+        target, checkout = node, "$HOME/tatbot"
+    script = f"{checkout}/scripts/lib/tatbot_runlog.py"
+    return SSH + [target, f"python3 {script} " + " ".join(map(_q, args))]
+
+
 def _remote(node: str, args: list[str]) -> tuple[int, str]:
     """Run this same CLI on another node; fall back to reading its index."""
-    script = "$(cd ~/tatbot* 2>/dev/null && pwd)/scripts/lib/tatbot_runlog.py"
-    cmd = SSH + [node, f"python3 {script} " + " ".join(map(_q, args))]
     try:
+        cmd = _remote_argv(node, args)
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         return out.returncode, (out.stdout or out.stderr)
     except Exception as exc:
@@ -995,33 +1107,64 @@ def _fmt_row(row: dict) -> str:
             f"{status:<22} {dur_s}  {summary}")[:200]
 
 
-def _cmd_list(args) -> int:
-    nodes = args.nodes
-    if nodes:
-        rc = 0
-        for node in nodes:
-            if node == _node():
-                continue
-            code, out = _remote(node, ["list"] + (["--workflow", args.workflow]
-                                                 if args.workflow else [])
-                                + ["-n", str(args.n)])
+def _list_remote(node: str, args) -> tuple[int, list[dict] | None, str]:
+    """One other node's listing: (exit code, its rows under --json, its text)."""
+    code, out = _remote(node, ["list"] + ([args.workflow] if args.workflow else [])
+                        + ["-n", str(args.n)] + (["--status", args.status] if args.status else [])
+                        + (["--json"] if args.json else []))
+    if not args.json:
+        return code, None, out
+    try:
+        rows = json.loads(out) if code == 0 else None
+    except ValueError:
+        rows = None
+    if not isinstance(rows, list):
+        return code or 1, None, out  # it answered, but not with a listing
+    return code, rows, out
+
+
+def _sweep(args) -> tuple[int, list[dict]]:
+    """The other nodes' listings: printed as sections, or (--json) their rows
+    for one array, each row naming its node."""
+    rc, swept = 0, []
+    for node in args.nodes:
+        if node == _node():
+            continue
+        code, rows, out = _list_remote(node, args)
+        if rows is not None:
+            swept.extend(rows)
+        elif not args.json:
             print(f"--- {node} ---")
             print(out.rstrip() if out.strip() else "(no runs)")
-            rc = rc or (0 if code == 0 else 0)
+        # A node that did not answer makes this listing incomplete. Say so on
+        # stderr and carry the first failing code out, so a search for a run
+        # cannot read one node's silence as "that run does not exist".
+        if code != 0:
+            print(f"{node}: listing failed (exit {code})", file=sys.stderr)
+            rc = rc or code
+    note = "retired: no roles in config/nodes.json; not swept — `logs show <run-id>` still resolves its runs"
+    for node in getattr(args, "retired", None) or []:
+        print(f"{node}: {note}", file=sys.stderr) if args.json else print(f"--- {node} ---\n({note})")
+    return rc, swept
+
+
+def _cmd_list(args) -> int:
+    rc, swept = _sweep(args) if args.nodes else (0, [])
+    if args.nodes and not args.json:
         print(f"--- {_node()} (local) ---")
     runs = index_runs(workflow=args.workflow)
     if args.status:
         runs = [r for r in runs if resolve_status(r).startswith(args.status)]
     runs = runs[-args.n:]
     if args.json:
-        print(json.dumps(runs, indent=2, default=str))
-        return 0
+        print(json.dumps(swept + runs, indent=2, default=str))
+        return rc
     if not runs:
         print("(no runs indexed)")
-        return 0
+        return rc
     for row in runs:
         print(_fmt_row(row))
-    return 0
+    return rc
 
 
 def _cmd_last(args) -> int:
@@ -1139,12 +1282,47 @@ def _cmd_fetch(args) -> int:
     excludes = [] if args.all else [
         "--exclude=poe/", "--exclude=rs/", "--exclude=*.rrd", "--exclude=*.z16",
         "--exclude=*.jpg", "--exclude=*.png", "--exclude=*.mp4"]
-    src = f"{node}:~/tatbot-logs/*/{args.run_id}*/"
+    # Dial the node the way `list`/`show` do (its config/nodes.json ssh target),
+    # and read its runs where it keeps them, not where this node does.
+    nmap, fleet = _fleet_map(), _fleet_module()
+    target = (fleet.ssh_target(nmap, node) if fleet is not None else None) or node
+    code, out = _remote(node, ["root"])
+    root = out.strip().splitlines()[-1] if code == 0 and out.strip() else "~/tatbot-logs"
+    src = f"{target}:{root}/*/{args.run_id}*/"
     cmd = (["rsync", "-a", "--partial", "--info=progress2"] + excludes
            + ["-e", " ".join(SSH[:1] + SSH[2:])]
            + [src, str(dest / args.run_id) + "/"])
     print(" ".join(cmd))
     return subprocess.call(cmd)
+
+
+def count_launches(workflow: str, cfg: dict | None = None) -> int:
+    """How many times `workflow` was launched: its runs with a start row in the index.
+
+    Every launch appends exactly one `running` row carrying `started_at`, and
+    `logs compact` keeps that field in the run's merged row, so this is the
+    launch count even for runs that never finalized, before or after a compact.
+    Exact workflow match: `rollout` and `rollout_async` are different launchers
+    and must not be summed."""
+    return len({row["run_id"] for row in index_rows(cfg)
+                if row.get("workflow") == workflow and row.get("run_id") and row.get("started_at")})
+
+
+def _cmd_count(args) -> int:
+    n = count_launches(args.workflow)
+    if args.expect is None:
+        print(n)
+        return 0
+    if args.before is None:
+        print("logs count: --expect needs --before <count from `logs count` taken before the launches>;"
+              " without it the comparison is against the all-time total", file=sys.stderr)
+        return 2
+    before = args.before
+    got = n - before
+    ok = got == args.expect
+    print(f"reconcile {args.workflow}: launched {args.expect}, index gained {got} "
+          f"({before} -> {n}) — {'OK' if ok else 'MISMATCH — STOP, investigate before more motion'}")
+    return 0 if ok else 1
 
 
 def _cmd_du(args) -> int:
@@ -1210,12 +1388,16 @@ def _cmd_reindex(args) -> int:
 
 
 def _cmd_compact(args) -> int:
+    """One row per run, read and replaced under the appenders' lock: a row
+    appended between the read and the replace used to be lost."""
     cfg = load_config()
-    runs = index_runs(cfg)
     path = index_path(cfg)
-    tmp = path.with_suffix(".jsonl.tmp")
-    tmp.write_text("".join(json.dumps(r, default=str) + "\n" for r in runs))
-    os.replace(tmp, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _flocked(path, os.O_RDONLY | os.O_CREAT):
+        runs = index_runs(cfg)
+        tmp = path.with_suffix(".jsonl.tmp")
+        tmp.write_text("".join(json.dumps(r, default=str) + "\n" for r in runs))
+        os.replace(tmp, path)
     print(f"compacted to {len(runs)} rows")
     return 0
 
@@ -1253,6 +1435,9 @@ def _cmd_begin(args) -> int:
     for pair in args.set or []:
         key, _, val = pair.partition("=")
         extra.setdefault("key", {})[key] = val
+    if args.parent_pid:
+        # The launcher shell is the run; this process exits once it prints the dir.
+        extra["node"] = {"pid": args.parent_pid}
     run = init(args.workflow, meta=extra, argv=(args.argv0 and [args.argv0]) or None,
                owns_console=True, attach_logging=False, emit_banner=True)
     print(run.dir)          # stdout is the contract: runlog.sh captures this
@@ -1341,13 +1526,19 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--all", action="store_true")
     p.set_defaults(func=_cmd_fetch)
 
+    p = sub.add_parser("count", help="launch count of a workflow (its `running` index rows)")
+    p.add_argument("workflow")
+    p.add_argument("--expect", type=int, default=None,
+                   help="with --before: exit 1 unless exactly this many launches were added")
+    p.add_argument("--before", type=int, default=None, help="the count printed before the launches")
+    p.set_defaults(func=_cmd_count)
+
     p = sub.add_parser("du", help="disk use per workflow")
     p.set_defaults(func=_cmd_du)
 
     p = sub.add_parser("prune", help="apply retention (dry run unless --yes)")
     p.add_argument("workflow", nargs="?")
     p.add_argument("--yes", action="store_true")
-    p.add_argument("--legacy", action="store_true")
     p.add_argument("--budget", type=float, default=None)
     p.set_defaults(func=_cmd_prune)
 
@@ -1365,7 +1556,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("begin")
     p.add_argument("--workflow", required=True)
     p.add_argument("--argv0")
-    p.add_argument("--parent-pid")
+    p.add_argument("--parent-pid", type=int)
     p.add_argument("--set", action="append")
     p.set_defaults(func=_cmd_begin)
 
@@ -1390,11 +1581,7 @@ def main(argv: list[str] | None = None) -> int:
         print(HELP)
         return 0
     if getattr(args, "all_nodes", False):
-        # env > runlog config > config/nodes.json keys. No hardcoded node
-        # names in code (plan Phase 1): the fleet is config, not a constant.
-        cfg = load_config()
-        env = os.environ.get("TATBOT_NODES")
-        args.nodes = env.split() if env else (cfg.get("nodes") or _fleet_nodes())
+        args.nodes, args.retired = _sweep_nodes(load_config())
     return args.func(args)
 
 

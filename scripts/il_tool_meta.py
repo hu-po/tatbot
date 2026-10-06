@@ -8,7 +8,7 @@
 
 LeRobot's own metadata says only ``robot_type: tatbot_follower``, which does
 not distinguish a 60 mm rotary pen from anything else that could be in the
-gripper. This writes ``meta/tool.json`` next to it: the fitted tool's whole
+mount. This writes ``meta/tool.json`` next to it: the fitted tool's whole
 datasheet INLINED, plus the measured tip offset and the touch-off it came
 from.
 
@@ -40,7 +40,10 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "scripts" / "lib"))
+sys.path.insert(0, str(REPO / "scripts/lib"))
+from tatbot_paths import bootstrap  # noqa: E402
+
+bootstrap()
 
 import ink_session  # noqa: E402
 import ink_spec  # noqa: E402
@@ -56,7 +59,7 @@ def main() -> int:
     ap.add_argument("--root", type=Path, help="dataset directory (overrides --repo-id)")
     ap.add_argument("--arm", default="right")
     ap.add_argument("--ee-tool", "--tool-id", dest="tool_id", required=True,
-                    help="REQUIRED: the tool in the gripper for this dataset. "
+                    help="REQUIRED: the tool in the mount for this dataset. "
                          "Not defaulted to workspace.yaml — a dataset stamped "
                          "with the previous tool's geometry is silently wrong "
                          "for every episode in it.")
@@ -136,7 +139,7 @@ def main() -> int:
         if not args.repo_id:
             print("--push needs --repo-id", file=sys.stderr)
             return 1
-        # The dataset itself was pushed by lerobot-record; this is one extra
+        # The dataset itself is already on the hub; this is one extra
         # file into the same repo, so a hub copy is not missing its tool.
         result = subprocess.run(
             ["hf", "upload", args.repo_id, str(path), "meta/tool.json",

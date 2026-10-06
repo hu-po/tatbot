@@ -31,6 +31,23 @@ public log.
 The run id should be sortable and unique. Include the execution environment in
 metadata rather than encoding private infrastructure in the public filename.
 
+## The `tatbot logs` verb
+
+`tatbot logs` is the reader for these directories (it runs the internal
+writer's index in-process; `scripts/tatbot-logs` is a shim for it). Its
+subcommands: `list` (recent runs), `last <workflow>` (the most recent run of
+one workflow — start here), `show <run-id>`, `tail <run-id> [-f]`,
+`fetch <run-id>` (copy a remote run here, media skipped), `du`, `prune`
+(retention; dry run unless `--yes`), `root`, `reindex`, `compact`, and
+`selftest`. `begin` / `end` / `event` / `artifact` are what the launchers call
+to write a run, not operator commands. `tatbot logs -- --help` lists them.
+
+`list --all-nodes` sweeps the fleet: every node in the sweep set is dialed at
+the ssh target and checkout `config/nodes.json` records for it, the same way
+`tatbot --on <node>` reaches it. A node with no roles there is retired; the
+sweep names it and does not dial it, and `show <run-id>` still resolves that
+node's runs from the id. `TATBOT_NODES="a b"` sweeps exactly those nodes.
+
 ## Debugging checklist
 
 1. Read the metadata and final structured event.
@@ -38,5 +55,8 @@ metadata rather than encoding private infrastructure in the public filename.
 3. Inspect the complete console log.
 4. Compare artifact manifests, not only screenshots.
 5. State what was measured, what is inferred, and what remains unknown.
+6. Reconcile launch COUNT against the run index (`tatbot logs count <workflow>`
+   before, `--expect N --before M` after) before calling any launch
+   uncommanded; never judge that from notification timing.
 
 Tatbot's internal writer and retention policy live outside the public docs.

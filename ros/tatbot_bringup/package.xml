@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>tatbot_bringup</name>
+  <version>0.1.0</version>
+  <description>Tatbot's launch file, stack and controller configuration, systemd templates and the `tatbot ros` backend.</description>
+  <maintainer email="hello@tatbot.ai">hu-po</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>tatbot_description</exec_depend>
+  <exec_depend>tatbot_hardware</exec_depend>
+  <exec_depend>tatbot_interfaces</exec_depend>
+  <exec_depend>tatbot_session</exec_depend>
+  <exec_depend>tatbot_bridge</exec_depend>
+  <exec_depend>tatbot_rerun</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>joint_trajectory_controller</exec_depend>
+  <exec_depend>gpio_controllers</exec_depend>
+  <exec_depend>mock_components</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>rmw_zenoh_cpp</exec_depend>
+  <exec_depend>rosbag2_storage_mcap</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <!-- scripts/mock_check.py -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>control_msgs</exec_depend>
+  <exec_depend>controller_manager_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>trajectory_msgs</exec_depend>
+
+  <test_depend>ament_cmake_pytest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

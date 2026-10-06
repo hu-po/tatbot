@@ -1,27 +1,44 @@
-# Public entry points that intentionally have no direct `tatbot` verb.
-# `scripts/check cli` verifies that every listed path exists and every other
-# public executable is wrapped. Keep this public variant free of site routing.
-python/tatbot_sim/src/tatbot_sim/audit_depth.py offline dataset-depth diagnostic
-python/tatbot_sim/src/tatbot_sim/distributions.py recipe library; `tatbot sim list` presents it
-python/tatbot_sim/src/tatbot_sim/fiducial_benchmark.py offline synthetic benchmark
-scripts/audio/live_audio.py helper launched by the live-audio wrapper where available
-scripts/draw_capture.py capture service launched beside the draw executor; fake mode is a bench aid
-scripts/githooks/pre-commit local lint hook
-scripts/il_client_shield.py rollout transport helper, not a user entry point
-scripts/il_patch_lerobot.py dependency patch helper, not a user entry point
-scripts/rerun_maximized.bash optional interactive-shell helper
-scripts/vision/baseline_ee_tracker.py research replay utility
-scripts/vision/compare_fiducial_detectors.py offline detector comparison
-scripts/vision/detect_shot.py per-burst calibration helper
-scripts/vision/ee_tracker.py tracking implementation launched by a wrapper where available
-scripts/vision/estimate_extrinsics.py provisional offline extrinsics helper
-scripts/vision/evaluate_ee_tracker.py offline tracker evaluation
-scripts/vision/generate_voice.py one-time clip renderer
-scripts/vision/live_surface.py viewer implementation launched by a wrapper where available
-scripts/vision/reconstruct_surface.py offline reconstruction implementation
-scripts/vision/rerun_session.sh sourced viewer lifecycle helpers
-scripts/vision/session_guide.py calibration-session helper launched by a wrapper where available
-scripts/vision/summarize_camera_encoder_ab.py offline experiment summarizer
-scripts/vision/teleop_log.py flight-log reader with a self-test entry point
-scripts/vision/transcribe_session.py offline narration transcription
-scripts/vision/urdf_kinematics.py kinematics library with a self-test entry point
+# Entry points (executables under scripts/, *.py with __main__/tyro, sim entry
+# modules) that no `tatbot` verb wraps, each with a reason. `scripts/check cli`
+# fails on an unlisted orphan, so a new script either gets a verb or a line
+# here in the same commit. Wrapped paths must not appear here.
+#
+# path                                          reason
+scripts/gen_motion_constants.py                   renders cpp/teleop/motion_constants.hpp from config/motion_constants.json; runs inside `scripts/check motion-constants`
+scripts/complexity_budget.py                    Python complexity ratchet against config/complexity-debt.tsv; runs inside `scripts/check complexity`, and by hand with --update
+scripts/il_client_shield.py                     wrapper used inside il_rollout*.sh, not a user entry point
+scripts/il_patch_lerobot.py                     applied by docs/cli.md after uv sync; not user-facing
+scripts/rerun_maximized.bash                    ~/.bashrc helper sourced by the operator shell (wraps rerun_session)
+scripts/githooks/pre-commit                     git hook; runs scripts/check --staged
+scripts/githooks/pre-push                       git hook; the public export gate, for a push to main only
+scripts/githooks/post-commit                    git hook; pushes an agent branch after every commit (tatbot work)
+scripts/vision/evaluate_ee_tracker.py           tracker tuning evaluation against a held-out teleop log; the procedure in docs/vision.md
+scripts/vision/compare_fiducial_detectors.py    Python/Rust detector parity gate, run before promoting Rust detector settings; docs/vision.md, docs/fiducials.md
+scripts/vision/urdf_kinematics.py               library with a self-test main
+scripts/vision/teleop_log.py                    library (.wxtl reader) with a self-test main
+scripts/tool_body_qualify.py                    optional five-reseat body-axis study; docs/tools.md; never run on the rig
+python/tatbot_sim/src/tatbot_sim/distributions.py  library (the three recipes); `tatbot sim list` prints them
+python/tatbot_sim/src/tatbot_sim/fiducial_benchmark.py  sim-to-real EE benchmark; docs/vision.md
+python/tatbot_sim/src/tatbot_sim/policy_worker.py  internal ManiSkill subprocess owned by `tatbot sim eval policy`
+python/tatbot_sim/src/tatbot_sim/body_models/audit.py  body asset reproducibility and parity evidence generator; docs/simulation.md
+python/tatbot_sim/src/tatbot_sim/human_rep/examples.py  deterministic checked-in TattooProgram example renderer; invoked by evidence and tests
+python/tatbot_sim/src/tatbot_sim/human_rep/registration_replay.py  offline Rerun registration replay helper; owned by the registration evidence generator
+python/tatbot_sim/src/tatbot_sim/human_rep/registration_suite.py  offline synthetic registration qualification generator; docs/simulation.md
+python/tatbot_sim/src/tatbot_sim/human_rep/review_evidence.py  capability release-review packet generator; docs/simulation.md
+
+scripts/vision/prepare_palette_viewer_asset.py  offline GLB material embed for the palette viewer asset, run once per print; cad/calibration-palette-v11/README.md; no robot workflow
+scripts/vision/surface_consistency.py  shared RGB-flow/depth cross-check for tatbot vision surface rgbd; no standalone workflow
+
+scripts/vision/surface_attachment.py  original-reference observer library consumed by vision comparison; a surface-deformation algorithm kept when the mock material session went; no standalone workflow
+scripts/vision/surface_material_support.py  bounded original-material appearance and measured-depth support library consumed by the observer library; no standalone workflow
+scripts/vision/surface_appearance_warp.py  measured rigid appearance chart shared by original-material verification and the observer library; no standalone workflow
+scripts/vision/surface_rigid_support.py  bounded sparse-anchor rigid-patch inference; a surface-deformation algorithm kept with its tests when the mock material session went; no standalone workflow
+scripts/vision/surface_attachment_inputs.py  bounded RGB-D decoder and calibrated fixture library consumed by vision comparison
+
+scripts/lib/bounded_npz.py  shared pre-allocation archive validator used by the stencil state and evidence readers; no standalone workflow
+
+
+scripts/lib/view_assets.py                              bounded, hash-bound artifact reads for the stencil observer and live inputs; no standalone workflow
+scripts/vision/stencil_observer.py                      the stencil observer estimator, supervised by stencild on the camera node; no device access or standalone viewer
+scripts/vision/stencil_bench_fit.py              one-off fit of stencil-bench degradation priors from a photo of a print beside its transfer; results live in PHOTO_FIT and the experiment record; docs/stencil-bench.md
+

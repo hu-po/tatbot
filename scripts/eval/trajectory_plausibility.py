@@ -9,10 +9,10 @@ only a plumbing/plausibility result.  It is never permission for powered use.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import pickle
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -24,6 +24,12 @@ from chunk_guard import (
     simulate_executed_actions,
     validate_execution_model,
 )
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/lib"))
+from tatbot_digest import sha256_file  # noqa: E402
+from tatbot_paths import bootstrap  # noqa: E402
+
+bootstrap()
 
 JOINT_NAMES = [
     "joint_0.pos",
@@ -49,14 +55,6 @@ SAFETY_WARNING = (
 )
 
 
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def postprocessor_artifact_hashes(postprocessor: Path) -> dict[str, str]:
     """Bind a processor definition and every external state file it names."""
 
@@ -75,7 +73,7 @@ def postprocessor_artifact_hashes(postprocessor: Path) -> dict[str, str]:
         path = postprocessor.parent / name
         if not path.is_file():
             raise ValueError(f"postprocessor artifact is missing: {path}")
-        result[name] = file_sha256(path)
+        result[name] = sha256_file(path)
     return result
 
 
@@ -174,95 +172,14 @@ def read_demonstrations(roots: list[Path], horizon: int) -> dict[str, np.ndarray
     }
 
 
-def action_decode_contract(
-    postprocessor: Path, horizon: int, joints: int
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return normalization bounds and the joints decoded relative to state.
-
-    GR00T stores one statistics block per action modality.  A modality present
-    in ``relative_action`` is decoded as a delta; excluded modalities remain
-    in ``action`` and are decoded absolutely.  The corrected Tatbot contract
-    deliberately uses that split: six relative arm joints plus one absolute
-    carriage joint.  Treating every column as relative corrupts the normalized
-    carriage evidence and can make a real checkpoint gate meaningless.
-    """
-
-    payload = json.loads(postprocessor.read_text())
-    step = next(
-        value
-        for value in payload["steps"]
-        if value.get("registry_name") == "groot_n1_7_action_decode_v1"
-    )
-    raw_stats = step["config"]["raw_stats"]
-    action_stats = raw_stats.get("action", {})
-    relative_stats = raw_stats.get("relative_action", {})
-    modality_names = list(action_stats) or list(relative_stats)
-    if not modality_names:
-        raise ValueError("postprocessor has no action normalization statistics")
-
-    lows: list[np.ndarray] = []
-    highs: list[np.ndarray] = []
-    relative: list[bool] = []
-    modalities: list[tuple[str, int, bool]] = []
-    for name in modality_names:
-        is_relative = name in relative_stats
-        stats = relative_stats.get(name, action_stats.get(name))
-        if stats is None:
-            raise ValueError(f"action modality {name!r} has no normalization statistics")
-        low = np.asarray(stats["min"], dtype=np.float64)
-        high = np.asarray(stats["max"], dtype=np.float64)
-        if low.ndim == 1:
-            low = np.repeat(low[None, :], horizon, axis=0)
-            high = np.repeat(high[None, :], horizon, axis=0)
-        elif low.ndim == 2:
-            low = low[:horizon]
-            high = high[:horizon]
-        else:
-            raise ValueError(f"action modality {name!r} has unsupported bounds shape {low.shape}")
-        if low.shape != high.shape or low.shape[0] != horizon:
-            raise ValueError(
-                f"action modality {name!r} bounds have shapes {low.shape}/{high.shape}; "
-                f"expected horizon {horizon}"
-            )
-        lows.append(low)
-        highs.append(high)
-        relative.extend([is_relative] * low.shape[1])
-        modalities.append((name, int(low.shape[1]), is_relative))
-
-    low = np.concatenate(lows, axis=1)
-    high = np.concatenate(highs, axis=1)
-    if low.shape != (horizon, joints) or high.shape != (horizon, joints):
-        raise ValueError(
-            f"action bounds have shapes {low.shape}/{high.shape}; expected "
-            f"{(horizon, joints)} from modalities {modalities}"
-        )
-    if np.any(high <= low):
-        raise ValueError("action normalization has a non-positive range")
-    return low, high, np.asarray(relative, dtype=bool)
-
-
 def postprocessor_action_mode(postprocessor: Path) -> str:
     """Identify the action normalization contract without loading policy code."""
 
     payload = json.loads(postprocessor.read_text())
     names = [step.get("registry_name") for step in payload.get("steps", [])]
-    if "groot_n1_7_action_decode_v1" in names:
-        return "groot_relative_minmax"
     if "unnormalizer_processor" in names:
         return "standard_absolute"
     raise ValueError("postprocessor has no supported action decode/unnormalize step")
-
-
-def inverse_decode(
-    actions: np.ndarray,
-    states: np.ndarray,
-    low: np.ndarray,
-    high: np.ndarray,
-    relative_joints: np.ndarray,
-) -> np.ndarray:
-    native = np.array(actions, dtype=np.float64, copy=True)
-    native[..., relative_joints] -= states[..., None, relative_joints]
-    return 2.0 * (native - low) / (high - low) - 1.0
 
 
 def distribution(values: np.ndarray) -> dict[str, list[float]]:
@@ -399,34 +316,6 @@ def build_contract(
             "execution_slew_saturation_fraction"
         ]["max"],
     }
-    if action_mode == "groot_relative_minmax":
-        low, high, relative_joints = action_decode_contract(postprocessor, horizon, joints)
-        normalized = inverse_decode(actions, position_states, low, high, relative_joints)
-        normalized_adjacent = np.abs(np.diff(normalized, axis=1))[adjacent_valid]
-        normalized_valid = normalized[valid]
-        endpoint = np.abs(normalized_valid) >= 1.0 - 1e-6
-        normalized_adjacent_dist = distribution(normalized_adjacent)
-        reference.update(
-            {
-                "normalized_adjacent_step_abs": normalized_adjacent_dist,
-                "normalized_endpoint_fraction_per_joint": endpoint.mean(axis=0).tolist(),
-                "normalized_endpoint_fraction_overall": float(endpoint.mean()),
-            }
-        )
-        thresholds.update(
-            {
-                "normalized_adjacent_step_abs_per_joint": _gross_per_joint(
-                    normalized_adjacent_dist["max"],
-                    GROSS_ENVELOPE_MULTIPLIER,
-                    NORMALIZED_HARD_ABSOLUTE_MARGIN,
-                ),
-                "normalized_endpoint_fraction_per_joint": endpoint.mean(axis=0).tolist(),
-                "normalized_endpoint_fraction_overall": float(endpoint.mean()),
-            }
-        )
-        quality_thresholds["normalized_adjacent_step_abs_per_joint"] = (
-            normalized_adjacent_dist["max"]
-        )
     return {
         "schema_version": 2,
         "kind": "demonstration-derived no-arm trajectory plausibility contract",
@@ -434,7 +323,7 @@ def build_contract(
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "reference_roots": [str(path) for path in roots],
         "postprocessor": str(postprocessor),
-        "postprocessor_sha256": file_sha256(postprocessor),
+        "postprocessor_sha256": sha256_file(postprocessor),
         "postprocessor_artifacts_sha256": postprocessor_artifact_hashes(postprocessor),
         "frames": int(len(states)),
         "episodes": int(len(np.unique(demonstrations["episode_index"]))),
@@ -462,7 +351,6 @@ def build_contract(
             "status": "retrospective provisional",
             "evidence": (
                 "2x routes the 2026-08-30 ACT 1.27x first-target miss and the "
-                "2026-08-29 GR00T 1.18x adjacent-step miss to review while retaining "
                 "hard rejection of the 2026-09-01 corrupted-sim ACT 2.43x-6.21x starts"
             ),
         },
@@ -470,8 +358,7 @@ def build_contract(
             "Exact genuine-demo maxima produce review warnings for decoded step, target "
             "distance, and modeled execution. Gross 2x excursions are hard rejections; "
             "exact-demo L1 is report-only. Demo q99 adjacent motion still hard-bounds "
-            "repeated-input spread. GR00T relative min-max processors additionally hard-bind "
-            "endpoint saturation and split normalized step into review/hard envelopes. The "
+            "repeated-input spread. The "
             "execution model replays the configured EMA and target slew over a single chunk; "
             "live weighted-average requests can be fed to the same model. Passing does not "
             "promote a checkpoint."
@@ -480,10 +367,8 @@ def build_contract(
 
 
 def extract_fixture(args: argparse.Namespace) -> dict[str, Any]:
-    import sys
 
     if args.depth_encoding:
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "train"))
         from feature_views import install_depth_encoding
 
         install_depth_encoding(args.depth_encoding)
@@ -508,15 +393,8 @@ def extract_fixture(args: argparse.Namespace) -> dict[str, Any]:
         "frame_index": np.asarray([int(item["frame_index"]) for item in items]),
         "task": np.asarray([str(item["task"]) for item in items]),
     }
-    for key in (
-        "wrist_upper",
-        "wrist_lower",
-        "wrist_upper_depth",
-        "wrist_lower_depth",
-    ):
-        source = f"observation.images.{key}"
-        if source not in items[0]:
-            continue
+    for source in sorted(name for name in items[0] if name.startswith("observation.images.")):
+        key = source.removeprefix("observation.images.")
         images = np.stack([item[source].numpy().transpose(1, 2, 0) for item in items])
         if key.endswith("_depth") and not args.depth_encoding:
             images = images.astype(np.float32, copy=False)
@@ -533,11 +411,11 @@ def extract_fixture(args: argparse.Namespace) -> dict[str, Any]:
         "indices": indices,
         "depth_encoding": args.depth_encoding,
         "npz": str(args.npz_out),
-        "npz_sha256": file_sha256(args.npz_out),
+        "npz_sha256": sha256_file(args.npz_out),
     }
 
 
-def wire_features(scenario: str) -> dict[str, dict[str, Any]]:
+def wire_features(scenario: str, *, sensor_profile: str = "deployment") -> dict[str, dict[str, Any]]:
     state_names = (
         JOINT_NAMES + EXTERNAL_EFFORT_NAMES
         if scenario == "act_rgbd14_masked"
@@ -550,18 +428,21 @@ def wire_features(scenario: str) -> dict[str, dict[str, Any]]:
             "names": state_names,
         },
     }
-    for name in ("wrist_upper", "wrist_lower"):
+    from wrist_cameras import describe
+
+    for camera in describe(Path(__file__).resolve().parents[2], profile=sensor_profile):
+        name = camera.role
         features[f"observation.images.{name}"] = {
             "dtype": "image",
-            "shape": (480, 640, 3),
+            "shape": (camera.height, camera.width, 3),
             "names": ["height", "width", "channels"],
             "info": {"is_depth_map": False},
         }
-        if scenario in ("act_rgbd14_masked", "groot_rgbd"):
-            channels = 1 if scenario == "act_rgbd14_masked" else 3
+        if scenario == "act_rgbd14_masked":
+            channels = 1
             features[f"observation.images.{name}_depth"] = {
                 "dtype": "image",
-                "shape": (480, 640, channels),
+                "shape": (camera.height, camera.width, channels),
                 "names": ["height", "width", "channels"],
                 "info": {"is_depth_map": channels == 1},
             }
@@ -611,23 +492,6 @@ def evaluate_predictions(
         metrics.update(
             execution_metrics(chunks, states[:, None, :], execution_model)
         )
-    normalized_thresholds = {**thresholds, **contract.get("quality_thresholds", {})}
-    if "normalized_adjacent_step_abs_per_joint" in normalized_thresholds:
-        low, high, relative_joints = action_decode_contract(postprocessor, horizon, joints)
-        normalized = inverse_decode(chunks, states[:, None], low, high, relative_joints)
-        normalized_adjacent = np.abs(np.diff(normalized, axis=2))
-        endpoint = np.abs(normalized) >= 1.0 - 1e-6
-        metrics.update(
-            {
-                "normalized_adjacent_step_abs_per_joint": normalized_adjacent.max(
-                    axis=(0, 1, 2)
-                ).tolist(),
-                "normalized_endpoint_fraction_per_joint": endpoint.mean(
-                    axis=(0, 1, 2)
-                ).tolist(),
-                "normalized_endpoint_fraction_overall": float(endpoint.mean()),
-            }
-        )
     failures = compare_metrics(
         metrics, thresholds, primary_joints=primary_joints, limit_label="hard_limit"
     )
@@ -650,9 +514,20 @@ def probe(args: argparse.Namespace) -> dict[str, Any]:
     fixture = {key: loaded[key] for key in loaded.files}
     contract = json.loads(args.contract.read_text())
     postprocessor_artifacts = validate_postprocessor_binding(contract, args.postprocessor)
-    required = ["state", "action", "action_is_pad", "wrist_upper", "wrist_lower"]
-    if args.scenario in ("act_rgbd14_masked", "groot_rgbd"):
-        required += ["wrist_upper_depth", "wrist_lower_depth"]
+    features = wire_features(args.scenario, sensor_profile=args.sensor_profile)
+    from wrist_cameras import read_checkpoint_config, validate_checkpoint_views
+
+    config_path, config = read_checkpoint_config(args.policy, args.checkpoint_config)
+    roles = tuple(name.removeprefix("observation.images.") for name in features
+                  if name.startswith("observation.images.") and not name.endswith("_depth"))
+    image_shapes = {name.removeprefix("observation.images."): (f["shape"][2], f["shape"][0], f["shape"][1])
+                    for name, f in features.items() if name.startswith("observation.images.")}
+    validate_checkpoint_views(config, roles, use_depth=args.scenario == "act_rgbd14_masked",
+                              image_shapes=image_shapes)
+    required = ["state", "action", "action_is_pad"] + [
+        name.removeprefix("observation.images.") for name in features
+        if name.startswith("observation.images.")
+    ]
     missing = [key for key in required if key not in fixture]
     if missing:
         raise ValueError(f"fixture lacks scenario features: {missing}")
@@ -666,11 +541,9 @@ def probe(args: argparse.Namespace) -> dict[str, Any]:
     policy_type = {
         "act_rgb": "act",
         "act_rgbd14_masked": "act",
-        "groot_rgb": "groot",
-        "groot_rgbd": "groot",
     }[args.scenario]
     setup = RemotePolicyConfig(
-        policy_type, args.policy, wire_features(args.scenario), contract["horizon"], "cuda"
+        policy_type, args.policy, features, contract["horizon"], "cuda"
     )
     stub.SendPolicyInstructions(
         services_pb2.PolicySetup(data=pickle.dumps(setup, protocol=pickle.HIGHEST_PROTOCOL)),
@@ -683,10 +556,10 @@ def probe(args: argparse.Namespace) -> dict[str, Any]:
         for fixture_index in range(len(fixture["state"])):
             repeated = []
             state_values = np.array(fixture["state"][fixture_index], copy=True)
-            state_names = wire_features(args.scenario)["observation.state"]["names"]
+            state_names = features["observation.state"]["names"]
             if args.scenario == "act_rgbd14_masked":
                 state_values[7:14] = 0.0
-            payload = {
+            payload: dict[str, Any] = {
                 name: float(value)
                 for name, value in zip(state_names, state_values, strict=True)
             }
@@ -732,13 +605,15 @@ def probe(args: argparse.Namespace) -> dict[str, Any]:
             "reject" if failures else "review_no_arm_only" if warnings else "pass_no_arm_only"
         ),
         "scenario": args.scenario,
+        "sensor_profile": args.sensor_profile,
+        "checkpoint_config_sha256": sha256_file(config_path),
         "server": args.server,
         "policy": args.policy,
         "fixture": str(args.fixture),
-        "fixture_sha256": file_sha256(args.fixture),
+        "fixture_sha256": sha256_file(args.fixture),
         "contract": str(args.contract),
-        "contract_sha256": file_sha256(args.contract),
-        "postprocessor_sha256": file_sha256(args.postprocessor),
+        "contract_sha256": sha256_file(args.contract),
+        "postprocessor_sha256": sha256_file(args.postprocessor),
         "postprocessor_artifacts_sha256": postprocessor_artifacts,
         "fixtures": int(array.shape[0]),
         "repetitions": int(array.shape[1]),
@@ -786,12 +661,14 @@ def main() -> None:
     fixture_parser.add_argument("--npz-out", type=Path, required=True)
 
     probe_parser = subparsers.add_parser("probe", help="query a policy server without a robot")
+    probe_parser.add_argument("--sensor-profile", choices=("deployment", "legacy-two-view"), default="deployment")
     probe_parser.add_argument(
-        "scenario", choices=("act_rgb", "act_rgbd14_masked", "groot_rgb", "groot_rgbd")
+        "scenario", choices=("act_rgb", "act_rgbd14_masked")
     )
     probe_parser.add_argument("--server", default=os.environ.get("TATBOT_POLICY_SERVER", ""),
                               help="host:port of the policy server (or TATBOT_POLICY_SERVER)")
     probe_parser.add_argument("--policy", required=True)
+    probe_parser.add_argument("--checkpoint-config", type=Path, help="local config.json for a server-side checkpoint")
     probe_parser.add_argument("--fixture", type=Path, required=True)
     probe_parser.add_argument("--contract", type=Path, required=True)
     probe_parser.add_argument("--postprocessor", type=Path, required=True)

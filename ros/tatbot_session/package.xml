@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>tatbot_session</name>
+  <version>0.1.0</version>
+  <description>The orchestrator: Draw/Touch/Land actions, Decide, ledger, page touches, e-stop continue/land, run logs.</description>
+  <maintainer email="hello@tatbot.ai">hu-po</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>tatbot_interfaces</exec_depend>
+  <exec_depend>tatbot_description</exec_depend>
+  <exec_depend>tatbot_motion</exec_depend>
+  <exec_depend>tatbot_bridge</exec_depend>
+  <exec_depend>tatbot_ink</exec_depend>
+  <exec_depend>control_msgs</exec_depend>
+  <exec_depend>trajectory_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>tf2_ros_py</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>controller_manager_msgs</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>builtin_interfaces</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>ros2bag</exec_depend>
+  <exec_depend>rosbag2_storage_mcap</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>controller_manager</test_depend>
+  <test_depend>joint_state_broadcaster</test_depend>
+  <test_depend>joint_trajectory_controller</test_depend>
+  <test_depend>gpio_controllers</test_depend>
+  <test_depend>hardware_interface</test_depend>  <!-- mock_components/GenericSystem -->
+  <test_depend>tatbot_hardware</test_depend>  <!-- TatbotArm sdk=fake in test_session_fake_e2e -->
+  <test_depend>robot_state_publisher</test_depend>
+  <test_depend>rmw_zenoh_cpp</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

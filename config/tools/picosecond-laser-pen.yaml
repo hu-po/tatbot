@@ -5,40 +5,47 @@
 # fluence, or laser class, and a bench test found nothing picosecond about
 # it. That is why no optical numbers appear below — this file describes the
 # object's SHAPE so the robot can carry it. Nothing in a datasheet makes a
-# laser safe to point at anyone.
+# laser safe to point at anyone. For the two-arm demo the pen stays
+# unactuated: the robot only carries and positions it.
 schema_version: 2
-# NO MOUNT (2026-08-30): the follower's tool bore is sized for the Lutin
-# body and this wand has no adapter, so fitting/calibration/flight are
-# refused (tool_spec.ToolMountError). The profile is kept in the OLD gripper
-# frame (z = 0 at the fingertips, as measured) for the datasets recorded
-# with it; re-measure from the adapter's bore face when one exists.
-mount: none
+# MOUNT (2026-09-15): the leader arm's leader-laser-v5 cradle, a mirrored V17
+# whose oval clamp cap is sized for this pen's 35 mm grip
+# (urdf/meshes/ee/leader-laser-v5/provenance.json, cad/leader-laser-v1).
+# It has no seat on the follower: that mount's bore is sized for the Lutin
+# body. `mount: tool_mount` resolves to left/tool_mount when fitted there;
+# where that datum sits on the wrist (the installed print rides
+# left/carriage_left rolled 180 degrees, not the CAD's carriage_right) is the
+# URDF's statement, not this file's.
+mount: tool_mount
 tool_id: picosecond-laser-pen
 kind: laser
 substrate: silicon_skin
 display_name: "Handheld picosecond-branded laser pen (tattoo removal)"
-body: "consumer handheld pen, ABS shell, internal 1200 mAh battery"
+body: "consumer handheld pen, ABS shell; installed demo prop has no power source"
 cartridge: null
 prompt_phrase: "with the removal laser"
 
-# [z_m, radius_m] along the tool axis, z = 0 at the gripper fingertips.
-# Traced from photographs on 6 mm graph paper (2026-08-25, 17.9 px/mm):
-# 214 mm long, widest 37.8 mm — a 9 mm chrome tail cap, 141 mm of white
-# shell swelling 27.5 → 37.8 mm, then 64 mm of chrome flaring down through
-# a 13.7 mm stem to a 15.4 mm lens face.
-# Grip measured on the arm 2026-08-25: the wand stands 130 mm proud of the
-# fingertips, so the tail sits 84 mm behind the fingers and the profile is
-# the traced silhouette shifted accordingly.
+# [z_m, radius_m] along the tool axis, z = 0 at the mount's clamp datum: the
+# fat end of the 35 mm grip cavity, +z toward the nose.
+# Silhouette traced from photographs on 6 mm graph paper (2026-08-25,
+# 17.9 px/mm): 214 mm long, widest 37.8 mm — a 9 mm chrome tail cap, 141 mm
+# of white shell swelling 27.5 → 37.8 mm, then 64 mm of chrome flaring down
+# through a 13.7 mm stem to a 15.4 mm lens face.
+# The axial profile is the 2026-08-25 photograph trace, placed at the
+# 2026-09-16 mechanical calibration's nominal 129.5 mm station. The current
+# 2026-09-19 mount-frame contact in workspace.yaml places this profile through
+# the shared resolved tool geometry; the profile's local z values are not a
+# second current tip measurement.
 profile: [
-  [-0.084, 0.0138],
-  [-0.075, 0.0138],
-  [-0.007, 0.0158],
-  [ 0.060, 0.0189],
-  [ 0.066, 0.0188],
-  [ 0.093, 0.0134],
-  [ 0.107, 0.0069],
-  [ 0.117, 0.0075],
-  [ 0.130, 0.0077]
+  [-0.0845, 0.0138],
+  [-0.0755, 0.0138],
+  [-0.0075, 0.0158],
+  [ 0.0595, 0.0189],
+  [ 0.0655, 0.0188],
+  [ 0.0925, 0.0134],
+  [ 0.1065, 0.0069],
+  [ 0.1165, 0.0075],
+  [ 0.1295, 0.0077]
 ]
 # The emitter window, modelled as an emissive sphere just inside the tip so
 # the pulse throws light onto the skin under the path tracer (the env drives
@@ -71,14 +78,20 @@ segment_colors: [
 ]
 
 # NOT MODELLED: the black LED panel and its two buttons on ONE side of the
-# shell (z = -0.04 .. 0.03); a profile of revolution would band them all the
-# way round, which reads worse in a wrist camera than leaving them off.
+# shell (z = -0.015 .. 0.055); a profile of revolution would band them all
+# the way round, which reads worse in a wrist camera than leaving them off.
 
-# A CONTACT tool despite being a laser: the plastic tip rests on the skin
-# with the emitter focused at it (operator, 2026-08-25), so the working
-# point is the tip itself and a touch-off measures it the ordinary way. The
-# registry's non-contact support is for standoff hardware; see docs/tools.md.
-contact: true
+# A STANDOFF tool (operator decision 2026-09-15): on the leader arm the lens
+# face traces the stencil from 10 mm above the silicone, never touching it,
+# so the working point (tcp_z_m) floats 10 mm past the physical nose. The
+# leader arm has no qualified contact cap or trip retract, which is what
+# makes a non-contact trace the only demo it may run. The 10 mm is a
+# clearance choice matching the hover contract's minimum, not an optical
+# working distance; state a different one here before flying it. An earlier
+# operator note (2026-08-25) had the plastic tip resting on the skin with the
+# emitter focused at it — that was the gripper-era follower fitting.
+contact: false
+tcp_z_m: 0.1395
 
 body_color: "0.94 0.94 0.93 1"
 tip_color: "0.60 0.63 0.67 1"
@@ -86,9 +99,7 @@ tip_color: "0.60 0.63 0.67 1"
 mass_kg: 0.175
 com_z_m: null
 
-# Wide, because the 15.4 mm lens face is blunt: what remains uncertain is
-# where a future mount repeats to and the traced-vs-calipered disagreement
-# along the body, and neither is narrowed by knowing the protrusion.
+# Wide, because the 15.4 mm lens face is blunt.
 tip_tolerance_m: 0.030
 
 # --- ink supply -------------------------------------------------------------
@@ -97,26 +108,41 @@ tip_tolerance_m: 0.030
 ink:
   mode: none
 
+# --- mechanical calibration (tatbot calib tip wrist palette --arm blue) ---
+# Operator decision 2026-09-16: calibrate the fitted pen's MECHANICAL contact
+# point, the chrome lens face resting on a volcano top, under the coarse
+# profile (scripts/lib/arm_calibration.py PROFILES). That point is stored
+# apart from tcp_z_m above (the nominal standoff working point) and says
+# nothing about optical focus. A broad face on a 3 mm top migrates with tilt;
+# the solver reports the tested orientation range rather than an exact pivot.
+calibration:
+  contact_reference: mechanical_nose
+  accuracy_profile: laser-mechanical-coarse
+  feature: "chrome lens face (15.4 mm) resting on the volcano top"
+  face_radius_m: 0.0077         # the lens face, which is the halo's hole
+  # The nose ends in a HALO (operator, 2026-09-28): a chrome ring around the
+  # hole, the lens recessed in it. Probe touches of 2026-09-28 put the ring's
+  # outside 9.0 mm off the axis (a 10.0 mm side radius with the 2 mm ball), and
+  # a ball 6.9 mm off the axis rose 2.1 mm into the hole untouched: the ring is
+  # about 1.3 mm wide. A probe touches the ring's side (the axis, from opposed
+  # pairs) or its end with the ball under the ring (the end plane: a rim
+  # touch). Nothing is planned into the hole.
+  face_kind: halo
+  wall_radius_m: 0.0090         # the ring's outside
+  rim_touch_radius_m: 0.00835   # the ball under the ring's middle
+  side_touch_height_m: 0.006    # a side touch meets the ball this far up the wall from its end
+
 measured:
   status: measured
-  utc: 2026-08-26T00:00:00Z
-  method: "protrusion, grip point and grip force on the arm; tip by touch-off; body silhouette traced from photographs on 6 mm graph paper"
+  utc: 2026-09-19
+  method: "hand-guided three-pit palette calibration (tatbot calib tip wrist palette --arm blue, sweep-arm-blue-20260919_124943): mechanical lens-face contact at (3.650, -3.660, 131.956) mm in left/tool_mount; silhouette from the 2026-08-25 photograph trace; grip diameters calipered by the operator 2026-09-13"
   note: |
-    Traced from photographs (2026-08-25) on 6 mm graph paper, grid pitch
-    107.5 px by FFT (17.9 px/mm): 214 mm long, widest 37.8 mm. Scale
-    corroborated on the arm — the jaws closed on the grip point at 29.6 mm
-    against 30 mm predicted. The trace follows the THIN axis of an ovoid
-    shell; the thick axis is ~15% larger (widest nearer 43 mm), still well
-    inside the jaws. Grip point measured 2026-08-25: 130 mm proud of the
-    fingertips. Mass is the retailer listing's 175 g, unweighed.
-
-    Touched off 2026-08-26 (session sweep-20260826_122203): nine planted
-    holds put the tip 136.3 mm out, rms 4.26 mm — the 15.4 mm contact face,
-    not aim; workspace.yaml carried the residual beside the number. Status
-    raised to measured by the operator that day.
-
-    STILL OPEN: the body profile is traced, not calipered, and the traced
-    thin-axis diameter at the grip point (32.2 mm) disagrees with the arm's
-    29.6 mm — read as photo error, unresolved. Calipers along the shell
-    would settle it in minutes. Fit in the thin orientation; the geometry
-    assumes it.
+    The lens face's mechanical contact point was measured on the three-tip
+    palette (fit rms 2.273 mm, leave-one-out maximum 2.585 mm). The final
+    witness drifted 350.65 mm and was excluded from the nine-contact fit;
+    this is not independently verified absolute tip accuracy. The
+    silhouette shape is the photograph trace (214 mm long, widest 37.8 mm;
+    the thick axis of the ovoid shell is about 15% larger); the oval grip is
+    39 x 33 mm at the fat end tapering to 39 x 32 mm over 35 mm (operator
+    calipers). tcp_z_m is the face plus the 10 mm standoff clearance; no
+    optical working distance is measured. Mass is the retailer's 175 g.

@@ -1,0 +1,22 @@
+{
+  "job_sha256": "ff5e2c00dbcf84dbc0e9a70d8d6b592004a45ddd855efc07c49e50fcd2275b3f",
+  "normalization": {
+    "normalizer": "dbv3-batik-svg/1",
+    "raw_path_elements": 6,
+    "size_mm": [
+      30.0,
+      30.0
+    ],
+    "svg_user_units_per_inch": 96,
+    "view_box": "0 0 113.385826772 113.385826772"
+  },
+  "outputs": {
+    "artwork.json": "bfabd962df059dc4dbe38c38cb76ba932ceb8e0c2d31ae9894380c743ff4db21",
+    "decoding.json": "d79e5bfb3ed91797a0e1e06c21a4bd95318f904fca6ecd60e074de5ece6d975a",
+    "normalized.svg": "7f2edc921125d46c9c79cc90c85b68e4d329f84b9dca53d7ced549e6892b2939",
+    "preview.svg": "56ddedb6bf2e0207ce05623784551ac229940e78be828ddf8553cf868959e018",
+    "raw/source.svg": "5377d09525dc60d0595012242fda8bcc1dedf2c62837817ad62531c71fed8add"
+  },
+  "recipe_sha256": "0cfea28251cdfbf5bdc830ce71e97e15b0efb42f1f775785bf5c6cf071ec95d8",
+  "schema": "tatbot.dbv3-acquisition/1"
+}

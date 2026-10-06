@@ -1,7 +1,8 @@
 # tatbot e-stop — CircuitPython code.py for Raspberry Pi Pico (RP2040).
 #
-# The button is the Keymoo IP65 station's single NC (normally closed) contact
-# wired between GP2 and GND. GP2 uses the internal pull-up:
+# Use the existing button's NC (normally closed), voltage-free contact
+# between GP2 (physical pin 4) and GND (physical pin 3). For a COM/NC/NO
+# switch, use COM and NC; leave NO unused. GP2 uses the internal pull-up:
 #
 #   button released  -> NC contact closed -> GP2 reads LOW  -> state 1 (OK)
 #   button pressed   -> NC contact open   -> GP2 reads HIGH -> state 0 (STOP)
@@ -17,16 +18,23 @@
 # increasing frame counter so the host can spot a rebooted or wedged sender.
 #
 # The onboard LED mirrors the state for at-a-glance confidence:
-#   solid on    = released, heartbeat flowing (normal)
+#   solid on    = contact closed (not proof the host receives heartbeats)
 #   fast blink  = pressed / circuit open
 
 import time
 
 import board
 import digitalio
+import supervisor
 import usb_cdc
 
-FRAME_PERIOD_S = 0.010  # 100 Hz
+# The host may write FAT metadata while inspecting CIRCUITPY. A safety sensor
+# must not restart (or reset its sequence) because of host filesystem traffic.
+# Intentional firmware updates require an explicit board reset while unowned.
+supervisor.runtime.autoreload = False
+
+FRAME_PERIOD_NS = 10_000_000  # 100 Hz
+LED_HALF_PERIOD_NS = 50_000_000  # 10 Hz blink, independent of USB progress
 
 nc_pin = digitalio.DigitalInOut(board.GP2)
 nc_pin.direction = digitalio.Direction.INPUT
@@ -39,7 +47,10 @@ serial = usb_cdc.data
 serial.write_timeout = 0  # never let a disconnected/full host stall the loop
 seq = 0
 pending = b""
-next_frame = time.monotonic()
+# CircuitPython floats lose sub-frame precision with uptime. At sufficiently
+# large values adding 0.010 rounds back to the same timestamp and floods USB.
+# Keep absolute deadlines in integer nanoseconds; convert only the small sleep.
+next_frame_ns = time.monotonic_ns()
 
 while True:
     # NC to GND: LOW = circuit closed = released/OK.
@@ -60,11 +71,11 @@ while True:
     except Exception:
         pass
 
-    led.value = released or (seq % 10 < 5)  # solid when OK, 10 Hz blink when pressed
+    led.value = released or (time.monotonic_ns() // LED_HALF_PERIOD_NS % 2 == 0)
 
-    next_frame += FRAME_PERIOD_S
-    delay = next_frame - time.monotonic()
-    if delay > 0:
-        time.sleep(delay)
+    next_frame_ns += FRAME_PERIOD_NS
+    delay_ns = next_frame_ns - time.monotonic_ns()
+    if delay_ns > 0:
+        time.sleep(delay_ns / 1_000_000_000)
     else:
-        next_frame = time.monotonic()  # fell behind; don't burst to catch up
+        next_frame_ns = time.monotonic_ns()  # fell behind; don't burst to catch up

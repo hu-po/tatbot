@@ -53,6 +53,8 @@ class TaskRequirements:
 
 
 TASK_REQUIREMENTS = {
+    "artwork": TaskRequirements("deposit", needs_ruled=False),
+    "spiral": TaskRequirements("deposit", needs_ruled=False),
     # the squiggle WALKS the printed 6 mm lines; without them it is tracing
     # geometry that is not in the frame, and saying so in its prompt
     "maze": TaskRequirements("deposit", needs_ruled=True),
@@ -175,16 +177,17 @@ def validate_task(task: str, tool, substrate) -> None:
 
 
 def _validate_ink_policy(tool) -> None:
-    """The static ink leg: a depositing task needs a tool that dips."""
+    """The static ink leg: a depositing task needs a tool with an ink supply --
+    one that dips (real, rehearsal) or carries its own (cartridge)."""
     from tatbot_sim import tools
 
     ink = tools.ink_registry()
     policy = ink.policy_for(tool)
-    if not policy.dips:
+    if policy.mode == "none":
         raise ValueError(
             f"this task needs an ink supply and {tool.tool_id!r} has ink.mode "
-            f"{policy.mode} — fit a tool that dips (lutin-3rl-bugpin, or "
-            "lutin-ballpoint-dot to rehearse)")
+            f"none — fit a tool that dips (lutin-3rl-bugpin) or carries a "
+            "cartridge (lutin-ballpoint-dot)")
 
 
 def validate_supply(task: str, tool, palette_load=None) -> None:
@@ -205,7 +208,9 @@ def validate_supply(task: str, tool, palette_load=None) -> None:
 
     ink = tools.ink_registry()
     policy = ink.policy_for(tool)
-    pal = ink.load_palette(tools.REPO)
+    if policy.mode == "cartridge":
+        return  # its supply is internal; the palette never replenishes it
+    pal = tools.palette()
     load = palette_load if palette_load is not None else tools.palette_load()
     try:
         ink.require_supply(policy, pal, load, needs_ink=True, arm="right",

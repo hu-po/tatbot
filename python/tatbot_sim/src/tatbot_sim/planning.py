@@ -12,14 +12,22 @@ one week.
 from __future__ import annotations
 
 import dataclasses
+import re
 from dataclasses import dataclass
+from functools import lru_cache
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from tatbot_sim import dipping, tasks, tools
-from tatbot_sim.config import DRConfig
-from tatbot_sim.env import TatbotDrawEnv
+from tatbot_sim.config import MAX_TOOL_Z_CENTER, DRConfig
 from tatbot_sim.language import sample_scene
+
+# The follower's staged position — the six arm joints of the pose the real
+# arm lifts to at connect. Read from the selected arm profile (through
+# tatbot_sim.tools) rather than copied: until 2026-08-30 a literal here
+# matched the real episodes' t=0 pose only because nobody had changed either.
+from tatbot_sim.resolved import ResolvedConfig, resolve  # noqa: E402
 from tatbot_sim.strokes import (
     MazeConfig,
     ShapeConfig,
@@ -31,19 +39,8 @@ from tatbot_sim.strokes import (
     sample_shape,
 )
 
-# The follower's staged position — the six arm joints of the pose the real
-# arm lifts to at connect. Read from the selected arm profile (through
-# tatbot_sim.tools) rather than copied: until 2026-08-30 a literal here
-# matched the real episodes' t=0 pose only because nobody had changed either.
-from tatbot_sim.tools import staged_pose as _staged_pose  # noqa: E402
-
-STAGED_POSE = np.array(_staged_pose()[:6], dtype=np.float32)
-
-# Longest single tracing pass an erase scene is sampled for. Kept small on
-# purpose: a motif sized for a 40 s budget is one the reach mask has nowhere to
-# put on a mound, and the sampler spends its retries placing nothing. Episode
-# duration comes from how many times the scene is retraced, not from its size.
-SCENE_PASS_CAP_S = 14.0
+if TYPE_CHECKING:
+    from tatbot_sim.native_reference import ReferenceBatch
 
 
 def sample_lean_profile(
@@ -105,7 +102,7 @@ def cap_lean(axes: np.ndarray, base_normal: np.ndarray, max_rad: float) -> np.nd
     """Hold the tool no further than ``max_rad`` off the pad's own normal.
 
     A tool does not have to be exactly perpendicular to skin to work it, and on
-    a mound's flanks exactly perpendicular is a pose the arm cannot make — so
+    a cylinder's flanks exactly perpendicular is a pose the arm cannot make — so
     it returns a best effort tens of millimetres away and the labels never say
     so. Leaning as far as the wrist can and no further is the honest version of
     that trade: the surface still decides which WAY the tool tilts, the arm
@@ -188,10 +185,72 @@ class BatchPlan:
     # carries no ink.
     ink_initial_ul: np.ndarray | None = None    # (B,)
     ink_capacity_ul: np.ndarray | None = None   # (B,)
+    stroke_metadata: list | None = None         # per-env ordered typed InkProgram stroke records
+    intended_targets: np.ndarray | None = None  # unmodified target labels when a failure variant perturbs actions
+    intended_lengths: np.ndarray | None = None  # full intended duration when an episode is interrupted
+    variant_ids: list[str] | None = None
+    expected_outcomes: list[str] | None = None
+    native_reference: ReferenceBatch | None = None
 
     @property
     def episode_steps(self) -> int:
         return self.n_app + self.draw_horizon
+
+
+# Declared perturbation magnitudes. A variant changes exactly one execution or
+# observation dimension by exactly one of these; the answer key never moves.
+MISSED_STROKE_OFFSET_M = 0.006   # whole path slides 6 mm along the surface tangent
+PARTIAL_LIFT_M = 0.015           # middle 40% of steps hover 15 mm off the surface
+INTERRUPTED_FRACTION = 0.55      # drawing stops after 55% of its intended steps
+
+EPISODE_VARIANT_OUTCOMES = {
+    "blank-start": "nominal",
+    "stencil-start": "nominal",
+    "missed-stroke": "missed",
+    "interrupted": "interrupted",
+    "partial-coverage": "partial",
+    "dry-tool": "dry",
+    "occluded": "occluded",
+}
+
+
+def apply_episode_variant(
+    plan: BatchPlan, variant: str, *, tool_ceiling: float | None = None
+) -> BatchPlan:
+    """Apply a deterministic synthetic outcome without changing its answer key.
+
+    ``plan_batch`` validated reach masks and ``tool_ceiling`` on the unperturbed
+    targets, so the perturbation is checked here against the same ceiling and
+    the caller re-runs the joint-reference gate on the perturbed targets.
+    """
+
+    if variant not in EPISODE_VARIANT_OUTCOMES:
+        raise ValueError(f"unknown episode variant {variant!r}")
+    if variant == "partial-coverage" and tool_ceiling is not None and tool_ceiling < PARTIAL_LIFT_M:
+        raise ValueError(
+            f"partial-coverage lift {PARTIAL_LIFT_M * 1000:.0f} mm exceeds the "
+            f"{tool_ceiling * 1000:.0f} mm tool ceiling the plan was validated against"
+        )
+    plan.intended_targets = plan.targets.copy()
+    plan.intended_lengths = plan.lengths.copy()
+    plan.variant_ids = [variant] * len(plan.kinds)
+    plan.expected_outcomes = [EPISODE_VARIANT_OUTCOMES[variant]] * len(plan.kinds)
+    if variant == "missed-stroke":
+        helper = np.zeros_like(plan.surface_normals)
+        helper[..., 2] = 1
+        near_parallel = np.abs(plan.surface_normals[..., 2]) > 0.9
+        helper[near_parallel] = np.array([1.0, 0.0, 0.0])
+        tangent = np.cross(plan.surface_normals, helper)
+        tangent /= np.maximum(np.linalg.norm(tangent, axis=-1, keepdims=True), 1e-12)
+        plan.targets = plan.targets + MISSED_STROKE_OFFSET_M * tangent
+    elif variant == "partial-coverage":
+        start = plan.targets.shape[1] * 3 // 10
+        end = plan.targets.shape[1] * 7 // 10
+        plan.targets[:, start:end] += PARTIAL_LIFT_M * plan.surface_normals[:, start:end]
+    elif variant == "interrupted":
+        drawing = np.maximum(plan.lengths - plan.n_app, 1)
+        plan.lengths = plan.n_app + np.maximum((drawing * INTERRUPTED_FRACTION).astype(np.int32), 1)
+    return plan
 
 
 class SceneTooLongError(RuntimeError):
@@ -235,17 +294,25 @@ def plan_batch(
     style=None,
     cap_rims: dict | None = None,
     dip_task_name: str = "dip {tool} into the {ink} ink cap.",
+    artwork_split: str = "train",
+    artwork_width_mm: float = .3,
+    artwork_sampler=None,
+    config: ResolvedConfig | None = None,
 ) -> BatchPlan:
     """``reachable`` is one ReachMask per env: where the fitted tool can be held
     normal to the surface. Strokes are placed only there, because a stroke laid
     across ground the wrist cannot make is a label the arm quietly misses.
+
+    ``artwork_sampler`` replaces the shared collection for the artwork and
+    erase tasks with a callable of artwork_scene.sample_artwork_scene's
+    signature — a portable design (design_scene.DesignScene.sample).
 
     ``style`` narrows what the scene sampler may draw (language.SceneStyle);
     None is the training draw.
 
     ``tool_ceiling`` is how high above the surface the tool can still be held.
     Travel and the opening descent are the tallest poses an episode asks for,
-    and over a mound they are the ones the arm cannot make -- an episode that
+    and over a cylinder they are the ones the arm cannot make -- an episode that
     starts higher than this begins from a pose that was never solved, and the
     sequential solve carries that miss through everything after it.
 
@@ -255,13 +322,14 @@ def plan_batch(
     charge model (scripts/lib/ink_spec.plan_dips) and spliced into the
     world-frame trajectory at stroke boundaries (tatbot_sim.dipping). None,
     or a tool with ink.mode none, plans no dips."""
-    inkctx = _ink_context(task, cap_rims, dr, num_envs, rng)
-    ink_initial, ink_capacity = _ink_opening(inkctx, num_envs)
+    config = config or resolve(dr=dr)
+    inkctx = _ink_context(task, cap_rims, dr, num_envs, rng, config=config)
+    ink_initial, ink_capacity = _ink_opening(inkctx, num_envs, config=config)
     # the canvas origin's height, which is what the start-height budget is
     # measured against; on a curved surface it is still the origin, not a peak
     tops = surface.origin_world_np()[:, 2]
-    shape_cfg = ShapeConfig()
-    maze_cfg = MazeConfig()
+    shape_cfg = ShapeConfig.for_tool((config or resolve()).tool.tool_id)
+    maze_cfg = MazeConfig.for_tool(config.tool.tool_id)
     if tool_ceiling is not None:
         lo, hi = shape_cfg.start_height_range
         shape_cfg = dataclasses.replace(
@@ -276,7 +344,7 @@ def plan_batch(
     kinds, paths, programs = [], [], []
     preink: list | None = None
     sizes_mm: dict[int, int] = {}
-    if task in ("language", "erase"):
+    if task in ("language", "erase", "artwork", "spiral"):
         lang_cfg = dataclasses.replace(shape_cfg, draw_speed_range=maze_cfg.draw_speed_range)
         # per-batch time budget, skewed short (min of two uniform draws:
         # "up to 30 s but opt for shorter" — operator call). Sampling the
@@ -302,33 +370,17 @@ def plan_batch(
             # shorter" — operator call)
             budget_s = (cap_s * 0.96 if (style is not None and style.fill_budget)
                         else min(rng.uniform(7.0, cap_s), rng.uniform(7.0, cap_s)) * 0.92)
-            scene_budget = budget_s
+            scene_budget = cap_s * .96 if task in ("artwork", "spiral") else budget_s
         else:
-            # Erase budgets the SCENE, not the episode: give the sampler the
-            # same 7 s floor the draw task uses and let the pass count set how
-            # long the episode runs. Dividing the episode budget instead left
-            # the scene near the cheapest motif's cost, where only one of the
-            # twelve at its smallest size was affordable and roughly a third
-            # of batches exhausted the sampler's retries.
-            # An erase episode should last as long as the operator's do. The
-            # recordings run 28-60 s; sampling a SCENE and hoping the passes
-            # added up left the sim at a 14 s median, because the scene
-            # sampler is deliberately skewed short. So sample the EPISODE
-            # duration from the band the recordings occupy and let the pass
-            # count decide how big a scene fits inside it.
             target_s = min(float(rng.uniform(*erase_seconds)), cap_s)
             if target_s <= 7.5:
                 raise ValueError(
                     f"--task erase needs horizon >= {int((erase_seconds[0] + 0.5) * 30) + n_app} "
                     f"for a {erase_seconds[0]:.0f} s episode (got {horizon})"
                 )
-            # The scene is sampled for ONE pass and stays SMALL -- a motif
-            # sized for a 40 s budget is one the reach mask has nowhere to put,
-            # and the sampler exhausts its retries placing nothing. Duration
-            # comes from the pass count, decided after measuring a pass below.
-            one_pass_cap = min(SCENE_PASS_CAP_S, cap_s)
-            scene_budget = min(rng.uniform(7.0, one_pass_cap),
-                               rng.uniform(7.0, one_pass_cap)) * 0.92
+            # Erase real artwork within the measured episode budget; never
+            # replace it with a cheap geometry motif to satisfy that budget.
+            scene_budget = cap_s * .85
         if verb == "erase":
             preink = []
         trajs = []
@@ -345,13 +397,20 @@ def plan_batch(
             built_len = None
             for _ in range(6):
                 try:
-                    strokes, program = sample_scene(
-                        rng, sheets[i], budget_i, verb=verb,
-                        reachable=None if reachable is None else reachable[i],
-                        style=style)
+                    if task in ("artwork", "spiral", "erase"):
+                        from tatbot_sim.artwork_scene import sample_artwork_scene
+                        sample = artwork_sampler or sample_artwork_scene
+                        strokes, program = sample(
+                            rng, sheets[i], budget_i, verb=verb,
+                            reachable=None if reachable is None else reachable[i],
+                            split=artwork_split, width_mm=artwork_width_mm, calibration=task == "spiral", config=config)
+                    else:
+                        strokes, program = sample_scene(
+                            rng, sheets[i], budget_i, verb=verb,
+                            reachable=None if reachable is None else reachable[i], style=style, config=config)
                 except RuntimeError:
                     # Nothing affordable would fit where the tool can work. On
-                    # a mound the reachable region is most of the skin but not
+                    # a cylinder the reachable region is most of the skin but not
                     # a convenient shape, so a big motif can have nowhere to go
                     # -- ask for a smaller scene rather than abandoning the
                     # episode.
@@ -359,7 +418,7 @@ def plan_batch(
                     continue
                 traj = build_ee_trajectory(
                     strokes, rng, lang_cfg,
-                    max_start_z=TatbotDrawEnv.MAX_TOOL_Z_CENTER - tops[i],
+                    max_start_z=MAX_TOOL_Z_CENTER - tops[i],
                 )
                 if verb == "erase":
                     # Retrace until the episode lasts as long as the operator's.
@@ -376,7 +435,7 @@ def plan_batch(
                     # the horizon.
                     two = build_ee_trajectory(
                         strokes * 2, rng, lang_cfg,
-                        max_start_z=TatbotDrawEnv.MAX_TOOL_Z_CENTER - tops[i],
+                        max_start_z=MAX_TOOL_Z_CENTER - tops[i],
                     )
                     per_pass = max(len(two) - len(traj), 1)
                     want = 1 + int(round((target_s * 30 - len(traj)) / per_pass))
@@ -387,7 +446,7 @@ def plan_batch(
                     traj = (traj if passes == 1 else two if passes == 2 else
                             build_ee_trajectory(
                                 strokes * passes, rng, lang_cfg,
-                                max_start_z=TatbotDrawEnv.MAX_TOOL_Z_CENTER - tops[i],
+                                max_start_z=MAX_TOOL_Z_CENTER - tops[i],
                             ))
                 drawn = strokes * passes
                 dip_plan_i = _plan_dips(inkctx, i, drawn, traj, surface, lang_cfg)
@@ -430,7 +489,7 @@ def plan_batch(
         for i in range(num_envs):
             lo, hi = shape_cfg.start_height_range
             z = float(rng.uniform(lo, hi))
-            cap_z = TatbotDrawEnv.MAX_TOOL_Z_CENTER - tops[i]
+            cap_z = MAX_TOOL_Z_CENTER - tops[i]
             z = min(z, cap_z)
             xy = rng.uniform(-shape_cfg.center_range, shape_cfg.center_range, 2)
             hold = np.repeat(np.array([[xy[0], xy[1], z]], dtype=np.float32), settle_n, axis=0)
@@ -444,7 +503,7 @@ def plan_batch(
             ink_id = plans[0].ink_id if plans else None
             ink = inkctx.inks.get(ink_id) if ink_id else None
             prompt = dip_task_name.format(
-                tool=tools.active_tool().prompt_phrase,
+                tool=config.tool.prompt_phrase,
                 ink=(ink.display_name.lower().replace(" ink", "") if ink else "empty"))
             kinds.append("dip")
             paths.append([])
@@ -491,7 +550,7 @@ def plan_batch(
             for _ in range(4):
                 positions, strokes, natural, starts = fit_strokes(
                     strokes, rng, traj_cfg, speed, draw_horizon - dip_budget,
-                    max_start_z=TatbotDrawEnv.MAX_TOOL_Z_CENTER - tops[i],
+                    max_start_z=MAX_TOOL_Z_CENTER - tops[i],
                     grid_walk=(kind == "maze"),
                 )
                 dip_plan_i = _plan_dips(inkctx, i, strokes, None, surface, traj_cfg, speed=speed)
@@ -524,14 +583,14 @@ def plan_batch(
 
     q_raised = None
     if do_approach:
-        q_raised = STAGED_POSE[None, :] + rng.normal(
+        q_raised = np.asarray(config.staged_pose[:6], dtype=np.float32)[None, :] + rng.normal(
             0, dr.approach.pose_jitter_rad, (num_envs, 6)
         ).astype(np.float32)
 
     task_strings = [
-        prog["prompt"] if prog is not None and kinds[i] in ("language", "erase", "dip")
-        else (maze_task_name if kinds[i] == "maze"
-              else task_name.format(shape=kinds[i], size_mm=sizes_mm.get(i, 0)))
+        prog["prompt"] if prog is not None and kinds[i] in ("language", "erase", "dip", "artwork", "spiral")
+        else (maze_task_name.format(tool=config.tool.prompt_phrase) if kinds[i] == "maze"
+              else task_name.format(shape=kinds[i], size_mm=sizes_mm.get(i, 0), tool=config.tool.prompt_phrase))
         for i, prog in enumerate(programs)
     ]
     lengths = np.asarray([n_app + n for n in naturals], dtype=np.int64)
@@ -551,18 +610,66 @@ def plan_tattoo_scenario(
     dr: DRConfig,
     draw_clearance: float,
     tool_ceiling: float | None = 0.020,
+    config: ResolvedConfig | None = None,
 ) -> BatchPlan:
-    """Plan the immutable SVG/placement in a compiled body scenario."""
+    """Plan the immutable compiled strokes in a posed body scenario."""
     from tatbot_sim.inkmap.contracts import validate_scenario
     from tatbot_sim.inkmap.svg_strokes import compile_svg_strokes
 
     validate_scenario(scenario)
-    metric = compile_svg_strokes(
-        scenario["design"]["svg"], scenario["placement"]["size_mm"],
-        mirror=scenario["placement"]["mirror"], rotation_rad=0.0,
-    )
-    strokes = [Stroke(points.copy()) for points in metric.strokes]
-    shape_cfg = ShapeConfig()
+    stroke_metadata = None
+    if scenario.get("schema_version") == 3:
+        patch = surface.patches[0]
+        face_uv = {
+            int(face): patch.triangles_uv[index]
+            for index, face in enumerate(patch.face_indices)
+        }
+        events = [
+            event
+            for event in scenario["program_binding"]["ink_program"]["events"]
+            if event["kind"] == "stroke"
+        ]
+        metric_strokes = []
+        for event in events:
+            points = []
+            for coordinate in event["curve"]["coordinates"]:
+                face = int(coordinate["face_index"])
+                if face not in face_uv:
+                    raise ValueError(
+                        f"typed InkProgram face {face} is outside the installed placement chart"
+                    )
+                points.append(np.asarray(coordinate["barycentric"]) @ face_uv[face])
+            metric_strokes.append(np.asarray(points, dtype=np.float64))
+        strokes = [Stroke(points) for points in metric_strokes]
+        binding_program = scenario["program_binding"]["bundle"]["artworks"]
+        placement = next(
+            item
+            for item in scenario["program_binding"]["bundle"]["placement_file"]["placements"]
+            if item["id"] == scenario["program_binding"]["placement_id"]
+        )
+        tattoo_program = binding_program[placement["design_id"]]["program"]
+        stroke_metadata = []
+        for index, event in enumerate(events):
+            match = re.search(r"source layer (\d+)", event["ordering_rationale"])
+            layer_index = int(match.group(1)) if match else -1
+            layer = tattoo_program["layers"][layer_index] if layer_index >= 0 else None
+            stroke_metadata.append(
+                {
+                    "event_index": index,
+                    "layer_index": layer_index,
+                    "layer_id": layer["id"] if layer is not None else None,
+                    "ink_id": layer["ink_id"] if layer is not None else None,
+                    "source_primitive_sha256": event["curve"]["source_primitive_sha256"],
+                    "curve_compiler_sha256": event["curve"]["compiler_sha256"],
+                }
+            )
+    else:
+        metric = compile_svg_strokes(
+            scenario["design"]["svg"], scenario["placement"]["size_mm"],
+            mirror=scenario["placement"]["mirror"], rotation_rad=0.0,
+        )
+        strokes = [Stroke(points.copy()) for points in metric.strokes]
+    shape_cfg = ShapeConfig.for_tool((config or resolve()).tool.tool_id)
     if tool_ceiling is not None:
         tool_ceiling = min(tool_ceiling, 0.020)
         lo, hi = shape_cfg.start_height_range
@@ -594,7 +701,7 @@ def plan_tattoo_scenario(
     sentence = scenario["placement"].get("language", {}).get(
         "sentence", f"tattoo {scenario['design']['name']} on the posed body",
     )
-    ink_initial, ink_capacity = _ink_opening(None, num_envs)
+    ink_initial, ink_capacity = _ink_opening(None, num_envs, config=config)
     return BatchPlan(
         n_app=0,
         q_raised=None,
@@ -615,6 +722,7 @@ def plan_tattoo_scenario(
         dips=None,
         ink_initial_ul=ink_initial,
         ink_capacity_ul=ink_capacity,
+        stroke_metadata=[stroke_metadata] * num_envs if stroke_metadata is not None else None,
     )
 
 
@@ -636,7 +744,7 @@ class _InkContext:
     initial_ul: np.ndarray      # (B,) charge the tool opens with (InkDR.initial_charge_frac)
 
 
-def _ink_context(task: str, cap_rims, dr, num_envs: int, rng: np.random.Generator | None = None):
+def _ink_context(task: str, cap_rims, dr, num_envs: int, rng: np.random.Generator | None = None, *, config=None):
     """None unless this task deposits, the tool dips, the env placed a
     palette, and dips are wanted: InkDR.dips for a drawing task, always for
     ``--task dip``. Missing caps for a dipping tool that is asked to dip is a
@@ -647,14 +755,15 @@ def _ink_context(task: str, cap_rims, dr, num_envs: int, rng: np.random.Generato
         return None
     if not (dr.ink.dips or tasks.is_dip(task)):
         return None
-    policy = tools.active_ink_policy()
+    config = config or resolve()
+    policy = config.ink_policy
     if not policy.dips:
         return None
     if cap_rims is None:
         return None
     ink = tools.ink_registry()
-    palette = ink.load_palette(tools.REPO)
-    load = tools.palette_load()
+    palette = config.palette
+    load = config.palette_load
     missing = [s for s in palette if s not in cap_rims]
     if missing:
         raise ValueError(f"env placed no cap for palette slot(s) {missing}")
@@ -666,14 +775,15 @@ def _ink_context(task: str, cap_rims, dr, num_envs: int, rng: np.random.Generato
     initial = np.asarray([p.charge_capacity_ul * float(f) for p, f in zip(policies, frac, strict=True)],
                          dtype=np.float32)
     return _InkContext(ink, policy, palette, load, cap_rims, dr.palette,
-                       tools.active_tool().tool_id, ink.load_inks(tools.REPO), policies, initial)
+                       config.tool.tool_id, ink.load_inks(tools.REPO), policies, initial)
 
 
-def _ink_opening(ctx, num_envs: int):
+def _ink_opening(ctx, num_envs: int, *, config=None):
     """How every env's tool opens the episode, for the env: charge and
     capacity. Without an ink context the tool is simply full — a drawing
     episode with dips off draws at full opacity."""
-    policy = tools.active_ink_policy()
+    config = config or resolve()
+    policy = config.ink_policy
     if not policy.dips:
         return None, None
     if ctx is None:
@@ -712,7 +822,20 @@ def _geometry(ctx, env_index: int, plan, cfg):
         plunge_speed=ctx.palette_dr.plunge_speed,
         travel_speed=cfg.travel_speed,
         settle_time=cfg.settle_time,
+        entry_axis=tuple(_palette_entry_axis()),
     )
+
+
+@lru_cache(maxsize=1)
+def _palette_entry_axis():
+    """Which way the tool enters a cap: the rack's measured orientation where
+    there is one, not an assumption about down. Shared with the arm
+    (scripts/lib/dip_motion.py)."""
+    from tatbot_sim import palette as sim_palette
+
+    scene = sim_palette.load(tools.REPO)
+    _, transform = sim_palette.base_transform(tools.REPO, scene)
+    return tuple(tools.dip_motion().palette_entry_axis(transform))
 
 
 def _dip_budget(ctx, env_index: int, plans, strokes, surface, cfg) -> int:
@@ -735,7 +858,7 @@ def _world_with_dips(ctx, env_index: int, positions, stroke_starts, plans, surfa
     tw, pts, nms = canvas_to_world(positions, surface, env_index, clearance)
     if ctx is None or not plans:
         return dipping.Spliced(tw, pts, nms, np.zeros(len(tw), dtype=bool), [], [])
-    cfg = ShapeConfig()
+    cfg = ShapeConfig.for_tool(ctx.tool_id)
     return dipping.splice(tw, pts, nms, stroke_starts, plans,
                           lambda plan: _geometry(ctx, env_index, plan, cfg), 1.0 / 30.0)
 

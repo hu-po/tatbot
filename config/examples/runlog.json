@@ -39,19 +39,9 @@
       "keep_days": 30,
       "keep_runs": 100
     },
-    "netmon": {
-      "class": "text",
-      "keep_days": 90,
-      "keep_runs": 500
-    },
     "train": {
       "class": "text",
       "keep_days": 180,
-      "keep_runs": 200
-    },
-    "camera_config": {
-      "class": "text",
-      "keep_days": 90,
       "keep_runs": 200
     },
     "vision": {

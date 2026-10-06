@@ -2,63 +2,55 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
-import { BODIES, buildPosedSkin } from "../src/core/body.ts";
+import {
+  BODY_SPEC,
+  MID_FACE_COUNT,
+  applyBodyRotation,
+  buildPosedSkin,
+  buildSkin,
+  canonicalSurfaceBytes,
+} from "../src/core/body.ts";
+import { POSE_CATALOG, POSE_CATALOG_SHA256, poseRecord } from "../src/core/pose.ts";
+import { sha256Hex } from "../src/core/sha256.ts";
 
-if (typeof ProgressEvent === "undefined") {
-  Object.defineProperty(globalThis, "ProgressEvent", {
-    value: class ProgressEvent {
-      type: string;
-      constructor(type: string, init: object = {}) { this.type = type; Object.assign(this, init); }
-    },
-  });
+function arrayBuffer(bytes: Buffer): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
-const catalog = JSON.parse(readFileSync(new URL("../../../config/inkmap/body-poses.json", import.meta.url), "utf8"));
+test("the browser reproduces every checked-in SOMA pose byte-for-byte", async () => {
+  const restBytes = readFileSync(new URL(`../public/${BODY_SPEC.path}`, import.meta.url));
+  assert.equal(await sha256Hex(arrayBuffer(restBytes)), POSE_CATALOG.rest_asset.sha256);
+  const gltf = await new GLTFLoader().parseAsync(arrayBuffer(restBytes), "");
+  const rest = buildSkin(gltf.scene);
 
-async function loadGlb(path: URL) {
-  const bytes = readFileSync(path);
-  const data = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-  return await new Promise<any>((resolve, reject) => new GLTFLoader().parse(data, "", resolve, reject));
-}
+  const poseBytes = readFileSync(new URL(`../public/${POSE_CATALOG.pose_asset.path}`, import.meta.url));
+  assert.equal(await sha256Hex(arrayBuffer(poseBytes)), POSE_CATALOG.pose_asset.sha256);
+  assert.equal(POSE_CATALOG.pose_asset.face_count, MID_FACE_COUNT);
 
-test("Three.js reproduces Blender-authored pose samples within 0.1 mm", async () => {
-  for (const spec of BODIES) {
-    const gltf = await loadGlb(new URL(`../public/${spec.rigPath}`, import.meta.url));
-    const body = catalog.bodies[spec.id];
-    assert.equal(body.rigged_path, spec.rigPath);
-    for (const poseId of catalog.pose_ids) {
-      const pose = body.poses[poseId];
-      const skin = buildPosedSkin(cloneSkeleton(gltf.scene), spec, pose.joint_rotations, pose.body_rotation_xyzw);
-      const positions = skin.geometry.getAttribute("position");
-      let maxError = 0;
-      body.validation_vertex_indices.forEach((vertex: number, sample: number) => {
-        const expected = pose.validation_vertices[sample];
-        const error = Math.hypot(
-          positions.getX(vertex) - expected[0],
-          positions.getY(vertex) - expected[1],
-          positions.getZ(vertex) - expected[2],
-        );
-        maxError = Math.max(maxError, error);
-      });
-      assert.ok(maxError <= 1e-4, `${spec.id}/${poseId}: max error ${maxError * 1000} mm`);
-      if (poseId.startsWith("reclined")) {
-        assert.ok(pose.anatomy["bend_offset_m:hip.L-knee.L-ankle.L"] >= 0.045);
-        assert.ok(pose.anatomy["bend_offset_m:hip.R-knee.R-ankle.R"] >= 0.045);
-        assert.ok(pose.anatomy["bend_off_axis_m:hip.L-knee.L-ankle.L"] <= 0.01);
-        assert.ok(pose.anatomy["bend_off_axis_m:hip.R-knee.R-ankle.R"] <= 0.01);
-      }
-      if (poseId.endsWith("left-arm-supported")) {
-        assert.ok(pose.anatomy["angle_deg:shoulder.L-elbow.L-wrist.L"] >= 110);
-        assert.ok(pose.anatomy["angle_deg:shoulder.L-elbow.L-wrist.L"] <= 145);
-        assert.ok(pose.anatomy["angle_deg:elbow.L-wrist.L-hand_tip.L"] >= 170);
-      }
-      if (poseId.endsWith("right-arm-supported")) {
-        assert.ok(pose.anatomy["angle_deg:shoulder.R-elbow.R-wrist.R"] >= 110);
-        assert.ok(pose.anatomy["angle_deg:shoulder.R-elbow.R-wrist.R"] <= 145);
-        assert.ok(pose.anatomy["angle_deg:elbow.R-wrist.R-hand_tip.R"] >= 170);
-      }
-      skin.geometry.dispose();
-    }
+  for (const poseId of POSE_CATALOG.pose_ids) {
+    const pose = poseRecord(poseId);
+    const chunk = poseBytes.subarray(pose.byte_offset, pose.byte_offset + pose.byte_length);
+    assert.equal(chunk.byteLength, pose.byte_length, poseId);
+    assert.equal(await sha256Hex(arrayBuffer(chunk)), pose.chunk_sha256, poseId);
+    const skin = buildPosedSkin(rest, arrayBuffer(chunk));
+    assert.equal(await sha256Hex(canonicalSurfaceBytes(skin.geometry)), pose.surface_sha256, poseId);
+    assert.ok(pose.quality.max_joint_rotation_deg <= 120, poseId);
+    assert.ok(pose.quality.edge_length_ratio_p001 > 0, poseId);
+    assert.ok(pose.quality.triangle_area_ratio_p01 > 0, poseId);
+
+    applyBodyRotation(skin, pose.body_rotation_xyzw);
+    assert.ok(skin.bbox.min.toArray().every(Number.isFinite), poseId);
+    assert.ok(skin.bbox.max.toArray().every(Number.isFinite), poseId);
+    skin.geometry.dispose();
   }
+  rest.geometry.dispose();
+});
+
+test("unknown poses fail closed", () => {
+  assert.throws(() => poseRecord("legacy-pose"), /pose_unsupported/);
+});
+
+test("the published catalog digest is the sha256 of the catalog file itself", async () => {
+  const catalogBytes = readFileSync(new URL("../../../config/inkmap/body-poses.json", import.meta.url));
+  assert.equal(await sha256Hex(arrayBuffer(catalogBytes)), POSE_CATALOG_SHA256);
 });

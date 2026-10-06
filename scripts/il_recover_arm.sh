@@ -5,11 +5,14 @@
 #
 #   il_recover_arm.sh [ip] [leader|follower]
 #
-# Uses the SAME landing routine the plugins use on a failed disconnect
-# (recovery.land_arm), so this script, lerobot-record, lerobot-teleoperate
-# and il_tune.sh all recover identically: fresh driver session, carriage held
-# where it is (the pen is not ridden along its axis), retries, and
-# verification that the arm actually reached the sleep pose.
+# Runs cpp/teleop/arm_recover, the landing routine on the vendor C++ SDK: no
+# Python environment, the same arm stack as the teleop executor. It performs
+# the SAME ritual the LeRobot plugins run on a failed disconnect
+# (recovery.land_arm): fresh driver session, golden pushed on a fault or a
+# pose outside the controller's limits, an arm joint measured past its limits
+# refused with nothing commanded (exit 7), carriage held through the staged
+# sweep then returned to its configured rest at sleep, retries, and
+# verification that the arm and carriage actually reached that pose.
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/cli_hint.sh
@@ -21,35 +24,43 @@ profile_env::require || exit $?
 IP="${1:-$TATBOT_FOLLOWER_IP}"
 ROLE="${2:-follower}"
 
-exec uv run --project "$REPO/python/lerobot_robot_tatbot" python - "$IP" "$ROLE" <<'EOF'
-import logging
+# The binary is built by `scripts/check cpp` and staged on the arm node by
+# `tatbot deploy`. Bench tests substitute a stand-in here; the
+# e-stop device and the staged pose below are never overridable.
+ARM_RECOVER="${TATBOT_ARM_RECOVER_BIN:-$REPO/cpp/teleop/build/arm_recover}"
+[ -x "$ARM_RECOVER" ] || {
+  echo "missing $ARM_RECOVER — build: cmake -B $REPO/cpp/teleop/build -S $REPO/cpp/teleop && cmake --build $REPO/cpp/teleop/build --target arm_recover" >&2
+  exit 1
+}
+# The SAME staged pose the plugins and the executor use — read from
+# tatbot.yaml with the stdlib parser, never copied: a literal here drifted
+# silently until 2026-08-30 (there were three copies).
+STAGED="$(python3 -c '
 import sys
+sys.path.insert(0, sys.argv[1])
+import tool_spec
+print(",".join(repr(v) for v in tool_spec.staged_positions(sys.argv[2])))
+' "$REPO/scripts/lib" "$REPO")" || { echo "il_recover_arm: cannot read the staged pose from config/trossen/tatbot.yaml" >&2; exit 1; }
+GOLDEN="$TATBOT_CONFIG_DIR/$ROLE.yaml"
 
-import trossen_arm
-from lerobot_robot_tatbot import recovery
-from lerobot_robot_tatbot.estop import acquire_estop, release_estop
-
-logging.basicConfig(level=logging.INFO, format="%(message)s")
-ip, role = sys.argv[1], sys.argv[2]
-end_effector = (
-    trossen_arm.StandardEndEffector.wxai_v0_leader if role == "leader"
-    else trossen_arm.StandardEndEffector.wxai_v0_follower
-)
-# The SAME staged pose the plugins use — read from tatbot.yaml, not copied:
-# a literal here drifted silently until 2026-08-30 (there were three copies).
-from lerobot_robot_tatbot import goldens  # noqa: E402
-
-staged = [float(v) for v in goldens.load_tatbot_yaml()["follower"]["staged_positions"]]
-assert len(staged) == 7, staged
-import os  # noqa: E402
-
-estop = acquire_estop(os.environ["TATBOT_ESTOP_DEVICE"], required=True)
-estop.wait_for_initial_state()
-try:
-    ok = recovery.land_arm(
-        ip, end_effector, staged, name=f"{role}@{ip}", estop=estop
-    )
-finally:
-    release_estop(estop)
-sys.exit(0 if ok else 1)
-EOF
+# shellcheck source=scripts/lib/runlog.sh
+source "$REPO/scripts/lib/runlog.sh"
+runlog::init arm-recover --set "role=$ROLE"
+command -v timeout >/dev/null || { echo "Recovery refused: GNU timeout is required." >&2; exit 3; }
+# The SDK's configure timeout covers TCP connect, not every blocking receive.
+# Enforce the routine's 45 s budget from outside the process. Foreground
+# mode preserves terminal Ctrl+C delivery to the landing's own shield.
+RC=0
+runlog::run timeout --foreground --signal=TERM --kill-after=2s 45s \
+  "$ARM_RECOVER" "$IP" "$ROLE" --staged "$STAGED" --golden "$GOLDEN" \
+  --estop "$TATBOT_ESTOP_DEVICE" || RC=$?
+if [ "$RC" = 124 ] || [ "$RC" = 137 ]; then
+  echo "Recovery timed out: the driver was terminated; arm state is UNKNOWN." >&2
+  echo "No landing or release was verified. Support the arms before any controller power cycle." >&2
+elif [ "$RC" = 3 ] || [ "$RC" = 5 ] || [ "$RC" = 6 ] || [ "$RC" = 7 ]; then
+  : # nothing was commanded: e-stop engaged (3), controller never answered (5), another driver owns the arms (6),
+  # an arm joint measured past its limits (7; arm_recover said how to free it)
+elif [ "$RC" != 0 ]; then
+  echo "Recovery failed or was interrupted; arm state is UNKNOWN. No automatic retry by this launcher." >&2
+fi
+exit "$RC"

@@ -1,0 +1,104 @@
+{
+  "derived": [
+    {
+      "path": "current-surface.npz",
+      "schema": "tatbot.surface/1",
+      "sha256": "93befe916c6fef5af853976cd7c2c2a8b7ded088b5d530cc0ccdaaf50ab681c9"
+    },
+    {
+      "path": "current-surface.json",
+      "sha256": "74448c026e54b6af106943edd7e019057ce290f382cd795e5ad8ce63e960241d"
+    },
+    {
+      "path": "current-samples.csv",
+      "schema": "tatbot.draw-samples/1",
+      "sha256": "484962efd080f9063e17fc1cbd66ae7e2b2e4508bf06166724a719061d438197"
+    },
+    {
+      "path": "current-samples.manifest.json",
+      "sha256": "3224a9018715de3b4d0d888839e236c1bb894e6c395c726d240a6372b5524bec"
+    }
+  ],
+  "description": "Synthetic, offline-only P0 end-to-end chain plus artwork coverage matrix. It grants no motion, deployment, or human-study authority.",
+  "files": [
+    {
+      "content_sha256": "6e46984c4abc85cf6588524699edb588b1701d89bac4bfffc8f9e37e593f4e0b",
+      "path": "tattoo-program.json",
+      "schema": "tatbot.tattoo-program/1"
+    },
+    {
+      "content_sha256": "0cc57177c20be9df1584f2581f718e0aba6e76c3e20f55e2c9925ec1c0b0091e",
+      "path": "artwork-matrix.json",
+      "schema": "tatbot.tattoo-program/1"
+    },
+    {
+      "content_sha256": "800babcf48d09f4ff1da9d2e8a0ebe266869a19849557450c7210c9a9fb9a1b6",
+      "path": "body-identity.json",
+      "schema": "tatbot.body-identity/1"
+    },
+    {
+      "content_sha256": "93ff21cbb19fc061f0c97e5556a00fddbfe619c1dcab31e2ab7d42924567be98",
+      "path": "body-state.json",
+      "schema": "tatbot.body-state/1"
+    },
+    {
+      "content_sha256": "125991cdc7e91b19dff91258f91ff022d3aec88cdb81133eaa660cd683bc691f",
+      "path": "surface-coordinate.json",
+      "schema": "tatbot.surface-coordinate/1"
+    },
+    {
+      "content_sha256": "f8aaea34bf0318ea48cf17091114b73ff51b7ed4431bf2a036977277eacc3691",
+      "path": "surface-placement.json",
+      "schema": "tatbot.surface-placement/1"
+    },
+    {
+      "content_sha256": "9fa43a18450457bf209985be410abcc969c1ab06ab733f0cc7b2119aed1c0464",
+      "path": "surface-curve.json",
+      "schema": "tatbot.surface-curve/1"
+    },
+    {
+      "content_sha256": "5d720cb39a1c990e8e4aa03f03df8e37afeabe18aaa4f581970054f422a249dd",
+      "path": "ink-program.json",
+      "schema": "tatbot.ink-program/1"
+    },
+    {
+      "content_sha256": "e172991374c279676fe2e3541a899b51c48672cf5852eb011f043b0ae0c5e22c",
+      "path": "surface-registration.json",
+      "schema": "tatbot.surface-registration/1"
+    },
+    {
+      "content_sha256": "894a4a2cee7c9e883e03ec2ecf24622357d693b006dc76daacf516fc3dd20b10",
+      "path": "execution-program.json",
+      "schema": "tatbot.execution-program/1"
+    }
+  ],
+  "python_files": [
+    {
+      "content_sha256": "f955c5276cec27cdfc8a771ae4e9c5afe36f8d7d3089a6c27529a9efc2bb2fa3",
+      "path": "current-samples.manifest.json",
+      "schema": "tatbot.draw-samples-manifest/1"
+    },
+    {
+      "content_sha256": "c723fb3325017ced150b968ff3f7a53da6ccb6b1f1f27cebe5906b1a21fa323b",
+      "path": "tissue-patch.json",
+      "schema": "tatbot.tissue-patch/1"
+    },
+    {
+      "content_sha256": "3f547e60cfe1c3211e199b27ee483a46d6dc4e383151f8890689c3f4007940b2",
+      "path": "anatomy-registration.json",
+      "schema": "tatbot.anatomy-registration/1"
+    },
+    {
+      "content_sha256": "a6a81e646a1b2c656fb68b521118e697f59aa530d488872ab7a77d2bd58a40dc",
+      "path": "force-displacement-calibration.json",
+      "schema": "tatbot.force-displacement-calibration/1"
+    },
+    {
+      "content_sha256": "bac4114b0b7adcf730836f12f432beefe6c461343c5506a59e5a06e974be2a85",
+      "path": "anatomy-source-manifest.json",
+      "schema": "tatbot.anatomy-source-manifest/1"
+    }
+  ],
+  "model_spec_sha256": "e615b8485c367509833ee68b0405cd1e0ce6015604eaa4c1b2b699f4fc8d5144",
+  "schema": "tatbot.human-representation-fixture-set/1"
+}

@@ -1,0 +1,32 @@
+{
+  "area": {
+    "clipping": "Drawing",
+    "crop": "Crop to fit",
+    "rescale": "High Quality",
+    "units": "mm"
+  },
+  "export": {
+    "exportSVGBackground": false,
+    "lineFilteringEnabled": false,
+    "lineFilteringTolerance": 0.5,
+    "lineFilteringUnits": "mm",
+    "lineMergingEnabled": true,
+    "lineMergingTolerance": 0.5,
+    "lineMergingUnits": "mm",
+    "lineSimplifyEnabled": true,
+    "lineSimplifyTolerance": 0.1,
+    "lineSimplifyUnits": "mm",
+    "lineSortingEnabled": true,
+    "lineSortingTolerance": 1.0,
+    "lineSortingUnits": "mm",
+    "multipassCount": 1,
+    "multipassEnabled": false,
+    "pathOptimisationEnabled": true,
+    "pathSplittingDistance": 500.0,
+    "pathSplittingEnabled": false,
+    "pathSplittingUnits": "m",
+    "svgDrawingStatsComment": true,
+    "svgLayerNaming": "%NAME%",
+    "svgPFMSettingsText": false
+  }
+}

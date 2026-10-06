@@ -1,0 +1,229 @@
+{
+  "presetType": "project",
+  "version": "2.0.0",
+  "presetSubType": "User",
+  "presetName": "New Preset",
+  "enabled": true,
+  "userCreated": true,
+  "data": {
+    "name": "",
+    "imagePath": "source.png",
+    "notes": "",
+    "timeStamp": "",
+    "thumbnailID": "",
+    "rating": 0,
+    "settings": {
+      "batch_processing": {
+        "overwriteExistingFiles": false,
+        "exportTasks": [
+          {
+            "exportHandler": "image_default",
+            "extension": ".png",
+            "perDrawing": true,
+            "perPen": false,
+            "perGroup": false
+          }
+        ]
+      },
+      "drawingState": {},
+      "image_filters": {
+        "presetType": "image_filters",
+        "version": "2.0",
+        "presetSubType": "User",
+        "presetName": "New Preset",
+        "enabled": true,
+        "userCreated": true,
+        "data": {
+          "filters": []
+        }
+      },
+      "ui_settings": {
+        "presetType": "ui_settings",
+        "version": "2.0",
+        "presetSubType": "User",
+        "presetName": "New Preset",
+        "enabled": true,
+        "userCreated": true,
+        "data": {
+          "settings": {
+            "backgroundColor": "-723724",
+            "blendMode": "Normal",
+            "canvasColor": "-1"
+          }
+        }
+      },
+      "cmyk_settings": {
+        "presetType": "cmyk_settings",
+        "version": "2.0",
+        "presetSubType": "User",
+        "presetName": "New Preset",
+        "enabled": true,
+        "userCreated": true,
+        "data": {
+          "settings": {
+            "defaultYellowMultiplier": "1.0",
+            "defaultWhiteMultiplier": "1.0",
+            "defaultColorSplitterVibrancy": "0.5",
+            "defaultOrangeOpacity": "0.2",
+            "defaultMagentaMultiplier": "1.0",
+            "defaultGreenOpacity": "0.2",
+            "defaultRedOpacity": "0.2",
+            "defaultCyanMultiplier": "1.0",
+            "defaultBlueMultiplier": "1.0",
+            "defaultVioletMultiplier": "1.0",
+            "defaultKeyMultiplier": "0.75",
+            "defaultVioletOpacity": "0.2",
+            "defaultColorSplitterCleanBlack": "0.0",
+            "defaultGreenMultiplier": "1.0",
+            "defaultCyanOpacity": "0.2",
+            "defaultRedMultiplier": "1.0",
+            "defaultOrangeMultiplier": "1.0",
+            "defaultBlueOpacity": "0.2",
+            "defaultKeyOpacity": "0.4",
+            "defaultWhiteOpacity": "0.4",
+            "defaultColorSplitterReduceOverlap": "0.0",
+            "defaultYellowOpacity": "0.2",
+            "defaultColorSplitterCleanWhite": "0.0",
+            "defaultMagentaOpacity": "0.2"
+          }
+        }
+      },
+      "colour_match": {
+        "presetType": "colour_match",
+        "version": "2.0",
+        "presetSubType": "User",
+        "presetName": "New Preset",
+        "enabled": true,
+        "userCreated": true,
+        "data": {
+          "settings": {
+            "Brightness Multiplier": "2.0",
+            "Invert Colour": "false",
+            "Pen Limit": "0",
+            "Colour Accuracy": "95.0",
+            "Use Canvas Colour": "true",
+            "Smooth Distribution": "true"
+          }
+        }
+      },
+      "drawing_sets": {
+        "drawingSets": [
+          {
+            "type": "Copic",
+            "name": "Dark Greys",
+            "pens": [
+              {
+                "source": {
+                  "type": "Copic Original",
+                  "name": "100 Black",
+                  "argb": -13554901,
+                  "distributionWeight": 100,
+                  "strokeSize": 1.0,
+                  "isEnabled": true
+                },
+                "penNumber": "0",
+                "isEnabled": "true",
+                "type": "Copic Original",
+                "name": "Black 0.5 mm",
+                "argb": "-16777216",
+                "distributionWeight": "100",
+                "strokeSize": "1.0",
+                "colorSplitMultiplier": "1.0",
+                "colorSplitOpacity": "0.25",
+                "colorSplitOffsetX": "0.0",
+                "colorSplitOffsetY": "0.0"
+              }
+            ],
+            "distributionOrder": "Darkest first (Default)",
+            "distributionType": "Even weighted",
+            "colorHandler": "Default"
+          }
+        ],
+        "activeSet": 0
+      },
+      "optional_data": {
+        "exportDirectory": "",
+        "importDirectory": ""
+      },
+      "pfm_settings": {
+        "pfmFactory": "Sketch Sweeping Curves",
+        "selectedPreset": "Sketch Sweeping Curves:Default",
+        "pfmSettings": {
+          "Erase Min": "50",
+          "Distortion": "0.0",
+          "Edge Power": "0.0",
+          "Erase Radius Max": "1.0",
+          "Sobel Power": "0.0",
+          "Should Lift Pen": "true",
+          "Line Max Length": "80",
+          "Line Max Limit": "-1",
+          "Luminance Power": "100.0",
+          "Angularity": "0.0",
+          "Random Seed": "42",
+          "Squiggle Max Deviation": "25.0",
+          "Plotting Resolution": "1.0",
+          "Seed Type": "Luminance",
+          "Erase Radius Min": "1.0",
+          "Squiggle Max Length": "500",
+          "Clarity": "0.0",
+          "Directionality": "0.0",
+          "Seed Threshold": "50.0",
+          "Tone": "50.0",
+          "Line Min Length": "20",
+          "Erase Max": "125",
+          "Squiggle Min Length": "25",
+          "Curvature": "0.0",
+          "Line Density": "35.0"
+        }
+      },
+      "image_settings": {
+        "imageRotation": "R0",
+        "imageFlipHorizontal": false,
+        "imageFlipVertical": false,
+        "cropStartX": 0.0,
+        "cropStartY": 0.0,
+        "cropEndX": 1024.0,
+        "cropEndY": 1536.0
+      },
+      "versions": {},
+      "masking_settings": {
+        "presetType": "masking_settings",
+        "version": "2.0",
+        "presetSubType": "User",
+        "presetName": "New Preset",
+        "enabled": true,
+        "userCreated": true,
+        "data": {
+          "settings": {
+            "masks": [],
+            "enableMasking": "true"
+          }
+        }
+      },
+      "drawing_area": {
+        "presetType": "drawing_area",
+        "version": "2.0",
+        "presetSubType": "User",
+        "presetName": "New Preset",
+        "enabled": true,
+        "userCreated": true,
+        "data": {
+          "settings": {
+            "drawingAreaPaddingLeft": "0.0",
+            "drawingAreaPaddingBottom": "0.0",
+            "inputUnits": "mm",
+            "drawingAreaGang": "true",
+            "drawingAreaHeight": "75.0",
+            "drawingAreaPaddingRight": "0.0",
+            "rescaleMode": "High Quality",
+            "drawingAreaPaddingTop": "0.0",
+            "useOriginalSizing": "false",
+            "drawingAreaWidth": "50.0",
+            "scalingMode": "Crop to fit",
+            "targetPenWidth": "0.5"
+          }
+        }
+      }
+    }
+  }
+}

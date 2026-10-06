@@ -57,5 +57,14 @@ int main()
   require(message.find("\"follower_eff\":[7,8]") != std::string::npos,
           "follower effort missing");
   require(publisher.stats().sent == 1, "publisher did not count the datagram");
+  tatbot::telemetry::UdpPublisher reversed(
+    "127.0.0.1:" + std::to_string(ntohs(address.sin_port)), 120.0, true);
+  reversed.publish(123456790, 8, {1.0}, {2.0}, {3.0}, {4.0});
+  require(poll(&ready, 1, 500) == 1, "mirrored datagram was not received");
+  const ssize_t reversed_size = recv(receiver, buffer, sizeof(buffer), 0);
+  require(reversed_size > 0, "empty mirrored datagram");
+  const std::string mirrored(buffer, static_cast<size_t>(reversed_size));
+  require(mirrored.find("\"version\":2,\"right_leader\":true") != std::string::npos,
+    "reversed roles would be interpreted as the old physical association");
   close(receiver);
 }

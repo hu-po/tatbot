@@ -7,6 +7,8 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+option(TATBOT_NO_ARM_SDK "Build hardware-independent targets without fetching the arm SDK" OFF)
+
 # Official vendor SDK, pinned to the same version as the repo's python dep
 # (pyproject.toml: trossen-arm==1.8.5). Public (BSD-3-Clause), ships a
 # prebuilt static library, fetched from Trossen's GitHub. The SDK stays in
@@ -19,17 +21,21 @@ FetchContent_Declare(
   trossen_arm_sdk
   GIT_REPOSITORY https://github.com/TrossenRobotics/trossen_arm.git
   GIT_TAG v1.8.5
+  GIT_SHALLOW TRUE
   # The SDK's CMakeLists assumes it is the top-level project (its CPack config
   # breaks under add_subdirectory). We only need its headers and prebuilt lib,
   # so point SOURCE_SUBDIR at a dir without a CMakeLists to skip it.
   SOURCE_SUBDIR include
 )
 set(TROSSEN_SDK_AVAILABLE ON)
+if(TATBOT_NO_ARM_SDK)
+  set(TROSSEN_SDK_AVAILABLE OFF)
+endif()
 set(_trossen_cached "${FETCHCONTENT_BASE_DIR}")
 if(NOT _trossen_cached)
   set(_trossen_cached "${CMAKE_BINARY_DIR}/_deps")
 endif()
-if(NOT EXISTS "${_trossen_cached}/trossen_arm_sdk-src/include")
+if(TROSSEN_SDK_AVAILABLE AND NOT EXISTS "${_trossen_cached}/trossen_arm_sdk-src/include")
   # Cold cache: probe the remote before FetchContent, whose failure is fatal.
   execute_process(
     COMMAND git ls-remote -q https://github.com/TrossenRobotics/trossen_arm.git HEAD
@@ -41,11 +47,13 @@ endif()
 if(TROSSEN_SDK_AVAILABLE)
   FetchContent_MakeAvailable(trossen_arm_sdk)
 endif()
-if(NOT TROSSEN_SDK_AVAILABLE)
+if(TATBOT_NO_ARM_SDK)
+  message(STATUS "hardware-independent build: Trossen SDK targets disabled")
+elseif(NOT TROSSEN_SDK_AVAILABLE)
   message(WARNING
     "trossen_arm SDK unavailable (no network and no cached _deps): building "
     "only the hardware-independent targets (estop_monitor, telemetry_udp, "
-    "flight_recorder, realtime and their tests). wxai_teleop, friction_tune and arm_set_ip "
+    "flight_recorder, realtime and their tests). wxai_teleop, friction_tune, arm_set_ip and arm_recover "
     "are skipped.")
 else()
   # The SDK's own imported target is directory-scoped, so define our own
@@ -81,20 +89,24 @@ target_include_directories(realtime PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 add_library(square_probe STATIC square_probe.cpp)
 target_include_directories(square_probe PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
-# Offline draw preflight (docs/draw.md): the executor's parser + planner as a
-# tool, so `draw plan` is judged by the code that streams.
+# The square_probe path parser + planner as an offline tool: the ROS CLIK
+# parity test (ros/tatbot_motion/test/test_clik_parity.py) compares against it.
 add_executable(path_plan_check path_plan_check.cpp)
 target_link_libraries(path_plan_check PRIVATE square_probe)
 
 if(TROSSEN_SDK_AVAILABLE)
   add_executable(wxai_teleop wxai_teleop.cpp)
-  target_link_libraries(wxai_teleop PRIVATE trossen::arm estop_monitor telemetry_udp flight_recorder realtime square_probe pthread)
+  target_link_libraries(wxai_teleop PRIVATE trossen::arm estop_monitor telemetry_udp flight_recorder realtime pthread)
 
   add_executable(friction_tune friction_tune.cpp)
   target_link_libraries(friction_tune PRIVATE trossen::arm estop_monitor pthread)
 
   add_executable(arm_set_ip arm_set_ip.cpp)
   target_link_libraries(arm_set_ip PRIVATE trossen::arm pthread)
+
+  # `tatbot arm recover`: the standalone landing routine on the vendor SDK.
+  add_executable(arm_recover arm_recover.cpp)
+  target_link_libraries(arm_recover PRIVATE trossen::arm estop_monitor pthread)
 endif()
 
 enable_testing()
@@ -113,3 +125,12 @@ add_test(NAME realtime_test COMMAND realtime_test)
 add_executable(square_probe_test square_probe_test.cpp)
 target_link_libraries(square_probe_test PRIVATE square_probe)
 add_test(NAME square_probe_test COMMAND square_probe_test)
+
+add_executable(teleop_mapping_test teleop_mapping_test.cpp)
+add_test(NAME teleop_mapping COMMAND teleop_mapping_test)
+add_executable(teleop_startup_test teleop_startup_test.cpp)
+target_link_libraries(teleop_startup_test PRIVATE pthread)
+add_test(NAME teleop_startup COMMAND teleop_startup_test)
+# arm_recover's guard on the measured pose, without the SDK.
+add_executable(recover_guard_test recover_guard_test.cpp)
+add_test(NAME recover_guard COMMAND recover_guard_test)

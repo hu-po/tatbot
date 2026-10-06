@@ -3,7 +3,7 @@
     uvx --with pytest --with numpy pytest -q scripts/tests/test_ink_spec.py
 
 What the design depends on: the three tools have the three modes; a laser is
-refused for any task that needs ink; the ballpoint rehearses on dry caps with
+refused for any task that needs ink; an explicit rehearsal policy uses dry caps with
 the same plan a real needle would make on full ones; the planner's dips are
 exactly what the charge arithmetic predicts; the ledger replays
 deterministically and rehearsal/sim events never move real stock; the two
@@ -15,14 +15,12 @@ from __future__ import annotations
 
 import json
 import shutil
-import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "scripts"))
-sys.path.insert(0, str(REPO / "scripts" / "lib"))
 
 import ink_spec  # noqa: E402
 import tool_spec  # noqa: E402
@@ -47,6 +45,11 @@ def pol(tool_id):
     return ink_spec.policy_for(tool_spec.load_tool(tool_id, REPO))
 
 
+def rehearsal():
+    # Rehearsal behavior is a test policy, independent of the fitted cartridge.
+    return replace(pol("lutin-3rl-bugpin"), mode="rehearsal")
+
+
 # --- registries ------------------------------------------------------------------
 
 def test_registries_load_and_agree(palette):
@@ -55,10 +58,33 @@ def test_registries_load_and_agree(palette):
     assert set(load) == set(palette)
     assert "nighthawk_black" in inks and inks["true_blue"].rgb == (0, 0, 255)
     # every URDF inkcap frame is a slot, and every slot is a URDF frame
-    urdf = (REPO / "urdf" / "tatbot.urdf").read_text()
+    urdf = (REPO / "urdf" / "palette.urdf").read_text()
     for slot_id in palette:
         assert f'<link name="{slot_id}"' in urdf, slot_id
     assert urdf.count('<link name="inkcap_') == len(palette)
+
+
+def test_palette_slots_bind_configured_ids_in_a_three_arm_registry(tmp_path):
+    (tmp_path / 'config').mkdir()
+    registry = json.loads((REPO / 'config/arms.json').read_text())
+    registry['arms']['drawing_arm'] = registry['arms'].pop('right')
+    registry['arms']['sensing_arm'] = registry['arms'].pop('left')
+    registry['arms']['third'] = {
+        'control_role': 'arm', 'profile_ip_field': 'third_ip',
+        'controller_config': 'config/trossen/third.yaml',
+        'sdk_end_effector': 'wxai_v0_third', 'workspace_section': 'third',
+        'urdf_prefix': 'third'}
+    (tmp_path / 'config/arms.json').write_text(json.dumps(registry))
+    palette_path = tmp_path / 'config/palette.yaml'
+    palette = (REPO / ink_spec.PALETTE_RELPATH).read_text().replace('arm: right', 'arm: drawing_arm')
+    palette = palette.replace('arm: drawing_arm', 'arm: sensing_arm', 1)
+    palette = palette.replace('arm: drawing_arm', 'arm: third', 1)
+    palette_path.write_text(palette)
+    slots = ink_spec.load_palette(tmp_path)
+    assert {slot.arm for slot in slots.values()} == {'drawing_arm', 'sensing_arm', 'third'}
+    palette_path.write_text(palette_path.read_text().replace('arm: drawing_arm', 'arm: absent', 1))
+    with pytest.raises(ValueError, match="arm 'absent' is not configured"):
+        ink_spec.load_palette(tmp_path)
 
 
 def test_palette_root_in_base():
@@ -68,17 +94,18 @@ def test_palette_root_in_base():
     assert len(right_pos) == 3 and len(left_pos) == 3
     assert right_pos == pytest.approx((0.126, 0.2675, 0.085))
     assert left_pos == pytest.approx((0.126, -0.2675, 0.085))
-    # Left and right arm base links are symmetric along the Y-axis
+    # Both coordinates describe the same configured synthetic ROOT point.
+    # Root is the rig midpoint; +Y points toward the robot's left hand.
     assert right_pos[0] == pytest.approx(left_pos[0])
-    assert right_pos[1] == pytest.approx(-left_pos[1])
+    assert left_pos[1] - right_pos[1] == pytest.approx(-0.535)
     assert right_pos[2] == pytest.approx(left_pos[2])
 
-    with pytest.raises(ValueError, match="no joint has child"):
+    with pytest.raises(ValueError, match="no configured arm binding"):
         ink_spec.palette_root_in_base(REPO, arm="invalid_arm")
 
 
 def test_cap_geometry_is_self_consistent(palette):
-    large = palette["inkcap_right_large"].size
+    large = palette["inkcap_large_1"].size
     assert large.surface_depth_m(0) == pytest.approx(large.depth_m)
     assert large.surface_depth_m(large.capacity_ul) == pytest.approx(0.0, abs=1e-6)
     assert 0 < large.surface_depth_m(large.capacity_ul / 2) < large.depth_m
@@ -86,35 +113,38 @@ def test_cap_geometry_is_self_consistent(palette):
 
 def test_palette_layout_from_urdf():
     layout = ink_spec.palette_layout_from_urdf(REPO)
-    assert len(layout) == 10
+    assert len(layout) == 6
     for slot_id, xyz in layout.items():
         assert slot_id.startswith("inkcap_")
         assert len(xyz) == 3
         assert all(isinstance(v, float) for v in xyz)
-    assert layout["inkcap_right_large"] == (0.0, -0.055, 0.0)
-    assert layout["inkcap_left_large"] == (0.0, 0.055, 0.0)
+    # the two large caps close the v11 crescent at its +Y and -Y ends
+    assert layout["inkcap_large_1"] == pytest.approx((-0.007469358, 0.035727562, 0.018))
+    assert layout["inkcap_large_2"] == pytest.approx((-0.013559908, -0.033887740, 0.018))
 
 
 def test_palette_urdf_error_handling(tmp_path):
     # test palette_layout_from_urdf with no inkcap joints
     urdf_dir = tmp_path / "urdf"
     urdf_dir.mkdir()
-    (urdf_dir / "tatbot.urdf").write_text("<robot name=\"test\"><link name=\"root\"/></robot>")
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "palette_geometry.json").write_text('{"urdf": "urdf/palette.urdf"}')
+    (urdf_dir / "palette.urdf").write_text("<robot name=\"test\"><link name=\"root\"/></robot>")
     with pytest.raises(ValueError, match=r"no inkcap_\* joints"):
         ink_spec.palette_layout_from_urdf(tmp_path)
 
-    # test palette_root_in_base with missing joints
-    with pytest.raises(ValueError, match="no joint has child 'palette_root'"):
-        ink_spec.palette_root_in_base(tmp_path, arm="right")
+
 
 
 def test_three_tools_three_modes():
     assert pol("lutin-3rl-bugpin").mode == "real"
-    assert pol("lutin-ballpoint-dot").mode == "rehearsal"
+    assert pol("lutin-ballpoint-dot").mode == "cartridge"
+    assert not pol("lutin-ballpoint-dot").dips
+    assert pol("lutin-ballpoint-dot").charge_capacity_ul == 0
     assert pol("picosecond-laser-pen").mode == "none"
     assert not pol("picosecond-laser-pen").dips
     # rehearsal mirrors real so it plans the same dips
-    r, b = pol("lutin-3rl-bugpin"), pol("lutin-ballpoint-dot")
+    r, b = pol("lutin-3rl-bugpin"), rehearsal()
     assert (r.uptake_ul, r.deposit_ul_per_mm, r.bleed_ul_per_s) == (b.uptake_ul, b.deposit_ul_per_mm, b.bleed_ul_per_s)
 
 
@@ -151,8 +181,8 @@ def test_real_refuses_dry_and_low_caps(palette, dry, full):
 
 
 def test_rehearsal_accepts_dry_caps(palette, dry):
-    ink_spec.require_supply(pol("lutin-ballpoint-dot"), palette, dry, needs_ink=True)
-    assert [s.slot_id for s in ink_spec.usable_slots(pol("lutin-ballpoint-dot"), palette, dry)] == [
+    ink_spec.require_supply(rehearsal(), palette, dry, needs_ink=True)
+    assert [s.slot_id for s in ink_spec.usable_slots(rehearsal(), palette, dry)] == [
         s for s in palette if palette[s].arm == "right"]
 
 
@@ -191,14 +221,14 @@ def test_planner_matches_the_arithmetic(palette, full):
 def test_colour_change_forces_a_dip(palette):
     p = pol("lutin-3rl-bugpin")
     load = {s: ink_spec.SlotLoad(s, None) for s in palette}
-    load["inkcap_right_large"] = ink_spec.SlotLoad("inkcap_right_large", "nighthawk_black", 1000.0)
-    load["inkcap_right_medium_0"] = ink_spec.SlotLoad("inkcap_right_medium_0", "true_blue", 500.0)
+    load["inkcap_large_1"] = ink_spec.SlotLoad("inkcap_large_1", "nighthawk_black", 1000.0)
+    load["inkcap_medium_1"] = ink_spec.SlotLoad("inkcap_medium_1", "true_blue", 500.0)
     strokes = [ink_spec.StrokeNeed(5, 0.5, "nighthawk_black"), ink_spec.StrokeNeed(5, 0.5, "true_blue"),
                ink_spec.StrokeNeed(5, 0.5, "true_blue")]
     plans = ink_spec.plan_dips(strokes, p, palette, load)
     assert [(d.before_stroke, d.reason, d.slot_id) for d in plans] == [
-        (0, "session_start", "inkcap_right_large"),
-        (1, "color_change", "inkcap_right_medium_0"),
+        (0, "session_start", "inkcap_large_1"),
+        (1, "color_change", "inkcap_medium_1"),
     ]
     assert plans[1].charge_before_ul == 0.0, "a colour change starts from a wiped needle"
 
@@ -207,7 +237,7 @@ def test_none_never_dips_and_rehearsal_equals_real(palette, dry, full):
     strokes = [ink_spec.StrokeNeed(40, 4)] * 12
     assert ink_spec.plan_dips(strokes, pol("picosecond-laser-pen"), palette, full) == []
     real = ink_spec.plan_dips(strokes, pol("lutin-3rl-bugpin"), palette, full)
-    reh = ink_spec.plan_dips(strokes, pol("lutin-ballpoint-dot"), palette, dry)
+    reh = ink_spec.plan_dips(strokes, rehearsal(), palette, dry)
     assert [(d.before_stroke, d.reason) for d in real] == [(d.before_stroke, d.reason) for d in reh]
 
 
@@ -216,9 +246,9 @@ def test_real_planner_drains_the_cap(palette):
     load = {s: ink_spec.SlotLoad(s, None) for s in palette}
     # a small cap sitting 1.5 dips above the min_fill_frac floor: the first
     # dip fits, the second lands on the floor, the third has no usable cap
-    size = palette["inkcap_right_small_0"].size
+    size = palette["inkcap_small_1"].size
     floor = p.min_fill_frac * size.capacity_ul * size.usable_frac
-    load["inkcap_right_small_0"] = ink_spec.SlotLoad("inkcap_right_small_0", "nighthawk_black", floor + 1.5 * p.uptake_ul)
+    load["inkcap_small_1"] = ink_spec.SlotLoad("inkcap_small_1", "nighthawk_black", floor + 1.5 * p.uptake_ul)
     strokes = [ink_spec.StrokeNeed(1000, 100)] * 3
     with pytest.raises(ink_spec.InkSupplyError, match="stroke 2"):
         ink_spec.plan_dips(strokes, p, palette, load)
@@ -226,7 +256,7 @@ def test_real_planner_drains_the_cap(palette):
 
 def test_dip_depth_follows_fill(palette):
     p = pol("lutin-3rl-bugpin")
-    slot = palette["inkcap_right_large"]
+    slot = palette["inkcap_large_1"]
     assert ink_spec.dip_plunge_m(p, slot, 0.0) == pytest.approx(p.dip_depth_m)
     half = ink_spec.dip_plunge_m(p, slot, slot.size.capacity_ul / 2)
     assert half > ink_spec.dip_plunge_m(p, slot, slot.size.capacity_ul * 0.7)
@@ -237,14 +267,14 @@ def test_dip_depth_follows_fill(palette):
 
 def test_ledger_replay_ignores_rehearsal_and_sim(tmp_path):
     path = tmp_path / "ledger.jsonl"
-    ink_spec.append_event("cap.fill", "real", path=path, slot="inkcap_right_large", ink_id="nighthawk_black", ul=500, bottle="b1")
-    ink_spec.append_event("dip", "real", path=path, slot="inkcap_right_large", uptake_ul=1.5)
-    ink_spec.append_event("dip", "rehearsal", path=path, slot="inkcap_right_large", uptake_ul=1.5)
-    ink_spec.append_event("dip", "sim", path=path, slot="inkcap_right_large", uptake_ul=1.5)
+    ink_spec.append_event("cap.fill", "real", path=path, slot="inkcap_large_1", ink_id="nighthawk_black", ul=500, bottle="b1")
+    ink_spec.append_event("dip", "real", path=path, slot="inkcap_large_1", uptake_ul=1.5)
+    ink_spec.append_event("dip", "rehearsal", path=path, slot="inkcap_large_1", uptake_ul=1.5)
+    ink_spec.append_event("dip", "sim", path=path, slot="inkcap_large_1", uptake_ul=1.5)
     ink_spec.append_event("stroke", "real", path=path, contact_mm=30, contact_s=3, ul=0.15)
     ink_spec.append_event("stroke", "rehearsal", path=path, contact_mm=30, contact_s=3, ul=0.15)
     r = ink_spec.replay(ink_spec.read_events(path))
-    assert r.cap_fill_ul["inkcap_right_large"] == pytest.approx(498.5)
+    assert r.cap_fill_ul["inkcap_large_1"] == pytest.approx(498.5)
     assert r.dips == 1 and r.stroke_ul == pytest.approx(0.15)
     assert r.bottle_used_ul["b1"] == 500
     assert r.ignored == {"rehearsal": 2, "sim": 1}
@@ -262,17 +292,18 @@ def _copy_repo_configs(tmp_path):
     (tmp_path / "config" / "tools").mkdir(parents=True)
     for rel in (ink_spec.INKS_RELPATH, ink_spec.PALETTE_RELPATH, ink_spec.LOAD_RELPATH, ink_spec.INVENTORY_RELPATH):
         shutil.copy(REPO / rel, tmp_path / rel)
+    shutil.copy(REPO/'config/arms.json', tmp_path/'config/arms.json')
     return tmp_path
 
 
 def test_palette_load_round_trip(tmp_path, palette):
     repo = _copy_repo_configs(tmp_path)
     load = ink_spec.load_palette_load(repo, palette)
-    load["inkcap_right_large"] = ink_spec.SlotLoad("inkcap_right_large", "nighthawk_black", 1200.0, "kuro_sumi_black_01", "2026-08-28T00:00:00Z")
+    load["inkcap_large_1"] = ink_spec.SlotLoad("inkcap_large_1", "nighthawk_black", 1200.0, "kuro_sumi_black_01", "2026-08-28T00:00:00Z")
     ink_spec.write_palette_load(load, repo, note="test")
     back = ink_spec.load_palette_load(repo, palette)
-    assert back["inkcap_right_large"] == load["inkcap_right_large"]
-    assert back["inkcap_right_small_1"].dry
+    assert back["inkcap_large_1"] == load["inkcap_large_1"]
+    assert back["inkcap_small_2"].dry
     text = (repo / ink_spec.LOAD_RELPATH).read_text()
     assert text.startswith("# palette_load.yaml"), "header comment preserved"
     assert "note: test" in text
@@ -293,7 +324,7 @@ def test_inventory_round_trip(tmp_path):
 
 def test_dataset_metadata_is_self_contained():
     meta = ink_spec.dataset_ink_metadata(tool_spec.load_tool("lutin-ballpoint-dot", REPO), REPO)
-    assert meta["policy"]["mode"] == "rehearsal"
+    assert meta["policy"]["mode"] == "cartridge"
     assert set(meta["slots"]) == {s for s, p in ink_spec.load_palette(REPO).items() if p.arm == "right"}
     json.dumps(meta)  # serialisable as written
 
@@ -304,19 +335,19 @@ def test_select_slot_prefers_the_inks_cap_size_and_says_why(palette):
     real = pol("lutin-3rl-bugpin")
     inks = ink_spec.load_inks(REPO)
     load = {s: ink_spec.SlotLoad(s, "nighthawk_black", 200.0) for s in palette}
-    load["inkcap_right_large"] = ink_spec.SlotLoad("inkcap_right_large", "nighthawk_black", 1500.0)
+    load["inkcap_large_1"] = ink_spec.SlotLoad("inkcap_large_1", "nighthawk_black", 1500.0)
     c = ink_spec.select_slot(real, palette, load, "right", "nighthawk_black", inks)
     assert palette[c.slot_id].size.size_id == "medium", c   # small caps are narrow; the needle misses
     assert "lining prefers medium" in c.reason
     # a session need larger than any small cap holds moves it to a cap that covers it
     c = ink_spec.select_slot(real, palette, load, "right", "nighthawk_black", inks, need_ul=900.0)
-    assert c.slot_id == "inkcap_right_large" and "covers the remaining 900.0" in c.reason
+    assert c.slot_id == "inkcap_large_1" and "covers the remaining 900.0" in c.reason
     # colour ink prefers medium
     load2 = {s: ink_spec.SlotLoad(s, "true_blue", 200.0) for s in palette}
     c = ink_spec.select_slot(real, palette, load2, "right", "true_blue", inks)
     assert palette[c.slot_id].size.size_id == "medium"
     # rehearsal: first usable cap, no ink reasoning
-    c = ink_spec.select_slot(pol("lutin-ballpoint-dot"), palette,
+    c = ink_spec.select_slot(rehearsal(), palette,
                              {s: ink_spec.SlotLoad(s, None) for s in palette}, "right", None, inks)
     assert c.reason.startswith("rehearsal")
 
@@ -335,14 +366,14 @@ def test_mise_en_place_fills_dry_caps_and_flags_stock(palette):
     assert sum(i.ul for i in fills) >= 300.0 * 1.15
     # a cap below the floor is a refill, not a new fill; an unused ink is noted
     low = dict(dry)
-    low["inkcap_right_small_0"] = ink_spec.SlotLoad("inkcap_right_small_0", "nighthawk_black", 5.0)
-    low["inkcap_right_large"] = ink_spec.SlotLoad("inkcap_right_large", "true_blue", 900.0)
+    low["inkcap_small_1"] = ink_spec.SlotLoad("inkcap_small_1", "nighthawk_black", 5.0)
+    low["inkcap_large_1"] = ink_spec.SlotLoad("inkcap_large_1", "true_blue", 900.0)
     items = ink_spec.mise_en_place(real, palette, low, inks, inv, {"nighthawk_black": 100.0},
                                    tool_id="lutin-3rl-bugpin")
-    assert any(i.kind == "refill" and i.slot_id == "inkcap_right_small_0" for i in items)
-    assert any(i.kind == "info" and i.slot_id == "inkcap_right_large" for i in items)
+    assert any(i.kind == "refill" and i.slot_id == "inkcap_small_1" for i in items)
+    assert any(i.kind == "info" and i.slot_id == "inkcap_large_1" for i in items)
     # rehearsal wants dry caps; a wet one is a dump
-    items = ink_spec.mise_en_place(pol("lutin-ballpoint-dot"), palette, low, inks, inv, {},
+    items = ink_spec.mise_en_place(rehearsal(), palette, low, inks, inv, {},
                                    tool_id="lutin-ballpoint-dot")
     assert any(i.kind == "dump" for i in items)
     assert ink_spec.mise_en_place(pol("picosecond-laser-pen"), palette, dry, inks, inv, {})[0].kind == "ok"
@@ -364,7 +395,7 @@ def test_need_from_a_program_matches_the_stroke_arithmetic():
 def test_dip_plan_carries_the_draining_cap_fill(palette):
     p = pol("lutin-3rl-bugpin")
     load = {s: ink_spec.SlotLoad(s, None) for s in palette}
-    load["inkcap_right_medium_0"] = ink_spec.SlotLoad("inkcap_right_medium_0", "nighthawk_black", 400.0)
+    load["inkcap_medium_1"] = ink_spec.SlotLoad("inkcap_medium_1", "nighthawk_black", 400.0)
     plans = ink_spec.plan_dips([ink_spec.StrokeNeed(400, 40)] * 4, p, palette, load)
     assert len(plans) >= 2 and plans[0].cap_fill_ul == 400.0
     assert plans[1].cap_fill_ul == pytest.approx(400.0 - p.uptake_ul)
@@ -407,8 +438,8 @@ def test_per_ink_dip_overrides_refine_the_datasheet():
 def test_synced_ledgers_are_read_once(tmp_path, monkeypatch):
     ledger = tmp_path / "ledger.jsonl"
     monkeypatch.setenv("TATBOT_INK_LEDGER", str(ledger))
-    a = ink_spec.append_event("dip", "rehearsal", slot="inkcap_right_medium_0")
-    b = ink_spec.append_event("dip", "rehearsal", slot="inkcap_right_medium_1")
+    a = ink_spec.append_event("dip", "rehearsal", slot="inkcap_medium_1")
+    b = ink_spec.append_event("dip", "rehearsal", slot="inkcap_medium_2")
     assert a["id"] != b["id"]
     remote = ink_spec.remote_ledger_dir()
     remote.mkdir()
@@ -421,9 +452,10 @@ def test_synced_ledgers_are_read_once(tmp_path, monkeypatch):
     assert len(ink_spec.read_events(include_remote=False)) == 2
 
 
-def test_tag8_sits_on_the_rack_root():
-    off = ink_spec.tag8_in_palette_root()
-    assert len(off) == 3 and abs(off[2]) < 0.02 and off[0] == 0 and off[1] == 0
+def test_palette_tag_sits_on_the_installed_seat():
+    off = ink_spec.tag_in_palette_root()
+    design = json.loads((REPO / ink_spec.palette_geometry()["cad_design"]).read_text())
+    assert off == pytest.approx([v / 1000 for v in design["installed_tag"]["xyz_mm"]])
 
 
 # --- scripts/ink.py coverage -------------------------------------------------------------
@@ -437,6 +469,7 @@ def ink_repo(tmp_path, monkeypatch):
     (tmp_path / "config" / "tools").mkdir(parents=True)
     for rel in (ink_spec.INKS_RELPATH, ink_spec.PALETTE_RELPATH, ink_spec.LOAD_RELPATH, ink_spec.INVENTORY_RELPATH):
         shutil.copy(REPO / rel, tmp_path / rel)
+    shutil.copy(REPO / 'config/arms.json', tmp_path / 'config/arms.json')
     if (REPO / "config" / "workspace.yaml").exists():
         shutil.copy(REPO / "config" / "workspace.yaml", tmp_path / "config" / "workspace.yaml")
     for f in (REPO / "config" / "tools").glob("*.yaml"):
@@ -455,8 +488,8 @@ def test_ink_helpers_and_die(capsys):
 
     # _pairs
     weighs = [
-        {"slot": "inkcap_right_large", "when": "before", "grams": 10.0},
-        {"slot": "inkcap_right_large", "when": "after", "grams": 9.5},
+        {"slot": "inkcap_large_1", "when": "before", "grams": 10.0},
+        {"slot": "inkcap_large_1", "when": "after", "grams": 9.5},
         {"bottle_id": "b1", "when": "after", "grams": 100.0},  # no before
         {"bottle_id": "b2", "when": "before", "grams": 200.0},
     ]
@@ -467,7 +500,7 @@ def test_ink_helpers_and_die(capsys):
     # _require_tool
     class DummyArgs:
         tool_id = None
-    assert ink._require_tool(DummyArgs(), "cmd") == "cmd needs --ee-tool <id> (or TATBOT_EE_TOOL): name the tool in the gripper"
+    assert ink._require_tool(DummyArgs(), "cmd") == "cmd needs --ee-tool <id> (or TATBOT_EE_TOOL): name the tool in the mount"
     DummyArgs.tool_id = "lutin-ballpoint-dot"
     assert ink._require_tool(DummyArgs(), "cmd") is None
 
@@ -491,28 +524,28 @@ def test_ink_cmd_status(ink_repo, capsys):
 def test_ink_cmd_load_and_dump(ink_repo, capsys):
     # Error cases
     assert ink.main(["load", "bad_slot", "nighthawk_black", "--ul", "100"]) == 2
-    assert ink.main(["load", "inkcap_right_large", "bad_ink", "--ul", "100"]) == 2
-    assert ink.main(["load", "inkcap_right_large", "nighthawk_black", "--ul", "999999"]) == 2
-    assert ink.main(["load", "inkcap_right_large", "nighthawk_black", "--ul", "100", "--bottle", "bad_bottle"]) == 2
-    assert ink.main(["load", "inkcap_right_large", "nighthawk_black", "--ul", "100", "--cap-stock", "bad_cap"]) == 2
+    assert ink.main(["load", "inkcap_large_1", "bad_ink", "--ul", "100"]) == 2
+    assert ink.main(["load", "inkcap_large_1", "nighthawk_black", "--ul", "999999"]) == 2
+    assert ink.main(["load", "inkcap_large_1", "nighthawk_black", "--ul", "100", "--bottle", "bad_bottle"]) == 2
+    assert ink.main(["load", "inkcap_large_1", "nighthawk_black", "--ul", "100", "--cap-stock", "bad_cap"]) == 2
 
     # Valid load
     rc = ink.main([
-        "load", "inkcap_right_large", "nighthawk_black", "--ul", "500",
+        "load", "inkcap_large_1", "nighthawk_black", "--ul", "500",
         "--bottle", "nighthawk_black_01", "--cap-stock", "emalla_15mm"
     ])
     assert rc == 0
     captured = capsys.readouterr()
-    assert "inkcap_right_large: nighthawk_black 500 uL" in captured.out
+    assert "inkcap_large_1: nighthawk_black 500 uL" in captured.out
 
     # Conflict load (slot holds different ink)
-    assert ink.main(["load", "inkcap_right_large", "true_blue", "--ul", "100"]) == 2
+    assert ink.main(["load", "inkcap_large_1", "true_blue", "--ul", "100"]) == 2
 
     # Dump
     assert ink.main(["dump", "bad_slot"]) == 2
-    assert ink.main(["dump", "inkcap_right_large"]) == 0
+    assert ink.main(["dump", "inkcap_large_1"]) == 0
     captured_dump = capsys.readouterr()
-    assert "inkcap_right_large: dumped 500 uL of nighthawk_black" in captured_dump.out
+    assert "inkcap_large_1: dumped 500 uL of nighthawk_black" in captured_dump.out
 
 
 def test_ink_cmd_bottle(ink_repo, capsys):
@@ -568,7 +601,7 @@ def test_ink_cmd_caps(ink_repo, capsys):
 def test_ink_cmd_weigh_and_fit(ink_repo, capsys):
     # Weigh errors & valid
     assert ink.main(["weigh", "bad_target", "10.0", "--when", "before"]) == 2
-    assert ink.main(["weigh", "inkcap_right_large", "15.0", "--when", "before"]) == 0
+    assert ink.main(["weigh", "inkcap_large_1", "15.0", "--when", "before"]) == 0
     assert ink.main(["weigh", "kuro_sumi_black_01", "300.0", "--when", "after"]) == 0
 
     # cmd_fit with no pairs / bracketed dips
@@ -577,13 +610,13 @@ def test_ink_cmd_weigh_and_fit(ink_repo, capsys):
     assert "no before/after weigh pairs" in captured.err
 
     # Create a weigh pair bracketing dips
-    ink_spec.append_event("weigh", "real", slot="inkcap_right_large", grams=15.0, when="before")
-    ink_spec.append_event("dip", "real", slot="inkcap_right_large", uptake_ul=1.5)
+    ink_spec.append_event("weigh", "real", slot="inkcap_large_1", grams=15.0, when="before")
+    ink_spec.append_event("dip", "real", slot="inkcap_large_1", uptake_ul=1.5)
     ink_spec.append_event("stroke", "real", contact_mm=100.0, contact_s=5.0, ul=0.5)
-    ink_spec.append_event("dip", "real", slot="inkcap_right_large", uptake_ul=1.5)
+    ink_spec.append_event("dip", "real", slot="inkcap_large_1", uptake_ul=1.5)
     ink_spec.append_event("stroke", "real", contact_mm=200.0, contact_s=10.0, ul=1.0)
-    ink_spec.append_event("dip", "real", slot="inkcap_right_large", uptake_ul=1.5)
-    ink_spec.append_event("weigh", "real", slot="inkcap_right_large", grams=12.0, when="after")
+    ink_spec.append_event("dip", "real", slot="inkcap_large_1", uptake_ul=1.5)
+    ink_spec.append_event("weigh", "real", slot="inkcap_large_1", grams=12.0, when="after")
 
     assert ink.main(["fit"]) == 0
     captured_fit = capsys.readouterr()
@@ -592,7 +625,7 @@ def test_ink_cmd_weigh_and_fit(ink_repo, capsys):
 
 
 def test_ink_cmd_ledger_and_reconcile(ink_repo, capsys):
-    ink_spec.append_event("cap.fill", "real", slot="inkcap_right_large", ink_id="nighthawk_black", ul=500.0, bottle="nighthawk_black_01")
+    ink_spec.append_event("cap.fill", "real", slot="inkcap_large_1", ink_id="nighthawk_black", ul=500.0, bottle="nighthawk_black_01")
     assert ink.main(["ledger", "-n", "1"]) == 0
     captured = capsys.readouterr()
     assert "cap.fill" in captured.out
@@ -604,7 +637,7 @@ def test_ink_cmd_ledger_and_reconcile(ink_repo, capsys):
 
     # Reconcile with write when drift exists
     load = ink_spec.load_palette_load(ink_repo, ink_spec.load_palette(ink_repo))
-    load["inkcap_right_large"] = ink_spec.SlotLoad("inkcap_right_large", "nighthawk_black", 100.0)
+    load["inkcap_large_1"] = ink_spec.SlotLoad("inkcap_large_1", "nighthawk_black", 100.0)
     ink_spec.write_palette_load(load, ink_repo)
     assert ink.main(["reconcile", "--write"]) == 0
     captured_write = capsys.readouterr()
@@ -641,9 +674,9 @@ def test_ink_cmd_mise(ink_repo, capsys, tmp_path):
     ]) == 2
 
 
-@pytest.mark.xfail(reason="Bug in scripts/ink.py cmd_mise: 'if args.strokes_mm and not needs' triggers before 'if args.ink and args.strokes_mm' populates needs", strict=True)
-def test_ink_cmd_mise_strokes_mm_with_ink_bug(ink_repo):
-    # This combination should work according to ink.py docstring/argparse, but bugs out due to order of checks
+def test_ink_cmd_mise_strokes_mm_with_ink(ink_repo):
+    """`--ink X --strokes-mm N` is the documented short form: the ink names the
+    colour and the length gives the volume, so no separate --need is required."""
     rc = ink.main([
         "mise-en-place", "--ee-tool", "lutin-ballpoint-dot", "--ink", "nighthawk_black",
         "--strokes-mm", "100"
@@ -651,12 +684,21 @@ def test_ink_cmd_mise_strokes_mm_with_ink_bug(ink_repo):
     assert rc == 0
 
 
+def test_ink_cmd_mise_strokes_mm_alone_is_refused(ink_repo):
+    """Without --ink or --need there is nothing to attribute the volume to."""
+    assert ink.main([
+        "mise-en-place", "--ee-tool", "lutin-ballpoint-dot", "--strokes-mm", "100"
+    ]) == 2
+
+
 def test_ink_cmd_plan(ink_repo, capsys):
-    assert ink.main(["plan", "--ee-tool", "lutin-ballpoint-dot", "--strokes", "100,5", "200,10,nighthawk_black"]) == 0
+    ink.main(["load", "inkcap_medium_1", "nighthawk_black", "--ul", "300"])
+    assert ink.main(["plan", "--ee-tool", "lutin-3rl-bugpin", "--strokes", "100,5", "200,10,nighthawk_black"]) == 0
     captured = capsys.readouterr()
-    assert "lutin-ballpoint-dot (rehearsal):" in captured.out
+    assert "lutin-3rl-bugpin (real):" in captured.out
 
     # Supply error on real tool with dry caps
+    ink.main(["dump", "inkcap_medium_1"])
     assert ink.main(["plan", "--ee-tool", "lutin-3rl-bugpin", "--strokes", "100,5"]) == 2
 
 
@@ -672,7 +714,7 @@ def test_ink_cmd_session(ink_repo, capsys, tmp_path):
     # start session with program
     prog_file = tmp_path / "prog.json"
     prog_file.write_text(json.dumps([[[0, 0], [0.01, 0.01]]]))
-    assert ink.main(["session", "start", "--ee-tool", "lutin-ballpoint-dot", "--program", str(prog_file)]) == 0
+    assert ink.main(["session", "start", "--ee-tool", "lutin-3rl-bugpin", "--program", str(prog_file)]) == 0
     assert ink.main(["session", "status"]) == 0
 
     # end session
@@ -703,6 +745,27 @@ def test_ink_cmd_sync(ink_repo, capsys, monkeypatch):
     assert "fail_host: connection refused" in captured.err
 
 
+def test_ink_sync_names_each_copy_after_its_node():
+    nmap = {"arm": {"ssh": "u@198.51.100.7", "ssh_lan": "u@203.0.113.7", "lan": "203.0.113.7"}}
+    assert ink.sync_source(nmap, "arm") == ("u@198.51.100.7", "arm")
+    assert ink.sync_source(nmap, "u@203.0.113.7") == ("u@203.0.113.7", "arm")
+    assert ink.sync_source(nmap, "v@198.51.100.7") == ("v@198.51.100.7", "arm")
+    # Two addresses sharing a first octet no longer share (and overwrite) one copy.
+    assert ink.sync_source(nmap, "u@192.0.2.10") == ("u@192.0.2.10", "192.0.2.10")
+    assert ink.sync_source(nmap, "u@192.0.2.20") == ("u@192.0.2.20", "192.0.2.20")
+    assert ink.sync_source({}, "u@box.example.org") == ("u@box.example.org", "box")
+
+
 def test_ink_arg_parsing_validation():
     assert ink.main(["bottle", "add", "b1"]) == 2  # missing --ink and --ml
     assert ink.main(["cartridge", "add", "c1"]) == 2  # missing args
+
+
+def test_legacy_supply_account_survives_serialization():
+    from dataclasses import asdict
+    supply = ink_spec.ContinuousSupply('cartridge-1', 10000, 1000, 3000)
+    restored = ink_spec.ContinuousSupply(**json.loads(json.dumps(asdict(supply))))
+    assert asdict(restored) == asdict(supply)
+    for budget in (0, -1, True, float('inf'), 2**64):
+        with pytest.raises(ValueError, match='account'):
+            ink_spec.ContinuousSupply('cartridge-1', budget, 1000, 3000)

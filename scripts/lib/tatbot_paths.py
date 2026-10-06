@@ -21,7 +21,50 @@ interpreters load this by path and none can install packages into the others.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
+
+# The script tree's import roots, relative to the checkout. Modules under
+# scripts/ import each other by bare name (`import arm_kinematics`), so every
+# root has to be on sys.path; no two roots share a module name, so the order
+# only decides which shadows a same-named third-party package (none do today).
+SCRIPT_ROOTS = ("scripts/lib", "scripts", "scripts/vision", "scripts/train", "scripts/eval")
+_ROOT: Path | None = None  # the checkout bootstrap() settled on, once per process
+
+
+def bootstrap(root: Path | None = None) -> Path:
+    """Put every script root on sys.path, once, and return the checkout root.
+
+    ``root`` defaults to the checkout this file lives in. A caller whose
+    checkout is chosen at run time passes its own (tatbot_sim honours
+    TATBOT_REPO, which the public simulator profile points at a copy of the
+    tree), so the script modules come from the same tree as everything else.
+
+    The one path line an entry point needs, in place of the per-file
+    `sys.path.insert(0, ...)` arithmetic that used to open 240 files:
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[N] / "scripts/lib"))
+        from tatbot_paths import bootstrap  # noqa: E402
+        REPO = bootstrap()
+
+    Libraries never call this; the process that imports them already did (an
+    entry script, the `tatbot` CLI, or scripts/tests/conftest.py). The roots
+    settle once per process: a later call without ``root`` is a no-op that
+    returns the root already chosen, so an entry script imported as a library
+    (capture_geometry by the simulator, say) cannot re-front its own checkout over
+    the one the process picked. An explicit ``root`` always wins and re-fronts.
+    """
+    global _ROOT
+    if root is None and _ROOT is not None:
+        return _ROOT
+    root = Path(root).resolve() if root is not None else Path(__file__).resolve().parents[2]
+    for sub in reversed(SCRIPT_ROOTS):
+        entry = str(root / sub)
+        if entry in sys.path:
+            sys.path.remove(entry)
+        sys.path.insert(0, entry)
+    _ROOT = root
+    return root
 
 
 class PathConfigError(RuntimeError):

@@ -1,13 +1,13 @@
 """Procedural grid paper for the drawing surface — texture, geometry, metadata.
 
-The real sessions draw on ruled paper, so a blank pad leaves the wrist views
+The real sessions draw on gridded paper, so a blank pad leaves the wrist views
 without the structure the policy actually sees. A handful of sheets are
 generated once into the ManiSkill asset directory and dealt out across
-environments, with tint, pitch and rule colour varying between them.
+environments, with tint, rule colour and grid phase varying between them.
 
 Each sheet is three files that travel together:
 
-- ``grid_NN.png`` — the ruled paper image;
+- ``grid_NN.png`` — the gridded paper image;
 - ``grid_NN.obj``/``.mtl`` — a UV'd quad the size of the sheet. The pad's box
   primitive cannot carry the texture: SAPIEN wraps box UVs around all six
   faces (verified with a striped probe — the top face samples an interior
@@ -15,12 +15,19 @@ Each sheet is three files that travel together:
 - ``grid_NN.json`` — the ruling's geometry in millimetres, so the maze
   generator can put strokes ON the printed lines rather than near them.
 
-The ruling is a single line weight on an exact 6 mm pitch (the operator's
-paper — one grid size, no major/minor distinction). 6 mm is not an integer
-pixel count at this resolution, so lines are drawn anti-aliased at true
-millimetre positions and the metadata is exact by construction; only the
-grid's phase (where the first line falls), the rule colour/strength, paper
-tint and grain vary between sheets.
+The paper is white with faint blue rules on a 1/4 in (6.35 mm) square grid —
+one grid size, no major/minor distinction — as the operator's pad and paper
+cylinder are printed (config/substrates.yaml). 6.35 mm is not an integer pixel
+count at this resolution, so lines are drawn anti-aliased at true millimetre
+positions and the metadata is exact by construction; only the grid's phase
+(where the first line falls), the rule colour/strength, paper tint and grain
+vary between sheets.
+
+A cylinder-shaped substrate gets one more file pair per sheet: ``fixture_*``,
+a closed cylinder of the fixture's radius and length textured all the way
+round with the same grid, phase-locked to the writable band on its crest.
+The band is what the ink field composites into; the fixture is what the rest
+of the cylinder looks like.
 
 The pixel↔canvas mapping is fixed by the quad's UVs (verified by probe
 render): texture column 0 sits at canvas x = −W/2 with +u along +x, and
@@ -33,49 +40,132 @@ growing a procedural world here.
 
 from __future__ import annotations
 
+import fcntl
+import functools
 import json
+import os
+import tempfile
 from pathlib import Path
 
 import cv2
 import numpy as np
-from mani_skill import ASSET_DIR
 
-TEX_DIR = Path(ASSET_DIR) / "robots/widowxai/tatbot_textures"
-# Letter sheet (216 x 279.4 mm); the env sizes its pad from these so texture
-# and geometry cannot drift apart. ~2.4 px/mm on both axes.
-SHEET_W_M = 0.2159
+from tatbot_sim.urdf import asset_dir
+
+TEX_DIR = asset_dir() / "robots/widowxai/tatbot_textures"
+# The paper pad (7.5 x 11 in, 190.5 x 279.4 mm) at ~2.37 px/mm on both axes.
+# These mirror the ``paper_pad`` entry of config/substrates.yaml — the env
+# sizes its pad from that record, and tests hold the two equal — and remain
+# here as the defaults of Surface and of every caller that means "the pad".
+SHEET_W_M = 0.1905
 SHEET_H_M = 0.2794
-SIZE_X = 512
+SIZE_X = 452
 SIZE_Y = 662
-GRID_PITCH_M = 0.006  # the operator's paper: a single 6 mm grid
+GRID_PITCH_M = 0.00635  # the operator's paper: a single 1/4 in grid
+PAPER_RGB = (1.0, 1.0, 1.0)
+RULE_RGB = (0.62, 0.74, 0.90)
+# Paper is a few hundredths of a millimetre; the cylinder's band is a shell
+# on its crest, not a second solid through its axis.
+BAND_SHELL_M = 0.0005
+FIXTURE_SEGMENTS = 96
 
 
-def _line_profile(n_px: int, span_m: float, offset_m: float, half_w_m: float) -> np.ndarray:
+def _serialized_sheets(build):
+    """One writer owns a shared sheet's image, ruling metadata and mesh."""
+    @functools.wraps(build)
+    def locked(*args, **kwargs):
+        TEX_DIR.mkdir(parents=True, exist_ok=True)
+        with (TEX_DIR / ".sheets.lock").open("a") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            return build(*args, **kwargs)
+    return locked
+
+
+def _write_cache(path: Path, content: bytes | str):
+    """Publish a complete asset so renderer readers never see a partial file."""
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(content.encode("utf-8") if isinstance(content, str) else content)
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def _write_png(path: Path, image):
+    ok, encoded = cv2.imencode(".png", image)
+    if not ok:
+        raise ValueError(f"cannot encode texture {path}")
+    _write_cache(path, encoded.tobytes())
+
+
+def _image_matches(path: Path, size):
+    image = cv2.imread(str(path)) if path.exists() else None
+    return image is not None and image.shape[:2] == size
+
+
+class _PadLike:
+    """The pad's geometry when no substrate record is handed in."""
+
+    name = "paper_pad"
+    shape = "pad"
+    width_m, height_m = SHEET_W_M, SHEET_H_M
+    texel_cols, texel_rows = SIZE_X, SIZE_Y
+    grid_pitch_m = GRID_PITCH_M
+    radius_m = None
+    base_color = rule_color = None
+
+    @staticmethod
+    def rgb(field: str, default):
+        return default
+
+
+def _line_profile(n_px: int, span_m: float, offset_m: float, half_w_m: float,
+                  pitch_m: float = GRID_PITCH_M) -> np.ndarray:
     """(n_px,) line coverage in [0,1]: anti-aliased rules at exact mm positions."""
     mm_per_px = span_m / n_px
     centers_m = (np.arange(n_px) + 0.5) * mm_per_px
-    phase = (centers_m - offset_m) % GRID_PITCH_M
-    dist = np.minimum(phase, GRID_PITCH_M - phase)
-    return np.clip(1.0 - dist / half_w_m, 0.0, 1.0)
+    phase = (centers_m - offset_m) % pitch_m
+    dist = np.minimum(phase, pitch_m - phase)
+    return np.clip((half_w_m - dist) / mm_per_px + 0.5, 0.0, 1.0)
 
 
-def _make_sheet(rng: np.random.Generator, path: Path) -> dict:
-    paper = rng.uniform([0.86, 0.86, 0.83], [0.99, 0.99, 0.97])
-    rule = rng.uniform([0.45, 0.55, 0.62], [0.70, 0.78, 0.85])
-    img = np.ones((SIZE_Y, SIZE_X, 3)) * paper
+def _paper_and_rule(rng: np.random.Generator, sub) -> tuple[np.ndarray, np.ndarray, float, float]:
+    """One sheet's paper tint, rule colour, rule strength and rule half-width.
 
-    strength = rng.uniform(0.3, 0.7)
-    half_w = rng.uniform(0.00025, 0.0005)  # rule half-width, m (0.5-1 mm lines)
-    off_x = float(rng.uniform(0, GRID_PITCH_M))
-    off_y = float(rng.uniform(0, GRID_PITCH_M))
-    cov_x = _line_profile(SIZE_X, SHEET_W_M, off_x, half_w) * strength  # columns
-    cov_y = _line_profile(SIZE_Y, SHEET_H_M, off_y, half_w) * strength  # rows
-    cov = np.maximum(cov_y[:, None], cov_x[None, :])
+    White paper and faint blue rules, as printed; what varies is the little a
+    box of pads varies — a touch of warmth or grey in the stock, a lighter or
+    heavier print run — never enough to read as a different paper.
+    """
+    paper = np.asarray(sub.rgb("base_color", PAPER_RGB), dtype=np.float64)
+    rule = np.asarray(sub.rgb("rule_color", RULE_RGB), dtype=np.float64)
+    paper = np.clip(paper * rng.uniform(0.93, 1.0) + rng.uniform(-0.015, 0.015, 3), 0, 1)
+    rule = np.clip(rule + rng.uniform(-0.06, 0.06, 3), 0, 1)
+    strength = float(rng.uniform(0.35, 0.8))            # faint: never a hard black line
+    half_w = float(rng.uniform(0.00015, 0.0003))         # 0.3-0.6 mm printed rules
+    return paper, rule, strength, half_w
+
+
+def _make_sheet(rng: np.random.Generator, path: Path, sub=_PadLike) -> dict:
+    """Write one gridded sheet of ``sub``'s size and return its ruling metadata."""
+    size_x, size_y = int(sub.texel_cols), int(sub.texel_rows)
+    pitch = float(sub.grid_pitch_m)
+    paper, rule, strength, half_w = _paper_and_rule(rng, sub)
+    img = np.ones((size_y, size_x, 3)) * paper
+    off_x = float(rng.uniform(0, pitch))
+    off_y = float(rng.uniform(0, pitch))
+    cov_x = _line_profile(size_x, sub.width_m, off_x, half_w, pitch) * strength  # columns
+    cov_y = _line_profile(size_y, sub.height_m, off_y, half_w, pitch) * strength  # rows
+    cov = np.clip(cov_x[None, :] + cov_y[:, None], 0, 1)
     img = img * (1 - cov[..., None]) + rule * cov[..., None]
-
-    img += rng.normal(0, 0.006, img.shape)  # grain, so it is not perfectly flat
-    cv2.imwrite(str(path), np.clip(img[..., ::-1] * 255, 0, 255).astype(np.uint8))
-    return {"pitch_m": GRID_PITCH_M, "offset_x_m": off_x, "offset_y_m": off_y}
+    img += rng.normal(0, rng.uniform(0.003, 0.008), img.shape)  # paper grain
+    _write_png(path, np.clip(img[..., ::-1] * 255, 0, 255).astype(np.uint8))
+    return {
+        "pitch_m": pitch, "offset_x_m": off_x, "offset_y_m": off_y,
+        "width_m": float(sub.width_m), "height_m": float(sub.height_m),
+        "paper_rgb": paper.tolist(), "rule_rgb": rule.tolist(),
+        "rule_strength": strength, "rule_half_w_m": half_w,
+    }
 
 
 def _make_skin(rng: np.random.Generator, path: Path, sub, size_x: int, size_y: int) -> dict:
@@ -105,10 +195,11 @@ def _make_skin(rng: np.random.Generator, path: Path, sub, size_x: int, size_y: i
 
     img = np.clip(base[None, None, :] * (1.0 + mottle[..., None]), 0, 1)
     img += rng.normal(0, rng.uniform(0.004, 0.009), img.shape)  # grain
-    cv2.imwrite(str(path), np.clip(img[..., ::-1] * 255, 0, 255).astype(np.uint8))
+    _write_png(path, np.clip(img[..., ::-1] * 255, 0, 255).astype(np.uint8))
     return {"base_color": base.tolist()}
 
 
+@_serialized_sheets
 def skin_sheets(count: int, sub, seed: int = 0) -> list[dict]:
     """Ensure ``count`` silicone skins exist and return their metadata.
 
@@ -126,8 +217,8 @@ def skin_sheets(count: int, sub, seed: int = 0) -> list[dict]:
         rng = np.random.default_rng((seed << 8) + 4096 + i)
         stem = TEX_DIR / f"skin_{sub.name}_{i:02d}"
         png = stem.with_suffix(".png")
-        stale = png.exists() and cv2.imread(str(png)).shape[:2] != (size_y, size_x)
-        if not png.exists() or stale:
+        stale = not _image_matches(png, (size_y, size_x))
+        if stale:
             _make_skin(rng, png, sub, size_x, size_y)
         if not stem.with_suffix(".obj").exists() or stale:
             _write_quad(stem, sub.width_m, sub.height_m)
@@ -145,12 +236,12 @@ def skin_sheets(count: int, sub, seed: int = 0) -> list[dict]:
 def _write_quad(stem: Path, width_m: float = SHEET_W_M, height_m: float = SHEET_H_M):
     """UV'd quad for the sheet's top face; see module docstring for mapping."""
     hx, hy = width_m / 2, height_m / 2
-    stem.with_suffix(".mtl").write_text(
+    _write_cache(stem.with_suffix(".mtl"),
         f"newmtl paper\nKd 1 1 1\nmap_Kd {stem.name}.png\n"
     )
     # rows run along +y and image row 0 is the TOP of the png, which OBJ
     # convention puts at v=1 — hence v = 1 at y = -hy.
-    stem.with_suffix(".obj").write_text(
+    _write_cache(stem.with_suffix(".obj"),
         f"mtllib {stem.name}.mtl\n"
         f"v {-hx} {-hy} 0\nv {hx} {-hy} 0\nv {hx} {hy} 0\nv {-hx} {hy} 0\n"
         "vt 0 1\nvt 1 1\nvt 1 0\nvt 0 0\n"
@@ -158,6 +249,17 @@ def _write_quad(stem: Path, width_m: float = SHEET_W_M, height_m: float = SHEET_
         "usemtl paper\n"
         "f 1/1/1 2/2/1 3/3/1\nf 1/1/1 3/3/1 4/4/1\n"
     )
+
+
+def _quad_extent(obj_path: Path) -> tuple[float, float] | None:
+    """Half-extents of a written quad, or None when the file is not one."""
+    if not obj_path.exists():
+        return None
+    verts = [ln.split()[1:] for ln in obj_path.read_text().splitlines() if ln.startswith("v ")]
+    if len(verts) != 4:
+        return None
+    xy = np.abs(np.array(verts, dtype=np.float64)[:, :2])
+    return float(xy[:, 0].max()), float(xy[:, 1].max())
 
 
 def write_surface_mesh(stem: Path, mtl_stem: str, verts, normals, rows: int, cols: int,
@@ -175,9 +277,9 @@ def write_surface_mesh(stem: Path, mtl_stem: str, verts, normals, rows: int, col
 
     With ``thickness_m`` the sheet becomes a SOLID: the same surface offset
     down by its thickness, plus a wall around the rim. That is what a shaped
-    substrate needs — a slab whose top is a 25 mm mound and whose body is a
-    flat box would show its box through the mound, and a separate body
-    modelled underneath is more scene than the shape is worth.
+    substrate needs — a curved top with a flat box behind it would show the box
+    through the surface, and a separate body is more scene than the profile
+    needs.
     """
     us = np.arange(cols) / (cols - 1)
     vs = 1.0 - np.arange(rows) / (rows - 1)  # v=1 at y=-hy, as the quad had it
@@ -190,10 +292,11 @@ def write_surface_mesh(stem: Path, mtl_stem: str, verts, normals, rows: int, col
 
     if thickness_m:
         n = rows * cols
-        under = np.asarray(verts, dtype=np.float64).copy()
-        under[:, 2] -= float(thickness_m)
-        verts = np.concatenate([np.asarray(verts, dtype=np.float64), under], 0)
-        normals = np.concatenate([np.asarray(normals), -np.asarray(normals)], 0)
+        top = np.asarray(verts, dtype=np.float64)
+        top_normals = np.asarray(normals, dtype=np.float64)
+        under = top - float(thickness_m) * top_normals
+        verts = np.concatenate([top, under], 0)
+        normals = np.concatenate([top_normals, -top_normals], 0)
         uv = np.concatenate([uv, uv], 0)
         # the underside, wound the other way so it faces down
         tri = np.concatenate([tri, np.stack([tri[:, 0], tri[:, 2], tri[:, 1]], 1) + n], 0)
@@ -213,26 +316,109 @@ def write_surface_mesh(stem: Path, mtl_stem: str, verts, normals, rows: int, col
     out += [f"vn {x:.6f} {y:.6f} {z:.6f}" for x, y, z in normals]
     out.append("usemtl paper")
     out += [f"f {p}/{p}/{p} {q}/{q}/{q} {r}/{r}/{r}" for p, q, r in tri]
-    stem.with_suffix(".obj").write_text("\n".join(out) + "\n")
+    _write_cache(stem.with_suffix(".obj"), "\n".join(out) + "\n")
     return str(stem.with_suffix(".obj"))
 
 
-def _line_coords_m(offset_m: float, span_m: float) -> list[float]:
+def fixture_seam_offset_m(sub, band_offset_x_m: float) -> float:
+    """Where the wrap's first circumferential rule falls, measured from the seam.
+
+    The band on the crest is centred at arc ``pi * r`` from the seam at the
+    bottom, and its own rules start ``band_offset_x_m`` in from its left edge
+    at ``-width/2``. Locking the wrap to that phase makes the band's printed
+    lines continue straight down the sides of the cylinder.
+    """
+    pitch = float(sub.grid_pitch_m)
+    return float((np.pi * sub.radius_m - sub.width_m / 2 + band_offset_x_m) % pitch)
+
+
+def _make_wrap(rng: np.random.Generator, path: Path, sub, meta: dict) -> dict:
+    """The full-circumference grid for a cylinder fixture, phase-locked to ``meta``."""
+    pitch = float(sub.grid_pitch_m)
+    circumference = 2 * np.pi * sub.radius_m
+    px_per_m = sub.texel_rows / sub.height_m
+    size_x = int(round(circumference * px_per_m))
+    size_y = int(sub.texel_rows)
+    paper = np.asarray(meta["paper_rgb"], dtype=np.float64)
+    rule = np.asarray(meta["rule_rgb"], dtype=np.float64)
+    off_x = fixture_seam_offset_m(sub, meta["offset_x_m"])
+    cov_x = _line_profile(size_x, circumference, off_x, meta["rule_half_w_m"], pitch) * meta["rule_strength"]
+    cov_y = _line_profile(size_y, sub.height_m, meta["offset_y_m"], meta["rule_half_w_m"], pitch) * meta["rule_strength"]
+    cov = np.clip(cov_x[None, :] + cov_y[:, None], 0, 1)
+    img = np.ones((size_y, size_x, 3)) * paper
+    img = img * (1 - cov[..., None]) + rule * cov[..., None]
+    img += rng.normal(0, rng.uniform(0.003, 0.008), img.shape)
+    _write_png(path, np.clip(img[..., ::-1] * 255, 0, 255).astype(np.uint8))
+    return {"circumference_m": float(circumference), "seam_offset_m": off_x, "size": [size_x, size_y]}
+
+
+def write_cylinder_mesh(stem: Path, radius_m: float, length_m: float,
+                        segments: int = FIXTURE_SEGMENTS) -> str:
+    """A closed cylinder along local +y, centred on its axis, textured all round.
+
+    The seam sits at the BOTTOM (local −z); the crest (+z) is where the band
+    lies. Texture ``u`` is arc from the seam over the circumference and ``v``
+    follows the quad's convention (v = 1 at y = −L/2), so a wrap image built by
+    ``_make_wrap`` lands with its rows along the axis. The end caps are plain
+    paper-coloured discs.
+    """
+    r, hy = float(radius_m), float(length_m) / 2
+    phi = np.linspace(0.0, 2 * np.pi, segments + 1)   # duplicate seam column for a clean UV wrap
+    ring = np.stack([-r * np.sin(phi), np.zeros_like(phi), -r * np.cos(phi)], 1)
+    normal = ring / r
+    verts = np.concatenate([ring + [0, -hy, 0], ring + [0, hy, 0]], 0)
+    normals = np.concatenate([normal, normal], 0)
+    u = phi / (2 * np.pi)
+    uv = np.concatenate([np.stack([u, np.ones_like(u)], 1), np.stack([u, np.zeros_like(u)], 1)], 0)
+    n = segments + 1
+    a = np.arange(segments) + 1
+    side = np.concatenate([np.stack([a, a + n, a + n + 1], 1), np.stack([a, a + n + 1, a + 1], 1)], 0)
+    # caps: a fan around a centre vertex at each end, wound to face outward
+    cap_centres = np.array([[0, -hy, 0], [0, hy, 0]], dtype=np.float64)
+    cap_normals = np.array([[0, -1, 0], [0, 1, 0]], dtype=np.float64)
+    base = 2 * n
+    caps = []
+    for k, sign in enumerate((-1, 1)):
+        centre = base + k + 1
+        rim = np.arange(segments) + (1 if sign < 0 else n + 1)
+        nxt = rim + 1
+        tri = np.stack([np.full(segments, centre), rim, nxt], 1) if sign > 0 else np.stack([np.full(segments, centre), nxt, rim], 1)
+        caps.append(tri)
+    verts = np.concatenate([verts, cap_centres], 0)
+    normals = np.concatenate([normals, cap_normals], 0)
+    uv = np.concatenate([uv, np.array([[0.5, 0.5], [0.5, 0.5]])], 0)
+    out = [f"mtllib {stem.name}.mtl"]
+    out += [f"v {x:.6f} {y:.6f} {z:.6f}" for x, y, z in verts]
+    out += [f"vt {s:.6f} {t:.6f}" for s, t in uv]
+    out += [f"vn {x:.6f} {y:.6f} {z:.6f}" for x, y, z in normals]
+    out.append("usemtl paper")
+    out += [f"f {p}/{p}/{p} {q}/{q}/{q} {t}/{t}/{t}" for p, q, t in side]
+    out.append("usemtl cap")
+    out += [f"f {p}/{p}/{p} {q}/{q}/{q} {t}/{t}/{t}" for p, q, t in np.concatenate(caps, 0)]
+    _write_cache(stem.with_suffix(".mtl"),
+        f"newmtl paper\nKd 1 1 1\nmap_Kd {stem.name}.png\n"
+        "newmtl cap\nKd 0.96 0.96 0.94\n"
+    )
+    _write_cache(stem.with_suffix(".obj"), "\n".join(out) + "\n")
+    return str(stem.with_suffix(".obj"))
+
+
+def _line_coords_m(offset_m: float, span_m: float, pitch_m: float = GRID_PITCH_M) -> list[float]:
     """Canvas coordinates (metres, centred) of the rules along one axis."""
     out = []
     x = offset_m
     while x < span_m:
         out.append(x - span_m / 2)
-        x += GRID_PITCH_M
+        x += pitch_m
     return out
 
 
-def _rule_px(offset_m: float, span_m: float, n_px: int) -> list[int]:
+def _rule_px(offset_m: float, span_m: float, n_px: int, pitch_m: float = GRID_PITCH_M) -> list[int]:
     """Pixel columns/rows of the printed rules along one axis."""
     out, x = [], offset_m
     while x < span_m:
         out.append(int(round(x / span_m * n_px)))
-        x += GRID_PITCH_M
+        x += pitch_m
     return out
 
 
@@ -240,13 +426,15 @@ def _apply_wear(rng: np.random.Generator, img: np.ndarray, meta: dict) -> np.nda
     """A used sheet: ghost strokes ON the ruling (previous drawings, faded),
     smudges, and uneven yellowing. ``img`` is float RGB in [0, 1]."""
     h, w = img.shape[:2]
+    width_m, height_m = meta.get("width_m", SHEET_W_M), meta.get("height_m", SHEET_H_M)
+    pitch = meta.get("pitch_m", GRID_PITCH_M)
     # uneven yellowing: a low-frequency field pushing blue down where it dips
     f = cv2.resize(rng.uniform(0.0, 1.0, (4, 4)), (w, h), interpolation=cv2.INTER_CUBIC)
     depth = rng.uniform(0.0, 0.12)
     img = img * (1 - f[..., None] * depth * np.array([0.1, 0.35, 1.0]))
     # ghost strokes: short lattice walks in faded grey, like erased/old ink
-    xs = _rule_px(meta["offset_x_m"], SHEET_W_M, w)
-    ys = _rule_px(meta["offset_y_m"], SHEET_H_M, h)
+    xs = _rule_px(meta["offset_x_m"], width_m, w, pitch)
+    ys = _rule_px(meta["offset_y_m"], height_m, h, pitch)
     overlay = img.copy()
     for _ in range(int(rng.integers(1, 4))):
         i, j = int(rng.integers(1, len(xs) - 1)), int(rng.integers(1, len(ys) - 1))
@@ -272,51 +460,92 @@ def _apply_wear(rng: np.random.Generator, img: np.ndarray, meta: dict) -> np.nda
     return np.clip(img, 0, 1)
 
 
-def grid_paper_sheets(count: int, seed: int = 0, wear_variants: int = 0) -> list[dict]:
-    """Ensure ``count`` sheets exist and return their metadata.
+@_serialized_sheets
+def grid_paper_sheets(count: int, sub=None, seed: int = 0, wear_variants: int = 0) -> list[dict]:
+    """Ensure ``count`` gridded sheets of ``sub`` exist and return their metadata.
 
-    Each dict: ``png``, ``obj`` (paths), ``xs``/``ys`` (rule canvas
-    coordinates in metres along x and y), ``pitch_m``. With
-    ``wear_variants`` > 0, each base sheet also contributes that many worn
-    variants (same ruling geometry, used-sheet texture) to the pool; the
-    pristine base sheets always stay in it.
+    ``sub`` is a ruled substrate record (config/substrates.yaml); None means
+    the paper pad. Each dict: ``png``, ``obj`` (paths), ``xs``/``ys`` (rule
+    canvas coordinates in metres along x and y), ``pitch_m``, and for a
+    cylinder-shaped substrate ``fixture_obj``, the textured cylinder the band
+    lies on. With ``wear_variants`` > 0, each base sheet also contributes that
+    many worn variants (same ruling geometry, used-sheet texture) to the pool;
+    the pristine base sheets always stay in it.
+
+    A sheet cached at another size, pitch or extent — a letter-size pad from
+    before 2026-09-11, say — is rebuilt, quad included, rather than reused.
     """
+    sub = sub or _PadLike
+    if not getattr(sub, "grid_pitch_m", None):
+        raise ValueError(f"substrate {sub.name!r} has no grid to print")
     TEX_DIR.mkdir(parents=True, exist_ok=True)
+    size = (int(sub.texel_rows), int(sub.texel_cols))
+    pitch = float(sub.grid_pitch_m)
+    prefix = "grid" if sub.name == "paper_pad" else f"grid_{sub.name}"
+    cylinder = getattr(sub, "shape", "pad") == "cylinder"
     sheets = []
     for i in range(count):
         # per-sheet stream: params stay stable no matter which files exist
         rng = np.random.default_rng((seed << 8) + i)
-        stem = TEX_DIR / f"grid_{i:02d}"
+        stem = TEX_DIR / f"{prefix}_{i:02d}"
         png, meta_p = stem.with_suffix(".png"), stem.with_suffix(".json")
         meta = json.loads(meta_p.read_text()) if meta_p.exists() else {}
+        extent = _quad_extent(stem.with_suffix(".obj"))
         stale = (
-            (png.exists() and cv2.imread(str(png)).shape[:2] != (SIZE_Y, SIZE_X))
-            or "pitch_m" not in meta  # pre-6mm-ruling sheet
+            not _image_matches(png, size)
+            or meta.get("pitch_m") != pitch
+            or meta.get("width_m") != float(sub.width_m)
+            or meta.get("height_m") != float(sub.height_m)
+            or extent is None
+            or abs(extent[0] - sub.width_m / 2) > 1e-6 or abs(extent[1] - sub.height_m / 2) > 1e-6
         )
         if not png.exists() or stale:
-            meta = _make_sheet(rng, png)
-            meta_p.write_text(json.dumps(meta))
-        if not stem.with_suffix(".obj").exists():
-            _write_quad(stem)
+            meta = _make_sheet(rng, png, sub)
+            _write_cache(meta_p, json.dumps(meta))
+            _write_quad(stem, sub.width_m, sub.height_m)
         entry = {
             "png": str(png),
             "obj": str(stem.with_suffix(".obj")),
             "pitch_m": meta["pitch_m"],
             # columns run along canvas x, rows along canvas y (probe-verified)
-            "xs": _line_coords_m(meta["offset_x_m"], SHEET_W_M),
-            "ys": _line_coords_m(meta["offset_y_m"], SHEET_H_M),
+            "xs": _line_coords_m(meta["offset_x_m"], sub.width_m, pitch),
+            "ys": _line_coords_m(meta["offset_y_m"], sub.height_m, pitch),
+            "ruled": True,
         }
+        if cylinder:
+            fstem = TEX_DIR / f"fixture_{sub.name}_{i:02d}"
+            fpng = fstem.with_suffix(".png")
+            if stale or not fpng.exists() or not fstem.with_suffix(".obj").exists():
+                wrap = _make_wrap(np.random.default_rng((seed << 8) + 8192 + i), fpng, sub, meta)
+                write_cylinder_mesh(fstem, sub.radius_m, sub.height_m)
+                meta = {**meta, "fixture": wrap}
+                _write_cache(meta_p, json.dumps(meta))
+            entry["fixture_obj"] = str(fstem.with_suffix(".obj"))
+            entry["fixture_png"] = str(fpng)
+            entry["radius_m"] = float(sub.radius_m)
         sheets.append(entry)
         for v in range(1, wear_variants + 1):
-            wstem = TEX_DIR / f"grid_{i:02d}_w{v}"
+            wstem = TEX_DIR / f"{prefix}_{i:02d}_w{v}"
             wpng = wstem.with_suffix(".png")
-            if not wpng.exists() or stale:
+            # A worn variant is judged on its own files, not only on whether
+            # the base was rebuilt just now: a caller that asked for no
+            # variants rebuilds the base at a new size and leaves the old
+            # variants behind, and the next caller that wants them would
+            # otherwise composite a sheet of the old size over the new field.
+            wextent = _quad_extent(wstem.with_suffix(".obj"))
+            wstale = (
+                stale
+                or not _image_matches(wpng, size)
+                or wextent is None
+                or abs(wextent[0] - sub.width_m / 2) > 1e-6 or abs(wextent[1] - sub.height_m / 2) > 1e-6
+            )
+            if not wpng.exists() or wstale:
                 wrng = np.random.default_rng((seed << 8) + i * 97 + v)
                 base = cv2.imread(str(png))[..., ::-1].astype(np.float64) / 255.0
                 worn = _apply_wear(wrng, base, meta)
-                cv2.imwrite(str(wpng), (worn[..., ::-1] * 255).astype(np.uint8))
-            if not wstem.with_suffix(".obj").exists():
-                _write_quad(wstem)
+                _write_png(wpng, (worn[..., ::-1] * 255).astype(np.uint8))
+            if not wstem.with_suffix(".obj").exists() or wstale:
+                _write_quad(wstem, sub.width_m, sub.height_m)
             sheets.append({**entry, "png": str(wpng), "obj": str(wstem.with_suffix(".obj"))})
     return sheets
 
@@ -387,7 +616,7 @@ def environment_face_sets(count: int, seed: int = 0) -> list[tuple[str, ...]]:
             # range changed, so the old bright faces must not be reused
             f = out_dir / f"env2_{i:02d}_{slot}.png"
             if not f.exists():
-                cv2.imwrite(str(f), _env_face(rng, palette, kind)[..., ::-1])
+                _write_png(f, _env_face(rng, palette, kind)[..., ::-1])
             else:
                 rng.integers(0, 2, 8)  # keep the stream aligned
             paths.append(str(f))
@@ -434,5 +663,5 @@ def floor_textures(count: int, seed: int = 0) -> list[str]:
             img[::w, :] *= 0.6
             img[:, ::w] *= 0.6
         img += rng.normal(0, rng.uniform(0.01, 0.05), img.shape)
-        cv2.imwrite(str(f), np.clip(img[..., ::-1] * 255, 0, 255).astype(np.uint8))
+        _write_png(f, np.clip(img[..., ::-1] * 255, 0, 255).astype(np.uint8))
     return paths

@@ -1,168 +1,191 @@
-// The body: a GLB whose named skin nodes are merged into ONE static, Z-up,
-// smooth "skin" geometry. Anchors are face indices into this geometry, so the
-// build must be deterministic (sorted node order, fixed subdivision) and the
-// GLB is content-hashed into every placement file.
+// Tatbot has one nominal-body path: the fixed MHR identity model transferred
+// onto SOMA mid topology. Identity and pose are parameters of this body, not
+// selectable body backends.
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { LoopSubdivision } from "three-subdivide";
 import { computeSmoothNormals, faceCentroids } from "./anchor.ts";
 
+export const MODEL_SPEC_ID = "mhr-soma-v1";
+export const MODEL_SPEC_SHA256 = "e615b8485c367509833ee68b0405cd1e0ce6015604eaa4c1b2b699f4fc8d5144";
+export const REFERENCE_IDENTITY_SHA256 = "800babcf48d09f4ff1da9d2e8a0ebe266869a19849557450c7210c9a9fb9a1b6";
+export const TOPOLOGY_SHA256 = "e0ca7ee25dc0b4c8d841bb2626e364bb88b7af7fae037e30854728842e320a18";
+export const REST_SURFACE_SHA256 = "caa66dff9b3625771c8f4c35bfe59556d30acdc3800880106f98f0ce75c49a95";
+export const REST_ASSET_SHA256 = "c1d0ec25c6f4708bb3e8d48811711da0d309598a6b85cf256975d49d1d46e841";
+export const MID_VERTEX_COUNT = 18_056;
+export const MID_FACE_COUNT = 36_108;
+
 export interface BodySpec {
-  id: string;
-  /** Short name for the body toggle. */
-  label: string;
-  /** One-character icon for the body toggle. */
-  glyph: string;
-  /** Relative to the site root (public/). */
+  id: typeof MODEL_SPEC_ID;
   path: string;
-  /** Rigged counterpart with the same canonical rest-surface face order. */
-  rigPath: string;
-  /** Mesh node names that are skin; everything else in the GLB is a prop and hidden. */
-  skinNodes: string[];
-  /** Loop subdivision iterations applied at load (toon meshes are flat-shaded and coarse). */
-  subdivide: number;
-  /** Uniform scale to bring the model to metres. */
-  scale: number;
-  /** Where the camera looks / the character stands, after scaling (m). */
+  posePath: string;
   eyeHeight: number;
+  modelSpecSha256: typeof MODEL_SPEC_SHA256;
+  identitySha256: typeof REFERENCE_IDENTITY_SHA256;
+  topologySha256: typeof TOPOLOGY_SHA256;
+  restSurfaceSha256: typeof REST_SURFACE_SHA256;
+  assetSha256: typeof REST_ASSET_SHA256;
 }
 
-export const BODIES: BodySpec[] = [
-  // Blender Studio "Human Base Meshes" bundle v1.4.1 (CC0), stylized bodies,
-  // exported by tools/export-hbm.py (white body, dark eyes in COLOR_0). Already in
-  // metres, feet on the floor, so scale is 1.
-  { id: "hbm-male-stylized", label: "male", glyph: "\u2642", path: "bodies/hbm-male-stylized.glb", rigPath: "bodies/hbm-male-stylized.rigged.glb", skinNodes: ["Body", "EyeL", "EyeR"], subdivide: 0, scale: 1, eyeHeight: 1.63 },
-  { id: "hbm-female-stylized", label: "female", glyph: "\u2640", path: "bodies/hbm-female-stylized.glb", rigPath: "bodies/hbm-female-stylized.rigged.glb", skinNodes: ["Body", "EyeL", "EyeR"], subdivide: 0, scale: 1, eyeHeight: 1.46 },
-];
-
-export function bodySpec(id: string): BodySpec {
-  const spec = BODIES.find((b) => b.id === id);
-  if (!spec) throw new Error(`unknown body "${id}"`);
-  return spec;
-}
-
-/** glTF is Y-up; the robot, the URDF and this app are Z-up. Applied ONCE, here. */
-export const Y_UP_TO_Z_UP = new THREE.Matrix4().makeRotationX(Math.PI / 2);
+export const BODY_SPEC: BodySpec = {
+  id: MODEL_SPEC_ID,
+  path: "bodies/mhr-soma-v1.glb",
+  posePath: "bodies/mhr-soma-v1.poses.bin",
+  eyeHeight: 1.72,
+  modelSpecSha256: MODEL_SPEC_SHA256,
+  identitySha256: REFERENCE_IDENTITY_SHA256,
+  topologySha256: TOPOLOGY_SHA256,
+  restSurfaceSha256: REST_SURFACE_SHA256,
+  assetSha256: REST_ASSET_SHA256,
+};
 
 export interface Skin {
   geometry: THREE.BufferGeometry;
   centroids: Float32Array;
-  /** Texture from the first skin node's material, if any. */
   map: THREE.Texture | null;
-  /** True when the GLB carries COLOR_0 (white skin / dark eyes; tinted by the skin-tone picker). */
   vertexColors: boolean;
   bbox: THREE.Box3;
 }
 
-/** Canonical bytes behind placement face indices: non-indexed, Z-up XYZ quantized to signed 10-micrometre units.
- * Integer quantization makes the digest portable across Three.js, Blender and
- * NumPy despite harmless one-ULP float transform differences. */
+function concatBytes(header: Uint8Array, payload: Uint8Array): ArrayBuffer {
+  const result = new Uint8Array(header.byteLength + payload.byteLength);
+  result.set(header, 0);
+  result.set(payload, header.byteLength);
+  return result.buffer;
+}
+
+function roundTiesEven(value: number): number {
+  const floor = Math.floor(value);
+  const fraction = value - floor;
+  if (fraction < 0.5) return floor;
+  if (fraction > 0.5) return floor + 1;
+  return floor % 2 === 0 ? floor : floor + 1;
+}
+
+function sourceAttribute(geometry: THREE.BufferGeometry): THREE.BufferAttribute {
+  const source = geometry.getAttribute("_soma_vertex") as THREE.BufferAttribute | undefined;
+  if (!source || source.itemSize !== 1 || source.count !== MID_FACE_COUNT * 3) {
+    throw new Error("body_topology_mismatch: missing canonical SOMA corner indices");
+  }
+  return source;
+}
+
+function canonicalIndexedPositions(geometry: THREE.BufferGeometry): Float32Array {
+  const position = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const source = sourceAttribute(geometry);
+  if (position.itemSize !== 3 || position.count !== MID_FACE_COUNT * 3) {
+    throw new Error("body_topology_mismatch: browser surface has the wrong position count");
+  }
+  const result = new Float32Array(MID_VERTEX_COUNT * 3);
+  const seen = new Uint8Array(MID_VERTEX_COUNT);
+  for (let corner = 0; corner < source.count; corner += 1) {
+    const index = source.getX(corner);
+    if (!Number.isInteger(index) || index < 0 || index >= MID_VERTEX_COUNT) {
+      throw new Error(`body_topology_mismatch: invalid SOMA vertex ${index}`);
+    }
+    const offset = index * 3;
+    const xyz = [position.getX(corner), position.getY(corner), position.getZ(corner)];
+    if (seen[index] && xyz.some((value, axis) => result[offset + axis] !== value)) {
+      throw new Error(`body_topology_mismatch: SOMA vertex ${index} differs across faces`);
+    }
+    result.set(xyz, offset);
+    seen[index] = 1;
+  }
+  if (seen.some((value) => value !== 1)) {
+    throw new Error("body_topology_mismatch: browser surface omits a SOMA vertex");
+  }
+  return result;
+}
+
+/** Canonical bytes matching Python's signed int64 10-micrometre digest. */
 export function canonicalSurfaceBytes(geometry: THREE.BufferGeometry): ArrayBuffer {
-  const src = geometry.getAttribute("position") as THREE.BufferAttribute;
-  const packed = new Int32Array(src.count * 3);
-  for (let i = 0; i < src.count; i++) {
-    packed[3 * i] = Math.round(src.getX(i) * 1e5);
-    packed[3 * i + 1] = Math.round(src.getY(i) * 1e5);
-    packed[3 * i + 2] = Math.round(src.getZ(i) * 1e5);
+  const vertices = canonicalIndexedPositions(geometry);
+  const payload = new ArrayBuffer(vertices.length * 8);
+  const view = new DataView(payload);
+  const quantum = Math.fround(0.00001);
+  for (let index = 0; index < vertices.length; index += 1) {
+    // NumPy's canonical implementation divides a float32 array by this
+    // scalar in float32 before rint. Spell out both roundings in JavaScript.
+    const units = Math.fround(Math.fround(vertices[index]) / quantum);
+    view.setBigInt64(index * 8, BigInt(roundTiesEven(units)), true);
   }
-  return packed.buffer;
+  const header = new TextEncoder().encode(
+    "dtype=<i8;shape=18056,3;order=C;quantization_m=0.00001;axes=x,-z,y\n",
+  );
+  return concatBytes(header, new Uint8Array(payload));
 }
 
-/** Build the skin from a loaded glTF scene. Pure geometry work; no React, no DOM. */
-export function buildSkin(scene: THREE.Object3D, spec: BodySpec): Skin {
-  return buildSkinGeometry(scene, spec);
+/** Canonical bytes matching Python's upstream-order int32 topology digest. */
+export function canonicalTopologyBytes(geometry: THREE.BufferGeometry): ArrayBuffer {
+  const source = sourceAttribute(geometry);
+  const payload = new ArrayBuffer(source.count * 4);
+  const view = new DataView(payload);
+  for (let index = 0; index < source.count; index += 1) {
+    view.setInt32(index * 4, source.getX(index), true);
+  }
+  const header = new TextEncoder().encode("dtype=<i4;shape=36108,3;order=C\n");
+  return concatBytes(header, new Uint8Array(payload));
 }
 
-/** Bake a named rig pose into canonical face order. Anchors therefore remain
- * face/barycentric coordinates while decals, raycasts, and atlases follow the
- * deformed surface. The input scene should be a fresh SkeletonUtils clone. */
-export function buildPosedSkin(
-  scene: THREE.Object3D,
-  spec: BodySpec,
-  jointRotations: Record<string, [number, number, number, number]>,
-  bodyRotation: [number, number, number, number],
-): Skin {
+/** Build the direct SOMA rendering/picking view from its one named node. */
+export function buildSkin(scene: THREE.Object3D): Skin {
   scene.updateMatrixWorld(true);
-  const bones = new Map<string, THREE.Bone>();
-  scene.traverse((obj) => { if ((obj as THREE.Bone).isBone) bones.set(obj.name, obj as THREE.Bone); });
-  for (const [name, xyzw] of Object.entries(jointRotations)) {
-    // GLTFLoader sanitizes dots out of node names for animation bindings.
-    const bone = bones.get(name) ?? bones.get(name.replaceAll(".", ""));
-    if (!bone) throw new Error(`body ${spec.id}: pose bone "${name}" missing from rigged GLB`);
-    // Blender matrix_basis is a delta in the bone's rest-local frame. glTF's
-    // node quaternion is that rest transform, so post-multiply the delta.
-    bone.quaternion.multiply(new THREE.Quaternion(...xyzw));
-  }
-  scene.updateMatrixWorld(true);
-  scene.traverse((obj) => {
-    const skinned = obj as THREE.SkinnedMesh;
-    if (skinned.isSkinnedMesh) skinned.skeleton.update();
-  });
-  const posed = buildSkinGeometry(scene, spec, true);
-  posed.geometry.applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion(...bodyRotation)));
-  computeSmoothNormals(posed.geometry);
-  posed.geometry.computeBoundingBox();
-  posed.geometry.computeBoundingSphere();
-  posed.centroids = faceCentroids(posed.geometry);
-  posed.bbox = posed.geometry.boundingBox!.clone();
-  return posed;
+  const object = scene.getObjectByName("SOMA") as THREE.Mesh | undefined;
+  if (!object?.isMesh) throw new Error("body_model_unsupported: SOMA mesh is missing");
+  let geometry = object.geometry.clone();
+  if (geometry.getIndex()) geometry = geometry.toNonIndexed();
+  geometry.applyMatrix4(object.matrixWorld);
+  sourceAttribute(geometry);
+  computeSmoothNormals(geometry);
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  const material = (Array.isArray(object.material) ? object.material[0] : object.material) as THREE.MeshStandardMaterial;
+  return {
+    geometry,
+    centroids: faceCentroids(geometry),
+    map: material?.map ?? null,
+    vertexColors: false,
+    bbox: geometry.boundingBox!.clone(),
+  };
 }
 
-function buildSkinGeometry(scene: THREE.Object3D, spec: BodySpec, deform = false): Skin {
-  scene.updateMatrixWorld(true);
-  const parts: THREE.BufferGeometry[] = [];
-  let map: THREE.Texture | null = null;
-  for (const name of [...spec.skinNodes].sort()) {
-    const obj = scene.getObjectByName(name) as THREE.Mesh | undefined;
-    if (!obj || !(obj as THREE.Mesh).isMesh) throw new Error(`body ${spec.id}: skin node "${name}" missing from GLB`);
-    const src = obj.geometry;
-    const g = new THREE.BufferGeometry();
-    if (deform) {
-      const skinned = obj as THREE.SkinnedMesh;
-      if (!skinned.isSkinnedMesh) throw new Error(`body ${spec.id}: skin node "${name}" is not skinned`);
-      const source = src.getAttribute("position") as THREE.BufferAttribute;
-      const positions = new Float32Array(source.count * 3);
-      const point = new THREE.Vector3();
-      for (let i = 0; i < source.count; i++) {
-        point.fromBufferAttribute(source, i);
-        skinned.applyBoneTransform(i, point).applyMatrix4(obj.matrixWorld);
-        positions.set(point.toArray(), i * 3);
-      }
-      g.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    } else {
-      g.setAttribute("position", src.getAttribute("position").clone());
-    }
-    const uv = src.getAttribute("uv");
-    if (uv) g.setAttribute("uv", uv.clone());
-    const color = src.getAttribute("color");
-    if (color) g.setAttribute("color", color.clone());
-    const idx = src.getIndex();
-    if (idx) g.setIndex(idx.clone());
-    // A SkinnedMesh at bind pose is exactly its geometry under matrixWorld.
-    if (!deform) g.applyMatrix4(obj.matrixWorld);
-    parts.push(g);
-    if (!map) {
-      const m = (Array.isArray(obj.material) ? obj.material[0] : obj.material) as THREE.MeshStandardMaterial;
-      map = m?.map ?? null;
-    }
+/** Replace only face-expanded positions; address and UV order stay invariant. */
+export function buildPosedSkin(rest: Skin, littleEndianFloat32: ArrayBuffer): Skin {
+  const expectedBytes = MID_FACE_COUNT * 3 * 3 * Float32Array.BYTES_PER_ELEMENT;
+  if (littleEndianFloat32.byteLength !== expectedBytes) {
+    throw new Error(`body_asset_hash_mismatch: pose chunk has ${littleEndianFloat32.byteLength} bytes`);
   }
-  // Optional attributes must be present on every part or on none, or the merge fails.
-  for (const name of ["uv", "color"]) {
-    if (!parts.every((p) => p.getAttribute(name))) for (const p of parts) p.deleteAttribute(name);
+  const source = new DataView(littleEndianFloat32);
+  const positions = new Float32Array(MID_FACE_COUNT * 3 * 3);
+  for (let index = 0; index < positions.length; index += 1) {
+    const value = source.getFloat32(index * 4, true);
+    if (!Number.isFinite(value)) throw new Error("body_units_or_axes_invalid: pose contains non-finite data");
+    positions[index] = value;
   }
-  const vertexColors = parts[0].getAttribute("color") !== undefined;
-  let merged = mergeGeometries(parts, false);
-  if (!merged) throw new Error(`body ${spec.id}: skin parts have mismatched attributes`);
-  merged = merged.toNonIndexed();
-  merged.applyMatrix4(new THREE.Matrix4().makeScale(spec.scale, spec.scale, spec.scale).multiply(Y_UP_TO_Z_UP));
-  if (spec.subdivide > 0) {
-    // split:false keeps the face count a pure function of the input; uvSmooth:false keeps the atlas colours crisp.
-    merged = LoopSubdivision.modify(merged, spec.subdivide, { split: false, uvSmooth: false, preserveEdges: false, flatOnly: false });
+  const geometry = rest.geometry.clone();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  computeSmoothNormals(geometry);
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return {
+    geometry,
+    centroids: faceCentroids(geometry),
+    map: rest.map,
+    vertexColors: false,
+    bbox: geometry.boundingBox!.clone(),
+  };
+}
+
+/** Apply a display/support transform after canonical pose digest validation. */
+export function applyBodyRotation(skin: Skin, xyzw: [number, number, number, number]): void {
+  const quaternion = new THREE.Quaternion(...xyzw);
+  if (Math.abs(quaternion.lengthSq() - 1) > 1e-5) {
+    throw new Error("pose_unsupported: body rotation is not unit length");
   }
-  computeSmoothNormals(merged);
-  merged.computeBoundingBox();
-  merged.computeBoundingSphere();
-  return { geometry: merged, centroids: faceCentroids(merged), map, vertexColors, bbox: merged.boundingBox!.clone() };
+  skin.geometry.applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(quaternion));
+  computeSmoothNormals(skin.geometry);
+  skin.geometry.computeBoundingBox();
+  skin.geometry.computeBoundingSphere();
+  skin.centroids = faceCentroids(skin.geometry);
+  skin.bbox = skin.geometry.boundingBox!.clone();
 }
 
 export { sha256Hex } from "./sha256.ts";

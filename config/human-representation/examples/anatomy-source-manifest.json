@@ -1,0 +1,39 @@
+{
+  "code_license_spdx": "Apache-2.0",
+  "content_sha256": "bac4114b0b7adcf730836f12f432beefe6c461343c5506a59e5a06e974be2a85",
+  "objects": [
+    {
+      "attribution": "Tatbot synthetic geometry fixture; no person data",
+      "derivatives_permitted": true,
+      "downloaded": false,
+      "license_spdx": "CC0-1.0",
+      "object_license_verified": true,
+      "sha256": "2828282828282828282828282828282828282828282828282828282828282828",
+      "source_object_id": "radius",
+      "source_uri": "fixture://human-representation/anatomy/radius"
+    },
+    {
+      "attribution": "Tatbot synthetic geometry fixture; no person data",
+      "derivatives_permitted": true,
+      "downloaded": false,
+      "license_spdx": "CC0-1.0",
+      "object_license_verified": true,
+      "sha256": "2929292929292929292929292929292929292929292929292929292929292929",
+      "source_object_id": "ulna",
+      "source_uri": "fixture://human-representation/anatomy/ulna"
+    }
+  ],
+  "pack_license_spdx": "CC0-1.0",
+  "provenance": {
+    "created_utc": "2026-09-04T16:45:00Z",
+    "producer": "human-representation-hermetic-fixture",
+    "seed": 9042026,
+    "source_sha256": "3030303030303030303030303030303030303030303030303030303030303030",
+    "version": "1"
+  },
+  "schema": "tatbot.anatomy-source-manifest/1",
+  "separate_asset_root": "external/anatomy-packs/synthetic-fixture-v1",
+  "source": "Tatbot hermetic synthetic anatomy fixture",
+  "use_case": "generic synthetic forearm radius and ulna visualization research only",
+  "version": "1"
+}

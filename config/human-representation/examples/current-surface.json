@@ -1,0 +1,46 @@
+{
+  "anchor_point": [
+    0.4,
+    0.0,
+    0.2
+  ],
+  "anchor_shift_m": 0.0,
+  "anchor_uv": [
+    0.0,
+    0.0
+  ],
+  "chart": {
+    "center": [
+      0.4,
+      0.0,
+      0.2
+    ],
+    "chart_kind": "plane",
+    "radius_m": NaN,
+    "rot": [
+      [
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  "cols": 2,
+  "height_m": 0.05,
+  "holes": 0,
+  "motion_authorized": false,
+  "rows": 2,
+  "schema": "tatbot.surface/1",
+  "source": "synthetic P0 compatibility fixture",
+  "width_m": 0.08
+}

@@ -1,0 +1,5 @@
+<library path="tatbot_hardware">
+  <class name="tatbot_hardware/TatbotArm" type="tatbot_hardware::TatbotArm" base_class_type="hardware_interface::SystemInterface">
+    <description>One Trossen WXAI arm: SDK owner, e-stop reader, hold latch, guards, carriage trip-retract, landing.</description>
+  </class>
+</library>

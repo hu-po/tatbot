@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.dev/schemas/inkmap/sim-bundle.schema.json",
+  "description": "Immutable simulation input, not an execution or release authorization. Readers verify nested derivations and pinned local assets; no URL resolution.",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "content_sha256", "placement_file", "artworks", "surface_placements", "atlas_sha256", "request", "assets"],
+  "properties": {
+    "schema": {"const": "tatbot.inkmap-sim-bundle/1"},
+    "content_sha256": {"$ref": "#/$defs/digest"},
+    "atlas_sha256": {"$ref": "#/$defs/digest"},
+    "placement_file": {"$ref": "https://tatbot.ai/schemas/inkmap/placement/v6"},
+    "artworks": {"type": "object", "minProperties": 1, "maxProperties": 100,
+      "additionalProperties": {"$ref": "artwork.schema.json"}},
+    "surface_placements": {
+      "type": "array", "minItems": 1, "maxItems": 100,
+      "items": {"type": "object", "additionalProperties": false,
+        "required": ["id", "placement"],
+        "properties": {"id": {"type": "string", "minLength": 1},
+          "placement": {"$ref": "../human-representation/surface-placement.schema.json"}}}
+    },
+    "request": {
+      "type": "object", "additionalProperties": false,
+      "required": ["pose_id", "pose_catalog_sha256", "support_id", "tool_id", "seed", "skin_tone", "camera", "target_world_m", "align_patch_up", "patch_yaw_rad"],
+      "properties": {
+        "pose_id": {"type": "string", "minLength": 1},
+        "pose_catalog_sha256": {"$ref": "#/$defs/digest"},
+        "support_id": {"type": "string", "minLength": 1},
+        "tool_id": {"type": "string", "minLength": 1, "maxLength": 100},
+        "seed": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "skin_tone": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+        "camera": {"anyOf": [
+          {"type": "null"},
+          {"type": "object", "additionalProperties": false,
+            "required": ["position", "target", "fov"],
+            "properties": {"position": {"$ref": "#/$defs/vec3"}, "target": {"$ref": "#/$defs/vec3"},
+              "fov": {"type": "number", "minimum": 10, "maximum": 120}}}
+        ]},
+        "target_world_m": {"$ref": "#/$defs/vec3"},
+        "align_patch_up": {"type": "boolean"},
+        "patch_yaw_rad": {"type": "number"},
+        "support_offset_m": {"type": "array", "minItems": 3, "maxItems": 3,
+          "items": {"type": "number", "minimum": -0.1, "maximum": 0.1}}
+      }
+    },
+    "assets": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {"type": "object", "additionalProperties": false,
+        "required": ["key", "sha256", "byte_length", "storage", "license", "license_source_sha256"],
+        "properties": {
+          "key": {"enum": ["body-rest", "body-poses", "body-exclusions"]},
+          "sha256": {"$ref": "#/$defs/digest"},
+          "byte_length": {"type": "integer", "minimum": 1},
+          "storage": {"const": "pinned-local-cache"},
+          "license": {"type": "string", "minLength": 1},
+          "license_source_sha256": {"$ref": "#/$defs/digest"}
+        }}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "vec3": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}}
+  }
+}

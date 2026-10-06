@@ -1,0 +1,8 @@
+{
+  "schema": "tatbot.arm-labels/1",
+  "aliases": {"pink": "right", "blue": "left"},
+  "descriptions": {
+    "pink": "Robot's own right hand looking forward through its fixed cameras; physical arm with pink tape. Identity stays with the arm when its tool changes.",
+    "blue": "Robot's own left hand looking forward through its fixed cameras; physical arm with blue tape. Identity stays with the arm when its tool changes."
+  }
+}

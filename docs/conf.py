@@ -7,11 +7,12 @@ sys.path.insert(0, os.path.abspath(".."))
 project = "tatbot"
 copyright = "2026, Hugo Ponte"
 author = "Hugo Ponte"
-version = "0.9.0"
-release = "0.9.0"
+version = "0.10.0"
+release = "0.10.0"
 
 extensions = [
     "myst_parser",
+    "sphinxcontrib.mermaid",
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx_copybutton",
@@ -19,6 +20,8 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.viewcode",
 ]
+
+myst_fence_as_directive = ["mermaid"]
 
 myst_enable_extensions = [
     "colon_fence",
@@ -30,7 +33,7 @@ myst_enable_extensions = [
 ]
 
 # Generate HTML anchors for headings up to level 3 so in-page links work
-myst_heading_anchors = 3
+myst_heading_anchors = 4
 
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "CONSOLIDATION_PLAN.md"]
 

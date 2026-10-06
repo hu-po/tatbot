@@ -1,85 +1,105 @@
 # What the tools work ON, one entry per physical substrate.
 #
-# A tool and a substrate come as a pair on this bench: the ballpoint only ever
-# draws on the paper pad, and the laser and the 3RL only ever work on the
-# silicone skin. Each tool datasheet names its substrate, so nothing has to
-# guess from context and a tool swap moves the whole scene with it.
+# A tool and a substrate come as a pair on this bench: the ballpoint draws on
+# the two paper fixtures, and the laser and the 3RL only ever work on the
+# silicone skin. Each tool datasheet names its default substrate and the
+# others it admits, so nothing has to guess from context and a tool swap
+# moves the whole scene with it.
 #
 # Dimensions are measured, not nominal. The sim sizes its geometry AND its
 # texture from these, so the two cannot drift apart, and the real workspace
-# records its plane against the same numbers.
+# records its plane against the same numbers. Inkmap's Paper and Cylinder
+# workspaces default to the same fixtures (web/inkmap/src/core/fixtures.ts,
+# held equal to this file by a test).
 #
 # texel_cols/rows are chosen so the texture is square-pixelled (the kernels
-# assume that) at roughly 2.4 px/mm. The paper pad's values are the ones its
-# baked sheets already use — changing them would invalidate every cached sheet
-# and the probe-verified pixel mapping.
+# assume that) at roughly 2.37 px/mm. Changing them invalidates every cached
+# sheet under the ManiSkill asset directory; the sheet generator notices the
+# size or pitch mismatch and rebuilds.
+#
+# A `shape` says how the material is presented. `pad` (the default) is a flat
+# sheet whose profile the scenario may still bend (SurfaceDR); `cylinder` is a
+# rigid fixture with one fixed radius, which the scenario cannot flatten.
 
 schema_version: 1
 
 paper_pad:
-  display_name: ruled paper pad
-  # letter, as the operator's pad measures
-  width_m: 0.2159
+  display_name: gridded paper pad
+  # 7.5 x 11 in pad, 1 cm thick, as the operator's pad measures (2026-09-11)
+  width_m: 0.1905
   height_m: 0.2794
   thickness_m: 0.010
-  texel_cols: 512
+  texel_cols: 452
   texel_rows: 662
-  # A sheet on a pad lifts by a millimetre and leans by a couple of degrees.
-  # It is not flat, but it is nowhere near a draped skin.
-  shape: near_flat
-  # a sheet on a pad lifts by about a millimetre; it is not a mound
-  mound_peak_m: 0.0015
   surface_phrase: on the paper pad
-  # printed 6 mm ruling; the maze task traces it, so it is the stencil
+  # printed 1/4 in (6.35 mm) square grid; the maze task traces it, so it is
+  # the stencil
   ruled: true
+  grid_pitch_m: 0.00635
+  # white paper, faint blue rules
+  base_color: 1.0 1.0 1.0
+  rule_color: 0.62 0.74 0.90
   # a pad is put down wherever there is room on the bench, including on top of
   # whatever else is already there
   rest_z_m: [0.0, 0.055]
-  # a millimetre of sheet lift varies by a little; there is no mound at stake
-  peak_scale: [0.85, 1.10]
-  # The undulation of a ruled sheet lying on a pad: a millimetre or so of lift
-  # leaning by a couple of degrees, over a hand's width. That is ALL the shape
-  # a ballpoint episode should ever see, and these are the values every paper
-  # dataset generated before 2026-08-27 was drawn from -- they lived as the
-  # defaults of tatbot_sim.config.SurfaceDR, which described the paper pad for
-  # every substrate. Changing them changes the paper distribution.
+  # The undulation of a gridded sheet lying on a pad: a millimetre or so of
+  # lift leaning by a couple of degrees, over a hand's width. That is ALL the
+  # shape a ballpoint episode should ever see, and these are the values every
+  # paper dataset generated before 2026-08-27 was drawn from -- they lived as
+  # the defaults of tatbot_sim.config.SurfaceDR, which described the paper pad
+  # for every substrate. Changing them changes the paper distribution.
   surface_amplitude_m: [0.0004, 0.0018]
   surface_max_slope_rad: [0.005, 0.04]
   surface_feature_m: [0.05, 0.12]
 
+paper_cylinder:
+  display_name: gridded paper cylinder
+  # A rigid cylinder wrapped in the same gridded paper: 85 mm diameter,
+  # 7.5 in (190.5 mm) long (2026-09-11). Its axis lies along canvas v, so
+  # height_m is the cylinder's length and width_m is the ARC the drawable
+  # band spans around the crest: the whole outer surface except the bottom
+  # quarter it rests on, 135 degrees either side of the top. The full
+  # circumference is 267 mm and is textured all the way round; the end caps
+  # are never drawn on. thickness_m is the diameter, so the actor origin is
+  # the axis.
+  shape: cylinder
+  diameter_m: 0.085
+  width_m: 0.2003
+  height_m: 0.1905
+  thickness_m: 0.085
+  texel_cols: 475
+  texel_rows: 452
+  surface_phrase: on the paper cylinder
+  ruled: true
+  grid_pitch_m: 0.00635
+  base_color: 1.0 1.0 1.0
+  rule_color: 0.62 0.74 0.90
+  # crest height when the cylinder lies on the bench where the pad rests:
+  # one diameter above it, a few millimetres of cradle either way
+  rest_z_m: [0.080, 0.090]
+  # A rigid fixture: no sheet undulation on top of the cylinder.
+  surface_amplitude_m: [0.0, 0.0]
+  surface_max_slope_rad: [0.0, 0.0]
+  surface_feature_m: [0.05, 0.12]
+
 silicon_skin:
   display_name: silicone practice skin
-  # measured 2026-08-26; drapes over a small wrist pad, which is what gives it
-  # its curvature — flat where it overhangs onto the table
+  # measured 2026-08-26; the material can be presented flat or wrapped around
+  # a cylindrical support. Surface profile is selected by the sim recipe.
   width_m: 0.140
   height_m: 0.185
   thickness_m: 0.0025
   texel_cols: 336
   texel_rows: 444
-  shape: draped
-  # MEASURED 2026-08-26: the top of the mound stands 25 mm above the skin's
-  # lower edges, which lie flat. This is the shape, not a randomisation range —
-  # the skin has it whether or not anyone asked for domain randomisation.
-  mound_peak_m: 0.025
   surface_phrase: on the silicone skin
   # blank: there is no ruling to trace, so a removal episode's target is ink
   # that is already there rather than a printed line
   ruled: false
   # pink/peach, the colour practice skin is sold in
   base_color: 0.91 0.71 0.65
-  # On the table, near enough. The laser can only work up to a summit of about
-  # 30 mm, and the mound spends 25 of that, so the skin has to rest low —
-  # measured 2026-08-26, the pre-flight passes here (0.04 mm residual) and
-  # refuses a full mound on a table 6 mm higher. Raising this is not a free
-  # choice until the tool's modelled tip matches the arm's measured one.
+  # On the table, near enough. Cylindrical profiles curve down from this crest;
+  # they do not add the former artificial mound height to the reach envelope.
   rest_z_m: [0.000, 0.002]
-  # Its shape IS the training signal for contouring, so it is drawn at the
-  # measured mound rather than a fraction of it.
-  peak_scale: [0.95, 1.00]
-  # No surface_* undulation ranges here, deliberately. A `draped` substrate is
-  # shaped by mound_peak_m/peak_scale above (the drape height field), and the
-  # ripple ranges are read only on the near_flat path -- so any numbers written
-  # here would be dormant, and dormant numbers get read later as measurements.
-  # The residual ripple a real skin carries ON TOP of its 25 mm mound has not
-  # been measured and is not modelled; measure it from a depth capture of the
-  # draped skin before giving it a range.
+  # Small residual ripples are opt-in through SurfaceDR.enabled. Until measured
+  # on flat and cylindrical fixtures independently, the conservative shared
+  # defaults remain available but are not enabled by the named recipes.

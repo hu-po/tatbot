@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.dev/schemas/human-representation/body-state.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "content_sha256",
+    "model_spec_sha256",
+    "body_identity_sha256",
+    "joint_rotations_xyzw",
+    "named_pose",
+    "tracked_source",
+    "tatbot_from_body",
+    "confidence",
+    "correctives_enabled",
+    "posed_surface_sha256",
+    "provenance"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tatbot.body-state/1"
+    },
+    "content_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "model_spec_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "body_identity_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "joint_rotations_xyzw": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/quat"
+      },
+      "minItems": 77,
+      "maxItems": 77
+    },
+    "named_pose": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tracked_source": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tracker",
+            "sample_time_utc",
+            "capture_sha256",
+            "source_frame"
+          ],
+          "properties": {
+            "tracker": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sample_time_utc": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+            },
+            "capture_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "source_frame": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            }
+          }
+        }
+      ]
+    },
+    "tatbot_from_body": {
+      "$ref": "common.schema.json#/$defs/matrix4"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "correctives_enabled": {
+      "const": true
+    },
+    "posed_surface_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "provenance": {
+      "$ref": "common.schema.json#/$defs/provenance"
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "named_pose": {
+          "type": "string"
+        },
+        "tracked_source": {
+          "type": "null"
+        }
+      }
+    },
+    {
+      "properties": {
+        "named_pose": {
+          "type": "null"
+        },
+        "tracked_source": {
+          "type": "object"
+        }
+      }
+    }
+  ]
+}

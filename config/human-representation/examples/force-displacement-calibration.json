@@ -1,0 +1,42 @@
+{
+  "bias": {
+    "displacement_m": -2e-06,
+    "force_n": 0.002
+  },
+  "calibration_trace_sha256": "2727272727272727272727272727272727272727272727272727272727272727",
+  "captured_utc": "2026-09-04T16:45:00Z",
+  "content_sha256": "a6a81e646a1b2c656fb68b521118e697f59aa530d488872ab7a77d2bd58a40dc",
+  "drift_per_hour": {
+    "displacement_m": 1e-06,
+    "force_n": 0.001
+  },
+  "instrument_id": "synthetic-force-displacement-fixture",
+  "provenance": {
+    "created_utc": "2026-09-04T16:45:00Z",
+    "producer": "human-representation-hermetic-fixture",
+    "seed": 9042026,
+    "source_sha256": "3131313131313131313131313131313131313131313131313131313131313131",
+    "version": "1"
+  },
+  "qualification_basis": "synthetic-fixture-only",
+  "qualified": false,
+  "repeatability": {
+    "displacement_m": 2e-06,
+    "force_n": 0.002
+  },
+  "resolution": {
+    "displacement_m": 1e-06,
+    "force_n": 0.001
+  },
+  "schema": "tatbot.force-displacement-calibration/1",
+  "synchronization_uncertainty_s": 0.0005,
+  "temperature_reference_c": 23.0,
+  "temperature_sensitivity": {
+    "displacement_m_per_c": 1e-07,
+    "force_n_per_c": 0.0002
+  },
+  "uncertainty": {
+    "displacement_m": 3e-06,
+    "force_n": 0.003
+  }
+}

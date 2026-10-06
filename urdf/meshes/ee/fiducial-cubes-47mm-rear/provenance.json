@@ -1,0 +1,123 @@
+{
+  "revision": "fiducial-cubes-47mm-rear-r3",
+  "units": "mm",
+  "representation": "Installed carrier geometry; CAD datums are nominal, wrist tag poses require recalibration.",
+  "source": "Rear-facing revision 3 assembly-coordinate exports, 2026-09-18",
+  "installed_utc": "2026-09-19",
+  "black_square_mm": 47,
+  "white_outer_mm": 64,
+  "faces": {
+    "right": {
+      "A": {
+        "center_mm": [
+          66.0,
+          144.0,
+          -29.564
+        ],
+        "normal": [
+          0,
+          0,
+          -1
+        ]
+      },
+      "B": {
+        "center_mm": [
+          66.0,
+          178.0,
+          4.436
+        ],
+        "normal": [
+          0,
+          1,
+          0
+        ]
+      },
+      "C": {
+        "center_mm": [
+          28.0,
+          144.0,
+          4.436
+        ],
+        "normal": [
+          -1,
+          0,
+          0
+        ]
+      }
+    },
+    "left": {
+      "A": {
+        "center_mm": [
+          66.0,
+          -144.0,
+          -29.564
+        ],
+        "normal": [
+          0,
+          0,
+          -1
+        ]
+      },
+      "B": {
+        "center_mm": [
+          66.0,
+          -178.0,
+          4.436
+        ],
+        "normal": [
+          0,
+          -1,
+          0
+        ]
+      },
+      "C": {
+        "center_mm": [
+          28.0,
+          -144.0,
+          4.436
+        ],
+        "normal": [
+          -1,
+          0,
+          0
+        ]
+      }
+    }
+  },
+  "meshes": {
+    "right_fiducial_cube_47mm.stl": "82b01084a905e2f09d224101243fea5eb6406082d8be0038edea9076bcd1113a",
+    "left_fiducial_cube_47mm.stl": "3806905c2ac1c94107e434411011821ffc09c3c7e88fcf506b0226885674d303"
+  },
+  "placements": {
+    "right": {
+      "parent": "right/gripper_left",
+      "child": "right/ee_mount",
+      "xyz_m": [
+        0,
+        0,
+        0
+      ],
+      "rpy": [
+        0,
+        0,
+        0
+      ],
+      "inventory_target": "wrist"
+    },
+    "left": {
+      "parent": "left/carriage_left",
+      "child": "left/ee_mount",
+      "xyz_m": [
+        0,
+        0,
+        0
+      ],
+      "rpy": [
+        3.141592653589793,
+        0,
+        0
+      ],
+      "inventory_target": "wrist_left"
+    }
+  }
+}

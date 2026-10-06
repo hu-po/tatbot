@@ -7,9 +7,9 @@ Two things drift if nobody checks them:
 
 - The CARRIAGE CONSTANTS (rest, retract, contact cap — since 2026-08-30 the
   carriage is the tool's contact axis)
-  live in config/trossen/tatbot.yaml and are copied into the batteryA golden,
-  the Python follower config defaults and the C++ teleop's compiled defaults.
-  Four copies of three numbers; this checks them against tatbot.yaml.
+  live in config/trossen/tatbot.yaml and are copied into the Python follower
+  config defaults and the C++ teleop's compiled defaults. Three copies of
+  four numbers; this checks them against tatbot.yaml.
 - The MEASURED TIP in config/workspace.yaml against the fitted tool's
   datasheet nominal, and its lean off the mount's bore axis.
 
@@ -29,7 +29,10 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "scripts" / "lib"))
+sys.path.insert(0, str(REPO / "scripts/lib"))
+from tatbot_paths import bootstrap  # noqa: E402
+
+bootstrap()
 
 import tool_spec  # noqa: E402
 
@@ -37,25 +40,21 @@ SOURCE = "config/trossen/tatbot.yaml"
 # key -> (label, path, regex capturing the value) for every copy of it
 CARRIAGE_SITES = {
     "carriage_rest_m": (
-        ("config/trossen-batteryA/tatbot.yaml", r"^\s*carriage_rest_m:\s*([0-9.]+)"),
         ("python/lerobot_robot_tatbot/src/lerobot_robot_tatbot/config_tatbot_follower.py",
          r"^\s*carriage_rest_m:\s*float\s*=\s*([0-9.]+)"),
         ("cpp/teleop/wxai_teleop.cpp", r"CARRIAGE_REST_M\s*=\s*([0-9.]+)"),
     ),
     "carriage_retract_m": (
-        ("config/trossen-batteryA/tatbot.yaml", r"^\s*carriage_retract_m:\s*([0-9.]+)"),
         ("python/lerobot_robot_tatbot/src/lerobot_robot_tatbot/config_tatbot_follower.py",
          r"^\s*carriage_retract_m:\s*float\s*=\s*([0-9.]+)"),
         ("cpp/teleop/wxai_teleop.cpp", r"CARRIAGE_RETRACT_M\s*=\s*([0-9.]+)"),
     ),
     "carriage_contact_deflect_m": (
-        ("config/trossen-batteryA/tatbot.yaml", r"^\s*carriage_contact_deflect_m:\s*([0-9.]+)"),
         ("python/lerobot_robot_tatbot/src/lerobot_robot_tatbot/config_tatbot_follower.py",
          r"^\s*carriage_contact_deflect_m:\s*float\s*=\s*([0-9.]+)"),
         ("cpp/teleop/wxai_teleop.cpp", r"CARRIAGE_CONTACT_DEFLECT_M\s*=\s*([0-9.]+)"),
     ),
     "carriage_contact_cap_n": (
-        ("config/trossen-batteryA/tatbot.yaml", r"^\s*carriage_contact_cap_n:\s*([0-9.]+)"),
         ("python/lerobot_robot_tatbot/src/lerobot_robot_tatbot/config_tatbot_follower.py",
          r"^\s*carriage_contact_cap_n:\s*float\s*=\s*([0-9.]+)"),
         ("cpp/teleop/wxai_teleop.cpp", r"CARRIAGE_CONTACT_CAP_N\s*=\s*([0-9.]+)"),
@@ -89,8 +88,8 @@ def check_carriage_constants() -> list[str]:
     return problems
 
 
-def check_tip(spec, workspace) -> list[str]:
-    measured = tool_spec.tip_offset_m(workspace)
+def check_tip(spec, workspace, arm: str = "right") -> list[str]:
+    measured = tool_spec.tip_offset_m(workspace, arm)
     if measured is None:
         print("  --  no measured tip offset yet (run a touch-off)")
         return []
@@ -109,7 +108,7 @@ def check_tip(spec, workspace) -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ee-tool", "--tool-id", dest="tool_id", default=None, help="override the fitted tool")
-    ap.add_argument("--arm", default="right")
+    ap.add_argument("--arm", default="right", choices=("right", "left"))
     args = ap.parse_args()
 
     workspace = tool_spec.read_workspace(REPO)
@@ -120,7 +119,7 @@ def main() -> int:
     print(f"  source {spec.source.relative_to(REPO)} ({spec.sha256[:12]})")
     print(f"  mount  {spec.mount or 'NONE — cannot be fitted'}")
 
-    problems = check_carriage_constants() + check_tip(spec, workspace)
+    problems = check_carriage_constants() + check_tip(spec, workspace, args.arm)
     geometry = tool_spec.resolved_tool_geometry(spec, workspace, args.arm, REPO)
     uncertainty = (f", uncertainty {geometry.contact_uncertainty_m * 1000:.3f} mm"
                    if geometry.contact_uncertainty_m is not None else "")

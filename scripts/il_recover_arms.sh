@@ -16,11 +16,10 @@ if (($#)); then
   exit 2
 fi
 
-RECOVERY_FAILED=0
-"$REPO/scripts/il_recover_arm.sh" "$TATBOT_FOLLOWER_IP" follower || RECOVERY_FAILED=1
-"$REPO/scripts/il_recover_arm.sh" "$TATBOT_LEADER_IP" leader || RECOVERY_FAILED=1
-
-if ((RECOVERY_FAILED)); then
-  echo "Arm recovery did not verify for both arms; inspect the messages above." >&2
-  exit 1
+RC=0
+"$REPO/scripts/il_recover_arm.sh" "$TATBOT_FOLLOWER_IP" follower || RC=$?
+if ((RC)); then
+  echo "Follower recovery failed or was interrupted; leader recovery was NOT started." >&2
+  exit "$RC"
 fi
+"$REPO/scripts/il_recover_arm.sh" "$TATBOT_LEADER_IP" leader

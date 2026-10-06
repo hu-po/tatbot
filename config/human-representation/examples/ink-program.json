@@ -1,0 +1,97 @@
+{
+  "compiler_sha256": "d22cb7b3c94214261230f0b94b286d4bcfcb0bca3079807af89981b9bfeff912",
+  "content_sha256": "5d720cb39a1c990e8e4aa03f03df8e37afeabe18aaa4f581970054f422a249dd",
+  "events": [
+    {
+      "kind": "pen_transition",
+      "state": "approach"
+    },
+    {
+      "allowed_tool_class": "ballpoint",
+      "contact_envelope_m": [
+        -0.0002,
+        0.0002
+      ],
+      "curve": {
+        "compiler_sha256": "d22cb7b3c94214261230f0b94b286d4bcfcb0bca3079807af89981b9bfeff912",
+        "coordinates": [
+          {
+            "barycentric": [
+              0.2,
+              0.3,
+              0.5
+            ],
+            "face_index": 1200,
+            "topology_sha256": "e0ca7ee25dc0b4c8d841bb2626e364bb88b7af7fae037e30854728842e320a18"
+          },
+          {
+            "barycentric": [
+              0.1,
+              0.6,
+              0.3
+            ],
+            "face_index": 1201,
+            "topology_sha256": "e0ca7ee25dc0b4c8d841bb2626e364bb88b7af7fae037e30854728842e320a18"
+          }
+        ],
+        "deposition": 0.7,
+        "direction": "forward",
+        "rest_surface_arc_length_m": 0.01,
+        "source_primitive_sha256": "08554971c0d5722df1ae0e4a99e6093152da91cb8ea14ee717ffbfe48c36c8f7",
+        "width_m": 0.0008
+      },
+      "kind": "stroke",
+      "ordering_rationale": "single connected fixture curve",
+      "orientation_tolerance_rad": 0.12,
+      "research_depth_band_m": null,
+      "speed_m_s": 0.004,
+      "start_choice": "start"
+    },
+    {
+      "kind": "pen_transition",
+      "state": "retract"
+    },
+    {
+      "dependency": "after-stroke-1",
+      "expected_load_after": 0.82,
+      "ink_id": "black",
+      "kind": "dip",
+      "target_load": [
+        0.75,
+        0.9
+      ],
+      "trigger_reason": "fixture budget"
+    },
+  {
+    "kind": "tool_change",
+    "required_tool_class": "ballpoint",
+    "transition_intent": "fixture-only explicit transition"
+    },
+    {
+      "intent": "end of color group",
+      "kind": "barrier"
+    }
+  ],
+  "initial_ink_state": {
+    "ink_id": "black",
+    "load_fraction": 0.8
+  },
+  "predicted_ink_state": {
+    "ink_id": "black",
+    "load_fraction": 0.62
+  },
+  "provenance": {
+    "created_utc": "2026-09-04T01:09:37Z",
+    "producer": "tatbot-human-representation-fixture",
+    "source_sha256": "7ce660fa89bd2b0954f074e6432eb5086231116228daaa1eaecf9fadeae99663",
+    "version": "1"
+  },
+  "schema": "tatbot.ink-program/1",
+  "surface_placement_sha256": "f8aaea34bf0318ea48cf17091114b73ff51b7ed4431bf2a036977277eacc3691",
+  "tattoo_program_sha256": "6e46984c4abc85cf6588524699edb588b1701d89bac4bfffc8f9e37e593f4e0b",
+  "total_material_path_length_m": 0.01,
+  "uncertainty": {
+    "length_sigma_m": 1e-05,
+    "load_sigma": 0.02
+  }
+}

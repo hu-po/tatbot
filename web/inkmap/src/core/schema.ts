@@ -1,30 +1,46 @@
 // The placement file: the contract between this app and the robot pipeline.
 // Mirrors config/inkmap/placement.schema.json. Bump SCHEMA_VERSION
 // on any breaking change and keep the JSON Schema in the same commit.
+import { validateArtworkShape, type ArtworkRecord } from "./artwork-record.ts";
 import type { Anchor } from "./anchor.ts";
+import type { InkLangIntent, InkLangResolution } from "./inklang/index.ts";
+import {
+  BODY_SPEC,
+  MODEL_SPEC_ID,
+  MODEL_SPEC_SHA256,
+  REFERENCE_IDENTITY_SHA256,
+  REST_ASSET_SHA256,
+  REST_SURFACE_SHA256,
+  TOPOLOGY_SHA256,
+} from "./body.ts";
 
-export const SCHEMA_VERSION = 4;
-/** Older versions a reader still accepts (v1 = no embedded designs, v2 = no inklang, v3 = whole-asset hash only). */
-export const ACCEPTED_VERSIONS: readonly number[] = [1, 2, 3, 4];
+export const SCHEMA_VERSION = 6;
 
 export interface DesignMeta {
   id: string;
   name: string;
   /** Relative to the site root (public/), or a data: URL for a design made in the session. */
   path: string;
-  /** Natural size when first placed, mm. Aspect matches the SVG viewBox. */
+  /** Natural size when first placed, mm. Aspect matches the frozen program canvas. */
   default_size_mm: [number, number];
-  /** Present only for designs generated in the app; the SVG text travels in the placement file. */
+  /** Frozen shared artwork; previews are derived from its program. */
   embedded?: EmbeddedDesign;
+  /** Runtime asset provenance. Portable simulation/project envelopes retain it. */
+  sourcePath?: string;
+  sourceSha256?: string;
+  /** Collection identity is checked against the frozen SVG bytes. */
+  sha256?: string;
+  usage?: "artwork" | "preview";
+  /** False keeps a stock design out of the picker: the simulator's artwork
+   *  collection and the showcase still draw on it by id. */
+  library?: boolean;
+  family?: string;
+  split?: "train" | "validation" | "test";
+  source?: import("./artwork-record.ts").ArtworkSource;
 }
 
-/** A design that is not one of the site's files: carried inside the placement file so it stays self-contained. */
-export interface EmbeddedDesign {
-  name: string;
-  svg: string;
-  default_size_mm: [number, number];
-  source?: { kind: "generated"; model: string; prompt: string; seed: number };
-}
+/** Artwork carried inside the placement file so it stays self-contained. */
+export type EmbeddedDesign = ArtworkRecord;
 
 export interface Placement {
   id: string;
@@ -36,7 +52,13 @@ export interface Placement {
   /** v3: the named inklang body site this placement belongs to (ids from config/inkmap/sites.json). */
   site?: PlacementSite;
   /** v3: the tattoo program and its canonical sentence; the program is validated by the inklang core (lang.ts), not here. */
-  language?: { sentence: string; program: Record<string, unknown> };
+  language?: {
+    sentence: string;
+    program: Record<string, unknown>;
+    intent?: InkLangIntent;
+    resolution?: InkLangResolution;
+    consumer_policy?: string;
+  };
 }
 
 export interface PlacementSite {
@@ -51,32 +73,22 @@ export interface PlacementSite {
 }
 
 export interface PlacementFile {
-  schema_version: number;
+  schema_version: typeof SCHEMA_VERSION;
   units: { length: "m"; tattoo_size: "mm"; up: "+z" };
   body: PlacementBody;
   placements: Placement[];
-  /** v2: designs referenced by placements that are not site files, keyed by design id. */
+  /** Every used design, keyed by design id. */
   designs?: Record<string, EmbeddedDesign>;
 }
 
-/** v4 keeps the anchor's rest surface stable when rig/material bytes change. */
 export interface PlacementBody {
-  id: string;
-  path: string;
-  /** v1-v3 whole-GLB identity. */
-  sha256?: string;
-  /** v4 whole-asset provenance. */
-  asset_sha256?: string;
-  /** v4 canonical non-indexed rest-surface signed-10-micrometre XYZ digest. */
-  surface_sha256?: string;
-}
-
-export function placementAssetSha(body: PlacementBody): string {
-  return body.asset_sha256 ?? body.sha256 ?? "";
-}
-
-export function placementSurfaceSha(body: PlacementBody): string {
-  return body.surface_sha256 ?? body.sha256 ?? "";
+  model_spec_id: typeof MODEL_SPEC_ID;
+  model_spec_sha256: typeof MODEL_SPEC_SHA256;
+  identity_sha256: typeof REFERENCE_IDENTITY_SHA256 | string;
+  topology_sha256: typeof TOPOLOGY_SHA256;
+  rest_surface_sha256: typeof REST_SURFACE_SHA256 | string;
+  asset_path: string;
+  asset_sha256: string;
 }
 
 export function newPlacementId(): string {
@@ -90,21 +102,27 @@ export function validatePlacementFile(x: unknown): asserts x is PlacementFile {
   const fail = (m: string): never => { throw new Error(`placement file: ${m}`); };
   if (typeof x !== "object" || x === null) fail("not an object");
   const f = x as Record<string, unknown>;
-  if (!ACCEPTED_VERSIONS.includes(f.schema_version as number)) fail(`schema_version ${String(f.schema_version)} not in ${ACCEPTED_VERSIONS.join("/")}`);
+  if (f.schema_version !== SCHEMA_VERSION) fail("unsupported schema/model");
   const u = f.units as Record<string, unknown> | undefined;
   if (!u || u.length !== "m" || u.tattoo_size !== "mm" || u.up !== "+z") fail("units must be {length:m, tattoo_size:mm, up:+z}");
   const b = f.body as Record<string, unknown> | undefined;
-  if (!b || typeof b.id !== "string" || typeof b.path !== "string") return fail("body needs id and path");
-  const version = f.schema_version as number;
-  if (version >= 4) {
-    if (typeof b.asset_sha256 !== "string" || typeof b.surface_sha256 !== "string") {
-      fail("v4 body needs asset_sha256 and surface_sha256");
-    }
-    if (!/^[0-9a-f]{64}$/.test(b.asset_sha256 as string)) fail("body.asset_sha256 is not a sha256 hex digest");
-    if (!/^[0-9a-f]{64}$/.test(b.surface_sha256 as string)) fail("body.surface_sha256 is not a sha256 hex digest");
-  } else {
-    if (typeof b.sha256 !== "string") fail("v1-v3 body needs sha256");
-    if (!/^[0-9a-f]{64}$/.test(b.sha256 as string)) fail("body.sha256 is not a sha256 hex digest");
+  if (!b) return fail("body binding is required");
+  const bodyKeys = [
+    "asset_path", "asset_sha256", "identity_sha256", "model_spec_id",
+    "model_spec_sha256", "rest_surface_sha256", "topology_sha256",
+  ];
+  if (Object.keys(b).sort().join("|") !== bodyKeys.sort().join("|")) fail("body binding fields differ from v6");
+  if (
+    b.model_spec_id !== MODEL_SPEC_ID
+    || b.model_spec_sha256 !== MODEL_SPEC_SHA256
+    || b.identity_sha256 !== REFERENCE_IDENTITY_SHA256
+    || b.topology_sha256 !== TOPOLOGY_SHA256
+    || b.rest_surface_sha256 !== REST_SURFACE_SHA256
+    || b.asset_path !== BODY_SPEC.path
+    || b.asset_sha256 !== REST_ASSET_SHA256
+  ) fail("unsupported schema/model");
+  for (const field of ["model_spec_sha256", "identity_sha256", "topology_sha256", "rest_surface_sha256", "asset_sha256"] as const) {
+    if (!/^[0-9a-f]{64}$/.test(b[field] as string)) fail(`body.${field} is not a sha256 hex digest`);
   }
   if (!Array.isArray(f.placements)) fail("placements must be an array");
   for (const [i, p0] of (f.placements as unknown[]).entries()) {
@@ -136,16 +154,39 @@ export function validatePlacementFile(x: unknown): asserts x is PlacementFile {
       const lg = p.language as Record<string, unknown>;
       if (typeof lg.sentence !== "string" || lg.sentence.length === 0) fail(`${where}.language.sentence must be a non-empty string`);
       if (typeof lg.program !== "object" || lg.program === null) fail(`${where}.language.program must be an object`);
+      if (lg.intent !== undefined && (typeof lg.intent !== "object" || lg.intent === null)) fail(`${where}.language.intent must be an object`);
+      if (lg.resolution !== undefined) {
+        if (typeof lg.resolution !== "object" || lg.resolution === null) fail(`${where}.language.resolution must be an object`);
+        const resolution = lg.resolution as Record<string, unknown>;
+        const resolvedAnchor = resolution.anchor as Record<string, unknown> | undefined;
+        const resolvedBody = resolution.body as Record<string, unknown> | undefined;
+        if (resolution.status !== "resolved") fail(`${where}.language.resolution must be resolved`);
+        if (!resolvedAnchor) fail(`${where}.language.resolution must have an anchor`);
+        if (!resolvedBody) fail(`${where}.language.resolution must have a body`);
+        if (resolvedAnchor!.face !== a.face || JSON.stringify(resolvedAnchor!.barycentric) !== JSON.stringify(a.barycentric)) {
+          fail(`${where}.language.resolution anchor differs from placement anchor`);
+        }
+        if (
+          resolvedBody!.model_spec_id !== b.model_spec_id
+          || resolvedBody!.model_spec_sha256 !== b.model_spec_sha256
+          || resolvedBody!.identity_sha256 !== b.identity_sha256
+          || resolvedBody!.topology_sha256 !== b.topology_sha256
+          || resolvedBody!.rest_surface_sha256 !== b.rest_surface_sha256
+          || resolvedBody!.asset_sha256 !== b.asset_sha256
+        ) {
+          fail(`${where}.language.resolution body differs from placement body`);
+        }
+      }
+      if (lg.consumer_policy !== undefined && (typeof lg.consumer_policy !== "string" || lg.consumer_policy.length === 0)) {
+        fail(`${where}.language.consumer_policy must be a non-empty string`);
+      }
     }
   }
   if (f.designs !== undefined) {
     if (typeof f.designs !== "object" || f.designs === null || Array.isArray(f.designs)) return fail("designs must be an object keyed by design id");
     for (const [id, d0] of Object.entries(f.designs as Record<string, unknown>)) {
-      const d = d0 as Record<string, unknown>;
-      const where = `designs[${id}]`;
-      if (typeof d.name !== "string" || typeof d.svg !== "string" || !d.svg.includes("<svg")) fail(`${where}: needs name and svg text`);
-      const sz = d.default_size_mm as unknown;
-      if (!Array.isArray(sz) || sz.length !== 2 || !sz.every((v) => typeof v === "number" && v > 0)) fail(`${where}.default_size_mm must be two positive numbers`);
+      if (!id) fail("artwork IDs must be nonempty");
+      validateArtworkShape(d0);
     }
     for (const p of f.placements as Placement[]) {
       if (p.design_id.startsWith("gen-") && !(p.design_id in (f.designs as object))) fail(`placement ${p.id} references generated design ${p.design_id} that is not embedded`);
