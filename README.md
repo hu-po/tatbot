@@ -9,8 +9,8 @@
 <div align="center">
   <a href="https://github.com/hu-po/tatbot/blob/main/LICENSE"><img src="https://img.shields.io/github/license/hu-po/tatbot.svg?v" alt="license"></a>
   <a href="https://hu-po.github.io/tatbot/"><img src="https://img.shields.io/badge/📚-docs-blue.svg" alt="documentation"></a>
-  <a href="https://poly.cam/@tatbot" target="_blank" rel="noopener noreferrer">
-    <img src="https://img.shields.io/badge/Polycam-%40tatbot-734F96.svg?style=flat" alt="Polycam @tatbot">
+  <a href="https://poly.cam/capture/89a7df7a-9871-493c-aed9-289028c1e38e" target="_blank" rel="noopener noreferrer">
+    <img src="https://img.shields.io/badge/Polycam-v6%20splat-734F96.svg?style=flat" alt="Polycam v6 splat">
   </a>
   <a href="https://huggingface.co/tatbot/datasets">
     <img alt="Datasets" src="https://img.shields.io/badge/%F0%9F%A4%97%20HF-Datasets-yellow">
