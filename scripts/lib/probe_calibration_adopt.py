@@ -1,9 +1,10 @@
 """Adopting a probe tip candidate (tatbot_calib.program, or the joint-6 sweep's, tatbot_calib.sweep): the arm's tip
-across its axis into config/workspace.yaml.
+into config/workspace.yaml.
 
 `tatbot ros calib apply --run ID` calls this when the operator asks for it. It moves the arm's pen_tip_offset_x/y
-and mechanical_contact_x/y by the fitted change across the axis (their lengths stay as they are) and names the run
-in the touch-off record; every other line stays as it was. A candidate measured with another tool than the one
+and mechanical_contact_x/y by the fitted change across the axis, and their _z by the fitted change in length when
+the run measured it (a sweep's tilts: `fit.length_measured`), and names the run in the touch-off record; every other
+line stays as it was. A candidate measured with another tool than the one
 fitted now is refused, because its tip belongs to that tool. Pure text: no ROS import.
 """
 from __future__ import annotations
@@ -21,7 +22,8 @@ def _section(text: str, arm: str) -> tuple[int, int]:
 
 
 def _pattern(key: str):
-    return re.compile(rf"^(\s+{re.escape(key)}:)[ \t]*([^\n#]*)", re.MULTILINE)
+    """key: value, the value up to an inline comment's own whitespace (YAML's `#` is a comment only after one)."""
+    return re.compile(rf"^(\s+{re.escape(key)}:)[ \t]*([^\n#]*?)(?=[ \t]*(?:#|$))", re.MULTILINE)
 
 
 def _get(section: str, key: str) -> str:
@@ -45,7 +47,8 @@ def apply(candidate: dict, text: str) -> tuple[str, list[str]]:
     tip, tip0 = candidate["fit"]["tip_m"], candidate["tip0_m"]
     if not all(isinstance(v, (int, float)) and math.isfinite(v) for v in [*tip, *tip0]):
         return text, ["the candidate's tip is not finite"]
-    for axis, k in (("x", 0), ("y", 1)):
+    length = bool(candidate["fit"].get("length_measured"))
+    for axis, k in (("x", 0), ("y", 1), ("z", 2))[:3 if length else 2]:
         for key in (f"pen_tip_offset_{axis}", f"mechanical_contact_{axis}"):
             section = _set(section, key, f"{float(_get(section, key)) + tip[k] - tip0[k]:.6f}")
     held = candidate.get("held_out_rms_m") or {}
@@ -56,6 +59,7 @@ def apply(candidate: dict, text: str) -> tuple[str, list[str]]:
                        ("residual_mm", f"{max(candidate['fit']['rms_m'].values()) * 1000:.3f}"),
                        ("holdout_mm", f"{max(held.values(), default=float('nan')) * 1000:.3f}"),
                        ("tip_loo_max_mm", f"{max((candidate.get('tip_moved_m') or {}).values(), default=float('nan')) * 1000:.3f}"),
-                       ("note", '"the tip across its axis only; its length is the installed one"')):
+                       ("note", '"the tip and its length"' if length else
+                        '"the tip across its axis only; its length is the installed one"')):
         section = _set(section, key, value)
     return text[:start] + section + text[end:], []

@@ -1,5 +1,5 @@
 #pragma once
-// Shared with tatbot-arm::lease and lerobot_robot_tatbot.driver_lease.
+// Shared with tatbot-arm::lease.
 // Never unlink the locked inode. A lease is ownership, not motion authority.
 #include <cerrno>
 #include <cstring>

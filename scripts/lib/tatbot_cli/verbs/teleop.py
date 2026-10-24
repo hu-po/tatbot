@@ -17,8 +17,6 @@ def _teleop_poses_args(p):
     p.add_argument('--out', required=True, help='new output directory for poses and provenance')
     p.add_argument('--urdf', required=True, help='explicit recorded URDF model')
     p.add_argument('--workspace', required=True, help='explicit recorded workspace/tool calibration')
-    p.add_argument('--arm', choices=('right', 'left'), default='right',
-                   help='the follower (default) or the leader: whose recorded joints and tool mount to export')
 
 
 @verb(effects=('read_files', 'write_files'), noun='teleop', verb='poses', tier=OFFLINE, visibility='public',
@@ -30,7 +28,7 @@ def _teleop_poses_args(p):
 def teleop_poses(ctx, ns, rest):
     from tatbot_cli.verbs._common import lerobot_py
     return lerobot_py(ctx, 'scripts/vision/teleop_poses.py', ns.log, '--out', ns.out,
-                      '--urdf', ns.urdf, '--workspace', ns.workspace, '--arm', ns.arm, *tool_flag(ctx))
+                      '--urdf', ns.urdf, '--workspace', ns.workspace, *tool_flag(ctx))
 
 
 def _teleop_role_args(p):
@@ -45,15 +43,10 @@ def _teleop_roles_validate(ctx, command, ns):
     from tatbot_cli.cli import UsageError, refuse
 
     try:
-        if getattr(ns, "wrist_calibration", False):
-            ns.leader = ns.leader or "right"
-            ns.follower = ns.follower or "left"
-            if ns.leader != "right" or ns.follower != "left":
-                raise ValueError('--wrist-calibration requires right leader and left follower')
         roles = arms.select_roles(ns.leader, ns.follower)
     except ValueError as exc:
         raise UsageError(str(exc)) from exc
-    if command.verb == "start" and roles != arms.select_roles() and not ns.wrist_calibration:
+    if command.verb == "start" and roles != arms.select_roles():
         return refuse(ctx, EXIT_GATE_REFUSED, "teleop_roles", arms.REVERSE_BLOCKER)
     return None
 
@@ -61,8 +54,7 @@ def _teleop_roles_validate(ctx, command, ns):
 def _teleop_start_prepare(ctx, command, ns):
     from tatbot_cli import arms
 
-    arms.require_current_executor(ctx.repo, arms.select_roles(ns.leader, ns.follower),
-                                  wrist_calibration=ns.wrist_calibration)
+    arms.require_current_executor(ctx.repo, arms.select_roles(ns.leader, ns.follower))
 
 
 @verb(effects=('read_files',), noun="teleop", verb="plan", tier=OFFLINE,
@@ -101,8 +93,6 @@ def teleop_plan(ctx, ns, rest):
 
 def _teleop_start_args(p):
     _teleop_role_args(p)
-    p.add_argument('--wrist-calibration', action='store_true',
-                   help='free-space right/pink leader, left/laser follower; mirror joints 0, 4 and 5')
     p.add_argument("--touchoff", action="store_true",
                    help="this session IS the stated tool's touch-off: run it although workspace.yaml names another "
                         "tool (wxai_teleop --tool-uncalibrated; grip force from the datasheet)")
@@ -113,7 +103,7 @@ def _teleop_start_args(p):
       validate=_teleop_roles_validate, prepare=_teleop_start_prepare,
       example=(), doc="docs/teleop_tuning.md", tty=True,
       invariants=(EXCL_INV,
-                  "Physical roles default to left leader and right follower; general reverse execution refuses before routing. --wrist-calibration enables right-led mirrored free-space capture. "
+                  "Physical roles default to left leader and right follower; reverse execution refuses before routing. "
                   "Use `teleop plan` to inspect either direction without hardware access.",
                   "`tatbot teleop start` routes itself to the configured arm owner; --on may name that owner "
                   "and may not appoint another. The hop is `ssh -t` and the launcher's gates run there.",
@@ -124,8 +114,6 @@ def _teleop_start_args(p):
                   "operator node shows every camera and the animated URDF beside it."))
 def teleop_start(ctx, ns, rest):
     flags = ["--touchoff"] if ns.touchoff else []
-    if ns.wrist_calibration:
-        flags.append("--wrist-calibration")
     for role in ("leader", "follower"):
         if getattr(ns, role) is not None:
             flags.extend((f"--{role}", getattr(ns, role)))
@@ -183,7 +171,7 @@ def _log_arg(p):
 
 
 @verb(effects=('read_files',), visibility="public", noun="teleop", verb="analyze", tier=OFFLINE, summary="loop-timing stats from a .wxtl without a GUI",
-      wraps=("cpp/teleop/analyze_log.py",), args=_log_arg, example=("~/tatbot-logs/teleop/last/teleop.wxtl",))
+      wraps=("cpp/teleop/analyze_log.py",), args=_log_arg, example=("~/tatbot-logs/teleop/latest/teleop.wxtl",))
 def teleop_analyze(ctx, ns, rest):
     return py(ctx, "cpp/teleop/analyze_log.py", ns.log, *rest)
 

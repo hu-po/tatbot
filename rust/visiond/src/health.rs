@@ -59,10 +59,6 @@ impl SensorHealth {
         self.snapshot.frames_dropped += count;
     }
 
-    pub fn reconnected(&mut self) {
-        self.snapshot.reconnects += 1;
-    }
-
     pub fn error(&mut self, error: impl Into<String>) {
         let error = error.into();
         if self.errors.len() == self.error_limit {

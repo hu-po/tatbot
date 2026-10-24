@@ -48,8 +48,7 @@ export function Scene() {
         <AtlasOverlay />
         <RegionHighlight />
         <Placements />
-        <ScenarioTrace />
-        <ScenarioSiteMarker />
+        <ShowcaseSiteMarker />
         <ShowcaseCamera />
         <ProjectCamera />
         <SelectionControls />
@@ -126,19 +125,17 @@ function ProjectCamera() {
 
 function ShowcaseCamera() {
   const body = useStore((s) => s.body);
-  const scenario = useStore((s) => s.showcaseScenario);
+  const slide = useStore((s) => s.showcaseSlide);
   const focus = useStore((s) => s.showcaseFocus);
   const { camera, controls } = useThree();
   useEffect(() => {
     if (!body) return;
     const orbit = controls as unknown as { target: THREE.Vector3; update: () => void } | undefined;
     camera.up.set(0, 0, 1);
-    const matchingScenario = scenario && body.spec.id === scenario.body.model_spec_id && body.poseId === scenario.pose.id
-      ? scenario
-      : null;
-    if (matchingScenario && focus) {
-      const { p, n } = anchorToPoint(body.skin.geometry, matchingScenario.placement.anchor);
-      const largest = Math.max(...matchingScenario.placement.size_mm) / 1000;
+    const matchingSlide = slide && body.poseId === slide.pose_id ? slide : null;
+    if (matchingSlide && focus) {
+      const { p, n } = anchorToPoint(body.skin.geometry, matchingSlide.placement.anchor);
+      const largest = Math.max(...matchingSlide.placement.size_mm) / 1000;
       const distance = THREE.MathUtils.clamp(largest * 10, 0.45, 0.70);
       const studioView = new THREE.Vector3(0.3, -0.6, 1.0).normalize();
       const view = n.clone().multiplyScalar(0.25).addScaledVector(studioView, 0.75).normalize();
@@ -154,24 +151,24 @@ function ShowcaseCamera() {
     camera.lookAt(orbit?.target ?? body.skin.bbox.getCenter(new THREE.Vector3()));
     camera.updateProjectionMatrix();
     orbit?.update();
-  }, [body, scenario, focus, camera, controls]);
+  }, [body, slide, focus, camera, controls]);
   return null;
 }
 
-function ScenarioSiteMarker() {
+function ShowcaseSiteMarker() {
   const body = useStore((s) => s.body);
-  const scenario = useStore((s) => s.showcaseScenario);
+  const slide = useStore((s) => s.showcaseSlide);
   const focus = useStore((s) => s.showcaseFocus);
   const marker = useMemo(() => {
-    if (!body || !scenario || body.spec.id !== scenario.body.model_spec_id || body.poseId !== scenario.pose.id) return null;
-    const { p, n } = anchorToPoint(body.skin.geometry, scenario.placement.anchor);
-    const scale = THREE.MathUtils.clamp(Math.max(...scenario.placement.size_mm) / 1000 * 1.35, 0.042, 0.075);
+    if (!body || !slide || body.poseId !== slide.pose_id) return null;
+    const { p, n } = anchorToPoint(body.skin.geometry, slide.placement.anchor);
+    const scale = THREE.MathUtils.clamp(Math.max(...slide.placement.size_mm) / 1000 * 1.35, 0.042, 0.075);
     return {
       position: p.addScaledVector(n, 0.0025),
       quaternion: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n),
       scale,
     };
-  }, [body, scenario]);
+  }, [body, slide]);
   if (!marker || focus) return null;
   return (
     <mesh position={marker.position} quaternion={marker.quaternion} raycast={() => null}>
@@ -179,33 +176,6 @@ function ScenarioSiteMarker() {
       <meshBasicMaterial color="#61e8ff" transparent opacity={0.9} depthTest={false} />
     </mesh>
   );
-}
-
-/** Exact compiled stroke anchors replayed on the currently posed skin. */
-function ScenarioTrace() {
-  const body = useStore((s) => s.body);
-  const scenario = useStore((s) => s.showcaseScenario);
-  const visible = useStore((s) => s.showcaseTraceVisible);
-  const lines = useMemo(() => {
-    if (!body || !scenario || body.spec.id !== scenario.body.model_spec_id || body.poseId !== scenario.pose.id) return [];
-    return scenario.trace.strokes.map((stroke) => {
-      const points = stroke.map((anchor) => {
-        const { p, n } = anchorToPoint(body.skin.geometry, anchor);
-        return p.addScaledVector(n, 0.0015);
-      });
-      const geometry = new THREE.BufferGeometry().setFromPoints(points);
-      const material = new THREE.LineBasicMaterial({ color: "#61e8ff", transparent: true, opacity: 0.96 });
-      const line = new THREE.Line(geometry, material);
-      line.raycast = () => undefined;
-      return line;
-    });
-  }, [body, scenario]);
-  useEffect(() => () => lines.forEach((line) => {
-    line.geometry.dispose();
-    (line.material as THREE.Material).dispose();
-  }), [lines]);
-  if (!visible) return null;
-  return <group>{lines.map((line, index) => <primitive key={index} object={line} />)}</group>;
 }
 
 /** The Canvas is its own React root: an uncaught error there blanks the scene silently. Surface it in the sidebar instead. */

@@ -5,9 +5,8 @@ backbones expect ordinary three-channel images, and image conversion
 would clamp raw millimetres to an almost entirely white image. ``depth-v1``
 keeps range, validity, and local surface relief explicit in uint8 channels.
 
-This module deliberately depends only on NumPy. Training loads this exact file
-from the repository, while the robot plugin imports it normally, so offline
-and live observations cannot drift into two implementations.
+This module deliberately depends only on NumPy, so training can load this
+exact file from the repository without importing anything else.
 """
 
 from __future__ import annotations

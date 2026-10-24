@@ -1,6 +1,6 @@
 {
   "schema": "tatbot.draw-samples-manifest/1",
-  "content_sha256": "f955c5276cec27cdfc8a771ae4e9c5afe36f8d7d3089a6c27529a9efc2bb2fa3",
+  "content_sha256": "6fb51fc3e6969465a6a116eb333c16d1ded89d2a6237b938b41c6a6ef8ef4b39",
   "samples": {
     "schema": "tatbot.draw-samples/1",
     "path": "current-samples.csv",
@@ -12,9 +12,9 @@
     "sha256": "38f86c62d7189567e3db91d83aad8f78df9a4df1f641f7e29b3ace845e89770a"
   },
   "inputs": {
-    "ink_program_sha256": "5d720cb39a1c990e8e4aa03f03df8e37afeabe18aaa4f581970054f422a249dd",
-    "body_state_sha256": "93ff21cbb19fc061f0c97e5556a00fddbfe619c1dcab31e2ab7d42924567be98",
-    "surface_registration_sha256": "e172991374c279676fe2e3541a899b51c48672cf5852eb011f043b0ae0c5e22c",
+    "ink_program_sha256": "e5b402eb0cbd7d1a40ef064d50407c637b5aef4261621ea8118c718ec373943f",
+    "body_state_sha256": "c7a7ac08a93afdc2a3fe6eb27a555ecb3d3de833d3e7917a01ff04a483f4b1f9",
+    "surface_registration_sha256": "242880b6adb2cc11dccd6cf316fa00767f3d93683fc842e8ae6b26d3e034117e",
     "measured_surface_sha256": "93befe916c6fef5af853976cd7c2c2a8b7ded088b5d530cc0ccdaaf50ab681c9",
     "tool_datasheet_sha256": "45ec7cab30d3863afa5e5fd5f57f4a2449d4a4d2dc5061c862c5b469ac760ca4",
     "robot_urdf_sha256": "b0344e1db6b1aac4050a7c3864be8f2c67c5da9c997f3ea9115dcb36e772eb88",

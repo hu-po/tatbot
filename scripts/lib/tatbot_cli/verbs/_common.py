@@ -8,7 +8,6 @@ from pathlib import Path
 from tatbot_cli.registry import Ctx, Plan
 
 LEROBOT_PROJECT = "python/lerobot_robot_tatbot"
-SIM_PROJECT = "python/tatbot_sim"
 
 
 def sh(ctx: Ctx, rel: str, *args: str, **kw) -> Plan:
@@ -55,24 +54,6 @@ def lerobot_py(ctx: Ctx, rel: str, *args: str, **kw) -> Plan:
             notes.append(f"interpreter: pinned LeRobot environment {python}")
             return Plan(argv=[str(python), ctx.path(rel), *args], notes=notes, **kw)
     return uvpy(ctx, LEROBOT_PROJECT, rel, *args, **kw)
-
-
-def uvmod(ctx: Ctx, project: str, module: str, *args: str, extra: str | None = None, **kw) -> Plan:
-    return Plan(argv=["uv", "run", "--project", ctx.path(project), *(["--extra", extra] if extra else []), "python", "-m", module, *args], **kw)
-
-
-def tag_arg(p) -> None:
-    p.add_argument("--tag", metavar="LABEL",
-                   help="optional tag folded into this launch's id (the id is automatic: ledgered + audited by arm_gate)")
-
-
-def ink_flags(p) -> None:
-    """The ink hook every launcher that puts a tool on the skin takes (scripts/lib/ink_hook.sh)."""
-    p.add_argument("--no-ink", action="store_true", help="no ink session, no debit; the run is stamped tracking=false")
-
-
-def ink_argv(ns) -> list[str]:
-    return ["--no-ink"] if ns.no_ink else []
 
 
 def tool_flag(ctx: Ctx, flag: str = "--ee-tool") -> list[str]:

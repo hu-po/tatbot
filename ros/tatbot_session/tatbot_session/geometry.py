@@ -6,6 +6,8 @@ paper. The TCP's +z points along the tool toward the paper, so drawing holds tcp
 """
 from __future__ import annotations
 
+import json
+
 import numpy as np
 from tatbot_description.transforms import matrix_quat, quat_matrix, rpy_matrix  # noqa: F401
 from tatbot_motion import timelaw
@@ -29,6 +31,165 @@ def page_moved(used: np.ndarray, newest: np.ndarray, translation_m: float, rotat
     return shift > translation_m or rotation_angle(used, newest) > rotation_rad
 
 
+# --- the overhead's markers: the sheet's moves without its pose ----------------------------------------------------
+def page_marks(support_json: str) -> dict:
+    """id -> (4, 3) a measured Page's marker corners as the overhead sees them: x/z and y/z of its anchor points in the
+    world, the overhead's colour optical frame (tatbot_bridge.capture.WORLD_FRAME), so the ray through each corner,
+    which no depth moves; and its range along that ray, from which marks_moved reads the sheet's rise (a plane over the
+    whole sheet lifted it, up to 6.6 mm off the skin; each corner's own depth since 2026-10-19). {} without them; an id
+    read twice in one reading is left out."""
+    try:
+        support = json.loads(support_json or "{}")
+        ids = [int(i) for i in (support.get("markers") or {}).get("ids") or []]
+        points = np.asarray(support.get("anchor_points_m") or [], float).reshape(-1, 4, 3)
+    except (ValueError, TypeError, AttributeError):
+        return {}
+    if len(points) != len(ids):
+        return {}
+    return {i: np.c_[p[:, :2] / p[:, 2:], np.linalg.norm(p, axis=1)] for i, p in zip(ids, points, strict=True)
+            if ids.count(i) == 1 and (p[:, 2] > 0).all()}
+
+
+def marks_median(readings) -> dict:
+    """Each marker's corners, each the median over the readings (page_marks) that saw it."""
+    seen = {}
+    for reading in readings:
+        for i, corners in reading.items():
+            seen.setdefault(i, []).append(corners)
+    return {i: np.median(c, axis=0) for i, c in seen.items()}
+
+
+def marks_moved(ref: dict, now: dict, printed: dict, up=None) -> tuple[float, float, np.ndarray, float, float, int] | None:
+    """(slide m, turn rad, the move, rise m, bend m, markers) of a print between two readings of its markers (page_marks), on the skin
+    in print metres: each common marker's corners now carried onto the print by the affine that takes its own corners
+    at `ref` onto its printed square (`printed`: id -> (4, 2) page metres), so the skin's slope toward the camera there,
+    curved or flat, scales that marker's move and no surface is fitted; then the rigid fit of where they were to where
+    they are (curved.rigid_fit: the move, 3 x 3 in print metres), its slide at the markers read. The rise: the median
+    corner's move in 3-D (its ray times its range) along `up`, the page's normal in the overhead's frame, else the
+    corners' range less (0 for a reading kept without ranges). A sheet lifted L reads ~0.7 L of slide across the rays,
+    and a 15 mm slide changes the ranges 4-6.5 mm on the rig's oblique view: the rise along the normal tells them
+    apart. The bend: the farthest marker's centre off that rigid move (nan under three markers), a skin that changed
+    shape. Markers: how many it shares with `ref`. None below two common markers: one stray decode is no reading."""
+    from tatbot_session.curved import moved_by, rigid_fit
+
+    common = sorted(set(ref) & set(now) & set(printed))
+    if len(common) < 2:
+        return None
+    was, is_, rise = [], [], []
+    for i in common:
+        a = np.c_[ref[i][:, :2], np.ones(4)]
+        m = np.linalg.lstsq(a, np.asarray(printed[i], float), rcond=None)[0]
+        was.append(a @ m)
+        is_.append(np.c_[now[i][:, :2], np.ones(4)] @ m)
+        if min(ref[i].shape[1], now[i].shape[1]) > 2:
+            rise += list((corners_3d(now[i]) - corners_3d(ref[i])) @ up if up is not None else ref[i][:, 2] - now[i][:, 2])
+    was, is_ = np.concatenate(was), np.concatenate(is_)
+    fit, c = rigid_fit(was, is_, 0.010), was.mean(axis=0)
+    bend = np.linalg.norm((moved_by(fit, was) - is_).reshape(-1, 4, 2).mean(axis=1), axis=1).max() if len(common) > 2 else np.nan
+    return (float(np.linalg.norm(fit[:2, :2] @ c + fit[:2, 2] - c)), float(np.arctan2(fit[1, 0], fit[0, 0])), fit,
+            float(np.median(rise)) if rise else 0.0, float(bend), len(common))
+
+
+def marks_extended(ref: dict, readings, printed: dict, up=None, slide_m: float = 0.001, turn_rad: float = 0.0175,
+                   rise_m: float = 0.0025) -> dict:
+    """`ref` (marks_median) with the print's markers it lacks that other `readings` saw while the sheet stood where
+    `ref` reads it: each reading sharing two markers with it (marks_moved) within slide_m, turn_rad and rise_m, every
+    new marker's corners the median over those readings, and again with the markers that joined until none does. Past
+    the arm the overhead reads two or three of a curved print's markers, a different two now and then: a forearm's
+    reference from its setup's newest readings (the arm over the print at its holds) kept markers 3 and 6 alone, and
+    after a 45 mm move the readings were 6 and 16, or 9 and 16; one in ten shared two markers with it, and the hover
+    judged nothing in the 10 s it waited for three (2026-10-24). The setup's earlier readings put 16 in it."""
+    out = dict(ref)
+    while True:
+        more = {}
+        for reading in readings:
+            new = (set(reading) & set(printed)) - set(out)
+            if new and (mv := marks_moved(out, reading, printed, up)) is not None and (
+                    mv[0] <= slide_m and abs(mv[1]) <= turn_rad and abs(mv[3]) <= rise_m):
+                for i in new:
+                    more.setdefault(i, []).append(reading[i])
+        if not more:
+            return out
+        out.update({i: np.median(c, axis=0) for i, c in more.items()})
+
+
+# The overhead's watch of a person's skin by its markers (sheet_watch, ArmExecutor.refresh_page; page.track.watch). On
+# three forearm sessions (2026-10-19/20, 1 Hz) breathing moved the print 0.1-0.3 mm; it swayed 0.4-0.9 mm (sd) over
+# ~20 s, drifted 0.5-1.5 mm/min one way for 17 min at a time, and stepped 1-4 mm, most steps staying put. The page
+# follows the drift by the follow_s median past follow_m at the drawing (follow_rad turned); it is set up again only
+# for a move that lasts: the gate_s median off_m from where the page follows the sheet, rise_m along the page's normal
+# or bent bend_m, held hold_s up to the newest reading, or a curved page's skin moved past total_m or total_rad from
+# its holds, or one whose follow a print turned round the arm would put roll_m under the skin (ArmExecutor._rolled).
+# Replayed with the page following before each stroke (it lags the sheet up to follow_m), 3.5 mm held 10 s fired on no
+# still silicone, the left forearm or 31 references of a lively right one (3 mm on 3 of them); a 5 mm step fires in
+# 11-20 s. The owner doubled every stop (2026-10-20): off_m, bend_m, total_*, roll_m twice those. Not rise_m, depth: a
+# hover whose gauge reads no skin has no other bound, and the 3RL's needles reach 4 mm from a tube 5 mm over the field.
+WATCH = {"follow_s": 20.0, "follow_m": 0.001, "follow_rad": 0.0175, "gate_s": 10.0, "hold_s": 10.0, "off_m": 0.007,
+         "rise_m": 0.0025, "bend_m": 0.003, "total_m": 0.020, "total_rad": 0.10, "roll_m": 0.001}
+
+
+def window(timed: list, span: float, least: int = 3) -> list:
+    """The moves of `timed` ((t, move), oldest first) in the newest `span` s ending at a reading that holds `least`."""
+    for k in range(len(timed) - 1, least - 2, -1):
+        moves = [m for t, m in timed[:k + 1] if t >= timed[k][0] - span]
+        if len(moves) >= least:
+            return moves
+    return []
+
+
+def median_move(moves) -> tuple[np.ndarray, float, float] | None:
+    """(the move, 3 x 3, its slide and turn each their median; the median rise; the median bend, 0 under three) of
+    marks_moved readings; None without one."""
+    if not moves:
+        return None
+    turn, bends, out = np.median([np.arctan2(m[2][1, 0], m[2][0, 0]) for m in moves]), [m[4] for m in moves], np.eye(3)
+    out[:2, :2], out[:2, 2] = [[np.cos(turn), -np.sin(turn)], [np.sin(turn), np.cos(turn)]], np.median([m[2][:2, 2] for m in moves], 0)
+    return out, float(np.median([m[3] for m in moves])), float(np.nanmedian(bends)) if np.isfinite(bends).sum() > 2 else 0.0
+
+
+def apart(a, b, points) -> float:
+    """How far apart two in-plane moves (3 x 3) put any of `points` (N, 2)."""
+    from tatbot_session.curved import moved_by
+
+    return float(np.max(np.linalg.norm(moved_by(a, points) - moved_by(b, points), axis=1)))
+
+
+def sheet_watch(timed: list, points, followed, total, cfg=WATCH) -> tuple[str | None, str]:
+    """Whether a sheet moved since its setup by the overhead's marker readings (timed: (t, marks_moved), oldest first,
+    since setup): ("fire", why) when its follow_s median passes `total` (m at the drawing's `points`, rad), or one of
+    WATCH's moves has held hold_s up to the newest reading: the gate_s median off_m at the drawing from `followed` (the
+    move the page has followed, 3 x 3: a move that lasts stays off the page until it is set up again, however long
+    ago it came), past rise_m or bend_m; ("pending", why) while it has not held that long; else (None, ""): one that
+    went back is no move. A gap holds the state: a gate_s window under three readings decides nothing."""
+    now = median_move(window(timed, cfg["follow_s"]))
+    if now is not None:
+        far, turn = apart(now[0], np.eye(3), points), float(np.arctan2(now[0][1, 0], now[0][0, 0]))
+        if far > total[0] or abs(turn) > total[1]:
+            return "fire", f"{far * 1e3:.1f} mm, {np.degrees(turn):+.1f} deg from its setup"
+    since, why = None, ""
+    for k in range(len(timed) - 1, -1, -1):   # back from the newest reading while the move stays
+        t = timed[k][0]
+        gate = [m for tt, m in timed[:k + 1] if tt >= t - cfg["gate_s"]]
+        if len(gate) < 3:
+            continue
+        gate = median_move(gate)
+        off = apart(gate[0], followed, points)
+        found = ", ".join(text for text, past in ((f"{off * 1e3:.1f} mm off the page", off > cfg["off_m"]),
+                                                  (f"{gate[1] * 1e3:+.1f} mm along its normal", abs(gate[1]) > cfg["rise_m"]),
+                                                  (f"bent {gate[2] * 1e3:.1f} mm", gate[2] > cfg["bend_m"])) if past)
+        if not found:
+            break
+        since, why = t, why or found
+    held = None if since is None else timed[-1][0] - since
+    return (None, "") if held is None else ("fire" if held >= cfg["hold_s"] else "pending", f"{why}, held {held:.0f} s")
+
+
+def corners_3d(corners) -> np.ndarray:
+    """(4, 3) page_marks corners as points in the overhead's frame: each ray, unit, times its range."""
+    rays = np.c_[corners[:, :2], np.ones(len(corners))]
+    return rays / np.linalg.norm(rays, axis=1, keepdims=True) * corners[:, 2:3]
+
+
 # --- touches and the page plane --------------------------------------------------------------
 def touch_points(spread_m: float, centre=(0.0, 0.0)) -> np.ndarray:
     """Three page-frame (x, y) touch points about `centre`: (-s, -s), (s, -s), (0, s) from it.
@@ -41,31 +202,17 @@ def touch_points(spread_m: float, centre=(0.0, 0.0)) -> np.ndarray:
     return np.array([[-s, -s], [s, -s], [0.0, s]]) + np.asarray(centre, dtype=float)
 
 
-SIDES = {"left": (0, -1.0), "right": (0, 1.0), "bottom": (1, -1.0), "top": (1, 1.0)}   # (axis, sign)
-
-
-def inner_edges(clear_m, inner_edges_m=None) -> dict:
-    """The print's nominal inner border edge per side in the page frame, metres: x of the left and
-    right sides, y of the bottom and top. page.inner_edges_m (from the installed print's settings.json,
-    config.print_page) gives them for a print whose border does not start at the clear centre's edge
-    (a coded print's knots sit on the lattice junctions by their centres, so its innermost ink is up to
-    a knot radius off that edge, by a different amount on each side); without it they are +-clear_m / 2."""
+def inner_edges(clear_m) -> dict:
+    """The print's clear centre's edge per side in the page frame, metres: x of the left and right sides, y of the
+    bottom and top."""
     hx, hy = clear_m[0] / 2.0, clear_m[1] / 2.0
-    if not inner_edges_m:
-        return {"left": -hx, "right": hx, "bottom": -hy, "top": hy}
-    try:
-        out = {side: float(inner_edges_m[side]) for side in SIDES}
-    except (KeyError, TypeError, ValueError) as err:
-        raise ValueError(f"page.inner_edges_m {inner_edges_m!r}: needs left, right, bottom and top") from err
-    if not all(0.0 < sign * out[side] < clear_m[axis] for side, (axis, sign) in SIDES.items()):
-        raise ValueError(f"page.inner_edges_m {out}: page frame metres, left and bottom below 0, right and top above")
-    return out
+    return {"left": -hx, "right": hx, "bottom": -hy, "top": hy}
 
 
 def off_print(program: dict, page: dict) -> str | None:
     """Why the program's lines, their width included, leave the clear centre of the print `page` (the effective
-    stack.yaml page: its clear_m and inner_edges_m) and would draw on its border; None when they stay inside."""
-    edges = inner_edges(page["clear_m"], page.get("inner_edges_m"))
+    stack.yaml page: its clear_m) and would draw on its border; None when they stay inside."""
+    edges = inner_edges(page["clear_m"])
     tools = {r["id"]: r.get("tool") or {} for r in program.get("resources", [])}
     lo, hi = np.full(2, np.inf), np.full(2, -np.inf)
     for op in program.get("ops", []):
@@ -108,6 +255,28 @@ def touch_layout(program: dict | None, spread_m: float) -> np.ndarray:
     return touch_points(min(float(spread_m), max(0.8 * float(np.min(half)), 0.004)), centre)
 
 
+HOLD_INSET_M = 0.005   # the gauge holds stay this far inside a print's clear centre unless it sets its own (inset_m)
+
+
+def hold_box(clear_m, inset_m=None) -> tuple[float, float]:
+    """The half-sizes of the box the gauge holds keep to: the print's clear centre less `inset_m` (the print's own,
+    page.inset_m; HOLD_INSET_M without one). A 45 x 63 mm forearm print's 32 mm centre less 5 mm left a 30 mm
+    drawing's corner holds 4 mm inside its corners; it sets 2.5 mm."""
+    inset = HOLD_INSET_M if inset_m is None else float(inset_m)
+    return clear_m[0] / 2 - inset, clear_m[1] / 2 - inset
+
+
+def gauge_layout(program: dict | None, spread_m: float, clear_m, inset_m=None) -> np.ndarray:
+    """The wrist gauge's holds on a flat page: the corners of a square spread_m about the drawing's centre, and the
+    centre, inside the print's clear centre less its inset (hold_box). The gauge leaves no dot, so unlike
+    touch_layout it need not stay under the drawing, and five points name a bad one where four cannot."""
+    box = program_box(program)
+    centre = np.zeros(2) if box is None else box[0]
+    hx, hy = hold_box(clear_m, inset_m)
+    corners = np.array([[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0], [0.0, 0.0]]) * spread_m + centre
+    return np.clip(corners, [-hx, -hy], [hx, hy])
+
+
 def fit_plane(points, normal_hint) -> tuple[np.ndarray, float]:
     """Least-squares plane through >= 3 points: (unit normal n, d) with n.p + d = 0, n along normal_hint."""
     pts = np.asarray(points, dtype=float)
@@ -120,15 +289,6 @@ def fit_plane(points, normal_hint) -> tuple[np.ndarray, float]:
         normal = -normal
     normal = normal / np.linalg.norm(normal)
     return normal, float(-normal @ centroid)
-
-
-def height_plane(points, normal) -> tuple[np.ndarray, float]:
-    """The plane with the given unit normal at the touches' median height: (n, d) with n.p + d = 0.
-    Three touches 24 mm apart pin a height well and a tilt badly (+-1 mm is +-2.4 deg; bench
-    2026-09-26 fits swung 7-13 deg), so the camera's tilt is kept and the touches set the height."""
-    n = np.asarray(normal, dtype=float)
-    n = n / np.linalg.norm(n)
-    return n, float(-np.median(np.asarray(points, dtype=float) @ n))
 
 
 def touched_page(camera: np.ndarray, normal: np.ndarray, d: float) -> np.ndarray:

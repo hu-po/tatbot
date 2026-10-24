@@ -20,11 +20,12 @@ arm; a pressed, disconnected, malformed, or timed-out signal must stop motion.
 - The e-stop is a motion stop, not a guarantee that power is removed.
 
 The firmware and consumer implementations are in
-`firmware/estop_pico/`, `cpp/teleop/`, and
-`python/lerobot_robot_tatbot/`. Keep their protocol and timeout tests together
-with code changes.
+`firmware/estop_pico/`, `cpp/teleop/`, `rust/tatbot-arm/`, the drawing
+driver's reader (`ros/tatbot_hardware/src/estop.cpp`) and the network
+relay (`ros/tatbot_estop_relay/`). Keep their protocol and timeout tests
+together with code changes.
 
-The active C++ or Python monitor also publishes `tatbot.estop-status/1` as an
+The active C++ or Rust monitor also publishes `tatbot.estop-status/1` as an
 atomic runtime snapshot. A separate writer publishes it so slow or failed
 filesystem writes cannot stall heartbeat consumption. `tatbot status` reads that snapshot instead of opening
 the serial device a second time. It accepts health only when the device matches,

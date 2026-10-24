@@ -15,9 +15,10 @@ from tatbot_motion.station import POST_RADIUS_M, Post, overhead_post  # noqa: F4
 from tatbot_calib import halo
 
 # The wrist's bodies as (frame suffix, sphere radius, m): each face of the wrist tag cube (tags of 47 mm on a cube
-# about 40 mm across, off the finger carriage), the wrist D405 and its bracket, the wrist flange and the forearm.
-WRIST_BODIES = (("wrist_tag", 0.035), ("realsense_color_optical_frame", 0.040), ("link_6", 0.045),
-                ("link_5", 0.045), ("link_4", 0.050))
+# about 40 mm across, off the finger carriage), each wrist D405 and its bracket (the lower one under the wrist since
+# 2026-10-23), the wrist flange and the forearm.
+WRIST_BODIES = (("wrist_tag", 0.035), ("realsense_color_optical_frame", 0.040),
+                ("realsense_lower_color_optical_frame", 0.040), ("link_6", 0.045), ("link_5", 0.045), ("link_4", 0.050))
 CLEARANCE_M = 0.015          # a wrist body's surface keeps this far from the post's
 APPROACH_OVER_M = 0.030      # S1 checks the way to the tool upright this far over the ball before it touches
 REST = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 1.5708, 0.0])   # the arm landed: where each goal's joint path starts
@@ -73,6 +74,31 @@ def planned_path(kin, motion: dict, q, target: np.ndarray, rate_hz: float = 100.
     return np.vstack(rows)
 
 
+def nearest_first(kin, joints, pool: list, room):
+    """(index, pose) of `pool`'s poses in the order a run visits them: of the first room() not yet tried (the holds
+    it still wants, in the pool's order), the one the arm reaches by the least turn of its largest joint from
+    joints() (what sets a joint move's length), ties to the earlier. The holds kept are the pool's first that
+    succeed, as in its own order: in a most-varied-first pool's (wristcam.spread) the 12 roof-tag holds of calib
+    overhead cf32 turned the arm's largest joint 7.8 rad between them, this order 4.3 (2026-10-22). Without
+    kinematics, the pool's order."""
+    tried: set[int] = set()
+    while batch := [i for i in range(len(pool)) if i not in tried][:max(0, room())]:
+        q = None if kin is None else np.asarray(joints(), float)
+        i = batch[int(np.argmin([0.0 if q is None else _turn(kin, pool[i], q) for i in batch]))]
+        tried.add(i)
+        yield i, pool[i]
+
+
+def _turn(kin, pose: np.ndarray, q: np.ndarray) -> float:
+    """The largest joint's turn from q to the IK of `pose` seeded there; inf without one."""
+    from tatbot_session import ready
+
+    try:
+        return float(np.max(np.abs(ready.solve_ik_seeded(kin, pose, q)[:6] - q[:6])))
+    except ValueError:
+        return math.inf
+
+
 def path_clearance(kin, rows, bodies, posts, every: int = 5) -> tuple[float, np.ndarray]:
     """The smallest wrist_clearance along rows of joints (every `every`th and the last), and the row it is at."""
     rows = np.asarray(rows, float)
@@ -82,11 +108,10 @@ def path_clearance(kin, rows, bodies, posts, every: int = 5) -> tuple[float, np.
     return gaps[worst], picked[worst]
 
 
-def _margin(kin, pose: np.ndarray, bodies, posts, guard=None, arm: str = "", station=None) -> float:
+def _margin(kin, pose: np.ndarray, bodies, posts, station=None) -> float:
     """The joint margin (rad) the arm keeps at `pose` from rest, or -1 when it has no IK there, its wrist comes
-    within CLEARANCE_M of a post, (with the stack's tatbot_motion.collision.Guard) it stands within the guard's
-    margin of the other arm, which the executor will not go near, or `station` (joints -> bool) says its bodies are
-    not clear of the station's parts."""
+    within CLEARANCE_M of a post, or `station` (joints -> bool) says its bodies are not clear of the station's
+    parts."""
     from tatbot_session import ready
 
     try:
@@ -95,19 +120,17 @@ def _margin(kin, pose: np.ndarray, bodies, posts, guard=None, arm: str = "", sta
         return -1.0
     if wrist_clearance(kin, q, bodies, posts) < CLEARANCE_M:
         return -1.0
-    if guard is not None and guard.scene.clearance({**guard.others(arm, {})[0], arm: q}).distance_m < guard.margin_m:
-        return -1.0
     if station is not None and not station(q):
         return -1.0
     return float(np.min(np.minimum(q[:6] - np.asarray(kin.lower)[:6], np.asarray(kin.upper)[:6] - q[:6])))
 
 
 def choose_heading(kin, arm: str, ball: np.ndarray, attitudes, margin_rad: float, posts=(),
-                   guard=None, station=None) -> tuple[float, list]:
+                   station=None) -> tuple[float, list]:
     """The base heading (degrees, every 15) whose attitudes the arm reaches over the ball from rest, keeping the
     planner's joint margin and its wrist clear of the posts: S1 upright, then each S4 (yaw, tilt) about the heading.
     The most of them, then the widest margin. Returns (the heading, the attitudes it cannot reach). The station
-    stands where the scene puts it (0.33 m out and toward the blue arm on the demo table, 2026-09-29), so a fixed
+    stands where the scene puts it (0.33 m out and to the arm's left on the demo table, 2026-09-29), so a fixed
     heading can leave S1 itself out of reach, or turn the wrist into the camera's post. S1's views are chosen apart
     from it (Calibration.probe_views)."""
     wanted = [(0.0, 0.0)] + [tuple(a) for a in attitudes]
@@ -117,7 +140,7 @@ def choose_heading(kin, arm: str, ball: np.ndarray, attitudes, margin_rad: float
         reached, margins = [], []
         for yaw, tilt in wanted:   # S1 upright first: a heading that misses it is no base
             margin = _margin(kin, halo.tool_pose(ball, math.radians(heading + yaw), math.radians(tilt)), bodies,
-                             posts, guard, arm, station)
+                             posts, station)
             if margin >= margin_rad:
                 reached.append((yaw, tilt))
                 margins.append(margin)

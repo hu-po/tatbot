@@ -1,5 +1,4 @@
 # Generic palette size example; not an installed inventory or placement.
-# See config/examples/simulator/palette.yaml for the six-slot v11 scene fixture.
 # Sizes below are generic placeholders — measure your caps.
 
 schema_version: 1

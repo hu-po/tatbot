@@ -26,8 +26,8 @@ fn build_sdk() {
     assert!(
         head.status.success()
             && String::from_utf8_lossy(&head.stdout).trim()
-                == "fdfd9f68f57b3bd05c4e85011fa5c11296525b2f",
-        "SDK must be pinned v1.8.5"
+                == "507451794d11e54f11494ef3be1d786ec6060d4a",
+        "SDK must be pinned v1.11.0"
     );
     let dirty = Command::new("git")
         .arg("-C")
@@ -54,8 +54,8 @@ fn build_sdk() {
         lib.join("libtrossen_arm.a").is_file(),
         "SDK static library missing"
     );
-    println!("cargo:sdk_version=1.8.5");
-    println!("cargo:sdk_revision=fdfd9f68f57b3bd05c4e85011fa5c11296525b2f");
+    println!("cargo:sdk_version=1.11.0");
+    println!("cargo:sdk_revision=507451794d11e54f11494ef3be1d786ec6060d4a");
     println!(
         "cargo:sdk_library_sha256={:x}",
         Sha256::digest(std::fs::read(lib.join("libtrossen_arm.a")).expect("SDK library"))

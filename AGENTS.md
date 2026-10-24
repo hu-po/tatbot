@@ -10,9 +10,10 @@ roots, no root Python package:
   test without it.
 - `rust/visiond/`: camera ingestion, sync, recording, replay. Cargo. Sensors
   are described in a registry file — see `rust/visiond/config/vision.example.toml`.
-- `python/lerobot_robot_tatbot/`: the LeRobot follower plugin. uv,
-  Python 3.12. `mock_driver.MockDriver` is the hardware-free backend.
-- `python/tatbot_sim/`: ManiSkill data factory (x86_64 only).
+- `python/lerobot_robot_tatbot/`: the LeRobot environment for training and
+  policy serving. uv, Python 3.12.
+- `python/tatbot_surface/`: torch-free body-surface, chart and placement readers
+  (numpy and scipy).
 - `web/inkmap/`, `web/inkgen/`: tattoo mapping and design generation.
 - `firmware/estop_pico/`: hardware e-stop heartbeat firmware.
 - `scripts/tatbot`: the CLI. `scripts/check` runs every check this tree can.

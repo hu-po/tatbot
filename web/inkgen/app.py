@@ -22,7 +22,8 @@ The HTTP handler hands the render to a worker thread with its context copied,
 which is what keeps the ZeroGPU scheduler's request context intact.
 
 Off the Hub the process stops itself after INKGEN_IDLE_STOP_S (900) with no
-generation, so `tatbot design generate` can start one on demand and forget it.
+generation, so a caller can start one on demand (`tatbot inkgen ctl -- start`)
+and forget it.
 `INKGEN_FAKE_ENGINE=1` serves the whole thing without weights (see
 `fake_engine.py`), for adapter tests and for driving the page on a laptop.
 
@@ -387,9 +388,10 @@ if __name__ == "__main__":
     # that wants LAN exposure states INKGEN_HOST explicitly.
     host = os.environ.get("INKGEN_HOST") or (
         "0.0.0.0" if os.environ.get("SPACE_ID") else "127.0.0.1")
+    # The page takes no file, so Gradio's generic upload route takes none either.
     gradio_app, _local, _share = demo.launch(server_name=host, server_port=port,
                                              prevent_thread_lock=True, ssr_mode=False,
-                                             allowed_paths=[str(DOWNLOADS)])
+                                             allowed_paths=[str(DOWNLOADS)], max_file_size="1kb")
     for route in reversed(router.routes):
         gradio_app.router.routes.insert(0, route)
     IDLE.start()

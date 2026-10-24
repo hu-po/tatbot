@@ -1,0 +1,23 @@
+# A made-up ink catalog for the scene tests.
+schema_version: 1
+
+example_black:
+  display_name: Example Black
+  rgb: [0, 0, 0]
+  vendor: null
+  product: null
+  bottle_ml: null
+
+example_white:
+  display_name: Example White
+  rgb: [250, 250, 250]
+  vendor: null
+  product: null
+  bottle_ml: null
+
+example_red:
+  display_name: Example Red
+  rgb: [200, 30, 30]
+  vendor: null
+  product: null
+  bottle_ml: null

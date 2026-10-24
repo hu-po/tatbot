@@ -34,14 +34,10 @@ fleet_toolchain::realsense_dds() {
 }
 
 fleet_toolchain::use() {
-  local source_root node_bin assets
+  local source_root node_bin
   source_root="$1"
   [[ "${source_root##*/}" == source && ! -e "$source_root/.git" ]] || return 0
   node_bin="$(dirname "$source_root")/toolchain/node/bin"
-  assets="$(dirname "$source_root")/toolchain/maniskill"
-  if [[ -d "$assets/data/robots/widowxai" && -z "${MS_ASSET_DIR:-}" ]]; then
-    export MS_ASSET_DIR="$assets"
-  fi
   fleet_toolchain::user_bins
   fleet_toolchain::realsense_dds
   [[ -x "$node_bin/node" ]] || return 0

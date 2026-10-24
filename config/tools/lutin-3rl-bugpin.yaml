@@ -20,6 +20,7 @@ schema_version: 2
 tool_id: lutin-3rl-bugpin
 kind: rotary_pen
 substrate: silicon_skin
+substrates: ["silicon_skin", "human_skin"]
 display_name: "Ambition Lutin + HAWINK 3RL bugpin X-taper"
 body: "Ambition Lutin Rotary (short pen, RCA)"
 cartridge: "HAWINK 1003RL, 3 round liner, 0.30 mm bugpin, X-taper"
@@ -73,6 +74,10 @@ stroke_mm: 4.0
 # the 3.0 mm rung the right depth and stopped the ladder past 1.5 mm; with the
 # needles meeting the skin in the last 25% of the stroke, that is 3.0 + 1.0.
 # Neither the arm's joint nor carriage efforts resolved the contact.
+# 2026-10-07, black on a half-skin: every rung inked, from the tube's end 4.0 mm
+# over the gauged skin (needles just reaching it, a line ~0.5 mm wide by eye) to
+# 2.5 mm (1.5 mm in, ~1 mm wide); there the needles went through the skin to the
+# mat under it, and the operator set 2.5 mm as the deepest this cartridge rides.
 needle_reach_mm: 4.0
 # The needles at the top of the stroke are inside the tube.
 tip_out_at_top_mm: null
@@ -103,7 +108,12 @@ dip:
   wall_margin_m: 0.0015    # the tool's outside keeps this from the bore's wall, beyond the station's uncertainty
   mm_per_dip: 120.0        # line per dip until a bench measurement (dip, draw until it fades) replaces it; 3x the
                            # first guess (40), which dipped well before the line faded (operator, 2026-10-06)
-  mm_per_dip_by_ink: {}    # {ink_id: mm}: measured per ink on this tool's substrate
+  mm_per_dip_by_ink:       # {ink_id: mm}: measured per ink on this tool's substrate
+    # one dip, then 20 mm lines at the 3.0 mm ride on a half-skin: lines inked to 260 mm and none from 280 mm
+    # (2026-10-07, three ~2.5 min page set-ups between them); three quarters of the fade keeps every line solid.
+    # On a forearm one dip carried the 184 mm heart and the operator asked for dips sooner (2026-10-23): skin
+    # takes more than silicone, so 130 mm until a fade block on skin measures it.
+    nighthawk_black: 130.0
   # A resource activated by a rinse (tatbot-inks/3 `activation: {method: rinse, slot, ink_id}`) takes the cartridge
   # from the last ink to its own in a cap of water, no landing: one dip there with the machine running, held longer
   # than an ink dip, the tube's end at the water's declared level so the stroking needles flush it (operator,

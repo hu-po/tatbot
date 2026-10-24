@@ -28,7 +28,7 @@ const UNREVIEWED: PlacementReview = { status: "pending", reviewer: "unreviewed I
 /** A placement authored here, as opposed to one that arrived in a file.
  *  An imported item keeps the review and provenance it came with, so opening a
  *  design and saving it back untouched hands back the identity it arrived with
- *  — including one written by the headless `tatbot design place`. */
+ *  — including one written by the former headless `tatbot design place`. */
 const authored = (record: ArtworkRecord): PlacementProvenance =>
   ({ producer: "tatbot-inkmap", version: "1", created_utc: EXPORT_EPOCH, source_sha256: record.content_sha256 });
 

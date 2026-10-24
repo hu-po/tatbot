@@ -14,7 +14,7 @@ from tatbot_motion import load_motion
 from tatbot_motion.estimate import drawing_seconds, estimate_duration
 
 
-def schedule(tmp_path, layers, resources, assignments, *, substrate='paper', max_seconds=60):
+def schedule(tmp_path, layers, resources, assignments, *, substrate='paper', max_seconds=60, max_stroke_m=None):
     doc = drawing(layers)
     repo = fixture_repo(tmp_path / 'repo')
     path = manifest(tmp_path / 'inks.yaml', doc, resources, assignments, substrate=substrate)
@@ -22,7 +22,8 @@ def schedule(tmp_path, layers, resources, assignments, *, substrate='paper', max
     widths = {key: next(r['tool']['line_width_m'] for r in table if r['id'] == identity)
               for key, identity in bindings.items()}
     strokes, _ = placed_strokes(doc, tool_widths=widths)
-    return schedule_ops(strokes, bindings, table, speed=SPEED, max_seconds=max_seconds, motion=load_motion()), table, strokes
+    return (schedule_ops(strokes, bindings, table, speed=SPEED, max_seconds=max_seconds, motion=load_motion(),
+                         max_stroke_m=max_stroke_m), table, strokes)
 
 
 def test_ballpoint_sequence_preserves_repeats_and_reversals_without_dips(tmp_path):
@@ -145,3 +146,15 @@ def test_residual_charge_carries_across_complete_paths():
 def test_invalid_material_inputs_refused(points, capacity, remaining):
     with pytest.raises(CompileError):
         physical_sections(points, capacity_m=capacity, remaining_m=remaining)
+
+
+def test_a_path_longer_than_max_stroke_is_drawn_as_lifted_strokes_covering_it_once(tmp_path):
+    path = element([[.002, .002], [.017, .002]])   # 15 mm
+    ops, _, strokes = schedule(tmp_path, [('pen', [path])], [resource('B')], [('pen', 'B')], max_stroke_m=.005)
+    actual = [op for op in ops if op['op'] == 'stroke']
+    lengths = [float(arc_lengths(np.asarray(op['points_m']))[-1]) for op in actual]
+    assert len(actual) == 3 and max(lengths) <= .005 + 1e-9 and not any(op['continues'] for op in actual)
+    assert sum(lengths) == pytest.approx(.015) and not any(op['closed'] for op in actual)
+    np.testing.assert_allclose([op['src']['arc_m'] for op in actual], [[0., .005], [.005, .01], [.01, .015]], atol=1e-9)
+    np.testing.assert_allclose(actual[0]['points_m'][0], strokes[0].points_m[0])
+    np.testing.assert_allclose(actual[-1]['points_m'][-1], strokes[0].points_m[-1])

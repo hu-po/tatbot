@@ -10,9 +10,11 @@
 
   <!-- Robot-centric axes: +X forward through the fixed cameras, +Y toward
        the robot's left hand, +Z up. Left/right never mean the observer's
-       left/right when looking back at the robot. Keep the aluminum frame
-       centered between the arms; a misidentified calibration wrist must
-       be corrected in the registration, not hidden by shifting the rig. -->
+       left/right when looking back at the robot. The aluminum frame stays
+       centred on the root, midway between the two arm mounts; only the
+       pink (right) arm is modelled, the left one being the teleop leader
+       alone. A misidentified calibration wrist must be corrected in the
+       registration, not hidden by shifting the rig. -->
   <link name="rig_center"/>
   <joint name="rig_center_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -180,366 +182,6 @@
   </joint>
   <link name="camera5_optical_frame"/>
 
-  <!-- arm_l -->
-  <joint name="left/mount_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0.2675 0"/>
-    <parent link="root"/>
-    <child link="left/base_link"/>
-  </joint>
-  <link name="left/base_link">
-    <inertial>
-      <origin rpy="0 0 0" xyz="-0.00014175 -0.00005228 0.03175177"/>
-      <mass value="0.45969858"/>
-      <inertia ixx="0.00041660" ixy="0.00000011" ixz="-0.00000454" iyy="0.00044896" iyz="-0.00000078" izz="0.00021403"/>
-    </inertial>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/base_link.stl"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/base_link.stl"/>
-      </geometry>
-    </collision>
-  </link>
-  <link name="left/link_1">
-    <inertial>
-      <origin rpy="0 0 0" xyz="-0.00011075 0.00171176 0.02044592"/>
-      <mass value="0.15270428"/>
-      <inertia ixx="0.00018509" ixy="-0.00000191" ixz="-0.00001436" iyy="0.00008358" iyz="-0.00000130" izz="0.00019219"/>
-    </inertial>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/link_1.stl"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/link_1.stl"/>
-      </geometry>
-    </collision>
-  </link>
-  <joint name="left/joint_0" type="revolute">
-    <origin rpy="0 0 0" xyz="0 0 0.05725"/>
-    <parent link="left/base_link"/>
-    <child link="left/link_1"/>
-    <axis xyz="0 0 1"/>
-    <limit effort="27.0" lower="-3.0543261909900767" upper="3.0543261909900767" velocity="3.375"/>
-  </joint>
-  <link name="left/link_2">
-    <inertial>
-      <origin rpy="0 0 0" xyz="-0.13121451 -0.00292583 0.00021345"/>
-      <mass value="1.15316319"/>
-      <inertia ixx="0.00102632" ixy="-0.00000319" ixz="-0.00002679" iyy="0.01736118" iyz="-0.00000193" izz="0.01794489"/>
-    </inertial>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/link_2.stl"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/link_2.stl"/>
-      </geometry>
-    </collision>
-  </link>
-  <joint name="left/joint_1" type="revolute">
-    <origin rpy="0 0 0" xyz="0.02 0 0.04625"/>
-    <parent link="left/link_1"/>
-    <child link="left/link_2"/>
-    <axis xyz="0 1 0"/>
-    <limit effort="27.0" lower="0.0" upper="3.141592653589793" velocity="3.375"/>
-  </joint>
-  <link name="left/link_3">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.18083602 -0.00094090 0.05554937"/>
-      <mass value="0.68666638"/>
-      <inertia ixx="0.00064876" ixy="0.00009128" ixz="-0.00052002" iyy="0.00547407" iyz="0.00001159" izz="0.00561509"/>
-    </inertial>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/link_3.stl"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/link_3.stl"/>
-      </geometry>
-    </collision>
-  </link>
-  <joint name="left/joint_2" type="revolute">
-    <origin rpy="0 0 0" xyz="-0.264 0 0"/>
-    <parent link="left/link_2"/>
-    <child link="left/link_3"/>
-    <axis xyz="0 -1 0"/>
-    <limit effort="27.0" lower="0.0" upper="2.356194490192345" velocity="3.375"/>
-  </joint>
-  <link name="left/link_4">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.05797842 0.00027145 0.05884447"/>
-      <mass value="0.45789905"/>
-      <inertia ixx="0.00053839" ixy="0.00000690" ixz="-0.00018164" iyy="0.00066138" iyz="0.00000724" izz="0.00042116"/>
-    </inertial>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/link_4.stl"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/link_4.stl"/>
-      </geometry>
-    </collision>
-  </link>
-  <joint name="left/joint_3" type="revolute">
-    <origin rpy="0 0 0" xyz="0.245 0 0.06"/>
-    <parent link="left/link_3"/>
-    <child link="left/link_4"/>
-    <axis xyz="0 -1 0"/>
-    <limit effort="7.0" lower="-1.5707963267948966" upper="1.5707963267948966" velocity="7.0"/>
-  </joint>
-  <link name="left/link_5">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.00412447 -0.00001138 -0.04283184"/>
-      <mass value="0.36693910"/>
-      <inertia ixx="0.00018912" ixy="-0.00000045" ixz="0.00000090" iyy="0.00032062" iyz="0.00000003" izz="0.00026750"/>
-    </inertial>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/link_5.stl"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/link_5.stl"/>
-      </geometry>
-    </collision>
-  </link>
-  <joint name="left/joint_4" type="revolute">
-    <origin rpy="0 0 0" xyz="0.06775 0 0.0455"/>
-    <parent link="left/link_4"/>
-    <child link="left/link_5"/>
-    <axis xyz="0 0 -1"/>
-    <limit effort="7.0" lower="-1.5707963267948966" upper="1.5707963267948966" velocity="7.0"/>
-  </joint>
-  <link name="left/link_6">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.04572768 -0.00000726 0.00001402"/>
-      <mass value="0.55469347"/>
-      <inertia ixx="0.00082429" ixy="-0.00000051" ixz="0.00000010" iyy="0.00048759" iyz="0.00000004" izz="0.00108600"/>
-    </inertial>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/link_6.stl"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/link_6.stl"/>
-      </geometry>
-    </collision>
-  </link>
-  <joint name="left/joint_5" type="revolute">
-    <origin rpy="0 0 0" xyz="0.02895 0 -0.0455"/>
-    <parent link="left/link_5"/>
-    <child link="left/link_6"/>
-    <axis xyz="1 0 0"/>
-    <limit effort="7.0" lower="-3.141592653589793" upper="3.141592653589793" velocity="7.0"/>
-  </joint>
-
-
-  <!-- left arm carriage -->
-  <link name="left/carriage_left">
-    <inertial>
-      <origin rpy="0 0 0" xyz="-0.00889602 -0.00403515 -0.00457908"/>
-      <mass value="0.05036313"/>
-      <inertia ixx="0.00001736" ixy="-0.00000165" ixz="-0.00000104" iyy="0.00000591" iyz="-0.00000172" izz="0.00001378"/>
-    </inertial>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/carriage_left.stl"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/carriage_left.stl"/>
-      </geometry>
-    </collision>
-  </link>
-  <joint name="left/left_carriage_joint" type="prismatic">
-    <origin rpy="0 0 0" xyz="0.0865 0.023 0"/>
-    <parent link="left/link_6"/>
-    <child link="left/carriage_left"/>
-    <axis xyz="0 1 0"/>
-    <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
-  </joint>
-  <link name="left/carriage_right">
-    <inertial>
-      <origin rpy="0 0 0" xyz="-0.00889602 0.00403514 0.00457901"/>
-      <mass value="0.05036313"/>
-      <inertia ixx="0.00001736" ixy="-0.00000165" ixz="-0.00000104" iyy="0.00000591" iyz="-0.00000172" izz="0.00001378"/>
-    </inertial>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/carriage_right.stl"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <mesh filename="meshes/wxai/carriage_right.stl"/>
-      </geometry>
-    </collision>
-  </link>
-  <joint name="left/right_carriage_joint" type="prismatic">
-    <origin rpy="0 0 0" xyz="0.0865 -0.023 0"/>
-    <parent link="left/link_6"/>
-    <child link="left/carriage_right"/>
-    <mimic joint="left/left_carriage_joint"/>
-    <axis xyz="0 -1 0"/>
-    <limit effort="400.0" lower="0.0" upper="0.044" velocity="0.0875"/>
-  </joint>
-  <link name="left/handle"/>
-  <joint name="left/handle_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.012 0 0"/>
-    <parent link="left/link_6"/>
-    <child link="left/handle"/>
-  </joint>
-  <link name="left/leader_finger_left_index"/>
-  <joint name="left/left_index_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
-    <parent link="left/carriage_left"/>
-    <child link="left/leader_finger_left_index"/>
-  </joint>
-  <link name="left/leader_finger_left_thumb"/>
-  <joint name="left/left_thumb_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
-    <parent link="left/carriage_right"/>
-    <child link="left/leader_finger_left_thumb"/>
-  </joint>
-  <!-- Installed left laser identity; mirrored V5 CAD visuals. The assembly
-       meshes are in the CAD frame (left/carriage_right, millimetres), but the
-       print is bolted to the OTHER carriage, rolled 180 degrees about the
-       carriage x axis (the 2x3 M3 pattern is symmetric under that roll), so
-       the V5 sits under left/carriage_left at rpy="pi 0 0". Evidence: the
-       measured wrist_left tags (config/wrist_tags_measured_left.json) lie on
-       the carrier's three faces only in that placement, and the pen axis
-       then points straight down in every 2026-09-16 palette contact hold
-       (sweep-arm-blue-20260916_132711). Legacy handle/finger links above
-       retain frames only. Both D405 chains remain on their own wrists.
-       The compact rear-facing carrier replaces the V5 carrier.
-       See meshes/ee/fiducial-cubes-47mm-rear/provenance.json. -->
-  <link name="left/ee_mount">
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry><mesh filename="meshes/ee/leader-laser-v5/01_leader_cradle.stl" scale="0.001 0.001 0.001"/></geometry>
-      <material name="laser_01_leader_cradle"><color rgba="0.12 0.12 0.13 1"/></material>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry><mesh filename="meshes/ee/leader-laser-v5/02_oval_clamp_cap.stl" scale="0.001 0.001 0.001"/></geometry>
-      <material name="laser_02_oval_clamp_cap"><color rgba="0.12 0.12 0.13 1"/></material>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry><mesh filename="meshes/ee/fiducial-cubes-47mm-rear/left_fiducial_cube_47mm.stl" scale="0.001 0.001 0.001"/></geometry>
-      <material name="laser_03_mirrored_tag_carrier"><color rgba="0.12 0.12 0.13 1"/></material>
-    </visual>
-  </link>
-  <joint name="left/ee_mount_joint" type="fixed">
-    <origin rpy="3.141592653589793 0 0" xyz="0 0 0"/>
-    <parent link="left/carriage_left"/>
-    <child link="left/ee_mount"/>
-  </joint>
-  <!-- leader-laser-v5 tool_mount: the fat end of the 35 mm oval grip cavity, the
-       CAD clamp datum, +z along the pen axis toward the nose, +x along the
-       carriage -z. This is the CAD datum (provenance tool_datum) carried
-       through the installed placement above: Rx(pi) applied to the CAD
-       origin and axes, so +z is carriage +x-y — the same direction in link 6
-       as the follower's datum. The 2026-09-16 touch-off in this frame lives
-       in config/workspace.yaml (re-expressed from the pre-correction frame
-       on 2026-09-17; the tip in link 6 is unchanged). The pen itself is the
-       generated tool block from its datasheet. -->
-  <link name="left/tool_mount"/>
-  <joint name="left/tool_mount_joint" type="fixed">
-    <origin rpy="0.785398163397448 1.570796326794897 0" xyz="0.038110806929 0.065907191271 0.000564"/>
-    <parent link="left/carriage_left"/>
-    <child link="left/tool_mount"/>
-  </joint>
-  <joint name="left/ee_gripper" type="fixed">
-    <origin rpy="0 0 0" xyz="0.156062 0 0"/>
-    <parent link="left/link_6"/>
-    <child link="left/ee_gripper_link"/>
-  </joint>
-  <link name="left/ee_gripper_link"/>
-
-
-  <!-- BEGIN GENERATED WRIST FIDUCIALS target=wrist_left layout_sha256=bcef11b90240c35e8e0e3670e6b2fe58b5f5b0194976a2a987f72e8051af0817 -->
-  <!-- status=calibrated; generated by scripts/vision/export_wrist_tags.py -->
-  <link name="left/wrist_tag1">
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0002"/>
-      <geometry><mesh filename="meshes/tags/36h11_001_47mm/tag.glb"/></geometry>
-      <material name="fiducial_1"><color rgba="1 1 1 1"/></material>
-    </visual>
-  </link>
-  <joint name="left/wrist_tag1_joint" type="fixed">
-    <origin rpy="-0.00164549 0.01279494 -0.01488363" xyz="0.06854182 0.13964242 0.02857898"/>
-    <parent link="left/carriage_left"/>
-    <child link="left/wrist_tag1"/>
-  </joint>
-  <link name="left/wrist_tag5">
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0002"/>
-      <geometry><mesh filename="meshes/tags/36h11_005_47mm/tag.glb"/></geometry>
-      <material name="fiducial_5"><color rgba="1 1 1 1"/></material>
-    </visual>
-  </link>
-  <joint name="left/wrist_tag5_joint" type="fixed">
-    <origin rpy="-1.56956599 0.01207150 -0.02292718" xyz="0.06941833 0.17484593 -0.00439281"/>
-    <parent link="left/carriage_left"/>
-    <child link="left/wrist_tag5"/>
-  </joint>
-  <link name="left/wrist_tag30">
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0002"/>
-      <geometry><mesh filename="meshes/tags/36h11_030_47mm/tag.glb"/></geometry>
-      <material name="fiducial_30"><color rgba="1 1 1 1"/></material>
-    </visual>
-  </link>
-  <joint name="left/wrist_tag30_joint" type="fixed">
-    <origin rpy="-1.56511783 -0.00149562 1.55821655" xyz="0.03075870 0.14097805 -0.00353179"/>
-    <parent link="left/carriage_left"/>
-    <child link="left/wrist_tag30"/>
-  </joint>
-  <!-- END GENERATED WRIST FIDUCIALS -->
   <!-- arm_r -->
   <joint name="right/mount_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 -0.2675 0"/>
@@ -787,7 +429,7 @@
     </inertial>
   </link>
 
-  <!-- BEGIN GENERATED WRIST FIDUCIALS layout_sha256=c9c0cfa2fb0bb726e9fce169fd3a04588c8c136e15284cf3a2f9e40cd330f183 -->
+  <!-- BEGIN GENERATED WRIST FIDUCIALS layout_sha256=3e5df17ddc64364642285bf62333b73a44b94214c3a30ab9352d974b0fae86c0 -->
   <!-- status=calibrated; generated by scripts/vision/export_wrist_tags.py -->
   <link name="right/wrist_tag2">
     <visual>
@@ -875,8 +517,15 @@
   </joint>
   <link name="right/realsense_color_optical_frame"/>
 
-  <!-- left arm RealSense: original Trossen mount, same local chain as right -->
-  <link name="left/realsense_mount_d405">
+  <!-- right lower realsense: a second D405 on its own stock Trossen mount, the
+       chain above rolled 180 degrees about link_6's x axis (owner, 2026-10-23):
+       under the wrist, looking along link_6's x axis from below as the upper
+       one does from above. Its mount joint is measured, not CAD: the pose to
+       the upper camera from both cameras' reads of one print at 80 stops of
+       two runs (internal/evidence/wrist_pair.py), which agreed to 0.2 deg and
+       0.8 mm; 1.76 deg and 1.96 mm off the stock bracket rolled pi. The rest
+       of the chain is the stock one. -->
+  <link name="right/realsense_lower_mount_d405">
     <inertial>
       <origin rpy="0 0 0" xyz="0.03023383 0.00679835 0.05006687"/>
       <mass value="0.04518012"/>
@@ -896,23 +545,23 @@
       </geometry>
     </collision>
   </link>
-  <joint name="left/realsense_mount_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.012 0 0"/>
-    <parent link="left/link_6"/>
-    <child link="left/realsense_mount_d405"/>
+  <joint name="right/realsense_lower_mount_joint" type="fixed">
+    <origin rpy="-3.12656 0.02674 -0.00122" xyz="0.01287 0.00091 0.0015"/>
+    <parent link="right/link_6"/>
+    <child link="right/realsense_lower_mount_d405"/>
   </joint>
-  <joint name="left/realsense_joint" type="fixed">
+  <joint name="right/realsense_lower_joint" type="fixed">
     <origin rpy="0 0.3490658503988659 0" xyz="0.02927207801 0 0.03824951197"/>
-    <parent link="left/realsense_mount_d405"/>
-    <child link="left/realsense_bottom_screw_frame"/>
+    <parent link="right/realsense_lower_mount_d405"/>
+    <child link="right/realsense_lower_bottom_screw_frame"/>
   </joint>
-  <link name="left/realsense_bottom_screw_frame"/>
-  <joint name="left/realsense_link_joint" type="fixed">
+  <link name="right/realsense_lower_bottom_screw_frame"/>
+  <joint name="right/realsense_lower_link_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0.01085 0.009 0.021"/>
-    <parent link="left/realsense_bottom_screw_frame"/>
-    <child link="left/realsense_link"/>
+    <parent link="right/realsense_lower_bottom_screw_frame"/>
+    <child link="right/realsense_lower_link"/>
   </joint>
-  <link name="left/realsense_link">
+  <link name="right/realsense_lower_link">
     <visual>
       <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.0038 -0.009 0"/>
       <geometry>
@@ -932,54 +581,54 @@
       <inertia ixx="0.00002117" ixy="0.0" ixz="0.0" iyy="0.000013758" iyz="0.0" izz="0.000013758"/>
     </inertial>
   </link>
-  <joint name="left/realsense_depth_joint" type="fixed">
+  <joint name="right/realsense_lower_depth_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0"/>
-    <parent link="left/realsense_link"/>
-    <child link="left/realsense_depth_frame"/>
+    <parent link="right/realsense_lower_link"/>
+    <child link="right/realsense_lower_depth_frame"/>
   </joint>
-  <link name="left/realsense_depth_frame"/>
-  <joint name="left/realsense_depth_optical_joint" type="fixed">
+  <link name="right/realsense_lower_depth_frame"/>
+  <joint name="right/realsense_lower_depth_optical_joint" type="fixed">
     <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="left/realsense_depth_frame"/>
-    <child link="left/realsense_depth_optical_frame"/>
+    <parent link="right/realsense_lower_depth_frame"/>
+    <child link="right/realsense_lower_depth_optical_frame"/>
   </joint>
-  <link name="left/realsense_depth_optical_frame"/>
-  <joint name="left/realsense_infra1_joint" type="fixed">
+  <link name="right/realsense_lower_depth_optical_frame"/>
+  <joint name="right/realsense_lower_infra1_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0.0 0"/>
-    <parent link="left/realsense_link"/>
-    <child link="left/realsense_infra1_frame"/>
+    <parent link="right/realsense_lower_link"/>
+    <child link="right/realsense_lower_infra1_frame"/>
   </joint>
-  <link name="left/realsense_infra1_frame"/>
-  <joint name="left/realsense_infra1_optical_joint" type="fixed">
+  <link name="right/realsense_lower_infra1_frame"/>
+  <joint name="right/realsense_lower_infra1_optical_joint" type="fixed">
     <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="left/realsense_infra1_frame"/>
-    <child link="left/realsense_infra1_optical_frame"/>
+    <parent link="right/realsense_lower_infra1_frame"/>
+    <child link="right/realsense_lower_infra1_optical_frame"/>
   </joint>
-  <link name="left/realsense_infra1_optical_frame"/>
-  <joint name="left/realsense_infra2_joint" type="fixed">
+  <link name="right/realsense_lower_infra1_optical_frame"/>
+  <joint name="right/realsense_lower_infra2_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 -0.018 0"/>
-    <parent link="left/realsense_link"/>
-    <child link="left/realsense_infra2_frame"/>
+    <parent link="right/realsense_lower_link"/>
+    <child link="right/realsense_lower_infra2_frame"/>
   </joint>
-  <link name="left/realsense_infra2_frame"/>
-  <joint name="left/realsense_infra2_optical_joint" type="fixed">
+  <link name="right/realsense_lower_infra2_frame"/>
+  <joint name="right/realsense_lower_infra2_optical_joint" type="fixed">
     <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="left/realsense_infra2_frame"/>
-    <child link="left/realsense_infra2_optical_frame"/>
+    <parent link="right/realsense_lower_infra2_frame"/>
+    <child link="right/realsense_lower_infra2_optical_frame"/>
   </joint>
-  <link name="left/realsense_infra2_optical_frame"/>
-  <joint name="left/realsense_color_joint" type="fixed">
+  <link name="right/realsense_lower_infra2_optical_frame"/>
+  <joint name="right/realsense_lower_color_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0 0.0 0"/>
-    <parent link="left/realsense_link"/>
-    <child link="left/realsense_color_frame"/>
+    <parent link="right/realsense_lower_link"/>
+    <child link="right/realsense_lower_color_frame"/>
   </joint>
-  <link name="left/realsense_color_frame"/>
-  <joint name="left/realsense_color_optical_joint" type="fixed">
+  <link name="right/realsense_lower_color_frame"/>
+  <joint name="right/realsense_lower_color_optical_joint" type="fixed">
     <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
-    <parent link="left/realsense_color_frame"/>
-    <child link="left/realsense_color_optical_frame"/>
+    <parent link="right/realsense_lower_color_frame"/>
+    <child link="right/realsense_lower_color_optical_frame"/>
   </joint>
-  <link name="left/realsense_color_optical_frame"/>
+  <link name="right/realsense_lower_color_optical_frame"/>
 
   <!-- right arm carriage -->
   <link name="right/carriage_left">
@@ -1164,11 +813,10 @@
     <child link="300mm_front_rail_right"/>
   </joint>
 
-
   <!-- BEGIN generated tool block — scripts/gen_tool_urdf.py, do not edit -->
-  <!-- Ambition Lutin + HAWINK 3RL bugpin X-taper (lutin-3rl-bugpin), datasheet config/tools/lutin-3rl-bugpin.yaml sha256 d5a04c85bb1b.
+  <!-- Ambition Lutin + HAWINK 3RL bugpin X-taper (lutin-3rl-bugpin), datasheet config/tools/lutin-3rl-bugpin.yaml sha256 ff241c2eeaf4.
        Body profile and TCP resolve from the same measured touch-off,
-       74.82 mm out along an axis 5.4 deg
+       62.24 mm out along an axis 2.5 deg
        off the mount's nominal +z (datasheet nominal 73 mm;
        source touch-axis-inferred; visual/TCP error 0.000 mm).
        Regenerate with scripts/gen_tool_urdf.py. -->
@@ -1985,7 +1633,7 @@
     </visual>
   </link>
   <joint name="right/tattoo_pen_joint" type="fixed">
-    <origin rpy="0 0.0935338947 -1.64298059" xyz="-1.22733305e-05 -0.000169732368 0.00181409078"/>
+    <origin rpy="0 0.0431755603 1.53989369" xyz="-1.43536644e-05 -0.000464332396 -0.0107529699"/>
     <parent link="right/tool_mount"/>
     <child link="right/tattoo_pen"/>
   </joint>
@@ -2001,712 +1649,6 @@
     <origin rpy="0 0 0" xyz="0 0 0.073"/>
     <parent link="right/tattoo_pen"/>
     <child link="right/tattoo_needle"/>
-  </joint>
-  <!-- END generated tool block -->
-  <!-- BEGIN generated tool block — scripts/gen_tool_urdf.py, do not edit -->
-  <!-- Handheld picosecond-branded laser pen (tattoo removal) (picosecond-laser-pen), datasheet config/tools/picosecond-laser-pen.yaml sha256 2c9342aeb29f.
-       Body profile and TCP resolve from the same measured touch-off,
-       142.06 mm out along an axis 2.2 deg
-       off the mount's nominal +z (datasheet nominal 140 mm;
-       source touch-axis-inferred; visual/TCP error 0.000 mm).
-       Regenerate with scripts/gen_tool_urdf.py. -->
-  <link name="left/tattoo_pen">
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.08"/>
-      <geometry>
-        <cylinder length="0.009" radius="0.0138"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.073375"/>
-      <geometry>
-        <cylinder length="0.00425" radius="0.0138625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.069125"/>
-      <geometry>
-        <cylinder length="0.00425" radius="0.0139875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.064875"/>
-      <geometry>
-        <cylinder length="0.00425" radius="0.0141125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.060625"/>
-      <geometry>
-        <cylinder length="0.00425" radius="0.0142375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.056375"/>
-      <geometry>
-        <cylinder length="0.00425" radius="0.0143625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.052125"/>
-      <geometry>
-        <cylinder length="0.00425" radius="0.0144875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.047875"/>
-      <geometry>
-        <cylinder length="0.00425" radius="0.0146125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.043625"/>
-      <geometry>
-        <cylinder length="0.00425" radius="0.0147375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.039375"/>
-      <geometry>
-        <cylinder length="0.00425" radius="0.0148625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.035125"/>
-      <geometry>
-        <cylinder length="0.00425" radius="0.0149875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.030875"/>
-      <geometry>
-        <cylinder length="0.00425" radius="0.0151125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.026625"/>
-      <geometry>
-        <cylinder length="0.00425" radius="0.0152375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.022375"/>
-      <geometry>
-        <cylinder length="0.00425" radius="0.0153625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.018125"/>
-      <geometry>
-        <cylinder length="0.00425" radius="0.0154875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.013875"/>
-      <geometry>
-        <cylinder length="0.00425" radius="0.0156125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.009625"/>
-      <geometry>
-        <cylinder length="0.00425" radius="0.0157375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.00540625"/>
-      <geometry>
-        <cylinder length="0.0041875" radius="0.015896875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.00121875"/>
-      <geometry>
-        <cylinder length="0.0041875" radius="0.016090625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.00296875"/>
-      <geometry>
-        <cylinder length="0.0041875" radius="0.016284375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.00715625"/>
-      <geometry>
-        <cylinder length="0.0041875" radius="0.016478125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.01134375"/>
-      <geometry>
-        <cylinder length="0.0041875" radius="0.016671875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.01553125"/>
-      <geometry>
-        <cylinder length="0.0041875" radius="0.016865625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.01971875"/>
-      <geometry>
-        <cylinder length="0.0041875" radius="0.017059375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.02390625"/>
-      <geometry>
-        <cylinder length="0.0041875" radius="0.017253125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.02809375"/>
-      <geometry>
-        <cylinder length="0.0041875" radius="0.017446875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.03228125"/>
-      <geometry>
-        <cylinder length="0.0041875" radius="0.017640625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.03646875"/>
-      <geometry>
-        <cylinder length="0.0041875" radius="0.017834375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.04065625"/>
-      <geometry>
-        <cylinder length="0.0041875" radius="0.018028125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.04484375"/>
-      <geometry>
-        <cylinder length="0.0041875" radius="0.018221875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.04903125"/>
-      <geometry>
-        <cylinder length="0.0041875" radius="0.018415625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.05321875"/>
-      <geometry>
-        <cylinder length="0.0041875" radius="0.018609375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.05740625"/>
-      <geometry>
-        <cylinder length="0.0041875" radius="0.018803125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0596875"/>
-      <geometry>
-        <cylinder length="0.000375" radius="0.018896875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0600625"/>
-      <geometry>
-        <cylinder length="0.000375" radius="0.018890625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0604375"/>
-      <geometry>
-        <cylinder length="0.000375" radius="0.018884375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0608125"/>
-      <geometry>
-        <cylinder length="0.000375" radius="0.018878125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0611875"/>
-      <geometry>
-        <cylinder length="0.000375" radius="0.018871875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0615625"/>
-      <geometry>
-        <cylinder length="0.000375" radius="0.018865625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0619375"/>
-      <geometry>
-        <cylinder length="0.000375" radius="0.018859375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0623125"/>
-      <geometry>
-        <cylinder length="0.000375" radius="0.018853125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0626875"/>
-      <geometry>
-        <cylinder length="0.000375" radius="0.018846875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0630625"/>
-      <geometry>
-        <cylinder length="0.000375" radius="0.018840625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0634375"/>
-      <geometry>
-        <cylinder length="0.000375" radius="0.018834375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0638125"/>
-      <geometry>
-        <cylinder length="0.000375" radius="0.018828125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0641875"/>
-      <geometry>
-        <cylinder length="0.000375" radius="0.018821875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0645625"/>
-      <geometry>
-        <cylinder length="0.000375" radius="0.018815625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0649375"/>
-      <geometry>
-        <cylinder length="0.000375" radius="0.018809375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0653125"/>
-      <geometry>
-        <cylinder length="0.000375" radius="0.018803125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.06634375"/>
-      <geometry>
-        <cylinder length="0.0016875" radius="0.01863125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.06803125"/>
-      <geometry>
-        <cylinder length="0.0016875" radius="0.01829375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.06971875"/>
-      <geometry>
-        <cylinder length="0.0016875" radius="0.01795625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.07140625"/>
-      <geometry>
-        <cylinder length="0.0016875" radius="0.01761875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.07309375"/>
-      <geometry>
-        <cylinder length="0.0016875" radius="0.01728125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.07478125"/>
-      <geometry>
-        <cylinder length="0.0016875" radius="0.01694375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.07646875"/>
-      <geometry>
-        <cylinder length="0.0016875" radius="0.01660625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.07815625"/>
-      <geometry>
-        <cylinder length="0.0016875" radius="0.01626875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.07984375"/>
-      <geometry>
-        <cylinder length="0.0016875" radius="0.01593125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.08153125"/>
-      <geometry>
-        <cylinder length="0.0016875" radius="0.01559375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.08321875"/>
-      <geometry>
-        <cylinder length="0.0016875" radius="0.01525625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.08490625"/>
-      <geometry>
-        <cylinder length="0.0016875" radius="0.01491875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.08659375"/>
-      <geometry>
-        <cylinder length="0.0016875" radius="0.01458125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.08828125"/>
-      <geometry>
-        <cylinder length="0.0016875" radius="0.01424375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.08996875"/>
-      <geometry>
-        <cylinder length="0.0016875" radius="0.01390625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.09165625"/>
-      <geometry>
-        <cylinder length="0.0016875" radius="0.01356875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0929375"/>
-      <geometry>
-        <cylinder length="0.000875" radius="0.013196875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0938125"/>
-      <geometry>
-        <cylinder length="0.000875" radius="0.012790625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0946875"/>
-      <geometry>
-        <cylinder length="0.000875" radius="0.012384375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0955625"/>
-      <geometry>
-        <cylinder length="0.000875" radius="0.011978125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0964375"/>
-      <geometry>
-        <cylinder length="0.000875" radius="0.011571875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0973125"/>
-      <geometry>
-        <cylinder length="0.000875" radius="0.011165625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0981875"/>
-      <geometry>
-        <cylinder length="0.000875" radius="0.010759375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0990625"/>
-      <geometry>
-        <cylinder length="0.000875" radius="0.010353125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.0999375"/>
-      <geometry>
-        <cylinder length="0.000875" radius="0.009946875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1008125"/>
-      <geometry>
-        <cylinder length="0.000875" radius="0.009540625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1016875"/>
-      <geometry>
-        <cylinder length="0.000875" radius="0.009134375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1025625"/>
-      <geometry>
-        <cylinder length="0.000875" radius="0.008728125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1034375"/>
-      <geometry>
-        <cylinder length="0.000875" radius="0.008321875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1043125"/>
-      <geometry>
-        <cylinder length="0.000875" radius="0.007915625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1051875"/>
-      <geometry>
-        <cylinder length="0.000875" radius="0.007509375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1060625"/>
-      <geometry>
-        <cylinder length="0.000875" radius="0.007103125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1068125"/>
-      <geometry>
-        <cylinder length="0.000625" radius="0.00691875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1074375"/>
-      <geometry>
-        <cylinder length="0.000625" radius="0.00695625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1080625"/>
-      <geometry>
-        <cylinder length="0.000625" radius="0.00699375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1086875"/>
-      <geometry>
-        <cylinder length="0.000625" radius="0.00703125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1093125"/>
-      <geometry>
-        <cylinder length="0.000625" radius="0.00706875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1099375"/>
-      <geometry>
-        <cylinder length="0.000625" radius="0.00710625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1105625"/>
-      <geometry>
-        <cylinder length="0.000625" radius="0.00714375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1111875"/>
-      <geometry>
-        <cylinder length="0.000625" radius="0.00718125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1118125"/>
-      <geometry>
-        <cylinder length="0.000625" radius="0.00721875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1124375"/>
-      <geometry>
-        <cylinder length="0.000625" radius="0.00725625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1130625"/>
-      <geometry>
-        <cylinder length="0.000625" radius="0.00729375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1136875"/>
-      <geometry>
-        <cylinder length="0.000625" radius="0.00733125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1143125"/>
-      <geometry>
-        <cylinder length="0.000625" radius="0.00736875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1149375"/>
-      <geometry>
-        <cylinder length="0.000625" radius="0.00740625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1155625"/>
-      <geometry>
-        <cylinder length="0.000625" radius="0.00744375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.1161875"/>
-      <geometry>
-        <cylinder length="0.000625" radius="0.00748125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.11690625"/>
-      <geometry>
-        <cylinder length="0.0008125" radius="0.00750625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.11771875"/>
-      <geometry>
-        <cylinder length="0.0008125" radius="0.00751875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.11853125"/>
-      <geometry>
-        <cylinder length="0.0008125" radius="0.00753125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.11934375"/>
-      <geometry>
-        <cylinder length="0.0008125" radius="0.00754375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.12015625"/>
-      <geometry>
-        <cylinder length="0.0008125" radius="0.00755625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.12096875"/>
-      <geometry>
-        <cylinder length="0.0008125" radius="0.00756875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.12178125"/>
-      <geometry>
-        <cylinder length="0.0008125" radius="0.00758125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.12259375"/>
-      <geometry>
-        <cylinder length="0.0008125" radius="0.00759375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.12340625"/>
-      <geometry>
-        <cylinder length="0.0008125" radius="0.00760625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.12421875"/>
-      <geometry>
-        <cylinder length="0.0008125" radius="0.00761875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.12503125"/>
-      <geometry>
-        <cylinder length="0.0008125" radius="0.00763125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.12584375"/>
-      <geometry>
-        <cylinder length="0.0008125" radius="0.00764375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.12665625"/>
-      <geometry>
-        <cylinder length="0.0008125" radius="0.00765625"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.12746875"/>
-      <geometry>
-        <cylinder length="0.0008125" radius="0.00766875"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.12828125"/>
-      <geometry>
-        <cylinder length="0.0008125" radius="0.00768125"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.12909375"/>
-      <geometry>
-        <cylinder length="0.0008125" radius="0.00769375"/>
-      </geometry>
-    </visual>
-    <visual>
-      <origin rpy="0 0 0" xyz="0 0 0.138275"/>
-      <geometry>
-        <sphere radius="0.0035"/>
-      </geometry>
-    </visual>
-  </link>
-  <joint name="left/tattoo_pen_joint" type="fixed">
-    <origin rpy="0 0.0391517933 -0.786766152" xyz="7.06798229e-05 -7.08734663e-05 0.0025552402"/>
-    <parent link="left/tool_mount"/>
-    <child link="left/tattoo_pen"/>
-  </joint>
-  <link name="left/tattoo_needle">
-  </link>
-  <joint name="left/tattoo_needle_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0.1395"/>
-    <parent link="left/tattoo_pen"/>
-    <child link="left/tattoo_needle"/>
   </joint>
   <!-- END generated tool block -->
 

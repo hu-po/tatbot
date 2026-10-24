@@ -8,15 +8,17 @@
 #   FAIL  the check ran and failed        -> exit 1
 #   SKIP  the node cannot run this check  -> named, with the reason, never fatal
 #
-# SKIP is load-bearing. An arm64 Thor has no ManiSkill wheels, an offline node
-# cannot FetchContent the Trossen SDK, and neither is a defect. A check that
+# SKIP is load-bearing. A node without a pinned MuJoCo wheel cannot run the
+# sim 2.0 suites, an offline node cannot FetchContent the Trossen SDK, and
+# neither is a defect. A check that
 # went red on every node it did not fit would be turned off within a week; one
 # that silently passed would be a lie. So it says which it was.
 #
 # Usage:
 #   scripts/check                 the fast tier: lint, contracts, light tests (minutes, not tens)
-#   scripts/check --full          every job this node can run except the simulator
-#   scripts/check rust cpp        only these, in full
+#   scripts/check --full          every job this node can run
+#   scripts/check rust cpp        only these jobs
+#   scripts/check ros             session developer tier; --full ros adds every ROS test
 #   scripts/check --light         drop the heavy jobs (torch, lerobot sync) from a named set
 #   scripts/check --staged        lint staged files only (the pre-commit hook)
 #   scripts/check --list          show jobs and exit
@@ -24,6 +26,19 @@
 #   scripts/check --no-hooks ...  run without arming the lint hook (hooks, CI and `work land` pass it)
 
 set -uo pipefail
+
+# Git exports these to the commands it runs (hooks, `git bisect run`). A job
+# that inherits them runs every git command, a test's scratch `git init`
+# included, against that repository instead of the one it names, which can
+# rewrite the real repository's config. The checkout is found by this file's
+# own directory, so nothing here needs them. The one exception is the index a
+# commit hook was handed (`git commit -a` and `git commit <paths>` stage into
+# a temporary one): --staged lists its files from that index and nothing else
+# sees it.
+STAGED_INDEX="${GIT_INDEX_FILE:-}"
+[[ -z "$STAGED_INDEX" || "$STAGED_INDEX" == /* ]] || STAGED_INDEX="$PWD/$STAGED_INDEX"
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY \
+  GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_PREFIX GIT_NAMESPACE
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 2
@@ -43,20 +58,21 @@ else
   C_PASS=''; C_FAIL=''; C_SKIP=''; C_DIM=''; C_OFF=''
 fi
 
-ALL_JOBS=(lint-py lint-sh complexity cli nodes tools motion-constants rerun-caps body-single-path disclosure export plans schemas ros-budget cpp rust ros tests tests-integration plugin sim sim-fast sim-contracts sim-geometry sim-engine sim-render web inkgen docs)
+ALL_JOBS=(lint-py lint-sh complexity cli nodes tools motion-constants rerun-caps body-single-path disclosure export plans schemas ros-budget cpp rust ros tests tests-integration plugin surface web inkgen docs deps-audit)
 declare -A JOB_DESC=(
   [lint-py]="ruff over tracked Python"
   [lint-sh]="shellcheck over tracked shell"
   [complexity]="no Python function is more complex than config/complexity-debt.tsv records"
   [cpp]="cpp/teleop: cmake build + ctest"
-  [ros]="ros/: colcon build + colcon test in a cache dir outside the tree, plus the e-stop relay tests (SKIP without ROS 2 Jazzy)"
-  [ros-budget]="ros/: <=20k lines of code, <=8 custom interfaces, <=3 launch files"
+  [ros]="ROS session developer tests; --full: every ROS package and slow test (cached colcon build; SKIP without Jazzy)"
+  [ros-budget]="ros/: <=23,867 lines of code, <=8 custom interfaces, <=3 launch files"
   [rust]="one workspace build with every feature this node has: clippy, every test once (--full: each deployed vision profile also builds alone)"
   [tests]="scripts/tests offline profile (--light: core dependencies only)"
   [tests-integration]="LeRobot-dependent scripts tests in the plugin environment (heavy)"
   [plugin]="python/lerobot_robot_tatbot tests"
-  [sim]="python/tatbot_sim tests"
+  [surface]="python/tatbot_surface: the torch-free body-surface readers Inkmap and sim 2.0 share (numpy and scipy only)"
   [docs]="sphinx build -W"
+  [deps-audit]="every locked or pinned dependency against OSV; advisories past config/deps-audit-allow.tsv fail (network; not in the fast tier)"
   [web]="web/inkmap: typecheck + core tests + vite build"
   [inkgen]="web/inkgen: the generator's idle-stop timer (no model, no GPU)"
   [cli]="tatbot: every verb --help/--dry-run, no orphans, docs/cli.md current"
@@ -64,11 +80,6 @@ declare -A JOB_DESC=(
   [tools]="fitted tool: datasheet <-> carriage constants/tip (tool sync), URDF tool block and wrist-tag layout current"
   [motion-constants]="config/motion_constants.json: generated cpp/teleop/motion_constants.hpp current, Python reader loads"
   [disclosure]="export manifest covers every tracked file; scanner canaries fire"
-  [sim-fast]="simulation capability checks excluding marked slow integration cases"
-  [sim-contracts]="engine-free configuration, observation and transport contracts"
-  [sim-geometry]="CPU geometry and compiler tests (Node, C++, cached robot assets)"
-  [sim-engine]="ManiSkill contact/control adapter tests without rendering"
-  [sim-render]="rendered world, camera and dataset integration"
   [export]="the public export builds, and this change adds no private identifier to it"
   [rerun-caps]="one Rerun viewer: launchers/producers use rerun_session + tatbot_rerun, both caps, one app id"
   [body-single-path]="one MHR/SOMA body: no retired assets or frozen research runtime dependencies"
@@ -76,13 +87,39 @@ declare -A JOB_DESC=(
   [schemas]="every tatbot.*/N literal in the scanned code is in config/schemas.json: a family, a bus name, an external contract, or a pending row that only shrinks"
 )
 # Jobs that pull a large toolchain or dependency set; --light drops them.
-declare -A JOB_HEAVY=([ros]=1 [plugin]=1 [sim]=1 [sim-fast]=1 [sim-geometry]=1 [sim-engine]=1 [sim-render]=1 [cpp]=1 [tests-integration]=1)
+declare -A JOB_HEAVY=([ros]=1 [plugin]=1 [cpp]=1 [tests-integration]=1)
+# Two tiers. Bare `scripts/check` is what an agent runs before every commit,
+# so it has to finish in minutes: lint, the ratchets, the CLI and config
+# contracts, and the light test profile without slow-marked tests. Until
+# 2026-09-16 the bare command ran nearly everything -- 45-50 minutes, 346
+# times in the recorded sessions of one workstation, on a main that advances
+# every 10-20 minutes. --full is that set (each job in full), for a change
+# that touches a build root, and for CI.
+FAST_JOBS=(lint-py lint-sh complexity cli nodes tools motion-constants rerun-caps body-single-path disclosure export plans schemas ros-budget docs inkgen surface tests)
+
+# Optional job packs: python/<project>/check-jobs.sh, which only some checkouts
+# carry. A pack is sourced before any option is read and runs nothing then: it
+# appends its jobs to ALL_JOBS (and FAST_JOBS or JOB_HEAVY as it chooses), sets
+# JOB_DESC for each, and defines job_<name> with dashes as underscores, which
+# the drive loop calls for any job it has no case for. A pack missing either is
+# refused here by name rather than crashing --list or doing nothing.
+for pack in python/*/check-jobs.sh; do
+  [[ -f "$pack" ]] || continue
+  before=${#ALL_JOBS[@]}
+  # shellcheck source=/dev/null
+  source "$pack"
+  for check_job in "${ALL_JOBS[@]:before}"; do
+    [[ -n "${JOB_DESC[$check_job]:-}" ]] && declare -F "job_${check_job//-/_}" >/dev/null || {
+      echo "check: $pack: job '$check_job' needs a JOB_DESC entry and a job_${check_job//-/_} function" >&2
+      exit 2
+    }
+  done
+done
 
 LIGHT=0
 STAGED=0
 FULL=0
 declare -a WANT=()
-SIM_NAME=sim; SIM_SCOPE=""; declare -a SIM_SELECT=()
 
 usage() { awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; }
 
@@ -107,21 +144,10 @@ while (($#)); do
   esac
   shift
 done
-# Two tiers. Bare `scripts/check` is what an agent runs before every commit,
-# so it has to finish in minutes: lint, the ratchets, the CLI and config
-# contracts, and the light test profile without slow-marked tests. Until
-# 2026-09-16 the bare command ran everything below except the simulator --
-# 45-50 minutes, 346 times in the recorded sessions of one workstation, on a
-# main that advances every 10-20 minutes. --full is that set (each job in
-# full), for a change that touches a build root, and for CI. The simulator is
-# still `scripts/check sim-fast` by name.
-FAST_JOBS=(lint-py lint-sh complexity cli nodes tools motion-constants rerun-caps body-single-path disclosure export plans schemas ros-budget docs inkgen tests)
 FAST=0
 if ((${#WANT[@]} == 0)); then
   if ((FULL)); then
-    for check_job in "${ALL_JOBS[@]}"; do
-      [[ "$check_job" == sim || "$check_job" == sim-fast ]] || WANT+=("$check_job")
-    done
+    WANT=("${ALL_JOBS[@]}")
   else
     FAST=1
     WANT=("${FAST_JOBS[@]}")
@@ -143,6 +169,11 @@ record() { R_NAME+=("$1"); R_STATE+=("$2"); R_NOTE+=("${3:-}"); }
 have()   { command -v "$1" >/dev/null 2>&1; }
 
 # Run a job body; capture output, print it only on failure so a green run is quiet.
+# A job whose body can find out only while running that this node cannot run it
+# (a shared resource taken since its precheck) sets RUN_JOB_SKIP_EXIT, local to
+# its job function, to the exit code that says so: that code is a SKIP whose
+# reason is the body's last output line, never a FAIL. The body must not exit
+# with it for anything else.
 run_job() {
   local name="$1"; shift
   local out rc start dur note
@@ -150,6 +181,12 @@ run_job() {
   start=$SECONDS
   out="$("$@" 2>&1)"; rc=$?
   dur=$((SECONDS - start))
+  if [[ -n "${RUN_JOB_SKIP_EXIT:-}" ]] && ((rc == RUN_JOB_SKIP_EXIT)); then
+    note="${out##*$'\n'}"
+    printf '%sSKIP%s %s(%s)%s\n' "$C_SKIP" "$C_OFF" "$C_DIM" "${note:-exit $rc}" "$C_OFF"
+    record "$name" SKIP "${note:-exit $rc}"
+    return 0
+  fi
   if ((rc == 0)); then
     printf '%sPASS%s %s(%ss)%s\n' "$C_PASS" "$C_OFF" "$C_DIM" "$dur" "$C_OFF"
     record "$name" PASS
@@ -227,7 +264,9 @@ fast_record() {
 
 # Tracked files of a given kind, or just the staged ones under --staged.
 sources() {
-  if ((STAGED)); then git diff --cached --name-only --diff-filter=ACMR -- "$@"
+  if ((STAGED)) && [[ -n "$STAGED_INDEX" ]]; then
+    GIT_INDEX_FILE="$STAGED_INDEX" git diff --cached --name-only --diff-filter=ACMR -- "$@"
+  elif ((STAGED)); then git diff --cached --name-only --diff-filter=ACMR -- "$@"
   else git ls-files -- "$@"; fi
 }
 
@@ -393,8 +432,10 @@ job_rerun_caps() {
         echo "$f: uses --rerun-connect without --rerun-max-fps (or a rerun-caps: one-shot line)"; rc=1
       fi
     done
-    # Python: one contract. rr.init / rr.spawn / connect_grpc / rr.save belong to tatbot_rerun.py only.
-    for f in $(git ls-files --cached --others --exclude-standard "scripts/*.py" "scripts/**/*.py" "ros/*.py" "ros/**/*.py"); do
+    # Python: one contract. rr.init / rr.spawn / connect_grpc / rr.save belong to tatbot_rerun.py only,
+    # in the Python heredoc of a shell script too.
+    for f in $(git ls-files --cached --others --exclude-standard "scripts/*.py" "scripts/**/*.py" "ros/*.py" "ros/**/*.py" \
+               "scripts/*.sh" "scripts/**/*.sh"); do
       [[ $f == scripts/lib/tatbot_rerun.py || $f == scripts/tests/* || $f == scripts/lib/lerobot_patches.py ]] && continue
       if grep -vE "^[[:space:]]*#" "$f" | grep -qE "\brr\.(init|spawn|connect_grpc|connect|save|set_sinks)\(|\brerun\.(init|spawn)\("; then
         echo "$f: opens its own Rerun stream; use tatbot_rerun.start() (scripts/lib/tatbot_rerun.py)"; rc=1
@@ -478,14 +519,14 @@ catalog = json.loads(Path("config/inkmap/body-poses.json").read_text())
 if catalog.get("model_spec_id") != "mhr-soma-v1" or catalog.get("schema") != "tatbot.body-pose-catalog/2":
     raise SystemExit("the sole pose catalog is not the SOMA v2 catalog")
 
-# The catalog is baked from the authoring sheet by web/inkmap/tools/export-soma.py,
-# which carries authored pose metadata and new pose joint controls verbatim and derives the
-# rest. Its own --check re-bakes and compares bytes, but that needs the MHR/SOMA
-# source assets, so it cannot run on a bare clone and nothing runs it here. The
-# authored fields need no assets to compare, and they are the half that drifts:
-# edit a label or a constraint in the sheet, forget to re-bake, and web/inkmap
-# and the simulator keep serving the old text from the catalog with nothing
-# saying so. Compare exactly the fields the bake copies, and nothing it derives.
+# The catalog was baked from the authoring sheet by web/inkmap/tools/export-soma.py,
+# which carried authored pose metadata and new pose joint controls verbatim and derived the
+# rest. It needed the MHR/SOMA source assets and the ManiSkill simulator's body
+# model, and left with that simulator (git history has it). The authored fields
+# need no assets to compare, and they are the half that drifts: edit a label or
+# a constraint in the sheet without a re-bake, and web/inkmap and sim 2.0 keep
+# serving the old text from the catalog with nothing saying so. Compare exactly
+# the fields the bake copies, and nothing it derives.
 authoring = json.loads(Path("config/body-models/mhr-soma-v1/poses.json").read_text())
 if authoring.get("schema") != "tatbot.soma-pose-authoring/1":
     raise SystemExit("the sole pose authoring sheet is not the SOMA v1 authoring schema")
@@ -494,8 +535,8 @@ for field, other in (("rig_id", "model_spec_id"), ("identity_sha256", "identity_
     if authoring.get(field) != catalog.get(other):
         raise SystemExit(
             f"pose authoring sheet and catalog disagree on {field}: "
-            f"{authoring.get(field)!r} != {catalog.get(other)!r}; re-bake with "
-            "web/inkmap/tools/export-soma.py")
+            f"{authoring.get(field)!r} != {catalog.get(other)!r}; re-bake "
+            "(web/inkmap/tools/export-soma.py, in git history)")
 COPIED = ("body_rotation_xyzw", "constraints", "label", "support_id")
 for pose_id in authoring["pose_ids"]:
     authored, baked = authoring["poses"][pose_id], catalog["poses"][pose_id]
@@ -507,27 +548,13 @@ for pose_id in authoring["pose_ids"]:
             raise SystemExit(
                 f"pose {pose_id!r} field {field!r} was edited in the authoring sheet "
                 f"but not re-baked into the catalog: {authored.get(field)!r} != "
-                f"{baked.get(field)!r}; re-bake with web/inkmap/tools/export-soma.py")
-
-# Load only the stdlib boundary module: optional simulator dependencies must
-# not make the research freeze unenforceable on a bare clone.
-import runpy
-boundary_path = Path("python/tatbot_sim/src/tatbot_sim/human_rep/boundary.py")
-if not boundary_path.is_file():
-    # Say so, rather than letting run_path raise a bare FileNotFoundError:
-    # this scan runs against synthetic checkouts too, and a traceback there
-    # reads like the body assets are wrong when the module is simply absent.
-    raise SystemExit(f"{boundary_path}: frozen-import boundary module is missing")
-boundary = runpy.run_path(str(boundary_path))
-violations = boundary["scan_frozen_imports"](Path.cwd())
-if violations:
-    raise SystemExit("\n".join(violations))
+                f"{baked.get(field)!r}; re-bake (web/inkmap/tools/export-soma.py, in git history)")
 PY
 
   local forbidden_selector
   forbidden_selector="$(git grep -n -E 'BODIES[[:space:]]*=|BodyToggle|setBodyId|bodyId|--body' -- \
     web/inkmap/src web/inkmap/tools scripts/lib/tatbot_cli/verbs/web.py \
-    python/tatbot_sim/src/tatbot_sim/inkmap 2>/dev/null || true)"
+    python/tatbot_surface/src 2>/dev/null || true)"
   if [[ -n "$forbidden_selector" ]]; then
     echo "body-model selector/provider residue remains:"
     echo "$forbidden_selector"
@@ -645,18 +672,42 @@ job_ros() {
   have colcon || { skip ros "colcon not installed"; return; }
   run_job ros bash -c '
     src="$PWD/ros"
-    export PYTHONPATH="$PWD/python/tatbot_contracts/src${PYTHONPATH:+:$PYTHONPATH}"
+    export TATBOT_REPO="$PWD"
+    script_roots=$(PYTHONPATH="$PWD/scripts/lib" python3 -c "
+from pathlib import Path
+import os
+from tatbot_paths import SCRIPT_ROOTS
+print(os.pathsep.join(str(Path.cwd() / path) for path in SCRIPT_ROOTS))
+") || exit 1
+    export PYTHONPATH="$PWD/python/tatbot_contracts/src:$script_roots${PYTHONPATH:+:$PYTHONPATH}"
     base="${TATBOT_ROS_CHECK_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/tatbot-check-ros/$(printf %s "$PWD" | sha256sum | cut -c1-12)}"
-    mkdir -p "$base" || exit 1
-    python3 -m pytest -q "$src/tatbot_estop_relay/test" || exit 1
+    mkdir -p "$base/tmp" "$base/ros/log" || exit 1
+    export TMPDIR="$base/tmp" ROS_HOME="$base/ros" ROS_LOG_DIR="$base/ros/log"
+    if [[ "$1" == 1 ]]; then
+      python3 -m pytest -q "$src/tatbot_estop_relay/test" "$src/tatbot_keys_relay/test" || exit 1
+    fi
     # shellcheck disable=SC1091
     source /opt/ros/jazzy/setup.bash
     cd "$base" || exit 1
     colcon build --base-paths "$src" --build-base build --install-base install --symlink-install \
       --event-handlers console_direct- --cmake-args -DCMAKE_BUILD_TYPE=Release -DFETCHCONTENT_BASE_DIR="$base/deps" || exit 1
-    colcon test --base-paths "$src" --build-base build --install-base install --event-handlers console_direct- || exit 1
+    # shellcheck disable=SC1091
+    source "$base/install/setup.bash" || exit 1
+    if [[ "$1" == 0 ]]; then
+      # The ROS interpreter, as colcon test uses: ROS binaries need the Ubuntu NumPy ABI, and a venv with
+      # numpy 2 first on PATH (the private CI native image) crashes pinocchio at import.
+      # Its JUnit report goes where colcon test writes one, the path the private CI reads as ROS coverage.
+      "${TATBOT_ROS_PYTHON:-/usr/bin/python3}" -m pytest -q "$src/tatbot_session/test" -m "not slow" --durations=10 \
+        --junitxml "$base/build/tatbot_session/pytest.xml"
+      exit $?
+    fi
+    # Full coverage includes every package, launch test and slow-marked session case.
+    # colcon replaces PYTEST_ADDOPTS; its explicit pytest arguments must override the package default.
+    colcon test --base-paths "$src" --build-base build --install-base install --event-handlers console_direct- \
+      --return-code-on-test-failure \
+      --pytest-args " -m" "slow or not slow" " --durations=0" || exit 1
     colcon test-result --test-result-base build --verbose
-  '
+  ' _ "$FULL"
 }
 
 rust_profile_unavailable() {
@@ -688,9 +739,6 @@ rust_features() {
   # A feature whose native dependency is absent is left out and named as a
   # SKIP, so a green run never claims it.
   local -a f=(tatbot-visiond/rerun tatbot-visiond/zenoh tatbot-visiond/fiducials tatbot-bus/zenoh)
-  if have pkg-config && pkg-config --exists gstreamer-1.0 gstreamer-app-1.0; then
-    f+=(tatbot-visiond/gstreamer)
-  else skip rust-gstreamer "gstreamer development packages absent; PoE capture paths not compiled"; fi
   if have pkg-config && pkg-config --exists realsense2; then
     f+=(tatbot-visiond/realsense)
   else skip rust-realsense "librealsense2 absent; wrist camera paths not compiled"; fi
@@ -761,15 +809,14 @@ job_rust() {
 }
 
 # A wedged check is worse than a failing one: it burns the runner and reports
-# nothing. TatbotFollower.disconnect() blocks for as long as the e-stop is
-# latched -- correct for an operator disconnect, but lerobot's Robot.__del__
-# calls it, so a garbage collection at any allocation point can park the
-# interpreter forever. That is exactly how this suite hung: mid-YAML-parse, in
-# an unrelated test. A per-test alarm turns any such hang into a normal
-# failure with a stack, and the run continues.
+# nothing: a blocking call reached from a finalizer can park the interpreter
+# at any allocation point (the deleted LeRobot follower's disconnect hung the
+# suite that way, mid-YAML-parse, in an unrelated test). A per-test alarm
+# turns any such hang into a normal failure with a stack, and the run
+# continues.
 PYTEST_TIMEOUT=${PYTEST_TIMEOUT:-120}
 TIMEOUT_ARGS=(-ra --timeout="$PYTEST_TIMEOUT" --timeout-method=signal)
-# The default full and simulator suites use the available cores. The light
+# The default full suites use the available cores. The light
 # scripts/tests suite also exercises real-time mock arm owners and live socket
 # subscribers; cap that suite's competing workers so a saturated test host
 # does not manufacture stop-heartbeat and subscriber-order failures. A caller
@@ -840,150 +887,28 @@ job_plugin() {
     pytest -q "${TIMEOUT_ARGS[@]}" "${XDIST_ARGS[@]}" python/lerobot_robot_tatbot/tests/
 }
 
-# Missing capabilities skip their partition; pure checks always run first.
-_sim_toolchain() {
-  have node || { skip "$SIM_NAME" "posed-body tests need node 22 for the InkLang resolver"; return 1; }
-  local major; major=$(node -p 'process.versions.node.split(".")[0]')
-  (( major >= 22 )) || { skip "$SIM_NAME" "node $major < 22 (the InkLang resolver uses --experimental-strip-types)"; return 1; }
-  # The version does not imply the capability: Debian/Ubuntu ship node 22 built
-  # without Amaro, so --experimental-strip-types raises ERR_NO_TYPESCRIPT and
-  # every resolver-backed test dies on a toolchain gap rather than a sim defect
-  # (Linux host, 2026-09-08: 42 failures that a green run could not be told
-  # apart from). Probe what the bridges actually do -- run a .ts file.
-  local ts_dir; ts_dir="$(mktemp -d)"
-  printf 'const probe: number = 0;\nprocess.exit(probe);\n' > "$ts_dir/probe.ts"
-  if ! node --experimental-strip-types "$ts_dir/probe.ts" >/dev/null 2>&1; then
-    rm -rf "$ts_dir"
-    skip "$SIM_NAME" "node $major cannot strip TypeScript (built without Amaro); the InkLang resolver needs a node with TypeScript support"
-    return 1
-  fi
-  rm -rf "$ts_dir"
-  # node_modules EXISTING is not node_modules being CURRENT. A workstation carried a
-  # September 3 install through the September 5 addition of @xmldom/xmldom, and
-  # the shared SVG adapter failed inside every artwork test -- 31 failures and
-  # 10 errors -- behind a guard that only asked whether the directory was there
-  # (2026-09-08). `npm ls --depth=0` is the offline, no-network question "does
-  # this tree still satisfy package.json"; it names the unmet dependency.
-  local deps_stale=0
-  if [[ ! -d web/inkmap/node_modules ]]; then
-    deps_stale=1
-  elif have npm && ! (cd web/inkmap && npm ls --depth=0 >/dev/null 2>&1); then
-    deps_stale=1
-  fi
-  if (( deps_stale )); then
-    have npm || { skip "$SIM_NAME" "web/inkmap/node_modules missing and no npm to install it"; return 1; }
-    ping -c1 -W2 registry.npmjs.org >/dev/null 2>&1 || { skip "$SIM_NAME" "web/inkmap/node_modules missing or stale and no network for npm ci"; return 1; }
-    (cd web/inkmap && npm ci --silent) || { skip "$SIM_NAME" "npm ci failed in web/inkmap"; return 1; }
-  fi
-  have cmake || { skip "$SIM_NAME" "C++ planner needs cmake"; return 1; }
+# What the surface readers' tests read: the package, its contract library, the
+# body assets, the pose catalog and the placement and artwork fixtures.
+surface_guard() {
+  printf '%s\n' python/tatbot_surface python/tatbot_contracts config/inkmap \
+    web/inkmap/public/bodies web/inkmap/public/designs
+}
+
+# The readers' own environment, nothing else installed: their import-boundary
+# test fails if torch, shapely or a physics engine is reachable. A PASS is
+# cached against the guarded content and recorded only if it did not move.
+job_surface() {
+  have uv || { skip surface "uv not installed"; return; }
+  local fp
+  fp="$(sim_fingerprint::compute "$ROOT" surface_guard)"
+  cached surface "$fp" surface && return
+  run_job surface uv run --no-project --python 3.12 --with numpy --with scipy --with pytest --with pytest-timeout \
+    --with-editable python/tatbot_contracts --with-editable python/tatbot_surface \
+    pytest -q -p no:cacheprovider "${TIMEOUT_ARGS[@]}" python/tatbot_surface/tests/
+  passed surface && [[ "$(sim_fingerprint::compute "$ROOT" surface_guard)" == "$fp" ]] \
+    && sim_fingerprint::record "$fp" surface
   return 0
 }
-
-_sim_partition() {
-  local partition="$1"
-  SIM_NAME="sim-$partition"
-  have uv || { skip "$SIM_NAME" "uv not installed"; return; }
-  local -a sim_profile_args=() engine_args=()
-  if [[ ! -f config/workspace.yaml || ! -f config/trossen/tatbot.yaml ]]; then
-    sim_profile_args=(--sim-profile public)
-  fi
-  if [[ "$partition" != contracts ]]; then
-    _sim_toolchain || return
-  fi
-  if [[ "$partition" == render ]]; then
-    # Rendered native-reference episodes invoke the production C++ planner.
-    # A fresh worktree has no build/ tree, so build the hardware-independent
-    # target before the partition's pytest run.
-    if ! cmake -S cpp/teleop -B cpp/teleop/build -DCMAKE_BUILD_TYPE=Release -DTATBOT_NO_ARM_SDK=ON >/dev/null \
-        || ! cmake --build cpp/teleop/build --target path_plan_check -j2 >/dev/null; then
-      record "$SIM_NAME" FAIL "could not build the offline C++ planner"
-      return
-    fi
-  fi
-  if [[ "$partition" == engine || "$partition" == render ]]; then
-    [[ "$(uname -m)" == x86_64 ]] || { skip "$SIM_NAME" "ManiSkill wheels require x86_64"; return; }
-    engine_args=(--extra maniskill)
-  fi
-  if [[ "$partition" != contracts ]]; then
-    local robot_asset="${MS_ASSET_DIR:-$HOME/.maniskill}/data/robots/widowxai/wxai_follower.urdf"
-    if [[ ! -f "$robot_asset" ]]; then
-      if [[ "$partition" == geometry ]]; then
-        skip "$SIM_NAME" "cached WidowXAI model absent; provision assets on a simulation host"
-        return
-      fi
-      uv run --locked --project python/tatbot_sim --extra maniskill python -m mani_skill.utils.download_asset widowxai -y || {
-        skip "$SIM_NAME" "WidowXAI robot assets unavailable"; return;
-      }
-    fi
-  fi
-  if [[ "$partition" == render ]]; then
-    local render_probe render_rc
-    render_probe=$(uv run --locked --project python/tatbot_sim --extra maniskill python -c '
-import sapien
-try:
-    system = sapien.render.RenderSystem()
-except RuntimeError as error:
-    print(error)
-    raise SystemExit(77)
-' 2>&1)
-    render_rc=$?
-    if ((render_rc == 77)); then
-      skip "$SIM_NAME" "SAPIEN render device unavailable: $render_probe"
-      return
-    elif ((render_rc)); then
-      printf '%s\n' "$render_probe"
-      record "$SIM_NAME" FAIL "renderer dependency probe failed"
-      return
-    fi
-    sim_profile_args+=(--sim-render)
-  fi
-  # Per test, not per file: one long file per worker leaves the others idle
-  # behind it. Module fixtures rebuild per worker, which the balance more
-  # than repays here.
-  local -a workers=("${XDIST_ARGS[@]/loadfile/load}")
-  # The public profile copies the tree and git-inits the source per pytest
-  # process; eight workers would race on that. It stays on one.
-  ((${#sim_profile_args[@]})) && workers=()
-  if [[ "$partition" == render ]]; then
-    # SAPIEN must enable GPU PhysX before any CPU PhysX scene in a process.
-    # Texture and root-pinning tests intentionally use the GPU backend, while
-    # the other rendered tests use CPU physics. Give each GPU file its own
-    # interpreter, regardless of worker count or test collection order.
-    run_job "$SIM_NAME" uv run --locked --project python/tatbot_sim "${engine_args[@]}" --with pytest --with pytest-timeout --with pytest-xdist \
-      pytest -q -ra --durations=10 "${TIMEOUT_ARGS[@]}" "${workers[@]}" "${SIM_SELECT[@]}" \
-      -k 'not test_dynamic_texture and not test_root_pin' python/tatbot_sim/tests/ \
-      --sim-capability render "${sim_profile_args[@]}"
-    run_job "$SIM_NAME-texture" uv run --locked --project python/tatbot_sim "${engine_args[@]}" --with pytest --with pytest-timeout --with pytest-xdist \
-      pytest -q -ra --durations=10 "${TIMEOUT_ARGS[@]}" "${workers[@]}" "${SIM_SELECT[@]}" \
-      python/tatbot_sim/tests/test_dynamic_texture.py --sim-capability render "${sim_profile_args[@]}"
-    if [[ "$SIM_SCOPE" != fast ]]; then
-      run_job "$SIM_NAME-root-pin" uv run --locked --project python/tatbot_sim "${engine_args[@]}" --with pytest --with pytest-timeout --with pytest-xdist \
-        pytest -q -ra --durations=10 "${TIMEOUT_ARGS[@]}" "${workers[@]}" "${SIM_SELECT[@]}" \
-        python/tatbot_sim/tests/test_root_pin.py --sim-capability render "${sim_profile_args[@]}"
-    fi
-    return
-  fi
-  run_job "$SIM_NAME" uv run --locked --project python/tatbot_sim "${engine_args[@]}" --with pytest --with pytest-timeout --with pytest-xdist \
-    pytest -q -ra --durations=10 "${TIMEOUT_ARGS[@]}" "${workers[@]}" "${SIM_SELECT[@]}" python/tatbot_sim/tests/ \
-    --sim-capability "$partition" "${sim_profile_args[@]}"
-}
-
-_sim_body() {
-  local partition i before=${#R_NAME[@]} complete=1 fp
-  fp="$(sim_fingerprint::compute "$ROOT")"
-  cached "sim${SIM_SCOPE:+-$SIM_SCOPE}" "$fp" "$SIM_SCOPE" && return
-  for partition in contracts geometry engine render; do
-    _sim_partition "$partition"
-  done
-  for ((i=before; i<${#R_NAME[@]}; i++)); do
-    [[ "${R_STATE[$i]}" == PASS ]] || complete=0
-  done
-  # Cache only complete coverage, never a run with missing capabilities.
-  ((complete)) && sim_fingerprint::record "$fp" "$SIM_SCOPE"
-}
-
-job_sim() { SIM_SCOPE=""; SIM_SELECT=(); _sim_body; }
-job_sim_fast() { SIM_SCOPE=fast; SIM_SELECT=(-m "not slow"); _sim_body; }
 
 # A warning-count ratchet (hard errors fail, the count may not grow) that
 # worked the docs backlog down from 97 to zero; at 0 it is `sphinx -W`. -E is
@@ -995,8 +920,8 @@ job_web() {
   have npm  || { skip web "npm not installed"; return; }
   local major; major=$(node -p 'process.versions.node.split(".")[0]')
   (( major >= 22 )) || { skip web "node $major < 22 (tests use --experimental-strip-types)"; return; }
-  # Same staleness question as job_sim: a present but out-of-date tree is the
-  # failure mode, not an absent one.
+  # A present but out-of-date node_modules is the failure mode, not an absent
+  # one: `npm ls` asks whether the tree still satisfies package.json.
   if ! (cd web/inkmap && npm ls --depth=0 >/dev/null 2>&1); then
     ping -c1 -W2 registry.npmjs.org >/dev/null 2>&1 || { skip web "node_modules missing or stale and no network for npm ci"; return; }
   fi
@@ -1010,6 +935,13 @@ job_web() {
 
 # The generator itself needs torch and a 13 GB model; its idle timer needs
 # neither, which is the whole reason it lives in its own stdlib module.
+# Not in the fast tier and never cached: it asks api.osv.dev, whose answer changes without a commit.
+job_deps_audit() {
+  have python3 || { skip deps-audit "python3 not installed"; return; }
+  local RUN_JOB_SKIP_EXIT=2   # OSV unreachable
+  run_job deps-audit python3 scripts/deps_audit.py
+}
+
 job_inkgen() {
   have uvx || { skip inkgen "uvx not installed"; return; }
   run_job inkgen uvx --with pytest --from pytest pytest -q web/inkgen/tests/
@@ -1064,12 +996,12 @@ for j in "${WANT[@]}"; do
     tests)   job_tests ;;
     tests-integration) job_tests_integration ;;
     plugin)  job_plugin ;;
-    sim)     job_sim ;;
-    sim-fast) job_sim_fast ;;
-    sim-contracts|sim-geometry|sim-engine|sim-render) _sim_partition "${j#sim-}" ;;
+    surface) job_surface ;;
     web)     job_web ;;
     inkgen)  job_inkgen ;;
+    deps-audit) job_deps_audit ;;
     docs)    job_docs ;;
+    *)       "job_${j//-/_}" ;;  # a pack's job; the pack hook checked the function exists
   esac
 done
 

@@ -3,7 +3,7 @@ use std::{collections::HashSet, net::IpAddr, path::Path};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::{PixelFormat, SensorKind, StreamProfile};
+use crate::{PixelFormat, StreamProfile};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VisionConfig {
@@ -41,70 +41,19 @@ fn default_queue_capacity() -> usize {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncConfig {
-    // No baked-in default (plan Phase 3): the NTP host is deployment data,
-    // stated in the registry file.
-    pub ntp_server: String,
     #[serde(default = "default_max_pairwise_skew_ms")]
     pub max_pairwise_skew_ms: f64,
-    #[serde(default = "default_max_clock_drift_ppm")]
-    pub max_clock_drift_ppm: f64,
 }
 
 fn default_max_pairwise_skew_ms() -> f64 {
     20.0
 }
 
-fn default_max_clock_drift_ppm() -> f64 {
-    100.0
-}
-
-// Both camera kinds are optional (plan Phase 3): a registry may describe
-// one camera, many, or no depth cameras at all, without code changes.
+// A registry may describe one camera, many, or none, without code changes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CamerasConfig {
     #[serde(default)]
-    pub poe: Vec<PoeCameraConfig>,
-    #[serde(default)]
     pub realsense: Vec<RealSenseConfig>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PoeCameraConfig {
-    pub name: String,
-    pub address: IpAddr,
-    #[serde(default = "default_rtsp_port")]
-    pub rtsp_port: u16,
-    #[serde(default = "default_http_port")]
-    pub http_port: u16,
-    #[serde(default = "default_username")]
-    pub username: String,
-    pub password_env: String,
-    pub main: StreamProfile,
-    pub sub: Option<StreamProfile>,
-    #[serde(default = "default_transport")]
-    pub transport: String,
-    #[serde(default = "default_gstreamer_latency_ms")]
-    pub gstreamer_latency_ms: u32,
-}
-
-fn default_rtsp_port() -> u16 {
-    554
-}
-
-fn default_http_port() -> u16 {
-    80
-}
-
-fn default_username() -> String {
-    "admin".to_string()
-}
-
-fn default_transport() -> String {
-    "tcp".to_string()
-}
-
-fn default_gstreamer_latency_ms() -> u32 {
-    200
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -173,31 +122,6 @@ pub enum RealSenseTransport {
     Dds,
 }
 
-pub trait CameraConfig {
-    fn name(&self) -> &str;
-    fn kind(&self) -> SensorKind;
-}
-
-impl CameraConfig for PoeCameraConfig {
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn kind(&self) -> SensorKind {
-        SensorKind::PoE
-    }
-}
-
-impl CameraConfig for RealSenseConfig {
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn kind(&self) -> SensorKind {
-        SensorKind::RealSense
-    }
-}
-
 impl VisionConfig {
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
@@ -205,7 +129,7 @@ impl VisionConfig {
             .with_context(|| format!("reading vision config {}", path.display()))?;
         let mut config: Self = toml::from_str(&text)
             .with_context(|| format!("parsing vision config {}", path.display()))?;
-        // Precedence contract (plan Phase 1): env beats file config.
+        // Precedence contract: env beats file config.
         if let Ok(root) = std::env::var("TATBOT_VISIOND_RECORD_ROOT") {
             if !root.is_empty() {
                 config.session.record_root = root;
@@ -230,31 +154,8 @@ impl VisionConfig {
         {
             return Err("sync.max_pairwise_skew_ms must be positive and <= 1000".into());
         }
-        if self.sync.max_clock_drift_ppm <= 0.0 {
-            return Err("sync.max_clock_drift_ppm must be positive".into());
-        }
 
         let mut names = HashSet::new();
-        for camera in &self.cameras.poe {
-            validate_name(&camera.name)?;
-            if !names.insert(camera.name.clone()) {
-                return Err(format!("duplicate camera name {}", camera.name));
-            }
-            if camera.password_env.trim().is_empty() {
-                return Err(format!("{} password_env must not be empty", camera.name));
-            }
-            if camera.transport != "tcp" && camera.transport != "udp" {
-                return Err(format!("{} transport must be tcp or udp", camera.name));
-            }
-            camera.main.validate()?;
-            if camera.main.stream != "color" && camera.main.stream != "main" {
-                return Err(format!("{} main stream must be color or main", camera.name));
-            }
-            if let Some(sub) = &camera.sub {
-                sub.validate()?;
-            }
-        }
-
         let mut serials = HashSet::new();
         for camera in &self.cameras.realsense {
             validate_name(&camera.name)?;
@@ -391,15 +292,9 @@ impl VisionConfig {
 
     pub fn sensor_names(&self) -> impl Iterator<Item = &str> {
         self.cameras
-            .poe
+            .realsense
             .iter()
             .map(|camera| camera.name.as_str())
-            .chain(
-                self.cameras
-                    .realsense
-                    .iter()
-                    .map(|camera| camera.name.as_str()),
-            )
     }
 }
 
@@ -428,46 +323,46 @@ mod tests {
         present
     }
 
-    // Phase 3 exit gate: the public example registry loads, and the registry
-    // flexes to one camera / no depth camera without code changes.
+    // The public example registry loads, and the registry flexes to one
+    // camera or none without code changes.
     #[test]
     fn example_registry_loads_and_validates() {
         let path =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config/vision.example.toml");
         let config = VisionConfig::load(path).expect("example config must load");
-        assert!(!config.cameras.poe.is_empty());
         assert!(!config.cameras.realsense.is_empty());
     }
 
     #[test]
-    fn registry_accepts_one_camera_and_no_depth() {
+    fn registry_accepts_one_camera_or_none() {
+        let empty: VisionConfig =
+            toml::from_str("schema_version = 1\n[sync]\n[cameras]\n").expect("empty registry parses");
+        empty.validate().expect("empty registry validates");
+        assert_eq!(empty.sensor_names().count(), 0);
         let toml = r#"
             schema_version = 1
             [sync]
-            ntp_server = "192.0.2.123"
-            [[cameras.poe]]
+            [[cameras.realsense]]
             name = "solo"
-            address = "192.0.2.10"
-            password_env = "CAM_PW"
-            [cameras.poe.main]
-            stream = "main"
-            width = 1920
-            height = 1080
-            fps_num = 30
-            fps_den = 1
-            format = "h264"
-            [cameras.poe.sub]
-            stream = "sub"
+            serial = "000000000001"
+            [cameras.realsense.color]
+            stream = "color"
             width = 640
-            height = 360
+            height = 480
             fps_num = 30
             fps_den = 1
-            format = "h264"
+            format = "rgb8"
+            [cameras.realsense.depth]
+            stream = "depth"
+            width = 640
+            height = 480
+            fps_num = 30
+            fps_den = 1
+            format = "z16"
         "#;
         let config: VisionConfig = toml::from_str(toml).expect("one-camera registry parses");
         config.validate().expect("one-camera registry validates");
-        assert_eq!(config.cameras.poe.len(), 1);
-        assert!(config.cameras.realsense.is_empty());
+        assert_eq!(config.sensor_names().collect::<Vec<_>>(), ["solo"]);
     }
 
     #[test]
@@ -484,7 +379,8 @@ mod tests {
             .find(|camera| camera.group == "overhead-depth")
             .expect("fixed overhead group");
         assert_eq!(camera.role, "surface_overhead");
-        assert_eq!((camera.color.width, camera.color.height), (640, 360));
+        assert_eq!((camera.color.width, camera.color.height), (1280, 720));
+        assert_eq!((camera.depth.width, camera.depth.height), (640, 360));
         assert_eq!(camera.visual_preset, Some(0.0));
         assert_eq!(camera.laser_power, Some(150.0));
         assert_eq!(camera.depth_units_m, Some(0.001));
@@ -540,20 +436,18 @@ mod tests {
         }
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("config/vision.toml");
         let source = VisionConfig::load(path).unwrap();
-        let left = source
-            .cameras
-            .realsense
-            .iter()
-            .find(|c| c.arm.as_deref() == Some("left"))
-            .unwrap();
-        let right = source
-            .cameras
-            .realsense
-            .iter()
-            .find(|c| c.arm.as_deref() == Some("right"))
-            .unwrap();
-        assert_ne!(left.serial, right.serial);
-        for camera in [left, right] {
+        // Both D405s are on the pink wrist since 2026-10-23, above and under it.
+        let wrist = |role: &str| {
+            source
+                .cameras
+                .realsense
+                .iter()
+                .find(|c| c.role == role)
+                .unwrap()
+        };
+        let (upper, lower) = (wrist("wrist_upper"), wrist("wrist_lower"));
+        assert_ne!(upper.serial, lower.serial);
+        for camera in [upper, lower] {
             let mut config = source.clone();
             config
                 .select_realsense(Some("d405"), std::slice::from_ref(&camera.name))
@@ -565,8 +459,8 @@ mod tests {
         }
         for (group, selection) in [
             ("d405", vec!["missing".into()]),
-            ("overhead-depth", vec![left.name.clone()]),
-            ("d405", vec![left.name.clone(), left.name.clone()]),
+            ("overhead-depth", vec![lower.name.clone()]),
+            ("d405", vec![lower.name.clone(), lower.name.clone()]),
             ("missing", vec![]),
         ] {
             let mut config = source.clone();

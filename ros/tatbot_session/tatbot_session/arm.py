@@ -6,9 +6,7 @@ driver's landing. On mock hardware nothing latches and nothing acks: an unlatche
 """
 from __future__ import annotations
 
-import math
 import threading
-import time
 
 import numpy as np
 from action_msgs.msg import GoalStatus
@@ -20,7 +18,8 @@ from rclpy.duration import Duration as RosDuration
 from tatbot_description import names
 from trajectory_msgs.msg import JointTrajectoryPoint
 
-from tatbot_session import rules
+from tatbot_session import ports
+from tatbot_session.ports import WALL, SafetyReadings, execute, goal_points, goal_tag, stop_reason
 
 LATCH_TEXT = {
     names.LATCH_NONE: "none", names.LATCH_ESTOP: "estop", names.LATCH_ESTOP_STALE: "estop_stale",
@@ -28,6 +27,7 @@ LATCH_TEXT = {
     names.LATCH_OVER_VELOCITY: "over_velocity", names.LATCH_GUARD_TIP_LAG: "guard_tip_lag",
     names.LATCH_GUARD_PROBE: "guard_probe", names.LATCH_CONTROLLER_ERROR: "controller_error",
     names.LATCH_DEACTIVATED: "deactivated", names.LATCH_STEP_REFUSED: "step_refused",
+    names.LATCH_GUARD_SNAG: "guard_snag",
 }
 
 # A change in any of these publishes SafetyState at once; ages and RT periods ride the 20 Hz timer.
@@ -36,33 +36,41 @@ CHANGES = ("estop_ok", "latched", "latch_reason", "guard_mode", "guard_tripped",
 
 
 def _duration(seconds: float) -> Duration:
-    sec = int(math.floor(seconds))
-    return Duration(sec=sec, nanosec=int(round((seconds - sec) * 1e9)) % 1_000_000_000)
+    """Rounded to the nanosecond as a whole: a time a hair under a second (14.9999999998 s, a 15 s jog's last knot)
+    rounded its fraction up to 1e9 ns and wrapped to 14.0 s, and the controller rejected the goal (2026-10-12)."""
+    sec, nanosec = divmod(int(round(seconds * 1e9)), 1_000_000_000)
+    return Duration(sec=sec, nanosec=nanosec)
 
 
-WAY_WAIT_S = 30.0   # a way blocked by the other arm's goal in flight waits this long for it to end
-# A goal that may be replaced mid-way (a pen trim) starts on an explicit stamp this far ahead and its replacements
-# share it, each starting this far in the past: JTC runs one from the knot that holds now, never from the measured
-# pose, which lags the command ~70 ms while tracking (README section 1).
-STAMP_AHEAD_S = REPLACE_BACK_S = 0.05
+class RosClock:
+    """The node's clock as the session's (ports.Clock) under use_sim_time (hardware sim): the simulator's time, which
+    /clock carries; utc() puts it on the run's epoch. The rig and fake hardware keep ports.WallClock."""
+
+    def __init__(self, node, epoch_utc: float = 0.0):
+        self.clock, self.epoch_utc = node.get_clock(), float(epoch_utc)
+
+    def now(self) -> float:
+        return self.clock.now().nanoseconds * 1e-9
+
+    def utc(self) -> float:
+        return self.epoch_utc + self.now()
+
+    def sleep(self, seconds: float) -> None:
+        self.clock.sleep_until(self.clock.now() + RosDuration(seconds=seconds))
+
+    def wait(self, cv, predicate, timeout_s: float, poll_s: float = 0.05) -> bool:
+        deadline = self.now() + timeout_s
+        while not predicate() and self.now() < deadline:
+            cv.wait(poll_s)
+        return bool(predicate())
 
 
-def landing_way(q, staged, n: int = 20) -> np.ndarray:
-    """The driver's landing in joint space (tatbot_hardware ArmCore::start_landing): from q to the staged joints
-    with q's carriage, then to the sleep pose, every joint at zero but the wrist roll and the carriage at the
-    staged ones; `n` rows each leg."""
-    q, staged = np.asarray(q, float), np.asarray(staged, float)
-    mid = staged.copy()
-    mid[6] = q[6]
-    sleep = np.zeros(7)
-    sleep[5], sleep[6] = staged[5], staged[6]
-    t = np.linspace(0.0, 1.0, n)[:, None]
-    return np.vstack([q + t * (mid - q), mid + t * (sleep - mid)])
+class ArmIO(SafetyReadings):
+    clock = WALL      # the session's clock (ports.Clock); the node passes RosClock on simulated hardware
+    goal_log = None   # ledger.GoalLog: every goal sent, into the run's goals.jsonl (stack.yaml session.goal_log)
 
-
-class ArmIO:
-    def __init__(self, node, arm: str, callback_group, on_safety_change=None):
-        self.node, self.arm = node, arm
+    def __init__(self, node, arm: str, callback_group, on_safety_change=None, clock=None):
+        self.node, self.arm, self.clock = node, arm, clock or WALL
         self.joint_names = names.joint_names(arm)
         self._cv = threading.Condition()
         self.q: np.ndarray | None = None
@@ -74,16 +82,13 @@ class ArmIO:
         self.safety_time = 0.0
         self.last_command: np.ndarray | None = None
         self.active = None   # the trajectory JTC runs or ran last: a replacement's, after a pen trim mid-goal
-        self._request = int(time.time())
+        self._request = int(self.clock.utc())
         self._on_change = on_safety_change
         self.goals = None  # a JointTrajectory publisher: every goal sent, for the run bag
-        # (arm, joint rows) -> why the way must not be sent, or None: the other arm's clearance (the node's
-        # tatbot_motion.collision.Guard); None when nothing places the two arms in one frame. The node's also
-        # reserves a way it lets through, and says whether only the other arm's way in flight blocks it:
-        # (why, waiting may clear it); `release` ends the reservation and `hold_way` reserves a landing's.
+        self.op_id = ""    # the op the executor last sent, until it is done: tags the published goals
+        # (arm, joint rows) -> why the way must not be sent, or None: the arm's own clearance (the node's
+        # tatbot_motion.collision.Guard); None when no registration places the arm.
         self.clearance = None
-        self.release = None
-        self.hold_way = None
         self.jtc = ActionClient(node, FollowJointTrajectory, names.follow_joint_trajectory(arm),
                                 callback_group=callback_group)
         self.gpio = node.create_publisher(DynamicInterfaceGroupValues, names.safety_commands_topic(arm), 10)
@@ -97,7 +102,7 @@ class ArmIO:
             return
         q = np.array([msg.position[index[name]] for name in self.joint_names])
         with self._cv:
-            self.q, self.q_time = q, time.monotonic()
+            self.q, self.q_time = q, self.clock.now()
             if self._recording is not None and len(msg.effort) == len(msg.name):
                 t = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
                 self._recording.append((q, np.array([msg.effort[index[name]] for name in self.joint_names]), t))
@@ -126,62 +131,43 @@ class ArmIO:
         values = msg.interface_values[msg.interface_groups.index(group)]
         state = dict(zip(values.interface_names, values.values, strict=False))
         with self._cv:
-            before, self.safety, self.safety_time = self.safety, state, time.monotonic()
+            before, self.safety, self.safety_time = self.safety, state, self.clock.now()
             self._cv.notify_all()
         if self._on_change is not None and any(before.get(k) != state.get(k) for k in CHANGES):
             self._on_change(self.arm, before, state)
 
-    def flag(self, name: str, default: float = 0.0) -> bool:
-        value = self.safety.get(name, default)
-        return bool(value) and not math.isnan(value) and value >= 0.5
-
-    @property
-    def latched(self) -> bool:
-        return self.flag("latched")
-
-    @property
-    def estop_ok(self) -> bool:
-        return self.flag("estop_ok", 1.0)
-
-    @property
-    def latch_reason(self) -> int:
-        value = self.safety.get("latch_reason", 0.0)
-        return 0 if math.isnan(value) else int(value)
-
     def latch_text(self) -> str:
         return LATCH_TEXT.get(self.latch_reason, str(self.latch_reason))
 
-    def trip_joints(self) -> np.ndarray | None:
-        q = np.array([self.safety.get(f"trip_q{i}", math.nan) for i in range(7)])
-        return None if np.isnan(q).any() else q
-
     def measured(self, timeout: float = 5.0) -> np.ndarray:
         with self._cv:
-            if not self._cv.wait_for(lambda: self.q is not None, timeout=timeout):
+            if not self.clock.wait(self._cv, lambda: self.q is not None, timeout):
                 raise RuntimeError(f"{self.arm}: no /joint_states for {self.joint_names[0]}")
             return self.q.copy()
 
-    def seed(self) -> np.ndarray:
-        """Measured joints with the carriage from the last command (its encoder rests 10-20 um off)."""
-        q = self.measured()
-        if self.last_command is not None:
-            q[6] = self.last_command[6]
-        return q
-
     def observed(self, *, after=None, timeout=1.0):
-        """Fresh measured joints (under 1 s old, and newer than `after`) and their monotonic receipt stamp."""
+        """Fresh measured joints (under 1 s old, and newer than `after`) and their receipt stamp (self.clock)."""
         with self._cv:
-            if not self._cv.wait_for(lambda: self.q is not None and time.monotonic()-self.q_time <= 1.0
-                                    and (after is None or self.q_time > after), timeout=timeout):
+            if not self.clock.wait(self._cv, lambda: self.q is not None and self.clock.now() - self.q_time <= 1.0
+                                   and (after is None or self.q_time > after), timeout):
                 raise RuntimeError(f'{self.arm}: no fresh measured joints')
             return self.q.copy(), self.q_time
 
     def wait(self, predicate, timeout: float) -> bool:
         with self._cv:
-            return self._cv.wait_for(predicate, timeout=timeout)
+            return self.clock.wait(self._cv, predicate, timeout)
 
     # --- GPIO requests -------------------------------------------------------------------------
+    guard = float(names.GUARD_NONE)   # the guard level last written: every safety command carries it (write)
+
     def write(self, **values: float) -> None:
+        """One safety command. The safety controller (GpioCommandController, 100 Hz) applies only the newest message
+        it holds at each update, so each one carries the guard level asked for last: a disarm with a land request
+        sent on its heels was never applied, and the snag guard left armed latched the next wake at rest
+        (2026-10-23)."""
+        if "guard_mode" in values:
+            self.guard = float(values["guard_mode"])
+        values = {"guard_mode": self.guard, **values}
         msg = DynamicInterfaceGroupValues()
         msg.header.stamp = self.node.get_clock().now().to_msg()
         msg.interface_groups = [names.safety_gpio(self.arm)]
@@ -196,8 +182,8 @@ class ArmIO:
     def _requested(self, command: str, ack: str, timeout: float) -> tuple[bool, int]:
         """Write command=N (repeated every 0.1 s; the same N is one request) until ack == N."""
         n = self._request_id()
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
+        deadline = self.clock.now() + timeout
+        while self.clock.now() < deadline:
             self.write(**{command: n})
             if self.wait(lambda: self.safety.get(ack) == n, timeout=0.1):
                 return True, n
@@ -220,28 +206,20 @@ class ArmIO:
             return False, f"the driver kept the latch ({self.latch_text()})"
         return True, "unlatched"
 
-    def land(self, budget_s: float, on_text=None, staged=None) -> tuple[bool, str]:
-        """land = N, then wait for the driver's verified landing (landed = 1). With `staged` (the driver's staged
-        joints) the landing's way is reserved against the other arm's next goals while it runs: the driver sweeps
-        in joint space from here to the staged pose, then to the sleep pose (landing_way)."""
+    def land(self, budget_s: float, on_text=None) -> tuple[bool, str]:
+        """land = N, then wait for the driver's verified landing (landed = 1)."""
         # The driver commands the landing, and a woken arm holds where it rests: the last goal's carriage seeded the
         # first goal after a wake 2 mm off the landed one, a step JTC took in 10 ms and the driver latched as
         # over_velocity (fake driver, 2026-10-04).
         self.last_command = None
-        if staged is not None and self.hold_way is not None and self.q is not None:
-            self.hold_way(self.arm, landing_way(self.q, staged))
-        try:
-            acked, _ = self._requested("land", "land_ack", 2.0)
-            if not acked:
-                return False, "the driver did not acknowledge land (mock hardware has no landing)"
-            if on_text:
-                on_text("landing")
-            if self.wait(lambda: self.flag("landed"), timeout=budget_s + 5.0):
-                return True, "landed and idle"
-            return False, f"not landed after {budget_s + 5.0:.0f} s ({self.latch_text()})"
-        finally:
-            if self.release is not None:
-                self.release(self.arm)
+        acked, _ = self._requested("land", "land_ack", 2.0)
+        if not acked:
+            return False, "the driver did not acknowledge land (mock hardware has no landing)"
+        if on_text:
+            on_text("landing")
+        if self.wait(lambda: self.flag("landed"), timeout=budget_s + 5.0):
+            return True, "landed and idle"
+        return False, f"not landed after {budget_s + 5.0:.0f} s ({self.latch_text()})"
 
     # --- trajectories --------------------------------------------------------------------------
     def hold(self, q: np.ndarray, seconds: float = 0.1):
@@ -254,16 +232,14 @@ class ArmIO:
     def goal(self, traj, first: int = 0) -> FollowJointTrajectory.Goal:
         goal = FollowJointTrajectory.Goal()
         goal.trajectory.joint_names = list(self.joint_names)
-        for t, q, qd in zip(traj.t[first:], traj.q[first:], traj.qd[first:], strict=True):
-            if t <= 0.0:
-                continue  # the seed knot; JTC starts from the current state
+        for t, q, qd in zip(*goal_points(traj, first), strict=True):   # JTC starts from the current state
             goal.trajectory.points.append(JointTrajectoryPoint(
                 positions=[float(v) for v in q], velocities=[float(v) for v in qd], time_from_start=_duration(t)))
         return goal
 
     def _send(self, traj, stamp=None, first: int = 0, start: float | None = None) -> tuple[threading.Event, dict]:
         """Publish the goal on /tatbot/goals and send it; the box fills with handle, t0 and result. `stamp` (ROS time;
-        `start` monotonic) starts it there, not on arrival; `first` drops the knots before it."""
+        `start` on self.clock) starts it there, not on arrival; `first` drops the knots before it."""
         done, box = threading.Event(), {"accepted": threading.Event()}
 
         def on_result(future):
@@ -271,7 +247,7 @@ class ArmIO:
             done.set()
 
         def on_accepted(future):
-            box["handle"], box["t0"] = future.result(), time.monotonic() if start is None else start
+            box["handle"], box["t0"] = future.result(), self.clock.now() if start is None else start
             box["accepted"].set()
             if box["handle"].accepted:
                 box["handle"].get_result_async().add_done_callback(on_result)
@@ -281,9 +257,14 @@ class ArmIO:
                 done.set()
 
         goal = self.goal(traj, first)
+        if self.goal_log is not None:
+            self.goal_log.append(self.op_id, goal_tag(self.op_id, traj, first), self.clock.now(), start,
+                                 *goal_points(traj, first))
         if self.goals is not None:
             goal.trajectory.header.stamp = (stamp if stamp is not None else self.node.get_clock().now()).to_msg()
+            goal.trajectory.header.frame_id = goal_tag(self.op_id, traj, first)
             self.goals.publish(goal.trajectory)
+            goal.trajectory.header.frame_id = ""
             goal.trajectory.header.stamp = Time()
         if stamp is not None:
             goal.trajectory.header.stamp = stamp.to_msg()
@@ -297,71 +278,43 @@ class ArmIO:
         new = retarget(elapsed, self.active)
         if new is None:
             return (*running, retarget)
-        done, box = self._send(new, stamp, max(int(np.searchsorted(new.t, elapsed - REPLACE_BACK_S)) - 1, 0), start)
+        done, box = self._send(new, stamp, max(int(np.searchsorted(new.t, elapsed - ports.REPLACE_BACK_S)) - 1, 0), start)
         if box["accepted"].wait(1.0) and box["handle"].accepted:
             self.active = new
             return done, box, retarget
         self.node.get_logger().warning(f"{self.arm}: the controller refused a replacement goal; the running one goes on")
         return (*running, None)
 
-    def _stop(self, watch_latch: bool, should_stop) -> str | None:
-        if watch_latch and self.latched:
-            return "latched"
-        return "cancelled" if should_stop and should_stop() else None
-
     def execute(self, traj, *, watch_latch: bool = True, on_tick=None, should_stop=None, poll: float = 0.02,
                 retarget=None):
         """Run one FollowJointTrajectory goal. Returns (status, sample index reached, text) with status
         ok | failed | latched | cancelled. A latch or a stop request cancels the goal. A landed arm is sent
         no goal (failed): its driver would ignore it, and JTC report it a success. Nor is a way that brings
-        the arm too near the other one (self.clearance). `retarget(elapsed_s, active)` may return a trajectory on
+        the arm onto itself (self.clearance). `retarget(elapsed_s, active)` may return a trajectory on
         the same knot times to replace the running one (a pen trim, at most pen.trim.limit_m off the way the
         clearance passed); self.active is the one JTC ran last."""
-        self.active = traj
-        if self.flag("landed"):
-            return "failed", 0, rules.landed_refusal(self.arm)
-        why = self._way_clear(traj, watch_latch, should_stop)
-        if why is not None:
-            self.node.get_logger().warning(why)
-            return "failed", 0, why
-        try:
-            return self._run(traj, watch_latch, on_tick, should_stop, poll, retarget)
-        finally:
-            if self.release is not None:
-                self.release(self.arm)
-
-    def _way_clear(self, traj, watch_latch: bool, should_stop) -> str | None:
-        """Why the way must not be sent (self.clearance), or None, reserved. One blocked only by the other arm's
-        way in flight waits up to WAY_WAIT_S for it to end."""
-        if self.clearance is None:
-            return None
-        deadline = time.monotonic() + WAY_WAIT_S
-        while True:
-            answer = self.clearance(self.arm, traj.q)
-            why, waits = answer if isinstance(answer, tuple) else (answer, False)
-            if why is None or not waits or time.monotonic() > deadline or self._stop(watch_latch, should_stop):
-                return why
-            time.sleep(0.2)
+        return execute(self, traj, lambda: self._run(traj, watch_latch, on_tick, should_stop, poll, retarget),
+                       self.node.get_logger().warning)
 
     def _run(self, traj, watch_latch: bool, on_tick, should_stop, poll: float, retarget=None):
         self.last_command = None  # unless it completes, JTC holds the measured pose: seed from measured
         if not self.jtc.wait_for_server(timeout_sec=5.0):
             return "failed", 0, f"{names.follow_joint_trajectory(self.arm)} is not available"
-        stamp, start = (self.node.get_clock().now() + RosDuration(seconds=STAMP_AHEAD_S),
-                        time.monotonic() + STAMP_AHEAD_S) if retarget else (None, None)
+        stamp, start = (self.node.get_clock().now() + RosDuration(seconds=ports.STAMP_AHEAD_S),
+                        self.clock.now() + ports.STAMP_AHEAD_S) if retarget else (None, None)
         done, box = self._send(traj, stamp, start=start)
-        index, sent_at = 0, time.monotonic()
+        index, sent_at = 0, self.clock.now()
         while not done.wait(poll):
             if 't0' in box:
-                elapsed = time.monotonic() - box["t0"]
+                elapsed = self.clock.now() - box["t0"]
                 index = min(int(np.searchsorted(traj.t, elapsed)), len(traj.t) - 1)
                 if on_tick:
                     on_tick(index)
-                if retarget is not None and elapsed > 2 * REPLACE_BACK_S and not box.get("cancel"):
+                if retarget is not None and elapsed > 2 * ports.REPLACE_BACK_S and not box.get("cancel"):
                     done, box, retarget = self._retarget(retarget, elapsed, stamp, start, (done, box))
             deadline = box['t0'] + float(traj.t[-1]) + 30.0 if 't0' in box else sent_at + 5.0
-            stop = self._stop(watch_latch, should_stop)
-            if stop or time.monotonic() > deadline:
+            stop = stop_reason(self, watch_latch, should_stop)
+            if stop or self.clock.now() > deadline:
                 box['cancel'] = True
                 if (handle := box.get('handle')) is not None and handle.accepted:
                     handle.cancel_goal_async()

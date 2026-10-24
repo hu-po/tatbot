@@ -29,7 +29,7 @@ _timeout.exclusive_bounds = (True, False)
 
 
 def _status_args(p):
-    p.add_argument("--cams", action="store_true", help="also ping the five PoE cameras")
+    p.add_argument("--cams", action="store_true", help="also ping the network cameras in __cameras__ (the overhead D555)")
     p.add_argument("--fleet", action="store_true", help="collect local observations from configured nodes over read-only SSH (a node with no roles is reported retired, not probed)")
     p.add_argument("--timeout-s", type=_timeout, default=15.0, help="finite overall deadline, 0 < seconds <= 300 (default 15; at most four fleet collectors)")
     p.add_argument("--schema-version", type=int, choices=(1, 2), default=2, help="JSON result version; 1 is the legacy field projection")

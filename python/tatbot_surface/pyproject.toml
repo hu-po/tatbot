@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tatbot-surface"
+version = "0.1.0"
+description = "Torch-free readers for the reference body surface, its pose rig, surface traces and v6 placements"
+authors = [{ name = "Hugo Ponte" }]
+license = "MIT"
+requires-python = ">=3.11"
+# numpy and scipy only: no torch, shapely, physics engine or renderer.
+dependencies = [
+  "tatbot-contracts==0.1.0",
+  "numpy",
+  "scipy",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["tatbot_surface*"]
+
+[tool.uv.sources]
+tatbot-contracts = { path = "../tatbot_contracts", editable = true }

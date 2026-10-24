@@ -87,23 +87,6 @@ def test_palette_slots_bind_configured_ids_in_a_three_arm_registry(tmp_path):
         ink_spec.load_palette(tmp_path)
 
 
-def test_palette_root_in_base():
-    right_pos = ink_spec.palette_root_in_base(REPO, arm="right")
-    left_pos = ink_spec.palette_root_in_base(REPO, arm="left")
-
-    assert len(right_pos) == 3 and len(left_pos) == 3
-    assert right_pos == pytest.approx((0.126, 0.2675, 0.085))
-    assert left_pos == pytest.approx((0.126, -0.2675, 0.085))
-    # Both coordinates describe the same configured synthetic ROOT point.
-    # Root is the rig midpoint; +Y points toward the robot's left hand.
-    assert right_pos[0] == pytest.approx(left_pos[0])
-    assert left_pos[1] - right_pos[1] == pytest.approx(-0.535)
-    assert right_pos[2] == pytest.approx(left_pos[2])
-
-    with pytest.raises(ValueError, match="no configured arm binding"):
-        ink_spec.palette_root_in_base(REPO, arm="invalid_arm")
-
-
 def test_cap_geometry_is_self_consistent(palette):
     large = palette["inkcap_large_1"].size
     assert large.surface_depth_m(0) == pytest.approx(large.depth_m)
@@ -132,8 +115,6 @@ def test_palette_urdf_error_handling(tmp_path):
     (urdf_dir / "palette.urdf").write_text("<robot name=\"test\"><link name=\"root\"/></robot>")
     with pytest.raises(ValueError, match=r"no inkcap_\* joints"):
         ink_spec.palette_layout_from_urdf(tmp_path)
-
-
 
 
 def test_three_tools_three_modes():
@@ -477,7 +458,6 @@ def ink_repo(tmp_path, monkeypatch):
 
     monkeypatch.setattr(ink, "REPO", tmp_path)
     monkeypatch.setenv("TATBOT_INK_LEDGER", str(tmp_path / "ledger.jsonl"))
-    monkeypatch.setenv("TATBOT_INK_SESSION", str(tmp_path / "session.json"))
     return tmp_path
 
 
@@ -702,33 +682,6 @@ def test_ink_cmd_plan(ink_repo, capsys):
     assert ink.main(["plan", "--ee-tool", "lutin-3rl-bugpin", "--strokes", "100,5"]) == 2
 
 
-def test_ink_cmd_session(ink_repo, capsys, tmp_path):
-    assert ink.main(["session", "status"]) == 0
-    with pytest.raises(SystemExit) as exc:
-        ink.main(["session", "invalid_verb"])
-    assert exc.value.code == 2
-
-    # start requiring tool
-    assert ink.main(["session", "start"]) == 2
-
-    # start session with program
-    prog_file = tmp_path / "prog.json"
-    prog_file.write_text(json.dumps([[[0, 0], [0.01, 0.01]]]))
-    assert ink.main(["session", "start", "--ee-tool", "lutin-3rl-bugpin", "--program", str(prog_file)]) == 0
-    assert ink.main(["session", "status"]) == 0
-
-    # end session
-    assert ink.main(["session", "end"]) == 0
-    assert ink.main(["session", "end"]) == 2  # no open session
-
-    # rebuild session
-    assert ink.main(["session", "rebuild"]) == 2  # missing id
-    evs = ink_spec.read_events()
-    sess_id = next(e["session_id"] for e in evs if e.get("kind") == "session.start")
-    assert ink.main(["session", "rebuild", sess_id, "--write"]) == 0
-    assert ink.main(["session", "rebuild", "non_existent_id"]) == 2
-
-
 def test_ink_cmd_sync(ink_repo, capsys, monkeypatch):
     import subprocess
     # Mock subprocess.run for scp
@@ -759,13 +712,3 @@ def test_ink_sync_names_each_copy_after_its_node():
 def test_ink_arg_parsing_validation():
     assert ink.main(["bottle", "add", "b1"]) == 2  # missing --ink and --ml
     assert ink.main(["cartridge", "add", "c1"]) == 2  # missing args
-
-
-def test_legacy_supply_account_survives_serialization():
-    from dataclasses import asdict
-    supply = ink_spec.ContinuousSupply('cartridge-1', 10000, 1000, 3000)
-    restored = ink_spec.ContinuousSupply(**json.loads(json.dumps(asdict(supply))))
-    assert asdict(restored) == asdict(supply)
-    for budget in (0, -1, True, float('inf'), 2**64):
-        with pytest.raises(ValueError, match='account'):
-            ink_spec.ContinuousSupply('cartridge-1', budget, 1000, 3000)

@@ -10,7 +10,6 @@ import { artworkPreviewUrl } from "../src/core/svg.ts";
 import { frozenArtwork } from "../src/core/frozen-artwork.ts";
 import { canonicalDigest } from "../src/core/human-representation/schema.ts";
 import { makeProject, parseProject, validateProject } from "../src/core/project.ts";
-import { makeSimulationBundle, simulationRequest, validateSimulationBundle } from "../src/core/sim-bundle.ts";
 import type { AtlasData } from "../src/core/atlas.ts";
 import type { PlacementFile } from "../src/core/schema.ts";
 
@@ -44,15 +43,14 @@ test("body, paper and parked cylinder preserve exact artwork through project JSO
   for (const [doc, original] of [[reopened.chart!, paper], [reopened.chart_parked!, cylinder]] as const) {
     assert.deepEqual(await designFromChartDraft(await chartDraftFromDocument(doc)), original);
   }
-  const bundle = await makeSimulationBundle(reopened.placement_file, atlas, simulationRequest("supine", "#804030", null, "lutin-3rl-bugpin", 42));
-  assert.deepEqual(bundle.artworks["line-v1"], art);
+  const reopenedBody = await designFromBodyFile(body.name, reopened.placement_file, atlas);
+  assert.deepEqual(reopenedBody.artworks["line-v1"], art);
   const elements = art.program.layers.flatMap(layer => layer.elements);
   assert.ok(elements.length > 1);
   assert.ok(elements.every(element => element.kind === "path" && element.fill === false));
-  const changed = structuredClone(bundle);
-  changed.placement_file.designs!["line-v1"].program.layers[0].elements[0].width_m = .0007;
-  changed.content_sha256 = await canonicalDigest(changed);
-  await assert.rejects(validateSimulationBundle(changed, atlas), /frozen placement record/);
+  const changed = structuredClone(reopened.placement_file);
+  changed.designs!["line-v1"].program.layers[0].elements[0].width_m = .0007;
+  await assert.rejects(designFromBodyFile(body.name, changed, atlas));
 });
 
 test("freezing and runtime collection provenance cannot overwrite a portable artwork record", async () => {

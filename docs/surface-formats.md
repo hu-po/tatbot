@@ -1,7 +1,7 @@
 # Surface, samples and capture formats
 
-The ROS 2 stack (`ros/`), the simulator, the offline samples planner and the
-wrist-camera tools read or write the files below. Every file has a `schema` value; readers refuse
+The ROS 2 stack (`ros/`), the offline samples planner and the wrist-camera
+tools read or write the files below. Every file has a `schema` value; readers refuse
 an unknown schema, and a preflight failure refuses a path rather than silently
 clamping it.
 
@@ -19,8 +19,8 @@ point and the tool axis come from the selected tool configuration.
 ## Shared constants
 
 Every number the C++ samples planner (`cpp/teleop/square_probe.cpp`, run
-offline as `path_plan_check`) and the Python planner (`scripts/lib/pen_path.py`)
-must agree on lives in one file, `config/motion_constants.json` (schema
+offline as `path_plan_check`) and the teleop reads lives in one file,
+`config/motion_constants.json` (schema
 `tatbot.draw-constants/1`). It holds the control period, the carriage-IK
 envelope, the planner's joint-velocity and model-error caps, the path's lean
 budget and dip speeds, and the legacy audio-rule constants.
@@ -114,7 +114,5 @@ the projected robot-root X hint, or Y when that is degenerate. A cylinder's
 physical registration.
 
 An optional `surface.json` sidecar records provenance and fit statistics
-without changing the numeric contract. The NumPy reader
-(`scripts/lib/surface_model.py`) and the simulator's loader
-(`python/tatbot_sim/src/tatbot_sim/surface_io.py`) read the same
-representation, and parity tests pin their frame points and normals.
+without changing the numeric contract. The NumPy reader is
+`scripts/lib/surface_model.py`.

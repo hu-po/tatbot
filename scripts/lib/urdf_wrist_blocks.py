@@ -2,8 +2,8 @@
 
 One block per fiducial target sits in urdf/tatbot.urdf between marker
 comments. export_wrist_tags.py renders a block from a layout; the arm-scoped
-adopter splices one arm's block into whatever URDF the destination holds so
-the other arm's block survives byte for byte. Both use these helpers.
+adopter splices it into whatever URDF the destination holds, leaving the rest
+byte for byte. Both use these helpers.
 """
 from __future__ import annotations
 
@@ -12,9 +12,6 @@ BEGIN_PREFIX = "  <!-- BEGIN GENERATED WRIST FIDUCIALS"
 END_MARKER = "  <!-- END GENERATED WRIST FIDUCIALS -->"
 LEGACY_BEGIN = "  <!-- Provisional geometry for the new three-fiducial wrist mount"
 LEGACY_END = '  <joint name="right/realsense_depth_joint"'
-# A block for a second target is inserted before this line the first time it
-# is generated; afterwards its own markers locate it.
-LEFT_INSERT_BEFORE = "  <!-- arm_r -->"
 
 
 def block_begin(target: str) -> str:
@@ -52,7 +49,4 @@ def replace_urdf_block(text: str, block: str, target: str = DEFAULT_TARGET) -> s
         if begin < 0 or end < 0:
             raise ValueError("URDF has neither generated nor recognized legacy wrist block")
         return text[:begin] + block + text[end:]
-    begin = text.find(LEFT_INSERT_BEFORE)
-    if begin < 0:
-        raise ValueError(f"URDF has no insertion point for the {target} block")
-    return text[:begin] + block + text[begin:]
+    raise ValueError(f"URDF has no generated block for the {target} target")

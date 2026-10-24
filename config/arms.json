@@ -5,7 +5,7 @@
       "control_role": "arm",
       "profile_ip_field": "leader_ip",
       "controller_config": "config/trossen/leader.yaml",
-      "sdk_end_effector": "wxai_v0_leader",
+      "sdk_end_effector": "wxai_v0_leader_20250509",
       "workspace_section": "left",
       "urdf_prefix": "left"
     },
@@ -13,7 +13,7 @@
       "control_role": "arm",
       "profile_ip_field": "follower_ip",
       "controller_config": "config/trossen/follower.yaml",
-      "sdk_end_effector": "wxai_v0_follower",
+      "sdk_end_effector": "wxai_v0_follower_20250509",
       "workspace_section": "right",
       "urdf_prefix": "right"
     }

@@ -47,8 +47,10 @@ def physical_sections(points, *, capacity_m, remaining_m):
     return sections, remaining_m
 
 
-def schedule_ops(strokes, bindings, resources, *, speed, max_seconds, motion):
-    """Schedule every path in source order; cartridge changes invalidate dip credit."""
+def schedule_ops(strokes, bindings, resources, *, speed, max_seconds, motion, max_stroke_m=None):
+    """Schedule every path in source order; cartridge changes invalidate dip credit. With `max_stroke_m` a path
+    longer than it is drawn as strokes of at most that length, each lifted and read again at its own hover (a stroke
+    on a person a few seconds long, 2026-10-21), not as chunks that continue pen-down."""
     table = {row['id']: row for row in resources}
     ops, current, remaining = [], None, None
     for stroke in strokes:
@@ -60,17 +62,20 @@ def schedule_ops(strokes, bindings, resources, *, speed, max_seconds, motion):
             current, remaining = identity, None
         profile = resource['dip']
         capacity = None if profile is None else profile['mm_per_dip']/1000
-        initial_dip = remaining is None
+        initial_dip, arc0 = remaining is None, getattr(stroke, 'arc0_m', 0.)   # a path cut at a keep region's edge
         sections, remaining = physical_sections(stroke.points_m, capacity_m=capacity, remaining_m=remaining)
         for points, (lo, hi), dip in sections:
             if dip:
                 ops.append({'op': 'dip', 'id': f'd{len(ops):04d}', 'resource_id': identity, 'slot': resource['slot'],
                             'reason': 'initial' if initial_dip and lo == 0 else 'replenish'})
-            pieces = split_timed(points, max_seconds, speed, motion)
-            for index, (piece, (a, b), seconds) in enumerate(pieces):
-                ops.append({'op': 'stroke', 'id': f's{len(ops):04d}', 'resource_id': identity, 'ink': resource['ink_id'],
-                            'closed': stroke.closed and len(sections) == len(pieces) == 1, 'continues': index > 0,
-                            'src': {**stroke.src, 'arc_m': [lo+a, min(hi, lo+b)]},
-                            'generation_width_m': stroke.generation_width_m, 'planned_drawing_s': seconds,
-                            'points_m': (piece + 0.).tolist()})
+            parts = [(points, (0., hi - lo))] if max_stroke_m is None else split(points, max_stroke_m)
+            for part, (pa, _) in parts:
+                pieces = split_timed(part, max_seconds, speed, motion)
+                for index, (piece, (a, b), seconds) in enumerate(pieces):
+                    ops.append({'op': 'stroke', 'id': f's{len(ops):04d}', 'resource_id': identity,
+                                'ink': resource['ink_id'],
+                                'closed': stroke.closed and len(sections) == len(parts) == len(pieces) == 1,
+                                'continues': index > 0, 'src': {**stroke.src, 'arc_m': [arc0+lo+pa+a, arc0+min(hi, lo+pa+b)]},
+                                'generation_width_m': stroke.generation_width_m, 'planned_drawing_s': seconds,
+                                'points_m': (piece + 0.).tolist()})
     return ops

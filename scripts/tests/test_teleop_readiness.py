@@ -187,7 +187,7 @@ def test_teleop_check_is_read_only_and_routes_to_the_arm_owner():
     from tatbot_cli.registry import find
     v = find("teleop", "check")
     assert v is not None and v.role == "arm" and v.auto_hop and v.native
-    assert not v.launch_id and not v.ink_hook and v.tier == "sensor"
+    assert not v.launch_id and v.tier == "sensor"
     assert "autonomous_motion" not in v.effects and "human_motion" not in v.effects
 
     plan = tatbot("--dry-run", "--json", "teleop", "check", "--no-probe", node=VIEWER)

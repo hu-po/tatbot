@@ -24,9 +24,6 @@ export interface UiState {
   popover: string | null;
   /** A notice beside an action: exports, opens, saves. Cleared by the next action. */
   notice: { action: string; message: string } | null;
-  /** Simulation export settings; the panel that edits them lives in a menu. */
-  simTool: string;
-  simSeed: number;
   setWorkspace: (tab: WorkspaceTab) => void;
   setChoosing: (choosing: boolean) => void;
   setChooserTab: (tab: "library" | "generate") => void;
@@ -50,8 +47,6 @@ export const useUi = create<UiState>((set) => ({
   tray: "working",
   popover: null,
   notice: null,
-  simTool: "lutin-3rl-bugpin",
-  simSeed: 0,
   setWorkspace: (tab) => {
     const workspace: Workspace = tab === "body" ? "body" : "chart";
     // A paper or cylinder tab names the chart's kind and nothing else: the

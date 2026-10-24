@@ -12,32 +12,21 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
-from ee_fiducial import WristLayout  # noqa: E402
 from export_wrist_tags import marker_asset_relpath, quality_gate, record_from_solve  # noqa: E402
 from fiducials import load_inventory, tag_model_corners  # noqa: E402
 from fiducials.detector import DetectorConfig, FiducialDetector, tag_dictionary  # noqa: E402
-from tag_scan import detection_candidates, resolve_duplicates  # noqa: E402
 
 
 def test_repository_inventory_is_complete_and_explicit():
     inventory = load_inventory()
     assert inventory.family == "apriltag_36h11"
-    assert inventory.target("board").family == "apriltag_16h5"
     assert inventory.target("wrist").family == "apriltag_36h11"
     assert inventory.target("palette").family == "apriltag_36h11"
     assert inventory.target("wrist").ids == (2, 3, 4)
-    assert inventory.target("wrist_left").ids == (5, 30, 1)
     assert inventory.target("wrist").edge_m == pytest.approx(0.047)
-    assert inventory.target("board").ids == (3, 4, 5, 6, 7, 8, 9, 10, 11)
-    assert inventory.target("board").edge_m == pytest.approx(0.044)
-    assert inventory.target("board").grid == ((3, 4, 5), (6, 7, 8), (9, 10, 11))
-    assert inventory.target("board").calibration_root_id == 10
-    assert inventory.target("board").max_calibration_regression_mm == 1.0
-    assert inventory.exclusive_ids("board") == inventory.target("board").ids
-    assert inventory.owners(8) == ("board",)
-    assert inventory.owners(3, "apriltag_16h5") == ("board",)
-    assert inventory.owners(6) == ("board",)
-    assert inventory.owners(7) == ("board",)
+    assert inventory.owners(3) == ("wrist",)
+    assert inventory.ids_by_family() == {"apriltag_36h11": frozenset({0, 2, 3, 4})}
+    assert set(inventory.targets) == {"wrist", "palette"}   # the blue arm's wrist_left went with it (2026-10-23)
     # the v11 palette's roof sticker: its black square triangulates to 46 mm
     assert inventory.target("palette").ids == (0,)
     assert inventory.target("palette").edge_m == pytest.approx(0.046)
@@ -45,7 +34,7 @@ def test_repository_inventory_is_complete_and_explicit():
     assert inventory.target("wrist").minimum_calibration_poses_per_id == 3
     assert inventory.target("wrist").max_calibration_parent_distance_mm == 225.0
     assert inventory.target("wrist").parent_frame == "right/gripper_left"
-    groups = {inventory.target(name).ambiguity_group for name in ("wrist", "board", "palette")}
+    groups = {inventory.target(name).ambiguity_group for name in ("wrist", "palette")}
     assert groups == {"phase_separated_calibration_ids"}
 
 
@@ -153,33 +142,25 @@ def test_the_edge_fit_finds_a_square_tags_edges_between_pixels():
     assert np.abs(detection.corners_px - [[lo, lo], [hi, lo], [hi, hi], [lo, hi]]).max() < 0.1
 
 
-def test_reused_ids_require_board_only_context(monkeypatch):
-    import tag_scan
-    monkeypatch.setattr(tag_scan, "PALETTE_IDS", {8})
-    monkeypatch.setattr(tag_scan, "WRIST_IDS", {3, 6, 7})
-    monkeypatch.setattr(tag_scan, "BOARD_UNIQUE_IDS", {4, 5, 9, 10, 11})
-    square = np.array([[0, 0], [10, 0], [10, 10], [0, 10]], np.float64)
-    board8 = square + [100, 100]
-    palette8 = square + [900, 600]
-    board, palette = resolve_duplicates([(8, board8), (8, palette8)])
-    assert board == {}
-    assert palette is None
-
-    siblings = [(4, square + [80, 100]), (5, square + [120, 100]),
-                (9, square + [100, 80])]
-    board, palette = resolve_duplicates([*siblings, (8, board8), (8, palette8)])
-    assert np.array_equal(board[8], board8)
-    assert np.array_equal(palette, palette8)
-
-    board3 = square + [90, 100]
-    wrist3 = square + [850, 550]
-    board, palette = resolve_duplicates([*siblings, (3, board3), (3, wrist3)])
-    assert np.array_equal(board[3], board3)
-    assert palette is None
-
-    candidates = detection_candidates([(8, board8), (8, palette8), (3, board3)])
-    assert len(candidates[8]) == 2
-    assert len(candidates[3]) == 1
+@pytest.mark.parametrize("scale", [0.5, 1.0, 2.0])
+@pytest.mark.parametrize("window", [None, (9, 5, 91, 93)])
+def test_a_resized_detection_reports_corners_where_the_tag_is(scale, window):
+    """A tag read in a resized image (scale), whole or in a window: its corners come back in the frame's pixels.
+    cv2.resize centres its pixel u at (u + 0.5) / scale - 0.5 in the frame, so u / scale is half a pixel off at
+    0.5 and a quarter pixel off at 2."""
+    turn, side = np.radians(17.0), 44.0
+    image_from_cell = np.array([[np.cos(turn), -np.sin(turn), 0.0], [np.sin(turn), np.cos(turn), 0.0],
+                                [0.0, 0.0, 1.0]]) @ np.diag([side / 8.0, side / 8.0, 1.0])
+    image_from_cell = np.array([[1.0, 0.0, 48.3], [0.0, 1.0, 47.6], [0.0, 0.0, 1.0]]) @ image_from_cell @ np.array(
+        [[1.0, 0.0, -4.0], [0.0, 1.0, -4.0], [0.002, -0.003, 1.0]])
+    image = _area_sampled(_marker_cells("apriltag_36h11", 5), image_from_cell)
+    truth = np.array([[0.0, 0.0, 1.0], [8.0, 0.0, 1.0], [8.0, 8.0, 1.0], [0.0, 8.0, 1.0]]) @ image_from_cell.T
+    truth = truth[:, :2] / truth[:, 2:]
+    detector = FiducialDetector({5}, DetectorConfig(scale=scale, min_side_px=8.0, refinement="edges"),
+                                ids_by_family={"apriltag_36h11": frozenset({5})})
+    (detection,) = detector.detect("synthetic", cv2.cvtColor(image, cv2.COLOR_GRAY2BGR), 0, window)
+    error = detection.corners_px - truth
+    assert np.abs(error).max() < 0.3 and np.abs(error.mean(axis=0)).max() < 0.1
 
 
 def test_wrist_publish_requires_distinct_poses_for_every_id():
@@ -216,23 +197,9 @@ def test_wrist_publish_requires_solve_in_configured_parent(tmp_path):
     assert record["parent_frame"] == "right/gripper_left"
 
 
-def test_checked_in_layout_matches_inventory_and_enforces_status(tmp_path):
-    path = ROOT / "config" / "wrist_tags_measured.json"
-    raw = json.loads(path.read_text())
-    inventory = load_inventory()
-    assert tuple(raw["target_ids"]) == inventory.target("wrist").ids
-    if raw["calibration_status"] == "calibrated":
-        layout = WristLayout.load(path)
-        assert layout.parent_frame == "right/gripper_left"
-    else:
-        with pytest.raises(ValueError, match="not calibrated"):
-            WristLayout.load(path)
-
-    raw["calibration_status"] = "pending_recalibration"
-    pending = tmp_path / "pending.json"
-    pending.write_text(json.dumps(raw))
-    with pytest.raises(ValueError, match="pending_recalibration"):
-        WristLayout.load(pending)
+def test_checked_in_layout_matches_inventory():
+    raw = json.loads((ROOT / "config" / "wrist_tags_measured.json").read_text())
+    assert tuple(raw["target_ids"]) == load_inventory().target("wrist").ids
 
 
 def test_foamcore_mount_envelope_accepts_offset_but_still_rejects_far_tag(tmp_path):
@@ -253,32 +220,6 @@ def test_foamcore_mount_envelope_accepts_offset_but_still_rejects_far_tag(tmp_pa
         record_from_solve(solved, tmp_path / "robot_world.json", inventory)
 
 
-def test_wrist_layout_schema_and_parent_are_fail_closed(tmp_path):
-    source = ROOT / "config" / "wrist_tags_measured.json"
-    record = json.loads(source.read_text())
-    record["calibration_status"] = "calibrated"
-
-    record["schema_version"] = 1
-    path = tmp_path / "wrong-schema.json"
-    path.write_text(json.dumps(record))
-    with pytest.raises(ValueError, match="unsupported wrist layout schema"):
-        WristLayout.load(path)
-
-    record["schema_version"] = 2
-    record["parent_frame"] = "right/realsense_link"
-    path = tmp_path / "wrong-parent.json"
-    path.write_text(json.dumps(record))
-    with pytest.raises(ValueError, match="parent must be right/gripper_left"):
-        WristLayout.load(path)
-
-    record["parent_frame"] = "right/gripper_left"
-    record["target_ids"] = [3, 6, 7, 8, 8]
-    path = tmp_path / "duplicate-id.json"
-    path.write_text(json.dumps(record))
-    with pytest.raises(ValueError, match="wrist target ids must be"):
-        WristLayout.load(path)
-
-
 def test_pending_layout_does_not_render_old_mount_tag_frames():
     from export_wrist_tags import render_urdf_block
     record = json.loads((ROOT / "config/wrist_tags_measured.json").read_text())
@@ -293,7 +234,7 @@ def test_pending_layout_does_not_render_old_mount_tag_frames():
     assert 'meshes/tags/36h11_002_47mm/tag.glb' in block
 
 
-@pytest.mark.parametrize("target_name", ["wrist", "wrist_left", "palette"])
+@pytest.mark.parametrize("target_name", ["wrist", "palette"])
 def test_viewer_assets_encode_the_canonical_fiducial_ids(target_name):
     inventory = load_inventory()
     target = inventory.target(target_name)
@@ -354,56 +295,34 @@ def test_palette_viewer_asset_embeds_printed_mount_material():
     )
 
 
-@pytest.mark.parametrize("family,tag_id", [("apriltag_16h5", 3), ("apriltag_36h11", 5)])
+def _with_16h5_target(tmp_path):
+    """The repository inventory plus a 16h5 target carrying id 3, as a skin stencil's would."""
+    record = json.loads((ROOT / "config" / "fiducials.json").read_text())
+    record["targets"]["sixteen"] = {"family": "apriltag_16h5", "role": "test", "ids": [3], "edge_m": 0.044}
+    path = tmp_path / "with-16h5.json"
+    path.write_text(json.dumps(record))
+    return load_inventory(path)
+
+
+@pytest.mark.parametrize("family,tag_id", [("apriltag_16h5", 3), ("apriltag_36h11", 2)])
 @pytest.mark.parametrize("turns", range(4))
-def test_both_families_keep_corner_order_under_rotation(family, tag_id, turns):
+def test_both_families_keep_corner_order_under_rotation(tmp_path, family, tag_id, turns):
     marker = cv2.aruco.generateImageMarker(tag_dictionary(family), tag_id, 240)
     frame = np.full((320, 320, 3), 255, np.uint8)
     frame[40:280, 40:280] = np.rot90(marker, turns)[:, :, None]
-    found = FiducialDetector.from_inventory(load_inventory()).detect("synthetic", frame, 123)
+    found = FiducialDetector.from_inventory(_with_16h5_target(tmp_path)).detect("synthetic", frame, 123)
     assert [d.tag_id for d in found] == [tag_id]
     expected = np.roll([[40, 40], [279, 40], [279, 279], [40, 279]], turns, axis=0)
     assert np.allclose(found[0].corners_px, expected, atol=2)
 
 
-def test_mixed_scene_filters_wrong_family_and_separates_the_two_wrist_targets():
+def test_mixed_scene_keeps_only_the_inventorys_family_and_ids():
     frame = cv2.imread(str(ROOT / 'scripts/tests/fixtures/fiducials/mixed.png'))
     found = FiducialDetector.from_inventory(load_inventory()).detect('synthetic', frame, 1)
-    assert sorted((d.family, d.tag_id) for d in found) == [("apriltag_16h5", 3), ("apriltag_36h11", 3), ("apriltag_36h11", 5)]
-    board = FiducialDetector.from_inventory(load_inventory(), target='board').detect('synthetic', frame, 1)
-    assert [d.tag_id for d in board] == [3]
-    # Each physical arm's triplet is its own target: a pink sighting never
-    # counts for blue and vice versa.
+    # The scene's 16h5 tag is another family, and its 36h11 tag 5 is in no target.
+    assert sorted((d.family, d.tag_id) for d in found) == [("apriltag_36h11", 3)]
     pink = FiducialDetector.from_inventory(load_inventory(), target='wrist').detect('synthetic', frame, 1)
-    blue = FiducialDetector.from_inventory(load_inventory(), target='wrist_left').detect('synthetic', frame, 1)
     assert [d.tag_id for d in pink] == [3]
-    assert [d.tag_id for d in blue] == [5]
-
-
-def test_reused_numeric_ids_are_retained_only_under_their_actual_family():
-    from tag_scan import detect, family_groups
-    inventory = load_inventory()
-    frame = cv2.imread(str(ROOT / 'scripts/tests/fixtures/fiducials/mixed.png'))
-    detector = FiducialDetector.from_inventory(inventory)
-    detector.keep_best_per_id = True
-    records = detector.detect('synthetic', frame, 1)
-    assert len(records) == 3  # ID 3 in both families survives deduplication.
-    families = family_groups(records)
-    board = families[inventory.target('board').family]
-    blue = families[inventory.target('wrist_left').family]
-    assert board['corners']['3'][0][0] == pytest.approx(40, abs=2)
-    assert blue['corners']['3'][0][0] == pytest.approx(360, abs=2)
-    assert detect(frame) == []  # Every seen ID is cross-family ambiguous.
-
-
-def test_palette_is_retained_when_wrist_tags_are_far_from_it():
-    from types import SimpleNamespace
-
-    from tag_scan import family_groups
-    records = [SimpleNamespace(family='apriltag_36h11', tag_id=tag_id,
-                               corners_px=np.array([[x, 0], [x + 50, 0], [x + 50, 50], [x, 50]], float))
-               for tag_id, x in [(3, 0), (5, 100), (22, 1000)]]
-    assert set(family_groups(records)['apriltag_36h11']['corners']) == {'3', '5', '22'}
 
 
 @pytest.mark.parametrize('mutation,match', [
@@ -417,7 +336,7 @@ def test_mixed_inventory_fails_closed(tmp_path, mutation, match):
     elif mutation == 'unsupported':
         wrist['family'] = 'unknown'
     elif mutation == 'overlap':
-        wrist['ids'][0] = 5
+        wrist['ids'][0] = 0   # the palette's
         del wrist['ambiguity_group']
     else:
         wrist['ids'][0] = 587
@@ -431,14 +350,14 @@ def test_legacy_schema_keeps_single_family(tmp_path):
     record = json.loads((ROOT / 'config/fiducials.json').read_text())
     record['schema_version'] = 1
     record['family'] = 'apriltag_16h5'
-    record['targets'] = {'board': record['targets']['board']}
-    del record['targets']['board']['family']
+    record['targets'] = {'palette': record['targets']['palette']}
+    del record['targets']['palette']['family']
     path = tmp_path / 'legacy.json'
     path.write_text(json.dumps(record))
-    assert load_inventory(path).target('board').family == 'apriltag_16h5'
+    assert load_inventory(path).target('palette').family == 'apriltag_16h5'
 
 
-@pytest.mark.parametrize('target_name', ['wrist', 'wrist_left', 'palette'])
+@pytest.mark.parametrize('target_name', ['wrist', 'palette'])
 def test_generated_sheet_encodes_inventory_and_metric_print_size(target_name):
     from PIL import Image
     inventory = load_inventory()

@@ -77,7 +77,7 @@ class Camera:
     def capture(self, after_ns: int, timeout_s: float = 4.0, *, retain_original: bool = False) -> dict:
         """The newest colour/depth set exposed after `after_ns`, as {image, metadata, stamp_ns, depth_profile,
         depth_m}. With retain_original, original_packet is the exact validated frame-set reply."""
-        from board_rgbd_evidence import unpack
+        from frame_set_wire import unpack
 
         deadline = time.monotonic() + timeout_s
         last = "no reply"

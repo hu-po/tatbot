@@ -8,12 +8,11 @@ spawns a viewer of its own: it connects to the proxy it was given (or writes an
 
     import tatbot_rerun as tr
     ap = argparse.ArgumentParser(); tr.add_sink_args(ap)
-    rr = tr.start("stencil_observe", args, calibration=..., urdf=...)
+    rr = tr.start("vision_capture", args, calibration=..., urdf=...)
     tr.set_capture_time(t_ns)
     rr.log("surface/status", rr.TextLog("..."))
 
-Import it with `scripts/lib` on sys.path (scripts/vision/stencil_rerun.py is one
-producer that does); launchers that copy a producer to another node copy this file too.
+Import it with `scripts/lib` on sys.path; launchers that copy a producer to another node copy this file too.
 """
 
 from __future__ import annotations
@@ -58,6 +57,8 @@ ENTITY_PREFIXES = {
     "calibration": "calibration evidence: the stencil camera's measured depth and candidate geometry",
     "draw": "drawing: the ROS 2 stack's plan and progress (draw/ros, ros/tatbot_rerun)",
     "session": "producer provenance (session/producers/<workflow>) and status",
+    "system": "host load at 1 Hz: system/<role>/{cpu_percent,mem_percent,temp_c,gpu_percent,gpu_temp_c}, "
+              "system/robot/{cpu_percent,temp_c} (tatbot_sysmon)",
 }
 
 
@@ -247,6 +248,49 @@ def start(workflow: str, args: argparse.Namespace | None = None, *, connect: str
         except Exception as error:  # noqa: BLE001
             print(f"  (view-coordinates hint skipped: {error})")
     return rr
+
+
+def forward_file(path: str | os.PathLike, connect: str, recording_id: str) -> None:
+    """Stream a recorded .rrd into the fleet viewer as `recording_id`, data only: no
+    producer rows of its own, nothing but the file and the recording's shared name."""
+    import rerun as rr  # noqa: PLC0415
+
+    rr.init(APP_ID, recording_id=recording_id)
+    rr.connect_grpc(connect)
+    rr.send_recording_name(recording_name(recording_id))
+    rr.log_file_from_path(str(path))
+    rr.disconnect()
+
+
+def watch_sink(say=print, *, exit_code: int = 0, period_s: float = 5.0, recording=None):
+    """For a supervised producer: once its gRPC sink is gone for good, `say` why and exit, so the supervisor starts it
+    over (a fresh connect, its static rows again). A daemon thread flushes every period_s.
+
+    Rerun 0.36's gRPC client never redials. A hub restart, a hub that came up after the connect, or a flush that timed
+    out before the connection opened leaves the sink disconnected, and every later log is dropped without an error;
+    only a flush says so ('... disconnected', '... severed'). A flush that times out on a slow or absent hub is not a
+    loss. `exit_code`: 0 for a ROS launch respawn, non-zero for a unit that restarts only on failure."""
+    import threading
+
+    if recording is None:
+        import rerun as rr  # noqa: PLC0415
+
+        recording = rr.get_global_data_recording()
+
+    def watch():
+        while True:
+            time.sleep(period_s)
+            try:
+                recording.flush(timeout_sec=10.0)
+            except RuntimeError as error:
+                if "disconnected" in str(error) or "severed" in str(error):
+                    say(f"rerun: the viewer hub's connection is gone ({error}); exiting to be started over")
+                    os._exit(exit_code)
+                    return
+
+    thread = threading.Thread(target=watch, name="rerun-sink-watch", daemon=True)
+    thread.start()
+    return thread
 
 
 def set_capture_time(t_ns: int) -> None:

@@ -42,8 +42,8 @@ tip_out_at_top_mm: 2.0
 
 # The line this cartridge lays on the paper pad, as drawn: 0.5 mm, measured
 # by the operator on paper and confirmed 2026-09-16. Re-measure after a
-# cartridge change or a different substrate: draw the five-line swatch with
-# `tatbot draw run --design strokes` at the working speed on the gridded pad
+# cartridge change or a different substrate: draw a five-line swatch with
+# `tatbot ros draw` at the working speed on the gridded pad
 # and read the width against the 6.35 mm grid pitch from the wrist camera
 # (or a loupe). The fill planner's default width and the stroke schedule's
 # dedup footprint read this; nothing about motion does.

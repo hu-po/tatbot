@@ -1,7 +1,9 @@
 # Trossen vendor boundary
 
-Feature `sdk` builds a CXX bridge against the same unmodified v1.8.5 vendor
-revision as `cpp/teleop` (`fdfd9f68f57b3bd05c4e85011fa5c11296525b2f`). Set
+Feature `sdk` builds a CXX bridge against the same unmodified v1.11.0 vendor
+revision as `cpp/teleop` (`507451794d11e54f11494ef3be1d786ec6060d4a`), paired
+with controller firmware v1.11.1. `configure` uses the dated 2025-05-09 preset
+(with the palm `set_palm` gave it) and sets the 2025-05-09 gains. Set
 `TROSSEN_ARM_SDK_ROOT` to that SDK checkout, or use the CMake download under
 `cpp/teleop/build/_deps/trossen_arm_sdk-src`. No network fetch occurs in the
 build script. Linux x86_64 and aarch64 libraries are supported.
@@ -37,5 +39,4 @@ target rather than inventing it from a later measurement. It does not verify
 that the controller executed the hold. No command target is inferred at connect.
 
 This feature enables no hardware command line of its own. Passing these tests
-does not qualify a tool or authorize human contact. Fixtures are
-paper or silicone, never a person.
+does not qualify a tool.

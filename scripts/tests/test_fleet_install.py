@@ -247,8 +247,8 @@ def test_referenced_releases_reads_the_shas_units_point_at(tmp_path):
     units.mkdir()
     # No literal home path here: the export scanner reads these as a
     # disclosure, and only the /releases/<sha> segment is under test.
-    (units / 'tatbot-visiond-poe.service').write_text(
-        f'ExecStart={tmp_path}/releases/{SHAS[3]}/source/scripts/fleet_service.sh visiond-poe\n')
+    (units / 'tatbot-visiond-d555.service').write_text(
+        f'ExecStart={tmp_path}/releases/{SHAS[3]}/source/scripts/fleet_service.sh visiond-d555\n')
     (units / 'unrelated.service').write_text(
         f'ExecStart={tmp_path}/releases/{SHAS[4]}/bin/other\n')
     assert installer.referenced_releases(units) == {SHAS[3]}
@@ -439,8 +439,8 @@ def test_viewer_overlay_copies_only_archived_source_and_preserves_local_bytecode
 def test_referenced_releases_protects_the_release_the_checkout_receipt_names(tmp_path):
     units = tmp_path / 'systemd'
     units.mkdir()
-    (units / 'tatbot-visiond-poe.service').write_text(
-        f'ExecStart={tmp_path}/releases/{SHAS[3]}/source/scripts/fleet_service.sh visiond-poe\n')
+    (units / 'tatbot-visiond-d555.service').write_text(
+        f'ExecStart={tmp_path}/releases/{SHAS[3]}/source/scripts/fleet_service.sh visiond-d555\n')
     checkout = tmp_path / 'checkout'
     checkout.mkdir()
     stamped = make_receipt(tmp_path / 'releases' / SHAS[1], SHAS[1])

@@ -16,6 +16,8 @@ tatbot_session publishes its runtime identity outside the run, to `runtime_recor
 runtime.json in the workspace root holding the repo (~/tatbot-ros/runtime.json), which `tatbot ros
 evidence` reads. A test harness points it into its own tmp dir, never at a live stack's.
 """
+import importlib.machinery
+import os
 import signal
 import sys
 from pathlib import Path
@@ -50,7 +52,7 @@ ARGUMENTS = {
     "repo": ("", "repo checkout holding config/ and urdf/; '' = $TATBOT_REPO"),
     "runtime_record": ("", "where tatbot_session publishes its runtime identity; '' = <repo>/../runtime.json"),
     "arms": ("", "comma-separated arms; '' = stack.yaml arms (right)"),
-    "hardware": ("", "mock | fake | real; '' = stack.yaml hardware"),
+    "hardware": ("", "mock | fake | real | sim; '' = stack.yaml hardware"),
     "profile": ("", "config/profiles/<profile>.json for arm addresses; '' = stack.yaml profile"),
     "estop_source": ("", "none | serial | udp; '' = stack.yaml estop.source"),
     "estop_device": ("", "serial device; '' = stack.yaml estop.serial_device"),
@@ -59,11 +61,15 @@ ARGUMENTS = {
     "probe": ("", "true | false: read the station probe (PRB1); '' = stack.yaml probe.enabled"),
     "probe_relay_addr": ("", "the probe relay's source address; '' = stack.yaml probe.relay_addr"),
     "machine_addr": ("", "the machine relay's address; '' = stack.yaml machine.addr"),
+    "keypad_from": ("", "the only address the keypad takes keys from; '' = stack.yaml keypad.from_addr"),
     "page_source": ("", "stencil | fixed; '' = stack.yaml page.source"),
     "pattern_id": ("", "the installed print to draw on; '' = stack.yaml page.pattern_id"),
+    "page_surface": ("", "plane | fitted: a curved page from the gauge holds; '' = stack.yaml page.surface.mode"),
     "touch": ("", "true | false: page touches at run start; '' = stack.yaml touch.enabled"),
     "rerun": ("", "true | false: start tatbot_rerun; '' = stack.yaml rerun.enabled"),
     "record": ("", "true | false: stack-wide MCAP in the ros-stack run; '' = stack.yaml record"),
+    "sim_endpoint": ("", "hardware sim: the sim server, tcp://host:port; '' = stack.yaml sim.endpoint"),
+    "tuning": ("", "a tatbot.yaml ros_tuning profile the arms connect with; '' = stack.yaml tuning (the role's own)"),
 }
 
 
@@ -75,6 +81,14 @@ def _bool(text: str) -> bool:
     if text.lower() not in ("true", "false", "1", "0"):
         raise ValueError(f"expected true or false, got {text!r}")
     return text.lower() in ("true", "1")
+
+
+def _one_of(*choices: str):
+    def parse(text: str) -> str:
+        if text not in choices:
+            raise ValueError(f"expected {' or '.join(choices)}, got {text!r}")
+        return text
+    return parse
 
 
 # launch argument -> (stack.yaml key path, parser)
@@ -89,11 +103,15 @@ OVERRIDES = {
     "probe": (("probe", "enabled"), _bool),
     "probe_relay_addr": (("probe", "relay_addr"), str),
     "machine_addr": (("machine", "addr"), str),
+    "keypad_from": (("keypad", "from_addr"), str),
     "page_source": (("page", "source"), str),
     "pattern_id": (("page", "pattern_id"), str),
+    "page_surface": (("page", "surface", "mode"), _one_of("plane", "fitted")),
     "touch": (("touch", "enabled"), _bool),
     "rerun": (("rerun", "enabled"), _bool),
     "record": (("record",), _bool),
+    "sim_endpoint": (("sim", "endpoint"), str),
+    "tuning": (("tuning",), str),
 }
 
 
@@ -111,7 +129,7 @@ def effective_stack(args: dict) -> dict:
         if args.get(name):
             node = stack
             for key in path[:-1]:
-                node = node[key]
+                node = node.setdefault(key, {})
             node[path[-1]] = parse(args[name])
     return stack
 
@@ -141,7 +159,7 @@ def _open_run(repo: Path, stack: dict):
     import tatbot_runlog
 
     meta = {"hardware": stack["hardware"], "arms": stack["arms"], "estop_source": stack["estop"]["source"],
-            "page_source": stack["page"]["source"]}
+            "page_source": stack["page"]["source"], "tuning": stack.get("tuning") or ""}
     revision = repo / "REVISION"
     if revision.is_file():  # `tatbot ros deploy`: the sha, then dirty=0|1
         lines = revision.read_text().split()
@@ -165,13 +183,32 @@ def generate(context, *args, **kwargs):
         raise
 
 
-def _optional_nodes(stack: dict, arms: tuple, node_params: list) -> list:
-    """The operator's numpad on this host (stack.yaml keypad) and the Rerun bridge, when configured."""
+def _optional_nodes(stack: dict, arms: tuple, node_params: list, repo: Path) -> list:
+    """The operator's drawing keys (stack.yaml keypad) and the Rerun bridge, when configured: the bridge alone
+    respawns (display only), and only where it finds the Rerun SDK."""
     keypad = stack.get("keypad") or {}
+    env = _rerun(stack, repo)
     return ([Node(package="tatbot_session", executable="keypad", name=names.KEYPAD_NODE, output="both",
-                  parameters=node_params)] if keypad.get("device") and keypad.get("arm") in arms else []) + (
+                  parameters=node_params)] if keypad.get("port") and keypad.get("arm") in arms else []) + (
         [Node(package="tatbot_rerun", executable="rerun_bridge", name=names.RERUN_NODE, output="both",
-              parameters=node_params)] if stack["rerun"]["enabled"] else [])
+              parameters=node_params, respawn=True, respawn_delay=5.0, additional_env=env)] if env else [])
+
+
+def _rerun(stack: dict, repo: Path) -> dict | None:
+    """The bridge's own PYTHONPATH: rerun-sdk from <stack root>/rerun-sdk, the isolated --no-deps install `tatbot ros
+    deploy` makes (never the user or system site, where its numpy 2 would shadow the apt numpy 1.26 the stack's cv2 is
+    built against), then the stack's own without scripts/lib, whose tatbot_rerun.py would shadow this package (the
+    bridge loads that helper by path); None (not started) when rerun is off or found nowhere."""
+    if not stack["rerun"]["enabled"]:
+        return None
+    sdk = repo.parent / "rerun-sdk"
+    path = [str(sdk), str(sdk / "rerun_sdk"), *(entry for entry in os.environ.get("PYTHONPATH", "").split(os.pathsep)
+                                                 if entry and not (Path(entry) / "tatbot_rerun.py").is_file())]
+    if importlib.machinery.PathFinder.find_spec("rerun", path + sys.path) is None:
+        print(f"stack: rerun.enabled, but no rerun-sdk in {sdk} (`tatbot ros deploy` installs it): tatbot_rerun "
+              "not started", file=sys.stderr)
+        return None
+    return {"PYTHONPATH": os.pathsep.join(path)}
 
 
 def _actions(run, repo: Path, stack: dict, arms: tuple, placed: dict) -> list:
@@ -191,8 +228,11 @@ def _actions(run, repo: Path, stack: dict, arms: tuple, placed: dict) -> list:
     cm_params = {"thread_priority": int(rt["priority"])}
     if rt.get("cpus"):
         cm_params["cpu_affinity"] = [int(cpu) for cpu in rt["cpus"]]
+    # hardware sim: the sim server owns time, which the driver republishes on /clock; every node runs on it.
+    sim_time = {"use_sim_time": True} if stack["hardware"] == "sim" else {}
+    cm_params.update(sim_time)
     # `stack` (tatbot_session) and `config` (tatbot_bridge, tatbot_rerun) name the same file.
-    node_params = [{"stack": str(stack_path), "config": str(stack_path)}]
+    node_params = [{"stack": str(stack_path), "config": str(stack_path), **sim_time}]
     spawned = [names.JOINT_STATE_BROADCASTER]
     for arm in arms:
         spawned += [names.arm_controller(arm), names.safety_controller(arm)]
@@ -202,7 +242,7 @@ def _actions(run, repo: Path, stack: dict, arms: tuple, placed: dict) -> list:
                               remappings=[("~/robot_description", names.ROBOT_DESCRIPTION_TOPIC)])
     processes = [
         Node(package="robot_state_publisher", executable="robot_state_publisher", output="both",
-             parameters=[{"robot_description": description}]),
+             parameters=[{"robot_description": description, **sim_time}]),
         controller_manager,
         Node(package="controller_manager", executable="spawner", output="both",
              arguments=[*spawned, "--param-file", controllers, "--controller-manager-timeout", "60"]),
@@ -211,7 +251,7 @@ def _actions(run, repo: Path, stack: dict, arms: tuple, placed: dict) -> list:
         Node(package="tatbot_session", executable="session", name=names.SESSION_NODE, output="both",
              parameters=node_params),
     ]
-    processes += _optional_nodes(stack, arms, node_params)
+    processes += _optional_nodes(stack, arms, node_params, repo)
     if stack.get("record"):
         processes.append(ExecuteProcess(output="both", cmd=[
             "ros2", "bag", "record", "--storage", "mcap", "--include-hidden-topics",
@@ -219,16 +259,19 @@ def _actions(run, repo: Path, stack: dict, arms: tuple, placed: dict) -> list:
 
     # The run's exit status: 1 when any process failed before shutdown began. A clean or stop-signal
     # exit is not a failure: systemd's stop signals every process of the unit, which can reach a node
-    # before the launch sees its own SIGINT. controller_manager leaving, for any reason, takes the
-    # whole launch (and tatbot-ros.service) down with it.
+    # before the launch sees its own SIGINT. The Rerun bridge's crash is a display's (`display_failed`;
+    # it respawns), never the stack's. controller_manager leaving, for any reason, takes the whole
+    # launch (and tatbot-ros.service) down with it.
     state = {"stopping": False, "failed": []}
 
     def exited(event, context):
         if state["stopping"]:
             return None
         if event.returncode not in CLEAN_EXITS:
-            state["failed"].append(f"{event.process_name} exit {event.returncode}")
-            run.event("process_failed", process=event.process_name, returncode=event.returncode)
+            display = event.process_name.startswith("rerun_bridge")
+            state["failed"] += [] if display else [f"{event.process_name} exit {event.returncode}"]
+            run.event("display_failed" if display else "process_failed", process=event.process_name,
+                      returncode=event.returncode)
         if event.action is controller_manager:
             return [Shutdown(reason=f"controller_manager exited ({event.returncode})")]
         return None

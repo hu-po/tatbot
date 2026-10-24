@@ -1,7 +1,7 @@
 //! Pinned vendor ABI only. This crate never supplies launch, fixture, driver
 //! ownership, E-stop or trajectory qualification. Callers must provide those
 //! through tatbot-arm and the gated CLI. No hardware backend is enabled here.
-pub const SDK_VERSION: &str = "1.8.5";
+pub const SDK_VERSION: &str = "1.11.0";
 pub const SDK_AVAILABLE: bool = cfg!(feature = "sdk");
 #[cfg(feature = "sdk")]
 pub type DriverPtr = cxx::UniquePtr<ffi::Driver>;
@@ -45,6 +45,7 @@ pub mod ffi {
         include!("trossen-arm-sys/include/bridge.h");
         type Driver;
         fn make_driver() -> Result<UniquePtr<Driver>>;
+        fn set_palm(self: Pin<&mut Driver>, mass_kg: f64, com_m: &[f64]) -> Result<()>;
         fn configure(
             self: Pin<&mut Driver>,
             ip: &str,

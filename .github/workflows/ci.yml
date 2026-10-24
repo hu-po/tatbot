@@ -3,24 +3,51 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "23 6 * * 1"   # Mondays: advisories published since against the same locks
+
+# Every action is pinned to a full commit SHA (the tag in the comment), the
+# token is read-only and no checkout keeps it.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  deps-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: locked and pinned dependencies against OSV
+        run: python3 scripts/deps_audit.py
+
   cli:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: public CLI contract
         run: scripts/check cli
 
   python:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: plugin tests
         run: |
           if [ -f python/lerobot_robot_tatbot/pyproject.toml ]; then
-            uv run --project python/lerobot_robot_tatbot --with pytest --with pytest-timeout \
+            uv run --locked --project python/lerobot_robot_tatbot --with pytest --with pytest-timeout \
               pytest -q --timeout=120 python/lerobot_robot_tatbot/tests/
           fi
       - name: script suite
@@ -32,23 +59,30 @@ jobs:
 
   rust:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch, 2026-10-16
+        with:
+          toolchain: stable
           components: clippy
       - name: visiond
         run: |
           if [ -f rust/Cargo.toml ]; then
             cd rust
-            cargo clippy --features rerun -- -D warnings
-            cargo test --features rerun
+            cargo clippy --locked --features rerun -- -D warnings
+            cargo test --locked --features rerun
           fi
 
   cpp:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: teleop
         run: |
           if [ -f cpp/teleop/CMakeLists.txt ]; then
@@ -61,41 +95,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
       - name: inkmap
-        # The web tests' pretest step compiles the showcase scenarios with
-        # python/tatbot_sim/.venv, whose simulator import builds the tool URDF
-        # from ManiSkill's WidowX AI asset. A hosted runner rasterises in
-        # software, so the editor's workstation latency budget is relaxed.
+        # A hosted runner rasterises in software, so the editor's workstation
+        # latency budget is relaxed.
         env:
-          MS_ASSET_DIR: ${{ runner.temp }}/tatbot-sim-assets
           INKMAP_E2E_LATENCY_BUDGET_MS: "1000"
         run: |
           if [ -f web/inkmap/package.json ]; then
-            uv sync --project python/tatbot_sim --extra maniskill
-            uv run --project python/tatbot_sim --extra maniskill python -m mani_skill.utils.download_asset widowxai -y
             cd web/inkmap && npm ci && npm run check
           fi
 
-  simulator:
+  surface:
     runs-on: ubuntu-latest
-    # The portable suite takes ~20 minutes on a workstation (2026-10-06).
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: 22
-      - run: npm ci --prefix web/inkmap
-      # ManiSkill is the project's opt-in `maniskill` extra (x86_64 only).
-      - name: Simulator robot assets
-        run: uv run --project python/tatbot_sim --extra maniskill python -m mani_skill.utils.download_asset widowxai -y
-      - name: Portable simulator tests with public fixtures
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - name: Body-surface readers
         run: |
-          uv run --project python/tatbot_sim --extra maniskill --with pytest --with pytest-timeout \
-            pytest -ra --timeout=120 python/tatbot_sim/tests --sim-profile public
+          uv run --no-project --python 3.12 --with numpy --with scipy --with pytest \
+            --with-editable python/tatbot_contracts --with-editable python/tatbot_surface \
+            pytest -ra python/tatbot_surface/tests

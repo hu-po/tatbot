@@ -22,7 +22,7 @@ tatbot research init /path/corpus.json --out /path/study
 ```
 
 The study copies and verifies source bytes. Its default layout has four rows
-of two 26 × 26 mm slots inside the stencil's 62 × 112 mm clear region.
+of two 26 × 26 mm slots inside the stencil's 90 × 134 mm clear region.
 Pass `--layout /path/layout.json` to specify different slot dimensions and centres:
 
 ```json

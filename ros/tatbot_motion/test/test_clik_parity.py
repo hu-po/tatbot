@@ -15,11 +15,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 import tatbot_motion as tm
-from tatbot_description import repo_root
+import yaml
+from tatbot_description import joint_calibration, repo_root
 from tatbot_motion import timelaw as tl
 from tatbot_motion.clik import clik
 
-CPP_BALLPOINT_TIP_IN_LINK6 = (0.20498692817078468, 0.012312678895000949, -0.0005439999999999881)
 REACH_M = 0.45  # a joint error of e rad moves the tip at most e * reach
 
 
@@ -48,9 +48,10 @@ def setup():
     tcp = kin.data.oMf[kin.model.getFrameId("right/tcp")]
     link6_from_tcp = link6.inverse() * tcp
     tip = np.array(link6_from_tcp.translation)
-    if np.linalg.norm(tip - CPP_BALLPOINT_TIP_IN_LINK6) > 1e-4:
-        pytest.skip("config/workspace.yaml's TCP differs from the C++ ballpoint constant; rebuild the C++ first")
-    return binary, kin, motion, np.array(link6_from_tcp.rotation), tip
+    calibration = joint_calibration()
+    workspace = yaml.safe_load((repo_root() / "config/workspace.yaml").read_text())
+    offsets = np.asarray(calibration.validate_offsets(workspace["right"].get(calibration.KEY)))
+    return binary, kin, motion, np.array(link6_from_tcp.rotation), tip, offsets
 
 
 def _seed(kin, height_m):
@@ -73,10 +74,14 @@ def _run_cpp(binary, tmp_path, name, q0, p, v, r_link6, pen, carriage_ik, dt, ti
         values = [k * dt, *p[k], *v[k], *r_link6[k].reshape(-1)]
         lines.append(",".join(repr(float(x)) for x in values) + f",{int(pen[k])},0")
     path.write_text("\n".join(lines) + "\n")
-    out = subprocess.run([str(binary), str(path), repr(dt), *[repr(float(x)) for x in q0], "--json"],
+    out = subprocess.run([str(binary), str(path), repr(dt), *[repr(float(x)) for x in q0], "--json",
+                          "--arm-prefix", "right", "--tool-tip-in-link6", *[repr(float(x)) for x in tip]],
                          capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr
-    return json.loads(out.stdout)
+    result = json.loads(out.stdout)
+    assert result["tool_model"]["source"] == "bound-input"
+    assert result["tool_model"]["tip_in_link6"] == pytest.approx(tip)
+    return result
 
 
 def _square(tip0, rot, dt):
@@ -121,7 +126,7 @@ def _jellyfish(tip0, rot, dt, motion):
 @pytest.mark.parametrize("shape,carriage_ik", [("square", False), ("circle", False), ("jellyfish", False),
                                                ("small-circle", True)])
 def test_clik_matches_path_plan_check(setup, tmp_path, shape, carriage_ik):
-    binary, kin, motion, link6_from_tcp_rot, tip = setup
+    binary, kin, motion, link6_from_tcp_rot, tip, offsets = setup
     dt = 1.0 / motion["control_rate_hz"]
     q0 = _seed(kin, 0.0)
     seed = kin.fk(q0)
@@ -136,10 +141,11 @@ def test_clik_matches_path_plan_check(setup, tmp_path, shape, carriage_ik):
         p, pen = _jellyfish(seed[:3, 3], rot, dt, motion)
     v = tl.feedforward(p, dt)
     rots = np.repeat(rot[None], len(p), axis=0)
-    cpp = _run_cpp(binary, tmp_path, f"{shape}-{int(carriage_ik)}", q0, p, v, rots @ link6_from_tcp_rot.T, pen,
+    # The reference C++ chain is nominal; the ROS chain applies encoder-zero origins.
+    cpp = _run_cpp(binary, tmp_path, f"{shape}-{int(carriage_ik)}", q0 + offsets, p, v, rots @ link6_from_tcp_rot.T, pen,
                    carriage_ik, dt, tip)
     ours = clik(kin, q0, p, v, rots, pen, dt, motion["clik"], motion["carriage"], carriage_ik=carriage_ik)
-    theirs = np.asarray(cpp["positions"])
+    theirs = np.asarray(cpp["positions"]) - offsets
     assert theirs.shape == ours.q.shape
     cap = motion["clik"]["model_error_cap_m"]
     tip_theirs = np.array([kin.fk(q)[:3, 3] for q in theirs])

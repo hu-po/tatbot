@@ -1,6 +1,6 @@
 /** Deterministic intrinsic unfolding of one connected rest-surface patch.
  *
- * This is the TypeScript counterpart of tatbot_sim.inkmap.surface_trace. Face
+ * This is the TypeScript counterpart of tatbot_surface.surface_trace. Face
  * identity always refers to the canonical SOMA mid surface. Texture UVs are
  * deliberately ignored: metric chart coordinates come only from triangle edge
  * lengths on the immutable rest mesh.

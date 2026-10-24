@@ -1,0 +1,143 @@
+# Ambition Lutin rotary machine fitted with a MAST Pro 1005RL cartridge: 5 round
+# liner, 0.30 mm (#10) needles, taper unpublished (listings say medium or 5 mm).
+# The same machine body, in the same mount bore, as lutin-3rl-bugpin; only the
+# cartridge differs, and a cartridge of another make has its own length and
+# nozzle, so this one's numbers are its own measurements or marked as the 3RL's.
+#
+# The TCP is the centre of the tube's end, which the wrist gauge measures; the
+# needles reach needle_reach_mm past it at the bottom of each stroke.
+#
+# Fitted on the pink arm 2026-10-07 for the per-cartridge bench (gauge fit, ride
+# ladder, test lines, mm_per_dip). Until its own sweep and station touch, its tip
+# across its axis and its length are the 3RL's installed ones.
+schema_version: 2
+tool_id: lutin-5rl-mast
+kind: rotary_pen
+substrate: silicon_skin
+substrates: ["silicon_skin", "human_skin"]
+display_name: "Ambition Lutin + MAST Pro 5RL"
+body: "Ambition Lutin Rotary (short pen, RCA)"
+cartridge: "MAST Pro 1005RL, 5 round liner, 0.30 mm"
+# 3RL is what a fineline machine draws with, so the prompt says liner, not
+# "pen tip" -- the phrase is what a language-conditioned policy sees.
+prompt_phrase: "using a 5RL liner"
+
+# [z_m, radius_m] along the tool axis, z = 0 at the mount bore face: the
+# machine body and, until this cartridge's own silhouette, the 3RL's cartridge
+# and nozzle (lutin-3rl-bugpin.yaml says how it was measured).
+profile: [
+  [-0.042,  0.0165 ],
+  [ 0.005,  0.0165 ],
+  [ 0.013,  0.016  ],
+  [ 0.038,  0.016  ],
+  [ 0.0385, 0.0070 ],
+  [ 0.0530, 0.0070 ],
+  [ 0.0553, 0.0039 ],
+  [ 0.0580, 0.0028 ],
+  [ 0.0606, 0.0020 ],
+  [ 0.0630, 0.00145],
+  [ 0.0660, 0.0012 ],
+  [ 0.0685, 0.0009 ],
+  [ 0.073,  0.0005 ]
+]
+# Three needles grouped so they act as one point, retracted inside the tube
+# with the machine off; drawn as they sit at rest, behind the tube's end.
+tip_detail:
+  kind: needles
+  count: 5
+  radius_m: 0.00015
+  length_m: 0.0042
+  color: "0.80 0.81 0.84 1"
+contact_radius_m: 0.0006
+
+tip_mesh: pen_tip.stl
+# The mesh is a 40 mm cone; this cartridge measures 34 mm.
+tip_mesh_scale: [1.0, 1.0, 0.78]
+
+# The machine's stroke (operator, 2026-10-05; the cam was 3.5 mm with a 4.0 spare).
+stroke_mm: 4.0
+
+# How far the needles reach past the tube's end at the bottom of the stroke:
+# the collar setting, unchanged from the 3RL's 4.0 mm; how far this cartridge's
+# needles stand past its own tube is unmeasured until its ride ladder.
+needle_reach_mm: 4.0
+# The needles at the top of the stroke are inside the tube.
+tip_out_at_top_mm: null
+
+rings: []
+body_color: "0.04 0.04 0.045 1"
+tip_color: "0.93 0.93 0.92 1"
+
+mount: tool_mount
+
+# Vendor: 113 g body only, 184.5 g with the Korall RCA battery pack.
+mass_kg: 0.113
+com_z_m: null
+
+tip_tolerance_m: 0.025
+seat_tolerance_deg: 15.0
+
+# --- palette dips (ros/README.md section 6) ----------------------------------
+# How the cartridge takes ink: the tube's end comes down the cap's axis to just
+# over the ink and holds there with the machine running, and the needles'
+# strokes pull ink up into the tube (operator, 2026-10-04). Nothing presses the
+# tube into the ink.
+dip:
+  above_ink_m: 0.0029      # the tube's end this far over the declared ink level while the machine runs: just under
+                           # a large cap's rim with ink 3 mm below it. At 1.5 mm into the ink for 1.5 s the 1005RL's
+                           # five needles came out overloaded and dropped ink (operator, 2026-10-07); here ~1 mm
+  dwell_s: 0.5             # the machine running over the ink: a third of the 3RL's
+  hover_m: 0.008           # the tube's end this far over the rim before it goes down and after it comes up
+  speed_m_s: 0.010         # along the cap's axis, down and up
+  wall_margin_m: 0.0015    # the tool's outside keeps this from the bore's wall, beyond the station's uncertainty
+  mm_per_dip: 120.0        # the 3RL's first figure until this cartridge's own fade block
+  mm_per_dip_by_ink:       # {ink_id: mm}: measured per ink on this tool's substrate
+    # one dip (needles ~1 mm into the ink, 0.5 s), then 20 mm lines at the 3.0 mm ride on a half-skin: six lines
+    # solid, faint from 120 mm (2026-10-07); five needles lay more per millimetre
+    nighthawk_black: 100.0
+  # A resource activated by a rinse (tatbot-inks/3 `activation: {method: rinse, slot, ink_id}`) takes the cartridge
+  # from the last ink to its own in a cap of water, no landing: one dip there with the machine running, held longer
+  # than an ink dip, the tube's end at the water's declared level so the stroking needles flush it (operator,
+  # 2026-10-05).
+  rinse_dwell_s: 10.0
+  rinse_above_ink_m: 0.0
+
+# --- ink supply, the simulator's volume model (scripts/lib/ink_spec.py) -----
+# Guesses (operator, 2026-08-28) the simulator and `tatbot ink` read; the ROS
+# stack reads `dip:` above.
+ink:
+  mode: real
+  charge_capacity_ul: 2.0
+  uptake_ul: 1.5
+  deposit_ul_per_mm: 0.004
+  bleed_ul_per_s: 0.01
+  dip_depth_m: 0.003
+  dip_dwell_s: 0.4
+  min_fill_frac: 0.25
+
+# --- station probe contact model (ros/README.md section 7) -------------------
+# The tube's end is a halo: the nozzle's ring around the needles' exit hole,
+# narrower than the probe's 2 mm ball. Side pairs touch the nozzle 3 mm up, where
+# it is ~1.5 mm across: there the search passes 4 mm under the overhead fix's
+# ball (which stood ~2 mm high on this station) and still meets the stylus, and
+# its lines, spaced by the side radius, leave no gap a 1 mm nozzle slips through.
+# The first two runs planned a 2.5 and a 4 mm tube and their 4-5 mm lines all
+# missed (2026-10-05). The fit
+# measures the side radius itself.
+calibration:
+  contact_reference: tube_end
+  accuracy_profile: needle-tube
+  feature: "the cartridge nozzle's end, needles retracted"
+  face_kind: halo
+  wall_radius_m: 0.00075        # the nozzle's outside 3 mm up
+  face_radius_m: 0.0003         # the needles' exit hole
+  rim_touch_radius_m: 0.0004    # an edge pass stops with the ball this far off the axis, under the ring
+  side_touch_height_m: 0.003
+
+measured:
+  status: assumed
+  utc: 2026-10-07T00:00:00Z
+  method: "the 3RL's nozzle silhouette and seat until this cartridge's own sweep"
+  note: |
+    SOURCED: cartridge code 1005RL: #10 = 0.30 mm needle, 05 = 5 needles, RL =
+    round liner; REBEL gives a 5RL's needle group as 0.70 mm across.

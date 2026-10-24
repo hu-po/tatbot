@@ -1,7 +1,5 @@
 """Split strokes at a contact budget, cutting at sharp corners and keeping arc addresses (README 4.2 step 5).
 
-Ported from scripts/lib/stroke_material.py (`cut_points`, `material_candidates`,
-`resample_polyline_by_arclength`) and human_rep/ink_program.py (`_split_polyline`).
 The uniform partition fixes the piece count; each interior cut may move up to a fifth of the
 budget to the sharpest corner in reach, and every piece still fits the budget. A piece keeps its
 source arc interval, so a stroke can resume from an arc position.
@@ -11,6 +9,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
+from tatbot_motion.timelaw import arc_lengths, resample_polyline_by_arclength
 
 from tatbot_ink.errors import CompileError
 
@@ -19,21 +18,9 @@ CORNER_MIN_RAD = math.radians(5.0)
 MAX_PIECES = 10_000
 
 
-def arc_lengths(points: np.ndarray) -> np.ndarray:
-    return np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(points, axis=0), axis=1))]
-
-
 def resample(points: np.ndarray, s) -> np.ndarray:
     """Points of a polyline at arc lengths `s`."""
-    points = np.asarray(points, float)
-    seg = np.diff(points, axis=0)
-    seg_len = np.linalg.norm(seg, axis=1)
-    cum = np.r_[0.0, np.cumsum(seg_len)]
-    s = np.clip(np.asarray(s, float), 0.0, cum[-1])
-    index = np.clip(np.searchsorted(cum, s, side="right") - 1, 0, len(seg) - 1)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        frac = np.where(seg_len[index] > 0.0, (s - cum[index]) / seg_len[index], 0.0)
-    return points[index] + frac[:, None] * seg[index]
+    return resample_polyline_by_arclength(points, s)[0]
 
 
 def cut_points(stroke: np.ndarray, arc: np.ndarray, count: int, max_length: float) -> np.ndarray:

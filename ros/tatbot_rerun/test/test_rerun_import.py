@@ -1,46 +1,31 @@
-"""The Rerun bridge's geometry (no rerun SDK needed) and its import."""
-import numpy as np
-import pytest
-from tatbot_rerun import shapes
+"""The Rerun bridge imports and names Draw's phases and the driver's latch reasons. Its scene models are
+tatbot_contracts.ros_scene, tested without ROS in scripts/tests/test_ros_scene.py."""
 
 
-def test_import():
-    import tatbot_rerun.node  # noqa: F401
+def test_import_and_names():
+    from tatbot_rerun import node
+
+    assert node.PHASES[5] == "DRAW" and node.PHASES[9] == "LATCHED"
+    assert node.LATCHES[1] == "estop" and node.LATCHES[11] == "guard_snag"
 
 
-def test_page_outlines_in_world():
-    world_from_page = np.eye(4)
-    world_from_page[:3, 3] = [0.3, -0.2, 0.05]
-    page, clear = shapes.page_outlines(world_from_page, (0.100, 0.150), (0.062, 0.112))
-    assert page.shape == (5, 3) and np.allclose(page[0], page[-1])
-    assert np.allclose(page.min(0), [0.25, -0.275, 0.05]) and np.allclose(page.max(0), [0.35, -0.125, 0.05])
-    assert np.allclose(clear.max(0) - clear.min(0), [0.062, 0.112, 0.0])
+def test_a_display_handler_takes_keywords_and_swallows_its_error():
+    """_on_event calls _follow(run_id, clear_tips=...): a wrapper without **kwargs turned every run start into a
+    swallowed TypeError, and the bridge never followed a new draw."""
+    from tatbot_rerun import node
 
+    class Bridge:
+        failed: set = set()
 
-def test_program_strokes_follow_the_page_pose():
-    rot = shapes.matrix([0.1, 0.0, 0.0], [0.0, 0.0, np.sin(np.pi / 4), np.cos(np.pi / 4)])  # 90 deg about z
-    program = {"ops": [{"op": "stroke", "id": "s0", "points_m": [[0.01, 0.0], [0.01, 0.02]]},
-                       {"op": "pause", "id": "p1"}, {"op": "stroke", "id": "s2", "points_m": []}]}
-    strokes = shapes.program_strokes(program, rot)
-    assert len(strokes) == 1
-    assert np.allclose(strokes[0], [[0.1, 0.01, 0.0], [0.08, 0.01, 0.0]])
+        def get_logger(self):
+            return type("Logger", (), {"warning": lambda self, text: None})()
 
+    @node.shown
+    def follow(self, run_id, clear_tips=False):
+        if run_id is None:
+            raise ValueError("no run")
+        return run_id, clear_tips
 
-def test_transform_samples_normalize_their_quaternion_and_refuse_an_unset_rotation():
-    quaternion = np.array([.1, -.2, .3, .4])
-    np.testing.assert_allclose(shapes.matrix([.1, .2, .3], quaternion),
-                               shapes.matrix([.1, .2, .3], -3*quaternion), atol=1e-15)
-    with pytest.raises(ValueError, match='zero norm'):
-        shapes.matrix([.1, .2, .3], [0, 0, 0, 0])
-
-
-def test_tip_path_steps_and_chunks():
-    path = shapes.TipPath(min_step_m=0.001, chunk=3)
-    assert path.add([0, 0, 0]) and not path.add([0.0005, 0, 0])
-    for x in (0.002, 0.004):
-        assert path.add([x, 0, 0])
-    assert path.index == 0 and path.array().shape == (3, 3)
-    assert path.add([0.006, 0, 0])               # a full chunk closes; the next starts at its last point
-    assert path.index == 1 and np.allclose(path.array()[:, 0], [0.004, 0.006])
-    path.clear()
-    assert path.index == 0 and path.array().shape == (0, 3)
+    bridge = Bridge()
+    assert follow(bridge, "a-run", clear_tips=True) == ("a-run", True)
+    assert follow(bridge, None) is None and bridge.failed == {"follow"}

@@ -33,7 +33,8 @@ def kin():
 
 def test_the_wrist_met_the_post_turned_to_30_degrees(kin):
     post, bodies = reach.overhead_post(CAMERA), reach.wrist_bodies(kin, "right")
-    assert {name for name, _ in bodies} >= {"right/link_6", "right/realsense_color_optical_frame", "right/wrist_tag4"}
+    assert {name for name, _ in bodies} >= {"right/link_6", "right/realsense_color_optical_frame", "right/wrist_tag4",
+                                           "right/realsense_lower_color_optical_frame"}   # both wrist D405s
     gaps = {turn: reach.wrist_clearance(kin, q, bodies, [post]) for turn, q in VIEWS.items()}
     assert gaps[30.0] < -0.05 and gaps[30.0] < gaps[0.0] < gaps[-30.0]      # the cube on the post, deepest at +30
     assert reach.wrist_clearance(kin, VIEWS[30.0], bodies, []) == math.inf  # no post, nothing to meet
@@ -44,27 +45,38 @@ def test_the_wrist_is_checked_along_the_way_the_executor_plans(kin):
     planner's travel down. At the moved station the view turned to +30 degrees still takes the wrist into the post
     and the others clear it. From where a free-air touch left the arm, 0.3 m out, the planner's crossing meets
     joint_1's limit, as the executor's would (2026-09-29: a stepped IK stalled there 16.7 mm short and ended the
-    run before any motion)."""
+    run before any motion). The lower wrist D405 under the wrist (2026-10-23) meets the post turned -30 degrees."""
     from tatbot_motion import load_motion
     from tatbot_motion.clik import PlanError
 
     motion = load_motion()
     post, bodies = reach.overhead_post(MOVED_CAMERA), reach.wrist_bodies(kin, "right")
     over = MOVED_BALL + [0.0, 0.0, 0.030]
+
+    def rows_at(turn):
+        return reach.planned_path(kin, motion, reach.REST, halo.tool_pose(over, math.radians(turn)))
     gaps = {}
-    for turn in (-30.0, 0.0):
+    for turn in (-30.0, -15.0, 0.0):
         rows = reach.planned_path(kin, motion, reach.REST, halo.tool_pose(over, math.radians(turn)))
         assert np.allclose(rows[0], reach.REST) and np.linalg.norm(kin.fk(rows[-1])[:3, 3] - over) < 1e-3
         gaps[turn] = reach.path_clearance(kin, rows, bodies, [post])[0]
-    assert min(gaps.values()) >= reach.CLEARANCE_M, gaps
+    assert min(gaps[-15.0], gaps[0.0]) >= reach.CLEARANCE_M, gaps
+    # -30 cleared it by 44 mm until the lower wrist D405 (2026-10-23), which it takes within 2.4 mm of the post
+    lower = [b for b in bodies if "lower" in b[0]]
+    assert gaps[-30.0] < reach.CLEARANCE_M and gaps[-30.0] == reach.path_clearance(kin, rows_at(-30.0), lower, [post])[0]
     assert reach.path_clearance(kin, rows, bodies, [])[0] == math.inf
     # turned toward the post, +20 takes the wrist within 10 mm of it (+15 did through the 09-19 tag layout, whose cube
     # stood ~10 mm off its seat; the seated one clears it by 15.9 mm); +30 from rest the executor refuses, the joint
     # move over it dipping (ready.station_dip)
-    rows = reach.planned_path(kin, motion, reach.REST, halo.tool_pose(over, math.radians(20.0)))
-    assert reach.path_clearance(kin, rows, bodies, [post])[0] < reach.CLEARANCE_M
-    with pytest.raises(ValueError, match="would take the tip down"):
-        reach.planned_path(kin, motion, reach.REST, halo.tool_pose(over, math.radians(30.0)))
+    # (through the 3RL's tip; through the 1011RL's, adopted 2026-10-12 10 mm across, the joint move plans and its
+    # wrist meets the post instead)
+    for turn in (20.0, 30.0):
+        try:
+            rows = reach.planned_path(kin, motion, reach.REST, halo.tool_pose(over, math.radians(turn)))
+        except ValueError as error:
+            assert "would take the tip down" in str(error)
+            continue
+        assert reach.path_clearance(kin, rows, bodies, [post])[0] < reach.CLEARANCE_M, turn
     with pytest.raises(PlanError, match="joint_1"):
         reach.planned_path(kin, motion, FREE_AIR, halo.tool_pose(over, 0.0))
 
@@ -85,7 +97,7 @@ def test_a_goal_into_the_post_or_without_a_plan_is_not_sent(kin):
     cal.way_check("view 0", [view[0.0]])
     with pytest.raises(RuntimeError, match="view 20: the wrist would pass"):
         cal.way_check("view 20", [view[20.0]])
-    with pytest.raises(RuntimeError, match="view 30: no plan to it .*would take the tip down"):
+    with pytest.raises(RuntimeError, match="view 30: (no plan to it .*would take the tip down|the wrist would pass)"):
         cal.way_check("view 30", [view[30.0]])
     joints["q"] = FREE_AIR
     with pytest.raises(RuntimeError, match="view 0: no plan to it"):
@@ -95,7 +107,8 @@ def test_a_goal_into_the_post_or_without_a_plan_is_not_sent(kin):
 def test_the_base_heading_reaches_the_attitudes_and_keeps_the_wrist_off_the_post(kin):
     """Without the post the blue arm's 30 degrees would have put the third view and the +60 yaw out of reach: the
     heading is chosen from the arm's reach. With the post, the chosen attitudes keep the wrist clear of it, and in
-    the moved layout S1 and at least three S4 attitudes remain."""
+    the moved layout S1 and at least two S4 attitudes remain (three through the 3RL's tip, before the 1011RL's
+    moved it 10 mm across on 2026-10-12)."""
     from tatbot_session import ready
 
     attitudes = program._attitudes(program.DEFAULT_ATTITUDES)
@@ -105,7 +118,7 @@ def test_the_base_heading_reaches_the_attitudes_and_keeps_the_wrist_off_the_post
     post, bodies = reach.overhead_post(MOVED_CAMERA), reach.wrist_bodies(kin, "right")
     heading, unreached = reach.choose_heading(kin, "right", MOVED_BALL, attitudes, 0.0333, [post])
     kept = [a for a in attitudes if a not in unreached]
-    assert (0.0, 0.0) not in unreached and len(kept) >= 3
+    assert (0.0, 0.0) not in unreached and len(kept) >= 2
     for yaw, tilt in kept:
         q = ready.solve_ik_seeded(kin, halo.tool_pose(MOVED_BALL, math.radians(heading + yaw), math.radians(tilt)),
                                   reach.REST)
@@ -136,3 +149,64 @@ def ready_q(kin, heading):
     from tatbot_session import ready
 
     return ready.solve_ik_seeded(kin, halo.tool_pose(BALL, math.radians(heading)), reach.REST)
+
+
+def test_holds_are_visited_nearest_first_among_those_still_wanted_and_the_pools_first_are_kept(monkeypatch):
+    """reach.nearest_first: the arm goes to the nearest of the holds it still wants, by its largest joint's turn,
+    and a hold that fails gives way to the pool's next. On 2026-10-22 the 12 roof-tag holds of calib overhead cf32,
+    visited most varied first, turned the largest joint 7.8 rad between them; nearest first, 4.3."""
+    from tatbot_session import ready
+
+    monkeypatch.setattr(ready, "solve_ik_seeded", lambda kin, pose, q: np.asarray(pose, float))
+    pool = [np.full(7, x) for x in (0.9, 0.1, 0.5, 0.2, 0.3)]
+    at, kept, visits = {"q": np.zeros(7)}, [], []
+    for i, pose in reach.nearest_first(object(), lambda: at["q"], pool, lambda: 3 - len(kept)):
+        at["q"] = pose
+        visits.append(i)
+        if i != 1:   # the nearest fails
+            kept.append(i)
+    assert visits == [1, 3, 2, 0] and sorted(kept) == [0, 2, 3]   # the pool's first three that succeed
+    in_order = [i for i, _ in reach.nearest_first(None, None, pool, lambda: 5)]
+    assert in_order[:1] == [0]   # without kinematics, the pool's own order
+
+
+def test_a_hold_clear_of_the_stylus_goes_by_one_joint_move_and_one_near_it_by_the_stations_way(kin):
+    """Calibration.go_to on the pink arm at the moved station: a view 0.12 m over the ball sends Touch MODE_VIEW,
+    one joint move; a view whose move brings the tool within clearance_m of the stylus (a column about the ball to
+    that far over its top) goes by the station's way, up, across and down, through way_check."""
+    from types import SimpleNamespace
+
+    from tatbot_calib import station
+    from tatbot_description import repo_root
+    from tatbot_motion import load_motion
+    from tatbot_session import ready
+
+    sent, checked = [], []
+    joints = {"q": None}
+
+    def goal(pose, *, move=False, view=False):
+        sent.append("view" if view else "move")
+        joints["q"] = ready.solve_ik_seeded(kin, pose, joints["q"])
+
+    rig = SimpleNamespace(joints=lambda: np.asarray(joints["q"], float), goal=goal)
+    cal = program.Calibration(rig, SimpleNamespace(dir=None), repo_root(None), "right",
+                              halo.Halo(0.00135, 0.0004, 0.0007, 0.002), 0.0, kin)
+    cal.motion, cal.bodies, cal.say = load_motion(), reach.wrist_bodies(kin, "right"), lambda text: None
+    cal.clearance_m = float(cal.motion["probe"]["clearance_m"])
+    cal.ball_in_palette = station.ball_in_palette(repo_root(None) / "urdf" / "palette.urdf")
+    cal.station_pose = np.eye(4)
+    cal.station_pose[:3, 3] = MOVED_BALL - cal.ball_in_palette
+    cal.ball, cal.floor_z = MOVED_BALL.copy(), float(MOVED_BALL[2]) - 0.007
+    cal.way_check = lambda label, poses: checked.append(label)
+    high = [halo.tool_pose(MOVED_BALL + offset, math.radians(turn)) for offset, turn in
+            (([0.0, -0.05, 0.12], 0.0), ([0.05, -0.05, 0.12], 30.0))]
+    joints["q"] = ready.solve_ik_seeded(kin, high[0], reach.REST)
+    assert cal.view_way("high", high[1]) is None
+    cal.go_to("high", high[1])
+    assert sent == ["view"] and checked == []
+    near = halo.tool_pose(MOVED_BALL + [0.0, 0.0, 0.016], 0.0)
+    assert "probe's stylus" in cal.view_way("near", near)
+    cal.go_to("near", near)
+    assert sent == ["view", "move"] and checked == ["near"]
+    cal.ball = None   # nothing places the stylus: always the station's way
+    assert cal.view_way("high", high[0]) == "nothing places the station"

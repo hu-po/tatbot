@@ -1,6 +1,7 @@
 """Per-arm identities, the native arm owner's build and telemetry, and the retained per-arm captures.
 
-The physical arm behind an operator label (pink, blue), its controller role
+The physical arm behind an operator label (pink: the drawing arm; the blue
+leader is teleop's alone and is not calibrated here), its controller role
 and wrist tag target resolve here for `tatbot calib pose` and `tatbot calib
 joint-measure`, with the native owner's build inputs and its seven-axis
 telemetry record. The hand-guided per-arm recipe that captured tip, wrist and
@@ -26,7 +27,7 @@ from tatbot_cli import arms as arm_registry
 from tatbot_digest import sha256_file as digest
 
 CONTROLLER_ROLE = {"config/trossen/leader.yaml": "leader", "config/trossen/follower.yaml": "follower"}
-WRIST_TARGET = {"right": "wrist", "left": "wrist_left"}
+WRIST_TARGET = {"right": "wrist"}   # the drawing arm's wrist tags
 
 # Seven-axis telemetry record shared with rust/tatbot-arm/src/guide.rs:
 # tick, wall ns, monotonic ns, positions[7], velocities[7], external efforts[7],
@@ -88,7 +89,6 @@ class SelectedArm:
     wrist_target: str
     tag_parent: str
     wrist_layout: str
-    other_arm_id: str
 
 
 def write_json(path, value) -> None:
@@ -100,8 +100,8 @@ def write_json(path, value) -> None:
 
 def arm_labels(repo: Path) -> dict[str, str]:
     document = json.loads((Path(repo) / "config/arm-labels.json").read_text())
-    if document.get("schema") != "tatbot.arm-labels/1" or set(document.get("aliases", {}).values()) != set(arm_registry.ARM_IDS):
-        raise RecipeError("config/arm-labels.json must alias exactly left and right")
+    if document.get("schema") != "tatbot.arm-labels/1" or set(document.get("aliases", {}).values()) != set(WRIST_TARGET):
+        raise RecipeError("config/arm-labels.json must alias exactly the drawing arm, right")
     return dict(document["aliases"])
 
 
@@ -126,8 +126,7 @@ def selected_arm(repo: Path, label: str) -> SelectedArm:
                        base_link=f"{physical.urdf_prefix}/base_link",
                        tool_mount=f"{physical.urdf_prefix}/tool_mount",
                        wrist_target=WRIST_TARGET[arm_id], tag_parent=parent,
-                       wrist_layout=target.get("layout") or "",
-                       other_arm_id="left" if arm_id == "right" else "right")
+                       wrist_layout=target.get("layout") or "")
 
 
 def fiducial_target(repo: Path, name: str) -> dict:
@@ -164,18 +163,6 @@ def read_telemetry(path: Path) -> list[dict]:
     return rows
 
 
-def unchanged_feedback_ns(rows: list[dict]) -> int:
-    """Longest run of an entirely unchanged seven-axis tuple; the freshness screen."""
-    longest, run_start = 0, rows[0]["mono_ns"]
-    previous = None
-    for row in rows:
-        current = (tuple(row["positions"]), tuple(row["velocities"]), tuple(row["efforts"]))
-        if current != previous:
-            previous, run_start = current, row["mono_ns"]
-        longest = max(longest, row["mono_ns"] - run_start)
-    return longest
-
-
 def bind_wrist_capture(capture: Path, telemetry: Path) -> dict:
     """Retain nominal exposure/telemetry timing without adopting a calibration."""
     import numpy as np
@@ -199,7 +186,7 @@ def bind_wrist_capture(capture: Path, telemetry: Path) -> dict:
 
 def bind_owner_packet(capture: Path, telemetry: Path) -> dict:
     """Bind the original frame-set exposures, never a decoded image's save time."""
-    from board_rgbd_evidence import unpack
+    from frame_set_wire import unpack
 
     header, frames = unpack(Path(capture).read_bytes(), max_bytes=64 * 2**20)
     stamps = [(sensor, metadata['profile']['stream'], metadata['sequence'],

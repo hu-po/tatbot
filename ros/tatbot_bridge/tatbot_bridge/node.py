@@ -1,13 +1,11 @@
-"""`ros2 run tatbot_bridge bridge`: stencild page poses from the tatbot zenoh bus into ROS, and the
-arm's measured joints from ROS onto the bus.
+"""`ros2 run tatbot_bridge bridge`: stencild page poses from the tatbot zenoh bus into ROS.
 
 page_source stencil: its own zenoh client session to the tatbot bus router
 (tatbot_cli.nodes.bus_endpoint(address="lan")) subscribes tatbot/tracking/target/<pattern_id>
 (tatbot.target-pose/1) and publishes /tatbot/page (Page, transient local, depth 1) plus the
 tf world -> page/<pattern_id> at each measured sample. A lost sample republishes the last measured
-pose with SOURCE_LOST and no tf. The one thing it puts on the bus is each arm's /joint_states as
-tatbot.arm-joints/1 on tatbot/session/ros/arm/<arm>/joints at 10 Hz (joints.py), which stencild poses
-its wrist views by. While the bus router is unreachable it retries every 2 s.
+pose with SOURCE_LOST and no tf. It only reads the bus. While the bus router is unreachable it retries
+every 2 s.
 page_source fixed: stack.yaml page.fixed.<arm> as a static tf <arm>/base_link -> page/fixed_<arm>
 and a Page per arm at 1 Hz. The arm transforms are the description's (robot_state_publisher),
 never this node's.
@@ -19,10 +17,8 @@ from __future__ import annotations
 import collections
 import json
 import math
-import os
 import sys
 import threading
-import time
 
 import numpy as np
 import rclpy
@@ -30,13 +26,12 @@ import rclpy.executors
 from builtin_interfaces.msg import Time
 from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
-from sensor_msgs.msg import JointState
-from tatbot_description import names, repo_root
-from tatbot_interfaces.msg import Page, SafetyState
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from tatbot_description import names
+from tatbot_interfaces.msg import Page
 from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 
-from tatbot_bridge import joints, page, stack
+from tatbot_bridge import page, stack
 
 PAGE_QOS = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE)
 LOG_BASE_EVERY_S = 10.0
@@ -123,49 +118,8 @@ class Bridge(Node):
         self.ee_samples = collections.deque(maxlen=64)
         self.ee_subs = []
         self.create_timer(0.02, self._drain)
-        self._start_joints()
         self.opener = self.create_timer(BUS_RETRY_S, self._open_bus)
         self._open_bus()
-
-    def _start_joints(self):
-        """/joint_states (400 Hz) -> the newest sample per arm; a PERIOD_S timer puts it on the bus."""
-        self.joint_state = None
-        self.safety = {}
-        self.joint_throttle = {a: joints.Throttle() for a in self.arms}
-        self.joint_calibration = {a: joints.calibration_id(stack.registration_path(self.stack, a)) for a in self.arms}
-        nodes = stack.fleet()
-        try:
-            node = nodes.this_node(nodes.load(repo_root()))
-        except (OSError, ValueError):
-            node = nodes.this_node()
-        revision = repo_root() / "REVISION"   # `tatbot ros deploy`: the sha, then dirty=0|1
-        sha = (revision.read_text().split() or [""])[0] if revision.is_file() else ""
-        self.joint_producer = joints.producer(node, os.getpid(), sha)
-        self.joint_mono0 = time.monotonic_ns()
-        self.create_subscription(JointState, names.JOINT_STATES_TOPIC,
-                                 lambda msg: setattr(self, "joint_state", msg), qos_profile_sensor_data)
-        self.create_subscription(SafetyState, names.SAFETY_TOPIC, lambda msg: self.safety.__setitem__(msg.arm, msg), 10)
-        self.create_timer(joints.PERIOD_S, self._publish_joints)
-
-    def _publish_joints(self):
-        msg = self.joint_state
-        if self.bus is None or msg is None:
-            return
-        wall_ns = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec or time.time_ns()
-        for arm in self.arms:
-            body = joints.payload(arm, msg.name, msg.position, msg.effort, wall_ns,
-                                  joints.mode(self.safety.get(arm)), self.joint_calibration[arm])
-            if body is None:
-                continue
-            seq = self.joint_throttle[arm].take(wall_ns)
-            if seq is None:
-                continue
-            data = joints.envelope(body, self.joint_producer, seq, time.monotonic_ns() - self.joint_mono0)
-            try:
-                stack.put(self.bus, joints.topic(arm), data)
-            except Exception as error:  # noqa: BLE001  (zenoh raises its own ZError)
-                self.get_logger().warning(f"joints put on {joints.topic(arm)} failed: {error}",
-                                          throttle_duration_sec=10.0)
 
     def _open_bus(self):
         """Open the bus session; while its router is unreachable (rig link down at boot, router restart),
@@ -183,8 +137,7 @@ class Bridge(Node):
         self.ee_subs = [bus.declare_subscriber(f"tatbot/tracking/ee/{arm}", lambda smp, arm=arm: self._on_ee(arm, smp))
                         for arm in self.arms if self.registrations.get(arm) is not None]
         self.get_logger().info(f"page source stencil: {page.topic(self.pattern_id)} on {self.endpoint} -> "
-                               f"{names.PAGE_TOPIC}, tf {names.WORLD} -> {self.frame}; {names.JOINT_STATES_TOPIC} -> "
-                               f"{', '.join(joints.topic(a) for a in self.arms)} ({joints.SCHEMA})")
+                               f"{names.PAGE_TOPIC}, tf {names.WORLD} -> {self.frame}")
 
     def _on_sample(self, sample):  # zenoh's thread: only queue
         with self.lock:

@@ -22,185 +22,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{FrameMetadata, FrameRecord, PixelFormat, RecordedPayload, SynchronizedFrameSet};
 
-/// Full-resolution detector luma, bit-identical to the RGB/BGR detector's
-/// integer conversion. Color sources and their timestamps remain untouched.
-pub fn luma_video_set(set: &SynchronizedFrameSet) -> Result<SynchronizedFrameSet> {
-    let convert = |(name, frame): (&String, &FrameRecord)| -> Result<(String, FrameRecord)> {
-        Ok((name.clone(), luma_frame(frame)?))
-    };
-    #[cfg(any(feature = "fiducials", feature = "rerun"))]
-    let frames = {
-        use rayon::prelude::*;
-        set.frames.par_iter().map(convert).collect::<Result<_>>()?
-    };
-    #[cfg(not(any(feature = "fiducials", feature = "rerun")))]
-    let frames = set.frames.iter().map(convert).collect::<Result<_>>()?;
-    Ok(SynchronizedFrameSet {
-        sequence: set.sequence,
-        timestamp_basis: set.timestamp_basis.clone(),
-        timestamp_ns: set.timestamp_ns,
-        maximum_skew_ns: set.maximum_skew_ns,
-        frames,
-    })
-}
-
 fn transport_wall_ns() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos()
-}
-
-fn luma_frame(frame: &FrameRecord) -> Result<FrameRecord> {
-    let started_unix_ns = transport_wall_ns();
-    let started = std::time::Instant::now();
-    let RecordedPayload::Video {
-        format,
-        width,
-        height,
-        bytes,
-    } = &frame.payload
-    else {
-        anyhow::bail!("luma transport requires decoded video");
-    };
-    let channels = match format {
-        PixelFormat::Y8 => 1,
-        PixelFormat::Rgb8 | PixelFormat::Bgr8 => 3,
-        _ => anyhow::bail!("luma transport requires RGB/BGR/Y8"),
-    };
-    anyhow::ensure!(
-        u64::from(*width) * u64::from(*height) * channels == bytes.len() as u64,
-        "invalid luma source size"
-    );
-    let luma = if channels == 1 {
-        bytes.clone()
-    } else if *format == PixelFormat::Bgr8 {
-        color_luma::<true>(bytes)
-    } else {
-        color_luma::<false>(bytes)
-    };
-    let mut metadata = frame.metadata.clone();
-    metadata.profile.format = PixelFormat::Y8;
-    metadata.attributes.insert(
-        "transport_luma_started_unix_ns".into(),
-        started_unix_ns.to_string(),
-    );
-    metadata.attributes.insert(
-        "transport_luma_finished_unix_ns".into(),
-        transport_wall_ns().to_string(),
-    );
-    metadata
-        .attributes
-        .insert("transport_source_format".into(), format!("{format:?}"));
-    metadata
-        .attributes
-        .insert("stride_bytes".into(), width.to_string());
-    metadata
-        .attributes
-        .insert("bits_per_pixel".into(), "8".into());
-    metadata.attributes.insert(
-        "transport_luma_conversion_ns".into(),
-        started.elapsed().as_nanos().to_string(),
-    );
-    Ok(FrameRecord {
-        metadata,
-        payload: RecordedPayload::Video {
-            format: PixelFormat::Y8,
-            width: *width,
-            height: *height,
-            bytes: luma,
-        },
-    })
-}
-
-fn color_luma<const BGR: bool>(bytes: &[u8]) -> Vec<u8> {
-    let mut output = vec![0; bytes.len() / 3];
-    for (pixel, gray) in bytes.chunks_exact(3).zip(&mut output) {
-        let (r, b) = if BGR {
-            (pixel[2], pixel[0])
-        } else {
-            (pixel[0], pixel[2])
-        };
-        // The largest weighted sum is 255 * 256 = 65280. Narrow
-        // arithmetic preserves the detector's exact rounding while allowing
-        // more pixels per vector; channel order is resolved per format.
-        *gray = ((77 * u16::from(r) + 150 * u16::from(pixel[1]) + 29 * u16::from(b)) >> 8) as u8;
-    }
-    output
-}
-
-/// Latest-only luma/socket worker. Expensive conversion and slow socket writes
-/// cannot block camera synchronization; only one unprocessed set is retained.
-pub struct LumaFramePublisher {
-    pending: std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<SynchronizedFrameSet>>>>,
-    stopped: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    error: std::sync::Arc<std::sync::Mutex<Option<String>>>,
-    worker: Option<std::thread::JoinHandle<()>>,
-}
-impl LumaFramePublisher {
-    pub fn spawn(mut publisher: UnixFramePublisher) -> Self {
-        use std::sync::{
-            Arc, Mutex,
-            atomic::{AtomicBool, Ordering},
-        };
-        let pending = Arc::new(Mutex::new(None::<Arc<SynchronizedFrameSet>>));
-        let incoming = pending.clone();
-        let stopped = Arc::new(AtomicBool::new(false));
-        let stop = stopped.clone();
-        let error = Arc::new(Mutex::new(None));
-        let failure = error.clone();
-        let worker = std::thread::spawn(move || {
-            while !stop.load(Ordering::Acquire) {
-                let set = incoming.lock().unwrap().take();
-                let Some(set) = set else {
-                    std::thread::sleep(Duration::from_millis(2));
-                    continue;
-                };
-                // Accept first: `publish` is otherwise the only path that takes
-                // new clients, so gating on the count alone would close the
-                // socket to every future subscriber. The conversion is the
-                // expensive half, and an unsubscribed set is dropped unconverted.
-                if let Err(e) = publisher.poll_accept() {
-                    *failure.lock().unwrap() = Some(e.to_string());
-                    break;
-                }
-                if publisher.client_count() == 0 {
-                    continue;
-                }
-                if let Err(e) = luma_video_set(&set).and_then(|gray| publisher.publish(&gray)) {
-                    *failure.lock().unwrap() = Some(e.to_string());
-                    break;
-                }
-            }
-        });
-        Self {
-            pending,
-            stopped,
-            error,
-            worker: Some(worker),
-        }
-    }
-    pub fn submit(&self, set: &SynchronizedFrameSet) -> Result<()> {
-        self.submit_shared(std::sync::Arc::new(set.clone()))
-    }
-
-    pub fn submit_shared(&self, set: std::sync::Arc<SynchronizedFrameSet>) -> Result<()> {
-        if let Some(error) = self.error.lock().unwrap().as_ref() {
-            anyhow::bail!("luma publisher: {error}");
-        }
-        let previous = self.pending.lock().unwrap().replace(set);
-        drop(previous);
-        Ok(())
-    }
-}
-impl Drop for LumaFramePublisher {
-    fn drop(&mut self) {
-        self.stopped
-            .store(true, std::sync::atomic::Ordering::Release);
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
-        }
-    }
 }
 
 const WIRE_MAGIC: &str = "tatbot-vision-frame-set";
@@ -676,30 +502,217 @@ fn payload_from_wire(payload: WirePayload, bytes: Vec<u8>) -> Result<RecordedPay
     })
 }
 
+/// The Python encoder's golden set (`scripts/lib/frame_set_wire.py` `pack`):
+/// one wrist tap message, tiny. The JSON beside it holds the inputs it was
+/// packed from and what a decoder reads back.
+#[cfg(test)]
+pub(crate) const PYTHON_WIRE_GOLDEN: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../scripts/tests/fixtures/frame_set_wire_golden.bin"
+));
+#[cfg(test)]
+const PYTHON_WIRE_GOLDEN_JSON: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../scripts/tests/fixtures/frame_set_wire_golden.json"
+));
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{FrameTimestamps, SensorKind, StreamProfile, TimestampDomain};
     use std::collections::BTreeMap;
 
+    fn sha256_hex(bytes: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
+        hex::encode(Sha256::digest(bytes))
+    }
+
+    fn header_text(wire: &[u8]) -> &str {
+        let length = u32::from_be_bytes(wire[..4].try_into().unwrap()) as usize;
+        std::str::from_utf8(&wire[4..4 + length]).unwrap()
+    }
+
     #[test]
-    fn color_luma_preserves_integer_detector_rounding_and_channel_order() {
-        let mut rgb = Vec::new();
-        let mut expected = Vec::new();
-        for r in 0..=255_u32 {
-            for g in 0..=255_u32 {
-                for b in [0, 1, 127, 254, 255] {
-                    rgb.extend_from_slice(&[r as u8, g as u8, b as u8]);
-                    expected.push(((77 * r + 150 * g + 29 * b) >> 8) as u8);
-                }
+    fn the_python_wire_golden_decodes_to_the_wrist_tap_frames_it_was_packed_from() {
+        let fixture: serde_json::Value = serde_json::from_str(PYTHON_WIRE_GOLDEN_JSON).unwrap();
+        let expected = &fixture["expected"];
+        assert_eq!(PYTHON_WIRE_GOLDEN.len() as u64, expected["bytes"]);
+        assert_eq!(sha256_hex(PYTHON_WIRE_GOLDEN), expected["sha256"]);
+        assert_eq!(
+            header_text(PYTHON_WIRE_GOLDEN).len() as u64,
+            expected["header_bytes"]
+        );
+
+        let set = decode_frame_set(PYTHON_WIRE_GOLDEN)
+            .expect("the strict decoder reads the Python encoder's set");
+        assert_eq!(set.sequence, 3);
+        assert_eq!(set.timestamp_basis, "normalized_unix_ns");
+        assert_eq!(set.timestamp_ns, 1_760_000_000_123_456_789);
+        assert_eq!(set.maximum_skew_ns, 0);
+        assert_eq!(set.envelope.as_ref(), Some(&expected["envelope"]));
+        let envelope = set.envelope.as_ref().unwrap();
+        assert_eq!(envelope["schema"], "tatbot.frame-set/1");
+        assert_eq!(envelope["seq"], 3);
+        assert_eq!(envelope["stamp"]["wall_ns"], 1_760_000_000_123_456_789_u64);
+        assert_eq!(envelope["payload"]["wire_version"], 1);
+
+        let [color, depth] = &set.frames[..] else {
+            panic!("two frames, not {}", set.frames.len());
+        };
+        for frame in [color, depth] {
+            let name = frame.metadata.sensor_name.as_str();
+            let recorded = &expected["frames"][name];
+            assert_eq!(
+                serde_json::to_value(&frame.metadata).unwrap(),
+                recorded["metadata"],
+                "{name}"
+            );
+            assert_eq!(
+                sha256_hex(frame.payload.bytes()),
+                recorded["data_sha256"],
+                "{name}"
+            );
+            let metadata = &frame.metadata;
+            assert_eq!(metadata.sensor_kind, SensorKind::RealSense);
+            assert_eq!(metadata.sequence, 3);
+            let stamps = &metadata.timestamps;
+            assert_eq!(stamps.source_domain, TimestampDomain::HostUnix);
+            assert_eq!(stamps.normalized_unix_ns, Some(set.timestamp_ns));
+            assert_eq!(stamps.host_unix_ns, set.timestamp_ns);
+            let attributes = &metadata.attributes;
+            assert_eq!(attributes["physical_arm"], "right");
+            assert_eq!(attributes["capture_owner_role"], "ros");
+            assert!(
+                !attributes.contains_key("aligned_to"),
+                "the golden depth is unaligned"
+            );
+            // Each stream's own optics, at that stream's size.
+            let intrinsics: serde_json::Value =
+                serde_json::from_str(&attributes["intrinsics"]).unwrap();
+            let profile = &metadata.profile;
+            assert_eq!(intrinsics["width"], profile.width, "{name}");
+            assert_eq!(intrinsics["height"], profile.height, "{name}");
+            for key in ["fx", "fy", "ppx", "ppy"] {
+                assert!(
+                    intrinsics[key].as_f64().is_some_and(f64::is_finite),
+                    "{name} {key}"
+                );
             }
         }
-        assert_eq!(color_luma::<false>(&rgb), expected);
-        for pixel in rgb.chunks_exact_mut(3) {
-            pixel.swap(0, 2);
-        }
-        assert_eq!(color_luma::<true>(&rgb), expected);
-        assert!(color_luma::<true>(&[]).is_empty());
+
+        assert_eq!(color.metadata.sensor_name, "realsense2_color");
+        assert_eq!(color.metadata.profile.format, PixelFormat::Bgr8);
+        assert_eq!(
+            (color.metadata.profile.width, color.metadata.profile.height),
+            (4, 3)
+        );
+        let RecordedPayload::Encoded {
+            format: PixelFormat::Jpeg,
+            bytes: jpeg,
+        } = &color.payload
+        else {
+            panic!("colour is a JPEG, not {:?}", color.payload);
+        };
+        assert_eq!(jpeg.len(), 697);
+        assert!(jpeg.starts_with(&[0xff, 0xd8]) && jpeg.ends_with(&[0xff, 0xd9]));
+        assert_eq!(
+            color.metadata.attributes["ros_frame"],
+            "right/realsense_color_optical_frame"
+        );
+        assert!(!color.metadata.attributes.contains_key("depth_units_m"));
+
+        assert_eq!(depth.metadata.sensor_name, "realsense2_depth");
+        assert_eq!(depth.metadata.profile.format, PixelFormat::Z16);
+        let RecordedPayload::Depth {
+            width: 3,
+            height: 2,
+            bytes,
+        } = &depth.payload
+        else {
+            panic!("depth is 3x2 z16, not {:?}", depth.payload);
+        };
+        let z16: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|sample| u16::from_le_bytes([sample[0], sample[1]]))
+            .collect();
+        assert_eq!(z16, [1000, 1001, 1002, 2000, 0, 65535]);
+        assert_eq!(
+            serde_json::to_value(&z16).unwrap(),
+            expected["realsense2_depth_z16_row_major"]
+        );
+        assert_eq!(depth.metadata.attributes["depth_units_m"], "0.0001");
+        assert_eq!(
+            depth.metadata.attributes["ros_frame"],
+            "right/realsense_depth_optical_frame"
+        );
+
+        assert!(decode_frame_set(&PYTHON_WIRE_GOLDEN[..PYTHON_WIRE_GOLDEN.len() - 1]).is_err());
+        let mut trailing = PYTHON_WIRE_GOLDEN.to_vec();
+        trailing.push(0);
+        assert!(decode_frame_set(&trailing).is_err());
+    }
+
+    #[test]
+    fn rust_encodes_the_python_golden_byte_for_byte() {
+        // Both encoders write serde's layout: struct fields in declaration
+        // order, maps (attributes, the envelope) by key, frames by sensor
+        // name. The header has no floats, so the same inputs give the same
+        // bytes. Built here from the fixture's inputs, not from the decoder.
+        let fixture: serde_json::Value = serde_json::from_str(PYTHON_WIRE_GOLDEN_JSON).unwrap();
+        let inputs = &fixture["inputs"];
+        let frames = inputs["frames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|frame| {
+                let metadata: FrameMetadata =
+                    serde_json::from_value(frame["metadata"].clone()).unwrap();
+                let descriptor: WirePayload =
+                    serde_json::from_value(frame["payload"].clone()).unwrap();
+                let bytes = hex::decode(frame["data_hex"].as_str().unwrap()).unwrap();
+                let payload = payload_from_wire(descriptor, bytes).unwrap();
+                (
+                    metadata.sensor_name.clone(),
+                    FrameRecord { metadata, payload },
+                )
+            })
+            .collect();
+        let set = SynchronizedFrameSet {
+            sequence: inputs["sequence"].as_u64().unwrap(),
+            timestamp_basis: "normalized_unix_ns".into(),
+            timestamp_ns: i128::from(inputs["timestamp_ns"].as_u64().unwrap()),
+            maximum_skew_ns: 0,
+            frames,
+        };
+        // The envelope frame_bus::encode writes for these inputs.
+        let envelope = serde_json::json!({
+            "schema": "tatbot.frame-set/1",
+            "producer": inputs["producer"],
+            "stamp": {"mono_ns": 0, "wall_ns": inputs["timestamp_ns"], "basis": set.timestamp_basis},
+            "seq": set.sequence,
+            "payload": {"wire_version": 1},
+        });
+        let encoded = encode_frame_set(&set, Some(envelope)).unwrap();
+        assert_eq!(header_text(&encoded), header_text(PYTHON_WIRE_GOLDEN));
+        assert_eq!(encoded, PYTHON_WIRE_GOLDEN);
+
+        // And what the decoder read back re-encodes to the same bytes.
+        let decoded = decode_frame_set(PYTHON_WIRE_GOLDEN).unwrap();
+        let again = SynchronizedFrameSet {
+            sequence: decoded.sequence,
+            timestamp_basis: decoded.timestamp_basis,
+            timestamp_ns: decoded.timestamp_ns,
+            maximum_skew_ns: decoded.maximum_skew_ns,
+            frames: decoded
+                .frames
+                .into_iter()
+                .map(|frame| (frame.metadata.sensor_name.clone(), frame))
+                .collect(),
+        };
+        assert_eq!(
+            encode_frame_set(&again, decoded.envelope).unwrap(),
+            PYTHON_WIRE_GOLDEN
+        );
     }
 
     #[test]
@@ -874,129 +887,6 @@ mod tests {
             Some("bundle")
         );
         assert_eq!(received.frames[0].payload, set.frames["camera1"].payload);
-        let luma = luma_video_set(&set).unwrap();
-        assert_eq!(luma.timestamp_ns, set.timestamp_ns);
-        assert_eq!(
-            luma.frames["camera1"].metadata.profile.format,
-            PixelFormat::Y8
-        );
-        assert_eq!(publisher.publish(&luma).unwrap(), 1);
-        let gray = client.recv().unwrap();
-        assert_eq!(
-            gray.frames[0].payload,
-            RecordedPayload::Video {
-                format: PixelFormat::Y8,
-                width: 2,
-                height: 1,
-                bytes: vec![2, 5],
-            }
-        );
-        assert_eq!(received.frames[0].payload, set.frames["camera1"].payload);
-        let background = LumaFramePublisher::spawn(publisher);
-        background
-            .submit_shared(std::sync::Arc::new(set.clone()))
-            .unwrap();
-        client.set_read_timeout(Duration::from_secs(1)).unwrap();
-        assert_eq!(
-            client.recv().unwrap().frames[0].payload,
-            gray.frames[0].payload
-        );
-        drop(background);
-        assert!(client.recv().is_err());
-    }
-
-    fn luma_gate_frame_set(payload: RecordedPayload) -> SynchronizedFrameSet {
-        let frame = FrameRecord {
-            metadata: FrameMetadata {
-                sensor_name: "camera1".into(),
-                sensor_kind: SensorKind::PoE,
-                sequence: 1,
-                profile: StreamProfile {
-                    stream: "main".into(),
-                    width: 2,
-                    height: 1,
-                    fps_num: 20,
-                    fps_den: 1,
-                    format: PixelFormat::Bgr8,
-                },
-                timestamps: FrameTimestamps {
-                    source_ns: Some(1_000),
-                    source_domain: TimestampDomain::CameraNtp,
-                    rtp_timestamp: Some(90),
-                    pipeline_pts_ns: Some(500),
-                    pipeline_dts_ns: None,
-                    host_monotonic_ns: 2_000,
-                    host_unix_ns: 3_000,
-                    normalized_unix_ns: Some(3_000),
-                },
-                dropped_before: 0,
-                calibration_id: Some("bundle".into()),
-                flags: Vec::new(),
-                attributes: BTreeMap::new(),
-            },
-            payload,
-        };
-        SynchronizedFrameSet {
-            sequence: 1,
-            timestamp_basis: "normalized_unix_ns".into(),
-            timestamp_ns: 3_000,
-            maximum_skew_ns: 0,
-            frames: BTreeMap::from([(String::from("camera1"), frame)]),
-        }
-    }
-
-    #[test]
-    fn luma_worker_skips_conversion_while_unsubscribed() {
-        let directory = tempfile::tempdir().unwrap();
-        let socket = directory.path().join("frames.sock");
-        let publisher = UnixFramePublisher::bind(&socket).unwrap();
-        let background = LumaFramePublisher::spawn(publisher);
-
-        // An encoded payload cannot be converted to luma. With nobody
-        // subscribed the worker must drop each set before attempting the
-        // conversion, so it never records a failure. Without the gate the
-        // first set poisons the publisher and every later submit fails.
-        // No client ever attaches here: converting an encoded set for a real
-        // subscriber is a genuine error, not the behaviour under test.
-        let encoded = luma_gate_frame_set(RecordedPayload::Encoded {
-            format: PixelFormat::H264,
-            bytes: vec![1, 2, 3],
-        });
-        for _ in 0..10 {
-            background
-                .submit(&encoded)
-                .expect("unsubscribed sets must not be converted");
-            std::thread::sleep(Duration::from_millis(5));
-        }
-    }
-
-    #[test]
-    fn luma_worker_accepts_subscribers_that_attach_after_it_starts() {
-        let directory = tempfile::tempdir().unwrap();
-        let socket = directory.path().join("frames.sock");
-        let publisher = UnixFramePublisher::bind(&socket).unwrap();
-        let background = LumaFramePublisher::spawn(publisher);
-
-        // `publish` is otherwise the only path that accepts, so a worker that
-        // gated on the client count alone would never see this subscriber.
-        let mut client = UnixFrameClient::connect(&socket).unwrap();
-        client.set_read_timeout(Duration::from_secs(5)).unwrap();
-        let decoded = luma_gate_frame_set(RecordedPayload::Video {
-            format: PixelFormat::Bgr8,
-            width: 2,
-            height: 1,
-            bytes: vec![4, 5, 6, 7, 8, 9],
-        });
-        background.submit(&decoded).unwrap();
-        assert_eq!(
-            client.recv().unwrap().frames[0].payload,
-            RecordedPayload::Video {
-                format: PixelFormat::Y8,
-                width: 2,
-                height: 1,
-                bytes: vec![5, 8],
-            }
-        );
     }
 
     #[test]

@@ -1,22 +1,32 @@
 """The rig's power state: `power` records in config/nodes.json and the sleep marker.
 
 A rig node is any node whose config/nodes.json record carries a ``power``
-object. `tatbot rig sleep` acts on those nodes only, in the ways each record
-allows, and leaves a marker (``~/tatbot-logs/rig/state.json``) on every node it
-touched and on the node it ran from. `tatbot status` shows the marker and the
-CLI refuses hardware verbs while it says ``asleep`` — the fix is `tatbot rig
+object. `tatbot rig sleep` acts on those nodes only, in the modes each record
+lists, and leaves a marker (``~/tatbot-logs/rig/state.json``) on every node it
+touched, on the node it ran from and, where they answer, on the operator
+nodes. `tatbot status` shows the marker and the CLI refuses motion verbs and
+the sleeping roles' verbs while it says ``asleep`` — the fix is `tatbot rig
 wake`, not a retry.
 
-    "power": {"sleep": ["services", "suspend"], "wake": "wol", "mac": "…"}
-    "power": {"sleep": ["services", "suspend"], "wake": "rtc", "units": ["extra.service"]}
+    "power": {"sleep": ["services"]}
+    "power": {"sleep": ["window"]}
 
-- ``services``: stop the node's manifested ``services`` units (plus ``units``)
-  in reverse order at sleep; start them in order at wake.
-- ``suspend``: suspend the host to RAM. A ``wol`` node is woken by a magic
-  packet to ``mac`` from a node on the rig LAN; an ``rtc`` node can only wake
-  itself from its clock, so it is suspended only when `rig sleep --wake-at` is
-  given and otherwise sleeps its services alone.
+- ``services``: the node's manifested ``services`` units. Sleep stops the ones
+  running, displays (part ``station``, the demo cockpit) first; it never stops
+  the bus router or its presence reporter (the units carrying ROUTER_KEY), which
+  the drawing stack it leaves running holds a session to. Wake starts the
+  enabled ones in stages: the router until its key answers on the bus, then the
+  rest until each is active, on the bus and not restarting, then the displays
+  and the node's display ``hardware`` units (the viewer hub, the load monitor).
+- ``window``: the node's demo viewer window. Sleep closes it; wake opens it
+  with WINDOW_OPEN (a window that runs is left as it is), and only over the
+  node's direct cable to the hub where it has one: a window on the rig port
+  delays the arm controller's packets.
 
+A display or a window is best-effort: it never fails a sleep or a wake, so it
+cannot keep the gate that refuses motion. A window node's marker is another
+matter: a wake that cannot clear it names the node and exits nonzero. A node that relays the e-stop never
+sleeps, and nothing here moves an arm, stops the drawing stack or cuts power.
 Pure: no ssh, no subprocess. The orchestration lives in scripts/lib/rig_power.py.
 """
 
@@ -24,17 +34,26 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 SCHEMA = "tatbot.rig-state/1"
-SLEEP_MODES = ("services", "suspend")
-WAKE_MODES = ("wol", "rtc")
-# Roles whose verbs need hardware that sleep switches off; the CLI refuses
-# them while the marker says asleep (motion tiers are refused regardless).
-SLEEPING_ROLES = ("arm", "estop", "realsense", "poe-cameras", "overhead-depth", "rerun-server")
-_MAC = re.compile(r"^([0-9a-f]{2}:){5}[0-9a-f]{2}$")
+SLEEP_MODES = ("services", "window")
+# Roles whose verbs need what sleep switches off (the D555 owner, the stencil and
+# tool trackers); the CLI refuses them while the marker says asleep (motion tiers
+# are refused regardless).
+SLEEPING_ROLES = ("overhead-depth", "track")
+# The bus router's own liveliness key, held by its presence reporter. Sleep never
+# stops the units that carry it (the drawing stack's bridge holds a session to the
+# router all night); wake starts them first, in case one died, and waits for the
+# key before anything that dials the bus.
+ROUTER_KEY = "zenohd"
+# What a window node runs at wake; station/bin/station-launch opens the same at boot. No --restart: a
+# window that runs is left as it is, so a wake on an awake rig does not replay the hub's buffer into it.
+WINDOW_OPEN = ("--memory-limit", "4GB", "--fullscreen")
+WINDOW_UNIT = "tatbot-viewer-window.service"  # scripts/vision/rerun_session.sh VIEWER_WINDOW_UNIT
+# The ROS 2 drawing stack (tatbot_cli.tatbot_ros.UNITS): `tatbot ros up|down` own it, sleep never does.
+DRAWING_STACK = ("tatbot-ros-router.service", "tatbot-ros.service")
 
 
 def marker_path() -> Path:
@@ -80,87 +99,84 @@ def now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def power_record(rec: dict) -> dict | None:
-    """A node's validated `power` record, or None for a node sleep never touches."""
+def power_record(rec: dict) -> list[str] | None:
+    """A node's validated sleep modes, or None for a node sleep never touches."""
     power = rec.get("power")
     if power is None:
         return None
-    if not isinstance(power, dict):
-        raise ValueError("power must be an object")
-    modes = power.get("sleep")
+    if not isinstance(power, dict) or set(power) != {"sleep"}:
+        raise ValueError("power must be an object with `sleep` alone")
+    modes = power["sleep"]
     if not isinstance(modes, list) or not modes or any(m not in SLEEP_MODES for m in modes):
         raise ValueError(f"power.sleep must list some of {SLEEP_MODES}")
-    wake = power.get("wake")
-    if "suspend" in modes:
-        if wake not in WAKE_MODES:
-            raise ValueError(f"a node that suspends needs power.wake in {WAKE_MODES}")
-        if wake == "wol" and not _MAC.match(str(power.get("mac", "")).lower()):
-            raise ValueError("power.wake=wol needs power.mac as aa:bb:cc:dd:ee:ff")
-    elif wake is not None:
-        raise ValueError("power.wake is meaningful only with sleep mode suspend")
-    extra = power.get("units", [])
-    if not isinstance(extra, list) or any(not re.fullmatch(r"tatbot[-\w@.]+\.service", u) for u in extra):
-        raise ValueError("power.units must name tatbot*.service units")
-    return {"sleep": list(modes), "wake": wake, "mac": (power.get("mac") or "").lower() or None,
-            "units": list(extra)}
+    roles = rec.get("roles", [])
+    if "estop-relay" in roles:
+        raise ValueError("the e-stop relay never sleeps: its silence stops and latches a running arm")
+    if "window" in modes and "rerun-server" in roles:
+        raise ValueError("power.sleep window closes a window, and on the rerun-server node `viewer stop` stops the hub")
+    return list(modes)
 
 
-def rig_nodes(nmap: dict) -> dict[str, dict]:
-    """node -> validated power record, in config order."""
+def rig_nodes(nmap: dict) -> dict[str, list[str]]:
+    """node -> validated sleep modes, in config order."""
     out = {}
     for name, rec in nmap.items():
         try:
-            power = power_record(rec)
+            modes = power_record(rec)
         except ValueError as exc:
             raise ValueError(f"config/nodes.json {name}: {exc}") from exc
-        if power:
-            out[name] = power
+        if modes:
+            out[name] = modes
     return out
 
 
-def plan(nmap: dict, *, hosts: bool = True, wake_at: str | None = None) -> dict[str, dict]:
-    """What sleep does per rig node, from the map alone (no probing).
+def _hardware_units(rec: dict) -> tuple[list[str], list[str], list[str]]:
+    """(system units, user units, display system units) of a node's `hardware` list,
+    a template `name@.service` as the login user's instance (as `tatbot rig check` expects it)."""
+    user = (rec.get("ssh") or "").split("@")[0]
+    system, users, display = [], [], []
+    for h in rec.get("hardware") or []:
+        unit = (h.get("unit") or h.get("user_unit") or "").replace("@.service", f"@{user}.service")
+        if not unit:
+            continue
+        (system if "unit" in h else users).append(unit)
+        if "unit" in h and h.get("part") == "station":
+            display.append(unit)
+    return system, users, display
 
-    units: stop order at sleep (the reverse is the start order at wake).
-    suspend: whether the host is suspended; `note` says why not when it could be.
+
+def plan(nmap: dict) -> dict[str, dict]:
+    """What sleep and wake do per rig node, from the map alone (no probing).
+
+    units: what sleep stops, in order (displays first); never the bus.
+    bus, start, display: wake's three stages, each in manifest order.
+    ensure: display `hardware` units sleep leaves running, started at wake in case one died.
+    liveliness: unit -> the `<node>/<key>` wake requires on the bus once it runs.
+    kept, kept_user: what sleep leaves running there.
     """
     out = {}
-    for name, power in rig_nodes(nmap).items():
+    for name, modes in rig_nodes(nmap).items():
         rec = nmap[name]
-        units = [s["unit"] for s in rec.get("services", []) if isinstance(s, dict) and s.get("unit")]
-        units = list(dict.fromkeys([*(units if "services" in power["sleep"] else []), *power["units"]]))
-        suspend, note = False, None
-        if "suspend" in power["sleep"]:
-            if not hosts:
-                note = "--no-hosts: services only"
-            elif power["wake"] == "rtc" and not wake_at:
-                note = "wakes only from its own clock: suspended only with --wake-at"
-            else:
-                suspend = True
-        out[name] = {"ssh": rec.get("ssh"), "checkout": rec.get("checkout"),
-                     "units": list(reversed(units)), "suspend": suspend, "wake": power["wake"] if suspend else None, "mac": power["mac"], "note": note}
+        services = [s for s in rec.get("services", []) if isinstance(s, dict) and s.get("unit")] \
+            if "services" in modes else []
+        display = [s["unit"] for s in services if s.get("part") == "station"]
+        bus = [s["unit"] for s in services if s.get("liveliness") == ROUTER_KEY and s["unit"] not in display]
+        start = [s["unit"] for s in services if s["unit"] not in display and s["unit"] not in bus]
+        system, users, shown = _hardware_units(rec)
+        window = "window" in modes
+        stack = list(DRAWING_STACK) if "ros" in rec.get("roles", []) else []
+        out[name] = {"checkout": rec.get("checkout"), "units": display + list(reversed(start)),
+                     "bus": bus, "start": start, "display": display, "ensure": shown if services else [],
+                     "liveliness": {s["unit"]: f"{name}/{s['liveliness']}" for s in services if s.get("liveliness")},
+                     "window": window, "kept": list(dict.fromkeys(bus + system + stack)),
+                     "kept_user": [u for u in users if not (window and u == WINDOW_UNIT)]}
     return out
 
 
-def magic_packet(mac: str) -> bytes:
-    mac = mac.lower()
-    if not _MAC.match(mac):
-        raise ValueError(f"not a MAC address: {mac}")
-    return b"\xff" * 6 + bytes.fromhex(mac.replace(":", "")) * 16
-
-
-def parse_wake_at(text: str, *, now_unix: float | None = None) -> int:
-    """`HH:MM` (the next occurrence, local time) or an absolute epoch second."""
-    import time as _time
-    if re.fullmatch(r"\d{9,10}", text):
-        return int(text)
-    m = re.fullmatch(r"([01]?\d|2[0-3]):([0-5]\d)", text)
-    if not m:
-        raise ValueError("--wake-at takes HH:MM (local, next occurrence) or a unix epoch second")
-    base = now_unix if now_unix is not None else _time.time()
-    local = _time.localtime(base)
-    candidate = _time.mktime((local.tm_year, local.tm_mon, local.tm_mday, int(m.group(1)), int(m.group(2)), 0,
-                              local.tm_wday, local.tm_yday, -1))
-    if candidate <= base + 60:
-        candidate += 86400
-    return int(candidate)
+def off_order(nmap: dict, me: str | None) -> list[str]:
+    """The nodes `tatbot rig off` shuts down (``"off": true`` in config/nodes.json),
+    in shutdown order: the arm and camera hosts first, the e-stop relay after
+    them (it is the stop path while an arm host is up), and the node running the
+    command last, so it can report the others before it goes."""
+    names = [n for n, rec in nmap.items() if isinstance(rec, dict) and rec.get("off") is True]
+    return sorted(names, key=lambda n: (n == me, "estop-relay" in nmap[n].get("roles", [])))

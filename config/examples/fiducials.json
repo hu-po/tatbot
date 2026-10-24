@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "family": "apriltag_16h5",
+  "schema_version": 2,
+  "family": "apriltag_36h11",
   "detector": {
     "calibration": {
       "scale": 1.0,
@@ -17,6 +17,7 @@
   },
   "targets": {
     "wrist": {
+      "family": "apriltag_36h11",
       "role": "rigid_ee",
       "ids": [
         1,
@@ -35,52 +36,14 @@
       "max_calibration_parent_distance_mm": 200.0,
       "ambiguity_group": "phase_separated_calibration_ids"
     },
-    "board": {
-      "role": "camera_calibration",
-      "ids": [
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        9
-      ],
-      "edge_m": 0.044,
-      "root_id": 5,
-      "calibration_root_id": 8,
-      "grid": [
-        [
-          1,
-          2,
-          3
-        ],
-        [
-          4,
-          5,
-          6
-        ],
-        [
-          7,
-          8,
-          9
-        ]
-      ],
-      "max_calibration_reprojection_px": 5.0,
-      "max_calibration_consensus_mm": 25.0,
-      "max_calibration_regression_mm": 1.0,
-      "ambiguity_group": "phase_separated_calibration_ids"
-    },
     "palette": {
+      "family": "apriltag_36h11",
       "role": "world_anchor",
       "ids": [
         0
       ],
       "edge_m": 0.046,
-      "ambiguity_group": "phase_separated_calibration_ids",
-      "family": "apriltag_36h11"
+      "ambiguity_group": "phase_separated_calibration_ids"
     }
   },
   "printing": {

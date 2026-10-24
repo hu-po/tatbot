@@ -25,13 +25,15 @@ def __getattr__(name):
 
 
 WORKFLOW = "ros-register"
-TARGETS = {"right": "wrist", "left": "wrist_left"}
-LABELS = {"right": "pink", "left": "blue"}
+TARGETS = {"right": "wrist"}   # the pink arm's wrist tags; the blue arm is the teleop leader alone
+LABELS = {"right": "pink"}
 VISION = Path("~/tatbot-logs/vision").expanduser()
 STACK_CALIB = Path("~/tatbot-ros/calib").expanduser()
 # The gates a candidate must pass before --adopt installs it. A 47 mm tag spans about 23 px at 640x360 from
 # the installed mount, so a corner is good to a fraction of a pixel and a layout error of a few millimetres
-# shows as a pixel or two; one hold must not move the answer more than a drawing tolerance.
+# shows as a pixel or two; one hold must not move the answer more than a drawing tolerance. Pixel gates are in
+# pixels of a 640-wide image and scale with the colour stream's width (px_scale): a millimetre is twice the
+# pixels at 1280x720.
 MIN_HOLDS = 12
 MIN_HOLDS_PER_TAG = 3
 MAX_MEDIAN_PX = 2.5
@@ -57,6 +59,12 @@ DISTINCT_DEG = 15.0
 VIEW_MARGIN_PX = 10.0
 VIEW_MAX_ANGLE_DEG = 60.0
 VIEW_MIN_SIDE_PX = 14.0
+GATE_WIDTH_PX = 640
+
+
+def px_scale(width) -> float:
+    """A pixel gate's factor for an image `width` pixels wide: the gates are stated at GATE_WIDTH_PX."""
+    return float(width) / GATE_WIDTH_PX
 
 
 # --- the holds --------------------------------------------------------------------------------------------------
@@ -84,6 +92,7 @@ def rest_heading_deg(kin, rest=(0.0, 0.0, 0.0, 0.0, 0.0, 1.5708, 0.0)) -> float:
 def predicted_views(kin, arm: str, q, camera_from_base, k, dist, target, size) -> dict:
     """Each tag's predicted view at joints q from a prior camera pose: {tag: (seen, face angle deg, side px)}."""
     width, height = size
+    margin, min_side = VIEW_MARGIN_PX * px_scale(width), VIEW_MIN_SIDE_PX * px_scale(width)
     out = {}
     for tag in target.ids:
         camera_from_tag = camera_from_base @ kin.frame(np.asarray(q, float), f"{arm}/wrist_tag{tag}")
@@ -91,8 +100,8 @@ def predicted_views(kin, arm: str, q, camera_from_base, k, dist, target, size) -
         angle = math.degrees(math.acos(float(np.clip(camera_from_tag[:3, 2] @ to_camera, -1.0, 1.0))))
         pixels = _project(camera_from_base, corner_points(kin, arm, q, tag, target.edge_m), k, dist)
         side = float(np.mean(np.linalg.norm(pixels - np.roll(pixels, 1, axis=0), axis=1)))
-        inside = bool(np.all((pixels >= VIEW_MARGIN_PX) & (pixels <= np.array([width, height]) - VIEW_MARGIN_PX)))
-        out[tag] = (inside and angle <= VIEW_MAX_ANGLE_DEG and side >= VIEW_MIN_SIDE_PX, angle, side)
+        inside = bool(np.all((pixels >= margin) & (pixels <= np.array([width, height]) - margin)))
+        out[tag] = (inside and angle <= VIEW_MAX_ANGLE_DEG and side >= min_side, angle, side)
     return out
 
 
@@ -243,6 +252,47 @@ def load_prior(value: str) -> dict:
     return {"camera_from_base": np.asarray(report["camera_from_base"], float), "k": k, "run": run.name,
             "dist": np.asarray(optics["distortion"]["coefficients"], float),
             "size": (optics["intrinsics"]["width"], optics["intrinsics"]["height"])}
+
+
+# A prior from the tags the arm shows at rest: a few frames of one pose, good to a centimetre or two, which is all
+# view planning needs. Refused past this median corner residual (a tag taken for another, the arm moving).
+REST_SHOTS = 5
+REST_MAX_MEDIAN_PX = 3.0
+
+
+def rest_prior(arm: str, repo: Path, kin, target, detector, rig) -> dict | None:
+    """A prior camera pose from the wrist tags the overhead sees where the arm stands now, moving nothing: what an
+    earlier run's fit gives, without assuming the camera, the arm or the table stayed where that run found them.
+    2026-10-05: a re-layout's holds planned from the old fit and a fixed grid saw the tags at 11 of 27 holds; this
+    prior, then a script beside the run logs, planned 40 that saw them at 38. None when too few tags show."""
+    camera = capture.Camera(repo)
+    try:
+        q0 = rig.joints()
+        shots = [camera.capture(time.time_ns()) for _ in range(REST_SHOTS)]
+        q1 = rig.joints()
+    finally:
+        camera.close()
+    if float(np.max(np.abs(q1 - q0))) > STILL_RAD:
+        print("# rest prior: the arm moved during its frames", flush=True)
+        return None
+    q = (q0 + q1) / 2.0
+    intrinsics = capture.intrinsics_of(shots[0]["metadata"])
+    k, dist = capture.k_dist(intrinsics)
+    sightings = [{"hold": i, "tag": int(d.tag_id), "pixels": np.asarray(d.corners_px, float),
+                  "points": corner_points(kin, arm, q, int(d.tag_id), target.edge_m)}
+                 for i, shot in enumerate(shots) for d in detector.detect(capture.COLOR, shot["image"], shot["stamp_ns"])]
+    if len({s["tag"] for s in sightings}) < 1 or len(sightings) < 3:
+        print(f"# rest prior: {len(sightings)} tag sightings in {REST_SHOTS} frames at rest", flush=True)
+        return None
+    camera_from_base, kept = solve(sightings, k, dist)
+    median = float(np.median(residuals(camera_from_base, kept, k, dist)))
+    camera_in_base = np.linalg.inv(camera_from_base)[:3, 3]
+    print(f"# rest prior: tags {sorted({s['tag'] for s in kept})} in {len(kept)} sightings, {median:.2f} px; the "
+          f"camera at {np.round(camera_in_base, 3).tolist()} m in {arm}/base_link", flush=True)
+    if median > REST_MAX_MEDIAN_PX * px_scale(intrinsics["width"]):
+        return None
+    return {"camera_from_base": camera_from_base, "k": k, "dist": dist, "run": "the rest pose",
+            "size": (intrinsics["width"], intrinsics["height"])}
 
 
 def hold_poses(center_xy, table_z: float, *, heading_deg: float = 0.0, spread_m: float = 0.07,
@@ -459,9 +509,10 @@ def gates(report: dict) -> list[str]:
     thin = [tag for tag, row in report["per_tag"].items() if 0 < row["poses"] < MIN_HOLDS_PER_TAG]
     if thin:
         why.append(f"tags {thin} were each seen at fewer than {MIN_HOLDS_PER_TAG} distinct poses")
-    if fit["median_px"] > MAX_MEDIAN_PX or fit["p95_px"] > MAX_P95_PX:
+    scale = px_scale(fit.get("width_px", GATE_WIDTH_PX))
+    if fit["median_px"] > MAX_MEDIAN_PX * scale or fit["p95_px"] > MAX_P95_PX * scale:
         why.append(f"corner residual median {fit['median_px']:.2f} px / p95 {fit['p95_px']:.2f} px "
-                   f"(at most {MAX_MEDIAN_PX} / {MAX_P95_PX})")
+                   f"(at most {MAX_MEDIAN_PX * scale:g} / {MAX_P95_PX * scale:g})")
     if out["max_mm"] is None or out["max_mm"] > MAX_HOLD_OUT_MM or out["max_deg"] > MAX_HOLD_OUT_DEG:
         why.append(f"one view moves the registration {out['max_mm']} mm / {out['max_deg']} deg "
                    f"(at most {MAX_HOLD_OUT_MM} / {MAX_HOLD_OUT_DEG})")
@@ -511,9 +562,8 @@ def install(path: Path, destination: Path, replaced: Path) -> None:
     temporary.replace(destination)
 
 
-def adopt(run_dir: Path, arm: str, bundle: dict, reused_bundle: bool) -> list[str]:
-    """The bundle, this arm's registration and (right arm) the robot-world golden where consumers read them. A
-    new bundle is another world: the other arm's registration, solved in the old one, is moved aside."""
+def adopt(run_dir: Path, arm: str, reused_bundle: bool) -> list[str]:
+    """The bundle, this arm's registration and the robot-world golden where consumers read them."""
     replaced = run_dir / "replaced"
     done = []
     if not reused_bundle:
@@ -523,20 +573,8 @@ def adopt(run_dir: Path, arm: str, bundle: dict, reused_bundle: bool) -> list[st
         install(run_dir / f"arm-registration-{arm}.json", directory / f"arm-registration-{arm}-current.json",
                 replaced / directory.name)
         done.append(str(directory / f"arm-registration-{arm}-current.json"))
-        for other in directory.glob("arm-registration-*-current.json"):
-            if other.name == f"arm-registration-{arm}-current.json":
-                continue
-            try:
-                stale = json.loads(other.read_text()).get("calibration_id") != bundle["bundle_id"]
-            except (OSError, ValueError):
-                stale = True
-            if stale:
-                (replaced / directory.name).mkdir(parents=True, exist_ok=True)
-                shutil.move(str(other), str(replaced / directory.name / other.name))
-                done.append(f"moved aside (another camera world): {other}")
-    if arm == "right":
-        install(run_dir / "robot-world.json", VISION / "robot-world-current.json", replaced)
-        done.append(str(VISION / "robot-world-current.json"))
+    install(run_dir / "robot-world.json", VISION / "robot-world-current.json", replaced)
+    done.append(str(VISION / "robot-world-current.json"))
     return done
 
 
@@ -551,8 +589,9 @@ def main(argv=None) -> int:
     parser.add_argument("--heights", type=float, nargs="+", default=[0.12, 0.17], help="tool heights over the table, m")
     parser.add_argument("--max-holds", dest="max_holds", type=int, default=0, help="stop after this many (0: all)")
     parser.add_argument("--prior", default="",
-                        help="an earlier ros-register run (directory or run id) whose fit plans the holds: upright "
-                             "ones, chosen for what they measure of the camera, the tags' seat and joints 1-4")
+                        help="rest (the wrist tags the camera sees where the arm stands, no motion) or an earlier "
+                             "ros-register run (directory or run id) whose fit plans the holds: upright ones, chosen "
+                             "for what they measure of the camera, the tags' seat and joints 1-4")
     parser.add_argument("--holds", type=int, default=27, help="with --prior: how many holds to plan")
     parser.add_argument("--adopt", action="store_true", help="install the result when it passes the gates")
     parser.add_argument("--dry-run", dest="dry_run", action="store_true",
@@ -562,7 +601,6 @@ def main(argv=None) -> int:
     from tatbot_description import names, repo_root, robot_description
     repo = repo_root()
     capture._lib(repo)
-    import tatbot_runlog
     from fiducials import load_inventory
     from fiducials.detector import DetectorConfig, FiducialDetector
     from tatbot_motion import Kinematics
@@ -580,11 +618,32 @@ def main(argv=None) -> int:
     target = inventory.target(TARGETS[ns.arm])
     detector = FiducialDetector.from_inventory(inventory, DetectorConfig(min_side_px=8.0, refinement="edges"),
                                                target=TARGETS[ns.arm])
-    if ns.prior:
+    from tatbot_calib.program import Rig
+
+    # one connection to the stack for the run: a second after closing the first fails if that close timed out in
+    # zenoh, as it did right after a setup's restart (2026-10-22, the station agent's calibration)
+    rig = Rig(ns.arm) if ns.prior == "rest" or not ns.dry_run else None
+    try:
+        return _main(ns, argv, repo, stack, kin, root_from_base, target, detector, ready, rig, center, table_z)
+    finally:
+        if rig is not None:
+            rig.close()
+
+
+def _main(ns, argv, repo, stack, kin, root_from_base, target, detector, ready, rig, center, table_z) -> int:
+    import tatbot_runlog
+
+    prior = None
+    if ns.prior == "rest":
+        prior = rest_prior(ns.arm, repo, kin, target, detector, rig)
+        if prior is None:
+            print("# no prior from the rest pose: the holds are a grid about the configured page", flush=True)
+    elif ns.prior:
+        prior = load_prior(ns.prior)
+    if prior is not None:
         from tatbot_motion import load_motion
         from tatbot_motion.collision import Guard
 
-        prior = load_prior(ns.prior)
         guard, text = Guard.from_stack(repo, stack, load_motion())
         print(f"# {text}", flush=True)
         posture = Posture(kin, ready, table_z, (lambda q: guard.self_gap(ns.arm, q)) if guard is not None else None)
@@ -606,7 +665,7 @@ def main(argv=None) -> int:
     run_dir = Path(run.dir)
     (run_dir / "frames").mkdir(exist_ok=True)
     try:
-        code = _run(ns, run_dir, repo, kin, root_from_base, target, detector, poses, center, table_z, ready)
+        code = _run(ns, run_dir, repo, kin, root_from_base, target, detector, poses, center, table_z, ready, rig)
     except BaseException:
         run.finalize(1, status="fail")
         raise
@@ -614,13 +673,14 @@ def main(argv=None) -> int:
     return code
 
 
-def _run(ns, run_dir: Path, repo: Path, kin, root_from_base, target, detector, poses, center, table_z, ready) -> int:
+def _run(ns, run_dir: Path, repo: Path, kin, root_from_base, target, detector, poses, center, table_z, ready,
+         rig) -> int:
     print(f"# {len(poses)} holds around ({center[0]:.3f}, {center[1]:.3f}) over table z {table_z:.4f} in "
           f"{ns.arm}/base_link; tags {list(target.ids)} at {target.edge_m * 1000:.0f} mm; run {run_dir}", flush=True)
     if ns.dry_run:
         plan_only(kin, poses, ready)
         return 0
-    sightings, first, rows = capture_holds(ns.arm, repo, kin, target, detector, poses, run_dir)
+    sightings, first, rows = capture_holds(ns.arm, repo, kin, target, detector, poses, run_dir, rig)
     if first is None or len({s["hold"] for s in sightings}) < 3:
         missed = sum(1 for row in rows if not row["reached"])
         why = ["fewer than 3 holds saw a wrist tag", *([f"{missed} of {len(rows)} holds were not reached"] * bool(missed))]
@@ -631,7 +691,7 @@ def _run(ns, run_dir: Path, repo: Path, kin, root_from_base, target, detector, p
     record = registration_record(ns.arm, bundle, run_dir / "calibration.json",
                                  np.asarray(report["camera_from_base"]), root_from_base, report, run_dir.name)
     write_outputs(ns.arm, run_dir, kin, target, record)
-    report["adopted"] = adopt(run_dir, ns.arm, bundle, reused) if ns.adopt and not report["refused"] else []
+    report["adopted"] = adopt(run_dir, ns.arm, reused) if ns.adopt and not report["refused"] else []
     report["chain"] = chain_report(ns.arm, kin, target, bundle, rows, report, run_dir)
     (run_dir / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     summarize(report, run_dir)
@@ -651,13 +711,12 @@ def plan_only(kin, poses, ready) -> None:
 
 
 def capture_holds(arm: str, repo: Path, kin, target, detector, poses,
-                  run_dir: Path) -> tuple[list[dict], dict | None, list[dict]]:
+                  run_dir: Path, rig) -> tuple[list[dict], dict | None, list[dict]]:
     """Drive the holds, capture each the arm reached, detect the arm's tags; the arm lands at the end. Returns
     (sightings, the first capture, the holds' rows) and writes holds.jsonl and each captured hold's frame."""
     import cv2
 
-    from tatbot_calib.program import Rig
-    rig, camera = Rig(arm), capture.Camera(repo)
+    camera = capture.Camera(repo)
     sightings, rows, first, misses = [], [], None, 0
     try:
         for i, pose in enumerate(poses):
@@ -692,7 +751,6 @@ def capture_holds(arm: str, repo: Path, kin, target, detector, poses,
             print(f"# landed: {rig.land()}", flush=True)
         except RuntimeError as error:
             print(f"# landing: {error}", flush=True)
-        rig.close()
         camera.close()
     return sightings, first, rows
 
@@ -764,7 +822,8 @@ def fit(arm: str, bundle: dict, reused: bool, sightings: list[dict], target) -> 
               "fit": {"sightings": len(kept), "dropped": len(sightings) - len(kept),
                       "holds": len({s["hold"] for s in kept}), "poses": len({s["view"] for s in kept}),
                       "median_px": float(np.median(errors)),
-                      "p95_px": float(np.percentile(errors, 95)), "max_px": float(np.max(errors))},
+                      "p95_px": float(np.percentile(errors, 95)), "max_px": float(np.max(errors)),
+                      "width_px": int(optics["intrinsics"].get("width", GATE_WIDTH_PX))},
               "per_tag": per_tag, "hold_out": hold_out(kept, camera_from_base, k, dist),
               "camera_from_base": camera_from_base.tolist()}
     report["refused"] = gates(report)

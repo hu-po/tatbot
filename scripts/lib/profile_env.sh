@@ -6,8 +6,7 @@
 #
 # Launchers reached through the tatbot CLI already inherit these from the
 # CLI's profile gate; this covers direct invocation. No profile, or a
-# gate-incapable one, is a hard stop BEFORE anything touches an arm
-# (plan Phase 2).
+# gate-incapable one, is a hard stop BEFORE anything touches an arm.
 
 profile_env::require() {
   # ALL THREE or resolve: pre-set arm IPs alone must not skip resolution and

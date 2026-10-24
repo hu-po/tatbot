@@ -1,4 +1,4 @@
-"""rollout · serve — trained policies on the arm, and the server that feeds them."""
+"""rollout · serve — the policy server and its offline checks."""
 
 from __future__ import annotations
 
@@ -9,92 +9,20 @@ import sys
 from pathlib import Path
 
 from tatbot_cli import EXIT_BUSY, EXIT_OK, EXIT_TOOL_FAILED
-from tatbot_cli.registry import MOTION_AUTO, OFFLINE, REMOTE, verb
-from tatbot_cli.verbs._common import (
-    ink_argv,
-    ink_flags,
-    lerobot_py,
-    py,
-    sh,
-    tag_arg,
-    tool_flag,
-)
-
-GATE_INV = (
-    "Policies use the physical left arm and its local wrist views; checkpoint camera keys must match exactly.",
-    "Never loosen force, workspace-floor or retreat limits to make it work; re-zeroing the floor (--robot.z_floor_m) is legitimate.",
-    "One launch at a time; the launcher refuses while another client holds the arm.",
-    "Reconcile run COUNT before calling any launch uncommanded: `tatbot logs count rollout_async` before, then "
-    "`--expect N --before M` after.",
-    "Every launch carries an automatic launch id, ledgered and audited by arm_gate (pid chain, SSH origin); "
-    "--tag adds a label.",
-)
-
-
-def _run_args(p):
-    p.add_argument("policy", nargs="?", help="server-side checkpoint dir (server default when omitted)")
-    p.add_argument("--duration", type=int, default=60, help="seconds (default 60)")
-    p.add_argument("--type", dest="policy_type", help="act | multi_task_dit | evo1")
-    tag_arg(p)
-    ink_flags(p)
-
-
-@verb(effects=('read_files', 'write_files', 'network', 'autonomous_motion', 'sensor_read'), noun="rollout", verb="run", tier=MOTION_AUTO, summary="flagship async rollout: policy server on the serve node, robot client here",
-      role="arm", wraps=("scripts/il_rollout_async.sh",), passthrough="robot_client", args=_run_args, needs_tool=True,
-      launch_id=True, ink_hook=True, example=("--duration", "60", "--tag", "a1",), doc="docs/imitation_learning.md",
-      tool_arm="left", invariants=GATE_INV)
-def rollout_run(ctx, ns, rest):
-    pos = [str(ns.duration)]
-    if ns.policy:
-        pos.append(ns.policy)
-        if ns.policy_type:
-            pos.append(ns.policy_type)
-    elif ns.policy_type:
-        print("rollout run: --type needs a policy path (positional order of il_rollout_async.sh)", file=sys.stderr)
-        return 2
-    return sh(ctx, "scripts/il_rollout_async.sh", *pos, *tool_flag(ctx), *ink_argv(ns), *rest)
-
-
-def _analyze_args(p):
-    p.add_argument("target", nargs="*", help="run dir, run id, flight CSV, or analysis.json with --compare")
-    p.add_argument('--arm', choices=('left', 'right'), help='physical arm for historical logs without arm metadata')
-    p.add_argument("--settle", type=float, help="seconds to ignore at the start (default: il_analyze_rollout.SETTLE_S)")
-    p.add_argument("--lift-mm", type=float, help="clearance above the floor that counts as a lift (default 6)")
-
-
-@verb(effects=('read_files', 'write_files'), visibility="public", noun="rollout", verb="analyze", tier=OFFLINE, summary="did the pen draw the shape, did the loop keep time",
-      wraps=("scripts/il_analyze_rollout.py",), passthrough="il_analyze_rollout.py", args=_analyze_args,
-      example=("~/tatbot-logs/rollout_async/last",), doc="docs/imitation_learning.md",
-      invariants=("FK 'contact' is proximity to a calibrated plane, NOT a touch measurement; the operator's eyes outrank it.",
-                  "Tip height, sustained lifts, descent and xy footprint (hull area) come from the touched-off tip on "
-                  "the recorded physical arm's tool_mount; --settle / --lift-mm tune the window and the lift threshold.",
-                  "A/B two policies by running `rollout run` once per rep (--tag labels each: a1 b1 a2 b2 ...), then "
-                  "`rollout analyze -- --compare` over the analysis.json files."))
-def rollout_analyze(ctx, ns, rest):
-    flags: list[str] = []
-    if ns.arm is not None:
-        flags += ['--arm', ns.arm]
-    if ns.settle is not None:
-        flags += ["--settle", str(ns.settle)]
-    if ns.lift_mm is not None:
-        flags += ["--lift-mm", str(ns.lift_mm)]
-    return lerobot_py(ctx, "scripts/il_analyze_rollout.py", *ns.target, *flags, *rest)
+from tatbot_cli.registry import OFFLINE, REMOTE, verb
+from tatbot_cli.verbs._common import lerobot_py, py, sh
 
 
 def _bench_args(p):
-    p.add_argument("what", choices=("wire", "plausibility"))
+    p.add_argument("what", choices=("plausibility",))
     p.add_argument("args", nargs="*")
 
 
-@verb(effects=('read_files', 'write_files', 'network', 'start_process'), visibility="public", noun="rollout", verb="bench", tier=OFFLINE, summary="no-robot checks of the serving path (wire bench / plausibility)",
-      wraps=("scripts/eval/wire_bench.py", "scripts/eval/trajectory_plausibility.py"), args=_bench_args, passthrough="wire_bench.py / trajectory_plausibility.py",
-      example=("wire", "--", "--help"), doc="docs/imitation_learning.md",
-      invariants=("Run the wire bench whenever a model, feature set or server is new, before committing the arm.",))
+@verb(effects=('read_files', 'write_files', 'network', 'start_process'), visibility="public", noun="rollout", verb="bench", tier=OFFLINE, summary="no-robot plausibility check of a policy's action chunks",
+      wraps=("scripts/eval/trajectory_plausibility.py",), args=_bench_args, passthrough="trajectory_plausibility.py",
+      example=("plausibility", "--", "--help"), doc="docs/imitation_learning.md")
 def rollout_bench(ctx, ns, rest):
-    # Neither bench takes a tool: the wire bench builds the follower's features
-    # without one (wire_client.build_feature_robot), and plausibility is offline.
-    script = "scripts/eval/wire_bench.py" if ns.what == "wire" else "scripts/eval/trajectory_plausibility.py"
-    return lerobot_py(ctx, script, *ns.args, *rest)
+    return lerobot_py(ctx, "scripts/eval/trajectory_plausibility.py", *ns.args, *rest)
 
 
 def _contract_arg(p):

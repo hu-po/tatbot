@@ -29,6 +29,11 @@ from pathlib import Path
 # root has to be on sys.path; no two roots share a module name, so the order
 # only decides which shadows a same-named third-party package (none do today).
 SCRIPT_ROOTS = ("scripts/lib", "scripts", "scripts/vision", "scripts/train", "scripts/eval")
+# The ROS drawing stack's packages the drawing is planned with: what `tatbot ros compile` runs offline,
+# importing the planner the robot draws with. tatbot_session is here
+# for its pure modules (ready, geometry); its executor and nodes import ROS.
+DRAWING_ROOTS = ("ros/tatbot_ink", "ros/tatbot_motion", "ros/tatbot_description", "ros/tatbot_session",
+                 "python/tatbot_contracts/src")
 _ROOT: Path | None = None  # the checkout bootstrap() settled on, once per process
 
 
@@ -36,12 +41,11 @@ def bootstrap(root: Path | None = None) -> Path:
     """Put every script root on sys.path, once, and return the checkout root.
 
     ``root`` defaults to the checkout this file lives in. A caller whose
-    checkout is chosen at run time passes its own (tatbot_sim honours
-    TATBOT_REPO, which the public simulator profile points at a copy of the
-    tree), so the script modules come from the same tree as everything else.
+    checkout is chosen at run time (TATBOT_REPO, say) passes its own, so the
+    script modules come from the same tree as everything else.
 
-    The one path line an entry point needs, in place of the per-file
-    `sys.path.insert(0, ...)` arithmetic that used to open 240 files:
+    The one path line an entry point needs, in place of per-file
+    `sys.path.insert(0, ...)` arithmetic:
 
         sys.path.insert(0, str(Path(__file__).resolve().parents[N] / "scripts/lib"))
         from tatbot_paths import bootstrap  # noqa: E402
@@ -51,7 +55,7 @@ def bootstrap(root: Path | None = None) -> Path:
     entry script, the `tatbot` CLI, or scripts/tests/conftest.py). The roots
     settle once per process: a later call without ``root`` is a no-op that
     returns the root already chosen, so an entry script imported as a library
-    (capture_geometry by the simulator, say) cannot re-front its own checkout over
+    (capture_geometry by another tool, say) cannot re-front its own checkout over
     the one the process picked. An explicit ``root`` always wins and re-fronts.
     """
     global _ROOT

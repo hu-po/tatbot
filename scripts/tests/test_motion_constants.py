@@ -4,8 +4,7 @@
 
 Pins: the JSON loads under its schema, its SHA is the 12-hex value the checked-in
 C++ header was generated with (so `scripts/gen_motion_constants.py --check` and this
-agree), two spot constants read the same on both sides, the Python aliases the
-planner keeps for its old names resolve to the JSON, and every samples file the
+agree), two spot constants read the same on both sides, and every samples file the
 planner writes carries the `constants_sha` line the executor checks.
 """
 
@@ -14,14 +13,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import numpy as np
-
 REPO = Path(__file__).resolve().parents[2]
 
-import arm_kinematics as dk  # noqa: E402
 import gen_motion_constants  # noqa: E402
 import motion_constants as dc  # noqa: E402
-import pen_path as dp  # noqa: E402
 
 HEADER = REPO / "cpp" / "teleop" / "motion_constants.hpp"
 
@@ -60,33 +55,3 @@ def test_flat_covers_every_number_once():
     assert len(keys) == len(set(keys))
     assert "schema" not in keys and not any(k.startswith("_") for k in keys)
     assert {"period_s", "planner.max_ticks", "path.dip_travel_backoff_m_s"} <= set(keys)
-
-
-def test_python_aliases_resolve_to_the_json():
-    c = dc.C
-    assert c.planner.max_ticks == dk.PLAN_MAX_TICKS
-    assert (c.carriage_ik.min_m, c.carriage_ik.max_m) == (dk.CARRIAGE_IK_MIN_M, dk.CARRIAGE_IK_MAX_M)
-
-
-def test_samples_files_carry_the_constants_sha(tmp_path):
-    n = 4
-    samples = dp.Samples(
-        period_s=dc.C.period_s, t=np.arange(n) * dc.C.period_s, p=np.zeros((n, 3)), v=np.zeros((n, 3)),
-        R=np.tile(np.eye(3), (n, 1, 1)), pen=np.zeros(n, np.int64), capture=np.zeros(n, np.int64))
-    for kind in ("orbit", "path"):
-        path = tmp_path / f"{kind}.csv"
-        dp.write_samples_csv(path, samples, kind, dk.BALLPOINT_TIP_IN_LINK6)
-        lines = path.read_text().splitlines()
-        assert lines[0] == f"schema,{dp.SAMPLES_SCHEMA}"
-        assert lines[1] == f"constants_sha,{dc.SHA}"
-        _, header = dp.read_samples_csv(path)
-        assert header["constants_sha"] == dc.SHA
-    # A caller may restate the line only if it agrees.
-    dp.write_samples_csv(tmp_path / "ok.csv", samples, "path", dk.BALLPOINT_TIP_IN_LINK6, {"constants_sha": dc.SHA})
-    try:
-        dp.write_samples_csv(tmp_path / "bad.csv", samples, "path", dk.BALLPOINT_TIP_IN_LINK6,
-                             {"constants_sha": "deadbeefcafe"})
-    except ValueError as exc:
-        assert "constants_sha" in str(exc)
-    else:
-        raise AssertionError("a conflicting constants_sha in extra must be refused")

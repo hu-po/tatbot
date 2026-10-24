@@ -1,7 +1,7 @@
 ---
 summary: Public fiducial configuration concepts
 tags: [vision, fiducials, calibration]
-updated: 2026-09-27
+updated: 2026-10-18
 audience: [dev, contributor]
 ---
 
@@ -16,7 +16,6 @@ IDs or sizes.
 
 - Give every marker family, id, and physical size an explicit record.
 - Keep units and frame names beside the value.
-- Separate board-only markers from markers that may appear on an end effector.
 - Version calibration outputs and record the exact input profile.
 
 Schema 2 requires an explicit `targets.<name>.family` for every target. Both
@@ -26,6 +25,15 @@ family-scoped corner maps, so the same numeric ID in different families
 cannot enter the wrong target solve. Legacy numeric-only records omit IDs
 that are ambiguous in their frozen inventory.
 Same-family duplicates require an explicit ambiguity group and phase separation.
+
+The skin stencil, the [fiducial tile](stencil-frames.md), uses
+the `apriltag_16h5` family outside the inventory: its codes and printed corners
+are the print's own (`tile.json`, bound to its stencil reference), read by
+`scripts/vision/fiducials/stencil.py` with this module's detector. Its `skin`
+profile corrects each code fully, which is safe only against the print's short
+id list and its printed layout; other 4x4 codes in a scene (an ArUco sheet, a
+36h11 tag's face) can decode as a tile code, so a reading must also agree with
+the layout and, overhead, with the marker's printed size on the depth.
 A pending layout can contain no transforms; generated tag placement and pose
 tracking remain unavailable until a measured layout passes the existing gates.
 
@@ -35,12 +43,12 @@ body. The `palette_tag` joint in `urdf/palette.urdf` carries that measured
 turn, and the palette pose solve crosses it rather than assuming the tag is
 aligned with the body. See [palette](palette.md).
 
-Run calibration against a static, non-human fixture. Private geometry,
+Run calibration against a static fixture. Private geometry,
 identifiers, and acceptance measurements do not belong in a public page.
 
 ## Positioning a parked wrist for camera inspection
 
-`tatbot --ee-tool <fitted-tool> calib inspect --arm blue --operator-go`
+`tatbot --ee-tool <fitted-tool> calib inspect --arm pink --operator-go`
 retains current measured joints before selecting a new pose. Connection takes
 a guarded position hold at the measured pose, so this is an active hold rather
 than a passive network probe. It uses the same native calibration owner,
@@ -74,8 +82,7 @@ Each increment lasts four seconds. Planned base/wrist increments use a
 0.08 rad/s twice-mean speed bound, leaving room for the 0.02 rad arrival
 readback tolerance within 0.1 rad/s. The recovery path retains its carriage
 qualification, live limits, exclusive driver lease, E-stop and contact cap.
-The workspace and complete tool sweep must be clear, both tools non-emitting,
-and the other arm parked and stable. After the final arrival it holds for
+The workspace and complete tool sweep must be clear. After the final arrival it holds for
 `--hold-seconds` (default 5, maximum 120), then idles and releases the arm.
 It does not return to the previous angle. The `calib-pose` run retains every
 increment, feedback tick and measured release. Camera visibility does not
@@ -83,11 +90,8 @@ establish calibration accuracy or return repeatability.
 
 ## Calibration
 
-The fixed-camera calibration that used these targets (board captures, the
-per-arm recipe, the rig candidate and its adoption, and motion-envelope
-teaching) was removed in 2026-09 with the overhead PoE cameras. The inventory
-stays the source for tracking, stencil and station tags; see
-[Vision](vision.md) for what the retained registrations still feed.
+The inventory is the source for tracking, stencil and station tags; see
+[Vision](vision.md) for what the retained registrations feed.
 
 
 For a retained current-pose wrist observation, add `--hold-seconds 5
@@ -99,7 +103,7 @@ bracketing native telemetry in `wrist-pose-binding.json`. That report includes
 nearest measured joints, carriage, timestamp skew, bracket gaps and observed
 motion across the camera window. It supplies nominal host-clock correspondence;
 physical accuracy and world registration remain unqualified. It adopts no
-camera, arm or board calibration. Capture failures follow the same terminal
+camera or arm calibration. Capture failures follow the same terminal
 release path; no new pose target is selected.
 
 Add `--capture-overhead` to `calib inspect`, or to a reviewed `calib pose
@@ -114,7 +118,7 @@ exposure fails the binding while preserving capture and release evidence.
 The report retains measured joints/carriage, host skew/gaps and observed
 motion; cross-device clock accuracy and physical accuracy remain unqualified.
 
-`tatbot calib register-fit --python /path/to/validated/python --arm blue
+`tatbot calib register-fit --python /path/to/validated/python --arm pink
 --capture /path/to/hold-a /path/to/hold-b --bundle /path/to/calibration.json
 --setup-id table-setup --out /path/to/new-fit` fits retained overhead views
 offline. Select captures from one physical setup after moving an arm base or

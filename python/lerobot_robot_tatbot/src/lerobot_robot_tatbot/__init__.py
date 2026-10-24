@@ -1,16 +1,7 @@
-"""tatbot LeRobot robot plugin.
+"""tatbot's LeRobot environment.
 
-Importing this package (which lerobot does automatically for any installed
-package named ``lerobot_robot_*``) registers the ``tatbot_follower`` robot
-type: a Trossen WidowX AI follower whose last joint is the carriage of a
-mounted tool, seated at rest and retracted by the safety layer (nothing is
-gripped since 2026-08-30).
+The project pins the LeRobot install that training, policy serving, dataset
+tools and `vision capture` run in. The package itself holds only the
+``depth-v1`` encoder training applies to recorded D405 depth; it registers
+no robot type (the blue arm's ``tatbot_follower`` was deleted on 2026-10-23).
 """
-
-from lerobot_robot_tatbot.config_tatbot_follower import TatbotFollowerConfig
-from lerobot_robot_tatbot.tatbot_follower import TatbotFollower
-
-__all__ = [
-    "TatbotFollower",
-    "TatbotFollowerConfig",
-]

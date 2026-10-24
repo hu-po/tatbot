@@ -27,6 +27,7 @@ stop a run that moves the arm.
 
 from __future__ import annotations
 
+import concurrent.futures
 import contextlib
 import fcntl
 import json
@@ -53,6 +54,8 @@ SCHEMA_VERSION = 1
 #   debug.log     Python DEBUG records (only when a shell owns console.log)
 #   run.jsonl     structured events, append-only
 #   KEEP          optional operator marker: this run is never pruned
+#   ADOPTED       written by `adopt`: this run was moved in from another log
+#                 root (a sim lane's); its retention is "adopted"'s
 #   ...           workflow artifacts: flight-*.csv, analysis.json,
 #                 teleop.wxtl, poe/, rs/, session.rrd
 #
@@ -76,7 +79,7 @@ BANNER_RE = re.compile(
 
 DEFAULT_CONFIG = {
     "schema_version": 1,
-    # No home-dir default here (plan Phase 1): the private rig supplies
+    # No home-dir default here: the private rig supplies
     # "~/tatbot-logs" via config/runlog.json; unset means the XDG state dir.
     "log_root": None,
     "stale_running_hours": 24,
@@ -146,6 +149,14 @@ def _run(cmd, cwd=None, timeout=5) -> str | None:
 def _repo_root(start: Path | None = None) -> Path | None:
     here = (start or Path(__file__)).resolve()
     for parent in here.parents:
+        ci_layout = (
+            parent.name == "trusted"
+            and (parent / "scripts/lib/tatbot_runlog.py").is_file()
+            and (parent / "config/runlog.json").is_file()
+            and (parent.parent / "installed-policy.json").is_file()
+        )
+        if ci_layout:
+            return parent
         # Session releases and the viewer overlay are git archives. Their
         # checked-in retention policy must resolve exactly as in a checkout;
         # requiring .git silently sends services to a different log index.
@@ -221,11 +232,10 @@ def _sweep_nodes(cfg: dict, nmap: dict | None = None) -> tuple[list[str], list[s
     """(nodes to sweep, retired nodes left out) for `--all-nodes`.
 
     env > runlog config > config/nodes.json keys. No hardcoded node names in
-    code (plan Phase 1): the fleet is config, not a constant. A node with no
-    roles is retired — nothing runs there and it is usually off — and is left
-    out the way `tatbot status --fleet` leaves it out: a retired node cost
-    every sweep a connect timeout and a non-zero exit until 2026-09-17.
-    TATBOT_NODES is an explicit request and is swept as given."""
+    code: the fleet is config, not a constant. A node with no roles is retired —
+    nothing runs there and it is usually off — and is left out the way `tatbot
+    status --fleet` leaves it out, rather than costing every sweep a connect
+    timeout and a non-zero exit. TATBOT_NODES is an explicit request and is swept as given."""
     env = os.environ.get("TATBOT_NODES")
     if env:
         return env.split(), []
@@ -826,14 +836,29 @@ def why_not_deletable(run_dir: Path, root: Path, workflow: str,
     return None
 
 
+def _kept_by_count(candidates: list[Path], adopted: set[str], policies: dict[bool, dict]) -> set[str]:
+    """The runs each group's keep_runs keeps (all of a disabled policy's), adopted runs and the
+    workflow's own counted apart. Keepers are the UNION of both rules, never the intersection: a run
+    is only eligible if it is both beyond the count AND beyond the age."""
+    protected: set[str] = set()
+    for is_adopted, policy in policies.items():
+        group = [p for p in candidates if (p.name in adopted) == is_adopted]
+        if policy.get("enabled") is False:
+            protected.update(p.name for p in group)
+        elif policy.get("keep_runs"):
+            protected.update(p.name for p in group[-int(policy["keep_runs"]):])
+    return protected
+
+
 def prune(workflow: str, cfg: dict | None = None, dry_run: bool = True,
           budget_s: float | None = None, verbose: bool = True) -> list[dict]:
-    """Delete the oldest runs of one workflow past its retention policy."""
+    """Delete the oldest runs of one workflow past its retention policy.
+
+    Runs `adopt` moved in from another log root (an ADOPTED marker) are held to
+    the "adopted" policy among themselves, never counted against the
+    workflow's own runs: a sim lane's ros-draw runs never push a real one out."""
     cfg = cfg or load_config()
-    policy = retention_for(workflow, cfg)
     removed: list[dict] = []
-    if policy.get("enabled") is False:
-        return removed
     root = log_root(cfg)
     wf_dir = root / workflow
     if not wf_dir.is_dir():
@@ -843,13 +868,9 @@ def prune(workflow: str, cfg: dict | None = None, dry_run: bool = True,
 
     candidates = sorted(p for p in wf_dir.iterdir()
                         if p.is_dir() and RUN_ID_RE.match(p.name))
-    keep_runs = policy.get("keep_runs")
-    keep_days = policy.get("keep_days")
-    # Keepers are the UNION of both rules, never the intersection: a run is
-    # only eligible if it is both beyond the count AND beyond the age.
-    protected = set()
-    if keep_runs:
-        protected.update(p.name for p in candidates[-int(keep_runs):])
+    adopted = {p.name for p in candidates if (p / ADOPTED).is_file()}
+    policies = {False: retention_for(workflow, cfg), True: retention_for(ADOPTED_POLICY, cfg)}
+    protected = _kept_by_count(candidates, adopted, policies)
 
     for run_dir in candidates:
         if time.time() > deadline:
@@ -859,6 +880,7 @@ def prune(workflow: str, cfg: dict | None = None, dry_run: bool = True,
             break
         if run_dir.name in protected:
             continue
+        keep_days = policies[run_dir.name in adopted].get("keep_days")
         meta = _read_meta(run_dir)
         if keep_days and meta is not None and _age_days(meta) < float(keep_days):
             continue
@@ -899,6 +921,85 @@ def prune(workflow: str, cfg: dict | None = None, dry_run: bool = True,
             print(f"prune: removed {run_dir.name} ({workflow}, {_human(size)}, "
                   f"ended {entry['ended_at']}, status {entry['status']})", file=sys.stderr)
     return removed
+
+
+ADOPTED = "ADOPTED"
+ADOPTED_POLICY = "adopted"
+"""The retention row (config/runlog.json "workflows") of runs `adopt` moved in."""
+
+
+def _rows_by_run(index: Path) -> dict[str, dict]:
+    """Another log root's index, one merged row per run (as index_runs does)."""
+    merged: dict[str, dict] = {}
+    with contextlib.suppress(OSError):
+        for line in index.read_text(errors="replace").splitlines():
+            with contextlib.suppress(ValueError):
+                row = json.loads(line)
+                if isinstance(row, dict) and row.get("run_id"):
+                    merged.setdefault(row["run_id"], {}).update(row)
+    return merged
+
+
+def adopt(source: Path, cfg: dict | None = None, *, dry_run: bool = False) -> dict:
+    """Move the finished runs under another log root (a sim lane's) into this node's, and index them here.
+
+    A sim lane writes its runs under its own root (containers/ros-sim/run.sh), so the page-carry file its
+    executor keeps beside them (two levels up from a run) never lands where a real stack reads one. Once
+    a run has finished, its directory is moved to <log root>/<workflow>/<run-id>, marked ADOPTED (its
+    retention is the "adopted" row's) and given an index row here, so `logs show/last/list` find it and
+    `prune` deletes it by retention. Only run-id directories with a finished meta.json move: the source's
+    own files (its index, a page-carry file) and unfinished runs stay, and the source's index gets a row
+    naming each run's new directory. Returns what moved and what stayed, and the source's size before and
+    after."""
+    cfg = cfg or load_config()
+    source, root = Path(source).expanduser().resolve(), log_root(cfg).expanduser().resolve()
+    if source == root or root in source.parents or source in root.parents:
+        raise ValueError(f"{source} is this node's log root, inside it or above it, not another root")
+    if not source.is_dir():
+        raise ValueError(f"{source}: no such log root")
+    rows = _rows_by_run(source / "index.jsonl")
+    out = {"source": str(source), "root": str(root), "dry_run": dry_run, "bytes_before": _dir_size(source),
+           "adopted": [], "left": []}
+    for wf_dir in sorted(p for p in source.iterdir() if p.is_dir() and not p.is_symlink()
+                         and not p.name.startswith(".")):
+        for run_dir in sorted(p for p in wf_dir.iterdir() if p.is_dir() and not p.is_symlink()
+                              and RUN_ID_RE.match(p.name)):
+            meta, dest = _read_meta(run_dir), root / wf_dir.name / run_dir.name
+            reason = ("meta.json unreadable" if meta is None else
+                      "not finished" if meta.get("status") in (None, "running") else
+                      "already in this log root" if dest.exists() else None)
+            entry = {"run_id": run_dir.name, "workflow": wf_dir.name}
+            if reason:
+                out["left"].append({**entry, "reason": reason})
+                continue
+            entry.update(bytes=_dir_size(run_dir), dir=str(dest))
+            out["adopted"].append(entry)
+            if dry_run:
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(run_dir), str(dest))
+            _atomic_write_json(dest / ADOPTED, {"from": str(run_dir), "at": _iso(), "policy": ADOPTED_POLICY})
+            node = meta.get("node", {})
+            row = {"schema_version": SCHEMA_VERSION, "run_id": run_dir.name, "workflow": wf_dir.name,
+                   "node": node.get("hostname", _node()), "started_at": meta.get("started_at"),
+                   "git": meta.get("git", {}).get("short"), "dirty": meta.get("git", {}).get("dirty"),
+                   "key": meta.get("key", {}), "exit_code": meta.get("exit_code"), "ended_at": meta.get("ended_at"),
+                   "duration_s": meta.get("duration_s"), "counters": meta.get("counters", {}),
+                   "summary": meta.get("summary"),
+                   **rows.get(run_dir.name, {}),
+                   "status": meta.get("status"), "dir": str(dest), "adopted_from": str(run_dir), "t": _iso()}
+            row.pop("pid", None)   # the lane container's, meaningless here
+            _append_line(index_path(cfg), row)
+            _append_line(source / "index.jsonl", {"schema_version": SCHEMA_VERSION, "run_id": run_dir.name,
+                                                  "workflow": wf_dir.name, "status": meta.get("status"),
+                                                  "dir": str(dest), "adopted_to": str(dest), "t": _iso()})
+            latest = dest.parent / "latest"
+            with contextlib.suppress(OSError):
+                if not latest.is_symlink() or os.readlink(latest) < dest.name:
+                    _update_latest(dest.parent, dest)
+    out["bytes_after"] = out["bytes_before"] - sum(e["bytes"] for e in out["adopted"]) if dry_run else \
+        _dir_size(source)
+    return out
 
 
 def _dir_size(path: Path) -> int:
@@ -1036,7 +1137,7 @@ HELP = """tatbot-logs — find and read the full log of any tatbot run.
   tatbot-logs tail <run-id> -f          follow a run that is still going
   tatbot-logs list [workflow]           recent runs, newest last
   tatbot-logs fetch <run-id>            copy a remote run here (skips media)
-  tatbot-logs count rollout_async       how many launches the index holds (reconcile before/after)
+  tatbot-logs count ros-draw            how many launches the index holds (reconcile before/after)
 
 A run id carries its node, so it is self-locating:
 
@@ -1050,7 +1151,9 @@ Runs live in <log root>/<workflow>/<run-id>/ on the node that produced them
 (`root` prints the log root). console.log holds more than the terminal showed.
 `list` shows which workflows this node holds runs for.
 
-Other commands: du, prune [--yes], reindex [--legacy], compact, selftest.
+Other commands: du, prune [--yes], adopt <root>, reindex [--legacy], compact,
+selftest. `adopt <root>` moves another log root's finished runs (a sim lane's,
+which `tatbot ros down` adopts by itself) here and indexes them.
 `count <workflow> --expect N --before M` exits 1 unless exactly N launches were
 added since the snapshot M: reconcile run COUNT before calling any launch
 uncommanded (the 2026-08-24 lesson).
@@ -1068,10 +1171,8 @@ def _remote_argv(node: str, args: list[str], nmap: dict | None = None) -> list[s
     The target and the checkout come from config/nodes.json through
     tatbot_cli.nodes, exactly as `tatbot --on <node>` resolves them; a node
     the map does not know is dialed by name and assumed at the public repo's
-    conventional path. It used to glob `$(cd ~/tatbot* && pwd)`, which is
-    empty wherever the log root or a second checkout sits beside the checkout
-    (`cd` refuses two arguments), so two nodes answered
-    `can't open file '/scripts/lib/tatbot_runlog.py'` (2026-09-17)."""
+    conventional path. Never a `~/tatbot*` glob: it matches the log root and any
+    second checkout beside this one."""
     nmap = _fleet_map() if nmap is None else nmap
     fleet = _fleet_module()
     if fleet is not None and node in nmap:
@@ -1127,10 +1228,11 @@ def _sweep(args) -> tuple[int, list[dict]]:
     """The other nodes' listings: printed as sections, or (--json) their rows
     for one array, each row naming its node."""
     rc, swept = 0, []
-    for node in args.nodes:
-        if node == _node():
-            continue
-        code, rows, out = _list_remote(node, args)
+    remote = [node for node in args.nodes if node != _node()]
+    # Ask every node at once (each ssh may take its full timeout); report in node order.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(remote))) as pool:
+        answers = list(pool.map(lambda node: _list_remote(node, args), remote))
+    for node, (code, rows, out) in zip(remote, answers, strict=True):
         if rows is not None:
             swept.extend(rows)
         elif not args.json:
@@ -1357,6 +1459,25 @@ def _cmd_prune(args) -> int:
     return 0
 
 
+def _cmd_adopt(args) -> int:
+    try:
+        found = adopt(Path(args.source), dry_run=args.dry_run)
+    except ValueError as exc:
+        print(f"adopt: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(found, indent=2))
+        return 0
+    verb = "would adopt" if args.dry_run else "adopted"
+    for entry in found["adopted"]:
+        print(f"{verb} {entry['run_id']} ({entry['workflow']}, {_human(entry['bytes'])}) -> {entry['dir']}")
+    for entry in found["left"]:
+        print(f"left {entry['run_id']} ({entry['workflow']}): {entry['reason']}")
+    print(f"{found['source']}: {_human(found['bytes_before'])} before, {_human(found['bytes_after'])} after; "
+          f"{len(found['adopted'])} runs {verb} into {found['root']}, {len(found['left'])} left")
+    return 0
+
+
 def _cmd_reindex(args) -> int:
     """Make pre-runlog files visible to `list` without touching them."""
     cfg = load_config()
@@ -1541,6 +1662,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--yes", action="store_true")
     p.add_argument("--budget", type=float, default=None)
     p.set_defaults(func=_cmd_prune)
+
+    p = sub.add_parser("adopt", help="move another log root's finished runs (a sim lane's) here")
+    p.add_argument("source", help="the other log root (a sim lane's: <lane root>/logs)")
+    p.add_argument("--dry-run", action="store_true", help="say what would move; move nothing")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=_cmd_adopt)
 
     p = sub.add_parser("reindex", help="index pre-runlog files for visibility")
     p.add_argument("--legacy", action="store_true")

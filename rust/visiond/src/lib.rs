@@ -2,7 +2,7 @@
 //!
 //! The crate deliberately keeps sensor-specific details behind the common
 //! [`FrameRecord`] contract.  A recorder, synchronizer, or policy bridge must
-//! not need to know whether a frame came from RTSP or a RealSense device.
+//! not need to know which device a frame came from.
 
 pub mod calibration;
 #[cfg(feature = "zenoh")]
@@ -14,7 +14,6 @@ pub mod frame_ops;
 pub mod health;
 pub mod ownership;
 pub mod record;
-pub mod rtcp;
 pub mod sync;
 pub mod systemd;
 pub mod teleop;
@@ -25,13 +24,9 @@ pub mod transport;
 pub mod fiducials;
 
 #[cfg(feature = "rerun")]
+pub mod depth_cloud;
+#[cfg(feature = "rerun")]
 pub mod rerun_viewer;
-
-#[cfg(feature = "gstreamer")]
-pub mod gstreamer_backend;
-
-#[cfg(feature = "gstreamer")]
-pub mod monitor;
 
 #[cfg(feature = "realsense")]
 pub mod realsense_backend;
@@ -44,19 +39,17 @@ pub use calibration::{
     CALIBRATION_SCHEMA_VERSION, CalibrationBundle, CameraCalibration, DistortionModel, Intrinsics,
     Pose,
 };
-pub use config::{CameraConfig, RealSenseConfig, VisionConfig};
+pub use config::{RealSenseConfig, VisionConfig};
 #[cfg(feature = "fiducials")]
 pub use fiducials::{
     AprilTagDetector, AprilTagDetectorFactory, DetectionRoi, EePoseEstimate, EstimatorConfig,
-    FiducialDetection, FiducialInventory, RustEeTracker, WristLayout, expanded_detection_roi,
+    FiducialDetection, FiducialInventory, RustEeTracker, WristLayout,
 };
 pub use health::{HealthSnapshot, SensorHealth};
 pub use record::read_recording_frame;
 pub use record::{EvidenceRecorder, RecordedPayload, RecordingEntry, read_recording_entries};
 #[cfg(feature = "rerun")]
-pub use rerun_viewer::{
-    APP_ID as RERUN_APP_ID, LiveTeleopScene, RerunSink, RerunSinkStats, RerunViewer, TeleopSetup,
-};
+pub use rerun_viewer::{RerunSink, RerunViewer, TeleopSetup};
 pub use sync::{
     ClockOffsetEstimator, FrameSynchronizer, PairwiseSyncReport, SyncAssessment,
     SynchronizedFrameSet, pairwise_sync_report,
@@ -69,7 +62,8 @@ pub use transport::{CONNECT_WINDOW, ReceivedFrameSet, UnixFrameClient, UnixFrame
 /// blueprint is sent into it at every server start (`viewer.sh blueprint`).
 pub const STANDING_RECORDING: &str = "live-cameras";
 
-/// Stable sensor-family identifier used in recordings and telemetry.
+/// Stable sensor-family identifier used in recordings and telemetry. `PoE`
+/// names the retired RTSP cameras, kept so their recordings still read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SensorKind {

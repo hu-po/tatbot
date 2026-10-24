@@ -1,10 +1,7 @@
 """The pink arm's workspace with the ballpoint fitted, for the tests about the ballpoint whatever the arm carries.
 
-arm_kinematics.BALLPOINT_TIP_IN_LINK6, the follower the module plans with and the C++ executor compiles in, is
-the ballpoint's touch-off carried to link 6. While the ballpoint is fitted config/workspace.yaml holds that
-touch-off and is read as it is, so a new one still has to match the constant; with another tool fitted the
-right section below (the ballpoint's 2026-09-19 touch-off) stands in for it. Copy a new ballpoint touch-off
-here when the constant changes.
+While the ballpoint is fitted config/workspace.yaml is read as it is; with another tool fitted the right
+section below (the ballpoint's 2026-09-19 touch-off) stands in for it.
 """
 from __future__ import annotations
 

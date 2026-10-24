@@ -1,9 +1,9 @@
 # shellcheck shell=bash
 # Fleet lookups for shell launchers — config/nodes.json is the only place
-# node names and ssh targets live (plan Phase 5). Source after REPO is set:
+# node names and ssh targets live. Source after REPO is set:
 #
 #   source "$REPO/scripts/lib/nodes.sh"
-#   POE="$(tatbot_nodes::target poe-cameras)"   # user@host, empty if no such node
+#   ARM="$(tatbot_nodes::target arm)"   # user@host, empty if no such node
 #
 # Empty output means "no node carries that role here" — callers decide
 # whether that is fatal or a skipped optional step.

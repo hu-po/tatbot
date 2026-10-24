@@ -224,9 +224,10 @@ def main(argv: list[str]) -> int:
     result: dict = {"domain": ns.domain, "port": port, "logs": str(logs)}
     try:
         time.sleep(1.0)
-        # runtime_record last: no extra argument can point it at a live stack's record.
+        # runtime_record last: no extra argument can point it at a live stack's record. rerun:=false before
+        # the caller's arguments: a check never draws into the fleet viewer's standing recording unless asked.
         launch = start(["ros2", "launch", "tatbot_bringup", "stack.launch.py", "hardware:=mock",
-                        "estop_source:=none", "page_source:=fixed", "touch:=false", f"arms:={ns.arms}",
+                        "estop_source:=none", "page_source:=fixed", "touch:=false", f"arms:={ns.arms}", "rerun:=false",
                         *ns.launch_args, f"runtime_record:={logs / 'runtime.json'}"],
                        env, logs / "launch.log")
         os.environ.update(env)  # rclpy reads the RMW, domain and zenoh endpoint from here

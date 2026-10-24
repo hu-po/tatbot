@@ -1,6 +1,5 @@
 """Ordered LeRobot source patches; application lives in lerobot_patch_engine."""
 
-# Patch 1: rollout context drops .eff/.ext_eff observations (see docstring).
 # Patch 2: multi_task_dit.predict_action_chunk assumes select_action already
 # ran _prepare_batch (stacks per-camera images into OBS_IMAGES) and
 # populate_queues (n_obs_steps history). The async_inference policy server
@@ -9,11 +8,6 @@
 # OBS_IMAGES key) and do both steps in place; the select_action path is
 # unaffected because it passes an already-prepared batch.
 PATCHES = [
-    (
-        "lerobot.rollout.context",
-        ['if isinstance(v, tuple) or (v is float and k.endswith((".pos", ".vel")))'],
-        'if isinstance(v, tuple) or (v is float and k.endswith((".pos", ".vel", ".eff", ".ext_eff")))',
-    ),
     (
         "lerobot.policies.multi_task_dit.modeling_multi_task_dit",
         [
@@ -79,35 +73,6 @@ PATCHES = [
         for k in batch:
             if k in self._queues:
                 batch[k] = torch.stack(list(self._queues[k]), dim=1)''',
-    ),
-    # Patch 5: below the action-queue threshold the async client uploads full
-    # raw camera frames EVERY control tick (~55 MB/s for two 640x480 RGB
-    # cameras at 30 Hz). Policies with small chunks (multi_task_dit: 24) sit
-    # below threshold permanently, and the sustained flood congests the
-    # network segment shared with the arm's 400 Hz UDP telemetry (observed:
-    # 35-79% UDP loss, driver collapse). The server consumes at most a few
-    # observations per second, so cap uploads at one per 250 ms.
-    (
-        "lerobot.async_inference.robot_client",
-        [
-            '''    def _ready_to_send_observation(self):
-        """Flags when the client is ready to send an observation"""
-        with self.action_queue_lock:
-            return self.action_queue.qsize() / self.action_chunk_size <= self._chunk_size_threshold''',
-        ],
-        '''    def _ready_to_send_observation(self):
-        """Flags when the client is ready to send an observation"""
-        with self.action_queue_lock:
-            below = self.action_queue.qsize() / self.action_chunk_size <= self._chunk_size_threshold
-        if not below:
-            return False
-        # tatbot patch: rate-limit uploads — raw frames at the loop rate
-        # saturate the link to the server and starve arm UDP telemetry.
-        now = time.monotonic()
-        if now - getattr(self, "_last_obs_send_t", 0.0) < 0.25:
-            return False
-        self._last_obs_send_t = now
-        return True''',
     ),
     # Patch 4: the async policy server allowlists policy types and predates
     # the newer policies in this release — multi_task_dit and evo1 load and
@@ -223,30 +188,6 @@ PATCHES = [
         # RGBD), and the similarity check KeyErrors on the mismatch.
         self.last_processed_obs = None''',
     ),
-    # Patch 10: the action queue drains to EMPTY at every chunk boundary,
-    # stalling the 30 Hz control loop ~0.5 s per chunk (measured 2026-08-24:
-    # 21-22% of ticks lost, stall median ~480 ms, on both RGB and RGBD).
-    # Two upstream halves only fail together: the client marks must_go only
-    # when the queue is already empty, and the server's similarity gate
-    # (joint-space atol=1 rad) drops every streamed below-threshold
-    # observation during slow tool motion — so the proactive refills that
-    # chunk_size_threshold is supposed to schedule never reach the policy.
-    # Fire the (event-debounced) must-go at the refill threshold instead:
-    # one early inference per chunk cycle, queue never empties.
-    (
-        "lerobot.async_inference.robot_client",
-        [
-            '''                observation.must_go = self.must_go.is_set() and self.action_queue.empty()''',
-        ],
-        '''                # tatbot patch: refill must fire BEFORE the queue empties —
-                # the server similarity gate drops ordinary streamed obs during
-                # slow tool motion, so this debounced must-go is the only
-                # observation guaranteed to reach the policy each cycle.
-                observation.must_go = self.must_go.is_set() and (
-                    self.action_queue.qsize()
-                    <= self._chunk_size_threshold * self.action_chunk_size
-                )''',
-    ),
     # Patch 9: live depth cannot reach the policy server. The async client
     # ships the follower's raw observation, so depth arrives as the camera's
     # uint16 (H, W, 1) — and the server resizes every image feature with
@@ -292,35 +233,11 @@ PATCHES = [
         for key in image_keys
     }''',
     ),
-    # Patch 12: TATBOT_OBS_HISTORY=1 bundles the previous SENT frame with
-    # each observation upload. Live, the policy's n_obs=2 history frames are
-    # whatever two observations last triggered inference — ~1.6 s apart at
-    # chunk cadence, vs 33 ms spacing in training (the 2026-08-21 obs1
-    # experiment showed that history is load-bearing for depth control).
-    # The bundled pair is ~250 ms apart (the upload rate limit), 6x closer
-    # to training than the status quo, not exact. OPT-IN by env flag so
-    # eval-era behavior does not change silently.
-    (
-        "lerobot.async_inference.robot_client",
-        [
-            '''            raw_observation: RawObservation = self.robot.get_observation()
-            raw_observation["task"] = task''',
-        ],
-        '''            raw_observation: RawObservation = self.robot.get_observation()
-            raw_observation["task"] = task
-            # tatbot patch: bundle the previous sent frame so the server can
-            # give the policy a near-spaced 2-frame history (opt-in).
-            if __import__("os").environ.get("TATBOT_OBS_HISTORY") == "1":
-                _prev = getattr(self, "_tatbot_prev_raw", None)
-                if _prev is not None:
-                    raw_observation["_prev"] = _prev
-                self._tatbot_prev_raw = {
-                    k: v for k, v in raw_observation.items() if k != "_prev"
-                }''',
-    ),
-    # Patch 13: server side of the history bundle — preprocess the attached
-    # previous frame through the same pipeline and hand it to the policy as
-    # tatbot_prev_batch (consumed by the patch-3 v3 queue fill).
+    # Patch 13: server side of the history bundle — preprocess a previous
+    # frame a client attached as `_prev` through the same pipeline and hand it
+    # to the policy as tatbot_prev_batch (consumed by the patch-3 v3 queue
+    # fill). The client half (patch 12) went with the blue arm's robot client
+    # on 2026-10-23; without `_prev` this patch changes nothing.
     (
         "lerobot.async_inference.policy_server",
         [
@@ -776,25 +693,6 @@ PATCHES = [
         "            actions_bytes = pickle.dumps(\n"
         "                action_chunk, protocol=pickle.HIGHEST_PROTOCOL\n"
         "            )  # nosec",
-    ),
-    # Patch 22b: use the same protocol for client setup and observation
-    # payloads. Protocol 5 is readable by pickle.loads without negotiation, so
-    # this changes only serialization overhead, not values or feature meaning.
-    (
-        "lerobot.async_inference.robot_client",
-        [
-            "            policy_config_bytes = pickle.dumps(self.policy_config)",
-        ],
-        "            policy_config_bytes = pickle.dumps(\n"
-        "                self.policy_config, protocol=pickle.HIGHEST_PROTOCOL\n"
-        "            )",
-    ),
-    (
-        "lerobot.async_inference.robot_client",
-        [
-            "        observation_bytes = pickle.dumps(obs)",
-        ],
-        "        observation_bytes = pickle.dumps(obs, protocol=pickle.HIGHEST_PROTOCOL)",
     ),
     # Patch 15: an evaluation server may be deliberately pinned to one
     # checkpoint/type. Refuse a stale or mistyped client instruction instead

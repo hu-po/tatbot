@@ -20,6 +20,10 @@ class ContractError(ValueError):
         self.path = path
         self.detail = detail
 
+    def __reduce__(self):
+        """Pickle by the three fields, so a process pool hands a worker's refusal back intact."""
+        return (type(self), (self.code, self.path, self.detail))
+
 
 def _reject_constant(value: str) -> None:
     raise ContractError("non_finite", "$", value)

@@ -2,13 +2,14 @@
 
 `__rig__` in config/nodes.json names the rig's own subnet and gateway. The
 addresses that have to live in it are spread over files that different tools
-read — the PoE camera list in `rust/visiond/config/vision.toml`, the arm
-controllers in the hardware driver profile and in `config/trossen*/` (which
+read — the arm controllers in the hardware driver profile and in
+`config/trossen*/` (which
 `wxai_teleop` writes into the controllers' EEPROM), the `ssh_lan`/`lan`
 addresses the bulk paths dial. None of those files may carry an address the
 map does not, so renumbering the rig is one edit to nodes.json followed by
-this check naming every file that still disagrees. `scripts/check nodes` runs
-it; a checkout without `__rig__` skips it.
+this check naming every file that still disagrees. A node's `links` (its
+addresses on direct cables) are the one address field held OUTSIDE the rig
+subnet. `scripts/check nodes` runs it; a checkout without `__rig__` skips it.
 """
 
 from __future__ import annotations
@@ -20,7 +21,6 @@ from pathlib import Path
 
 from tatbot_cli import nodes
 
-VISION_TOML = Path("rust/visiond/config/vision.toml")
 PROFILES = Path("config/profiles")
 CONTROLLER_YAMLS = ("leader.yaml", "follower.yaml")
 
@@ -96,10 +96,6 @@ def sites(repo: Path) -> list[Site]:
         for key in ("ssh_lan", "lan"):
             if rec.get(key):
                 out.append(Site(f"{node}.{key}", str(rec[key]).split("@")[-1]))
-    vision = repo / VISION_TOML
-    if vision.is_file():
-        for name, addr in vision_cameras(vision.read_text()).items():
-            out.append(Site(f"{VISION_TOML}: {name}", addr))
     for rel, profile in _profiles(repo):
         out += _profile_sites(rel, profile)
     for yrel, role, y in _controller_yamls(repo):
@@ -127,23 +123,6 @@ def remaining(repo: Path) -> list[str]:
         return []
     stale = _Subnets({"subnet": old})
     return [f"{site.label} {site.value}" for site in sites(repo) if _in(stale, site.value)]
-
-
-def vision_cameras(text: str) -> dict[str, str]:
-    """`name` → `address` of every `[[cameras.poe]]` block, plus `ntp_server`
-    under the key `ntp_server`. Regex, not a TOML parser: the arm and camera
-    nodes run Python 3.10 (no tomllib) and the CLI is stdlib only."""
-    out: dict[str, str] = {}
-    m = re.search(r"^ntp_server\s*=\s*\"([^\"]*)\"", text, re.MULTILINE)
-    if m:
-        out["ntp_server"] = m.group(1)
-    for block in re.split(r"^\[\[cameras\.poe\]\]\s*$", text, flags=re.MULTILINE)[1:]:
-        head = re.split(r"^\[", block, maxsplit=1, flags=re.MULTILINE)[0]
-        name = re.search(r"^name\s*=\s*\"([^\"]*)\"", head, re.MULTILINE)
-        addr = re.search(r"^address\s*=\s*\"([^\"]*)\"", head, re.MULTILINE)
-        if name and addr:
-            out[name.group(1)] = addr.group(1)
-    return out
 
 
 def controller_yaml(text: str) -> dict[str, str]:
@@ -176,27 +155,33 @@ def check(repo: Path) -> tuple[list[str], str | None]:
             continue
         if not _in(subnet, site.value):
             problems.append(f"{site.label} {site.value} is not in {subnet}")
-    problems += _vision_agrees(repo)
+    problems += _links_off_the_rig(repo, subnet)
     arms, disagreements = _profile_arms(repo)
     problems += disagreements
     problems += _controllers_agree(repo, arms, gateway, subnet)
     return problems, None
 
 
-def _vision_agrees(repo: Path) -> list[str]:
-    """vision.toml names the same cameras at the same addresses as __cameras__."""
-    vision = repo / VISION_TOML
-    if not vision.is_file():
-        return []
-    cams = nodes.cameras(repo)
-    seen = vision_cameras(vision.read_text())
-    seen.pop("ntp_server", None)
+def _links_off_the_rig(repo: Path, subnet: _Subnets) -> list[str]:
+    """A node's `links` (direct cables, by the peer's role) name a role some node
+    holds and an address off the rig subnet: a "direct" address on the rig wire
+    would carry the traffic the cable exists to keep off it (tatbot_cli.viewer_path)."""
+    nmap = nodes.load(repo)
+    held = {role for rec in nmap.values() for role in rec.get("roles", [])}
     out = []
-    for name, addr in seen.items():
-        if name not in cams:
-            out.append(f"{VISION_TOML}: {name} is not in __cameras__")
-        elif cams[name] != addr:
-            out.append(f"{VISION_TOML}: {name} is {addr}, __cameras__ says {cams[name]}")
+    for node, rec in nmap.items():
+        links = rec.get("links", {})
+        if not isinstance(links, dict):
+            out.append(f"{node}.links is not a role -> address map")
+            continue
+        for role, value in links.items():
+            label = f"{node}.links.{role} {value!r}"
+            if role not in held:
+                out.append(f"{label}: no node holds role {role}")
+            if _addr(str(value)) is None:
+                out.append(f"{label} is not an IPv4 address")
+            elif _in(subnet, str(value)):
+                out.append(f"{label} is in the rig subnet {subnet}; a direct cable needs its own")
     return out
 
 

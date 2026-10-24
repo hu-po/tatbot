@@ -45,6 +45,28 @@ def test_archive_release_uses_its_checked_in_log_policy(tmp_path, monkeypatch):
     assert rl._repo_root() is None
 
 
+def test_ci_archive_uses_pinned_policy_and_preserves_per_node_overrides(tmp_path, monkeypatch):
+    runtime = tmp_path / "runtime"
+    trusted = runtime / "trusted"
+    lib = trusted / "scripts/lib/tatbot_runlog.py"
+    lib.parent.mkdir(parents=True)
+    lib.write_text("# installed trusted logger\n")
+    (trusted / "config").mkdir()
+    (trusted / "config/runlog.json").write_text(json.dumps({"default": {"keep_runs": 17}}))
+    marker = runtime / "installed-policy.json"
+    marker.write_text("{}")
+    account = tmp_path / "account"
+    override = account / ".config/tatbot/runlog.json"
+    override.parent.mkdir(parents=True)
+    override.write_text(json.dumps({"default": {"keep_days": 2}}))
+    monkeypatch.setattr(rl, "__file__", str(lib))
+    monkeypatch.setenv("HOME", str(account))
+    assert rl._repo_root() == trusted
+    assert rl.load_config()["default"] == {"class": "text", "keep_days": 2, "keep_runs": 17}
+    marker.unlink()
+    assert rl._repo_root() is None
+
+
 def _layout_block() -> str:
     start = SRC.index("# BEGIN LAYOUT")
     end = SRC.index("# END LAYOUT")
@@ -305,7 +327,7 @@ def test_logs_list_passes_the_positional_workflow_to_remote_nodes(tmp_path, monk
 # A fleet map in the shape of config/nodes.json, with documentation addresses
 # (RFC 5737): this file is exported, so no real node name or tailnet address.
 FLEET = {
-    "camera": {"ssh": "camera@192.0.2.10", "checkout": "~/source", "roles": ["poe-cameras"]},
+    "camera": {"ssh": "camera@192.0.2.10", "checkout": "~/source", "roles": ["overhead-depth"]},
     "arm": {"ssh": "arm@192.0.2.11", "checkout": "~/source", "roles": ["arm"]},
     "retired": {"ssh": "retired@192.0.2.12", "checkout": "~/source", "roles": []},
 }

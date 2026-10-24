@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Put the fitted tool into urdf/tatbot.urdf, where FK can see it.
 
-    gen_tool_urdf.py [--check] [--arm right]
+    gen_tool_urdf.py [--check]
 
 The real rig's model used to stop at an empty ``<arm>/ee_gripper_link`` while
 the tool hung 60 mm past it, unmodelled; everything downstream carried the
@@ -47,7 +47,6 @@ BEGIN = "  <!-- BEGIN generated tool block — scripts/gen_tool_urdf.py, do not 
 END = "  <!-- END generated tool block -->"
 
 
-axis_rpy = tool_spec.axis_rpy  # one definition, shared with the sim's URDF builder
 
 
 def _fmt(values) -> str:
@@ -84,8 +83,8 @@ def render_block(arm: str, spec, tip_offset, measured: bool,
         if measured else
         [f"       NOMINAL: no touch-off in {spec.mount_frame(arm)} yet, so the needle",
          f"       sits at the datasheet's {reach * 1000:.0f} mm along the bore axis. FK",
-         "       answers about the tip are good to the datasheet, not to a measurement;",
-         "       require_z_floor refuses to fly on this. Run the tip phase."])
+         "       answers about the tip are good to the datasheet, not to a measurement.",
+         "       Run the tip phase."])
     lines = [
         BEGIN,
         f"  <!-- {spec.display_name} ({spec.tool_id}), datasheet "
@@ -158,41 +157,14 @@ def mount_links(text: str) -> set[str]:
     return {link.get("name") for link in ET.fromstring(text).iter("link") if link.get("name") is not None}
 
 
-ARM_IDS = ("right", "left")
+ARM = "right"   # the drawing arm; the left is the teleop leader alone, not modelled
 
 
-def fitted_arms(workspace: dict) -> list[str]:
-    """Every arm whose workspace section names a fitted tool, follower first."""
-    return [arm for arm in ARM_IDS if (workspace.get(arm) or {}).get("tool_id")]
-
-
-def _require_fitted(workspace: dict, arms: list[str] | None) -> list[str]:
-    """The fitted arms, after checking they are exactly the ones asked for."""
-    fitted = fitted_arms(workspace)
-    requested = list(fitted) if arms is None else list(dict.fromkeys(arms))
-    unfitted = [arm for arm in requested if arm not in fitted]
-    if unfitted:
-        raise SystemExit(
-            f"{unfitted[0]}: no tool_id under `{unfitted[0]}:` in config/workspace.yaml — "
-            f"nothing to model for that arm (fitted: {', '.join(fitted) or 'none'})")
-    unasked = [arm for arm in fitted if arm not in requested]
-    if unasked:
-        raise SystemExit(
-            f"{unasked[0]} carries {tool_spec.active_tool_id(REPO, unasked[0], workspace)} but "
-            f"was not asked for — the URDF models every fitted tool, so drop --arm or name it too")
-    return fitted
-
-
-def build(arms: list[str] | None = None) -> str:
-    """Render one block per fitted arm; ``arms`` names the ones the caller
-    expects to be fitted and is checked against the workspace.
-
-    The generated blocks are stripped and re-rendered together, so the URDF
-    always models every fitted tool: an arm asked for without a fitted tool,
-    or a fitted arm left out of the request, is a refusal rather than a skip.
-    A lone ``--arm left`` used to strip the right arm's block silently."""
+def build() -> str:
+    """Render the drawing arm's block, stripped and re-rendered whole; an arm
+    with no fitted tool gets none."""
     workspace = tool_spec.read_workspace(REPO)
-    fitted = _require_fitted(workspace, arms)
+    fitted = [ARM] if (workspace.get(ARM) or {}).get("tool_id") else []
     text = strip_block(URDF_PATH.read_text())
     links = mount_links(text)
     blocks = []
@@ -212,7 +184,7 @@ def build(arms: list[str] | None = None) -> str:
                 raise SystemExit(
                     f"{arm}: the measured tip is {error_m * 1000:.1f} mm from {tool_id}'s "
                     f"nominal tip — refusing to model a tool the calibration disagrees with. "
-                    f"Re-run il_touchoff.py with the right --tool-id.")
+                    f"Measure its tip (`tatbot ros calib run`) or correct tool_id.")
             lean = tool_spec.axis_lean_deg(tip)
             if lean > spec.seat_tolerance_deg:
                 raise SystemExit(
@@ -233,15 +205,11 @@ def build(arms: list[str] | None = None) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--arm", action="append", default=None, choices=ARM_IDS,
-                    help="arm expected to carry a fitted tool (repeatable); the URDF always "
-                         "models every arm with a tool_id in config/workspace.yaml, and this "
-                         "refuses when that set differs")
     ap.add_argument("--check", action="store_true",
                     help="exit 1 if the URDF is not what this would generate")
     args = ap.parse_args()
 
-    rendered = build(args.arm)
+    rendered = build()
     current = URDF_PATH.read_text()
     if args.check:
         if rendered != current:

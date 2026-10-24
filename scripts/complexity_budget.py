@@ -55,11 +55,13 @@ HEADER = (
 
 
 def _ruff_cmd() -> list[str]:
-    """Prefer a ruff on PATH; fall back to uvx, as scripts/check does."""
+    """The ruff scripts/check lint-py pins (its RUFF_VERSION), through uvx; a ruff
+    on PATH only where uvx is missing, since two versions can score differently."""
+    pin = re.search(r"^RUFF_VERSION=(\S+)$", (REPO / "scripts" / "check").read_text(), re.M)
+    if shutil.which("uvx"):
+        return ["uvx", f"ruff@{pin.group(1)}" if pin else "ruff"]
     if shutil.which("ruff"):
         return ["ruff"]
-    if shutil.which("uvx"):
-        return ["uvx", "ruff"]
     return []
 
 
@@ -110,10 +112,9 @@ def write_baseline(found: dict[tuple[str, str], int]) -> None:
     BASELINE.write_text(HEADER + rows)
 
 
-# internal/** is private-only in internal/export/manifest.json and never ships.
-# Two of its functions are over the threshold, and naming their paths in a public
-# baseline would publish a node name (internal/ci/<node>/...) -- the export gate
-# refuses exactly that. Skipping the tree keeps config/complexity-debt.tsv
+# internal/** is private-only in internal/export/manifest.json and never ships,
+# and naming its paths in a public baseline could publish private layout -- the
+# export gate refuses exactly that. Skipping the tree keeps config/complexity-debt.tsv
 # public-safe by construction, and keeps it identical in the private repo and the
 # export, so the ratchet still holds there instead of reporting every function as
 # new against an absent baseline.

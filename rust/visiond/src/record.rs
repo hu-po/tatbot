@@ -303,7 +303,7 @@ pub fn read_recording_frame(
         metadata: entry.metadata.clone(),
         payload,
     };
-    #[cfg(any(feature = "zenoh", feature = "rerun", feature = "gstreamer"))]
+    #[cfg(any(feature = "zenoh", feature = "rerun"))]
     if frame.metadata.profile.format == crate::PixelFormat::Jpeg {
         use image::ImageDecoder;
         let decoder =

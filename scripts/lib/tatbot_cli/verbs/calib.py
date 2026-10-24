@@ -1,11 +1,7 @@
 """calib — native arm measurements and retained overhead registration.
 
-The five-camera calibration pipeline that lived here (`tatbot calib <phases>`,
-list/review/solve/preview/apply/catalog/destination/receive and its `vision
-calib …` spellings) was removed on 2026-09-29 with the overhead PoE cameras and
-the calibration conductor node it needed. Tool-tip calibration on the demo rig
-is the ROS 2 stack's station probe (`tatbot ros calib run`); `vision touchoff`
-still solves a tip from a flight log.
+Tool-tip calibration on the demo rig is the ROS 2 stack's station probe
+(`tatbot ros calib run`).
 
 register-fit consumes original native holds through the shared pure registration
 fitter. It supplies no capture executor or calibration adoption path.
@@ -38,7 +34,7 @@ def calib_joint_measure(ctx, ns, rest):
 
 
 def _pose_args(p):
-    p.add_argument('--arm', required=True, choices=('pink', 'blue'))
+    p.add_argument('--arm', required=True, choices=('pink',))
     p.add_argument('--wrist-deg', required=True, type=float)
     p.add_argument('--base-deg', type=float, help='optional absolute base yaw, within +/-30 degrees')
     p.add_argument('--hold-seconds', default=5.0, type=float)
@@ -67,7 +63,7 @@ def calib_pose(ctx, ns, rest):
 
 
 def _inspect_args(p):
-    p.add_argument('--arm', required=True, choices=('pink', 'blue'))
+    p.add_argument('--arm', required=True, choices=('pink',))
     p.add_argument('--operator-go', action='store_true', required=True,
                    help='record authorization for a measured hold at the current pose, then idle release')
     p.add_argument('--hold-seconds', default=5.0, type=float, help='bounded current-pose hold before the final measurement')
@@ -79,7 +75,7 @@ def _inspect_args(p):
       tier=MOTION_AUTO, role='arm', auto_hop=True, needs_tool=True, launch_id=True,
       args=_inspect_args, wraps=('scripts/il_wrist_pose.sh', 'scripts/vision/wrist_pose.py'), doc='docs/fiducials.md',
       summary='retain measured joints at the current parked pose, then release to idle without a new pose target',
-      example=('--arm', 'blue', '--operator-go'),
+      example=('--arm', 'pink', '--operator-go'),
       invariants=('Connection takes a measured position hold; this is not a passive network probe.',
                   'Uses the existing calibrated arm owner, exact native build identity, exclusive lease and physical E-stop.',
                   'No wrist, base, approach, staging or landing target is selected; release verifies idle.'))
@@ -91,7 +87,7 @@ def calib_inspect(ctx, ns, rest):
 
 def _register_fit_args(p):
     p.add_argument('--python', required=True, help='existing interpreter with NumPy, OpenCV and PyYAML; no installation')
-    p.add_argument('--arm', required=True, choices=('blue', 'pink'))
+    p.add_argument('--arm', required=True, choices=('pink',))
     p.add_argument('--capture', required=True, nargs='+', help='completed native hold directories with original overhead packets')
     p.add_argument('--bundle', required=True, help='camera optics bundle matching the original packets')
     p.add_argument('--setup-id', required=True, help='label for this explicitly selected physical setup window')
@@ -104,7 +100,7 @@ def _register_fit_args(p):
       tier=OFFLINE, visibility='public', args=_register_fit_args, doc='docs/fiducials.md',
       wraps=('scripts/vision/native_registration.py',),
       summary='fit an unadopted overhead registration from original native holds and shared geometry',
-      example=('--python', '/path/to/validated/python', '--arm', 'blue', '--capture', '/path/to/hold',
+      example=('--python', '/path/to/validated/python', '--arm', 'pink', '--capture', '/path/to/hold',
                '--bundle', '/path/to/calibration.json', '--setup-id', 'table-setup', '--out', '/tmp/registration-fit'),
       invariants=('Reads original packets and rebinds their exposures to measured native joints and carriage.',
                   'Uses the shared URDF, target detector, registration solve and quality gates.',

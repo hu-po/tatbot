@@ -1,11 +1,15 @@
-torch>=2.8,<2.12
-diffusers>=0.40
-transformers>=4.50
-accelerate>=1.0
-sentencepiece
-protobuf
-gradio>=5
-fastapi
-uvicorn
-httpx
-pillow
+# Exact pins: the set the inkgen node runs the model with (2026-10-24), gradio raised to 6.30.0
+# for its 5.x advisories. Releases are adopted once a week old unless they fix a vulnerability.
+# gradio caps pillow below 13; the app decodes no uploaded image (launch caps uploads at 1 KB).
+# requirements.txt (the Space) and requirements.txt.local (the inkgen node) keep the same pins.
+torch==2.11.0
+diffusers==0.40.0
+transformers==5.16.1
+accelerate==1.14.0
+sentencepiece==0.2.2
+protobuf==7.36.0
+gradio==6.30.0
+fastapi==0.141.1
+uvicorn==0.52.4
+httpx==0.28.1
+pillow==12.3.0

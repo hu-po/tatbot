@@ -15,7 +15,9 @@ FakeBackend::FakeBackend(FakeOptions options)
 void FakeBackend::connect()
 {
   std::lock_guard<std::mutex> lock(mutex_);
+  if (refuse_connect_) {throw std::runtime_error("fake arm: the controller does not answer");}
   connected_ = true;
+  ++connects_;
 }
 
 Feedback FakeBackend::read()
@@ -67,6 +69,13 @@ void FakeBackend::set_position_mode()
   idle_ = false;
 }
 
+void FakeBackend::disconnect()
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  idle_ = true;   // the SDK's cleanup() idles every motor
+  connected_ = false;
+}
+
 void FakeBackend::set_idle()
 {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -76,13 +85,19 @@ void FakeBackend::set_idle()
 std::string FakeBackend::error()
 {
   std::lock_guard<std::mutex> lock(mutex_);
-  return error_;
+  return connected_ ? error_ : "";
 }
 
 void FakeBackend::inject_error(const std::string & text)
 {
   std::lock_guard<std::mutex> lock(mutex_);
   error_ = text;
+}
+
+void FakeBackend::refuse_connect(bool refuse)
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  refuse_connect_ = refuse;
 }
 
 void FakeBackend::set_effort(size_t joint, double value)
@@ -103,15 +118,11 @@ void FakeBackend::set_frozen(bool frozen)
   frozen_ = frozen;
 }
 
-void FakeBackend::set_page_z(double z)
-{
-  std::lock_guard<std::mutex> lock(mutex_);
-  o_.page_z = z;
-}
-
 Vec7 FakeBackend::last_q() const {std::lock_guard<std::mutex> lock(mutex_); return last_q_;}
 Vec7 FakeBackend::last_qd() const {std::lock_guard<std::mutex> lock(mutex_); return last_qd_;}
 bool FakeBackend::idle() const {std::lock_guard<std::mutex> lock(mutex_); return idle_;}
+bool FakeBackend::connected() const {std::lock_guard<std::mutex> lock(mutex_); return connected_;}
 int FakeBackend::commands() const {std::lock_guard<std::mutex> lock(mutex_); return commands_;}
+int FakeBackend::connects() const {std::lock_guard<std::mutex> lock(mutex_); return connects_;}
 
 }  // namespace tatbot_hardware

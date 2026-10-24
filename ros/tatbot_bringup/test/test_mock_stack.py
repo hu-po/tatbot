@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 CHECK = Path(__file__).resolve().parents[1] / "scripts" / "mock_check.py"
+pytestmark = pytest.mark.slow
 
 
 @pytest.mark.skipif(not shutil.which("ros2"), reason="needs a sourced ROS 2 workspace")

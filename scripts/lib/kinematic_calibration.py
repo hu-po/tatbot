@@ -22,12 +22,14 @@ def validate_offsets(values=None):
 
 
 def apply_origins(joints, prefix, offsets):
-    """R_origin *= R_axis(offset) makes FK(raw q) equal nominal FK(q+offset)."""
+    """R_origin *= R_axis(offset) makes FK(raw q) equal nominal FK(q+offset).
+
+    prefix None names the joints unprefixed, as a single-arm URDF (the simulator's) does."""
     by_name = {joint.get('name'): joint for joint in joints}
     for i, angle in enumerate(validate_offsets(offsets)):
         if angle == 0:
             continue
-        joint = by_name[f'{prefix}/joint_{i}']
+        joint = by_name[f'{prefix}/joint_{i}' if prefix else f'joint_{i}']
         if joint.get('type') not in ('revolute', 'continuous'):
             raise ValueError('encoder-zero calibration requires a revolute joint')
         origin = joint.find('origin')

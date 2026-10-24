@@ -5,41 +5,64 @@
   "//4": "with your own deployment. Fields per node: ssh (user@address,",
   "//5": "required for --on), roles (list, gates which verbs run here),",
   "//6": "arch (informational), hostname (optional alias when `hostname -s`",
-  "//7": "differs from the node name), checkout (optional remote repo path).",
-  "//7b": "Every role the code resolves is held by some node here (the Rust",
-  "//7c": "workspace compiles this map in), split as a two-host rig: the",
-  "//7d": "workstation plans, serves and conducts, the robot host owns the arm",
-  "//7e": "and every camera.",
-  "//8": "The reference rig runs 7 cameras: 5 PoE IP cameras (__cameras__ below)",
-  "//9": "plus 2 USB RealSense D405 depth cameras attached to the node holding",
-  "//10": "the 'realsense' role - USB devices are addressed by serial in the",
-  "//11": "vision config, not listed here.",
-  "//12": "__rig__ names the rig's own subnet and gateway: cameras, arm",
-  "//13": "controllers and every ssh_lan/lan address live in it, and",
-  "//14": "`tatbot check nodes` holds the vision config, driver profile and",
-  "//15": "controller YAMLs to it, so renumbering the rig is one edit here.",
+  "//7": "differs from the node name), checkout (optional remote repo path;",
+  "//7a": "null for a node without one), lan (the node's address on the rig",
+  "//7b": "subnet, where the e-stop relay and bus consumers reach it),",
+  "//7c": "gpu (optional: the GPU lease's slots, reserve_mib, unified; docs/fleet.md),",
+  "//7d": "links (optional: the node's address on a direct cable, keyed by the role of",
+  "//7e": "the node at the other end, never on the rig subnet; the viewer server's",
+  "//7f": "links carry that node's window off the rig port, docs/vision.md),",
+  "//7g": "platform (optional: the host's hardware in a word, which the demo viewer's",
+  "//7h": "load legends show in place of its role), load_via (optional, for a host",
+  "//7i": "with no checkout: the role whose load monitor reads its CPU and",
+  "//7j": "temperature over ssh, installing nothing there; docs/vision.md).",
+  "//8": "Every role the code resolves is held by some node here (the Rust",
+  "//9": "workspace compiles this map in), laid out as the demo rig: a",
+  "//10": "workstation plans and serves; the arm host runs the left arm and its",
+  "//11": "wrist D405; the ROS host runs the drawing stack on the right arm, the",
+  "//12": "bus router, the viewer, the networked overhead depth camera and the",
+  "//13": "trackers; a small board relays the one e-stop button to both arms; a",
+  "//14": "trainer trains. USB cameras are addressed by serial in the vision",
+  "//15": "config, not listed here; __cameras__ lists networked cameras.",
+  "//16": "__rig__ names the rig's own subnet and gateway: networked cameras,",
+  "//17": "arm controllers and every ssh_lan/lan address live in it, and",
+  "//18": "`tatbot check nodes` holds the vision config, driver profile and",
+  "//19": "controller YAMLs to it, so renumbering the rig is one edit here.",
   "workstation": {
     "arch": "x86_64",
     "ssh": "user@203.0.113.10",
-    "roles": ["operator", "sim", "calib-conductor", "design", "inkgen", "rerun-server", "serve", "bus-router", "tb-hub", "ci-supervisor"]
+    "roles": ["operator", "serve", "inkgen", "ci-supervisor"],
+    "gpu": {"slots": 2, "reserve_mib": 2048}
   },
-  "robot-host": {
-    "arch": "x86_64",
+  "arm-host": {
+    "arch": "aarch64",
     "ssh": "user@203.0.113.20",
-    "roles": ["arm", "estop", "realsense", "cameras-lan", "poe-cameras", "overhead-depth", "track"]
+    "lan": "192.0.2.20",
+    "roles": ["arm", "estop", "realsense", "cameras-lan"]
+  },
+  "ros-host": {
+    "arch": "aarch64",
+    "platform": "jetson",
+    "ssh": "user@203.0.113.30",
+    "lan": "192.0.2.30",
+    "roles": ["ros", "bus-router", "rerun-server", "overhead-depth", "track"]
+  },
+  "estop-board": {
+    "arch": "aarch64",
+    "platform": "pi",
+    "ssh": "user@203.0.113.40",
+    "lan": "192.0.2.40",
+    "checkout": null,
+    "roles": ["estop-relay"]
   },
   "trainer": {
     "arch": "aarch64",
-    "ssh": "user@203.0.113.30",
-    "roles": ["train"],
+    "ssh": "user@203.0.113.50",
+    "roles": ["train", "tb-hub"],
     "checkout": "~/tatbot"
   },
   "__rig__": {"subnet": "192.0.2.0/24", "gateway": "192.0.2.1"},
   "__cameras__": {
-    "camera1": "192.0.2.91",
-    "camera2": "192.0.2.92",
-    "camera3": "192.0.2.93",
-    "camera4": "192.0.2.94",
-    "camera5": "192.0.2.95"
+    "overhead_depth": "192.0.2.89"
   }
 }

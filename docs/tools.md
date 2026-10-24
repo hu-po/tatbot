@@ -22,12 +22,14 @@ A datasheet's `calibration:` block declares how the station probe may touch
 the tool: `face_kind: halo`, a tube's end, with the ring's outside
 (`wall_radius_m`), its hole (`face_radius_m`), where a rim touch puts the ball
 (`rim_touch_radius_m`) and how far up the wall a side touch meets it
-(`side_touch_height_m`). The laser's nose and the ballpoint cartridge's tube
-declare one; the probe calibration refuses a tool whose datasheet does not
-(`ros/README.md` §7). The block's other fields (`contact_reference`,
-`accuracy_profile`, `feature`) belong to the retired one-arm mechanical recipe,
-and nothing reads them; they stay because a datasheet's bytes are its tool
-identity, which the URDF and every recorded dataset carry. The touch probe on
+(`side_touch_height_m`). The needle cartridges and the laser's nose declare
+one; the ballpoint declares `face_kind: ballpoint_tip`, its tip alone. The
+probe calibration refuses a tool whose datasheet declares neither
+(`ros/README.md` §7). `contact_reference: tube_end` makes the planner ride the
+tube's end on the surface. The block's other fields (`accuracy_profile`,
+`feature`) belong to the retired one-arm mechanical recipe, and nothing reads
+them; they stay because a datasheet's bytes are its tool identity, which the
+URDF and every recorded dataset carry. The touch probe on
 the installed palette replaces that recipe's pits (`docs/palette.md`).
 
 A fitted mechanical point is stored apart from `tcp_z_m`: a standoff tool
@@ -59,11 +61,7 @@ also determines the contact-relevant axis; roll is unobservable but does not
 change the geometry. Metadata therefore separates
 `contact_geometry_status: pivot-calibrated` from
 `body_pose_status: axis-inferred` instead of calling the
-whole result provisional. Optional independent body evidence can promote the
-body envelope to `independent-qualified` for asymmetric clearance work.
-Coordinates or a hand-edited status are not evidence, and a new touch-off
-clears prior independent body evidence because the seat may have changed.
-Non-contact tools may separate material and TCP only by their explicit
+whole result provisional. Non-contact tools may separate material and TCP only by their explicit
 datasheet standoff.
 
 Dataset metadata always records the concrete geometry that ran, including a
@@ -92,6 +90,12 @@ can use the footprint for deduplication; native DBV3 paths retain repeated passe
 A `status: assumed` value is a placeholder for a measurement: draw a short swatch
 at the working speed on the substrate, measure the line against a known pitch
 (or a loupe), then record `measured` with the UTC and method.
+
+The pen's passes over each spot (`tatbot_ink.passes`: a program's
+`stats.passes`, a run's `passes.json`) are counted at `line.width_mm`, else at
+each path's generation width; `tatbot ros compile --mark-width-mm` counts at
+another width, and `stats.passes.marks` says which. No needle cartridge's mark
+on skin is measured, so the 3RL counts at its 0.3 mm paths.
 
 ## The stroke: press or ride
 
@@ -134,46 +138,11 @@ software remain private.
 Contact qualification is evidence-bound by the touch-off's tool/frame identity,
 pose count, condition number, rotation spread, residual, datasheet tip range,
 and seat-angle range. Held-out and leave-one-out disagreement travel as
-uncertainty metadata; they never widen the collision/marking band. A named
-simulation recipe may use that bound to draw one mount-frame tip offset per
-shard. The draw remains fixed for the shard, like one physical seating, and
-the visible body, collision endpoint, IK TCP, and metadata all use the same
-resolved geometry. Different seeds span plausible calibration outcomes without
-allowing marks away from the simulated surface. Optional
+uncertainty metadata; they never widen the collision/marking band. Optional
 explicit body geometry separately revalidates its report digest and
 current-seat identity, falling back to the inferred axis if that evidence is
 missing or stale. Physical capture procedures and calibration values stay in
 the private operator documentation rather than this public contract.
-
-## Optional independent body qualification
-
-`scripts/tool_body_qualify.py` validates an independently measured tool-body
-axis against the current touch-off. This optional file-based study is useful for
-asymmetric bodies and close-clearance work; without `--write` it is a dry run.
-
-The input is a JSON report containing at least five chronological remove and
-reseat samples. Each sample identifies its touch-off session and records a
-body-profile origin, a unit body axis, and an independently planted tip in the
-tool-mount frame. The selected sample must be the final reseat and must match
-the current workspace touch-off. Measurements must come from an instrument
-independent of the planted-tip fit; deriving them from that same fit is not
-independent evidence.
-
-Dry-run before writing:
-
-```bash
-python3 scripts/tool_body_qualify.py --ee-tool fixture-pen \
-  --report /path/to/body-reseat-report.json
-python3 scripts/tool_body_qualify.py --ee-tool fixture-pen \
-  --report /path/to/body-reseat-report.json --write
-```
-
-A validation failure writes nothing. A passing write stores canonical report
-bytes, binds their digest and computed metrics to the workspace, and
-revalidates the result. Existing evidence is immutable unless the bytes are
-identical. A later touch-off clears the independent body evidence because the
-physical seat may have changed. Site-specific capture procedures, measured
-coordinates, and qualification records remain in private operator documents.
 
 ## Ballpoint cartridge
 

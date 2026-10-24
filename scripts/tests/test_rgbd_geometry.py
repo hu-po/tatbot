@@ -188,12 +188,28 @@ def test_bound_optics_refuse_genuine_mismatches(change):
         require_calibrated_model(live, camera, serial)
 
 
+def rgbd_fixture():
+    """An aligned RGB-D frame of a plane 0.45 m out, its metadata as an owner publishes it."""
+    height, width, focal = 240, 320, 450.
+    intr = {'schema': 'tatbot.camera-intrinsics/1', 'width': width, 'height': height,
+            'fx': focal, 'fy': focal, 'ppx': 159.5, 'ppy': 119.5,
+            'distortion_model': 'None', 'distortion_coefficients': [0.]*5}
+    attrs = {'frame_number': '1', 'capture_epoch': 'fixture', 'device_serial': 'fixture', 'intrinsics': json.dumps(intr),
+             'alignment_calibration': json.dumps(alignment(intr))}
+    color = {'sensor_name': 'fixture_color', 'sequence': 1,
+             'profile': {'width': width, 'height': height, 'fps_num': 30, 'fps_den': 1},
+             'attributes': attrs, 'timestamps': {'normalized_unix_ns': 1_000_000_000,
+                 'source_ns': 1_000_000_000, 'source_domain': 'real_sense_hardware'}}
+    depth = dict(color, sensor_name='fixture_depth', attributes=dict(attrs, aligned_to='fixture_color', depth_units_m='.0001'))
+    return {'image': np.zeros((height, width, 3), np.uint8), 'depth_m': np.full((height, width), .45),
+            'color_metadata': color, 'depth_metadata': depth, 'timestamp_ns': 1_000_000_000}
+
+
 def test_tracker_and_both_scan_paths_measure_the_same_color_frame_points():
     import capture_geometry
-    from stencil_surface import rgbd_frame
-    from test_stencil_surface import geometry_fixture
+    from rgbd_geometry import rgbd_frame
     intr, model, raw, truth = metric_fixture()
-    _, frame = geometry_fixture()
+    frame = rgbd_fixture()
     frame.update(image=np.zeros((*raw.shape, 3), np.uint8), depth_m=raw.astype(float)*.0001)
     for meta in (frame['color_metadata'], frame['depth_metadata']):
         meta['profile'].update(width=640, height=480)

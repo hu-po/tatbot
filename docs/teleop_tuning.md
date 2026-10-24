@@ -33,11 +33,9 @@ does not acquire ownership, validate calibration or authorize motion.
 
 `tatbot teleop start` accepts the same role selectors. Existing default
 execution remains unchanged; explicit `--leader left --follower right` selects
-that same path. General reverse execution refuses before routing or hardware
-access. `--wrist-calibration` selects the supported right-led, mirrored-arm
-mode for free-space capture, described below. The direct shell launcher checks
-that mode and its roles as well. Editing the registry cannot enable another
-mapping.
+that same path. Reverse execution refuses before routing or hardware access,
+and the direct shell launcher checks the roles as well. Editing the registry
+cannot enable another mapping.
 
 Teleop retains exclusive ownership of both arms. Per-arm leases and independent
 concurrent execution are not introduced by this registry. Camera-to-arm and USB
@@ -47,7 +45,7 @@ stay with the physical arm when session roles change.
 
 ## Development path
 
-Use the simulator or recorded replay first. Build the C++ component with CMake,
+Use recorded replay first. Build the C++ component with CMake,
 then exercise the loop with no hardware attached. Keep tuning parameters in the
 component configuration and record units with every change.
 
@@ -132,30 +130,14 @@ This command never connects an SDK, opens the e-stop serial device, changes
 network configuration, or starts/stops/releases teleop. A retained trace is
 diagnostic evidence, not communication or motion qualification.
 
-## Mirrored wrist calibration
+## Retired mirrored wrist calibration
 
-`teleop start --wrist-calibration` (the mode the retired wrist calibration
-phase selected) makes physical right the input and physical left receive
-commands. Joints 0, 4 and 5 reverse
-movement from the measured starting poses, with no startup or resume alignment.
-Shoulder, elbow and wrist pitch (joints 1–3) retain their signs.
-The position, velocity and reflected-effort mappings use the same sign.
-Controller addresses, per-arm profiles and SDK end-effector models remain
-attached to their physical arms. The mode is for free-space wrist capture;
-it rejects contact/reference capture. Its position mapping
-is `q_follower_start + sign * (q_leader - q_leader_start)`, preserving each
-arm's initial wrist orientation. This is an offset-preserving teleoperation
-mapping, not a geometrical reflection around encoder zero.
-
-These sessions write `WXTLOG2` with the same 64-byte header and record width as
-`WXTLOG1`. Header offset 48 is a flags word: bit 0 absolute carriage, bit 1
-right leader, bit 2 mirrored base, bit 3 mirrored joint 4 and bit 4 mirrored
-joint 5; bit 5 means start-pose anchoring. New captures write 63. Older absolute
-mirrors wrote 31 (joints 0/4/5) or 7 (joint 0 only). All remain readable; readers
-and fused-pose metadata expose both the mirrored joints and anchoring policy.
-Position, velocity, effort and target columns describe **control roles**, not fixed physical sides.
-The right arm is the leader channel; the left arm is the follower channel.
-The physical-arm-aware fuser explicitly accepts this version. Other Python
-consumers refuse it until they support its role assignment. Live telemetry
-uses version 2 with `right_leader: true`; old viewer receivers reject it rather
-than animate the wrong arm. Version 1 recordings remain readable unchanged.
+The right-led, mirrored-arm mode (`teleop start --wrist-calibration`), in which
+the left arm received commands, was deleted on 2026-10-23 with the left arm's
+use as a follower. Its flight logs, `WXTLOG2`, keep the 64-byte header and
+record width of `WXTLOG1`; header offset 48 is a flags word (bit 0 absolute
+carriage, bit 1 right leader, bits 2-4 mirrored joints 0, 4 and 5, bit 5
+start-pose anchoring: 63, or 31 and 7 from older absolute mirrors). Their
+position, velocity, effort and target columns describe control roles: the
+right arm is the leader channel. `cpp/teleop/analyze_log.py` and the viewer
+still read them; live telemetry is version 1 only.

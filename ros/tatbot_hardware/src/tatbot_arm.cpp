@@ -8,7 +8,9 @@
 #include <chrono>
 #include <cmath>
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -33,6 +35,14 @@ double now_s()
   return std::chrono::duration<double>(std::chrono::steady_clock::now() - epoch).count();
 }
 
+// Unix time (s) at now_s() == 0: the flight log's header carries it, so its t lines up with the run logs and bags.
+double realtime_at_epoch()
+{
+  const double steady = now_s();
+  const double wall = std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+  return wall - steady;
+}
+
 std::vector<double> numbers(std::string text)
 {
   for (char & c : text) {
@@ -40,8 +50,8 @@ std::vector<double> numbers(std::string text)
   }
   std::istringstream in(text);
   std::vector<double> out;
-  double v;
-  while (in >> v) {out.push_back(v);}
+  std::string token;
+  while (in >> token) {out.push_back(std::strtod(token.c_str(), nullptr));}   // strtod reads "nan"
   return out;
 }
 
@@ -58,11 +68,20 @@ struct FlightRecord
 {
   double t;
   float q[kJoints], qd[kJoints], effort[kJoints], cmd_q[kJoints], sent_q[kJoints], sent_qd[kJoints];
+  float compensation[kJoints], rotor_temp[kJoints];
+  uint32_t controller_id;
+  uint64_t controller_us;
   float estop_age_s, period_ms;
   uint8_t estop_ok, latched, reason, phase;
 };
 #pragma pack(pop)
+static_assert(sizeof(FlightRecord) == 256, "flight_summary.py DTYPES[2] reads 256-byte records");
 }  // namespace
+
+#ifndef TATBOT_HAVE_SIM
+// src/sim_backend.cpp is private: a tree without it builds this, and sdk=sim refuses at configure.
+std::unique_ptr<Backend> make_sim_backend(const SimOptions &) {return nullptr;}
+#endif
 
 TipFk make_tip_fk(
   const std::string & urdf, const std::string & base_frame, const std::string & tcp_frame,
@@ -120,7 +139,38 @@ TatbotArm::CallbackReturn TatbotArm::on_init(
     arm_ = text("arm", "right");
     sdk_ = text("sdk", "fake");
     ip_ = text("ip", "");
-    end_effector_ = text("end_effector", "wxai_v0_follower");
+    sdk_options_.end_effector = text("end_effector", sdk_options_.end_effector);
+    sdk_options_.motor_parameters = text("motor_parameters", sdk_options_.motor_parameters);
+    const auto idle_ki = numbers(text("idle_velocity_ki_scale", ""));
+    if (!idle_ki.empty()) {
+      if (idle_ki.size() != sdk_options_.idle_velocity_ki_scale.size()) {
+        RCLCPP_FATAL(get_logger(), "idle_velocity_ki_scale needs one value per arm joint (6)");
+        return CallbackReturn::ERROR;
+      }
+      std::copy(idle_ki.begin(), idle_ki.end(), sdk_options_.idle_velocity_ki_scale.begin());
+    }
+    for (auto [key, target] : {std::pair{"position_kp_scale", &sdk_options_.position_kp_scale},
+        std::pair{"velocity_kp_scale", &sdk_options_.velocity_kp_scale},
+        std::pair{"velocity_ki_scale", &sdk_options_.velocity_ki_scale},
+        std::pair{"friction_transition_velocity", &sdk_options_.friction_transition_velocity},
+        std::pair{"friction_constant_term", &sdk_options_.friction_constant_term}})
+    {
+      const auto values = numbers(text(key, ""));
+      if (values.empty()) {continue;}
+      if (values.size() != target->size()) {
+        RCLCPP_FATAL(get_logger(), "%s needs one value per arm joint (6)", key);
+        return CallbackReturn::ERROR;
+      }
+      std::copy(values.begin(), values.end(), target->begin());
+    }
+    sdk_options_.carriage_position_offset_m = num("carriage_position_offset_m", sdk_options_.carriage_position_offset_m);
+    sdk_options_.palm_mass_kg = num("palm_mass_kg", sdk_options_.palm_mass_kg);
+    const auto palm_com = numbers(text("palm_com_m", ""));
+    if (std::isfinite(sdk_options_.palm_mass_kg) && palm_com.size() != 3) {
+      RCLCPP_FATAL(get_logger(), "palm_mass_kg needs palm_com_m as three values");
+      return CallbackReturn::ERROR;
+    }
+    if (palm_com.size() == 3) {std::copy(palm_com.begin(), palm_com.end(), sdk_options_.palm_com_m.begin());}
     flight_path_ = text("flight_path", "");
     rt_priority_ = static_cast<int>(num("rt_priority", 80));
     for (double c : numbers(text("rt_cpus", ""))) {rt_cpus_.push_back(static_cast<int>(c));}
@@ -165,6 +215,8 @@ TatbotArm::CallbackReturn TatbotArm::on_init(
     c.contact_force_n = num("contact_force_n", c.contact_force_n);
     c.contact_hold_s = num("contact_hold_s", c.contact_hold_s);
     c.contact_baseline_s = num("contact_baseline_s", c.contact_baseline_s);
+    c.snag_off_m = num("snag_off_m", c.snag_off_m);
+    c.snag_hold_s = num("snag_hold_s", c.snag_hold_s);
     c.landing_takeover_s = num("landing_takeover_s", c.landing_takeover_s);
     c.landing_staged_s = num("landing_staged_s", c.landing_staged_s);
     c.landing_sleep_s = num("landing_sleep_s", c.landing_sleep_s);
@@ -179,12 +231,20 @@ TatbotArm::CallbackReturn TatbotArm::on_init(
     carriage_min_m_ = num("carriage_min_m", carriage_min_m_);
     carriage_max_m_ = num("carriage_max_m", carriage_max_m_);
     controller_query_period_s_ = num("controller_query_period_s", controller_query_period_s_);
+    sim_options_.arm = arm_;
+    sim_options_.endpoint = text("sim_endpoint", "");
+    sim_options_.keepalive_s = num("sim_keepalive_s", sim_options_.keepalive_s);
+    sim_options_.reply_timeout_s = num("sim_reply_timeout_s", sim_options_.reply_timeout_s);
+    sim_options_.connect_timeout_s = num("sim_connect_timeout_s", sim_options_.connect_timeout_s);
+    if (const auto clock = get_clock()) {   // the controller manager's: what its loop sleeps on (sim only reads it)
+      sim_options_.loop_now_ns = [clock]() {return static_cast<int64_t>(clock->now().nanoseconds());};
+    }
   } catch (const std::exception & e) {
     RCLCPP_FATAL(get_logger(), "bad hardware parameter: %s", e.what());
     return CallbackReturn::ERROR;
   }
-  if (sdk_ != "fake" && sdk_ != "real") {
-    RCLCPP_FATAL(get_logger(), "sdk must be fake or real, not '%s'", sdk_.c_str());
+  if (sdk_ != "fake" && sdk_ != "real" && sdk_ != "sim") {
+    RCLCPP_FATAL(get_logger(), "sdk must be fake, real or sim, not '%s'", sdk_.c_str());
     return CallbackReturn::ERROR;
   }
 
@@ -212,7 +272,7 @@ TatbotArm::CallbackReturn TatbotArm::on_init(
   std::string why;
   fk_ = make_tip_fk(info_.original_xml, text("base_frame", arm_ + "/base_link"),
       text("tcp_frame", arm_ + "/tcp"), joint_names, why);
-  if (!fk_) {RCLCPP_ERROR(get_logger(), "tip-lag guard has no FK: %s", why.c_str());}
+  if (!fk_) {RCLCPP_ERROR(get_logger(), "the tip-lag and snag guards have no FK: %s", why.c_str());}
 
   const auto n = info_.joints.size();
   position_.assign(n, 0.0);
@@ -276,9 +336,15 @@ TatbotArm::CallbackReturn TatbotArm::on_configure(const State &)
     }
     if (sdk_ == "real") {
       lock_ = runtime::DriverLock::acquire();
-      backend_ = make_sdk_backend(ip_, end_effector_);
+      backend_ = make_sdk_backend(ip_, sdk_options_);
       if (!backend_) {
         RCLCPP_FATAL(get_logger(), "built without the Trossen SDK (TATBOT_ARM_SDK off or offline)");
+        return CallbackReturn::ERROR;
+      }
+    } else if (sdk_ == "sim") {
+      backend_ = make_sim_backend(sim_options_);
+      if (!backend_) {
+        RCLCPP_FATAL(get_logger(), "built without the sim backend (src/sim_backend.cpp absent)");
         return CallbackReturn::ERROR;
       }
     } else {
@@ -293,59 +359,18 @@ TatbotArm::CallbackReturn TatbotArm::on_configure(const State &)
       fake_ = fake.get();
       backend_ = std::move(fake);
     }
-    // SCHED_FIFO and the CPU pin first, on a helper thread, so the SDK's daemon thread that
-    // configure() starts inherits both (cpp/teleop realtime::apply).
-    std::exception_ptr failure;
-    runtime::RtSetup rt;
-    std::thread helper([&]() {
-        rt = runtime::apply_realtime(rt_priority_, rt_cpus_);
-        std::lock_guard<std::mutex> lock(connect_mutex());
-        try {backend_->connect();} catch (...) {failure = std::current_exception();}
-      });
-    helper.join();
-    if (failure) {std::rethrow_exception(failure);}
-    {
-      // A power-cycled controller boots with a -4 mm carriage floor, while a loaded carriage rests
-      // on its stop near -4.7 mm: holding that pose idles motor 6 and every later command fails
-      // with "modes different than configured modes" (cpp/teleop/arm_recover.cpp). Apply the
-      // follower limits of config/trossen/follower.yaml before the first command.
-      std::lock_guard<std::mutex> lock(connect_mutex());
-      const auto before = backend_->set_carriage_limits(carriage_min_m_, carriage_max_m_);
-      if (sdk_ == "real") {
-        RCLCPP_INFO(get_logger(), "%s carriage limits [%.4f, %.4f] m (controller had [%.4f, %.4f])",
-          arm_.c_str(), carriage_min_m_, carriage_max_m_, before.first, before.second);
-      }
-    }
-    if (rt.fifo && rt.affinity) {
-      RCLCPP_INFO(get_logger(), "%s arm connected (%s): SCHED_FIFO %d on %zu cores",
-        arm_.c_str(), sdk_.c_str(), rt_priority_, rt.cpus.size());
-    } else {
-      RCLCPP_WARN(get_logger(), "%s arm connected (%s) without full real time: %s",
-        arm_.c_str(), sdk_.c_str(), rt.error.c_str());
-    }
-    // configure() returns before the daemon has robot output: wait for a non-zero measurement,
-    // then for feedback_warmup_s of it, so the seeded first command is judged against a real pose.
-    const double until = now_s() + kFeedbackWaitS;
-    double nonzero_since = -1;
-    while (true) {
-      fb_ = backend_->read();
-      const double t = now_s();
-      core_->observe_feedback(t, fb_);
-      if (nonzero_since < 0 && std::any_of(fb_.q.begin(), fb_.q.end(), [](double x) {return x != 0.0;})) {
-        nonzero_since = t;
-      }
-      if (nonzero_since >= 0 && t - nonzero_since >= cfg_.feedback_warmup_s) {break;}
-      if (nonzero_since < 0 && t >= until) {
-        throw std::runtime_error("no non-zero joint measurement within 1 s of connecting");
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
+    open_session();
     for (size_t i = 0; i < info_.joints.size(); ++i) {position_[i] = fb_.q[index_[i]];}
     if (!flight_path_.empty()) {
       std::filesystem::create_directories(flight_path_);
       recorder_ = std::make_unique<runtime::FlightRecorder>(
         (std::filesystem::path(flight_path_) / (arm_ + "-flight.bin")).string());
-      const std::string header = "tatbot-flight 1 " + arm_ + " " + std::to_string(sizeof(FlightRecord)) + "\n";
+      // A sim arm's t is the sim server's clock, which no wall time maps: clock=sim instead of realtime0.
+      char realtime[32];
+      std::snprintf(realtime, sizeof(realtime), "%.6f", realtime_at_epoch());
+      const std::string clock = sdk_ == "sim" ? std::string("clock=sim") : std::string("realtime0=") + realtime;
+      const std::string header = "tatbot-flight 2 " + arm_ + " " + clock + " " +
+        std::to_string(sizeof(FlightRecord)) + "\n";
       recorder_->append(header.data(), header.size());
     }
   } catch (const std::exception & e) {
@@ -353,13 +378,14 @@ TatbotArm::CallbackReturn TatbotArm::on_configure(const State &)
     release();
     return CallbackReturn::ERROR;
   }
-  // TCP getters and the post-landing idle, off the control thread. Every SDK call, these included,
+  // TCP getters and the post-landing close, off the control thread. Every SDK call, these included,
   // holds the driver's one data mutex for its whole round trip (trossen_arm.hpp "Mutex ownership"),
   // so each query stalls the 400 Hz loop by 1.5-2.5 ms: at 10 Hz that was ~120 late ticks a minute
   // on the pink arm (bench 2026-09-26). A controller error also surfaces as an SDK
   // exception on the next read or command (sticky_error_), so the query runs every
-  // controller_query_period_s; an idle request is served within 100 ms.
+  // controller_query_period_s; a close request is served within 100 ms.
   aux_ = std::make_shared<Aux>();
+  aux_->open = true;
   aux_thread_ = std::thread([aux = aux_, backend = backend_.get(), logger = get_logger(), arm = arm_,
       period = controller_query_period_s_]() {
       sched_param other{};
@@ -368,17 +394,28 @@ TatbotArm::CallbackReturn TatbotArm::on_configure(const State &)
       auto next_query = std::chrono::steady_clock::now();
       while (!aux->stop.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        const bool idle = aux->idle_request.load();
+        const bool close = aux->close_request.load();
         const auto now = std::chrono::steady_clock::now();
-        if (!idle && now < next_query) {continue;}
+        if (!close && (!aux->open.load() || now < next_query)) {continue;}
         next_query = now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
           std::chrono::duration<double>(period));
         std::string error;
         {
           std::lock_guard<std::timed_mutex> lock(aux->tcp);
+          if (aux->close_request.exchange(false)) {
+            // Landed: close the session, whose cleanup() idles every motor, rather than idle the
+            // controller and keep streaming to it until a wake. On 2026-10-07 a controller held idle
+            // that way stopped answering 1 s and 11 s after the switch, twice, and took no new
+            // connection until it was power-cycled; a stack stopped after landing closes exactly so.
+            backend->disconnect();
+            aux->error.store(false);
+            reported = false;
+            RCLCPP_INFO(logger, "%s landed: its SDK session is closed until a wake reconnects", arm.c_str());
+            continue;
+          }
+          if (!aux->open.load()) {continue;}
           try {
             error = backend->error();
-            if (aux->idle_request.exchange(false)) {backend->set_idle();}
           } catch (const std::exception & e) {
             error = std::string("controller unreachable: ") + e.what();
           }
@@ -394,15 +431,103 @@ TatbotArm::CallbackReturn TatbotArm::on_configure(const State &)
   return CallbackReturn::SUCCESS;
 }
 
+void TatbotArm::record_controller()
+{
+  if (flight_path_.empty()) {return;}
+  try {
+    const std::string snapshot = backend_->snapshot();
+    if (snapshot.empty()) {return;}
+    std::string describe;
+    for (char c : backend_->describe()) {
+      if (c == '"' || c == '\\') {describe += '\\';}
+      describe += c;
+    }
+    char realtime[32];
+    std::snprintf(realtime, sizeof(realtime), "%.3f",
+      std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count());
+    std::filesystem::create_directories(flight_path_);
+    std::ofstream out(std::filesystem::path(flight_path_) / (arm_ + "-controller.jsonl"), std::ios::app);
+    out << "{\"realtime\":" << realtime << ",\"arm\":\"" << arm_ << "\",\"describe\":\"" << describe
+        << "\",\"controller\":" << snapshot << "}\n";
+  } catch (const std::exception & e) {
+    RCLCPP_WARN(get_logger(), "%s: reading the controller's parameters back failed: %s", arm_.c_str(), e.what());
+  }
+}
+
+void TatbotArm::open_session()
+{
+  // SCHED_FIFO and the CPU pin first, on a helper thread, so the SDK's daemon thread that
+  // configure() starts inherits both (cpp/teleop realtime::apply).
+  std::exception_ptr failure;
+  runtime::RtSetup rt;
+  std::thread helper([&]() {
+      rt = runtime::apply_realtime(rt_priority_, rt_cpus_);
+      std::lock_guard<std::mutex> lock(connect_mutex());
+      try {backend_->connect();} catch (...) {failure = std::current_exception();}
+    });
+  helper.join();
+  if (failure) {std::rethrow_exception(failure);}
+  try {
+    {
+      // A power-cycled controller boots with a -4 mm carriage floor, while a loaded carriage rests
+      // on its stop near -4.7 mm: holding that pose idles motor 6 and every later command fails
+      // with "modes different than configured modes" (cpp/teleop/arm_recover.cpp). Apply the
+      // follower limits of config/trossen/follower.yaml before the first command.
+      std::lock_guard<std::mutex> lock(connect_mutex());
+      const auto before = backend_->set_carriage_limits(carriage_min_m_, carriage_max_m_);
+      if (sdk_ == "real") {
+        RCLCPP_INFO(get_logger(), "%s carriage limits [%.4f, %.4f] m (controller had [%.4f, %.4f])",
+          arm_.c_str(), carriage_min_m_, carriage_max_m_, before.first, before.second);
+      }
+    }
+    if (!backend_->describe().empty()) {
+      RCLCPP_INFO(get_logger(), "%s controller: %s", arm_.c_str(), backend_->describe().c_str());
+    }
+    record_controller();
+    if (rt.fifo && rt.affinity) {
+      RCLCPP_INFO(get_logger(), "%s arm connected (%s): SCHED_FIFO %d on %zu cores",
+        arm_.c_str(), sdk_.c_str(), rt_priority_, rt.cpus.size());
+    } else {
+      RCLCPP_WARN(get_logger(), "%s arm connected (%s) without full real time: %s",
+        arm_.c_str(), sdk_.c_str(), rt.error.c_str());
+    }
+    // configure() returns before the daemon has robot output: wait for a non-zero measurement,
+    // then for feedback_warmup_s of it, so the seeded first command is judged against a real pose.
+    const double until = now() + kFeedbackWaitS;
+    double nonzero_since = -1;
+    while (true) {
+      fb_ = backend_->read();
+      const double t = now();
+      core_->observe_feedback(t, fb_);
+      if (nonzero_since < 0 && std::any_of(fb_.q.begin(), fb_.q.end(), [](double x) {return x != 0.0;})) {
+        nonzero_since = t;
+      }
+      if (nonzero_since >= 0 && t - nonzero_since >= cfg_.feedback_warmup_s) {break;}
+      if (nonzero_since < 0 && t >= until) {
+        throw std::runtime_error("no non-zero joint measurement within 1 s of connecting");
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  } catch (...) {
+    backend_->disconnect();   // never commanded in this session
+    throw;
+  }
+  sticky_error_ = false;   // a fresh SDK session; one that threw is gone
+}
+
 TatbotArm::CallbackReturn TatbotArm::on_activate(const State &)
 {
   if (!backend_) {return CallbackReturn::ERROR;}
   try {
+    std::unique_lock<std::timed_mutex> lock(aux_->tcp, std::chrono::milliseconds(500));
+    if (!lock) {throw std::runtime_error("the controller is not answering (a TCP call is stuck)");}
+    // A landed arm's session is closed (closing idled it); woken before the aux thread got to it,
+    // it is still open. ros2_control runs no read or write of this component during a transition.
+    if (!aux_->close_request.exchange(false) && !aux_->open) {open_session();}
+    aux_->open = true;
     fb_ = backend_->read();
-    core_->activate(now_s(), fb_);
+    core_->activate(now(), fb_);
     if (core_->phase() != Phase::kLanded) {
-      std::unique_lock<std::timed_mutex> lock(aux_->tcp, std::chrono::milliseconds(500));
-      if (!lock) {throw std::runtime_error("the controller is not answering (a TCP call is stuck)");}
       backend_->set_position_mode();
       backend_->command(core_->hold_pose(), Vec7{});
     }
@@ -423,7 +548,7 @@ TatbotArm::CallbackReturn TatbotArm::on_activate(const State &)
 void TatbotArm::hold(int reason)
 {
   if (!core_ || !backend_) {return;}
-  send(core_->hold_now(now_s(), fb_, reason));
+  send(core_->hold_now(now(), fb_, reason));
   publish_safety();
   const std::string event = core_->take_event();
   if (!event.empty()) {RCLCPP_WARN(get_logger(), "%s: %s", arm_.c_str(), event.c_str());}
@@ -474,7 +599,13 @@ void TatbotArm::release()
       RCLCPP_ERROR(get_logger(), "%s controller not answering; leaving its session open", arm_.c_str());
     }
   }
-  if (recorder_) {recorder_->finish();}
+  if (recorder_) {
+    recorder_->finish();
+    if (recorder_->dropped()) {
+      RCLCPP_WARN(get_logger(), "%s flight recorder dropped %lu records", arm_.c_str(),
+        static_cast<unsigned long>(recorder_->dropped()));
+    }
+  }
   recorder_.reset();
   const Phase phase = core_ ? core_->phase() : Phase::kInactive;
   if (backend_ && (aux_stuck || (phase != Phase::kLanded && phase != Phase::kInactive))) {
@@ -499,7 +630,7 @@ void TatbotArm::release()
 hardware_interface::return_type TatbotArm::read(const rclcpp::Time &, const rclcpp::Duration &)
 {
   if (!backend_) {return return_type::OK;}
-  const double t = now_s();
+  const double t = now();
   // Longest read-to-read period over the last second: this window and the one before.
   if (last_read_ >= 0) {window_max_ = std::max(window_max_, t - last_read_);}
   last_read_ = t;
@@ -509,10 +640,12 @@ hardware_interface::return_type TatbotArm::read(const rclcpp::Time &, const rclc
     window_start_ = t;
   }
   period_max_ms_ = std::max(previous_max_, window_max_) * 1e3;
-  try {
-    fb_ = backend_->read();
-  } catch (const std::exception &) {
-    sticky_error_ = true;   // the SDK expects the process to end after an exception
+  if (aux_->open) {   // landed, its session closed: the last measurement stands until a wake
+    try {
+      fb_ = backend_->read();
+    } catch (const std::exception &) {
+      sticky_error_ = true;   // the SDK expects the process to end after an exception
+    }
   }
   for (size_t i = 0; i < info_.joints.size(); ++i) {
     position_[i] = fb_.q[index_[i]];
@@ -525,8 +658,11 @@ hardware_interface::return_type TatbotArm::read(const rclcpp::Time &, const rclc
 void TatbotArm::send(const Output & out)
 {
   last_out_ = out;
-  if (out.idle_request) {aux_->idle_request = true;}
-  if (!out.send || !backend_) {return;}
+  if (out.idle_request) {
+    aux_->open = false;   // this thread's last SDK call is behind it: the aux thread may close
+    aux_->close_request = true;
+  }
+  if (!out.send || !backend_ || !aux_->open) {return;}
   try {
     backend_->command(out.q, out.qd);
   } catch (const std::exception &) {
@@ -550,7 +686,7 @@ hardware_interface::return_type TatbotArm::write(const rclcpp::Time &, const rcl
   if (estop_) {estop = estop_->status(steady);}
   ProbeStatus probe;
   if (probe_) {probe = probe_->status(steady);}
-  const double t = now_s();
+  const double t = now();
   const Output out = core_->tick(t, fb_, cmd, estop, aux_->error.load() || sticky_error_.load(), probe);
   if (out.reset_commands) {
     for (size_t i = 0; i < info_.joints.size(); ++i) {
@@ -570,7 +706,11 @@ hardware_interface::return_type TatbotArm::write(const rclcpp::Time &, const rcl
       r.cmd_q[k] = static_cast<float>(cmd.q[k]);
       r.sent_q[k] = out.send ? static_cast<float>(out.q[k]) : NAN;
       r.sent_qd[k] = out.send ? static_cast<float>(out.qd[k]) : NAN;
+      r.compensation[k] = static_cast<float>(fb_.compensation[k]);
+      r.rotor_temp[k] = static_cast<float>(fb_.rotor_temp[k]);
     }
+    r.controller_id = fb_.controller_id;
+    r.controller_us = fb_.controller_us;
     r.estop_age_s = static_cast<float>(estop.age_s);
     r.period_ms = static_cast<float>(period_max_ms_);
     r.estop_ok = estop.ok;
@@ -579,9 +719,17 @@ hardware_interface::return_type TatbotArm::write(const rclcpp::Time &, const rcl
     r.phase = static_cast<uint8_t>(core_->phase());
     recorder_->append(&r, sizeof(r));
   }
+  // A simulator steps its world here, once per cycle, after the core's output went out; the others do nothing.
+  backend_->tick(cmd, out, core_->phase(), safety_state_[4] != 0.0);
   const std::string event = core_->take_event();
   if (!event.empty()) {RCLCPP_WARN(get_logger(), "%s: %s", arm_.c_str(), event.c_str());}
   return return_type::OK;
+}
+
+double TatbotArm::now() const
+{
+  const double t = backend_ ? backend_->clock_s() : std::numeric_limits<double>::quiet_NaN();
+  return std::isfinite(t) ? t : now_s();
 }
 
 void TatbotArm::publish_safety()

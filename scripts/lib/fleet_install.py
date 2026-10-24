@@ -216,10 +216,11 @@ def _unit_text(stage, source, unit, user, home, node):
 
 def _render_units(p, args, stage, source, services, user, home):
     """Render and validate selected units before any installed unit changes."""
-    # Only these explicitly manifested camera/bus/tracker units can be changed.
-    allowed = {'tatbot-zenohd.service', 'tatbot-zenoh-presence.service', 'tatbot-visiond-poe.service',
+    # Only these explicitly manifested camera/bus/tracker/display units can be changed.
+    allowed = {'tatbot-zenohd.service', 'tatbot-zenoh-presence.service',
                'tatbot-visiond-d405.service', 'tatbot-visiond-d555.service',
-               'tatbot-trackd.service', 'tatbot-trackd-left.service', 'tatbot-stencild.service'}
+               'tatbot-trackd.service', 'tatbot-stencild.service',
+               'tatbot-cockpit.service'}
     for service in services:
         if service['unit'] not in allowed:
             p.exit(3, 'install refused: unapproved service in manifest\n')

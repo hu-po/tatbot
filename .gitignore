@@ -5,7 +5,6 @@ __pycache__/
 .env
 uv.lock
 !python/lerobot_robot_tatbot/uv.lock
-!python/tatbot_sim/uv.lock
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -38,9 +37,7 @@ outputs/
 /.tatbot-build.json
 .claude/settings.local.json
 
-# Compiled Inkmap showcase scenarios (~32 MB). The seed inputs -- pose ids and
-# placements -- live in the tracked showcase/manifest.json; scripts/inkmap_deploy.sh
-# recompiles these before the Vite build. Regenerate by hand with:
-#   uv run --project python/tatbot_sim python -m tatbot_sim.inkmap.showcase \
-#     --output-dir web/inkmap/public/showcase --install
+# Compiled Inkmap showcase scenarios (~32 MB) from the deleted ManiSkill
+# simulator. Nothing reads them any more and Vite would ship them from public/:
+# delete any a checkout still has. Ignored so none is committed by accident.
 web/inkmap/public/showcase/*.scenario.json

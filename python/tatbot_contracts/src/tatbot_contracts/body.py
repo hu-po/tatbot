@@ -20,7 +20,7 @@ from .digest import sha256_file
 
 SPEC_SCHEMA = "tatbot.body-model-spec/1"
 METADATA = ".tatbot-body-cache.json"
-REVIEWED_SPEC_SHA256 = "e615b8485c367509833ee68b0405cd1e0ce6015604eaa4c1b2b699f4fc8d5144"
+REVIEWED_SPEC_SHA256 = "234a951c4e534b5ec7826907eaf2ee86d1d287f62e26e530b85e1dff5d44bd1d"
 REVIEWED_TOPOLOGY_SHA256 = "e0ca7ee25dc0b4c8d841bb2626e364bb88b7af7fae037e30854728842e320a18"
 REVIEWED_LOW_VERTEX_MAP_SHA256 = "f51534883dc562a83c3d585bfada2e003a647b3642b6229e86d35e6459686d3b"
 REVIEWED_MIRROR_MAP_SHA256 = "530b954b8087e4f100df8ae2ca24cfaa72f5e0046ba87332e801fb8fa033aa6b"
@@ -217,11 +217,13 @@ def _validate_source(value: Any, path: str, tag: str) -> None:
     _digest(source["archive_sha256"], f"{path}.archive_sha256")
 
 
-def _validate_body_spec(spec: dict[str, Any]) -> None:
+def _validate_sources(spec: dict[str, Any]) -> None:
     sources = _fields(spec["sources"], "sources", {"soma_x", "mhr"})
     _validate_source(sources["soma_x"], "sources.soma_x", "v0.3.0")
     _validate_source(sources["mhr"], "sources.mhr", "v1.0.1")
 
+
+def _validate_package(spec: dict[str, Any]) -> None:
     package = _fields(spec["python_package"], "python_package", {"name", "version", "python", "wheel", "sdist"})
     expected_package = {"name": "py-soma-x", "version": "0.3.0", "python": ">=3.11,<3.13"}
     for key, expected in expected_package.items():
@@ -234,6 +236,8 @@ def _validate_body_spec(spec: dict[str, Any]) -> None:
             raise BodyCacheError("spec_type", f"python_package.{distribution}.size must be positive")
         _digest(item["sha256"], f"python_package.{distribution}.sha256")
 
+
+def _validate_model(spec: dict[str, Any]) -> None:
     expected_model = {
         "identity_model_type": "mhr",
         "lod": "mid",
@@ -255,6 +259,8 @@ def _validate_body_spec(spec: dict[str, Any]) -> None:
                 f"model.{key} does not match the reviewed MHR/SOMA dense contract",
             )
 
+
+def _validate_geometry(spec: dict[str, Any]) -> None:
     geometry = _fields(
         spec["geometry"],
         "geometry",
@@ -283,6 +289,8 @@ def _validate_body_spec(spec: dict[str, Any]) -> None:
         if (uv["values_sha256"], uv["indices_sha256"]) != REVIEWED_UV_SHA256[name]:
             raise BodyCacheError("body_topology_mismatch", f"geometry.uv_sets.{name}")
 
+
+def _validate_coordinates(spec: dict[str, Any]) -> None:
     coordinates = _fields(
         spec["coordinates"],
         "coordinates",
@@ -308,12 +316,17 @@ def _validate_body_spec(spec: dict[str, Any]) -> None:
     if coordinates["reference_rest_surface_sha256"] != REVIEWED_REST_SURFACE_SHA256:
         raise BodyCacheError("body_rest_surface_mismatch", "coordinates.reference_rest_surface_sha256")
 
-    software = _fields(spec["software_lock"], "software_lock", {"path", "sha256", "environment", "torch"})
+
+def _validate_software_lock(spec: dict[str, Any]) -> None:
+    """The lock is named, not hashed: it is reviewed as its own file (hash-pinned, and audited by
+    scripts/deps_audit.py), so a security refresh of it leaves the body model's identity alone."""
+    software = _fields(spec["software_lock"], "software_lock", {"path", "environment", "torch"})
     _safe_relative(_text(software["path"], "software_lock.path"))
-    _digest(software["sha256"], "software_lock.sha256")
     if software["environment"] != "cp312-x86_64-manylinux_2_28" or software["torch"] != "2.13.0":
         raise BodyCacheError("spec_value", "software lock platform or Torch pin changed")
 
+
+def _validate_security(spec: dict[str, Any]) -> None:
     security = _fields(
         spec["security"],
         "security",
@@ -326,6 +339,16 @@ def _validate_body_spec(spec: dict[str, Any]) -> None:
     if security["usd_parse_stage"] != "post-audit":
         raise BodyCacheError("spec_value", "USD parsing must remain post-audit")
     _text(security["native_binary_audit"], "security.native_binary_audit")
+
+
+def _validate_body_spec(spec: dict[str, Any]) -> None:
+    _validate_sources(spec)
+    _validate_package(spec)
+    _validate_model(spec)
+    _validate_geometry(spec)
+    _validate_coordinates(spec)
+    _validate_software_lock(spec)
+    _validate_security(spec)
 
 
 def load_spec(path: Path) -> tuple[dict[str, Any], str]:
@@ -369,6 +392,13 @@ def validate_spec(spec: Any) -> tuple[dict[str, Any], str]:
         raise BodyCacheError("wrong_spec_hash", f"declared {spec['content_sha256']}; computed {actual}")
     _text(spec["name"], "name")
     _validate_body_spec(spec)
+    _validate_asset_source(spec)
+    _validate_assets(spec)
+    _validate_denials(spec)
+    return spec, actual
+
+
+def _validate_asset_source(spec: dict[str, Any]) -> None:
     source = spec.get("asset_source")
     if not isinstance(source, dict) or set(source) != {"repository", "revision", "manifest"}:
         raise BodyCacheError("asset_source_fields", "asset_source must name repository, immutable revision, and manifest")
@@ -386,6 +416,9 @@ def validate_spec(spec: Any) -> tuple[dict[str, Any], str]:
     if _integer(manifest["size"], "asset_source.manifest.size") == 0:
         raise BodyCacheError("manifest_fields", "manifest size must be positive")
     _digest(manifest["sha256"], "asset_source.manifest.sha256")
+
+
+def _validate_assets(spec: dict[str, Any]) -> None:
     if not isinstance(spec.get("assets"), list) or not spec["assets"]:
         raise BodyCacheError("empty_allowlist", "assets")
     seen: set[str] = set()
@@ -406,6 +439,9 @@ def validate_spec(spec: Any) -> tuple[dict[str, Any], str]:
             raise BodyCacheError("asset_license", rel)
         if not isinstance(entry["reason"], str) or not entry["reason"]:
             raise BodyCacheError("asset_reason", rel)
+
+
+def _validate_denials(spec: dict[str, Any]) -> None:
     denied = spec.get("denied_prefixes")
     if not isinstance(denied, list) or any(not isinstance(item, str) for item in denied):
         raise BodyCacheError("denied_prefixes", "expected string array")
@@ -414,7 +450,6 @@ def validate_spec(spec: Any) -> tuple[dict[str, Any], str]:
     required_denials = {"SMPL/", "SMPLX/", "MANO/", "Anny/", "GarmentMeasurements/"}
     if not required_denials <= set(denied):
         raise BodyCacheError("denied_prefixes", "required model-family exclusions are missing")
-    return spec, actual
 
 
 def _inventory(root: Path) -> list[str]:

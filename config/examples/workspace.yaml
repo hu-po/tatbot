@@ -1,9 +1,8 @@
 # Example workspace.yaml — measured scene geometry. NOTHING HERE MOVES THE ARM.
 #
-# Every value below is a PLACEHOLDER: this file is written by your own
-# touch-off (scripts/il_touchoff.py) with values measured on your bench, and
-# read by rollout analysis and vision fusion. A copied example is not a
-# calibration — run the touch-off.
+# Every value below is a PLACEHOLDER: replace it with values measured on your
+# bench (`tatbot ros calib run`); it is read by rollout analysis and vision
+# fusion. A copied example is not a calibration.
 right:
   # Which physical tool is fitted — names a datasheet in config/tools/.
   tool_id: lutin-ballpoint-dot
@@ -17,25 +16,6 @@ right:
   # already qualifies the contact vector for an axisymmetric profile; null here
   # means the visual/collision body axis is inferred from mount origin -> tip.
   # Set status to `qualified` only with a timestamp, method, and the full pose.
-  tool_body_status: null
-  tool_body_utc: null
-  tool_body_method: null
-  tool_body_measurement_source: null
-  tool_body_report: null
-  tool_body_report_sha256: null
-  tool_body_samples: null
-  tool_body_selected_cycle: null
-  tool_body_alignment_max_mm: null
-  tool_body_tip_repeatability_mm: null
-  tool_body_origin_repeatability_mm: null
-  tool_body_axis_repeatability_deg: null
-  tool_body_frame: null
-  tool_body_origin_x: null
-  tool_body_origin_y: null
-  tool_body_origin_z: null
-  tool_body_rpy_x: null
-  tool_body_rpy_y: null
-  tool_body_rpy_z: null
   # Carriage reading at the solve, metres.
   carriage_m: 0.0
   # Surface Z in the arm base frame, metres.

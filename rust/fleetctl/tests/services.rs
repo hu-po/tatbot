@@ -17,7 +17,7 @@ fn completed_reply_stream_is_success_but_duplicate_is_refused() {
         .unwrap();
     drop(socket);
     let _router = zenoh::open(config).wait().unwrap();
-    let bus = Bus::open(std::slice::from_ref(&endpoint), &[]).unwrap();
+    let bus = Bus::open_with(std::slice::from_ref(&endpoint), None).unwrap();
     let producer = Producer {
         node: "test".into(),
         pid: 1,
@@ -36,6 +36,7 @@ fn completed_reply_stream_is_success_but_duplicate_is_refused() {
                 "--require",
                 "test/camera",
             ])
+            .env("TATBOT_BUS_CREDENTIALS", "") // the test router takes none
             .output()
             .unwrap()
     };
@@ -43,13 +44,14 @@ fn completed_reply_stream_is_success_but_duplicate_is_refused() {
     assert!(
         result.status.success(),
         "{}",
-        String::from_utf8_lossy(&result.stdout)
+        String::from_utf8_lossy(&result.stderr)
     );
     let value: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
     assert_eq!(value["complete"], true);
-    let second = Bus::open(std::slice::from_ref(&endpoint), &[]).unwrap();
+    let second = Bus::open_with(std::slice::from_ref(&endpoint), None).unwrap();
     let _duplicate = ServiceLease::declare(&second, producer, "camera", vec![]).unwrap();
     let result = run();
     assert!(!result.status.success());
-    assert!(String::from_utf8_lossy(&result.stdout).contains("duplicate service producers"));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("duplicate service producers"));
+    assert!(result.stdout.is_empty());
 }

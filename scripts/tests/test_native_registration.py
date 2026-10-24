@@ -60,7 +60,7 @@ def capture_factory(tmp_path, shared):
             'stamp_ns': stamp, 'color_metadata': frames[0]['metadata'], 'depth_metadata': frames[1]['metadata']})
         recipe.write_json(root / 'overhead-pose-binding.json', recipe.bind_owner_packet(packet, root / 'arm/telemetry.bin'))
         revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=REPO, text=True).strip()
-        recipe.write_json(root / 'meta.json', {'arm': 'blue', 'status': 'ok', 'git': {'sha': revision, 'dirty': False}})
+        recipe.write_json(root / 'meta.json', {'arm': 'pink', 'status': 'ok', 'git': {'sha': revision, 'dirty': False}})
         bundle = shared.draft_bundle(frames[0]['metadata'], frames[1]['metadata']['profile'])
         bundle['bundle_id'] = 'f'*64
         return root, bundle
@@ -69,7 +69,7 @@ def capture_factory(tmp_path, shared):
 
 def test_cli_fit_is_local_offline_and_has_no_arm_or_ros_launcher():
     result = tatbot('--dry-run', '--json', 'calib', 'register-fit', '--python', '/existing/python',
-                    '--arm', 'blue', '--capture', '/a', '/b', '--bundle', '/bundle',
+                    '--arm', 'pink', '--capture', '/a', '/b', '--bundle', '/bundle',
                     '--setup-id', 'rearranged', '--out', '/fit', '--seat-report')
     assert result.returncode == 0, result.stderr
     plan = json.loads(result.stdout)
@@ -81,20 +81,20 @@ def test_cli_fit_is_local_offline_and_has_no_arm_or_ros_launcher():
 
 
 def test_native_adapter_uses_arm_base_once_and_moves_the_tag_with_carriage(tmp_path, shared):
-    kin = native.NativeKinematics(REPO, 'left', tmp_path)
+    kin = native.NativeKinematics(REPO, 'right', tmp_path)
     q = np.zeros(7)
-    assert np.allclose(kin.frame(q, 'left/base_link'), np.eye(4))
-    assert kin.root_from_base[1, 3] == pytest.approx(.2675)
+    assert np.allclose(kin.frame(q, 'right/base_link'), np.eye(4))
+    assert kin.root_from_base[1, 3] == pytest.approx(-.2675)
     q[6] = .012
-    delta = kin.frame(q, 'left/wrist_tag1')[:3, 3] - kin.frame(np.zeros(7), 'left/wrist_tag1')[:3, 3]
+    delta = kin.frame(q, 'right/wrist_tag2')[:3, 3] - kin.frame(np.zeros(7), 'right/wrist_tag2')[:3, 3]
     assert np.linalg.norm(delta) == pytest.approx(.012)
     q[0], q[5] = .3, 1.2
-    values = dict(zip(kin.chain.driver_joint_names('left'), q, strict=True))
-    expected = np.linalg.inv(kin.chain.link_pose('left/base_link')) @ kin.chain.link_pose('left/wrist_tag1', values)
-    assert np.allclose(kin.frame(q, 'left/wrist_tag1'), expected)
-    assert not np.allclose(kin.frame(q, 'left/wrist_tag1'), kin.chain.link_pose('left/wrist_tag1', values))
+    values = dict(zip(kin.chain.driver_joint_names('right'), q, strict=True))
+    expected = np.linalg.inv(kin.chain.link_pose('right/base_link')) @ kin.chain.link_pose('right/wrist_tag2', values)
+    assert np.allclose(kin.frame(q, 'right/wrist_tag2'), expected)
+    assert not np.allclose(kin.frame(q, 'right/wrist_tag2'), kin.chain.link_pose('right/wrist_tag2', values))
     with pytest.raises(ValueError, match='seven finite'):
-        kin.frame(q[:6], 'left/wrist_tag1')
+        kin.frame(q[:6], 'right/wrist_tag2')
 
 
 @pytest.mark.parametrize('change,why', [
@@ -138,7 +138,7 @@ def test_wrong_optics_or_camera_identity_refuses(capture_factory, shared):
         native.optics_match(bundle, color, depth, shared)
 
 
-@pytest.mark.parametrize('field,value,why', [('arm', 'pink', 'selected arm'), ('status', 'fail', 'successful'),
+@pytest.mark.parametrize('field,value,why', [('arm', 'blue', 'selected arm'), ('status', 'fail', 'successful'),
                                          ('dirty', True, 'clean'), ('model', None, 'model')])
 def test_capture_source_identity_and_model_pin_are_enforced(capture_factory, field, value, why):
     root, _ = capture_factory()
@@ -148,7 +148,7 @@ def test_capture_source_identity_and_model_pin_are_enforced(capture_factory, fie
     elif field != 'model':
         meta[field] = value
     recipe.write_json(root / 'meta.json', meta)
-    arm = recipe.selected_arm(REPO, 'blue')
+    arm = recipe.selected_arm(REPO, 'pink')
     hashes = native.model_inputs(REPO, arm)
     if field == 'model':
         hashes['config/workspace.yaml'] = '0'*64
@@ -157,10 +157,10 @@ def test_capture_source_identity_and_model_pin_are_enforced(capture_factory, fie
 
 
 def test_shared_fit_recovers_known_transform_and_repeated_views_do_not_qualify(tmp_path, shared):
-    kin = native.NativeKinematics(REPO, 'left', tmp_path)
+    kin = native.NativeKinematics(REPO, 'right', tmp_path)
     from fiducials import load_inventory
 
-    target = load_inventory(REPO / 'config/fiducials.json').target('wrist_left')
+    target = load_inventory(REPO / 'config/fiducials.json').target('wrist')
     # A known camera in a synthetic scene; each view sees all configured wrist tags.
     camera = np.eye(4)
     camera[:3, 3] = [.1, -.2, 1.5]
@@ -173,15 +173,15 @@ def test_shared_fit_recovers_known_transform_and_repeated_views_do_not_qualify(t
     for i in range(12):
         q = np.array([.1*i, .2*np.sin(i), .2*np.cos(i), .1*np.sin(i*2), .1, .4*i, .002])
         for tag in target.ids:
-            points = shared.corner_points(kin, 'left', q, tag, target.edge_m)
+            points = shared.corner_points(kin, 'right', q, tag, target.edge_m)
             sightings.append({'hold': i, 'tag': tag, 'points': points,
                               'pixels': shared._project(camera, points, k, dist), 'tcp': kin.fk(q)})
-    report = shared.fit('left', bundle, True, sightings, target)
+    report = shared.fit('right', bundle, True, sightings, target)
     assert not report['refused'], report['refused']
     assert np.allclose(report['camera_from_base'], camera, atol=1e-6)
     assert report['hold_out']['views'] == 12
     repeated = [dict(sightings[i % 3], hold=i) for i in range(36)]
-    thin = shared.fit('left', bundle, True, repeated, target)
+    thin = shared.fit('right', bundle, True, repeated, target)
     assert thin['fit']['holds'] == 36 and thin['fit']['poses'] == 1
     assert any('distinct poses' in reason for reason in thin['refused'])
     assert any('one view' in reason for reason in thin['refused'])
@@ -202,8 +202,8 @@ def test_pipeline_retains_originals_and_candidate_without_adopting(capture_facto
 
     model_dir = tmp_path / 'reference-model'
     model_dir.mkdir()
-    kin = native.NativeKinematics(REPO, 'left', model_dir)
-    target = load_inventory(REPO / 'config/fiducials.json').target('wrist_left')
+    kin = native.NativeKinematics(REPO, 'right', model_dir)
+    target = load_inventory(REPO / 'config/fiducials.json').target('wrist')
     camera = np.eye(4)
     camera[:3, 3] = [.1, -.2, 1.5]
     q_by_stamp, roots = {}, []
@@ -215,7 +215,7 @@ def test_pipeline_retains_originals_and_candidate_without_adopting(capture_facto
     k = np.array([[60., 0, 32], [0, 60., 24], [0, 0, 1]])
     def detections(sensor, image, stamp):
         return [Detection(sensor, tag, shared._project(camera,
-                    shared.corner_points(kin, 'left', q_by_stamp[stamp], tag, target.edge_m), k, np.zeros(5)),
+                    shared.corner_points(kin, 'right', q_by_stamp[stamp], tag, target.edge_m), k, np.zeros(5)),
                           stamp, 10., target.family) for tag in target.ids]
     monkeypatch.setattr(FiducialDetector, 'from_inventory', lambda *args, **kw: SimpleNamespace(detect=detections))
     def forbidden_adopt(*args):
@@ -225,12 +225,12 @@ def test_pipeline_retains_originals_and_candidate_without_adopting(capture_facto
     recipe.write_json(bundle_path, bundle)
     originals = {root: native.sha256_file(root / 'overhead/owner-packet.bin') for root in roots}
     output = tmp_path / 'fit'
-    report = native.prepare(REPO, 'blue', roots, bundle_path, output, 'synthetic-window', seat_report=True)
+    report = native.prepare(REPO, 'pink', roots, bundle_path, output, 'synthetic-window', seat_report=True)
     assert not report['refused'], report['refused']
     assert report['captures'] == 12 and report['fit']['poses'] == 12
     assert not report['calibration_adopted'] and not report['motion_authority']
     assert report['physical_accuracy_bound_m'] is None and report['clock_error_bound_ms'] is None
-    candidate = json.loads((output / 'arm-registration-left-candidate.json').read_text())
+    candidate = json.loads((output / 'arm-registration-right-candidate.json').read_text())
     assert np.allclose(candidate['world_from_arm_base'], camera, atol=1e-6)
     assert np.allclose(np.asarray(candidate['world_from_root']) @ kin.root_from_base, camera, atol=1e-6)
     assert not candidate['motion_authority'] and not candidate['rig']['adopted']
@@ -244,7 +244,7 @@ def test_pipeline_retains_originals_and_candidate_without_adopting(capture_facto
     assert diagnostics['models']['seat']['held_out']['views'] == 12
     assert diagnostics['layout_sha256'] == native.sha256_file(output / 'wrist-layout.json')
     with pytest.raises(FileExistsError):
-        native.prepare(REPO, 'blue', roots, bundle_path, output, 'synthetic-window')
+        native.prepare(REPO, 'pink', roots, bundle_path, output, 'synthetic-window')
 
 
 def test_seat_diagnostic_recovers_known_mount_without_counting_repeat_captures_as_new_views(tmp_path, shared):
@@ -253,10 +253,10 @@ def test_seat_diagnostic_recovers_known_mount_without_counting_repeat_captures_a
     from fiducials import load_inventory
     from tatbot_calib import chain
 
-    kin = native.NativeKinematics(REPO, 'left', tmp_path)
+    kin = native.NativeKinematics(REPO, 'right', tmp_path)
     inventory = load_inventory(REPO / 'config/fiducials.json')
-    target = inventory.target('wrist_left')
-    c = chain.Chain(kin, 'left', target)
+    target = inventory.target('wrist')
+    c = chain.Chain(kin, 'right', target)
     camera = np.eye(4)
     camera[:3, 3] = [.1, -.2, 1.5]
     k = np.array([[500., 0, 320], [0, 500., 240], [0, 0, 1]])
@@ -270,7 +270,7 @@ def test_seat_diagnostic_recovers_known_mount_without_counting_repeat_captures_a
         tags = {str(tag): shared._project(camera, c.corners({'q': q, 'tag': tag}, np.zeros(7), seat),
                                          k, np.zeros(5)).tolist() for tag in target.ids}
         rows.append({'hold': hold, 'q': q.tolist(), 'still_rad': 0., 'tags': tags})
-    diagnostic = native._seat_report(shared, kin, 'left', target, bundle, rows,
+    diagnostic = native._seat_report(shared, kin, 'right', target, bundle, rows,
                                      {'camera_from_base': camera.tolist()}, tmp_path)
     assert diagnostic['original_sightings'] == 45
     assert diagnostic['original_holds_by_distinct_view']['0'] == [0, 12, 13, 14]
@@ -282,7 +282,7 @@ def test_seat_diagnostic_recovers_known_mount_without_counting_repeat_captures_a
     layout = json.loads((tmp_path / 'wrist-layout.json').read_text())
     assert layout['observations'] == 45
     assert layout['pose_observations_by_tag'] == {str(tag): 12 for tag in target.ids}
-    record = record_from_solve(layout, tmp_path / 'wrist-layout.json', inventory, target='wrist_left')
+    record = record_from_solve(layout, tmp_path / 'wrist-layout.json', inventory, target='wrist')
     for tag in target.ids:
         assert np.allclose(record['tags'][str(tag)]['ee_from_tag'], seat @ c.parent_from_tag[tag], atol=1e-5)
     assert not diagnostic['calibration_adopted'] and not diagnostic['motion_authority']
@@ -290,7 +290,7 @@ def test_seat_diagnostic_recovers_known_mount_without_counting_repeat_captures_a
     thin = tmp_path / 'repeated-only'
     thin.mkdir()
     repeated = [dict(rows[0], hold=i) for i in range(15)]
-    refused = native._seat_report(shared, kin, 'left', target, bundle, repeated,
+    refused = native._seat_report(shared, kin, 'right', target, bundle, repeated,
                                   {'camera_from_base': camera.tolist()}, thin)
     assert refused['refused'] and len(refused['original_holds_by_distinct_view']) == 1
     assert not (thin / 'wrist-layout.json').exists()

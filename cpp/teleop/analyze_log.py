@@ -13,6 +13,7 @@ Format (all little-endian doubles unless noted; see wxai_teleop.cpp):
 """
 
 import argparse
+import os
 import struct
 import sys
 from array import array
@@ -51,13 +52,18 @@ def control_roles(magic, flags):
     return "Control roles: leader=physical left, follower=physical right"
 
 
+def log_file(path: str) -> str:
+    """A .wxtl, or the teleop.wxtl a teleop run dir holds."""
+    return os.path.join(path, "teleop.wxtl") if os.path.isdir(path) else path
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("log")
     ap.add_argument("--top", type=int, default=10, help="worst hiccups to list")
     args = ap.parse_args()
 
-    with open(args.log, "rb") as f:
+    with open(log_file(args.log), "rb") as f:
         raw_header = f.read(HEADER_SIZE)
         magic, n, period, tau, goal_time, ff_gain, abs_gripper, wall_ns = struct.unpack(
             HEADER_FMT, raw_header

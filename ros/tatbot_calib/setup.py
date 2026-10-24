@@ -17,5 +17,6 @@ setup(
     tests_require=["pytest"],
     entry_points={"console_scripts": ["station = tatbot_calib.cli:main", "calib = tatbot_calib.program:main",
                                         "register = tatbot_calib.register:main", "sweep = tatbot_calib.sweep:main",
-                                        "chain = tatbot_calib.chain:main"]},
+                                        "chain = tatbot_calib.chain:main", "wristcam = tatbot_calib.wristcam:main",
+                                        "gaugecal = tatbot_calib.gaugecal:main", "overhead = tatbot_calib.overhead:main"]},
 )

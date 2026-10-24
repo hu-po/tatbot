@@ -7,7 +7,7 @@
     ink.py bottle add <id> --ink <ink_id> --ml <n> [--purchased YYYY-MM-DD]
     ink.py bottle open|retire <id>
     ink.py cartridge add <id> --spec "<text>" --needle-code 1003RL --count <n> [--fits <tool_id>]
-    ink.py cartridge fit <id> [--n 1]          one taken from the box and fitted
+    ink.py cartridge fit <id> [n]              n (default 1) taken from the box and fitted
     ink.py cartridge count <id> <n>            recount on the shelf
     ink.py cartridge retire <id>
     ink.py caps count <id> <n>                 blank ink caps recount
@@ -18,10 +18,6 @@
     ink.py fit                                 refit uptake/deposit/bleed from weigh events
     ink.py mise-en-place --ee-tool <id> --need black=800   the setup checklist for a session
     ink.py mise-en-place --ee-tool <id> --ink black --program run_meta.json   need from the planned program
-    ink.py session [status]                    the open ink session on this node
-    ink.py session start --ee-tool <id> [--need-ul N | --program <json>] [--force]
-    ink.py session end [--note "..."]          close it, totals into the ledger
-    ink.py session rebuild <session_id>        recover a session's state from the ledger
     ink.py sync <node|user@host> ...           pull other nodes' ledgers into ink/remote/
 
 Nothing here moves the arm. `load`, `dump` and the inventory verbs rewrite the
@@ -34,6 +30,7 @@ code that dips, not by hand.
 from __future__ import annotations
 
 import argparse
+import functools
 import ipaddress
 import os
 import sys
@@ -45,7 +42,6 @@ from tatbot_paths import bootstrap  # noqa: E402
 
 bootstrap()
 
-import ink_session  # noqa: E402
 import ink_spec  # noqa: E402
 import tool_spec  # noqa: E402
 from tatbot_cli import nodes  # noqa: E402
@@ -456,69 +452,7 @@ def cmd_plan(args) -> int:
     return 0
 
 
-# --- argparse -----------------------------------------------------------------------------
-
-# --- the session and the other nodes' ledgers -------------------------------------------
-
-def cmd_session(args) -> int:
-    verb = args.verb or "status"
-    if verb == "status":
-        sess = ink_session.current() or ink_session.load()
-        policy = None
-        if sess is not None:
-            try:
-                policy = ink_spec.policy_for(tool_spec.load_tool(sess.tool_id, REPO))
-            except Exception:
-                policy = None
-        print(ink_session.describe(sess, policy))
-        return 0
-    if verb == "start":
-        why = _require_tool(args, "session start")
-        if why:
-            return _die(why)
-        tool = tool_spec.load_tool(args.tool_id, REPO)
-        policy = ink_spec.policy_for(tool)
-        need = args.need_ul
-        if args.program:
-            import json
-
-            doc = json.loads(Path(args.program).expanduser().read_text())
-            need = ink_spec.need_from_polylines(ink_spec.program_polylines(doc), policy,
-                                                args.speed_mm_s / 1000.0)
-        try:
-            sess = ink_session.start(tool, policy, need_ul=need, note=args.note, force=args.force)
-        except ValueError as exc:
-            return _die(str(exc))
-        print(ink_session.describe(sess, policy))
-        return 0
-    if verb == "end":
-        sess = ink_session.current()
-        if sess is None:
-            return _die("no open session")
-        ink_session.end(sess, note=args.note)
-        print(ink_session.describe(sess))
-        return 0
-    if verb == "rebuild":
-        if not args.id:
-            return _die("session rebuild needs the session id")
-        events = ink_spec.read_events()
-        start_ev = next((e for e in events if e.get("session_id") == args.id and e.get("kind") == "session.start"), None)
-        capacity = None
-        if start_ev and start_ev.get("tool_id"):
-            try:
-                capacity = ink_spec.policy_for(tool_spec.load_tool(start_ev["tool_id"], REPO)).charge_capacity_ul
-            except Exception:
-                capacity = None
-        sess = ink_session.rebuild(args.id, events, capacity_ul=capacity)
-        if sess is None:
-            return _die(f"no session.start for {args.id} in the ledger")
-        print(ink_session.describe(sess))
-        if args.write:
-            ink_session.save(sess)
-            print(f"wrote {ink_session.session_path()}")
-        return 0
-    return _die(f"unknown session verb {verb}")
-
+# --- the other nodes' ledgers -------------------------------------------------------------
 
 def sync_source(nmap: dict, target: str) -> tuple[str, str]:
     """(ssh target, copy name) for a fleet node name or a user@host.
@@ -571,6 +505,8 @@ def cmd_sync(args) -> int:
     return rc
 
 
+# --- argparse -----------------------------------------------------------------------------
+
 def _tool_arg(p: argparse.ArgumentParser) -> None:
     """The tool in the mount — stated on the command line, or by the CLI
     through TATBOT_EE_TOOL (`tatbot --ee-tool <id> ink …`); never inferred."""
@@ -585,8 +521,11 @@ def _require_tool(args, what: str) -> str | None:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+                                 allow_abbrev=False)
+    # No abbreviations anywhere: `fit box01 --n 5` once meant --needle-code 5.
+    sub = ap.add_subparsers(dest="cmd", required=True,
+                            parser_class=functools.partial(argparse.ArgumentParser, allow_abbrev=False))
 
     sub.add_parser("status").set_defaults(fn=cmd_status)
 
@@ -664,18 +603,6 @@ def main(argv=None) -> int:
     _tool_arg(p)
     p.add_argument("--arm", default="right")
     p.add_argument("--strokes", nargs="+", required=True, metavar="MM,S[,INK]")
-
-    p = sub.add_parser("session")
-    p.set_defaults(fn=cmd_session)
-    p.add_argument("verb", nargs="?", choices=["status", "start", "end", "rebuild"])
-    p.add_argument("id", nargs="?")
-    _tool_arg(p)
-    p.add_argument("--need-ul", type=float)
-    p.add_argument("--program")
-    p.add_argument("--speed-mm-s", type=float, default=30.0)
-    p.add_argument("--note")
-    p.add_argument("--force", action="store_true", help="end an open session first")
-    p.add_argument("--write", action="store_true", help="rebuild: also write session.json")
 
     p = sub.add_parser("sync")
     p.set_defaults(fn=cmd_sync)

@@ -42,17 +42,11 @@ class TargetSpec:
     parent_frame: str | None = None
     minimum_acquisition_ids: int | None = None
     ambiguity_group: str | None = None
-    root_id: int | None = None
-    calibration_root_id: int | None = None
-    grid: tuple[tuple[int, ...], ...] | None = None
     minimum_calibration_observations: int | None = None
     minimum_calibration_poses_per_id: int | None = None
     max_calibration_corner_px: float | None = None
     max_calibration_residual_mm: float | None = None
     max_calibration_parent_distance_mm: float | None = None
-    max_calibration_reprojection_px: float | None = None
-    max_calibration_consensus_mm: float | None = None
-    max_calibration_regression_mm: float | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -95,11 +89,6 @@ class FiducialInventory:
         return tuple(name for name, target in self.targets.items()
                      if tag_id in target.ids and (family is None or target.family == family))
 
-    def exclusive_ids(self, target_name: str) -> tuple[int, ...]:
-        """Ids with exactly one mounted physical instance, on ``target_name``."""
-        target = self.target(target_name)
-        return tuple(tag_id for tag_id in target.ids if self.owners(tag_id, target.family) == (target_name,))
-
     @property
     def cross_family_ids(self) -> frozenset[int]:
         return frozenset(tag_id for tag_id in self.known_ids
@@ -122,14 +111,6 @@ def _validate_owners(path, targets):
                 raise ValueError(
                     f"{path}: id {tag_id} is shared by {names} without one explicit ambiguity_group"
                 )
-    for name, target in targets.items():
-        if target.calibration_root_id is not None and len([
-            t for t in owners[target.calibration_root_id] if t.family == target.family
-        ]) != 1:
-            raise ValueError(
-                f"{path}: targets.{name}.calibration_root_id must identify one physical instance"
-            )
-
     return owners
 
 
@@ -182,30 +163,6 @@ def load_inventory(path: str | Path = DEFAULT_INVENTORY_PATH) -> FiducialInvento
         minimum = entry.get("minimum_acquisition_ids")
         if minimum is not None and not 1 <= int(minimum) <= len(ids):
             raise ValueError(f"{path}: targets.{name}.minimum_acquisition_ids is invalid")
-        root_id = entry.get("root_id")
-        if root_id is not None and int(root_id) not in ids:
-            raise ValueError(f"{path}: targets.{name}.root_id must be one of its ids")
-        calibration_root_id = entry.get("calibration_root_id")
-        if calibration_root_id is not None and int(calibration_root_id) not in ids:
-            raise ValueError(
-                f"{path}: targets.{name}.calibration_root_id must be one of its ids"
-            )
-        grid = entry.get("grid")
-        parsed_grid = None
-        if grid is not None:
-            if (
-                not isinstance(grid, list)
-                or not grid
-                or any(not isinstance(row, list) or not row for row in grid)
-                or len({len(row) for row in grid}) != 1
-            ):
-                raise ValueError(f"{path}: targets.{name}.grid must be a non-empty rectangle")
-            parsed_grid = tuple(tuple(int(tag_id) for tag_id in row) for row in grid)
-            flattened = tuple(tag_id for row in parsed_grid for tag_id in row)
-            if len(set(flattened)) != len(flattened) or set(flattened) != set(ids):
-                raise ValueError(
-                    f"{path}: targets.{name}.grid must contain each target id exactly once"
-                )
         minimum_observations = entry.get("minimum_calibration_observations")
         if minimum_observations is not None and int(minimum_observations) < 4:
             raise ValueError(f"{path}: targets.{name}.minimum_calibration_observations must be >=4")
@@ -217,21 +174,9 @@ def load_inventory(path: str | Path = DEFAULT_INVENTORY_PATH) -> FiducialInvento
         max_corner_px = entry.get("max_calibration_corner_px")
         max_residual_mm = entry.get("max_calibration_residual_mm")
         max_parent_distance_mm = entry.get("max_calibration_parent_distance_mm")
-        max_reprojection_px = entry.get("max_calibration_reprojection_px")
-        max_consensus_mm = entry.get("max_calibration_consensus_mm")
-        max_regression_mm = entry.get("max_calibration_regression_mm")
-        if max_corner_px is not None and (
-            not math.isfinite(float(max_corner_px)) or float(max_corner_px) <= 0
-        ):
-            raise ValueError(f"{path}: targets.{name}.max_calibration_corner_px must be positive")
-        if max_residual_mm is not None and (
-            not math.isfinite(float(max_residual_mm)) or float(max_residual_mm) <= 0
-        ):
-            raise ValueError(f"{path}: targets.{name}.max_calibration_residual_mm must be positive")
         for field_name, value in (
-            ("max_calibration_reprojection_px", max_reprojection_px),
-            ("max_calibration_consensus_mm", max_consensus_mm),
-            ("max_calibration_regression_mm", max_regression_mm),
+            ("max_calibration_corner_px", max_corner_px),
+            ("max_calibration_residual_mm", max_residual_mm),
             ("max_calibration_parent_distance_mm", max_parent_distance_mm),
         ):
             if value is not None and (not math.isfinite(float(value)) or float(value) <= 0):
@@ -246,11 +191,6 @@ def load_inventory(path: str | Path = DEFAULT_INVENTORY_PATH) -> FiducialInvento
             parent_frame=parent_frame,
             minimum_acquisition_ids=int(minimum) if minimum is not None else None,
             ambiguity_group=entry.get("ambiguity_group"),
-            root_id=int(root_id) if root_id is not None else None,
-            calibration_root_id=(
-                int(calibration_root_id) if calibration_root_id is not None else None
-            ),
-            grid=parsed_grid,
             minimum_calibration_observations=(
                 int(minimum_observations) if minimum_observations is not None else None
             ),
@@ -263,15 +203,6 @@ def load_inventory(path: str | Path = DEFAULT_INVENTORY_PATH) -> FiducialInvento
             ),
             max_calibration_parent_distance_mm=(
                 float(max_parent_distance_mm) if max_parent_distance_mm is not None else None
-            ),
-            max_calibration_reprojection_px=(
-                float(max_reprojection_px) if max_reprojection_px is not None else None
-            ),
-            max_calibration_consensus_mm=(
-                float(max_consensus_mm) if max_consensus_mm is not None else None
-            ),
-            max_calibration_regression_mm=(
-                float(max_regression_mm) if max_regression_mm is not None else None
             ),
         )
     if not targets:

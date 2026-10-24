@@ -1,23 +1,19 @@
-"""ink — inks, caps, palette, the ledger and the session (scripts/ink.py).
+"""ink — inks, caps, palette and the ledger (scripts/ink.py).
 
-Six verbs over ink.py's seventeen subcommands, one per thing an operator
-means (2026-09-02; the 08-29 one-verb-per-subcommand tree had 17 verbs, 12
-of them never typed):
+Five verbs over ink.py's subcommands, one per thing an operator means:
 
-- `ink status` reads — palette, stock, the session (`--session`) and the
-  ledger (`--ledger`); all three are `ink.py status|session status|ledger`.
+- `ink status` reads — palette, stock and the ledger (`--ledger`), as
+  `ink.py status|ledger`.
 - `ink mise-en-place` is the pre-session checklist for the stated tool;
   `--strokes` turns it into the dip planner's dry run (`ink.py plan`).
-- `ink session start|end` open and close what the next run debits; `start`
-  takes the stated `--ee-tool` like every other tool-bearing verb.
 - `ink edit -- <load|dump|bottle|cartridge|caps|reconcile|weigh> …` is the
   one `mutates-config` verb: those seven rewrite tracked config or append a
   ledger event, and the tier is the only thing the CLI adds — ink.py validates
   its own arguments. Any other subcommand after `edit --` is refused, so a
   read never masquerades as an edit.
 - `ink sync` scp's other nodes' ledgers (`remote`).
-- bare `ink -- …` passes anything else ink.py offers (`fit`, `session
-  rebuild <id>`, `plan`, `--help`) through as `offline`; it refuses the edit
+- bare `ink -- …` passes anything else ink.py offers (`fit`, `plan`,
+  `--help`) through as `offline`; it refuses the edit
   subcommands and `sync`, so a write never masquerades as offline.
 """
 
@@ -30,7 +26,7 @@ from tatbot_cli.registry import MUTATES_CONFIG, OFFLINE, REMOTE, verb
 from tatbot_cli.verbs._common import py, tool_flag
 
 INK = "scripts/ink.py"
-WRAPS = (INK, "scripts/lib/ink_spec.py", "scripts/lib/ink_session.py")
+WRAPS = (INK, "scripts/lib/ink_spec.py")
 DOC = "docs/ink.md"
 LEDGER_INV = "The ledger is append-only; every event carries an id, so re-reading or re-syncing never double-counts."
 COMMIT_INV = "Writes the file at once (no --write); commit config/palette_load.yaml / inventory.yaml afterwards — they are session facts every node should agree on."
@@ -60,7 +56,6 @@ def _ink(ctx, sub: str, *args, tool: bool = False, **kw):
 
 
 def _status_args(p):
-    p.add_argument("--session", action="store_true", help="the open session on this node (ink.py session status)")
     p.add_argument("--ledger", action="store_true", help="the append-only event ledger, local + synced remote copies (ink.py ledger)")
     p.add_argument("--since", metavar="ISO", help="ledger: events since this time (implies --ledger)")
     p.add_argument("--mode", choices=["real", "rehearsal", "sim"], help="ledger: one mode (implies --ledger)")
@@ -68,17 +63,11 @@ def _status_args(p):
 
 
 @verb(effects=('read_files',), noun="ink", verb="status", tier=OFFLINE,
-      summary="palette load, stock, the ledger tail; --session the open session; --ledger [-n N] the events",
-      wraps=WRAPS, passthrough="ink.py status | session status | ledger", args=_status_args, example=(), doc=DOC,
+      summary="palette load, stock, the ledger tail; --ledger [-n N] the events",
+      wraps=WRAPS, passthrough="ink.py status | ledger", args=_status_args, example=(), doc=DOC,
       invariants=(LEDGER_INV,))
 def ink_status(ctx, ns, rest):
-    ledger = ns.ledger or bool(ns.since or ns.mode or ns.n)
-    if ledger and ns.session:
-        print("tatbot ink status: --ledger and --session are two different reads; pick one", file=sys.stderr)
-        return EXIT_USAGE
-    if ns.session:
-        return _ink(ctx, "session", "status", *rest)
-    if ledger:
+    if ns.ledger or ns.since or ns.mode or ns.n:
         flags = (["--since", ns.since] if ns.since else []) + (["--mode", ns.mode] if ns.mode else []) + \
             (["-n", str(ns.n)] if ns.n else [])
         return _ink(ctx, "ledger", *flags, *rest)
@@ -99,24 +88,6 @@ def ink_mise(ctx, ns, rest):
     if ns.strokes:
         return _ink(ctx, "plan", "--strokes", *ns.strokes, *rest, tool=True)
     return _ink(ctx, "mise-en-place", *rest, tool=True)
-
-
-# --- the session -----------------------------------------------------------------
-
-
-@verb(effects=('read_files', 'write_files'), noun="ink", verb="session start", tier=OFFLINE, summary="open the session for the stated tool (one per node; --need-ul / --program)",
-      wraps=WRAPS, passthrough="ink.py session start", needs_tool=True, example=(), doc=DOC,
-      invariants=("One open session per node — one tool in the mount; another tool's session is refused until ended.",
-                  "Start one by hand to declare the planned need.",
-                  "Read it back with `tatbot ink status --session`; prove it from the ledger with `tatbot ink -- session rebuild <id>`."))
-def ink_session_start(ctx, ns, rest):
-    return _ink(ctx, "session", "start", *rest, tool=True)
-
-
-@verb(effects=('read_files', 'write_files'), noun="ink", verb="session end", tier=OFFLINE, summary="close the open session with its totals",
-      wraps=WRAPS, passthrough="ink.py session end", example=(), doc=DOC)
-def ink_session_end(ctx, ns, rest):
-    return _ink(ctx, "session", "end", *rest)
 
 
 # --- tracked config ---------------------------------------------------------------
@@ -161,11 +132,10 @@ def _bare_args(p):
     p.description = (p.description or "") + (
         "\n\nanything else ink.py offers passes through after `--` (offline):\n"
         "  tatbot ink -- fit                       refit uptake/deposit/bleed from weigh events\n"
-        "  tatbot ink -- session rebuild <id>      prove a session from its ledger events\n"
         "  tatbot ink -- --help                    ink.py's own usage")
 
 
-@verb(effects=('read_files', 'write_files'), noun="ink", verb="", tier=OFFLINE, summary="anything else ink.py offers: `-- fit`, `-- session rebuild <id>`, `-- --help`",
+@verb(effects=('read_files', 'write_files'), noun="ink", verb="", tier=OFFLINE, summary="anything else ink.py offers: `-- fit`, `-- plan`, `-- --help`",
       wraps=WRAPS, passthrough="ink.py", args=_bare_args, example=("--", "fit"), doc=DOC,
       invariants=("Offline passthrough only: the writing subcommands are `ink edit --`, sync is `ink sync`; both are refused here.",))
 def ink_passthrough(ctx, ns, rest):

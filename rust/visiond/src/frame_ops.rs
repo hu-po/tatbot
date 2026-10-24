@@ -1,145 +1,36 @@
-//! Frame post-processing, rate limiting and timing aggregation.
+//! Frame post-processing and rate limiting.
 //!
 //! Pure logic lifted out of the `tatbot-visiond` binary. It reads and writes
 //! recorded frames and plain numbers, and touches no camera API, so it builds
 //! and tests under every profile — including `vision-core`, which is all most
-//! nodes can compile. It used to sit in `main.rs` behind `gstreamer`,
-//! `realsense` and `fiducials`, where its tests ran only on a camera node.
+//! nodes can compile.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::mpsc;
 
+// Only the `image`-backed visual scaling below returns errors or matches
+// pixel formats; it is compiled with the viewer.
+#[cfg(feature = "rerun")]
 use anyhow::{Context, Result};
-use serde::Serialize;
 
-use crate::{PixelFormat, RecordedPayload, SynchronizedFrameSet};
+#[cfg(feature = "rerun")]
+use crate::PixelFormat;
+use crate::{RecordedPayload, SynchronizedFrameSet};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VideoCrop {
-    pub x: u32,
-    pub y: u32,
-    pub width: u32,
-    pub height: u32,
-}
-
-pub fn parse_socket_crops(values: &[String]) -> Result<BTreeMap<String, VideoCrop>> {
-    let mut crops = BTreeMap::new();
-    for value in values {
-        let (camera, coordinates) = value.split_once('=').with_context(|| {
-            format!("invalid --socket-crop {value:?}; expected CAMERA=X,Y,WIDTH,HEIGHT")
-        })?;
-        if camera.is_empty() {
-            anyhow::bail!("invalid --socket-crop {value:?}; camera name is empty");
-        }
-        let parts = coordinates
-            .split(',')
-            .map(str::parse::<u32>)
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .with_context(|| format!("invalid --socket-crop {value:?}; coordinates must be u32"))?;
-        let [x, y, width, height] = parts.as_slice() else {
-            anyhow::bail!("invalid --socket-crop {value:?}; expected four coordinates");
-        };
-        if *width == 0 || *height == 0 {
-            anyhow::bail!("invalid --socket-crop {value:?}; width and height must be positive");
-        }
-        let crop = VideoCrop {
-            x: *x,
-            y: *y,
-            width: *width,
-            height: *height,
-        };
-        if crops.insert(camera.to_string(), crop).is_some() {
-            anyhow::bail!("duplicate --socket-crop for {camera}");
+/// Packed YUYV (two pixels per Y0 U Y1 V macropixel) to RGB8, BT.601: the one
+/// conversion the bus encoder, the viewer's JPEG path and the depth cloud share.
+pub fn yuyv_to_rgb(bytes: &[u8]) -> Vec<u8> {
+    let mut rgb = Vec::with_capacity(bytes.len() / 2 * 3);
+    for pair in bytes.chunks_exact(4) {
+        let u = pair[1] as f32 - 128.0;
+        let v = pair[3] as f32 - 128.0;
+        for y in [pair[0] as f32, pair[2] as f32] {
+            rgb.push((y + 1.402 * v).clamp(0.0, 255.0) as u8);
+            rgb.push((y - 0.344 * u - 0.714 * v).clamp(0.0, 255.0) as u8);
+            rgb.push((y + 1.772 * u).clamp(0.0, 255.0) as u8);
         }
     }
-    Ok(crops)
-}
-
-pub fn crop_video_set(
-    set: &SynchronizedFrameSet,
-    crops: &BTreeMap<String, VideoCrop>,
-    purpose: &str,
-) -> Result<SynchronizedFrameSet> {
-    let mut frames = BTreeMap::new();
-    for (name, frame) in &set.frames {
-        let crop = crops
-            .get(name)
-            .with_context(|| format!("no {purpose} crop configured for {name}"))?;
-        let (format, width, height, bytes) = match &frame.payload {
-            RecordedPayload::Video {
-                format,
-                width,
-                height,
-                bytes,
-            } if matches!(format, PixelFormat::Bgr8 | PixelFormat::Rgb8) => {
-                (*format, *width, *height, bytes)
-            }
-            _ => anyhow::bail!("visual cropping requires decoded BGR/RGB frames"),
-        };
-        let x_end = crop
-            .x
-            .checked_add(crop.width)
-            .context("socket crop x extent overflowed")?;
-        let y_end = crop
-            .y
-            .checked_add(crop.height)
-            .context("socket crop y extent overflowed")?;
-        if x_end > width || y_end > height {
-            anyhow::bail!(
-                "{purpose} crop for {name} ({},{},{},{}) exceeds {width}x{height}",
-                crop.x,
-                crop.y,
-                crop.width,
-                crop.height
-            );
-        }
-        let source_stride = usize::try_from(width)? * 3;
-        let output_stride = usize::try_from(crop.width)? * 3;
-        let expected = source_stride * usize::try_from(height)?;
-        if bytes.len() != expected {
-            anyhow::bail!(
-                "decoded {name} frame has {} bytes; expected {expected}",
-                bytes.len()
-            );
-        }
-        let mut output = Vec::with_capacity(output_stride * usize::try_from(crop.height)?);
-        let x_offset = usize::try_from(crop.x)? * 3;
-        for y in crop.y..y_end {
-            let start = usize::try_from(y)? * source_stride + x_offset;
-            output.extend_from_slice(&bytes[start..start + output_stride]);
-        }
-        let mut metadata = frame.metadata.clone();
-        metadata.profile.width = crop.width;
-        metadata.profile.height = crop.height;
-        metadata.flags.push(format!("{purpose}_cropped"));
-        metadata.attributes.insert(
-            format!("{purpose}_source_dimensions"),
-            format!("{width}x{height}"),
-        );
-        metadata.attributes.insert(
-            format!("{purpose}_crop_xywh"),
-            format!("{},{},{},{}", crop.x, crop.y, crop.width, crop.height),
-        );
-        frames.insert(
-            name.clone(),
-            crate::FrameRecord {
-                metadata,
-                payload: RecordedPayload::Video {
-                    format,
-                    width: crop.width,
-                    height: crop.height,
-                    bytes: output,
-                },
-            },
-        );
-    }
-    Ok(SynchronizedFrameSet {
-        sequence: set.sequence,
-        timestamp_basis: set.timestamp_basis.clone(),
-        timestamp_ns: set.timestamp_ns,
-        maximum_skew_ns: set.maximum_skew_ns,
-        frames,
-    })
+    rgb
 }
 
 /// Nearest-neighbour downscale of a packed raster whose rows are `units`
@@ -205,175 +96,296 @@ pub fn note_scaled(
 /// values are untouched, so `depth_units_m` stays valid; the scaled plane is
 /// a visualization derivative, never evidence.
 pub fn scale_depth_set(set: &SynchronizedFrameSet, scale: f64, purpose: &str) -> SynchronizedFrameSet {
-    let mut output = set.clone();
-    for frame in output.frames.values_mut() {
+    with_frames(set, |frame| {
         let RecordedPayload::Depth {
             width,
             height,
             bytes,
         } = &frame.payload
         else {
-            continue;
+            return frame.clone();
         };
         let (width, height) = (*width, *height);
         let Some((resized, new_width, new_height)) =
             scale_packed_rows(bytes, width, height, 2, scale)
         else {
-            continue;
+            return frame.clone();
         };
-        frame.payload = RecordedPayload::Depth {
-            width: new_width,
-            height: new_height,
-            bytes: resized,
+        let mut out = crate::FrameRecord {
+            metadata: frame.metadata.clone(),
+            payload: RecordedPayload::Depth {
+                width: new_width,
+                height: new_height,
+                bytes: resized,
+            },
         };
-        note_scaled(frame, width, height, new_width, new_height, scale, purpose);
+        note_scaled(&mut out, width, height, new_width, new_height, scale, purpose);
+        out
+    })
+}
+
+/// `set` with each frame replaced by `frame(original)`: only what `frame`
+/// builds is allocated, never a copy of the whole set first.
+fn with_frames(
+    set: &SynchronizedFrameSet,
+    mut frame: impl FnMut(&crate::FrameRecord) -> crate::FrameRecord,
+) -> SynchronizedFrameSet {
+    SynchronizedFrameSet {
+        sequence: set.sequence,
+        timestamp_basis: set.timestamp_basis.clone(),
+        timestamp_ns: set.timestamp_ns,
+        maximum_skew_ns: set.maximum_skew_ns,
+        frames: set.frames.iter().map(|(name, f)| (name.clone(), frame(f))).collect(),
     }
+}
+
+/// A Z16 depth plane decimated to fit `max_width` x `max_height` by an
+/// integer factor, each output sample the nearest valid range in its block.
+/// Averaging across a depth edge would invent surfaces between the near and
+/// the far side; the minimum keeps the nearer one, and a block with no valid
+/// sample stays zero (invalid). `None` when the frame is not depth or already
+/// fits. The plane stays in sensor units, so `depth_units_m` holds, and a
+/// Pinhole scaled by payload over full size still projects it.
+pub fn decimate_depth_valid_min(
+    frame: &crate::FrameRecord,
+    max_width: u32,
+    max_height: u32,
+    purpose: &str,
+) -> Option<crate::FrameRecord> {
+    let RecordedPayload::Depth {
+        width,
+        height,
+        bytes,
+    } = &frame.payload
+    else {
+        return None;
+    };
+    let (width, height) = (*width, *height);
+    let factor = width
+        .div_ceil(max_width.max(1))
+        .max(height.div_ceil(max_height.max(1)));
+    if factor <= 1 || bytes.len() != width as usize * height as usize * 2 {
+        return None;
+    }
+    let (new_width, new_height) = (width.div_ceil(factor), height.div_ceil(factor));
+    let sample = |x: u32, y: u32| {
+        let at = (y as usize * width as usize + x as usize) * 2;
+        u16::from_le_bytes([bytes[at], bytes[at + 1]])
+    };
+    let mut decimated = Vec::with_capacity(new_width as usize * new_height as usize * 2);
+    for row in 0..new_height {
+        for column in 0..new_width {
+            let nearest = (row * factor..((row + 1) * factor).min(height))
+                .flat_map(|y| (column * factor..((column + 1) * factor).min(width)).map(move |x| (x, y)))
+                .map(|(x, y)| sample(x, y))
+                .filter(|&range| range != 0)
+                .min()
+                .unwrap_or(0);
+            decimated.extend_from_slice(&nearest.to_le_bytes());
+        }
+    }
+    let mut output = frame.clone();
+    output.payload = RecordedPayload::Depth {
+        width: new_width,
+        height: new_height,
+        bytes: decimated,
+    };
+    note_scaled(
+        &mut output,
+        width,
+        height,
+        new_width,
+        new_height,
+        1.0 / f64::from(factor),
+        purpose,
+    );
     output
+        .metadata
+        .attributes
+        .insert(format!("{purpose}_resize_filter"), "valid_min".into());
+    Some(output)
+}
+
+/// Zero (invalid) every sample of a Z16 depth plane beyond `max_m` metres,
+/// read in the frame's own `depth_units_m`, so a display cloud keeps the
+/// working volume and drops the room behind it. A plane without metric units
+/// is left as it is: its scale would be a guess.
+pub fn clip_depth_beyond(frame: &mut crate::FrameRecord, max_m: f64, purpose: &str) {
+    let Some(units) = frame
+        .metadata
+        .attributes
+        .get("depth_units_m")
+        .and_then(|units| units.parse::<f64>().ok())
+        .filter(|units| units.is_finite() && *units > 0.0)
+    else {
+        return;
+    };
+    let RecordedPayload::Depth { bytes, .. } = &mut frame.payload else {
+        return;
+    };
+    let limit = (max_m / units).round().min(f64::from(u16::MAX)) as u16;
+    for sample in bytes.chunks_exact_mut(2) {
+        if u16::from_le_bytes([sample[0], sample[1]]) > limit {
+            sample.fill(0);
+        }
+    }
+    frame
+        .metadata
+        .attributes
+        .insert(format!("{purpose}_max_range_m"), max_m.to_string());
+}
+
+/// A Z16 plane (little-endian samples) as ROS `compressedDepth` RVL, the
+/// payload Rerun's `EncodedDepthImage` decodes: a 12-byte config header
+/// (format 0, no inverse-depth quantisation, so the samples stay in sensor
+/// units), width and height, then RVL (Wilson 2017): each run of zeros and of
+/// valid samples as a length, each valid sample as the zigzag of its
+/// difference from the previous one, all in 3-bit groups packed eight to a
+/// little-endian word. Lossless; a smooth surface costs about a byte a sample.
+pub fn rvl_depth(width: u32, height: u32, samples: &[u8]) -> Vec<u8> {
+    struct Nibbles {
+        out: Vec<u8>,
+        word: u32,
+        count: u32,
+    }
+    impl Nibbles {
+        fn push(&mut self, nibble: u32) {
+            self.word = (self.word << 4) | nibble;
+            self.count += 1;
+            if self.count == 8 {
+                self.out.extend_from_slice(&self.word.to_le_bytes());
+                (self.word, self.count) = (0, 0);
+            }
+        }
+        fn value(&mut self, mut value: u32) {
+            loop {
+                let low = value & 0x7;
+                value >>= 3;
+                self.push(if value == 0 { low } else { low | 0x8 });
+                if value == 0 {
+                    return;
+                }
+            }
+        }
+    }
+    let samples: Vec<u16> = samples
+        .chunks_exact(2)
+        .map(|b| u16::from_le_bytes([b[0], b[1]]))
+        .collect();
+    let mut nibbles = Nibbles {
+        out: Vec::with_capacity(20 + samples.len()),
+        word: 0,
+        count: 0,
+    };
+    nibbles.out.extend_from_slice(&0_i32.to_le_bytes());
+    nibbles.out.extend_from_slice(&[0; 8]);
+    nibbles.out.extend_from_slice(&width.to_le_bytes());
+    nibbles.out.extend_from_slice(&height.to_le_bytes());
+    let (mut at, mut previous) = (0, 0_i32);
+    while at < samples.len() {
+        let zeros = samples[at..].iter().take_while(|&&v| v == 0).count();
+        at += zeros;
+        let valid = samples[at..].iter().take_while(|&&v| v != 0).count();
+        nibbles.value(zeros as u32);
+        nibbles.value(valid as u32);
+        for &sample in &samples[at..at + valid] {
+            let delta = i32::from(sample) - previous;
+            nibbles.value(((delta << 1) ^ (delta >> 31)) as u32);
+            previous = i32::from(sample);
+        }
+        at += valid;
+    }
+    if nibbles.count > 0 {
+        let word = nibbles.word << (4 * (8 - nibbles.count));
+        nibbles.out.extend_from_slice(&word.to_le_bytes());
+    }
+    nibbles.out
 }
 
 // The only helper here that is not self-contained: nearest-neighbour RGB
 // resizing goes through `image`, an optional dependency of these features.
-#[cfg(any(feature = "gstreamer", feature = "rerun"))]
+#[cfg(feature = "rerun")]
 pub fn scale_video_set(
     set: &SynchronizedFrameSet,
     scale: f64,
     purpose: &str,
 ) -> Result<SynchronizedFrameSet> {
-    let mut output = set.clone();
-    for frame in output.frames.values_mut() {
-        let (format, width, height, bytes) = match &frame.payload {
-            RecordedPayload::Video {
-                format,
-                width,
-                height,
-                bytes,
-            } if matches!(format, PixelFormat::Bgr8 | PixelFormat::Rgb8) => {
-                (*format, *width, *height, bytes)
-            }
-            // RealSense colour arrives as YUYV: two pixels share one 4-byte
-            // macropixel, so scale in macropixel units and keep the width even.
-            RecordedPayload::Video {
-                format: PixelFormat::Yuyv,
-                width,
-                height,
-                bytes,
-            } => {
-                let (width, height) = (*width, *height);
-                let Some((resized, new_macro, new_height)) =
-                    scale_packed_rows(bytes, width / 2, height, 4, scale)
-                else {
-                    anyhow::bail!("YUYV frame length does not match its dimensions");
-                };
-                let new_width = new_macro * 2;
-                frame.payload = RecordedPayload::Video {
-                    format: PixelFormat::Yuyv,
-                    width: new_width,
-                    height: new_height,
-                    bytes: resized,
-                };
-                note_scaled(frame, width, height, new_width, new_height, scale, purpose);
-                continue;
-            }
-            // A detector-only owner decodes straight to luma. Resize the
-            // single plane rather than refusing the frame, so the shadow
-            // comparison can run against a Y8 owner as well as a colour one.
-            RecordedPayload::Video {
-                format: PixelFormat::Y8,
-                width,
-                height,
-                bytes,
-            } => {
-                let (width, height) = (*width, *height);
-                let new_width = ((width as f64 * scale).round() as u32).max(1);
-                let new_height = ((height as f64 * scale).round() as u32).max(1);
-                let source = image::GrayImage::from_raw(width, height, bytes.clone())
-                    .context("decoded luma frame length does not match its dimensions")?;
-                let resized = image::imageops::resize(
-                    &source,
-                    new_width,
-                    new_height,
-                    image::imageops::FilterType::Nearest,
-                );
-                frame.payload = RecordedPayload::Video {
-                    format: PixelFormat::Y8,
-                    width: new_width,
-                    height: new_height,
-                    bytes: resized.into_raw(),
-                };
-                note_scaled(frame, width, height, new_width, new_height, scale, purpose);
-                continue;
-            }
-            RecordedPayload::Depth { .. } => continue,
-            _ => anyhow::bail!("visual scaling requires decoded BGR/RGB/YUYV/Y8 frames"),
-        };
-        let new_width = ((width as f64 * scale).round() as u32).max(1);
-        let new_height = ((height as f64 * scale).round() as u32).max(1);
-        let source = image::RgbImage::from_raw(width, height, bytes.clone())
-            .context("decoded frame length does not match its dimensions")?;
-        let resized = image::imageops::resize(
-            &source,
-            new_width,
-            new_height,
-            // The shadow path is latency-sensitive and AprilTag edges are
-            // binary. Nearest-neighbour preserves those edges and avoids the
-            // CPU saturation observed with five simultaneous Triangle resizes
-            // on the Jetson camera node.
-            image::imageops::FilterType::Nearest,
-        );
-        frame.payload = RecordedPayload::Video {
+    let mut failure = None;
+    let output = with_frames(set, |frame| {
+        scale_video_frame(frame, scale, purpose).unwrap_or_else(|error| {
+            failure.get_or_insert(error);
+            frame.clone()
+        })
+    });
+    failure.map_or(Ok(output), Err)
+}
+
+#[cfg(feature = "rerun")]
+fn scale_video_frame(
+    frame: &crate::FrameRecord,
+    scale: f64,
+    purpose: &str,
+) -> Result<crate::FrameRecord> {
+    let (format, width, height, bytes) = match &frame.payload {
+        RecordedPayload::Video {
+            format,
+            width,
+            height,
+            bytes,
+        } => (*format, *width, *height, bytes.as_slice()),
+        RecordedPayload::Depth { .. } => return Ok(frame.clone()),
+        _ => anyhow::bail!("visual scaling requires decoded BGR/RGB/YUYV/Y8 frames"),
+    };
+    let (resized, new_width, new_height) = match format {
+        // RealSense colour arrives as YUYV: two pixels share one 4-byte
+        // macropixel, so scale in macropixel units and keep the width even.
+        PixelFormat::Yuyv => {
+            let Some((resized, new_macro, new_height)) =
+                scale_packed_rows(bytes, width / 2, height, 4, scale)
+            else {
+                anyhow::bail!("YUYV frame length does not match its dimensions");
+            };
+            (resized, new_macro * 2, new_height)
+        }
+        // A recording made by a detector-only owner holds luma: resize the
+        // single plane rather than refusing the frame.
+        PixelFormat::Y8 => resize_nearest::<image::Luma<u8>>(bytes, width, height, scale)
+            .context("decoded luma frame length does not match its dimensions")?,
+        // Nearest-neighbour preserves AprilTag edges, ignores channel order
+        // (BGR resizes as RGB) and avoids the CPU a Triangle filter costs.
+        PixelFormat::Bgr8 | PixelFormat::Rgb8 => {
+            resize_nearest::<image::Rgb<u8>>(bytes, width, height, scale)
+                .context("decoded frame length does not match its dimensions")?
+        }
+        _ => anyhow::bail!("visual scaling requires decoded BGR/RGB/YUYV/Y8 frames"),
+    };
+    let mut out = crate::FrameRecord {
+        metadata: frame.metadata.clone(),
+        payload: RecordedPayload::Video {
             format,
             width: new_width,
             height: new_height,
-            bytes: resized.into_raw(),
-        };
-        frame.metadata.profile.width = new_width;
-        frame.metadata.profile.height = new_height;
-        frame
-            .metadata
-            .flags
-            .push(format!("{purpose}_uniformly_scaled"));
-        frame.metadata.attributes.insert(
-            format!("{purpose}_source_dimensions"),
-            format!("{width}x{height}"),
-        );
-        frame
-            .metadata
-            .attributes
-            .insert(format!("{purpose}_scale"), scale.to_string());
-        frame
-            .metadata
-            .attributes
-            .insert(format!("{purpose}_resize_filter"), "nearest".into());
-    }
-    Ok(output)
+            bytes: resized,
+        },
+    };
+    note_scaled(&mut out, width, height, new_width, new_height, scale, purpose);
+    Ok(out)
 }
 
-pub fn decoded_frame_dimensions(frame: &crate::FrameRecord) -> Option<(usize, usize)> {
-    match &frame.payload {
-        RecordedPayload::Video { width, height, .. } => Some((*width as usize, *height as usize)),
-        _ => None,
-    }
-}
-
-pub fn fiducial_set_due(
-    timestamp_ns: i128,
-    last_processed_ns: Option<i128>,
-    min_interval_ns: Option<i128>,
-) -> bool {
-    match (last_processed_ns, min_interval_ns) {
-        // Camera periods are not exact integer nanoseconds. Comparing the raw
-        // delta made nominal 20 Hz frames at 99.9 ms miss a 10 Hz threshold
-        // and selected every third frame (~6.7 Hz). One sample per aligned
-        // interval keeps the long-run cap while accepting that second frame.
-        (Some(last), Some(interval)) if timestamp_ns >= last => {
-            timestamp_ns.div_euclid(interval) > last.div_euclid(interval)
-        }
-        _ => true,
-    }
-}
-
-pub fn camera_reacquisition_due(row: usize, camera_index: usize, period: usize) -> bool {
-    period == 0 || (row + camera_index) % period == 0
+/// Nearest-neighbour resize of a borrowed plane: the source is read in place.
+#[cfg(feature = "rerun")]
+fn resize_nearest<P: image::Pixel<Subpixel = u8> + 'static>(
+    bytes: &[u8],
+    width: u32,
+    height: u32,
+    scale: f64,
+) -> Option<(Vec<u8>, u32, u32)> {
+    let new_width = ((width as f64 * scale).round() as u32).max(1);
+    let new_height = ((height as f64 * scale).round() as u32).max(1);
+    let source = image::ImageBuffer::<P, &[u8]>::from_raw(width, height, bytes)?;
+    let resized =
+        image::imageops::resize(&source, new_width, new_height, image::imageops::FilterType::Nearest);
+    Some((resized.into_raw(), new_width, new_height))
 }
 
 pub fn decimate_replay_rows(rows: &mut Vec<(i128, usize, usize)>, source_count: usize, max_fps: f64) {
@@ -390,74 +402,6 @@ pub fn decimate_replay_rows(rows: &mut Vec<(i128, usize, usize)>, source_count: 
         }
         due
     });
-}
-
-#[derive(Debug, Serialize)]
-pub struct TimingSummary {
-    pub samples: usize,
-    pub retained_samples: usize,
-    pub median: f64,
-    pub p95: f64,
-    pub max: f64,
-}
-
-/// At 20 Hz, 4096 values cover more than three minutes per metric while making
-/// multi-hour live views constant-space.
-pub const TIMING_SAMPLE_LIMIT: usize = 4096;
-
-#[derive(Debug)]
-pub struct TimingSamples {
-    pub values: Vec<f64>,
-    pub next: usize,
-    pub samples: usize,
-    pub max: f64,
-    pub limit: usize,
-}
-
-impl TimingSamples {
-    pub fn with_limit(limit: usize) -> Self {
-        assert!(limit > 0);
-        Self {
-            values: Vec::new(),
-            next: 0,
-            samples: 0,
-            max: f64::NEG_INFINITY,
-            limit,
-        }
-    }
-
-    pub fn push(&mut self, value: f64) {
-        self.samples = self.samples.saturating_add(1);
-        self.max = self.max.max(value);
-        if self.values.len() < self.limit {
-            self.values.push(value);
-            return;
-        }
-        self.values[self.next] = value;
-        self.next = (self.next + 1) % self.limit;
-    }
-}
-
-impl Default for TimingSamples {
-    fn default() -> Self {
-        Self::with_limit(TIMING_SAMPLE_LIMIT)
-    }
-}
-
-pub fn timing_summary(samples: &TimingSamples) -> Option<TimingSummary> {
-    if samples.values.is_empty() {
-        return None;
-    }
-    let mut sorted = samples.values.clone();
-    sorted.sort_by(f64::total_cmp);
-    let p95_index = ((sorted.len() - 1) as f64 * 0.95).round() as usize;
-    Some(TimingSummary {
-        samples: samples.samples,
-        retained_samples: sorted.len(),
-        median: sorted[sorted.len() / 2],
-        p95: sorted[p95_index],
-        max: samples.max,
-    })
 }
 
 pub fn bounded_capture_event_channel<T>(capacity: usize) -> (mpsc::SyncSender<T>, mpsc::Receiver<T>) {
@@ -497,140 +441,6 @@ impl BoundedStrings {
 }
 
 #[cfg(test)]
-mod socket_crop_tests {
-    use super::{VideoCrop, crop_video_set, parse_socket_crops};
-    use std::collections::{BTreeMap, BTreeSet};
-    use crate::{
-        FrameMetadata, FrameRecord, FrameTimestamps, PixelFormat, RecordedPayload, SensorKind,
-        StreamProfile, SynchronizedFrameSet, TimestampDomain,
-    };
-
-    #[test]
-    fn parses_and_refuses_ambiguous_crop_specs() {
-        let crops =
-            parse_socket_crops(&["camera1=1,2,3,4".to_string(), "camera2=0,0,5,6".to_string()])
-                .unwrap();
-        assert_eq!(
-            crops["camera1"],
-            VideoCrop {
-                x: 1,
-                y: 2,
-                width: 3,
-                height: 4
-            }
-        );
-        assert!(parse_socket_crops(&["camera1=0,0,0,4".to_string()]).is_err());
-        assert!(
-            parse_socket_crops(&["camera1=0,0,1,1".to_string(), "camera1=1,1,1,1".to_string(),])
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn crops_without_cloning_full_frame_pixels() {
-        let frame = FrameRecord {
-            metadata: FrameMetadata {
-                sensor_name: "camera1".into(),
-                sensor_kind: SensorKind::PoE,
-                sequence: 1,
-                profile: StreamProfile {
-                    stream: "main".into(),
-                    width: 3,
-                    height: 2,
-                    fps_num: 20,
-                    fps_den: 1,
-                    format: PixelFormat::Bgr8,
-                },
-                timestamps: FrameTimestamps {
-                    source_ns: Some(10),
-                    source_domain: TimestampDomain::CameraNtp,
-                    rtp_timestamp: Some(1),
-                    pipeline_pts_ns: Some(2),
-                    pipeline_dts_ns: None,
-                    host_monotonic_ns: 3,
-                    host_unix_ns: 4,
-                    normalized_unix_ns: Some(10),
-                },
-                dropped_before: 0,
-                calibration_id: None,
-                flags: Vec::new(),
-                attributes: BTreeMap::new(),
-            },
-            payload: RecordedPayload::Video {
-                format: PixelFormat::Bgr8,
-                width: 3,
-                height: 2,
-                bytes: (0_u8..18).collect(),
-            },
-        };
-        let set = SynchronizedFrameSet {
-            sequence: 1,
-            timestamp_basis: "normalized_unix_ns".into(),
-            timestamp_ns: 10,
-            maximum_skew_ns: 0,
-            frames: BTreeMap::from([("camera1".into(), frame)]),
-        };
-        let output = crop_video_set(
-            &set,
-            &BTreeMap::from([(
-                "camera1".into(),
-                VideoCrop {
-                    x: 1,
-                    y: 0,
-                    width: 2,
-                    height: 2,
-                },
-            )]),
-            "test",
-        )
-        .unwrap();
-        let cropped = &output.frames["camera1"];
-        assert_eq!(cropped.metadata.profile.width, 2);
-        assert_eq!(cropped.metadata.profile.height, 2);
-        assert!(cropped.metadata.flags.contains(&"test_cropped".into()));
-        let RecordedPayload::Video { bytes, .. } = &cropped.payload else {
-            panic!("expected video payload");
-        };
-        assert_eq!(bytes, &[3, 4, 5, 6, 7, 8, 12, 13, 14, 15, 16, 17]);
-        assert_eq!(
-            output.frames.keys().cloned().collect::<BTreeSet<_>>(),
-            BTreeSet::from(["camera1".to_string()])
-        );
-    }
-}
-
-#[cfg(test)]
-mod fiducial_rate_tests {
-    use super::{camera_reacquisition_due, fiducial_set_due};
-
-    #[test]
-    fn rate_limit_uses_capture_timestamps_and_recovers_from_regression() {
-        assert!(fiducial_set_due(1_000, None, Some(100)));
-        assert!(!fiducial_set_due(1_099, Some(1_000), Some(100)));
-        assert!(fiducial_set_due(1_100, Some(1_000), Some(100)));
-        assert!(fiducial_set_due(900, Some(1_000), Some(100)));
-        assert!(fiducial_set_due(1_001, Some(1_000), None));
-    }
-
-    #[test]
-    fn aligned_intervals_accept_nominal_frames_just_below_raw_delta() {
-        assert!(fiducial_set_due(
-            1_149_900_000,
-            Some(1_050_000_000),
-            Some(100_000_000)
-        ));
-    }
-
-    #[test]
-    fn absent_camera_reacquisition_is_staggered_and_zero_disables_backoff() {
-        assert!(camera_reacquisition_due(10, 0, 5));
-        assert!(!camera_reacquisition_due(10, 1, 5));
-        assert!(camera_reacquisition_due(14, 1, 5));
-        assert!(camera_reacquisition_due(11, 3, 0));
-    }
-}
-
-#[cfg(test)]
 mod replay_tests {
     use super::decimate_replay_rows;
 
@@ -660,8 +470,6 @@ mod replay_tests {
 #[cfg(test)]
 mod retention_tests {
     use super::{BoundedStrings, bounded_capture_event_channel};
-    #[cfg(feature = "gstreamer")]
-    use super::{TimingSamples, timing_summary};
     use std::sync::mpsc::TrySendError;
 
     #[test]
@@ -691,40 +499,10 @@ mod retention_tests {
         assert_eq!(strings.dropped, 1);
         assert_eq!(strings.into_vec(), vec!["second", "third"]);
     }
-
-    #[cfg(feature = "gstreamer")]
-    #[test]
-    fn reports_order_independent_percentiles() {
-        let mut samples = TimingSamples::default();
-        for value in [4.0, 1.0, 3.0, 2.0] {
-            samples.push(value);
-        }
-        let summary = timing_summary(&samples).unwrap();
-        assert_eq!(summary.samples, 4);
-        assert_eq!(summary.retained_samples, 4);
-        assert_eq!(summary.median, 3.0);
-        assert_eq!(summary.p95, 4.0);
-        assert_eq!(summary.max, 4.0);
-    }
-
-    #[cfg(feature = "gstreamer")]
-    #[test]
-    fn bounds_retention_without_losing_total_count_or_global_max() {
-        let mut samples = TimingSamples::with_limit(3);
-        for value in [100.0, 1.0, 2.0, 3.0] {
-            samples.push(value);
-        }
-        let summary = timing_summary(&samples).unwrap();
-        assert_eq!(summary.samples, 4);
-        assert_eq!(summary.retained_samples, 3);
-        assert_eq!(summary.median, 2.0);
-        assert_eq!(summary.p95, 3.0);
-        assert_eq!(summary.max, 100.0);
-    }
 }
 
 #[cfg(test)]
-#[cfg(any(feature = "gstreamer", feature = "rerun"))]
+#[cfg(feature = "rerun")]
 mod luma_scale_tests {
     use super::scale_video_set;
     use crate::{
@@ -815,5 +593,144 @@ mod luma_scale_tests {
             bytes.pop();
         }
         assert!(scale_video_set(&set, 0.5, "socket").is_err());
+    }
+}
+
+#[cfg(test)]
+mod depth_decimation_tests {
+    use super::{clip_depth_beyond, decimate_depth_valid_min, rvl_depth};
+    use crate::{
+        FrameMetadata, FrameRecord, FrameTimestamps, PixelFormat, RecordedPayload, SensorKind,
+        StreamProfile, TimestampDomain,
+    };
+
+    fn depth(width: u32, height: u32, samples: &[u16]) -> FrameRecord {
+        FrameRecord {
+            metadata: FrameMetadata {
+                sensor_name: "overhead_depth_depth".into(),
+                sensor_kind: SensorKind::RealSense,
+                sequence: 1,
+                profile: StreamProfile {
+                    stream: "depth".into(),
+                    width,
+                    height,
+                    fps_num: 30,
+                    fps_den: 1,
+                    format: PixelFormat::Z16,
+                },
+                timestamps: FrameTimestamps {
+                    source_ns: None,
+                    source_domain: TimestampDomain::HostMonotonic,
+                    rtp_timestamp: None,
+                    pipeline_pts_ns: None,
+                    pipeline_dts_ns: None,
+                    host_monotonic_ns: 1,
+                    host_unix_ns: 1,
+                    normalized_unix_ns: Some(1),
+                },
+                dropped_before: 0,
+                calibration_id: None,
+                flags: Vec::new(),
+                attributes: [("depth_units_m".to_string(), "0.001".to_string())].into(),
+            },
+            payload: RecordedPayload::Depth {
+                width,
+                height,
+                bytes: samples.iter().flat_map(|v| v.to_le_bytes()).collect(),
+            },
+        }
+    }
+
+    fn samples(frame: &FrameRecord) -> Vec<u16> {
+        frame
+            .payload
+            .bytes()
+            .chunks_exact(2)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .collect()
+    }
+
+    #[test]
+    fn decimation_keeps_the_nearest_valid_range_and_never_invents_one() {
+        // 5x3 into at most 2 wide: factor 3, a 2x1 output with a partial block.
+        #[rustfmt::skip]
+        let frame = depth(5, 3, &[
+            900, 0,   1200, 0, 0,
+            0,   400, 1200, 0, 0,
+            1300, 0,  1200, 0, 0,
+        ]);
+        let small = decimate_depth_valid_min(&frame, 2, 2, "viewer_preview").unwrap();
+        assert_eq!(samples(&small), [400, 0], "the near side of the edge; an empty block stays invalid");
+        assert_eq!(
+            (small.metadata.profile.width, small.metadata.profile.height),
+            (2, 1)
+        );
+        let attributes = &small.metadata.attributes;
+        assert_eq!(attributes["viewer_preview_source_dimensions"], "5x3");
+        assert_eq!(attributes["viewer_preview_resize_filter"], "valid_min");
+        assert_eq!(attributes["depth_units_m"], "0.001", "sensor units are kept");
+        // A plane that already fits, or a frame that is not depth, is left alone.
+        assert!(decimate_depth_valid_min(&frame, 5, 3, "viewer_preview").is_none());
+        let mut color = frame.clone();
+        color.payload = RecordedPayload::Video {
+            format: PixelFormat::Rgb8,
+            width: 5,
+            height: 3,
+            bytes: vec![0; 45],
+        };
+        assert!(decimate_depth_valid_min(&color, 2, 2, "viewer_preview").is_none());
+    }
+
+    #[test]
+    fn the_d555_aligned_depth_halves_to_the_viewer_preview() {
+        let frame = depth(1280, 720, &vec![700; 1280 * 720]);
+        let small = decimate_depth_valid_min(&frame, 640, 360, "viewer_preview").unwrap();
+        assert_eq!(
+            (small.metadata.profile.width, small.metadata.profile.height),
+            (640, 360)
+        );
+        assert!(samples(&small).iter().all(|v| *v == 700));
+    }
+
+    #[test]
+    fn the_range_clip_drops_the_room_and_keeps_the_table_in_sensor_units() {
+        // Millimetres: table 400-786, floor 1800, invalid 0.
+        let mut frame = depth(5, 1, &[400, 786, 850, 851, 1800]);
+        clip_depth_beyond(&mut frame, 0.85, "viewer_preview");
+        assert_eq!(samples(&frame), [400, 786, 850, 0, 0]);
+        assert_eq!(frame.metadata.attributes["viewer_preview_max_range_m"], "0.85");
+        // 0.1 mm units (a D405): the same metres, ten times the samples.
+        let mut fine = depth(3, 1, &[4000, 8500, 8501]);
+        fine.metadata.attributes.insert("depth_units_m".into(), "0.0001".into());
+        clip_depth_beyond(&mut fine, 0.85, "viewer_preview");
+        assert_eq!(samples(&fine), [4000, 8500, 0]);
+        // Without metric units the scale is unknown and nothing is dropped.
+        let mut unknown = depth(2, 1, &[400, 1800]);
+        unknown.metadata.attributes.clear();
+        clip_depth_beyond(&mut unknown, 0.85, "viewer_preview");
+        assert_eq!(samples(&unknown), [400, 1800]);
+    }
+
+    #[test]
+    fn rvl_depth_is_what_the_viewer_decodes_back_exactly() {
+        // Zero runs at both ends and between, a jump to the far end of the
+        // range and back, one-sample runs: every branch of the coder.
+        let mut plane: Vec<u16> = vec![0, 0, 0, 700, 701, 699, 0, 65535, 1, 0];
+        plane.extend((0..1000_u32).map(|i| if i % 97 == 0 { 0 } else { 600 + (i * 7 % 13) as u16 }));
+        plane.extend([0; 11]);
+        let bytes: Vec<u8> = plane.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let (width, height) = (plane.len() as u32, 1);
+        let blob = rvl_depth(width, height, &bytes);
+        let metadata = re_rvl::RosRvlMetadata::parse(&blob).unwrap();
+        assert_eq!((metadata.width, metadata.height), (width, height));
+        assert!(!metadata.has_quantization(), "samples stay in sensor units");
+        let decoded = re_rvl::decode_rvl_with_quantization(&blob, &metadata).unwrap();
+        let decoded: Vec<u16> = decoded.iter().map(|v| *v as u16).collect();
+        assert_eq!(decoded, plane);
+        // A smooth surface costs well under a byte a sample.
+        let smooth: Vec<u8> = (0..320 * 180_u32)
+            .flat_map(|i| ((500 + (i % 320) / 4 + (i / 320) / 3) as u16).to_le_bytes())
+            .collect();
+        assert!(rvl_depth(320, 180, &smooth).len() < smooth.len() / 3);
     }
 }

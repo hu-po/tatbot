@@ -7,29 +7,17 @@
 
 namespace tatbot::teleop
 {
-// Apply the same Jacobian to positions, velocities and reflected efforts.
-inline double map_joint(double value, size_t joint, bool mirror_arm)
-{
-  // Reflection across root y=0 reverses the axial rotations about x/z.
-  // Shoulder, elbow and wrist pitch rotate about y and retain their signs.
-  return mirror_arm && (joint == 0 || joint == 4 || joint == 5) ? -value : value;
-}
-
 // Startup alignment (see the header comment). The follower's target is the
 // leader's angle plus an offset that starts at whatever mismatch the two arms
 // powered on with and fades to zero over a speed-bounded smoothstep ramp;
-// afterwards the mapping is absolute, with joints 0/4/5 negated in mirrored mode,
-// independent of how either arm was parked before power-on.
+// afterwards the mapping is absolute, independent of how either arm was parked
+// before power-on.
 // In --relative mode the offset never fades, which is the old delta mapping.
 class Alignment
 {
 public:
-  Alignment(bool absolute, double rate, bool mirror_arm = false)
-  : absolute_(absolute), mirror_arm_(mirror_arm), rate_(rate) {}
-
-  // Free-space calibration follows hand-guided increments. Never erase the
-  // measured parking/mount offsets by moving toward mirrored encoder zero.
-  static Alignment wrist_calibration(double rate) {return Alignment(false, rate, true);}
+  Alignment(bool absolute, double rate)
+  : absolute_(absolute), rate_(rate) {}
 
   // Begin a ramp from a fresh pair of baselines (startup, and every resume).
   void restart(
@@ -40,7 +28,7 @@ public:
     largest_ = 0.0;
     largest_joint_ = 0;
     for (size_t i = 0; i < offset_.size(); ++i) {
-      offset_[i] = follower_start[i] - map_joint(leader_start[i], i, mirror_arm_);
+      offset_[i] = follower_start[i] - leader_start[i];
       // The last joint is the follower's tool carriage, which never follows
       // the leader; its offset is never applied, so it must not size the
       // ramp either.
@@ -74,7 +62,7 @@ public:
 
   bool aligning() const {return absolute_ && elapsed_ < duration_;}
   double position(double leader, size_t joint) const
-  {return map_joint(leader, joint, mirror_arm_) + residual() * offset_[joint];}
+  {return leader + residual() * offset_[joint];}
   double offset(size_t joint) const {return offset_[joint];}
   double duration() const {return duration_;}
   double largest_rad() const {return largest_;}
@@ -83,7 +71,6 @@ public:
 private:
   static constexpr double already_aligned_rad = 0.0017;  // 0.1 deg
   bool absolute_;
-  bool mirror_arm_;
   double rate_;
   std::vector<double> offset_;
   double elapsed_ = 0.0;

@@ -60,8 +60,10 @@ def pi():
 
 def test_the_switch_runs_the_machine_only_while_asked_and_released_and_never_restarts_it_by_itself(pi):
     switch, line, released, button_on, stop = pi
-    assert switch.wait(False, 0.5) and not any(line)
+    assert switch.wait(False, 0.5) and not any(line) and machine.reply(switch)[0] is False
     assert switch.wait(True, 0.5) and line[-1] is True
+    powered, age = machine.reply(switch)
+    assert powered and 0.0 <= age < 0.2
     released.clear()   # the e-stop pressed: the Pi cuts the machine by itself
     time.sleep(0.1)
     assert line[-1] is False and switch.why_off() == "the e-stop is pressed" and not switch.wait(True, 0.1)
@@ -77,6 +79,7 @@ def test_the_switch_runs_the_machine_only_while_asked_and_released_and_never_res
     switch._stop.set()   # the session dies with the machine asked on
     time.sleep(0.35)
     assert line[-1] is False and "does not answer" in switch.why_off()
+    assert machine.reply(switch)[1] >= 0.3   # the newest reply is the one before the silence, and it ages
 
 
 def test_the_stack_names_the_switch_and_its_arm():
@@ -103,3 +106,19 @@ def test_service_off_evidence_requires_a_fresh_reply_to_the_current_off_command(
         4 if condition == 'old-sequence' else 5, condition == 'reported-on', condition == 'powered',
         machine.ESTOP_RELEASED, time.monotonic() - (1.0 if condition == 'stale' else 0.0))
     assert switch.is_off() is (condition == 'off')
+
+
+def test_the_safety_state_shows_the_newest_reply_and_its_age_or_none():
+    assert machine.reply(None) == (False, -1.0)   # no switch configured for this arm
+    switch = object.__new__(machine.PiSwitch)
+    switch.answer = None
+    assert machine.reply(switch) == (False, -1.0)   # configured, not answered yet
+    switch.answer = machine.Answer(7, True, True, machine.ESTOP_RELEASED, time.monotonic() - 0.5)
+    powered, age = machine.reply(switch)
+    assert powered and age == pytest.approx(0.5, abs=0.05)
+    switch.answer = machine.Answer(8, True, False, machine.ESTOP_PRESSED, time.monotonic())   # cut by the e-stop
+    assert machine.reply(switch)[0] is False
+    sim = machine.SimSwitch()
+    assert machine.reply(sim)[0] is False and 0.0 <= machine.reply(sim)[1] < 0.01
+    sim.set(True)
+    assert machine.reply(sim)[0] is True and sim.is_off() is False

@@ -50,6 +50,11 @@ def test_native_artwork_preserves_repeated_passes_and_direction(tmp_path):
     assert all(op["src"]["artwork_sha256"] == art["content_sha256"] and not op["continues"] for op in ops)
     assert result == tatbot_ink.compile(path, repo=REPO, at_m=[.015, -.028], width_m=.02)
     assert json.loads(tatbot_ink.write_program(result, tmp_path/'program.json').read_text()) == result
+    bad = copy.deepcopy(result)
+    bad["stats"]["est_s"] = -0.0
+    with pytest.raises(ValueError, match="negative_zero"):
+        tatbot_ink.write_program(bad, tmp_path/'bad.json')
+    assert not (tmp_path/'bad.json').exists()
 
 
 def test_closed_path_retains_closure_and_arc_when_chunked(tmp_path):
@@ -128,6 +133,25 @@ def test_inlumino_pack_shares_geometry_and_preserves_color_exchanges_without_dip
     assert result['stats']['dips'] == 0 and result['stats']['tool_changes'] == 6
 
 
+def test_the_3rl_tattoos_human_skin_exactly_as_it_does_silicone(tmp_path):
+    from resource_fixtures import manifest, resource
+    from tatbot_ink.input import read_input
+
+    art = line_art()
+    path = write(tmp_path, art)
+    results = {}
+    for substrate in ('silicon_skin', 'human_skin'):
+        inkfile = manifest(tmp_path/f'{substrate}.yaml', read_input(art),
+                           [resource('black', tool='lutin-3rl-bugpin', ink='nighthawk_black', mode='ride',
+                                     slot='inkcap_medium_1')], [('pen-1', 'black')], substrate=substrate)
+        results[substrate] = tatbot_ink.compile(path, repo=REPO, inks_path=inkfile)
+    skin, human = results['silicon_skin'], results['human_skin']
+    assert human['substrate'] == 'human_skin' and human['preparation']['ink_binding']['substrate'] == 'human_skin'
+    assert human['resources'] == skin['resources'] and human['resources'][0]['dip'] is not None
+    assert human['ops'] == skin['ops'] and human['stats'] == skin['stats']
+    assert human['preparation']['motion_sha256'] == skin['preparation']['motion_sha256']
+
+
 def test_size_change_and_unbound_or_tampered_artwork_refused(tmp_path):
     art = line_art()
     with pytest.raises(CompileError, match="regenerate"):
@@ -142,7 +166,7 @@ def test_size_change_and_unbound_or_tampered_artwork_refused(tmp_path):
     with pytest.raises(CompileError, match="DBV3"):
         tatbot_ink.compile(write(tmp_path, corrupted), repo=REPO)
     with pytest.raises(CompileError, match="clear area"):
-        tatbot_ink.compile(write(tmp_path, art), repo=REPO, at_m=[.03, .05])
+        tatbot_ink.compile(write(tmp_path, art), repo=REPO, at_m=[.044, .05])
 
 
 def test_placed_design_is_verified_before_overrides(tmp_path):
@@ -168,9 +192,9 @@ def test_generation_width_is_not_a_measurement_or_a_geometry_edit(tmp_path, monk
     motion['pen']['mode'] = 'ride'
     monkeypatch.setattr(adapter, 'load_motion', lambda *args: copy.deepcopy(motion))
     with pytest.raises(CompileError, match='riding tool stroke_mm'):
-        tatbot_ink.compile(path, repo=REPO, arm='left')
+        tatbot_ink.compile(path, repo=REPO, tool_id='picosecond-laser-pen')
     motion['pen']['mode'] = 'press'
-    prop = tatbot_ink.compile(path, repo=REPO, arm="left")
+    prop = tatbot_ink.compile(path, repo=REPO, tool_id='picosecond-laser-pen')
     assert prop["resources"][0]["tool"]["line_width_status"] == "unknown" and prop["resources"][0]["tool"]["line_width_m"] is None
     assert prop["ops"][1]["points_m"] == result["ops"][1]["points_m"]
     assert 'generation width' in tatbot_ink.write_preview(prop, tmp_path/'preview.svg').read_text()

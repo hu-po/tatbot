@@ -774,8 +774,7 @@ fn aligned_records_match(records: &[FrameRecord], calibration: &serde_json::Valu
 /// A record's intrinsics travel as text and come back through the JSON
 /// parser; the calibration's are the values the SDK reported. Without
 /// serde_json's exact float parsing the two can differ by one ULP, and value
-/// equality then withheld every frameset a D405 produced (2026-09-16, the
-/// wrist owner's first run on hardware after the alignment work). Dimensions
+/// equality would withhold every frameset a D405 produces. Dimensions
 /// and the model name must be identical; the floats agree to a relative
 /// 1e-9, far below any calibration change the check exists to catch.
 fn intrinsics_equal(a: &serde_json::Value, b: &serde_json::Value) -> bool {

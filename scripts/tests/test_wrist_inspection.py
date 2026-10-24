@@ -14,7 +14,7 @@ from tatbot_cli import nodes
 def owned_inspection(monkeypatch, tmp_path):
     build = {'schema': 'tatbot.arm-guide-build/1', 'native_backend_compiled': True,
              'sources': {}, 'target': 'x86_64-unknown-linux-gnu', 'profile': 'release',
-             'sdk': {'version': '1.8.5', 'revision': 'fdfd9f68f57b3bd05c4e85011fa5c11296525b2f',
+             'sdk': {'version': '1.11.0', 'revision': '507451794d11e54f11494ef3be1d786ec6060d4a',
                      'library_sha256': 'a' * 64}}
     owner = SimpleNamespace(commands=[], closed=False, fault=None, close_code=0)
 
@@ -32,14 +32,14 @@ def owned_inspection(monkeypatch, tmp_path):
     owner.wait = wait
     owner.close = close
     monkeypatch.setattr(wrist_pose, 'Owner', lambda *args: owner)
-    monkeypatch.setattr(wrist_pose.recipe, 'selected_arm', lambda *args: SimpleNamespace(arm_id='left', controller_role='leader'))
+    monkeypatch.setattr(wrist_pose.recipe, 'selected_arm', lambda *args: SimpleNamespace(arm_id='right', controller_role='follower'))
     monkeypatch.setattr(wrist_pose.recipe, 'native_source_digests', lambda repo: {})
     monkeypatch.setattr(wrist_pose, 'sha256_file', lambda path: 'b' * 64)
-    monkeypatch.setattr(wrist_pose, 'read_workspace', lambda repo: {'left': {'tool_id': 'example-tool'}})
+    monkeypatch.setattr(wrist_pose, 'read_workspace', lambda repo: {'right': {'tool_id': 'example-tool'}})
     monkeypatch.setattr(wrist_pose.subprocess, 'check_output', lambda *args, **kwargs: json.dumps(build))
     monkeypatch.setattr(wrist_pose.platform, 'machine', lambda: 'x86_64')
     monkeypatch.setenv('TATBOT_ESTOP_DEVICE', 'mock-only')
-    args = SimpleNamespace(arm='blue', ee_tool='example-tool', inspect=True, operator_go=True,
+    args = SimpleNamespace(arm='pink', ee_tool='example-tool', inspect=True, operator_go=True,
                            wrist_deg=None, base_deg=None, hold_seconds=0)
     return args, SimpleNamespace(dir=tmp_path, run_id='synthetic-inspection'), owner
 
@@ -89,7 +89,7 @@ def test_existing_pose_still_requests_the_reviewed_target(owned_inspection):
 
 def test_cli_inspection_records_go_and_has_no_pose_target():
     result = tatbot('--dry-run', '--json', '--ee-tool', 'picosecond-laser-pen',
-                    'calib', 'inspect', '--arm', 'blue', '--operator-go', node=nodes.example_node('arm'))
+                    'calib', 'inspect', '--arm', 'pink', '--operator-go', node=nodes.example_node('arm'))
     assert result.returncode == 0, result.stderr
     plan = json.loads(result.stdout)
     assert plan['tier'] == 'motion-auto'
@@ -99,13 +99,13 @@ def test_cli_inspection_records_go_and_has_no_pose_target():
 
 
 def test_cli_inspection_refuses_missing_go():
-    result = tatbot('--dry-run', '--json', 'calib', 'inspect', '--arm', 'blue', node=nodes.example_node('arm'))
+    result = tatbot('--dry-run', '--json', 'calib', 'inspect', '--arm', 'pink', node=nodes.example_node('arm'))
     assert result.returncode == 2
 
 
 @pytest.mark.parametrize('target', [('--wrist-deg', '30'), ('--base-deg', '20')])
 def test_cli_inspection_refuses_pose_targets(target):
-    result = tatbot('--dry-run', '--json', 'calib', 'inspect', '--arm', 'blue', '--operator-go',
+    result = tatbot('--dry-run', '--json', 'calib', 'inspect', '--arm', 'pink', '--operator-go',
                     *target, node=nodes.example_node('arm'))
     assert result.returncode == 2
 
@@ -196,7 +196,7 @@ def test_inspection_capture_subscribes_to_owner_and_closes_before_release(owned_
     monkeypatch.setitem(sys.modules, 'vision_capture', module)
     monkeypatch.setattr(wrist_pose.recipe, 'bind_wrist_capture', lambda *args: {'motion_authority': False})
     wrist_pose.run(args, log)
-    assert calls == [(False, True, 'left'), 'capture', 'closed']
+    assert calls == [(False, True, 'right'), 'capture', 'closed']
     assert owner.commands[-1]['cmd'] == 'release' and owner.closed
 
 
@@ -277,11 +277,11 @@ def test_failed_overhead_binding_does_not_claim_pose_or_hide_idle_release(overhe
 def test_cli_overhead_capture_is_an_explicit_authorized_native_hold():
     for command, target in [('inspect', ()), ('pose', ('--wrist-deg', '90'))]:
         result = tatbot('--dry-run', '--json', '--ee-tool', 'picosecond-laser-pen', 'calib', command,
-                        '--arm', 'blue', '--operator-go', '--capture-overhead', *target,
+                        '--arm', 'pink', '--operator-go', '--capture-overhead', *target,
                         node=nodes.example_node('arm'))
         assert result.returncode == 0, result.stderr
         plan = json.loads(result.stdout)
         assert '--capture-overhead' in plan['argv'] and '--operator-go' in plan['argv']
     result = tatbot('--dry-run', '--json', '--ee-tool', 'picosecond-laser-pen', 'calib', 'pose',
-                    '--arm', 'blue', '--wrist-deg', '90', '--capture-overhead', node=nodes.example_node('arm'))
+                    '--arm', 'pink', '--wrist-deg', '90', '--capture-overhead', node=nodes.example_node('arm'))
     assert result.returncode != 0 and 'operator-go' in result.stderr

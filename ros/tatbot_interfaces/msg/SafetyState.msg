@@ -16,10 +16,12 @@ uint8 LATCH_GUARD_PROBE=7       # probe guard trip (M2)
 uint8 LATCH_CONTROLLER_ERROR=8  # the arm controller reported an error
 uint8 LATCH_DEACTIVATED=9       # hardware component deactivated: hold, never idle
 uint8 LATCH_STEP_REFUSED=10     # a command more than the step limit from the held pose
+uint8 LATCH_GUARD_SNAG=11       # snag guard trip: a riding needle held off its command (a stop, not a fault)
 
 uint8 GUARD_NONE=0
 uint8 GUARD_TIP_LAG=1
 uint8 GUARD_PROBE=2
+uint8 GUARD_SNAG=3
 
 builtin_interfaces/Time stamp
 string arm
@@ -36,4 +38,6 @@ bool landing                # the landing sequence is running
 bool landed                 # verified landed and idle
 bool controller_error
 bool machine_off            # passive tool, or fresh relay reply confirming commanded power off
+bool machine_powered        # the newest MCS1 reply reports the machine powered (sim: as asked); false before one
+float64 machine_reply_age_s # age of the newest MCS1 reply, s; -1 for no machine switch or before the first reply
 float64 rt_period_max_ms    # longest read-to-read period over the last second

@@ -17,7 +17,6 @@ RIG_FILES = [
     "config/profiles/tatbot.json",
     "config/trossen/leader.yaml",
     "config/trossen/follower.yaml",
-    "rust/visiond/config/vision.toml",
 ]
 
 
@@ -55,21 +54,10 @@ def test_renumbering_names_every_file_that_still_holds_the_old_subnet(rig_copy):
     joined = "\n".join(problems)
     router = nodes.require_role(nodes.load(rig_copy), "bus-router")
     arm = nodes.require_role(nodes.load(rig_copy), "arm")
-    for needle in ("__cameras__.camera1", f"{router}.lan", f"{arm}.ssh_lan", "vision.toml: ntp_server",
+    for needle in ("__cameras__.overhead_depth", f"{router}.lan", f"{arm}.ssh_lan",
                    "tatbot.json: driver.leader_ip", "tatbot.json: driver.follower_ip",
                    "leader.yaml: gateway", "follower.yaml: dns"):
         assert needle in joined, f"{needle} missing from:\n{joined}"
-
-
-def test_a_camera_that_drifts_between_vision_toml_and_nodes_json_is_named(rig_copy):
-    path = rig_copy / "rust/visiond/config/vision.toml"
-    cams = nodes.cameras(rig_copy)
-    subnet = nodes.rig_subnet(rig_copy)
-    stray = str(subnet.network_address + 200)  # still inside the subnet, so only the drift is reported
-    text = path.read_text().replace(f'address = "{cams["camera2"]}"', f'address = "{stray}"', 1)
-    path.write_text(text)
-    problems, _ = rig_addressing.check(rig_copy)
-    assert problems == [f"rust/visiond/config/vision.toml: camera2 is {stray}, __cameras__ says {cams['camera2']}"]
 
 
 def test_controller_yaml_must_match_the_profile_and_the_gateway(rig_copy):
@@ -101,12 +89,6 @@ def test_no_rig_stanza_is_a_skip_not_a_failure(tmp_path):
     assert problems == [] and skip
 
 
-def test_vision_toml_parser_reads_blocks_not_lines():
-    text = ('[sync]\nntp_server = "192.0.2.5"\n\n[[cameras.poe]]\nname = "camera1"\naddress = "192.0.2.91"\n'
-            '[cameras.poe.main]\nstream = "main"\n\n[[cameras.poe]]\nname = "camera2"\naddress = "192.0.2.92"\n')
-    assert rig_addressing.vision_cameras(text) == {"ntp_server": "192.0.2.5", "camera1": "192.0.2.91", "camera2": "192.0.2.92"}
-
-
 # `ip -4 -o addr` as a rig node prints it: loopback, a link-local fallback, the
 # wired rig address and a Wi-Fi address on another LAN (RFC 5737 ranges, which
 # the ipaddress module classes as private like RFC 1918).
@@ -122,3 +104,21 @@ def test_lan_ip_is_the_address_on_the_rig_subnet_never_a_baked_in_prefix():
     assert nodes.pick_lan_ip(IP_ADDR, ipaddress.IPv4Network("198.51.100.0/24")) is None
     # no subnet described: the first LAN-looking address, never loopback or link-local
     assert nodes.pick_lan_ip(IP_ADDR, None) == "192.0.2.49"
+
+
+def test_a_direct_cable_address_stays_off_the_rig_subnet_and_names_a_held_role(tmp_path):
+    (tmp_path / "config").mkdir()
+    fleet = {"__rig__": {"subnet": "192.0.2.0/24", "gateway": "192.0.2.1"},
+             "hub": {"ssh": "u@203.0.113.30", "lan": "192.0.2.30", "roles": ["rerun-server"],
+                     "links": {"station": "198.51.100.2"}},
+             "station": {"ssh": "u@203.0.113.40", "roles": ["station"]}}
+    path = tmp_path / "config/nodes.json"
+    path.write_text(json.dumps(fleet))
+    assert rig_addressing.check(tmp_path) == ([], None)
+    fleet["hub"]["links"] = {"station": "192.0.2.77", "kiosk": "198.51.100.6", "tb-hub": "not-an-ip"}
+    path.write_text(json.dumps(fleet))
+    problems, _ = rig_addressing.check(tmp_path)
+    assert problems == ["hub.links.station '192.0.2.77' is in the rig subnet 192.0.2.0/24; a direct cable needs its own",
+                        "hub.links.kiosk '198.51.100.6': no node holds role kiosk",
+                        "hub.links.tb-hub 'not-an-ip': no node holds role tb-hub",
+                        "hub.links.tb-hub 'not-an-ip' is not an IPv4 address"]

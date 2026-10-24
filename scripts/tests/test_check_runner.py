@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -18,8 +19,8 @@ def function(name):
     return re.search(rf"^{name}\(\).*?^}}\n(?=\n|$)", source, re.M | re.S).group()
 
 
-# Exactly the fields web/inkmap/tools/export-soma.py carries from the authoring
-# sheet into the catalog; everything else on either side is derived or consumed.
+# Exactly the fields the pose bake (web/inkmap/tools/export-soma.py, in git
+# history) carried from the authoring sheet into the catalog; everything else on either side is derived or consumed.
 BAKED_POSE = {
     "body_rotation_xyzw": [0, 0, 0, 1],
     "constraints": ["posterior surface faces support"],
@@ -29,13 +30,6 @@ BAKED_POSE = {
 
 
 def body_checkout(tmp_path):
-    # The scan loads the frozen-import boundary module by path, so a checkout
-    # without it cannot run at all. Copy the real module rather than stubbing
-    # it: scan_frozen_imports then runs for real over the fixture, and these
-    # tests keep asserting on what the scan reports rather than on how it died.
-    boundary = Path("python/tatbot_sim/src/tatbot_sim/human_rep/boundary.py")
-    (tmp_path / boundary).parent.mkdir(parents=True)
-    shutil.copyfile(REPO / boundary, tmp_path / boundary)
     assets = tmp_path / "web/inkmap/public/bodies"
     assets.mkdir(parents=True)
     for suffix in ("exclusions.bin", "glb", "poses.bin", "regions.json"):
@@ -78,32 +72,6 @@ def test_body_scan_ignores_incidental_binary_token_but_rejects_text(tmp_path):
     assert "retired.txt: retired body token" in result.stdout
 
 
-def test_body_scan_rejects_a_new_consumer_of_a_frozen_module(tmp_path):
-    """The research freeze is a live gate, not just a module the scan loads.
-
-    Until the fixture carried boundary.py the scan died before reaching this
-    check, so nothing here proved it still fires.
-    """
-    body_checkout(tmp_path)
-    consumer = tmp_path / "python/tatbot_sim/src/tatbot_sim/human_rep/consumer.py"
-    consumer.write_text("from tatbot_sim.human_rep import mechanics\n")
-    code = function("body_single_path_impl") + "\nbody_single_path_impl"
-    result = subprocess.run(["bash", "-c", code], cwd=tmp_path, capture_output=True, text=True)
-    assert result.returncode == 1
-    assert "frozen research dependency tatbot_sim.human_rep.mechanics" in result.stderr
-
-
-def test_body_scan_reports_an_absent_boundary_module_by_name(tmp_path):
-    """A missing boundary module must say so rather than raise a traceback."""
-    body_checkout(tmp_path)
-    (tmp_path / "python/tatbot_sim/src/tatbot_sim/human_rep/boundary.py").unlink()
-    code = function("body_single_path_impl") + "\nbody_single_path_impl"
-    result = subprocess.run(["bash", "-c", code], cwd=tmp_path, capture_output=True, text=True)
-    assert result.returncode == 1
-    assert "frozen-import boundary module is missing" in result.stderr
-    assert "Traceback" not in result.stderr
-
-
 def test_body_scan_rejects_renamed_binary_by_actual_hash(tmp_path):
     body_checkout(tmp_path)
     asset = b"\0retired binary fixture\0"
@@ -127,6 +95,63 @@ def test_successful_job_surfaces_omitted_pytest_coverage():
     result = subprocess.run(["bash", "-c", code], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout
     assert "tests-coverage" in result.stdout and "3 module(s)" in result.stdout
+
+
+def test_ros_fast_and_full_select_their_real_test_tiers(tmp_path):
+    """The full selector reaches colcon as arguments: its Python test task replaces PYTEST_ADDOPTS."""
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    setup = tmp_path / "setup.bash"
+    setup.touch()
+    recorder = tools / "recorder"
+    recorder.write_text('''#!/bin/bash
+printf '%s|%s|%s\\n' "${0##*/}" "$*" "${PYTEST_ADDOPTS:-}" >> "$CALLS"
+if [[ "${0##*/}" == colcon && "$1" == build ]]; then
+  mkdir -p "$TATBOT_ROS_CHECK_DIR/install"
+  touch "$TATBOT_ROS_CHECK_DIR/install/setup.bash"
+fi
+''')
+    recorder.chmod(0o755)
+    for command in ("python3", "colcon"):
+        (tools / command).symlink_to(recorder)
+    job = function("job_ros").replace("/opt/ros/jazzy/setup.bash", str(setup))
+    for full in (0, 1):
+        calls = tmp_path / f"calls-{full}"
+        env = dict(os.environ, PATH=f"{tools}:{os.environ['PATH']}", CALLS=str(calls),
+                   TATBOT_ROS_CHECK_DIR=str(tmp_path / f"cache-{full}"), PYTEST_ADDOPTS="",
+                   TATBOT_ROS_PYTHON=str(tools / "python3"))   # the session tier's interpreter, recorded
+        code = f'FULL={full}\nhave() {{ return 0; }}\nrun_job() {{ shift; "$@"; }}\n'
+        subprocess.run(["bash", "-c", code + job + "\njob_ros"], cwd=REPO, env=env, check=True)
+        recorded = calls.read_text()
+        assert "colcon|build" in recorded
+        if full:
+            assert "colcon|test " in recorded and "colcon|test-result" in recorded
+            assert "--return-code-on-test-failure" in recorded
+            assert "--pytest-args -m slow or not slow --durations=0" in " ".join(recorded.split())
+            assert "tatbot_estop_relay/test" in recorded
+            assert "tatbot_session/test -m not slow" not in recorded
+        else:
+            assert "tatbot_session/test -m not slow" in recorded and "colcon|test " not in recorded
+            # private CI reads this report as the developer tier's ROS coverage
+            assert f"--junitxml {tmp_path}/cache-0/build/tatbot_session/pytest.xml" in recorded
+            assert "tatbot_estop_relay/test" not in recorded
+
+
+def test_ros_session_budget_fails_only_unmarked_overruns(monkeypatch):
+    import runpy
+    from types import SimpleNamespace
+
+    path = REPO / "ros/tatbot_session/test/conftest.py"
+    for keywords, budget, expected in (({}, "60", 1), ({"slow": True}, "60", 0), ({}, "0", 0)):
+        hooks = runpy.run_path(str(path))
+        monkeypatch.setenv("TATBOT_TEST_BUDGET_S", budget)
+        hooks["pytest_runtest_logreport"](SimpleNamespace(when="call", passed=True, keywords=keywords,
+                                                         duration=61.0, nodeid="fixture-test"))
+        reporter = SimpleNamespace(write_line=lambda text: None)
+        session = SimpleNamespace(exitstatus=0, config=SimpleNamespace(
+            pluginmanager=SimpleNamespace(get_plugin=lambda name, reporter=reporter: reporter)))
+        hooks["pytest_sessionfinish"](session, 0)
+        assert session.exitstatus == expected
 
 
 def test_named_profile_refuses_missing_dependency(monkeypatch):
@@ -373,3 +398,185 @@ def test_pass_cache_is_bypassed_on_request_and_records_only_a_pass(tmp_path):
     assert "MISS" in run_cache_harness(tmp_path / "bypass", recorded=True, no_cache=True)
     out = run_cache_harness(tmp_path / "fail", recorded=False, state="FAIL")
     assert "MISS" in out and "deadbeef" not in out
+
+
+# A job pack (python/<project>/check-jobs.sh) driven through a copy of the real
+# runner, so these exercise the hook, --list and the drive loop as shipped.
+PACK = '''\
+# shellcheck shell=bash
+ALL_JOBS+=(probe-pack)
+JOB_DESC[probe-pack]="a job a pack adds"
+job_probe_pack() {
+  [[ -z "${PROBE_SKIP:-}" ]] || { skip probe-pack "asked to skip"; return; }
+  run_job probe-pack touch "$PROBE_MARK"
+}
+'''
+
+
+def check_copy(root, pack=None):
+    for rel in ("scripts/check", "scripts/lib/sim_fingerprint.sh"):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO / rel, root / rel)
+    if pack is not None:
+        (root / "python/probe").mkdir(parents=True)
+        (root / "python/probe/check-jobs.sh").write_text(pack)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    return root
+
+
+def run_check(root, *args, **env):
+    return subprocess.run(["bash", str(root / "scripts/check"), "--no-hooks", *args], cwd=root,
+                          capture_output=True, text=True, env={**os.environ, **env}, timeout=60)
+
+
+def test_a_job_pack_adds_one_listed_job_and_no_pack_changes_nothing(tmp_path):
+    declared = re.search(r"^ALL_JOBS=\((.*?)\)$", (REPO / "scripts/check").read_text(), re.M).group(1).split()
+    bare = run_check(check_copy(tmp_path / "bare"), "--list")
+    assert bare.returncode == 0, bare.stderr
+    assert [line.split()[0] for line in bare.stdout.splitlines()] == declared
+    packed = run_check(check_copy(tmp_path / "packed", PACK), "--list")
+    assert packed.returncode == 0, packed.stderr
+    assert packed.stdout.splitlines() == [*bare.stdout.splitlines(), "  probe-pack a job a pack adds"]
+
+
+def test_a_pack_job_runs_by_name_and_can_skip(tmp_path):
+    root = check_copy(tmp_path / "tree", PACK)
+    mark = tmp_path / "ran"
+    ran = run_check(root, "probe-pack", PROBE_MARK=str(mark))
+    assert ran.returncode == 0, ran.stdout + ran.stderr
+    assert mark.is_file() and ">> probe-pack PASS" in ran.stdout and "1 passed, 0 failed, 0 skipped" in ran.stdout
+    skipped = run_check(root, "probe-pack", PROBE_MARK=str(mark), PROBE_SKIP="1")
+    assert skipped.returncode == 0, skipped.stdout + skipped.stderr
+    assert "SKIP (asked to skip)" in skipped.stdout and "0 passed, 0 failed, 1 skipped" in skipped.stdout
+
+
+SKIP_EXIT_PACK = PACK + '''\
+ALL_JOBS+=(probe-exit)
+JOB_DESC[probe-exit]="a body that may find, running, that it cannot run here"
+job_probe_exit() {
+  local RUN_JOB_SKIP_EXIT=3
+  run_job probe-exit bash -c 'echo "some detail"; echo "the shared resource was taken"; exit "$PROBE_RC"'
+}
+'''
+
+
+def test_a_job_that_names_its_skip_exit_reports_it_as_a_skip_with_its_reason(tmp_path):
+    root = check_copy(tmp_path / "tree", SKIP_EXIT_PACK.replace(
+        'run_job probe-pack touch "$PROBE_MARK"', 'run_job probe-pack bash -c \'exit "$PROBE_RC"\''))
+    for rc, exit_job, plain_job in (("3", "SKIP (the shared resource was taken)", "FAIL"), ("1", "FAIL", "FAIL"),
+                                    ("0", "PASS", "PASS")):
+        ran = run_check(root, "probe-exit", "probe-pack", PROBE_RC=rc)
+        lines = {line.split()[1]: " ".join(line.split()[2:]) for line in ran.stdout.splitlines()
+                 if line.startswith(">> ")}
+        assert lines["probe-exit"].startswith(exit_job), ran.stdout
+        assert lines["probe-pack"].startswith(plain_job), ran.stdout  # exit 3 is a FAIL unless a job says so
+        assert ran.returncode == (0 if rc == "0" else 1), ran.stdout
+
+
+def test_a_pack_job_without_a_description_is_refused_by_name(tmp_path):
+    root = check_copy(tmp_path, PACK.replace('JOB_DESC[probe-pack]="a job a pack adds"\n', ""))
+    result = run_check(root, "--list")
+    assert result.returncode == 2
+    assert "python/probe/check-jobs.sh: job 'probe-pack' needs a JOB_DESC entry" in result.stderr
+
+
+def test_pass_markers_follow_the_directory_override(tmp_path):
+    code = (f'source "{REPO}/scripts/lib/sim_fingerprint.sh"\n'
+            'sim_fingerprint::record deadbeef probe\n'
+            'sim_fingerprint::is_fresh deadbeef probe && echo FRESH\n'
+            'TATBOT_SIM_PASS_DIR= sim_fingerprint::is_fresh deadbeef probe && echo SHARED\n'
+            'true\n')
+    env = {**os.environ, "XDG_CACHE_HOME": str(tmp_path / "xdg"), "TATBOT_SIM_PASS_DIR": str(tmp_path / "own")}
+    result = subprocess.run(["bash", "-c", code], capture_output=True, text=True, env=env)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["FRESH"]
+    assert (tmp_path / "own/deadbeef.probe").is_file() and not (tmp_path / "xdg").exists()
+
+
+def test_the_test_suite_key_ignores_only_the_tests_a_job_pack_runs(tmp_path):
+    rels = ("python/plain/a.py", "python/probe/tests/test_b.py", "python/probe/check-jobs.sh",
+            "python/probe/src/probe/capabilities/cap.py")
+    for rel in rels:
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("v1\n")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "python"], cwd=tmp_path, check=True)
+    command = 'source "$1"; sim_fingerprint::compute "$2" sim_fingerprint::guarded_tests'
+
+    def key():  # from this checkout's cwd: the guard must glob the repo it hashes
+        return subprocess.run(["bash", "-c", command, "bash", str(REPO / "scripts/lib/sim_fingerprint.sh"),
+                               str(tmp_path)], cwd=REPO, capture_output=True, text=True, check=True).stdout.strip()
+
+    baseline = key()
+    (tmp_path / "python/probe/tests/test_b.py").write_text("v2\n")
+    (tmp_path / "python/probe/tests/test_c.py").write_text("untracked\n")
+    assert key() == baseline
+    # The scripts tests reach a pack project's source through the CLI (a verb
+    # wraps its entry point and scans its metadata), so source edits re-run them.
+    previous = baseline
+    for rel, text in (("python/probe/src/probe/capabilities/cap.py", "v2\n"),
+                      ("python/probe/src/probe/capabilities/new.py", "untracked\n"),
+                      ("python/probe/tests_helper.py", "beside tests/, not in it\n"),
+                      ("python/probe/check-jobs.sh", "v2\n"),
+                      ("python/plain/a.py", "v2\n")):
+        (tmp_path / rel).write_text(text)
+        current = key()
+        assert current != previous, rel
+        previous = current
+
+
+# What git exports to a hook or a `git bisect run` step. A job that inherited
+# them would run a test's scratch-repository git against the repository they
+# name; the runner drops them and keeps only a commit hook's index for --staged.
+GIT_PROBE_PACK = '''\
+# shellcheck shell=bash
+ALL_JOBS+=(probe-git)
+JOB_DESC[probe-git]="what a job sees of git"
+job_probe_git() {
+  sources '*.py' > "$PROBE_OUT/staged"
+  env | grep -E '^GIT_(DIR|WORK_TREE|INDEX_FILE|COMMON_DIR|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES)=' \
+    > "$PROBE_OUT/env" || true
+  git rev-parse --absolute-git-dir > "$PROBE_OUT/git-dir"
+  run_job probe-git true
+}
+'''
+
+
+def test_a_job_never_sees_the_repository_git_handed_the_runner(tmp_path):
+    root = check_copy(tmp_path / "tree", GIT_PROBE_PACK)
+    decoy = tmp_path / "decoy"
+    subprocess.run(["git", "init", "-q", str(decoy)], check=True)
+    decoy_config = (decoy / ".git/config").read_text()
+    # A commit hook's own index holds a file the tree's index does not.
+    (root / "staged.py").write_text("x = 1\n")
+    index = tmp_path / "hook-index"
+    subprocess.run(["git", "add", "staged.py"], cwd=root, check=True, env={**os.environ, "GIT_INDEX_FILE": str(index)})
+    out = tmp_path / "out"
+    out.mkdir()
+    env = {"GIT_DIR": str(decoy / ".git"), "GIT_WORK_TREE": str(decoy), "GIT_COMMON_DIR": str(decoy / ".git"),
+           "GIT_OBJECT_DIRECTORY": str(decoy / ".git/objects"), "GIT_INDEX_FILE": str(index),
+           "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(decoy / ".git/objects"), "PROBE_OUT": str(out)}
+    ran = run_check(root, "--staged", "probe-git", **env)
+    assert ran.returncode == 0, ran.stdout + ran.stderr
+    assert (out / "env").read_text() == ""
+    assert Path((out / "git-dir").read_text().strip()) == (root / ".git").resolve()
+    assert (out / "staged").read_text().split() == ["staged.py"]
+    assert (decoy / ".git/config").read_text() == decoy_config
+
+
+def test_this_session_carries_none_of_gits_repository_variables():
+    location = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+                "GIT_ALTERNATE_OBJECT_DIRECTORIES")
+    assert [name for name in location if name in os.environ] == []
+
+
+def test_a_session_started_by_git_drops_its_repository_variables(tmp_path):
+    """As a hook or a `git bisect run` step starts it: the conftest clears them before any test."""
+    decoy = tmp_path / "decoy"
+    subprocess.run(["git", "init", "-q", str(decoy)], check=True)
+    env = {**os.environ, "GIT_DIR": str(decoy / ".git"), "GIT_WORK_TREE": str(decoy),
+           "GIT_INDEX_FILE": str(decoy / ".git/index"), "GIT_COMMON_DIR": str(decoy / ".git")}
+    probe = f"{Path(__file__).resolve()}::test_this_session_carries_none_of_gits_repository_variables"
+    out = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "no:xdist", probe],
+                         cwd=REPO, env=env, capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0 and "1 passed" in out.stdout, out.stdout + out.stderr

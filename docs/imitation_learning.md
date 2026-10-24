@@ -1,33 +1,25 @@
 ---
 summary: Public LeRobot and dataset interfaces
 tags: [imitation-learning, lerobot, datasets]
-updated: 2026-09-14
+updated: 2026-10-23
 audience: [dev, contributor]
 ---
 
 # Imitation learning
 
-The LeRobot integration is the follower plugin and its policy interface;
-training datasets come from the simulator (teleoperated recording was removed
-in 2026-09). Code lives in `python/lerobot_robot_tatbot/`.
+The LeRobot integration is an environment, not a robot: `python/lerobot_robot_tatbot/`
+pins the LeRobot install that training, the policy server, the dataset tools
+and `vision capture` run in, and holds the `depth-v1` encoder training applies
+to recorded D405 depth. Training uses the archived datasets (`tatbot data
+hub`): teleoperated recording was removed in 2026-09 and the ManiSkill data
+factory in 2026-10, so no source produces new ones. The follower robot class
+that ran policies on the blue arm was deleted with that arm's use in 2026-10;
+no robot client consumes the policy server today.
 
-Wrist observations come from cameras assigned to the receiving physical arm in
-the vision registry. A rollout reads one or more local views; it does not
-open the other arm's camera. `tatbot rollout run` uses the physical left arm;
-the follower plugin's `physical_arm` selects the controller preset, fitted tool,
-URDF chain and floor receipt independently of its LeRobot action interface.
-The launcher resolves the address and controller file from `config/arms.json`
-and the hardware profile.
-Async rollout checks the checkpoint's complete RGB/depth key set against
-those local views before acquiring motion authority. A checkpoint trained on
-two wrist views must be replaced or retrained for a one-view setup; the missing
-view is never filled with the other arm's image.
-
-The required floor receipt belongs to that same physical arm. A missing pad
-touch, stale receipt or mismatched generated tool block refuses startup.
-Motion aborts terminate the policy session; the retired recording-resume API
-is absent. Repeated staging in one connection preserves the flight CSV and
-the existing warning throttle.
+A checkpoint's camera keys name wrist views of one physical arm, as the vision
+registry assigns them. A checkpoint trained on two wrist views must be
+replaced or retrained for a one-view setup; the missing view is never filled
+with the other arm's image.
 
 ## Dataset contract
 
@@ -47,13 +39,8 @@ page documents only the public adapter boundary.
 
 ## Evaluation ladder
 
-Offline dataset loss checks tensor and preprocessing compatibility. `tatbot sim
-eval policy` is the next screen: a feature-only Tatbot follower client
-sends exact simulated RGB/depth/state through the deployed async LeRobot policy
-server, executes the returned chunks in ManiSkill with the rollout filter/slew
-semantics, then compares pigment against each episode's exact generated design.
-It retains checkpoint and protocol identity, chunk accepts/rejects,
-intended/drawn/overlay evidence, and confidence intervals. It refuses to compare
-contaminated seed splits, dirty producers, or mixed tool/task contracts. A
-physical rollout remains a separate, operator-observed acceptance stage; sim
-evaluation never advances or authorizes it.
+Offline dataset loss checks tensor and preprocessing compatibility; `tatbot
+rollout bench plausibility` checks a policy's action chunks against a
+demonstration-derived contract, offline or against a running policy server,
+with no arm. There is no simulated policy screen: the ManiSkill evaluation was
+deleted with that simulator, and none replaces it yet.

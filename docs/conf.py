@@ -7,8 +7,8 @@ sys.path.insert(0, os.path.abspath(".."))
 project = "tatbot"
 copyright = "2026, Hugo Ponte"
 author = "Hugo Ponte"
-version = "0.10.0"
-release = "0.10.0"
+version = "0.11.0"
+release = "0.11.0"
 
 extensions = [
     "myst_parser",
@@ -35,7 +35,7 @@ myst_enable_extensions = [
 # Generate HTML anchors for headings up to level 3 so in-page links work
 myst_heading_anchors = 4
 
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "CONSOLIDATION_PLAN.md"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 # Furo theme configuration
 html_theme = "furo"
@@ -90,3 +90,10 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", None),
     "sphinx": ("https://www.sphinx-doc.org/en/master/", None),
 }
+
+# Isolated builds consume the inventories fetched during environment setup.
+if inventory_dir := os.environ.get("SPHINX_INVENTORY_DIR"):
+    intersphinx_mapping = {
+        name: (url, os.path.join(inventory_dir, name + ".inv"))
+        for name, (url, _) in intersphinx_mapping.items()
+    }

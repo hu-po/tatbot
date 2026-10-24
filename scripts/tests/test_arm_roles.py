@@ -155,28 +155,9 @@ def test_default_cli_launch_argv_preserved():
     assert explicit.argv[-2:] == ["--leader", "left"]
 
 
-def test_wrist_mode_assigns_right_leader_without_swapping_hardware(launcher):
-    roles = arms.select_roles('right')
-    arms.require_current_executor(REPO, roles, wrist_calibration=True)
-    with pytest.raises(ValueError, match='right leader and left follower'):
-        arms.require_current_executor(REPO, arms.select_roles(), wrist_calibration=True)
-    result = subprocess.run(['bash', str(launcher), '--wrist-calibration'],
-                            capture_output=True, text=True, timeout=10)
-    assert result.returncode == 42, result.stderr
-    result = subprocess.run(['bash', str(launcher), '--wrist-calibration', '--leader', 'left'],
-                            capture_output=True, text=True, timeout=10)
-    assert result.returncode in (2, 3) and 'reached-existing' not in result.stdout
-
-
-def test_wrist_cli_carries_mode_and_correct_physical_roles():
-    from tatbot_cli import cli as cli_module
-    from tatbot_cli.registry import Ctx, find
-
-    command = find('teleop', 'start')
-    parser = cli_module.build_noun_parser('teleop')
-    ctx = Ctx(repo=REPO, node='test', ee_tool='lutin-ballpoint-dot')
-    ns = parser.parse_args(['start', '--wrist-calibration'])
-    assert command.validate(ctx, command, ns) is None
-    command.prepare(ctx, command, ns)
-    plan = command.run(ctx, ns, [])
-    assert plan.argv[-5:] == ['--wrist-calibration', '--leader', 'right', '--follower', 'left']
+def test_the_retired_mirrored_wrist_mode_is_gone():
+    """2026-10-23: the right-led mirrored mode moved only the retired blue arm."""
+    with pytest.raises(ValueError, match="Reverse teleop execution"):
+        arms.require_current_executor(REPO, arms.select_roles("right"))
+    result = cli("teleop", "start", "--wrist-calibration", "--json")
+    assert result.returncode == 2 and "--wrist-calibration" in result.stderr

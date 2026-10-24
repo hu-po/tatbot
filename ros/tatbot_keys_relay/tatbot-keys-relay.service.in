@@ -1,0 +1,18 @@
+# The station keyboard's drawing keys to the ROS stack's keypad node. Installed by
+# `tatbot ros relay-install --keys` (sudo on the station node); @USER@, @DIR@ and @ARGS@
+# (--dest <ros node rig address>:7644) are filled at install. The input group reads the keyboards.
+[Unit]
+Description=tatbot station keyboard keys (TBK1 -> UDP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+SupplementaryGroups=input
+ExecStart=/usr/bin/python3 @DIR@/tatbot_keys_relay.py @ARGS@
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

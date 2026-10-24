@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "lerobot_robot_tatbot"
 version = "0.1.0"
-description = "tatbot LeRobot robot plugin: WidowX AI follower carrying a mounted tool on its carriage"
+description = "tatbot's LeRobot environment: training, policy serving and the depth-v1 encoder"
 authors = [{ name = "Hugo Ponte" }]
 license = "MIT"
 requires-python = ">=3.12,<3.13"
@@ -33,19 +33,15 @@ lerobot_robot_trossen = { git = "https://github.com/TrossenRobotics/lerobot_tros
 # the 0.36 viewer and showed nothing. lerobot 0.6.1 caps rerun-sdk below
 # 0.36; we use only rr.log/connect_grpc/set_sinks/save from the SDK, not
 # lerobot's visualizer, so override its cap.
-# Our arms run controller firmware v1.8.4; the trossen_arm driver's minor
-# version must pair with the firmware's, so force the 1.8 line even though
-# the Trossen plugin declares >=1.9. Pinned to 1.8.5 — the exact version the
-# hardware-validated C++ teleop uses (cpp/teleop pins SDK v1.8.5 and runs
-# for hours at 400 Hz on this firmware). The previous 1.8.8 pin wedged the
-# follower controller twice within a minute on 2026-08-20 (UDP output
-# stream died, TCP half-dead, power cycle required) and also required YAML
-# schema keys (position_offset) the firmware era doesn't produce. Drop this
-# override after the arms' firmware is upgraded to >=1.9.
+# The trossen_arm driver's major.minor must match the controller firmware's.
+# Both controllers run firmware v1.11.1 since 2026-10-07, and every driver in
+# the repo (this pin, cpp/teleop, ros/tatbot_hardware, rust/trossen-arm-sys)
+# is 1.11.0. Before that it was pinned to 1.8.5 for firmware v1.8.4: a 1.8.8
+# pin had wedged the follower controller twice within a minute on 2026-08-20.
 # lerobot[intelrealsense] pins pyrealsense2 to an exact version that predates
 # Intel's aarch64 wheels, so `uv sync` cannot resolve at all on the Arm arm
 # node: 2.56.5.9235 ships only manylinux1_x86_64 and win_amd64. 2.58.4.10922
 # has an aarch64 wheel and matches the librealsense2 2.58.4 the nodes install
 # from Intel's apt repo, so the Python binding and the system library stop
 # straddling two releases. Drop this override once lerobot's own pin moves.
-override-dependencies = ["trossen-arm==1.8.5", "rerun-sdk==0.36.0", "pyrealsense2==2.58.4.10922"]
+override-dependencies = ["trossen-arm==1.11.0", "rerun-sdk==0.36.0", "pyrealsense2==2.58.4.10922"]

@@ -215,7 +215,7 @@ def newest_mtime(repo: Path, entries: list[str]) -> float | None:
     return max(times) if times else None
 
 
-def inspect(mirror: Path, wt: dict) -> dict:
+def inspect(wt: dict) -> dict:
     path, branch = wt["path"], wt.get("branch")
     session = session_of(path)
     meta = read_meta(session) if session else {}
@@ -251,7 +251,7 @@ def remote_agent_branches(mirror: Path) -> list[dict]:
 def summary(mirror: Path) -> dict:
     mirror_dirty = porcelain(mirror)
     mirror_ahead = count(mirror, "origin/main..HEAD") if ref_exists(mirror, "origin/main") else 0
-    trees = [inspect(mirror, wt) for wt in worktrees(mirror) if session_of(wt["path"])]
+    trees = [inspect(wt) for wt in worktrees(mirror) if session_of(wt["path"])]
     local_branches = {t["branch"] for t in trees}
     remote = [r for r in remote_agent_branches(mirror) if r["branch"] not in local_branches or not r["merged"]]
     unlanded = [t for t in trees if t["unlanded"] and not t["parked"]]
@@ -632,7 +632,7 @@ def cmd_sweep(a) -> int:
     try:
         fetch(mirror)
         for wt in worktrees(mirror):
-            info = inspect(mirror, wt) if session_of(wt["path"]) else None
+            info = inspect(wt) if session_of(wt["path"]) else None
             if info and info["branch"] and info["branch"].startswith(f"{BRANCH_PREFIX}/"):
                 _sweep_worktree(mirror, info, a, actions)
         live = {t.get("branch") for t in worktrees(mirror)}
@@ -713,7 +713,7 @@ def hook_stop(a) -> int:
         return 0
     session = session_of(top)
     if session:
-        info = inspect(mirror, {"path": top, "branch": current_branch(top)})
+        info = inspect({"path": top, "branch": current_branch(top)})
         if not info["unlanded"] or info["parked"]:
             return 0
         where = f"your worktree {top}"
@@ -753,7 +753,7 @@ def hook_session_start(a) -> int:
     top = toplevel(cwd)
     lines = []
     if top and session_of(top):
-        info = inspect(mirror, {"path": top, "branch": current_branch(top)})
+        info = inspect({"path": top, "branch": current_branch(top)})
         lines.append(f"tatbot work: this session runs in its own worktree {top} on {info['branch']}"
                      f" (dirty={info['dirty_files']}, ahead_of_main={info['ahead_of_main']}).")
     else:

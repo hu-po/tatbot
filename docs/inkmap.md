@@ -35,31 +35,6 @@ npm run dev
 
 The app should work with local fixtures and no private service. Keep generated
 images and personal designs outside Git unless their license permits sharing.
-**Simulation export**, under the top bar menu's **Advanced** section in the body
-workspace, downloads an immutable bundle with all accepted placements, faithful artwork, pose/support, seed,
-camera/appearance, and nominal tool ID. Compile it offline with
-`tatbot sim compile FILE -- --output SCENARIO`; select `--placement-id ID` for
-multi-placement drawing input. Body bytes resolve only through the pinned local
-cache. The typed v3 compiler and deterministic simulator target-label
-materializer are available; the latter emits soft coverage/color and discrete
-IDs without pre-inking the episode. `tatbot sim perception SCENARIO -- \
---output-dir DIR` adds audited dense camera-space labels as privileged NPZ
-sidecars; they are not deployed-policy observations. **Open compiled preview** revalidates the
-portable bundle/program/trace bindings before loading the exact placement and
-named pose. It is a visual preview, not the CLI's local execution validation or
-motion approval. Automated mapping/mask parity passes; human and GPU rendered
-scene review remain pending.
-
-Before assigning production compute, `tatbot sim pilot-plan -- --output-dir
-DIR --seed 42` writes the audited pilot ledger without launching a renderer.
-It fixes the cross-product at six site/pose/support cells, three acquired DBV3
-artworks, two appearances, and three views: 36 reference scenes and
-108 reference images. The selected three-identity expansion is 108 scenes and
-324 images, but its two non-reference identities stay blocked until their
-visual review is accepted. The same ledger assigns 12 drawing episodes across
-every cell and artwork class while leaving reach/clearance, compute, stencil,
-GPU, and human-review gates pending; unrun episodes have no success label.
-
 See [design format](design-format.md) for the exact contract and current gates.
 Hugging Face upload is separately gated by the recorded `inkmap_deployment`
 and `public_release` approvals. The deployment script enforces both before
@@ -122,8 +97,7 @@ tested viewport (390×844, 522×900, 1440×900, and short heights).
 design (JSON)** — the accepted body placements, or the paper/cylinder draft;
 **Artwork SVG** — the *selected* artwork as this editor draws it, a preview and
 not a stencil, available before any placement; **Project backup (JSON)**; and,
-under *Advanced*, the v6 **placement file**, loading one, the simulation bundle
-and the compiled preview. A refusal is reported beside the action that produced
+under *Advanced*, the v6 **placement file** and loading one. A refusal is reported beside the action that produced
 it, in the stage's one message region and in the menu. **View** holds the
 camera presets, pose, skin tone, atlas, grid, neutral light and the quality
 overlay; Undo/Redo and Fit/Focus stay in the bar. **New project** under File
@@ -161,7 +135,7 @@ The built-in library contains three small native DBV3 acquisitions: `dbv3-orbit`
 `dbv3-sprout` and `dbv3-ridges`, each generated at 30 × 30 mm with a 0.3 mm
 black generation pen. `web/inkmap/public/designs/manifest.json` names only
 acquired JSON records. A fresh project opens the library without placing
-anything. The same records supply the simulator and five-pose showcase.
+anything. The same records supply the five-pose showcase.
 
 Each example includes its original CC0 raster source, version 3 job and frozen
 recipe, effective pen table, native export and decoding evidence. The app loads
@@ -226,8 +200,8 @@ placements mixed across body and chart targets, or a surface warp — names the
 unsupported feature, keeps the working draft, and offers the original bytes
 back unchanged. Nothing is reconstructed as an approximation and handed back
 under the same name. Opening a design and saving it again without touching it
-returns the identity it arrived with, including one written by the headless
-[`tatbot design place`](design.md): each placement keeps the review and
+returns the identity it arrived with, including one written by the former
+headless `tatbot design place`: each placement keeps the review and
 provenance it came with, and an edit changes only the placement it touched.
 
 Rotation is stored in radians, as the placement contract has it; the degree box
@@ -263,27 +237,25 @@ follows its content up to about 45% of the viewport, it expands to most of the
 screen for browsing a full library, and it collapses to a handle to give the
 body the room. Each new step reopens it to its working size, so Accept is never
 behind a collapsed handle. The body stands alone in the viewport: no floor
-grid and no bed, chair or armrest props. The simulator's nominal scenario
-families still carry their named supports; the editor only names the pose's
-support in the bundle it exports. Neutral inspection lighting is a view toggle.
+grid and no bed, chair or armrest props. Neutral inspection lighting is a view
+toggle.
 
-### Procedural simulation showcase
+### Pose showcase
 
-The guided milestone view uses the production Three.js renderer and checked-in
-scenario fixtures; it is not a painted mockup. It switches among all five
-tattoo-session poses on the fixed MHR/SOMA body, names each pose's intended
-support, projects each scenario's real SVG placement, and draws the
-compiled face/barycentric surface trace in cyan:
+The guided view uses the production Three.js renderer and the tracked
+`public/showcase/manifest.json`; it is not a painted mockup. It switches among
+all five tattoo-session poses on the fixed MHR/SOMA body, names each pose's
+intended support, and places the slide's collection artwork at its
+face/barycentric anchor with the editor's own decals:
 
 ```bash
 tatbot inkmap dev
 # open http://127.0.0.1:4180/?showcase=1
 ```
 
-The evidence panel records the deterministic CPU sampling and reach-audit run
-behind the five examples. Its last pipeline stage remains visibly pending:
-the showcase does not claim a GPU-rendered ManiSkill episode, deformable skin,
-MediaPipe tracking, powered-arm behavior, or safe human contact.
+Each slide names the exact artwork bytes it shows, and loading refuses a
+collection that differs. Its last pipeline stage remains visibly pending: the
+showcase claims no reach, deformable skin, tracking, or powered-arm behavior.
 
 ## The design generator
 
@@ -347,22 +319,16 @@ with no generation (`ctl -- start --idle-minutes N`, `0` keeps it up;
 `last_request_unix` and `idle_stop_in_s` so `tatbot status` can show the
 countdown. Health probes read that countdown, they never extend it, and a
 generation still running when the timer expires finishes first. On the Hub the
-Space owns the lifecycle and the timer is off. Anything that needs a generator
-starts one through the same idempotent `ctl -- start`, so a stale pidfile after
-an idle stop is normal rather than a crash. `tatbot design generate` and
-`tatbot sim materialize` do exactly that (`--no-autostart` refuses instead),
-and both refuse before starting when the GPU has less than
-`INKGEN_VRAM_MIN_MB` (14000) free, naming what holds it — the generator's node
-also carries the `sim` role. On a node with the role, `tatbot status` shows
-whether one is running and how long until it stops itself.
+Space owns the lifecycle and the timer is off. Starting one goes through the
+same idempotent `ctl -- start`, so a stale pidfile after an idle stop is normal
+rather than a crash. On a node with the role, `tatbot status` shows whether
+one is running and how long until it stops itself.
 
 Which generator answers is an explicit choice, never a search. There are four
 kinds — the managed **fleet** worker (the only one anything here starts), an
-**endpoint** a caller named with `--api-url` (probed, never started, never
-woken), the public **Space** (`--space`, or the interactive default when no
-node carries the role), and none at all. Bulk work does not accept that last
-fallback: `tatbot inkgen batch` refuses (exit 5) rather than pointing a
-thousand-image job at a shared public GPU.
+**endpoint** a caller named (`tatbot inkgen status --url`, batch's `--api`;
+probed, never started, never woken), the public **Space** (`--space`, or the interactive default when no
+node carries the role), and none at all.
 
 ### Deploying the generator
 
@@ -381,54 +347,32 @@ copy with this repository off `sys.path` entirely, hashes everything into a
 `tatbot.inkgen-release-candidate/1` manifest, and stops. A payload that only
 imports inside the checkout is not a Space, and this is where that is decided.
 
-The upload is no longer piped through anything: a failed `hf upload` fails the
-deploy. It used to end in `| grep -v '^Hint' || true`, which reports grep's
-status and then discards it, so a failed upload printed a successful deploy and
-the wait loop "verified" the revision that was already live. `/api/health` now
-reports the payload's build stamp and the script waits for *that* stamp — a
-healthy previous revision is a failure, not a pass.
+A failed `hf upload` fails the deploy: nothing pipes its exit status away.
+`/api/health` reports the payload's build stamp and the script waits for
+*that* stamp — a healthy previous revision is a failure, not a pass.
 
 ### Batch generation
 
-`tatbot inkgen batch` runs — or resumes — one artwork generation job:
+`web/inkgen/batch.py` runs — or resumes — one image generation job. Interrupting
+it is safe: rerun the same command. A request's identity comes from its
+content — `<subject-slug>-<nth occurrence>`, and a seed derived from that key —
+so inserting, reordering or sharding a job leaves every existing request where
+it was. Cache keys bind the resolved model revision and every generation
+setting. Resume verifies retained bytes against the ledger and regenerates
+what does not match as a new counted attempt. One worker holds the job; a
+second gets a busy refusal. The results are source images, not Inkmap
+artwork: native DBV3 acquisition is required before placement.
 
-```bash
-tatbot inkgen batch --output-dir ~/tatbot-artwork/flash-v1 \
-  --subjects-file subjects.txt --count 24 --seed 7 --replacement-budget 8
-tatbot inkgen batch-status --output-dir ~/tatbot-artwork/flash-v1
-```
-
-Interrupting it is safe: rerun the same command. A request's identity comes from
-its content — `<subject-slug>-<nth occurrence>`, and a seed derived from that
-key — so inserting, reordering or sharding a job leaves every existing request
-where it was. Cache keys bind the resolved model revision and every generation
-setting, so the same words on different weights are different work. The raster
-is persisted before anything is traced, so a tracer failure never costs a second
-GPU request. Resume verifies retained bytes against the ledger and regenerates
-what does not match as a new counted attempt. One worker holds the job; a second
-gets a busy refusal.
-
-`manifest.json` appears only when every requested slot ended accepted, so
-these are source-image results, not Inkmap or simulator artwork. Native DBV3
-acquisition is required before placement. A job that falls short
-writes `selection.json` instead, with requested/accepted/refused/failed/
-duplicate on its face, and exits 1. Identical output is deduplicated: both
-requests are kept, one artwork is published. `--replacement-budget` lets a
-refused or duplicate slot spend a fresh candidate on the same slot — a retry
-budget, not extra dataset items.
-
-The job module is also a standalone program with no Tatbot checkout, node map or
-fleet configuration involved, which is what the Space payload needs:
+It is a standalone program with no Tatbot checkout, node map or fleet
+configuration involved, which is what the Space payload needs:
 
 ```bash
 python web/inkgen/batch.py run ./job --subject "a swallow" --count 4 --api http://127.0.0.1:8600
 ```
 
-Source generation and placement of acquired DBV3 artwork are reachable without
-a browser as [`tatbot design`](design.md). The former `design trace` command
-refuses with a native acquisition action.
-Drawing it on paper is `tatbot ros compile` and `tatbot ros draw` on the ROS 2
-stack (`ros/README.md`, section 4).
+Acquired DBV3 artwork (`tatbot drawingbot generate`, [DrawingBot V3](drawingbot.md))
+draws on paper without a browser: `tatbot ros compile artwork.json` and
+`tatbot ros draw` on the ROS 2 stack (`ros/README.md`, section 4).
 
 ## Placement record
 
@@ -452,7 +396,7 @@ onto an armrest. The
 pose control bakes the pose into the geometry used for display, raycasts, and
 decals. The editor's pose picker, in the body panel and under View, offers
 standing and reclined seated; the other session poses stay in the catalog for
-the showcase and the simulator, and a project that already holds one keeps it.
+the showcase and offline consumers, and a project that already holds one keeps it.
 Skin tone sits beside the pose picker. No support prop is drawn. InkLang resolution and region
 charts remain tied to the canonical rest surface. Placement anchors name that
 unchanged rest-surface face and barycentric coordinates; the preview applies
@@ -462,17 +406,11 @@ Named joint/support constraints live in
 `config/body-models/mhr-soma-v1/poses.json`. The deterministic reference GLB,
 expanded posed-face cache, upstream not-skin exclusion mask, and
 `config/inkmap/body-poses.json` catalog are checked in so normal browser
-development does not need licensed source assets. Regeneration is an explicit
-offline build in the locked SOMA environment and exact reviewed cache:
-
-```bash
-python web/inkmap/tools/export-soma.py \
-  --cache-dir /path/to/reviewed/body-cache
-```
-
-Generation fails before model construction on an absent/unlisted/mismatched
-asset or software lock, and fails if topology, units, axes, identity, face
-order, pose names, or expected surface digests drift. The browser renders
+development does not need licensed source assets. There is no regeneration
+tool in the tree: the bake (`web/inkmap/tools/export-soma.py`) ran on the
+deleted ManiSkill simulator's body model and is in git history, and
+`scripts/check body-single-path` still refuses an authoring-sheet edit the
+catalog does not carry. The browser renders
 chart-clipped triangles from an intrinsic rest-surface unfold and replays the
 same face/barycentric addresses on posed vertices; a chart overlap or
 insufficient girth refuses instead of projecting through the far side.

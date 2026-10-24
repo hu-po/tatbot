@@ -6,8 +6,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -16,23 +14,33 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      # uv pip checks the lock's hashes; uvx --with-requirements does not.
       - name: sphinx build
         run: |
-          uvx --from sphinx --with-requirements docs/requirements.txt \
-            sphinx-build -b html -E --keep-going docs docs/_build
-      - uses: actions/upload-pages-artifact@v3
+          uv venv --python 3.12 "$RUNNER_TEMP/docs-venv"
+          uv pip install --python "$RUNNER_TEMP/docs-venv" --require-hashes -r docs/requirements.txt
+          "$RUNNER_TEMP/docs-venv/bin/sphinx-build" -b html -E --keep-going docs docs/_build
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: docs/_build
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only the job that publishes may write Pages or mint an OIDC token.
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

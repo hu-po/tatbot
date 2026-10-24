@@ -8,8 +8,13 @@ K = np.array([[640.0, 0, 640.0], [0, 640.0, 360.0], [0, 0, 1]])
 PAGE = g.rpy_matrix([0.33, 0.06, 0.044], [0.02, -0.01, -1.5])
 
 
+def look_down(base_from_page, xy, height_m):
+    """ins.look_at straight down the page normal from height_m."""
+    return ins.look_at(base_from_page, xy, tilt_rad=0.0, azimuth_rad=0.0, distance_m=height_m)
+
+
 def test_look_down_is_a_rotation_looking_down_the_page_normal():
-    cam = ins.look_down(PAGE, (0.01, -0.02), 0.09)
+    cam = look_down(PAGE, (0.01, -0.02), 0.09)
     assert np.allclose(cam[:3, :3].T @ cam[:3, :3], np.eye(3)) and np.isclose(np.linalg.det(cam[:3, :3]), 1.0)
     assert np.allclose(cam[:3, 2], -PAGE[:3, 2]) and np.allclose(cam[:3, 0], PAGE[:3, 1])
     under = ins.page_to_pixel(np.array([[0.01, -0.02]]), PAGE, cam, K, np.zeros(5))
@@ -21,13 +26,13 @@ def test_look_down_is_a_rotation_looking_down_the_page_normal():
 
 def test_tcp_target_puts_the_camera_where_asked():
     tcp_from_cam = g.rpy_matrix([0.01, 0.0, -0.08], [0.0, 0.35, 0.0])
-    cam = ins.look_down(PAGE, (0.0, 0.0), 0.09)
+    cam = look_down(PAGE, (0.0, 0.0), 0.09)
     assert np.allclose(ins.tcp_target(cam, tcp_from_cam) @ tcp_from_cam, cam)
 
 
 def test_rectify_maps_a_camera_image_back_onto_the_page():
     pytest.importorskip("cv2")
-    cam = ins.look_down(PAGE, (0.0, 0.0), 0.09)
+    cam = look_down(PAGE, (0.0, 0.0), 0.09)
     # a camera image of a page with one bright dot at page (5, 20) mm
     image = np.zeros((720, 1280), np.uint8)
     u, v = ins.page_to_pixel(np.array([[0.005, 0.020]]), PAGE, cam, K, np.zeros(5))[0]
@@ -40,6 +45,50 @@ def test_rectify_maps_a_camera_image_back_onto_the_page():
     assert abs(col - x) <= 3 and abs(row - y) <= 3
 
 
+def _forearm(crest_m, at_y_m, radius_m=0.03):
+    """A forearm along page x as the overhead's depth reads it (page frame, 2 mm apart): its crest `crest_m` over
+    the page at y `at_y_m`, the table 70 mm under the page, and the arm's own wrist 100 mm over it."""
+    x, y = np.meshgrid(np.arange(-0.12, 0.12, 0.002), np.arange(-0.15, 0.15, 0.002))
+    off = np.abs(y - at_y_m)
+    z = np.where(off < radius_m, crest_m - (radius_m - np.sqrt(np.clip(radius_m ** 2 - off ** 2, 0.0, None))), -0.07)
+    wrist = np.c_[np.full((60, 2), 0.01), np.full(60, 0.10)]
+    return np.r_[np.c_[x.ravel(), y.ravel(), z.ravel()], wrist]
+
+
+def test_a_wrist_search_aims_over_the_skin_the_overhead_depth_reads_each_view_over_its_own_highest_skin():
+    """2026-10-21: the overhead read no marker of an inked forearm print and two locate views read none either; the
+    set-up refused, its views and holds on the forearm's flank where the stale page stood. The search is centred on
+    the skin the overhead's depth reads near the last page now (not the table, nor the arm): that centre first, then
+    the points the print's extent from it with skin under them, each raised lift_m over its own highest skin (no
+    surface fitted), never below the page."""
+    half = (0.0325, 0.0415)   # a 45 x 63 mm print and its 10 mm round it
+    aims = ins.skin_aims(_forearm(0.004, 0.05), half, lift_m=0.008)   # risen 4 mm and moved 50 mm along page y
+    assert np.allclose(aims[0]["xy"], [0.0, 0.05], atol=0.002)       # centred on the skin now, not the last page
+    assert aims[0]["rise_m"] == pytest.approx(0.012) and aims[0]["points"] >= ins.SEARCH_MIN_POINTS   # its crest, 8 mm up
+    assert len(aims) == 9 and min(a["xy"][1] for a in aims) > 0.0 and all(0 < a["rise_m"] <= 0.0121 for a in aims)
+    sunk = ins.skin_aims(_forearm(-0.04, 0.0), half, lift_m=0.008)      # a limb lowered: views stand on the page
+    assert len(sunk) == 9 and np.allclose(sunk[0]["xy"], 0.0, atol=0.002) and all(a["rise_m"] == 0.0 for a in sunk)
+    assert ins.skin_aims(np.zeros((0, 3)), half, lift_m=0.008) == []
+    assert ins.skin_aims(_forearm(0.2, 0.0), half, lift_m=0.008) == []  # nothing within the band: no search
+
+
+def test_a_wrist_search_with_no_skin_by_the_last_page_aims_over_the_skin_nearest_it_on_the_mat():
+    """2026-10-21: a fresh run seeded from the last run's page; the forearm lay elsewhere, the overhead's depth read
+    no skin within 50 mm of that page's plane about it, and no search ran. The mat about it is read for what stands
+    15-120 mm over it (not the mat, nor the arm's wrist 170 mm up): the skin nearest the last page centres the
+    search, each aim over its own highest skin; a bare mat aims nothing."""
+    half = (0.0325, 0.0415)
+    moved = _forearm(-0.02, 0.13)             # 130 mm along page y and its crest 20 mm under the last page
+    assert ins.skin_aims(moved, half, lift_m=0.008) == []
+    wide = ins.wide_aims(moved, half, lift_m=0.008)
+    assert wide and all(a["wide"] for a in wide) and 0.095 < wide[0]["xy"][1] < 0.14 and abs(wide[0]["xy"][0]) < 0.01
+    assert wide[0]["rise_m"] == pytest.approx(-0.02 + 0.008, abs=0.003)   # over its crest, under the last page
+    assert all(a["xy"][1] > 0.05 for a in wide)                           # none over the arm's wrist by the page
+    mat = _forearm(-0.07, 0.09)[:-60]
+    mat[:, 2] = -0.07
+    assert ins.wide_aims(mat, half, lift_m=0.008) == []
+
+
 def test_look_at_tilts_toward_the_azimuth_and_keeps_looking_at_the_point():
     cam = ins.look_at(PAGE, (0.0, 0.01), tilt_rad=np.radians(45), azimuth_rad=np.radians(90), distance_m=0.15)
     assert np.allclose(cam[:3, :3].T @ cam[:3, :3], np.eye(3)) and np.isclose(np.linalg.det(cam[:3, :3]), 1.0)
@@ -49,157 +98,71 @@ def test_look_at_tilts_toward_the_azimuth_and_keeps_looking_at_the_point():
     assert np.allclose(ins.page_to_pixel(np.array([[0.0, 0.01]]), PAGE, cam, K, np.zeros(5)), [[640.0, 360.0]])
 
 
-def _page(extent, ppm, clear, *, shift=(0.0, 0.0), theta=0.0):
-    """A synthetic page image: white paper, a dark 14 mm border band around the clear centre, moved by
-    shift and turned by theta (the print's true pose in the believed page frame)."""
+def _tile_page(extent, ppm, *, shift=(0.0, 0.0)):
+    """A rectified page image of the forearm fiducial tile, its markers dark on pale skin, the print moved by `shift`
+    in the believed page frame (scripts/lib/stencil_tile.py, seed 0)."""
+    import sys
+
+    import cv2
+    pytest.importorskip("PIL")
+    sys.path.insert(0, str(ins.repo_root(None) / "scripts/vision"))
+    import stencil_tile
+    from fiducials import stencil
+
+    ink, record = stencil_tile.build("forearm", 0)
+    (ox, oy), (tw, th) = record["tile_origin_in_stencil_mm"], record["tile_mm"]
     gx, gy = ins.page_grid(extent, ppm)
-    c, s = np.cos(-theta), np.sin(-theta)
-    x, y = c * (gx - shift[0]) - s * (gy - shift[1]), s * (gx - shift[0]) + c * (gy - shift[1])
-    hx, hy = clear[0] / 2, clear[1] / 2
-    band = (np.abs(x) < hx + 0.014) & (np.abs(y) < hy + 0.014) & ~((np.abs(x) < hx) & (np.abs(y) < hy))
-    img = np.full(gx.shape, 220, np.uint8)
-    img[band & ((np.round(x * 2000) + np.round(y * 2000)) % 3 != 0)] = 30
-    return img
-
-
-def test_border_edges_find_a_shifted_turned_print():
-    pytest.importorskip("cv2")
-    extent, ppm, clear = (-0.060, -0.085, 0.060, 0.085), 5.0, (0.062, 0.112)
-    img = _page(extent, ppm, clear, shift=(0.004, 0.009), theta=np.radians(1.5))
-    sol = ins.solve_in_plane(ins.border_edges(img, extent, ppm, clear), clear)
-    assert sol is not None and len(sol["sides"]) == 4
-    # the correction maps believed coordinates onto the print: t = -R shift
-    assert abs(sol["tx_m"] + 0.004) < 0.0006 and abs(sol["ty_m"] + 0.009) < 0.0006
-    assert abs(sol["theta_rad"] + np.radians(1.5)) < np.radians(0.4)
+    sx = (((gx - shift[0]) * 1000 + tw / 2 + ox) * stencil_tile.PPM - 0.5).astype(np.float32)
+    sy = ((th / 2 - (gy - shift[1]) * 1000 + oy) * stencil_tile.PPM - 0.5).astype(np.float32)
+    img = cv2.remap(ink, sx, sy, cv2.INTER_AREA, borderValue=255)
+    return (90 + img.astype(np.float32) * (210 - 90) / 255).astype(np.uint8), stencil.tile(record)
 
 
 CLEAR = (0.062, 0.112)
-LATTICE_M, KNOT_M, LINE_M = 0.0065, 0.0011, 0.0006   # a coded print: 6.5 mm hex lattice, 2.2 mm knots
-PHASE_M = (0.000875, 0.0)   # a junction's offset from the page centre: the default coded design's phase
-CODED_INNER = {"left": -0.030525, "right": 0.032275, "bottom": -0.055192, "top": 0.055192}   # its innermost ink
 
 
-def _coded_lattice():
-    """Knot centres and lattice lines (page frame, m) of a coded-like border: the junctions of a hex
-    lattice in the 14 mm frame at least 0.2 mm outside the clear centre, as the generator places them,
-    so the knots on the innermost ones reach past its edge by up to their radius: 0.5 mm in at the
-    left, 1.3 mm short at the right, 0.8 mm in at the bottom and top (CODED_INNER)."""
-    q, r = (v.ravel() for v in np.meshgrid(np.arange(-20, 21), np.arange(-20, 21)))
-    pts = np.c_[PHASE_M[0] + LATTICE_M * (q + r / 2), PHASE_M[1] + LATTICE_M * r * np.sqrt(3) / 2]
+def test_hold_tip_reads_a_fiducial_tile_by_its_markers():
+    """The same hold over a fiducial-tile print (scripts/lib/stencil_tile.py): its markers, each at its printed place,
+    put the tip on the print within a quarter millimetre from a believed page 6 mm and 2 deg off, and say how many
+    agreed; read in `every` frame the hold took when the gauge's own show none of them (a faint transfer decodes a
+    different few markers each frame, 2026-10-24)."""
+    import sys
 
-    def in_band(p):
-        inner = (np.abs(p[..., 0]) < CLEAR[0] / 2 + 0.0002) & (np.abs(p[..., 1]) < CLEAR[1] / 2 + 0.0002)
-        return ~inner & (np.abs(p[..., 0]) <= CLEAR[0] / 2 + 0.0138) & (np.abs(p[..., 1]) <= CLEAR[1] / 2 + 0.0138)
-
-    knots = pts[in_band(pts)]
-    pairs = [(a, b) for i, a in enumerate(knots) for b in knots[i + 1:] if np.hypot(*(a - b)) < LATTICE_M * 1.01]
-    lines = [(a, b) for a, b in pairs if in_band(a + (b - a) * np.linspace(0, 1, 9)[:, None]).all()]
-    return knots, lines
-
-
-def _coded_page(extent, ppm, *, shift=(0.0, 0.0), theta=0.0, scale=1.0, ink=30, mat=None):
-    """A synthetic page image of the coded-like border (anti-aliased), the print moved by shift and turned
-    by theta as in _page, and imaged `scale` times its size. With `mat` (a grey), the 100 x 150 mm page
-    lies on a mat of that grey."""
     import cv2
-
-    img = np.full(ins.page_grid(extent, ppm)[0].shape, 220 if mat is None else mat, np.uint8)
-    c, s = scale * np.cos(theta), scale * np.sin(theta)
-
-    def px(p):   # print frame -> image pixels, 4 fractional bits
-        p = np.asarray(p, dtype=float).reshape(-1, 2)
-        believed = np.c_[c * p[:, 0] - s * p[:, 1], s * p[:, 0] + c * p[:, 1]] + shift
-        return np.round(ins.to_image_px(believed, extent, ppm) * 16).astype(np.int32)
-
-    if mat is not None:
-        cv2.fillPoly(img, [px([[-0.05, -0.075], [0.05, -0.075], [0.05, 0.075], [-0.05, 0.075]])], 220, cv2.LINE_AA,
-                     shift=4)
-    knots, lines = _coded_lattice()
-    for a, b in lines:
-        (p0, p1) = px([a, b])
-        cv2.line(img, tuple(int(v) for v in p0), tuple(int(v) for v in p1), ink, int(round(LINE_M * 1000 * ppm)),
-                 cv2.LINE_AA, shift=4)
-    for k in px(knots):
-        cv2.circle(img, tuple(int(v) for v in k), int(round(scale * KNOT_M * 1000 * ppm * 16)), ink, -1, cv2.LINE_AA,
-                   shift=4)
-    return img
-
-
-def _truth(shift, theta, scale=1.0):
-    """The correction _coded_page's print needs: believed b = scale R(theta) p + shift, so p = S R(-theta) b
-    + t with t = -R(-theta) shift / scale."""
-    c, s = np.cos(theta), np.sin(theta)
-    return -np.array([c * shift[0] + s * shift[1], -s * shift[0] + c * shift[1]]) / scale
-
-
-def test_border_fit_takes_each_side_about_the_prints_own_inner_edge():
-    """A coded print's knots reach past the clear centre's edge by a different amount on each side.
-    Fitted against +-clear_m / 2 the print comes out ~0.9 mm off in x with its x scale 2 % off, on every
-    print; against its own inner edges (settings.json border_inner_mm) it is right."""
-    pytest.importorskip("cv2")
-    extent, ppm = ins.PAGE_EXTENT, 5.0
-    for shift, theta in (((0.0, 0.0), 0.0), ((0.004, 0.009), np.radians(1.5)), ((-0.003, 0.002), np.radians(-0.8))):
-        img = _coded_page(extent, ppm, shift=shift, theta=theta)
-        truth = _truth(shift, theta)
-        edges = ins.border_edges(img, extent, ppm, CLEAR, inner_m=CODED_INNER)
-        sol = ins.solve_in_plane(edges, CLEAR, inner_m=CODED_INNER)
-        assert sol is not None and len(sol["sides"]) == 4
-        assert abs(sol["tx_m"] - truth[0]) < 0.0003 and abs(sol["ty_m"] - truth[1]) < 0.0003
-        assert abs(sol["theta_rad"] + theta) < np.radians(0.2)
-        legacy = ins.solve_in_plane(ins.border_edges(img, extent, ppm, CLEAR), CLEAR)
-        assert legacy is not None and abs(legacy["tx_m"] - truth[0]) > 0.0006 and abs(legacy["scale"][0] - 1) > 0.015
-
-
-def test_artwork_fit_places_a_print_whose_edges_do_not_fit():
-    """A transfer with two sides solid and two wiped off: the edge fit refuses it, the artwork's frame
-    still places it within half its 2 mm step and turns it within its sigma; a page with no print on it
-    matches nothing."""
-    pytest.importorskip("cv2")
-    extent, ppm, size = ins.PAGE_EXTENT, 5.0, ins.PAGE_SIZE
-    artwork = _coded_page((-size[0] / 2, -size[1] / 2, size[0] / 2, size[1] / 2), 10.0)
-    for shift, theta in (((-0.005, 0.006), np.radians(1.0)), ((0.004, -0.003), np.radians(-2.5))):
-        img = _coded_page(extent, ppm, shift=shift, theta=theta)
-        gx, gy = ins.page_grid(extent, ppm)
-        img[(gx < shift[0] - CLEAR[0] / 4) | (gy < shift[1] - CLEAR[1] / 4)] = 220   # left and bottom: blank skin
-        truth = _truth(shift, theta)
-        assert ins.solve_in_plane(ins.border_edges(img, extent, ppm, CLEAR, inner_m=CODED_INNER), CLEAR,
-                                  inner_m=CODED_INNER) is None
-        sol = ins.artwork_fit(img, artwork, extent, ppm, size, CLEAR)
-        assert sol is not None and sol["sides"] == ["artwork"]
-        assert abs(sol["tx_m"] - truth[0]) < 0.001 and abs(sol["ty_m"] - truth[1]) < 0.001
-        assert abs(sol["theta_rad"] + theta) < sol["sigma"][2]
-    assert ins.artwork_fit(np.full_like(img, 220), artwork, extent, ppm, size, CLEAR) is None
-
-
-def test_hold_tip_reads_the_tip_on_the_print_whatever_page_seeds_it():
-    """A gauge hold's wrist frame, 13 mm over a coded print seen 20 deg off its normal: the tip's place on the print
-    comes from the camera's own geometry (the gauge's surface, the print's artwork, the gauge's tip point), the
-    same within half a millimetre from a believed page 4 mm and 1 deg off it or from the print itself."""
-    import cv2
+    pytest.importorskip("PIL")
+    sys.path.insert(0, str(ins.repo_root(None) / "scripts/vision"))
+    import stencil_tile
+    from fiducials import stencil
     from tatbot_session import gauge
 
-    size = ins.PAGE_SIZE
-    artwork = _coded_page((-size[0] / 2, -size[1] / 2, size[0] / 2, size[1] / 2), 10.0)
-    sheet_extent, sheet_ppm = (-0.09, -0.12, 0.09, 0.12), 10.0
-    sheet = _coded_page(sheet_extent, sheet_ppm)
+    ink, record = stencil_tile.build("forearm", 0)
+    tile = stencil.tile(record)
+    (ox, oy), (tw, th) = record["tile_origin_in_stencil_mm"], record["tile_mm"]
     cam_from_print = np.linalg.inv(ins.look_at(np.eye(4), (0.005, 0.0), tilt_rad=np.radians(20),
                                                azimuth_rad=np.radians(200), distance_m=0.13))
     v, u = np.mgrid[0:720, 0:1280].astype(float)
     rays = np.stack([(u - K[0, 2]) / K[0, 0], (v - K[1, 2]) / K[1, 1], np.ones_like(u)], axis=-1)
     print_from_cam = np.linalg.inv(cam_from_print)
     o, d = print_from_cam[:3, 3], rays @ print_from_cam[:3, :3].T
-    hit = o[:2] + (-o[2] / d[..., 2])[..., None] * d[..., :2]   # each pixel's point on the print (m)
-    px = ins.to_image_px(hit.reshape(-1, 2), sheet_extent, sheet_ppm).reshape(720, 1280, 2).astype(np.float32) - 0.5
-    image = cv2.remap(sheet, px[..., 0], px[..., 1], cv2.INTER_LINEAR, borderValue=220)
+    hit = (o[:2] + (-o[2] / d[..., 2])[..., None] * d[..., :2]) * 1000   # each pixel's point on the print (mm)
+    sx = ((hit[..., 0] + tw / 2 + ox) * stencil_tile.PPM - 0.5).astype(np.float32)
+    sy = ((th / 2 - hit[..., 1] + oy) * stencil_tile.PPM - 0.5).astype(np.float32)
+    image = cv2.remap(ink, sx, sy, cv2.INTER_AREA, borderValue=255)
+    image = (90 + image.astype(np.float32) * (200 - 90) / 255).astype(np.uint8)   # violet on skin, in green
     surface = gauge.Frame(np.zeros((0, 3)), cam_from_print[:3, 3], cam_from_print[:3, 2], 0.0)
     meta = {"color_intrinsics": {"k": K.tolist(), "coeffs": [0.0] * 5}}
     tip = np.array([0.004, -0.007, 0.013])
     tip_cam = (cam_from_print @ [*tip, 1.0])[:3]
-    page = {"size_m": size, "clear_m": CLEAR}
-    for off in (ins.correction_matrix(0.0, 0.0, 0.0), ins.correction_matrix(0.003, -0.004, np.radians(1.0))):
-        found = ins.hold_tip([np.dstack([image] * 3)], [surface], meta, tip_cam, cam_from_print @ off, page, artwork)
-        assert found is not None and np.allclose(found["tip_m"], tip, atol=0.0005)
-    assert ins.hold_tip([np.dstack([image] * 3)], [None], meta, tip_cam, cam_from_print, page, artwork) is None
+    page = {"size_m": list(tile.size_m), "clear_m": list(tile.size_m)}
+    for off in (ins.correction_matrix(0.0, 0.0, 0.0), ins.correction_matrix(0.006, -0.004, np.radians(2.0))):
+        found = ins.hold_tip([np.dstack([image] * 3)], [surface], meta, tip_cam, cam_from_print @ off, page, tile)
+        assert found is not None and np.allclose(found["tip_m"], tip, atol=0.00025)
+        assert found["accepted"] and found["markers"] >= 10 and found["margin"] == 1.0
+    blank = np.dstack([np.full_like(image, 200)] * 3)                       # skin alone: no marker in it
+    assert ins.hold_tip([blank], [surface], meta, tip_cam, cam_from_print, page, tile) is None
+    found = ins.hold_tip([blank], [surface], meta, tip_cam, cam_from_print, page, tile,
+                         every=[blank, np.dstack([image] * 3)])
+    assert found is not None and found["accepted"] and np.allclose(found["tip_m"], tip, atol=0.00025)
 
 
 def test_holds_shift_is_the_median_of_where_the_tip_stood_less_where_it_was_sent():
@@ -213,79 +176,95 @@ def test_holds_shift_is_the_median_of_where_the_tip_stood_less_where_it_was_sent
     assert ins.holds_shift(holds[:2] + holds[4:]) is None   # two agree, the third is a band off
 
 
-def test_border_scan_stops_short_of_the_page_edge():
-    """A border too faint to find, on a page imaged a few % small on a dark mat: scanning out to search_m
-    the mat beyond the page's edge passed for the border on three sides (a fit 15 mm off); bounded by
-    the page's margin and frame the scan finds nothing and the fit refuses. A border it can see on the
-    same mat still fits."""
-    pytest.importorskip("cv2")
-    extent, ppm = ins.PAGE_EXTENT, 5.0
-
-    def fit(img, **kw):
-        return ins.solve_in_plane(ins.border_edges(img, extent, ppm, CLEAR, inner_m=CODED_INNER, **kw), CLEAR,
-                                  inner_m=CODED_INNER)
-
-    assert fit(_coded_page(extent, ppm, scale=0.96, ink=180, mat=60)) is None
-    scale, shift, theta = 0.97, (0.003, 0.0), 0.02
-    truth = _truth(shift, theta, scale)
-    faint = _coded_page(extent, ppm, shift=shift, theta=theta, scale=scale, ink=180, mat=60)
-    assert fit(faint) is None
-    unbounded = fit(faint, size_m=None)
-    assert unbounded is not None and abs(unbounded["tx_m"] - truth[0]) > 0.010   # what the bound stops
-    sol = fit(_coded_page(extent, ppm, shift=shift, theta=theta, scale=scale, mat=60))
-    assert sol is not None and abs(sol["tx_m"] - truth[0]) < 0.0003 and abs(sol["ty_m"] - truth[1]) < 0.0003
+def test_holds_shift_says_its_farthest_reading_and_the_places_two_markers_read():
+    """off_m: the farthest from the shift of the holds kept and of every one by two markers or more, dropped or not;
+    places: the kept ones' by two markers or more, a hold made again (nearer than span_m) one place."""
+    sent = [(-0.0175, -0.02), (-0.0172, -0.02), (0.0175, 0.02), (0.0, 0.0), (-0.0175, 0.02)]
+    off = [(0.001, 0.0), (0.0012, 0.0), (0.0018, 0.0), (0.001, 0.0), (0.012, 0.0)]
+    holds = [{"xy": xy, "tip_m": [xy[0] + dx, xy[1] + dy, 0.01], "markers": m}
+             for xy, (dx, dy), m in zip(sent, off, (3, 2, 1, 1, 1), strict=True)]
+    found = ins.holds_shift(holds)
+    assert found["dropped"] == 1 and found["off_m"] == pytest.approx(0.0007) and found["places"] == 1
+    holds[4]["markers"] = 4                                  # a dropped reading by four markers counts
+    assert ins.holds_shift(holds)["off_m"] == pytest.approx(0.0109)
+    holds[2]["markers"] = 2
+    assert ins.holds_shift(holds)["places"] == 2
 
 
-def test_solve_in_plane_scales_about_the_aim_point():
-    """A view aimed off the page centre images the print a few % large about the point it aims at: the fit
-    returns the print's own offset when its scale is about that point, and (1 - s) c more about the page
-    centre."""
-    aim, k, t = np.array([-0.015, 0.037]), 1.03, np.array([0.0012, -0.0008])   # image scale k, the print's offset t
-    edges = []
-    for side, (axis, _) in ins.SIDES.items():
-        for a in np.linspace(-0.02, 0.02, 6):
-            q = np.zeros(2)
-            q[axis], q[1 - axis] = CODED_INNER[side], a    # on the print's inner edge
-            p = aim + k * (q - t - aim)                    # where the view shows it
-            edges.append({"side": side, "axis": axis, "edge_m": float(p[axis]), "along_m": float(p[1 - axis])})
-    sol = ins.solve_in_plane(edges, CLEAR, inner_m=CODED_INNER, centre_m=aim)
-    assert sol is not None  # solve_in_plane returns a fit dict for valid edges
-    assert np.allclose([sol["tx_m"], sol["ty_m"], sol["theta_rad"]], [t[0], t[1], 0.0], atol=1e-9)
-    assert np.allclose(sol["scale"], 1 / k)
-    off = ins.solve_in_plane(edges, CLEAR, inner_m=CODED_INNER)
-    assert off is not None  # solve_in_plane returns a fit dict for valid edges
-    assert np.allclose([off["tx_m"], off["ty_m"]], t + (1 - 1 / k) * aim, atol=1e-9)
+def test_holds_shift_leaves_out_the_holds_the_track_would_not_take():
+    """A hold whose markers were not accepted (margin 0) does not vote: four such holds agreeing on a misread no
+    longer outvote three accepted ones, and the accepted ones alone are too few when only two remain."""
+    sent = [(-0.022, 0.022), (-0.037, 0.039), (-0.006, 0.039), (-0.037, 0.004), (-0.006, 0.004), (-0.020, 0.004),
+            (-0.022, 0.039)]
+    off = [(0.001, -0.006)] * 3 + [(0.013, -0.006)] * 4
+    margins = [1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+    holds = [{"xy": xy, "tip_m": [xy[0] + dx, xy[1] + dy, 0.010], "margin": m}
+             for xy, (dx, dy), m in zip(sent, off, margins, strict=True)]
+    assert np.allclose(ins.holds_shift([{k: h[k] for k in ("xy", "tip_m")} for h in holds])["shift_m"], [0.013, -0.006])
+    found = ins.holds_shift(holds)
+    assert np.allclose(found["shift_m"], [0.001, -0.006]) and found["holds"] == 3
+    assert ins.holds_shift(holds[1:]) is None
 
 
-def test_a_held_scale_lets_a_stray_far_side_point_be_rejected():
-    """A locate view saw the top border as one point at the pen cone, 7.8 mm inside the print's edge; with
-    the y scale free the fit matched it exactly and moved the page ~4 mm in y (2026-09-28)."""
-    t = np.array([0.0006, -0.0125])
-    edges = []
-    for side in ("left", "right", "bottom"):
-        axis = ins.SIDES[side][0]
-        for a in np.linspace(-0.02, 0.02, 7):
-            q = np.zeros(2)
-            q[axis], q[1 - axis] = CODED_INNER[side] - t[axis], a
-            edges.append({"side": side, "axis": axis, "edge_m": float(q[axis]), "along_m": float(q[1 - axis])})
-    edges.append({"side": "top", "axis": 1, "edge_m": 0.0474, "along_m": 0.0})
-    free = ins.solve_in_plane(edges, CLEAR, inner_m=CODED_INNER)
-    held = ins.solve_in_plane(edges, CLEAR, inner_m=CODED_INNER, free_scale=(True, False))
-    assert free is not None and held is not None  # solve_in_plane returns a fit dict for valid edges
-    assert abs(free["ty_m"] - t[1]) > 0.002 and free["scale"][1] != 1.0
-    assert np.allclose([held["tx_m"], held["ty_m"]], t, atol=1e-9) and held["scale"][1] == 1.0
-    assert held["points"] == len(edges) - 1     # the stray point is rejected, not fitted
+def test_holds_shift_on_a_curved_page_takes_the_holds_own_turn():
+    """On a curved page the page turns by the median of each hold's own marker fit's turn (2026-10-19: 0.1-0.4 deg
+    apart over a forearm's holds, the locate's views 0.4-0.8 deg apart) and shifts by each tip less where that turn
+    puts where it was sent; a flat page's turn stays the locate's, and a wild one is not taken (the places' own turn
+    still is)."""
+    sent = [(-0.0175, -0.02), (0.0175, -0.02), (0.0175, 0.02), (0.0, 0.0), (-0.0175, 0.02)]
+    turn, shift = np.radians(0.5), np.array([0.001, -0.002])
+    rot = ins.correction_matrix(0.0, 0.0, turn)[:2, :2]
+    holds = [{"xy": xy, "tip_m": [*(rot @ xy + shift), 0.01], "turn_rad": turn + np.radians(d)}
+             for xy, d in zip(sent, (0.1, -0.1, 0.0, 0.2, -0.2), strict=True)]
+    found = ins.holds_shift(holds, turned=True)
+    assert np.isclose(found["turn_rad"], turn) and np.allclose(found["shift_m"], shift, atol=1e-9)
+    assert ins.holds_shift(holds)["turn_rad"] == 0.0
+    wild = [{**h, "turn_rad": np.radians(10.0)} for h in holds]
+    assert np.isclose(ins.holds_shift(wild, turned=True)["turn_rad"], turn)
+    assert ins.holds_shift(wild, turned=True)["fit_turn_rad"] == pytest.approx(turn)
 
 
-def test_inner_edges_default_to_the_clear_centre_and_refuse_a_misread_key():
-    assert ins.inner_edges(CLEAR) == {"left": -0.031, "right": 0.031, "bottom": -0.056, "top": 0.056}
-    assert ins.inner_edges(CLEAR, CODED_INNER) == CODED_INNER
-    for bad in ([-0.0305, 0.0322, -0.0551, 0.0552],                                # a list: which side is which
-                {"left": 19.473, "right": 82.211, "bottom": 130.133, "top": 19.812},   # settings.json mm, unconverted
-                {"left": -0.0305, "right": 0.0322, "bottom": 0.0551, "top": -0.0552},  # y down
-                {"left": -0.0305, "right": 0.0322, "top": 0.0552}):
-        with pytest.raises(ValueError):
-            ins.inner_edges(CLEAR, bad)
+HOLDS = np.array([(-0.0135, -0.0127), (0.0128, -0.0127), (0.0128, 0.0114), (-0.0135, 0.0114), (-0.0003, -0.0006)])
+
+
+def _turned_holds(deg, sent=HOLDS, centre=(0.004, -0.002), slide=(0.0012, -0.0008)):
+    """Holds of a print turned deg about `centre` and slid from the page believed: where each tip stands on it."""
+    c, s = np.cos(np.radians(deg)), np.sin(np.radians(deg))
+    tip = (sent - centre) @ np.array([[c, -s], [s, c]]).T + centre + slide
+    return [{"xy": xy.tolist(), "tip_m": [*t, 0.010], "margin": 1.0} for xy, t in zip(sent, tip, strict=True)]
+
+
+def test_holds_take_out_a_turned_pages_turn_with_its_shift():
+    """2026-10-19, a forearm print: the five holds put the page 2-3 deg off the locate's (a spot read again later
+    agreed to 0.04-0.23 mm), and a shift alone left 0.9 mm at the corner holds. A page truly turned 3 deg about a
+    point off the holds' centre: the move carries every hold's believed point onto where its tip stood."""
+    holds = _turned_holds(3.0)
+    found = ins.holds_shift(holds, turned=True)
+    assert np.isclose(np.degrees(found["turn_rad"]), 3.0) and found["holds"] == 5
+    assert ins.holds_shift(holds)["turn_rad"] == 0.0                                # a flat page: the locate's
+    move = ins.correction_matrix(*found["move"])
+    for h in holds:
+        assert np.allclose((move @ [*h["xy"], 0.0, 1.0])[:2], h["tip_m"][:2], atol=1e-9)
+    shift_only = np.array([h["tip_m"][:2] for h in holds]) - HOLDS - np.median(
+        [np.subtract(h["tip_m"][:2], h["xy"]) for h in holds], axis=0)
+    assert np.linalg.norm(shift_only, axis=1).max() > 0.0009                       # what the shift alone left
+    assert found["spread_m"] == pytest.approx([0.0, 0.0], abs=1e-9)
+
+
+def test_a_turn_is_taken_only_from_enough_holds_spread_wide_and_within_the_locates_reach():
+    """Four holds (one misread turns the page and nothing shows it), four places with one hold made again (recorded
+    twice, 2026-10-19), five within 2 mm of each other, or a turn past 5 deg (a misread: the locate holds the yaw to
+    1-1.5 deg) keep the median shift alone."""
+    again = [*_turned_holds(3.0)[:4], {**_turned_holds(3.0)[0], "xy": (HOLDS[0] + [0.0006, -0.0004]).tolist()}]
+    for holds in (_turned_holds(3.0)[:4], again, _turned_holds(3.0, sent=HOLDS * 0.1), _turned_holds(6.0)):
+        found = ins.holds_shift(holds, turned=True)
+        r = np.array([np.subtract(h["tip_m"][:2], h["xy"]) for h in holds])
+        assert found["turn_rad"] == 0.0 and abs(found["fit_turn_rad"]) > 0.04
+        assert np.allclose(found["shift_m"], np.median(r, axis=0)) and np.allclose(found["move"][:2], found["shift_m"])
+
+
+def test_inner_edges_are_the_clear_centres():
+    assert g.inner_edges(CLEAR) == {"left": -0.031, "right": 0.031, "bottom": -0.056, "top": 0.056}
 
 
 def test_fuse_weights_by_inverse_variance():
@@ -385,91 +364,206 @@ def test_ink_alignment_ignores_a_neighbouring_drawing():
     assert fit["coverage"] > 0.9 and fit["p95_gap_m"] < 0.001
 
 
-def test_aim_skips_a_view_that_leaves_a_joint_at_its_limit():
-    """The cheapest view put joint_1 on its limit, where the next plan refused to start; aim takes the next."""
+def test_aim_rejects_each_bad_posture_and_takes_the_next_clear_view():
+    """Joint margin, arm reach, pen tilt, wrist turn, cube height and side clearance each reject a cheaper view.
+    The same chooser returns None when that is the only view; removing the arm cap restores the cheaper choice."""
     from types import SimpleNamespace
 
-    up = np.eye(4)
-    up[2, 3] = 0.1   # every solution holds the pen 100 mm over the page
-
-    kin = SimpleNamespace(arm="right", lower=np.array([-3.0, 0.0, 0.0, -3.0, -3.0, -3.0, 0.0]),
-                          upper=np.array([3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 0.04]),
-                          fk=lambda q: up, frame=lambda q, f: up)
-    at_limit = np.array([0.0, 0.003, 1.0, 0.0, 0.0, 0.0, 0.0])   # joint_1 3 mrad over its lower limit
-    clear = np.array([0.5, 0.5, 1.0, 0.0, 0.0, 0.0, 0.0])
-    calls = []
-
-    def solve_ik(kin, target, seed):
-        calls.append(1)
-        return at_limit.copy() if len(calls) == 1 else clear.copy()
-
-    loose = {"reference": np.zeros(7), "max_pen_tilt_deg": 180.0, "cube_up_m": -1.0}
-    got = ins.aim(kin, solve_ik, np.eye(4), (0.0, 0.0), np.zeros(7), frame="cam", clearance_m=0.015,
-                  tilts_deg=(20,), distances_m=(0.18,), azimuths=[0.0, 1.0], rolls_deg=range(0, 1), **loose)
-    assert got is not None and np.allclose(got[0], clear)
-    none = ins.aim(kin, lambda *_: at_limit.copy(), np.eye(4), (0.0, 0.0), np.zeros(7), frame="cam",
-                   clearance_m=0.015, tilts_deg=(20,), distances_m=(0.18,), azimuths=[0.0], rolls_deg=range(0, 1), **loose)
-    assert none is None
-
-
-def test_aim_keeps_the_wrist_cube_on_its_side_and_clear_of_the_table():
-    """The cheapest post-draw view rolled the wrist 90 deg: the pen stayed 20 mm up but the fiducial cube's tag
-    face came 33 mm over the table, 140-180 mm past the camera toward the palette (2026-09-30)."""
-    from types import SimpleNamespace
-
-    def pose(z, y=0.0):
-        out = np.eye(4)
-        out[1, 3], out[2, 3] = y, z
+    def pose(deg=0.0, z=0.150, y=0.0):
+        out = ins.rpy_matrix([0.0, y, z], [np.pi + np.radians(deg), 0.0, 0.0])
         return out
 
-    # three solutions, cheapest first: the cube low over the table, the cube across the side line, clear
-    cube = {1.0: pose(0.033), 2.0: pose(0.150, y=0.200), 3.0: pose(0.150)}
+    clear = np.array([0.1, 0, 0, 0.6, 0, 0, 0.0])
+    bad = np.array([0.7, 0, 0, 0, 0, 0, 0.0])
+    for reason in ("joint limit", "arm reach", "pen tilt", "wrist turn", "cube below mount", "cube near table", "side"):
+        rejected = bad.copy()
+        if reason == "joint limit":
+            rejected[1] = -8.997   # only 3 mrad from its limit
+        if reason == "wrist turn":
+            rejected[3] = 1.2
 
-    def frame(q, name):
-        if name == "right/wrist_tag4":
-            return cube.get(float(q[0]), pose(0.150))
-        if name == "right/missing_frame":
-            raise ValueError("URDF lacks frame")
-        return pose(0.100 if name == "right/tool_mount" else 0.150)
+        def frame(q, name, reason=reason, rejected=rejected):
+            if "missing" in name:
+                raise ValueError("URDF lacks frame")
+            if name == "right/tool_mount":
+                return pose(z=0.100)
+            if name == "right/wrist_tag4" and np.array_equal(q, rejected):
+                return pose(z={"cube below mount": 0.110, "cube near table": 0.033}.get(reason, 0.150),
+                            y=0.200 if reason == "side" else 0.0)
+            return pose()
 
-    kin = SimpleNamespace(arm="right", lower=np.full(7, -9.0), upper=np.full(7, 9.0), fk=lambda q: pose(0.020),
-                          frame=frame)
-    solutions = iter(np.array([k, 0, 0, 0, 0, 0, 0], float) for k in (1.0, 2.0, 3.0))
-    got = ins.aim(kin, lambda *_: next(solutions), np.eye(4), (0.0, 0.0), np.zeros(7), frame="cam",
-                  clearance_m=0.015, tilts_deg=(30,), distances_m=(0.18,), azimuths=[0.0], rolls_deg=range(0, 181, 90),
-                  max_y=0.100, reference=np.zeros(7), max_pen_tilt_deg=180.0)
-    assert got is not None and got[0][0] == 3.0
+        kin = SimpleNamespace(arm="right", lower=np.full(7, -9.0), upper=np.full(7, 9.0), frame=frame,
+                              fk=lambda q, reason=reason, rejected=rejected: pose(60.0 if reason == "pen tilt" and np.array_equal(q, rejected) else 0.0))
+        options = {"frame": "cam", "clearance_m": 0.015, "reference": np.zeros(7), "max_y": 0.100,
+                   "max_arm_rad": 0.6 if reason == "arm reach" else None, "max_pen_tilt_deg": 45.0,
+                   "cube_up_m": -1.0 if reason == "cube near table" else ins.CUBE_UP_M,
+                   "tilts_deg": (20,), "distances_m": (0.18,), "rolls_deg": (0,)}
+        choices = iter([rejected, clear])
+        got = ins.aim(kin, lambda *_, choices=choices: next(choices).copy(), np.eye(4), (0, 0), np.zeros(7),
+                      azimuths=(0.0, 1.0), **options)
+        assert got is not None and np.array_equal(got[0], clear), reason
+        assert ins.aim(kin, lambda *_, rejected=rejected: rejected.copy(), np.eye(4), (0, 0), np.zeros(7),
+                       azimuths=(0.0,), **options) is None, reason
+        if reason == "arm reach":
+            choices = iter([rejected, clear])
+            got = ins.aim(kin, lambda *_, choices=choices: next(choices).copy(), np.eye(4), (0, 0), np.zeros(7),
+                          azimuths=(0.0, 1.0), **{**options, "max_arm_rad": None})
+            assert np.array_equal(got[0], rejected)
     assert ins.frames_of(kin, np.zeros(7), ("{arm}/wrist_tag4", "{arm}/missing_frame")) == ["right/wrist_tag4"]
 
 
-def test_aim_keeps_the_pen_down_the_wrist_near_pen_down_and_the_cube_up():
-    """Scan views stay upright (operator, 2026-09-30): the pen mostly down, no big wrist turns, the cube up."""
+def test_the_lower_wrist_camera_is_a_wrist_body_kept_on_the_arms_side_and_over_the_page():
+    """The lower wrist D405 (2026-10-23) is one of the wrist's bodies (WRIST_BODY): a view whose lower camera crosses
+    the side line, or stands under BODY_CLEARANCE_M over the page, is refused as one of the upper's would be."""
+    from tatbot_session import inspect as ins
+
+    at = {"right/realsense_lower_link": [0.3, -0.1, 0.2]}
+
+    class Kin:
+        arm, lower, upper = "right", np.full(7, -3.0), np.full(7, 3.0)
+
+        def frame(self, q, name):
+            pose = np.eye(4)
+            pose[:3, 3] = at.get(name, [0.3, -0.1, 0.2])
+            return pose
+
+        def fk(self, q):
+            return self.frame(q, "right/tcp")
+
+    kin = Kin()
+    body = ins.frames_of(kin, np.zeros(7), ins.WRIST_BODY)
+    assert "right/realsense_lower_link" in body and "right/realsense_link" in body
+
+    def clear():
+        return ins.view_clear(kin, np.zeros(7), np.eye(4), margin_rad=0.0, clearance_m=0.015, body=body,
+                              body_clearance_m=ins.BODY_CLEARANCE_M, side=body, max_y=0.0)
+    assert clear()
+    at["right/realsense_lower_link"] = [0.3, 0.02, 0.2]      # past the side line
+    assert not clear()
+    at["right/realsense_lower_link"] = [0.3, -0.1, 0.05]     # under the bodies' clearance
+    assert not clear()
+
+
+def test_a_top_down_view_is_aimed_about_the_page_levelled_with_the_side_line_farther(monkeypatch):
+    """2026-10-21: views 35-40 deg off saw a forearm print's markers squashed; the owner wants them straight down.
+    top_down aims about the page levelled (its centre and turn kept) on TOP_DOWN's grid, the side line farther."""
+    calls, tilted = [], ins.rpy_matrix([0.3, 0.0, 0.1], [0.2, 0.0, 0.5])
+    monkeypatch.setattr(ins, "aim", lambda kin, solve, page, xy, q, **k: calls.append((page, k)))
+    ins.top_down(None, None, tilted, (0.0, 0.0), np.zeros(7), max_y=0.1, frame="cam")
+    (page, k), = calls
+    assert np.allclose(page[:3, 2], [0, 0, 1.0]) and np.allclose(page[:3, 3], tilted[:3, 3])
+    assert abs(page[:3, 0] @ tilted[:3, 0]) > np.cos(0.21) and k["max_y"] == pytest.approx(0.1 + ins.TOP_DOWN_SIDE_M)
+    assert {key: k[key] for key in ins.TOP_DOWN} == ins.TOP_DOWN and ins.TOP_DOWN["tilts_deg"] == (0, 5, 10)
+
+
+def test_an_over_centre_view_is_the_ready_pose_raised_square_to_the_page():
+    """2026-10-24: the locate's first look stands the pen square to the page `height_m` over its centre at the ready
+    move's heading, solved from the ready move's seed with the carriage where it is (inspect.over_centre); it keeps the
+    joint margins, the pen's and the wrist bodies' clearance over the page and a way off the arm itself, and no side
+    line (the ready pose under it has none); the markers it sees by `see`, None without."""
     from types import SimpleNamespace
 
-    def tilted(deg, z=0.150):
-        """A pose `deg` off pen-down (tcp z into the page) at height z; the camera rides the tcp here."""
-        c, s = np.cos(np.radians(deg)), np.sin(np.radians(deg))
-        out = np.eye(4)
-        out[:3, :3] = np.diag([1.0, -1.0, -1.0]) @ np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
-        out[2, 3] = z
-        return out
+    page = ins.rpy_matrix([0.30, -0.05, 0.10], [0.12, 0.0, 0.4])
+    heading = ins.rpy_matrix([0.0, 0.0, 0.0], [np.pi, 0.0, 0.7])
+    solved, at = [], {}
 
-    def frame(q, name):
-        if name == "right/tool_mount":
-            return tilted(0.0, 0.100)
-        if "wrist_tag" in name and float(q[0]) == 3.0:
-            return tilted(0.0, 0.110)             # the cube only 10 mm over the mount: turned over
-        return tilted(0.0, 0.150)
+    def frame(q, name):   # the wrist's bodies 0.2 m over the page and 0.5 m past any side line
+        pose = np.eye(4)
+        pose[:3, 3] = at.get(name, page[:3, 3] + 0.2 * page[:3, 2] + [0.0, 0.5, 0.0])
+        return pose
+    kin = SimpleNamespace(arm="right", lower=np.full(7, -3.0), upper=np.full(7, 3.0), frame=frame,
+                          fk=lambda q: solved[-1][0])
 
-    # solutions in cost order: the pen 60 deg off down, a wrist joint turned 1.2 rad, the cube low, upright
-    kin = SimpleNamespace(arm="right", lower=np.full(7, -9.0), upper=np.full(7, 9.0),
-                          fk=lambda q: tilted(60.0 if float(q[0]) == 1.0 else 0.0), frame=frame)
-    solutions = iter([np.array([1.0, 0, 0, 0, 0, 0, 0]), np.array([2.0, 0, 0, 1.2, 0, 0, 0]),
-                      np.array([3.0, 0, 0, 0, 0, 0, 0]), np.array([4.0, 0, 0, 0.2, 0, 0, 0])])
-    got = ins.aim(kin, lambda *_: next(solutions), np.eye(4), (0.0, 0.0), np.zeros(7), frame="cam",
-                  clearance_m=0.015, tilts_deg=(20,), distances_m=(0.18,), azimuths=[0.0, 1.0, 2.0, 3.0],
-                  rolls_deg=range(0, 1), reference=np.zeros(7), max_pen_tilt_deg=45.0)
-    assert got is not None and got[0][0] == 4.0
+    def solve(kin, target, seed):
+        solved.append((target, seed.copy()))
+        return np.full(7, 0.1)
+    here = np.r_[np.full(6, 0.5), 0.02]
+    q, view = ins.over_centre(kin, solve, page, (0.0, 0.0), here, heading, frame="cam", clearance_m=0.015,
+                              height_m=0.050, seed=ins.REST)
+    target, seed = solved[-1]
+    assert np.allclose(target[:3, 3], page[:3, 3] + 0.050 * page[:3, 2]) and np.allclose(target[:3, 2], -page[:3, 2])
+    assert target[:3, 0] @ heading[:3, 0] > 0.99 and np.allclose(seed, [*ins.REST[:6], 0.02])
+    assert np.allclose(q, 0.1) and view == {"over_m": 0.050, "seen": None}
+    _, view = ins.over_centre(kin, solve, page, (0.0, 0.0), here, heading, frame="cam", clearance_m=0.015,
+                              height_m=0.100, see=lambda base_from_camera: 4)
+    assert view == {"over_m": 0.100, "seen": 4}
+    assert ins.over_centre(kin, solve, page, (0.0, 0.0), here, heading, frame="cam", clearance_m=0.015,
+                           height_m=0.050, self_gap=lambda q: -0.01) is None              # its way crosses the arm
+    at["right/realsense_lower_link"] = page[:3, 3] + 0.03 * page[:3, 2]
+    assert ins.over_centre(kin, solve, page, (0.0, 0.0), here, heading, frame="cam", clearance_m=0.015,
+                           height_m=0.050) is None                                         # a body near the page
+
+    def fails(*a):
+        raise ValueError("no solution")
+    assert ins.over_centre(kin, fails, page, (0.0, 0.0), here, heading, frame="cam", clearance_m=0.015,
+                           height_m=0.050) is None
+
+
+def test_a_view_is_chosen_by_the_markers_it_sees_before_its_joint_cost():
+    """2026-10-22: the locate's cheapest views put the print behind the tool (75% of the markers in view read, 92% of
+    those the tool left clear). With `see` the views seeing the most come first, and none seeing fewer is solved once
+    one of them is reachable; without it the cheapest is taken as before."""
+    from types import SimpleNamespace
+
+    down = ins.rpy_matrix([0.0, 0.0, 0.15], [np.pi, 0.0, 0.0])
+    kin = SimpleNamespace(arm="right", lower=np.full(7, -9.0), upper=np.full(7, 9.0), frame=lambda q, name: down,
+                          fk=lambda q: down)
+    options = {"frame": "cam", "clearance_m": 0.015, "reference": np.zeros(7), "max_arm_rad": None,
+               "tilts_deg": (20,), "distances_m": (0.18,), "rolls_deg": (0,), "azimuths": (0.0, np.pi / 2),
+               "cube_up_m": -1.0}
+    cheap, dear, solved = np.zeros(7), np.array([0.3, 0, 0, 0, 0, 0, 0.0]), []
+
+    def solve(kin, target, seed):   # the view toward +y (azimuth 90 deg) costs more
+        solved.append(target[:3, 3].copy())
+        return (dear if target[1, 3] > 0.01 else cheap).copy()
+
+    assert np.array_equal(ins.aim(kin, solve, np.eye(4), (0, 0), np.zeros(7), **options)[0], cheap)
+    solved.clear()
+    q, view = ins.aim(kin, solve, np.eye(4), (0, 0), np.zeros(7), see=lambda cam: 3 if cam[1, 3] > 0.01 else 1,
+                      **options)
+    assert np.array_equal(q, dear) and view["seen"] == 3 and len(solved) == 1
+    q, view = ins.aim(kin, solve, np.eye(4), (0, 0), np.zeros(7), around=((0.0, 0.0), (0.0, 0.05)), **options)
+    assert view["aside_m"] == [0.0, 0.0] and len({tuple(t.round(4)) for t in solved}) == 4
+
+
+def test_the_markers_a_view_sees_are_in_frame_past_the_tool_and_big_enough():
+    """markers_seen counts a marker when its four corners land in the frame, none on the tool's footprint, its sides
+    MARKER_PX long on average; top_down_distances goes as high as the print's smallest marker keeps that size."""
+    from types import SimpleNamespace
+
+    k = np.array([[651.0, 0.0, 640.0], [0.0, 651.0, 360.0], [0.0, 0.0, 1.0]])
+    square = np.array([[-1, 1], [1, 1], [1, -1], [-1, -1]]) * 0.009   # 18 mm, TL/TR/BR/BL in the page frame
+    tile = SimpleNamespace(ids=[0, 1, 2], corners={0: square + [-0.03, 0], 1: square + [0.03, 0], 2: square + [0.5, 0]},
+                           sides_m={0: 0.018, 1: 0.018, 2: 0.018})
+    camera = ins.rpy_matrix([0.0, 0.0, 0.25], [np.pi, 0.0, 0.0])   # looking straight down from 0.25 m
+    clear, left = np.zeros((720, 1280), bool), np.zeros((720, 1280), bool)
+    left[:, :640] = True
+    assert ins.markers_seen(np.eye(4), camera, tile, k, clear) == 2      # the third is out of the frame
+    assert ins.markers_seen(np.eye(4), camera, tile, k, left) == 1       # the tool hides one
+    assert ins.markers_seen(np.eye(4), camera, tile, k, clear, min_px=60.0) == 0   # 47 px a side
+    assert ins.top_down_distances(tile, 651.0) == (ins.TOP_DOWN_M, ins.TOP_DOWN_MAX_M)
+    tile.sides_m = {0: 0.012}
+    assert ins.top_down_distances(tile, 651.0) == (ins.TOP_DOWN_M,)
+
+
+def test_the_tools_footprint_is_its_datasheet_profile_moved_onto_the_measured_tip():
+    """The tool rides the camera, so it covers the same pixels in every view: its profile of revolution about the
+    mount's z, projected, moved so its tip lies on the gauge's measured tip (2026-10-22: the CAD mount put the tip
+    11 mm off it, and the footprint then told which of 477 markers were read in 87% against 91%)."""
+    from types import SimpleNamespace
+
+    mount = np.eye(4)
+    mount[:3, 3] = [0.0, 0.03, 0.05]   # 30 mm below the camera's axis, 50 mm out, along it
+    kin = SimpleNamespace(arm="right", frame=lambda q, name: mount if name.endswith("tool_mount") else np.eye(4))
+    k = np.array([[651.0, 0.0, 640.0], [0.0, 651.0, 360.0], [0.0, 0.0, 1.0]])
+    profile = [(0.0, 0.01), (0.05, 0.01)]
+
+    def at(x, y, z):
+        return int(360 + 651 * y / z), int(640 + 651 * x / z)
+    cad = ins.tool_footprint(kin, np.zeros(7), k, profile, "cam")
+    moved = ins.tool_footprint(kin, np.zeros(7), k, profile, "cam", tip_cam=[0.02, 0.03, 0.1])
+    assert cad[at(0.0, 0.03, 0.075)] and not cad[20, 1260] and 0.01 < cad.mean() < 0.5
+    assert moved[at(0.02, 0.03, 0.075)] and not moved[at(-0.012, 0.03, 0.075)]
 
 
 def test_view_targets_drop_a_tilted_pen_before_any_ik():
@@ -494,55 +588,32 @@ def test_path_clear_refuses_a_way_that_passes_through_the_arm_itself():
     assert ins.path_clear(self_gap, inside, np.array([0.0, 0, 0, 0, 0, 0, 0]))      # an arm inside backs out
 
 
-def test_analyse_drops_views_far_from_the_expected_shift_and_pairs_each_with_its_border():
+def test_analyse_drops_views_far_from_the_expected_shift_and_pairs_each_with_its_print_fit():
     """Two of three views matched ink 13 mm off (a misregistered view, or another drawing): the median
     alone reports their shift; the gate around the rig's known shift keeps the one good view, and its
-    placement is its own shift plus its own border correction."""
+    placement is its own shift plus its own print correction (the tile's markers)."""
     pytest.importorskip("cv2")
     import cv2
 
-    extent, ppm, clear = (-0.060, -0.085, 0.060, 0.085), 5.0, (0.062, 0.112)
-    plan = np.array([[-0.025, 0.030], [-0.005, 0.030], [-0.005, 0.045]])
+    extent, ppm, clear = (-0.060, -0.085, 0.060, 0.085), 5.0, (0.110, 0.150)
+    plan = np.array([[-0.025, 0.050], [-0.005, 0.050], [-0.005, 0.065]])   # above the 45 x 63 mm tile's markers
     program = {"ops": [{"op": "stroke", "points_m": plan.tolist()}]}
+    tile = None
 
     def view(border_shift, ink_shift):
-        img = _page(extent, ppm, clear, shift=border_shift)
+        nonlocal tile
+        img, tile = _tile_page(extent, ppm, shift=border_shift)
         px = ins.to_image_px(plan + np.asarray(border_shift) + ink_shift, extent, ppm)
         cv2.polylines(img, [np.round(px).astype(np.int32)], False, 30, 3)
         return img
 
     views = [view((0.0, 0.002), (-0.0065, -0.0005)), view((0.0, 0.0), (0.0065, 0.0)), view((0.0, 0.0), (0.0065, 0.0))]
-    plain = ins.analyse(views, program, clear, extent, ppm)
+    plain = ins.analyse(views, program, clear, extent, ppm, tile=tile)
     assert plain["ink"]["dx_m"] > 0.004   # the two bad views carry the median
-    gated = ins.analyse(views, program, clear, extent, ppm, ink_prior_m=[-0.0065, -0.0005], ink_gate_m=0.003)
+    gated = ins.analyse(views, program, clear, extent, ppm, tile=tile, ink_prior_m=[-0.0065, -0.0005], ink_gate_m=0.003)
     assert gated["ink"]["views"] == 1 and gated["ink"]["used"] == [0] and gated["ink"]["gated"]
     # view 0 sees the print 2 mm up and the ink 2 mm up with it: on the print it is off by the ink shift alone
     assert abs(gated["placement"]["dx_m"] + 0.0065) < 0.001 and abs(gated["placement"]["dy_m"] + 0.0005) < 0.001
     assert "1 of 3 views" in ins.summary(gated)
 
 
-def test_border_scan_starts_where_the_drawing_ends():
-    """A drawing in the clear centre: scanned from search_m inside each edge, the first dark run after clean
-    paper is ink (a resume's drawn wave, 2026-10-05: x scale 1.21-1.26, the print 10-13 mm off). Scanned
-    from the program's drawing's own edge, the fit finds the print."""
-    import cv2
-
-    extent, ppm = ins.PAGE_EXTENT, 5.0
-    shift, theta = (-0.002, 0.001), np.radians(0.5)
-    img = _coded_page(extent, ppm, shift=shift, theta=theta)
-    c, s = np.cos(theta), np.sin(theta)
-    band = np.array([[0.018, -0.035], [0.023, -0.035], [0.023, 0.035], [0.018, 0.035]])   # filled ink, print frame
-    cv2.fillPoly(img, [np.round(ins.to_image_px(band @ [[c, s], [-s, c]] + shift, extent, ppm)).astype(np.int32)], 40)
-    program = {"ops": [{"op": "tool_change"}, {"op": "stroke", "points_m": [[-0.022, -0.040], [0.023, 0.040]]}]}
-    truth = _truth(shift, theta)
-
-    def fit(**kw):
-        return ins.solve_in_plane(ins.border_edges(img, extent, ppm, CLEAR, inner_m=CODED_INNER, **kw), CLEAR,
-                                  inner_m=CODED_INNER)
-
-    fooled = fit()
-    assert fooled is not None and abs(fooled["tx_m"] - truth[0]) > 0.003 and fooled["scale"][0] > 1.1
-    assert ins.drawing_extent(program) == (-0.022, -0.040, 0.023, 0.040)
-    sol = fit(drawn_m=ins.drawing_extent(program))
-    assert sol is not None and abs(sol["tx_m"] - truth[0]) < 0.0003 and abs(sol["ty_m"] - truth[1]) < 0.0003
-    assert abs(sol["scale"][0] - 1) < 0.01

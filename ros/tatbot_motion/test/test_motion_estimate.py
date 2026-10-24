@@ -25,7 +25,7 @@ def test_estimate_accounts_for_corner_easing_and_exact_planner_ticks():
 
 def test_unmeasured_dips_and_colour_changes_are_unknown_not_free():
     ops = [stroke([[0, 0], [.02, 0]]), {"op": "dip"}, {"op": "dip"},
-           {"op": "pause", "reason": "swap pen: red"}]
+           {"op": "tool_change"}]
     motion = load_motion()
     estimate = estimate_duration(ops, .0035, 0, motion)
     assert estimate["unknown_operations"] == {"dip": 2, "pen_change": 1}

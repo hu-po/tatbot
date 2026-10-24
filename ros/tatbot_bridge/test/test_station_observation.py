@@ -64,8 +64,12 @@ def observations(tmp_path, monkeypatch):
         def close(self):
             state.closed = True
 
-    detector = SimpleNamespace(detect=lambda *args: [SimpleNamespace(tag_id=target.ids[0], corners_px=state.corners)]
-                               if state.detections else [])
+    def detect(*args):
+        state.looks += 1
+        return [SimpleNamespace(tag_id=target.ids[0], corners_px=state.corners)] \
+            if state.detections and state.looks % state.every == 0 else []
+    state.looks, state.every = 0, 1
+    detector = SimpleNamespace(detect=detect)
     monkeypatch.setattr(capture, 'Camera', Camera)
     monkeypatch.setattr(FiducialDetector, 'from_inventory', lambda *a, **k: detector)
     return state
@@ -161,3 +165,18 @@ def test_bridge_session_calibration_dependencies_remain_acyclic():
         visit(name, [])
     assert 'tatbot_motion' in graph['tatbot_bridge']
     assert 'tatbot_bridge' in graph['tatbot_session'] and 'tatbot_bridge' in graph['tatbot_calib']
+
+
+def test_too_few_placed_shots_keep_it_shooting_up_to_three_times_as_many(observations, tmp_path):
+    """2026-10-06: the tag in plain view, a dimming room, 2 and 1 of 8 shots placed it, and the drawing stopped."""
+    s = observations
+    s.every = 8                                  # the tag found in one look in eight (two looks a shot when unseen)
+    fix = observe(s, tmp_path, shots=4)          # two of four needed
+    assert len(s.shots) > 4 and np.allclose(fix.base_from_palette, s.pose, atol=1e-7)
+    rows = [json.loads(row) for row in (tmp_path/'evidence/shots.jsonl').read_text().splitlines()]
+    assert len(rows) == len(s.shots) and sum('base_from_palette' in row for row in rows) == 2
+    s.shots.clear()
+    s.every, s.looks = 1000, 0
+    with pytest.raises(producer.UnmeasuredError, match=r"in 0 of 12 shots"):
+        observe(s, tmp_path, shots=4)
+    assert len(s.shots) == 12

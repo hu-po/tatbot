@@ -38,7 +38,10 @@ writer's index in-process; `scripts/tatbot-logs` is a shim for it). Its
 subcommands: `list` (recent runs), `last <workflow>` (the most recent run of
 one workflow — start here), `show <run-id>`, `tail <run-id> [-f]`,
 `fetch <run-id>` (copy a remote run here, media skipped), `du`, `prune`
-(retention; dry run unless `--yes`), `root`, `reindex`, `compact`, and
+(retention; dry run unless `--yes`), `adopt <root>` (move another log root's
+finished runs here, as `tatbot ros down` does for a sim lane's; retention holds
+them to the `adopted` row), `count <workflow>` (launches, with
+`--expect N --before M` to check them), `root`, `reindex`, `compact`, and
 `selftest`. `begin` / `end` / `event` / `artifact` are what the launchers call
 to write a run, not operator commands. `tatbot logs -- --help` lists them.
 

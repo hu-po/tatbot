@@ -187,7 +187,7 @@ void ArmCore::activate(double now, const Feedback & fb)
     safety_[kLatched] = 0;
     safety_[kReason] = names::kLatchNone;
   }
-  stall_since_ = lag_since_ = -1;
+  stall_since_ = lag_since_ = snag_since_ = -1;
   cap_.configure(cfg_);
 }
 
@@ -203,7 +203,7 @@ void ArmCore::latch(double now, const Feedback & fb, int reason)
   safety_[kLanding] = 0;
   phase_ = Phase::kLatched;
   hold_ = clamp(fb.q);
-  stall_since_ = lag_since_ = -1;
+  stall_since_ = lag_since_ = snag_since_ = -1;
   std::ostringstream text;
   text << "latched (reason " << reason << ") at " << fmt(hold_);
   set_event(text.str());
@@ -218,6 +218,14 @@ Output ArmCore::hold_now(double now, const Feedback & fb, int reason)
     hold_ = clamp(fb.q);
   }
   latch(now, fb, reason);
+  return hold();
+}
+
+Output ArmCore::trip(double now, const Feedback & fb, int reason)
+{
+  latch(now, fb, reason);
+  safety_[kTripped] = 1;
+  for (size_t i = 0; i < kJoints; ++i) {safety_[kTripQ0 + i] = fb.q[i];}
   return hold();
 }
 
@@ -308,6 +316,38 @@ bool ArmCore::guard_tripped(double now, const Vec7 & target, const Feedback & fb
   if (lag_since_ < 0) {lag_since_ = now;}
   if (now - lag_since_ < cfg_.tip_lag_hold_s) {return false;}
   set_event("touch guard: tip lag");
+  return true;
+}
+
+bool ArmCore::snagged(double now, const Vec7 & target, const Feedback & fb)
+{
+  if (guard_level_ != names::kGuardSnag || !fk_) {
+    snag_since_ = -1;
+    return false;
+  }
+  // The measured tip against the commanded one at this tick, in any direction: the arm tracks its command with
+  // the velocity fed forward, so no lag is allowed for (README section 8 has the measured spread). A needle the
+  // work holds is pulled back as the arm lifts or travels away, and the work it carries pulls on it.
+  const TipPose a = fk_(target), b = fk_(fb.q);
+  double off = 0, deep = 0;
+  for (size_t i = 0; i < 3; ++i) {
+    const double e = b.p[i] - a.p[i];
+    off += e * e;
+    deep += e * a.z[i];
+  }
+  off = std::sqrt(off);
+  if (!(off > cfg_.snag_off_m)) {
+    snag_since_ = -1;
+    return false;
+  }
+  if (snag_since_ < 0) {snag_since_ = now;}
+  if (now - snag_since_ < cfg_.snag_hold_s) {return false;}
+  std::ostringstream text;
+  text.precision(3);
+  text << "snag guard: the tip " << off * 1e3 << " mm off its command (" << deep * 1e3
+       << " mm along the tool, + deeper; " << std::sqrt(std::max(0.0, off * off - deep * deep)) * 1e3
+       << " mm across) for " << cfg_.snag_hold_s << " s";
+  set_event(text.str());
   return true;
 }
 
@@ -477,11 +517,11 @@ Output ArmCore::tick(
   safety_[kProbe] = probe.triggered ? 1 : 0;
   safety_[kCtrlError] = controller_error ? 1 : 0;
   const int level = std::isfinite(cmd.guard_mode) ? static_cast<int>(std::lround(cmd.guard_mode)) : 0;
-  const int guard = level >= 0 && level <= 2 ? level : 0;
+  const int guard = level >= 0 && level <= names::kGuardSnag ? level : 0;
   if (guard != guard_level_) {
     guard_level_ = guard;
     guard_armed_at_ = now;
-    lag_since_ = contact_since_ = -1;
+    lag_since_ = contact_since_ = snag_since_ = -1;
     force_sum_ = 0;
     force_n_ = 0;
     probe_clear_ = false;
@@ -549,7 +589,7 @@ Output ArmCore::tick(
         safety_[kLatched] = 0;
         safety_[kReason] = names::kLatchNone;
         safety_[kTripped] = 0;
-        stall_since_ = lag_since_ = -1;
+        stall_since_ = lag_since_ = snag_since_ = -1;
         last_target_ = hold_;
         set_event("unlatched");
         out = hold();   // this tick holds; commands are tracked from the next
@@ -615,12 +655,7 @@ Output ArmCore::tick(
       return hold();
     }
   }
-  if (guard_tripped(now, target, fb)) {
-    latch(now, fb, names::kLatchGuardTipLag);
-    safety_[kTripped] = 1;
-    for (size_t i = 0; i < kJoints; ++i) {safety_[kTripQ0 + i] = fb.q[i];}
-    return hold();
-  }
+  if (guard_tripped(now, target, fb)) {return trip(now, fb, names::kLatchGuardTipLag);}
   double arm_speed = 0;
   for (size_t i = 0; i < kCarriage; ++i) {arm_speed = std::max(arm_speed, std::fabs(fb.qd[i]));}
   const bool aligning = std::isfinite(ff[kCarriage]) && std::fabs(ff[kCarriage]) > 1e-6;
@@ -640,6 +675,8 @@ Output ArmCore::tick(
     out.send = true;
     return out;
   }
+  // After the carriage cap: a carriage pushed past it in the same tick retracts, as it would unguarded.
+  if (snagged(now, target, fb)) {return trip(now, fb, names::kLatchGuardSnag);}
   return track(target, ff);
 }
 

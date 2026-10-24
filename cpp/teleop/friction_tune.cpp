@@ -70,7 +70,7 @@ int main(int argc, char ** argv)
     std::unique_ptr<tatbot::estop::Monitor> estop;
     if (estop_enabled) {
       estop = std::make_unique<tatbot::estop::Monitor>(
-        estop_device, true, estop_state);
+        estop_device, estop_state);
       bool announced = false;
       while (estop_state.load() > tatbot::estop::ok) {
         if (!announced) {
@@ -85,12 +85,14 @@ int main(int argc, char ** argv)
     trossen_arm::TrossenArmDriver driver;
     driver.configure(
       trossen_arm::Model::wxai_v0,
-      trossen_arm::StandardEndEffector::wxai_v0_base,
+      trossen_arm::StandardEndEffector::wxai_v0_base_20250509,
       ip,
       true  // clear_error
     );
     if (!config_file.empty()) {
       driver.load_configs_from_file(config_file);
+    } else {  // firmware 1.10+ boots with 2026-03-17's gains; tune on the 2025-05-09 ones the arms run
+      driver.set_motor_parameters(trossen_arm::StandardMotorParameters::wxai_v0_20250509);
     }
     if (index < 0 || index >= driver.get_num_joints()) {
       std::cerr << "joint_index out of range" << std::endl;

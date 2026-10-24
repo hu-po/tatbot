@@ -3,7 +3,7 @@
 
 New calibration (the target names the physical arm's tag set):
 
-    python scripts/vision/export_wrist_tags.py SESSION/robot_world.json --write --target wrist_left
+    python scripts/vision/export_wrist_tags.py SESSION/robot_world.json --write --target wrist
 
 Repository consistency, every target that declares a layout:
 
@@ -11,7 +11,7 @@ Repository consistency, every target that declares a layout:
 
 Each generated layout stores transforms from the one parent frame declared by
 ``targets.<target>.parent_frame``; the shared URDF carries one generated block
-per target, so re-exporting one arm leaves the other arm's block byte for
+per target, so re-exporting one target leaves the rest of the URDF byte for
 byte. URDF origins and simulator poses are derived representations, never
 separately calibrated values. ``--refresh-existing`` migrates a
 legacy/provisional layout without claiming that its transforms are calibrated.
@@ -56,8 +56,8 @@ def target_layout_path(inventory, target: str) -> Path:
 def wrist_link_prefix(record: dict) -> str:
     parent = record.get("parent_frame") or ""
     prefix = parent.split("/", 1)[0]
-    if prefix not in ("left", "right"):
-        raise ValueError(f"wrist parent frame {parent!r} is not on a physical arm")
+    if prefix != "right":
+        raise ValueError(f"wrist parent frame {parent!r} is not on the drawing arm")
     return prefix
 
 
@@ -109,7 +109,7 @@ def validate_record(record: dict, inventory, *, require_calibrated: bool, target
     tag_ids = {int(tag_id) for tag_id in record.get("tags", {})}
     if tag_ids != set(declared) and not _empty_pending_layout(record, require_calibrated):
         raise ValueError(f"wrist layout tag transforms must be exactly {list(declared)}")
-    for tag_id, entry in record["tags"].items():
+    for tag_id, entry in record.get("tags", {}).items():
         transform = np.asarray(entry.get("ee_from_tag"), dtype=np.float64)
         if transform.shape != (4, 4) or not np.isfinite(transform).all():
             raise ValueError(f"tag {tag_id} parent_from_tag must be a finite 4x4 matrix")

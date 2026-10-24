@@ -5,10 +5,11 @@ import datetime as dt
 import math
 import time
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
+from tatbot_description import same_machine  # noqa: F401  (callers ask station whether a touch carries)
 from tatbot_description.transforms import rpy_matrix
 
 SCHEMA = "tatbot.station-fix/1"
@@ -101,8 +102,6 @@ POSTS = (("probe_body", (0.0, 0.0, 0.030), 0.0175),
 
 BODY_TOP_BELOW_BALL_M = 0.0556 - 0.030   # the probe body's white top under the ball's centre (POSTS, the URDF)
 
-BODY_RADIUS_M = POSTS[0][2]              # the probe body's top, a white disc this wide in radius (POSTS)
-
 
 def parts(base_from_palette: np.ndarray, inkcaps=(), palette_urdf: Path | None = None) -> list[tuple[str, np.ndarray, float, bool]]:
     """(name, centre in the base, radius, post) for every part: a post stands from the table up to its centre."""
@@ -146,9 +145,6 @@ def require_fresh(fix: StationFix, run_started: float, *, now: float | None = No
     return max(age, 0.0)
 
 
-ZONE_MARGIN_M = 0.020   # the palette zone reaches this far past the outermost part, and this far over the tallest
-
-
 def station_world_parts(zones, world_from_base: np.ndarray, table_z: float) -> list:
     """The station's parts (Calibration.zones: name, centre in the arm base, radius, post) in the collision
     scene's world: spheres, and posts standing from the table (table_z, the base) up along the base's z to their
@@ -160,17 +156,6 @@ def station_world_parts(zones, world_from_base: np.ndarray, table_z: float) -> l
         out.append((name, "post", at, radius, max(float(centre[2]) - table_z, 1e-3), up) if post
                    else (name, "sphere", at, radius))
     return out
-
-
-def palette_zone(arm, fix, run, base, zones):
-    """One measured zone for calibration and drawing; base is the loaded scene's registration."""
-    root = np.asarray(fix.base_from_palette)[:3, 3]
-    radius = max(float(np.hypot(*(centre[:2]-root[:2])))+r for _, centre, r, _ in zones)
-    top = max(float(centre[2])+(0. if post else r) for _, centre, r, post in zones)
-    at = np.eye(4)
-    at[:3, 3] = root
-    return {'arm': arm, 'run': run, 'world_from_zone': (base @ at).tolist(),
-            'radius_m': radius+ZONE_MARGIN_M, 'height_m': top-float(root[2])+ZONE_MARGIN_M}
 
 
 # The post: a 20 mm extrusion beside the camera, which a bracket holds a few centimetres off the post's axis in a
@@ -240,6 +225,9 @@ def plane_depth(depth: np.ndarray, k, dist, keep: np.ndarray, px, min_px: int = 
 # D555's fix of 8 shots repeats to 0.1 mm across and 0.3 mm in height, one shot's to 0.3 and 1.0 (2026-09-29).
 MOVED_M = {"overhead_tag": 0.001, "wrist_tag": 0.001}
 MOVED_RAD = math.radians(0.5)
+# A dip goes at a palette moved up to twice that since its touch (owner, 2026-10-20: every stop doubled), the touched
+# ball carried across by the fixes' own shift, which repeats to 0.1 mm; farther, the station is touched again.
+DIP_MOVED_M, DIP_MOVED_RAD = 0.002, math.radians(1.0)
 # The tag's free pose may tilt this far from the base's vertical before it is refused: the palette stands on the
 # arm's table, and its more level IPPE pose tilts 1.0-1.7 degrees there (the other one 22-23).
 MAX_TILT_RAD = math.radians(8.0)
@@ -388,6 +376,17 @@ def station_moved(before: StationFix, after: StationFix, *, translation_m: float
 # whether the palette has moved since.
 TOUCH_SCHEMA = "tatbot.station-touch/1"
 TOUCH_TCP_CHANGE_M = 0.005   # a tcp moved further than this since the touches is another tool's seat: touch again
+# The touches' edge passes cannot measure the ball's height; the palette camera can (calib height). The overhead fix
+# repeats to ~0.3 mm in height and read the ball 2.4-2.8 mm over the camera's height all of 2026-10-14/15, while a
+# touch-only height 5.4 mm low put the 3RL through a cap's floor (2026-10-15). A dip refuses a touched ball whose height
+# stands further than this from the fresh fix's; a re-touch carries the camera's height when the ball moved less than
+# CARRY_HEIGHT_XY_M across.
+FIX_HEIGHT_M = 0.004
+# A height the palette camera measured is the arm's own reading of the ball; the overhead's bias against it is the
+# overhead's (3-6 mm high at times, 2026-10-12; +5.2 mm with the D555 hung 0.58 m over the playroom table on 2026-10-16,
+# where the camera's 82.90 mm matched 10-14's 82.81). Such a height is checked only for a gross error.
+FIX_HEIGHT_CAMERA_M = 0.008
+CARRY_HEIGHT_XY_M = 0.003
 
 
 def touch_path(arm: str) -> Path:
@@ -405,12 +404,13 @@ class StationTouch:
     fix: StationFix             # the overhead fix the touches started from
     run: str
     measured_utc: str
+    height_source: str = ""     # what measured the ball's height (calib height), "" when only the touches did
 
     def as_dict(self) -> dict:
         return {"schema": TOUCH_SCHEMA, "arm": self.arm, "tool_id": self.tool_id, "ball": np.asarray(self.ball).tolist(),
                 "rotation": np.asarray(self.rotation).tolist(), "tcp_m": np.asarray(self.tcp_m).tolist(),
                 "joint_offsets": [float(v) for v in self.joint_offsets], "fix": self.fix.as_dict(), "run": self.run,
-                "measured_utc": self.measured_utc}
+                "measured_utc": self.measured_utc, "height_source": self.height_source}
 
     @classmethod
     def from_dict(cls, data: dict) -> StationTouch:
@@ -418,7 +418,7 @@ class StationTouch:
             raise ValueError(f"not a {TOUCH_SCHEMA} record")
         return cls(data["arm"], data["tool_id"], np.asarray(data["ball"], float), np.asarray(data["rotation"], float),
                    np.asarray(data["tcp_m"], float), list(data["joint_offsets"]), StationFix.from_dict(data["fix"]),
-                   data["run"], data["measured_utc"])
+                   data["run"], data["measured_utc"], data.get("height_source", ""))
 
     def write(self, path: Path | None = None) -> Path:
         import json
@@ -448,18 +448,32 @@ def load_touch(arm: str, path: Path | None = None) -> StationTouch:
     return StationTouch.from_dict(json.loads(path.read_text()))
 
 
+def _carried_ball(touch: StationTouch, fix: StationFix, delta) -> np.ndarray:
+    """The touched ball at the tcp now (delta since the touches), carried across by the fixes' own shift once the
+    palette moved past the fix's repeatability (MOVED_M)."""
+    ball = touch.ball + touch.rotation @ delta
+    if station_moved(touch.fix, fix)["moved"]:
+        ball[:2] += (np.asarray(fix.ball, float) - np.asarray(touch.fix.ball, float))[:2]
+    return ball
+
+
 def touched_palette(touch: StationTouch, fix: StationFix, *, tool_id: str, tcp_m, joint_offsets,
-                    palette_urdf: Path) -> np.ndarray:
+                    palette_urdf: Path, same_body: bool = False, check_height: bool = True) -> np.ndarray:
     """<arm>/base_link <- palette_root for aiming at the caps: the fresh fix's rotation about the touched ball.
 
     Refused (StaleStationError) when the touches cannot speak for now: another tool, another joint model, another
     registration (the fix would not be comparable), a tcp moved past TOUCH_TCP_CHANGE_M, or a palette the fix sees
-    moved since. A tcp moved less (a probe calibration adopted since) carries the ball with it: at the touches'
-    rotation the same joints put the new tcp R (t_new - t_old) further on."""
+    moved past DIP_MOVED_M or DIP_MOVED_RAD since; one moved less, past the fix's repeatability (MOVED_M), carries the
+    ball across by the fixes' shift. A tcp moved less (a probe calibration adopted since) carries the ball with it: at the touches'
+    rotation the same joints put the new tcp R (t_new - t_old) further on. Another cartridge in the same machine
+    (`same_body`: tatbot_description.same_machine) carries it the same way: its tcp is the touched cartridge's
+    plus their tips' difference, which the wrist gauge's fits of the two measure. `check_height` False skips the
+    touched height against the overhead fix's: the overhead's registration through the wrist (tatbot_calib.overhead)
+    places its views by the touch while that registration is what stands the two apart."""
     why = None
     if touch.arm != fix.arm:
         why = f"the touch is the {touch.arm} arm's"
-    elif touch.tool_id != tool_id:
+    elif touch.tool_id != tool_id and not same_body:
         why = f"the station was touched with {touch.tool_id}, and {tool_id} is fitted"
     elif not np.allclose(np.asarray(touch.joint_offsets, float), np.asarray(joint_offsets, float), atol=1e-6):
         why = "the joint offsets changed since the touch"
@@ -469,11 +483,43 @@ def touched_palette(touch: StationTouch, fix: StationFix, *, tool_id: str, tcp_m
     if why is None and float(np.linalg.norm(delta)) > TOUCH_TCP_CHANGE_M:
         why = f"the tcp moved {np.linalg.norm(delta) * 1000:.1f} mm since the touch"
     if why is None:
-        moved = station_moved(touch.fix, fix)
+        moved = station_moved(touch.fix, fix, translation_m=DIP_MOVED_M, rotation_rad=DIP_MOVED_RAD)
         if moved["moved"]:
             why = (f"the palette moved {moved['shift_m'] * 1000:.1f} mm, {math.degrees(moved['rotation_rad']):.2f} deg "
                    f"since the touch ({touch.fix.measured_utc})")
     if why is not None:
         raise StaleStationError(f"{why}: touch the station again (tatbot ros calib run --arm {fix.arm} --station-only)")
-    ball = touch.ball + touch.rotation @ delta
+    ball = _carried_ball(touch, fix, delta)
+    height = float(ball[2] - np.asarray(fix.ball, float)[2])
+    limit = FIX_HEIGHT_CAMERA_M if "palette camera" in touch.height_source else FIX_HEIGHT_M
+    if check_height and abs(height) > limit:
+        raise StaleStationError(
+            f"the touched ball stands {height * 1000:+.1f} mm from the overhead fix in height (at most "
+            f"{limit * 1000:.1f}): measure its height with the palette camera (tatbot ros calib height --arm "
+            f"{fix.arm}), or touch the station again")
     return anchored(fix.base_from_palette, ball, ball_in_palette(palette_urdf))
+
+
+def carry_height(touch: StationTouch, previous: StationTouch | None) -> tuple[StationTouch, str]:
+    """A re-touch keeps the camera's height of the touch it replaces (the touches cannot measure the ball's top):
+    the same tool, joint model and registration, and the ball moved less than CARRY_HEIGHT_XY_M across. Returns the
+    touch to adopt and what happened to the height, for the log."""
+    if previous is None or not previous.height_source or touch.height_source:
+        return touch, ""
+    across = float(np.linalg.norm(np.asarray(touch.ball, float)[:2] - np.asarray(previous.ball, float)[:2]))
+    same = (previous.tool_id == touch.tool_id and previous.arm == touch.arm
+            and np.allclose(np.asarray(previous.joint_offsets, float), np.asarray(touch.joint_offsets, float), atol=1e-6)
+            and np.allclose(previous.tcp_m, touch.tcp_m, atol=1e-6)
+            and previous.fix.detail.get("registration_sha256") == touch.fix.detail.get("registration_sha256"))
+    if not same or across > CARRY_HEIGHT_XY_M:
+        why = "another tool, joint model, tcp or registration" if not same else f"the ball moved {across * 1000:.1f} mm"
+        return touch, (f"the camera's height of touch {previous.run} does not carry ({why}): this touch's height is the "
+                       "touches' own, which cannot measure the ball's top; measure it before dipping "
+                       f"(tatbot ros calib height --arm {touch.arm})")
+    ball = np.asarray(touch.ball, float).copy()
+    dropped = float(ball[2] - previous.ball[2])
+    ball[2] = float(previous.ball[2])
+    carried = replace(touch, ball=ball,
+                                  height_source=f"{previous.height_source}; carried over touch {touch.run}")
+    return carried, (f"kept the camera's ball height from touch {previous.run} (the touches read it {dropped * 1000:+.1f} "
+                     f"mm; the ball moved {across * 1000:.1f} mm across)")

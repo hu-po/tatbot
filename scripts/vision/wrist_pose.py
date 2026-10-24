@@ -180,7 +180,7 @@ def _inspect_current(owner, args, log, arm_id):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--arm', required=True, choices=('pink', 'blue'))
+    parser.add_argument('--arm', required=True, choices=('pink',))
     parser.add_argument('--ee-tool', required=True)
     parser.add_argument('--wrist-deg', type=float)
     parser.add_argument('--base-deg', type=float)

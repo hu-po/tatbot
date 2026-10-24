@@ -271,6 +271,20 @@ class Job:
             _atomic_write_json(frozen, request)
         return job
 
+    @classmethod
+    def peek(cls, root: Path) -> Job:
+        """The job as its ledger last recorded it: no lock, no reconciliation, nothing written."""
+        root = Path(root)
+        job = cls(root, load_job(root))
+        if job.ledger_path.is_file():
+            document = json.loads(job.ledger_path.read_text())
+            if document.get("schema") != LEDGER_SCHEMA or document.get("job_id") != job.request["job_id"]:
+                raise BatchError("ledger belongs to a different job")
+            job.entries = {row["key"]: LedgerEntry.from_json(row) for row in document["items"]}
+        for key, item in job.items.items():
+            job.entries.setdefault(key, LedgerEntry(key=key, request_sha256=item.request(job.settings).digest))
+        return job
+
     def acquire(self) -> Job:
         """One writer. A second gets a refusal, not a corrupted ledger."""
         self.job_dir.mkdir(parents=True, exist_ok=True)
@@ -632,7 +646,7 @@ __all__ = ["JOB_SCHEMA", "SELECTION_SCHEMA", "BatchError", "ConversionRefusedErr
 # ---- standalone entry point -------------------------------------------------
 # `python batch.py ...` from this directory, with no Tatbot checkout, no fleet
 # configuration and no node map. It generates and retains rasters; turning them
-# into artwork needs Inkmap's tracer, which is a separate, larger dependency.
+# into artwork is DBV3 acquisition's job (`tatbot drawingbot generate`).
 def _png_converter(png: bytes, meta: dict, item: JobItem) -> dict:
     stem = f"{item.ordinal:04d}-{item.key}"
     return {"artifacts": {f"{stem}.png": png,
@@ -650,6 +664,7 @@ def _local_generator():
 
 
 def _http_generator(url: str, timeout_s: float):
+    import urllib.error
     import urllib.request
 
     def generate(request: GenerationRequest) -> tuple[bytes, dict]:
@@ -659,10 +674,20 @@ def _http_generator(url: str, timeout_s: float):
                            **({"style": request.style} if request.style else {})}).encode()
         post = urllib.request.Request(url.rstrip("/") + "/api/generate", data=body,
                                       headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(post, timeout=timeout_s) as response:  # noqa: S310
-            reply = json.loads(response.read(64 << 20))
-        if reply.get("error"):
-            raise BatchError(str(reply["error"]))
+        try:
+            with urllib.request.urlopen(post, timeout=timeout_s) as response:  # noqa: S310
+                reply = json.loads(response.read(64 << 20))
+        except urllib.error.HTTPError as error:
+            # Every refusal is an error status with a JSON body: say why, and wait out a
+            # rate limit's retry_after_s (bounded) before the next attempt is spent.
+            try:
+                body = json.loads(error.read(1 << 20))
+            except ValueError:
+                body = {}
+            wait = body.get("retry_after_s")
+            if isinstance(wait, (int, float)) and wait > 0:
+                time.sleep(min(float(wait), 600.0))
+            raise BatchError(f"HTTP {error.code}: {body.get('error') or error.reason}") from error
         return base64.b64decode(reply["png_base64"], validate=True), {
             "seed": int(reply.get("seed", request.seed)), "prompt": reply.get("prompt"),
             "model": reply.get("model"), "model_revision": reply.get("model_revision"),
@@ -692,9 +717,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "status":
-        request = load_job(args.root)
-        with Job.open(args.root, request) as job:
-            print(json.dumps(job.report(), indent=2, sort_keys=True))
+        # Opening the job would reconcile it (failed back to pending) and rewrite the ledger.
+        print(json.dumps(Job.peek(args.root).report(), indent=2, sort_keys=True))
         return 0
 
     settings = GenerationSettings.from_env()

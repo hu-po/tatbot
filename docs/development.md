@@ -8,7 +8,7 @@ audience: [dev, contributor]
 # Development
 
 Tatbot is a collection of independently buildable components. You can work
-on the web app or simulator without access to robot hardware.
+on the web app, replay tools or the mock arm without access to robot hardware.
 
 ## Prerequisites
 
@@ -27,8 +27,8 @@ root-level install.
 | --- | --- | --- |
 | Teleoperation | `cpp/teleop/` | `cmake -B build -S . && cmake --build build` |
 | Vision service | `rust/visiond/` | `cargo build --release` |
-| LeRobot integration | `python/lerobot_robot_tatbot/` | `uv sync` |
-| Simulator | `python/tatbot_sim/` | `uv sync --extra maniskill`; omit the extra for CPU preparation |
+| LeRobot environment | `python/lerobot_robot_tatbot/` | `uv sync` |
+| Body-surface readers | `python/tatbot_surface/` | `scripts/check surface` |
 | Inkmap | `web/inkmap/` | `npm ci && npm run check` |
 | E-stop firmware | `firmware/estop_pico/` | see the component README |
 
@@ -40,7 +40,7 @@ with one command; see [Work](work.md). In short:
 ```bash
 tatbot work start --task fix-the-thing   # ~/tatbot-work/<session>, branch agent/<node>/<session>
 # ... edit, commit as usual; every commit is pushed to the agent branch ...
-tatbot work land                         # rebase, fast tier, push to main, delete the branch
+tatbot work land                         # rebase, land gate (lint, disclosure, export), push to main
 ```
 
 The shared checkout is a mirror that refuses commits. `tatbot work status`
@@ -63,12 +63,20 @@ four workers; `PYTEST_WORKERS=N` picks a count and `0` forces one.
 Each process defaults `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS` and
 `MKL_NUM_THREADS` to one inner thread, preserving explicit settings. This
 avoids multiplying pytest concurrency by a separate numerical worker pool.
-`scripts/check --full` runs every job this node can except the simulator ones;
-`scripts/check rust` (one workspace build, every crate's tests once) and
-`scripts/check sim-fast` are the ones to run by name for a change in those
-roots. A job whose inputs are
+`scripts/check --full` runs every job this node can; `scripts/check rust` (one
+workspace build, every crate's tests once) is the one to run by name for a
+change in that root, and a project's own job pack (below) names its jobs in
+`scripts/check --list`. A job whose inputs are
 unchanged since its last PASS on this machine reports `PASS (cached ...)`;
 `TATBOT_CHECK_NO_CACHE=1` reruns it.
+
+A project under `python/` can add jobs without editing `scripts/check`: a
+`check-jobs.sh` beside its `pyproject.toml` is sourced before options are read,
+appends to `ALL_JOBS` (and `FAST_JOBS` or `JOB_HEAVY` if it chooses), sets a
+`JOB_DESC` entry and defines `job_<name>` for each job. Such a project's
+`tests/` is left out of the scripts tests' cache key, since its own jobs run
+them; the rest of it stays in, because the CLI those tests exercise can read
+it. `TATBOT_SIM_PASS_DIR` gives its PASS markers a directory of their own.
 
 Light scripts tests (the fast tier and `scripts/check --light tests`) default
 OpenBLAS, OpenMP and MKL to one thread per native pool, since pytest workers
@@ -84,9 +92,7 @@ A passing test whose call phase exceeds the per-test budget (60 s of wall time, 
 `TATBOT_TEST_BUDGET_S`) fails its job. Mark it `@pytest.mark.slow` -- the fast
 tier then skips it and `--full` still runs it -- or make it cheaper.
 Expensive shared fixture setup also belongs in the slow tier: mark every test
-that consumes it. The two-arm calibration capture/solve/adoption tests use this
-tier; shorter owner and fault checks remain fast. Named `scripts/check tests`
-and CI include the slow tests.
+that consumes it. Named `scripts/check tests` and CI include the slow tests.
 
 ## Workflow boundaries
 
@@ -105,8 +111,8 @@ training dependencies. A named profile fails if a required dependency is absent.
 `scripts/check tests-integration` runs the LeRobot-dependent scripts test
 modules and validates the patch catalog against copies of the installed sources
 in the locked plugin environment. It is a heavy job and is omitted by
-`--light`. Cloud CI runs both the offline and integration jobs. The plugin's own
-suite remains `scripts/check plugin`.
+`--light`. CI reports offline and integration coverage separately; a fast result
+does not imply either job ran. The plugin's own suite remains `scripts/check plugin`.
 
 Omitted collection coverage is printed even with quiet pytest output and appears
 as separate `SKIP` entries in the check summary. A passed test job with omitted
@@ -136,9 +142,8 @@ multiple module files is not atomic for an already running process.
 `scripts/check rust` is one workspace build: locked Clippy (warnings are
 errors) and every crate's tests once, with every feature whose native
 dependency this node has. A feature whose dependency is absent is left out and
-named as a `SKIP`: GStreamer (`gstreamer-1.0` and `gstreamer-app-1.0` through
-`pkg-config`) for PoE capture, `realsense2` for the wrist cameras, the pinned
-vendor SDK for the arm adapter. A compilation or test failure remains `FAIL`.
+named as a `SKIP`: `realsense2` (through `pkg-config`) for the RealSense
+cameras, the pinned vendor SDK for the arm adapter. A compilation or test failure remains `FAIL`.
 Tests use offline fixtures; no capture command is launched.
 
 Under `scripts/check --full`, or when `TATBOT_RUST_PROFILES` selects a
@@ -146,8 +151,8 @@ comma-separated subset, `visiond` is also built on its own for each profile in
 `rust/check-profiles.json` (`cargo build --release --bins` with only that
 profile's features), so another workspace member cannot silently enable a
 feature a deployment lacks. Profile builds are compile checks; nothing is
-re-tested. The profiles cover core, viewer, PoE capture and wrist capture,
-including the Zenoh-enabled deployment variants, and deployment inventory tests
+re-tested. The profiles cover core, viewer and RealSense capture, including
+the Zenoh-enabled deployment variants, and deployment inventory tests
 fail when a service or the visualizer launcher introduces a feature combination
 absent from the matrix.
 
@@ -164,11 +169,10 @@ TATBOT_RUST_REQUIRED_PROFILES=vision-wrist,vision-wrist-bus scripts/check rust
 Passing these checks establishes build and offline-test coverage, not camera or
 robot qualification.
 
-Hosted CI builds the core, viewer and both PoE profiles once a day, and for
-pull requests that touch the Rust tree, after installing the GStreamer
-development libraries; it is a daily cross-check, not a per-commit gate. The
-two wrist profiles run on SDK-equipped fleet hosts; they are not silently
-counted as covered by the hosted job.
+Development CI requires the core and both viewer profiles on x86_64, and both
+wrist profiles on a native aarch64 worker with the RealSense SDK. A job covers only its declared profiles;
+the general build cannot stand in for native wrist coverage. Changed snapshots
+receive affected checks and a daily full sweep refreshes all required profiles.
 
 Cargo defaults native C compilation to GNU C17 through `.cargo/config.toml`.
 The pinned AprilTag sources use pre-C23 function declarations; this keeps newer

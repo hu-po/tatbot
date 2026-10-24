@@ -1,7 +1,7 @@
 // The ros2_control adapter with sdk=fake: parameters, interface export in URDF joint order,
 // activation in position mode at the measured pose, velocity feed-forward, deactivate/error hold,
 // the tip-lag guard with KDL FK from the robot description, the UDP e-stop, the flight log, and a
-// landed arm idle until a restart.
+// landed arm's session closed until a wake reconnects it.
 #include <arpa/inet.h>
 #include <gtest/gtest.h>
 #include <sys/socket.h>
@@ -178,6 +178,28 @@ TEST(HwPlugin, TipLagGuardUsesFkFromTheRobotDescription)
   EXPECT_GT(p.get("right_safety/trip_q1"), 0.005);
 }
 
+TEST(HwPlugin, SnagGuardTakesItsParametersAndFk)
+{
+  // The page stops the tip ~2 mm down; the command runs on. 0.5 mm held 0.05 s trips about 0.15 s after contact, long
+  // before the stack.yaml defaults (1.5 mm, 0.2 s) would.
+  Plugin p({{"staged_positions", "0,0,0,0,0,0.001,0"}, {"fake_page_z", "0.098"}, {"snag_off_m", "0.0005"},
+      {"snag_hold_s", "0.05"}});
+  p.start();
+  p.cycle(4);
+  p.set("right_safety/guard_mode", names::kGuardSnag);
+  double q = 0;
+  int cycles = 0;
+  for (; cycles < 1200 && p.get("right_safety/latched") == 0; ++cycles) {
+    q += 0.02 * 0.0025;   // ~5 mm/s at the tip
+    p.set("right/joint_1/position", q);
+    p.set("right/joint_1/velocity", 0.02);
+    p.cycle();
+  }
+  EXPECT_EQ(p.get("right_safety/latch_reason"), names::kLatchGuardSnag);
+  EXPECT_EQ(p.get("right_safety/guard_tripped"), 1);
+  EXPECT_LT(cycles, 300);   // contact at ~160 cycles; the defaults would hold off until ~360
+}
+
 TEST(HwPlugin, UdpEstopHoldsUntilReleasedAndUnlatched)
 {
   Plugin p({{"estop_source", "udp"}, {"estop_udp_port", "0"}, {"estop_relay_addr", "127.0.0.1"},
@@ -215,7 +237,7 @@ TEST(HwPlugin, UdpEstopHoldsUntilReleasedAndUnlatched)
   std::ifstream log(path, std::ios::binary);
   std::string header;
   std::getline(log, header);
-  EXPECT_EQ(header.rfind("tatbot-flight 1 right ", 0), 0u);
+  EXPECT_EQ(header.rfind("tatbot-flight 2 right realtime0=", 0), 0u);
   EXPECT_GT(std::filesystem::file_size(path), header.size() + 20 * 100);
 }
 
@@ -254,32 +276,49 @@ TEST(HwPlugin, ShutdownBeforeLandingLeavesTheSessionHoldingNeverIdle)
   EXPECT_DOUBLE_EQ(fake->last_qd()[1], 0.0);
 }
 
-TEST(HwPlugin, ShutdownAfterLandingClosesTheSession)
+namespace
 {
-  Plugin p({{"landing_takeover_s", "0.02"}, {"landing_staged_s", "0.1"}, {"landing_sleep_s", "0.1"}});
-  p.start();
-  p.cycle(10);
+void land(Plugin & p)
+{
   p.set("right_safety/land", 1);
   for (int i = 0; i < 400 && p.get("right_safety/landed") == 0; ++i) {p.cycle();}
   ASSERT_EQ(p.get("right_safety/landed"), 1);
-  std::this_thread::sleep_for(250ms);   // the aux thread idles the motors
+}
+
+const std::map<std::string, std::string> kQuickLanding{
+  {"landing_takeover_s", "0.02"}, {"landing_staged_s", "0.1"}, {"landing_sleep_s", "0.1"}};
+}  // namespace
+
+TEST(HwPlugin, ALandedArmClosesItsSessionAndShutdownLeavesItClosed)
+{
+  // Landed: the aux thread closes the SDK session (cleanup() idles every motor), and the control loop
+  // reads no closed session. On 2026-10-07 a controller kept idle with its session open stopped answering.
+  Plugin p(kQuickLanding);
+  p.start();
+  p.cycle(10);
+  land(p);
+  std::this_thread::sleep_for(250ms);   // the 10 Hz aux thread
   EXPECT_TRUE(p.arm.fake()->idle());
+  EXPECT_FALSE(p.arm.fake()->connected());
+  const double rest = p.get("right/joint_1/position");
+  p.cycle(100);
+  EXPECT_EQ(p.get("right_safety/controller_error"), 0);   // a read of the closed fake throws
+  EXPECT_EQ(p.get("right_safety/landed"), 1);
+  EXPECT_DOUBLE_EQ(p.get("right/joint_1/position"), rest);
   p.arm.on_shutdown(p.none);
-  EXPECT_EQ(p.arm.fake(), nullptr);   // landed and idle: the session closes
+  EXPECT_EQ(p.arm.fake(), nullptr);
 }
 
 TEST(HwPlugin, ALandedArmIgnoresCommandsUntilItsHardwareAloneIsCycled)
 {
   // What tatbot_session refuses a landed arm's goals on: the driver keeps it landed and idle whatever it is
   // commanded. A deactivate and activate of this arm's hardware alone (`client wake`, 2026-09-30: the other arm
-  // keeps running) takes it back where it rests, and a first command from there is tracked.
-  Plugin p({{"landing_takeover_s", "0.02"}, {"landing_staged_s", "0.1"}, {"landing_sleep_s", "0.1"}});
+  // keeps running) reconnects it, takes it back where it rests, and a first command from there is tracked.
+  Plugin p(kQuickLanding);
   p.start();
   p.cycle(10);
-  p.set("right_safety/land", 1);
-  for (int i = 0; i < 400 && p.get("right_safety/landed") == 0; ++i) {p.cycle();}
-  ASSERT_EQ(p.get("right_safety/landed"), 1);
-  std::this_thread::sleep_for(250ms);   // the aux thread idles the motors
+  land(p);
+  std::this_thread::sleep_for(250ms);   // the aux thread closes the session
   FakeBackend * fake = p.arm.fake();
   const int sent = fake->commands();
   const double rest = p.get("right/joint_1/position");
@@ -293,16 +332,71 @@ TEST(HwPlugin, ALandedArmIgnoresCommandsUntilItsHardwareAloneIsCycled)
       EXPECT_EQ(p.get("right_safety/latched"), 0);
     };
   stays_put();
+  EXPECT_EQ(fake->connects(), 1);
   p.arm.on_deactivate(p.none);
   ASSERT_EQ(p.arm.on_activate(p.none), hardware_interface::CallbackReturn::SUCCESS);
+  EXPECT_EQ(fake->connects(), 2);
+  EXPECT_TRUE(fake->connected());
   p.cycle();
   EXPECT_EQ(p.get("right_safety/landed"), 0);
   EXPECT_EQ(p.get("right_safety/latched"), 0);
+  EXPECT_EQ(p.get("right_safety/controller_error"), 0);
   EXPECT_FALSE(fake->idle());
   EXPECT_NEAR(p.get("right/joint_1/position"), rest, 1e-6);
   p.set("right/joint_1/position", rest + 0.002);   // the trajectory controller's first command, from the rest
   p.cycle(200);
   EXPECT_EQ(p.get("right_safety/latched"), 0);
   EXPECT_GT(fake->commands(), sent);
+  EXPECT_NEAR(p.get("right/joint_1/position"), rest + 0.002, 5e-4);
+}
+
+TEST(HwPlugin, AWakeTheControllerDoesNotAnswerFailsAndTheArmStaysLanded)
+{
+  // A controller wedged or powered off while landed: the wake fails, nothing is commanded, and once it
+  // answers again (power-cycled) the next wake reconnects without a stack restart.
+  Plugin p(kQuickLanding);
+  p.start();
+  p.cycle(10);
+  land(p);
+  std::this_thread::sleep_for(250ms);
+  FakeBackend * fake = p.arm.fake();
+  const int sent = fake->commands();
+  fake->refuse_connect(true);
+  p.arm.on_deactivate(p.none);
+  EXPECT_EQ(p.arm.on_activate(p.none), hardware_interface::CallbackReturn::ERROR);
+  p.cycle(50);
+  EXPECT_EQ(p.get("right_safety/landed"), 1);
+  EXPECT_EQ(p.get("right_safety/controller_error"), 0);
+  EXPECT_EQ(fake->commands(), sent);
+  EXPECT_FALSE(fake->connected());
+  fake->refuse_connect(false);
+  ASSERT_EQ(p.arm.on_activate(p.none), hardware_interface::CallbackReturn::SUCCESS);
+  p.cycle(10);
+  EXPECT_EQ(p.get("right_safety/landed"), 0);
+  EXPECT_EQ(p.get("right_safety/latched"), 0);
+  EXPECT_TRUE(fake->connected());
+  EXPECT_FALSE(fake->idle());
+}
+
+TEST(HwPlugin, AWakeRacingTheCloseLeavesTheSessionOpen)
+{
+  // Woken straight after landing, before or after the aux thread closes the session: either way the
+  // arm ends awake on an open session, and no close left pending fires on the woken arm.
+  Plugin p(kQuickLanding);
+  p.start();
+  p.cycle(10);
+  land(p);
+  p.arm.on_deactivate(p.none);
+  ASSERT_EQ(p.arm.on_activate(p.none), hardware_interface::CallbackReturn::SUCCESS);
+  std::this_thread::sleep_for(250ms);
+  const double rest = p.get("right/joint_1/position");
+  p.set("right/joint_1/position", rest + 0.002);
+  p.cycle(200);
+  FakeBackend * fake = p.arm.fake();
+  EXPECT_TRUE(fake->connected());
+  EXPECT_FALSE(fake->idle());
+  EXPECT_EQ(p.get("right_safety/landed"), 0);
+  EXPECT_EQ(p.get("right_safety/latched"), 0);
+  EXPECT_EQ(p.get("right_safety/controller_error"), 0);
   EXPECT_NEAR(p.get("right/joint_1/position"), rest + 0.002, 5e-4);
 }

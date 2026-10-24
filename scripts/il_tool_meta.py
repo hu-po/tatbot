@@ -45,7 +45,6 @@ from tatbot_paths import bootstrap  # noqa: E402
 
 bootstrap()
 
-import ink_session  # noqa: E402
 import ink_spec  # noqa: E402
 import tool_spec  # noqa: E402
 
@@ -118,20 +117,9 @@ def main() -> int:
     # says so, which is still an answer.
     ink_meta = ink_spec.dataset_ink_metadata(spec, REPO, args.arm)
     ink_meta["source"] = "archive" if args.recorded_with_past_tool else "robot"
-    # Whether this recording took part in ink accounting at all: a launcher
-    # run with --no-ink (TATBOT_INK=0) did not, and says so; otherwise the
-    # open session on this node is the one the episodes drew from.
-    tracking = os.environ.get("TATBOT_INK", "1") != "0" and not args.recorded_with_past_tool
-    ink_meta["tracking"] = tracking
-    sess = ink_session.current() if tracking else None
-    ink_meta["session"] = (
-        {"session_id": sess.session_id, "node": sess.node, "charge_ul": sess.charge_ul,
-         "capacity_ul": sess.capacity_ul, "ink": sess.ink_id, "dips": sess.dips}
-        if sess is not None else None)
     ink_path = Path(path).with_name("ink.json")
     ink_path.write_text(json.dumps(ink_meta, indent=2) + "\n")
-    print(f"wrote {ink_path} (ink.mode {ink_meta['policy']['mode']}, tracking {tracking}"
-          f"{', session ' + sess.session_id if sess else ''})")
+    print(f"wrote {ink_path} (ink.mode {ink_meta['policy']['mode']})")
     print(f"  tool {spec.summary()}")
     print(f"  tip offset {'uncalibrated' if tip is None else [round(v * 1000, 2) for v in tip]} mm")
 

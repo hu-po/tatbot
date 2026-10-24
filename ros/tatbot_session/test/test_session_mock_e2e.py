@@ -16,8 +16,15 @@ pytestmark = pytest.mark.skipif(not sg.ZENOHD.exists(), reason="needs ROS 2 Jazz
 @pytest.fixture(scope="module")
 def graph(tmp_path_factory):
     g = sg.Graph(tmp_path_factory.mktemp("mock_e2e"))
+    stack = sg.base_stack(hardware="mock")
+    stack["page"]["fixed"]["right"]["xyz"][2] = 0.040   # synthetic raised skin, reachable looking straight down
+    stack["touch"]["enabled"] = True
+    stack["sensing"] = {"wrist": "real"}   # fixture_session supplies the deterministic sensor port
+    stack["page"].update(carry_max_s=0.0, track={"mode": "off"})
+    stack["page"]["locate"].update(wrist=True, poses=1, frames=1, settle_s=0.0, holds=False)
+    stack["page"]["surface"].update(frames=5, pool=1)
     try:
-        yield g.up(sg.mock_urdf(), sg.base_stack(hardware="mock"))
+        yield g.up(sg.mock_urdf(), stack, motion=sg.fast_motion(mock=True), sensing=True)
     finally:
         g.stop()
 
@@ -25,6 +32,9 @@ def graph(tmp_path_factory):
 def test_status_and_idle_decide(graph):
     right = sg.last_json(graph.client("status", "--json").stdout)["safety"]["right"]
     assert right["estop_ok"] is True and right["latched"] is False and right["estop_source"] == 0
+    # the graph's sim switch answers at once: off, with a fresh reply (a stack with no switch reports age -1)
+    assert right["machine_off"] is True and right["machine_powered"] is False
+    assert 0.0 <= right["machine_reply_age_s"] < 1.0
     decide = sg.last_json(graph.client("decide", "right", "continue").stdout)
     assert decide["accepted"] is False and "nothing waits" in decide["reason"]
 
@@ -54,7 +64,19 @@ def test_draw_square_to_completion(graph):
     assert 'id="drawn-s0001-0"' in svg and 'id="plan-s0001"' in svg
     meta = json.loads((run / "meta.json").read_text())
     assert meta["status"] == "ok" and meta["hardware"] == "mock" and meta["arms"]["right"]["tool"]
-    assert json.loads((run / "page.json").read_text())["pattern_id"] == "fixed_right"
+    page = json.loads((run / "page.json").read_text())
+    assert page["pattern_id"] == "fixed_right"
+    # the session camera alone (no further camera here) reads it from over the page centre at 50 and 100 mm
+    assert page["locate"]["wrist"]["poses"] == 2 and page["locate"]["fused"]
+    assert [view.get("over_m") for view in page["locate"]["views"]] == [0.05, 0.1]
+    assert all(view["fit"] for view in page["locate"]["views"])   # no top-down view after them
+    holds = [r for r in page["gauge"] if not r.get("check")]
+    assert len(holds) >= 5 and all(t["method"] == "wrist gauge" for t in page["touches"])
+    assert page["surface"]["check_m"] and max(map(abs, page["surface"]["check_m"])) <= 0.0009
+    import numpy as np
+
+    loo = np.asarray(page["surface"]["report"]["loo_m"], float)
+    assert np.isfinite(loo).sum() >= 3 and max(abs(loo[np.isfinite(loo)])) <= 0.0009
     receipt = graph.evidence('synthetic-mock-sheet', '0:0')
     assert receipt.returncode == 0, receipt.stderr
     evidence = json.loads(receipt.stdout)
@@ -78,6 +100,7 @@ def test_legacy_pause_refuses_without_robot_operations(graph):
     assert proc.returncode != 0 and 'only tool_change, dip and stroke' in proc.stdout
 
 
+@pytest.mark.slow
 def test_resume_crash_left_sent_waits_for_skip(graph):
     # the cancel lands in the first square (26 s); the resume skips it and draws the second (10 s) inside its minute
     program = sg.square_program(graph.tmp, name='crash', sides=(.006, .002), speed_m_s=.001)

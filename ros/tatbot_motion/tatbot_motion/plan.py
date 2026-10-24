@@ -1,6 +1,7 @@
 """Program operations through control-rate time laws and CLIK to JTC trajectories; ros/README.md §4.4."""
 from __future__ import annotations
 
+import copy
 import math
 from dataclasses import dataclass, field
 
@@ -10,7 +11,7 @@ from tatbot_motion import timelaw as tl
 from tatbot_motion.clik import Kinematics, PlanError, clik, depth_sensitivity
 
 # Draw feedback PHASE_* (tatbot_interfaces/action/Draw.action); no ROS import here.
-PHASE_TRAVEL, PHASE_DESCEND, PHASE_SETTLE, PHASE_DRAW, PHASE_LIFT, PHASE_TOUCH, PHASE_PAUSED = 2, 3, 4, 5, 6, 7, 8
+PHASE_TRAVEL, PHASE_DESCEND, PHASE_SETTLE, PHASE_DRAW, PHASE_LIFT, PHASE_TOUCH = 2, 3, 4, 5, 6, 7
 _GROUP_TRAVEL, _GROUP_DRAW, _GROUP_LIFT = "travel", "draw", "lift"
 
 
@@ -306,21 +307,9 @@ def _draw_leg(poly, from_arc_m, r_pen, cruise, motion) -> _Leg:
     return _Leg(p, np.repeat(r_pen[None], len(p), axis=0), True, PHASE_DRAW, _GROUP_DRAW, arc=float(from_arc_m) + s)
 
 
-def _plan_pause(q_seed, base_from_page, kin, motion) -> Trajectory:
-    seed = kin.fk(q_seed)
-
-    def build(scales):
-        legs = _liftoff(seed[:3, 3], seed[:3, :3], base_from_page, motion, scales.get(_GROUP_LIFT, 1.0))
-        if legs:
-            return legs
-        p, r = tl.hold_rows(seed[:3, 3], seed[:3, :3], 0.1, 1.0 / float(motion["control_rate_hz"]))
-        return [_Leg(p, r, False, PHASE_PAUSED, _GROUP_LIFT)]
-    return _solve(build, q_seed, kin, motion)
-
-
 def plan_op(op: dict, *, base_from_page: np.ndarray, q_seed: np.ndarray, kin: Kinematics, motion: dict,
             speed_m_s: float, from_arc_m: float = 0.0, pen_down_at_start: bool = False,
-            lift_at_end: bool = True, pen: PenDown | None = None) -> Trajectory:
+            lift_at_end: bool = True, pen: PenDown | None = None, surface=None, turn_pen: bool = True) -> Trajectory:
     """A program op from the seed joints (measured revolute joints, the last carriage command).
 
     stroke: travel to the standoff above the start (from `from_arc_m`), descend, settle, draw, lift; a
@@ -329,14 +318,18 @@ def plan_op(op: dict, *, base_from_page: np.ndarray, q_seed: np.ndarray, kin: Ki
     describes the incoming join, never the ending lift. With pen_down_at_start: within dispatch_drift.start_tolerance_m of the start
     (resume_reapproach_m when resuming mid-stroke) it joins the path pen-down and draws; farther, it lifts
     and re-approaches. A tip below the standoff
-    lifts straight off the page before any travel. pause: lift to the standoff, or hold there.
-    `base_from_page` is the touched, trimmed page pose."""
+    lifts straight off the page before any travel.
+    `base_from_page` is the touched, trimmed page pose. A curved `surface` (tatbot_motion.surface.PageSurface over
+    that page) plans on it instead (_plan_op_surface; `turn_pen`: the pen turned to each point's normal, else held
+    square to the page); a flat one or None plans on the plane exactly as before."""
+    if surface is not None and not surface.flat:
+        return _plan_op_surface(op, surface=surface, q_seed=q_seed, kin=kin, motion=motion, speed_m_s=speed_m_s,
+                                from_arc_m=from_arc_m, pen_down_at_start=pen_down_at_start, lift_at_end=lift_at_end,
+                                pen=pen, turn_pen=turn_pen)
     base_from_page = np.asarray(base_from_page, float)
     kind = op.get("op", "stroke")
-    if kind == "pause":
-        return _plan_pause(q_seed, base_from_page, kin, motion)
     if kind != "stroke":
-        raise NotImplementedError(f"op {kind!r}: dipping is M4")
+        raise NotImplementedError(f"op {kind!r}: plan_op plans strokes; tatbot_motion.dip plans a dip")
     dt, _ = _cfg(motion)
     pen = pen or pen_down(motion)
     seed = kin.fk(q_seed)
@@ -344,8 +337,7 @@ def plan_op(op: dict, *, base_from_page: np.ndarray, q_seed: np.ndarray, kin: Ki
     r_pen = pen_rotation(base_from_page, r0)
     poly = tl.trim_polyline(page_points(op, base_from_page, pen.height_m), float(from_arc_m))
     start = poly[0]
-    join_tol = float(motion["resume_reapproach_m"] if from_arc_m > 0.0 else motion["dispatch_drift"]["start_tolerance_m"])
-    joined = pen_down_at_start and float(np.linalg.norm(tip0 - start)) <= join_tol
+    joined = pen_down_at_start and _joined(tip0, start, motion, from_arc_m)
     cruise0 = min(float(speed_m_s), float(motion["tip_speed"]["pen_down_max_m_s"]))
 
     def build(scales):
@@ -372,6 +364,20 @@ def plan_op(op: dict, *, base_from_page: np.ndarray, q_seed: np.ndarray, kin: Ki
     return traj
 
 
+def _joined(tip, start, motion: dict, from_arc_m: float) -> bool:
+    tol = motion["resume_reapproach_m"] if from_arc_m > 0.0 else motion["dispatch_drift"]["start_tolerance_m"]
+    return float(np.linalg.norm(np.asarray(tip, float) - start)) <= float(tol)
+
+
+# Whether plan_op, pen down at the start, joins the stroke's path where `tip` (base) stands: its start from from_arc_m
+# within dispatch_drift.start_tolerance_m (resume_reapproach_m resuming mid-stroke). Else it lifts and re-approaches: a
+# descent, which a caller measuring the skin first must measure before.
+def joins(op: dict, tip, *, base_from_page, motion: dict, from_arc_m: float = 0.0, pen=None, surface=None) -> bool:
+    h = (pen or pen_down(motion)).height_m
+    poly = surface_points(op, surface, h)[0] if surface is not None and not surface.flat else page_points(op, base_from_page, h)
+    return _joined(tip, tl.trim_polyline(poly, float(from_arc_m))[0], motion, from_arc_m)
+
+
 def plan_travel(*, q_seed: np.ndarray, base_from_tcp: np.ndarray, kin: Kinematics, motion: dict,
                 via: list | None = None) -> Trajectory:
     """Pen-up travel to a TCP pose (through the `via` positions when given): one accelerate/cruise/decelerate
@@ -388,11 +394,33 @@ def plan_travel(*, q_seed: np.ndarray, base_from_tcp: np.ndarray, kin: Kinematic
     return _solve(build, q_seed, kin, motion)
 
 
+HOP_STEP_M = 0.0005   # a hop's curve is sampled this finely: the corner budget then reads its curvature (at 1 mm the
+                      # chords' kinks held a 43 mm hop 6% longer, at 2 mm 60%)
+
+
+def hop_via(p_from, up_from, p_to, up_to, rise_m: float, step_m: float = HOP_STEP_M) -> list[np.ndarray]:
+    """plan_travel's via points for one pen-up move from `p_from` up and over onto `p_to`: a cubic Bezier leaving
+    along `up_from` and coming down `up_to` (unit, base), its inner control points `rise_m` out along them, sampled
+    every `step_m` or closer, its ends left out. It stays in their hull: never under the chord between the ends, and
+    0.75 rise_m over it midway when both point the same way. A lift, a stop at its top and a travel down are three
+    goals and two more of the arm's starts and stops; this is one."""
+    p0, p3 = np.asarray(p_from, float), np.asarray(p_to, float)
+    p1 = p0 + float(rise_m) * np.asarray(up_from, float) / np.linalg.norm(up_from)
+    p2 = p3 + float(rise_m) * np.asarray(up_to, float) / np.linalg.norm(up_to)
+    longest = max(np.linalg.norm(p1 - p0), np.linalg.norm(p2 - p1), np.linalg.norm(p3 - p2))   # |B'| <= 3 longest
+    u = np.linspace(0.0, 1.0, max(4, int(math.ceil(3.0 * longest / float(step_m)))) + 1)[1:-1, None]
+    w = 1.0 - u
+    return list(w ** 3 * p0 + 3.0 * u * w * w * p1 + 3.0 * u * u * w * p2 + u ** 3 * p3)
+
+
 def plan_hover(op: dict, *, base_from_page: np.ndarray, q_seed: np.ndarray, kin: Kinematics, motion: dict,
-               from_arc_m: float = 0.0, pen: PenDown | None = None) -> Trajectory:
+               from_arc_m: float = 0.0, pen: PenDown | None = None, surface=None, turn_pen: bool = True) -> Trajectory:
     """Pen-up travel to the standoff above a stroke's start (from `from_arc_m`) with the drawing rotation, at rest:
     where plan_op's approach would turn down to the page. Stencil tracking stops there to measure, then plans the
-    stroke from it. A tip below the standoff lifts straight off the page first."""
+    stroke from it. A tip below the standoff lifts straight off the page first. A curved `surface`: on it."""
+    if surface is not None and not surface.flat:
+        return _plan_hover_surface(op, surface=surface, q_seed=q_seed, kin=kin, motion=motion, from_arc_m=from_arc_m,
+                                   pen=pen, turn_pen=turn_pen)
     base_from_page = np.asarray(base_from_page, float)
     seed = kin.fk(q_seed)
     start = tl.trim_polyline(page_points(op, base_from_page, (pen or pen_down(motion)).height_m), float(from_arc_m))[0]
@@ -523,6 +551,30 @@ def to_knots(traj: Trajectory, rate_hz: float) -> Trajectory:
                       None if traj.dq_dh is None else interp(traj.dq_dh))
 
 
+START_BLEND_S = 0.5   # blend_start fades a goal's start offset out over this (a quintic): 2 mm at 7.5 mm/s, 20 mrad at 75 mrad/s
+
+
+def blend_start(traj: Trajectory, q_from: np.ndarray, kin: Kinematics, blend_s: float = START_BLEND_S) -> Trajectory:
+    """`traj` begun from `q_from` rather than its first knot: the offset fades out over its first `blend_s` (no later than
+    its end) as a quintic, the knots' velocities with it, and its tip follows. JTC starts a goal from the measured joints
+    and closes any gap to the first knot sent, 10 ms in: pen-up goals pre-planned from a stroke's untrimmed end and
+    let through by dispatch_drift (pen_up_*: 2 mm, 20 mrad) started up to 2.0 mm off the arm, the reference sweeping it
+    at up to 1.6 rad/s (2026-10-20)."""
+    delta = np.asarray(q_from, float) - np.asarray(traj.q[0], float)
+    t = np.asarray(traj.t, float)
+    span = min(float(blend_s), float(t[-1]))
+    if span <= 0.0 or not np.any(delta):
+        return traj
+    u = np.clip(t / span, 0.0, 1.0)
+    fade, rate = 1.0 - tl._quintic(u), np.where(u < 1.0, -30.0 * u * u * (1.0 - u) ** 2 / span, 0.0)
+    out = copy.copy(traj)
+    out.q, out.qd = traj.q + fade[:, None] * delta, traj.qd + rate[:, None] * delta
+    out.tip = np.array(traj.tip, float)
+    out.tip[fade > 0.0] = [kin.fk(row)[:3, 3] for row in out.q[fade > 0.0]]
+    out.info = {**getattr(traj, "info", {}), "start_blend_rad": float(np.abs(delta[:6]).max())}
+    return out
+
+
 def dispatch_drift(traj: Trajectory, q_measured: np.ndarray, kin: Kinematics, motion: dict,
                    pen_down: bool | None = None) -> dict:
     """How far the measured pose drifted from the plan's first knot: joints (revolute, rad) and tip (m),
@@ -538,3 +590,158 @@ def dispatch_drift(traj: Trajectory, q_measured: np.ndarray, kin: Kinematics, mo
     key = "pen_down" if pen_down else "pen_up"
     ok = joint <= float(limits[f"{key}_rad"]) and tip <= float(limits[f"{key}_m"])
     return {"ok": ok, "joint_rad": joint, "tip_m": tip, "pen_down": bool(pen_down)}
+
+
+# --- a curved page (tatbot_motion.surface): every point its own normal ------------------------------------------
+SURFACE_STEP_M = 0.0005   # stroke points are spaced this finely in print mm before they are lifted onto a curve: a
+                          # chord across a 20 mm segment on a 40 mm radius sags 1.3 mm under the skin
+
+
+def surface_points(op: dict, surface, height_m: float) -> tuple[np.ndarray, np.ndarray]:
+    """((N, 3) stroke polyline in the base, height_m along the surface's normal over the print points, (N, 3) unit
+    normals): page_points on a curve, the print's (u, v) through the surface's chart."""
+    pts = np.asarray(op["points_m"], float).reshape(-1, 2)
+    if op.get("closed") and len(pts) > 1 and np.linalg.norm(pts[0] - pts[-1]) > 1e-9:
+        pts = np.vstack([pts, pts[:1]])
+    if len(pts) > 1:
+        arc = tl.arc_lengths(pts)
+        fine = np.unique(np.r_[arc, np.arange(0.0, arc[-1], SURFACE_STEP_M)])
+        pts = np.stack([np.interp(fine, arc, pts[:, 0]), np.interp(fine, arc, pts[:, 1])], axis=1)
+    return surface.lift(pts, height_m)
+
+
+def _trim_with(poly: np.ndarray, normals: np.ndarray, from_arc_m: float) -> tuple[np.ndarray, np.ndarray]:
+    """tl.trim_polyline with each kept point's normal (the cut point's interpolated)."""
+    out = tl.trim_polyline(poly, float(from_arc_m))
+    if len(out) == len(poly):
+        return out, normals
+    arc = tl.arc_lengths(poly)
+    first = np.array([np.interp(float(from_arc_m), arc, normals[:, k]) for k in range(3)])
+    first /= np.linalg.norm(first)
+    return out, np.vstack([first, normals[len(poly) - len(out) + 1:]])
+
+
+def _surface_liftoff(tip, rot, surface, motion, scale) -> list[_Leg]:
+    """_liftoff over a curve: straight along the normal under the tip to the standoff over the surface."""
+    standoff = float(motion["approach"]["standoff_m"])
+    gap, normal = surface.height_over(tip)
+    normal = np.asarray(normal, float)
+    if not (np.isfinite(gap) and np.isfinite(normal).all() and np.linalg.norm(normal) > 0.5):
+        # no foot under the tip (a steep field's normal search ran off it; the pen back from a dip, 2026-10-21):
+        # the whole standoff up the page's normal, away from any skin under it
+        gap, normal = 0.0, np.asarray(surface.base[:3, 2], float)
+    if gap >= standoff - 1e-3:
+        return []
+    leg = _lift_leg(tip, rot, np.asarray(tip) + (standoff - gap) * normal, motion, scale)
+    leg.axis = normal
+    return [leg]
+
+
+def _surface_draw_leg(poly, normals, from_arc_m, r_start, cruise, motion, turn: bool = True) -> _Leg:
+    """_draw_leg with the pen turned at every knot to the surface's normal there (the least turn from the start's);
+    without `turn` the pen holds r_start."""
+    dt, _ = _cfg(motion)
+    draw = motion["draw"]
+    if tl.polyline_length(poly) <= 1e-6:
+        p, r = tl.hold_rows(poly[0], r_start, 2.0 * float(draw["min_ease_s"]), dt)
+        leg = _Leg(p, r, True, PHASE_DRAW, _GROUP_DRAW, arc=np.full(len(p), float(from_arc_m)))
+        leg.axis = normals[0]
+        return leg
+    _, s, _, _ = drawing_time_law(poly, cruise, motion)
+    p, _ = tl.resample_polyline_by_arclength(poly, s)
+    arc = tl.arc_lengths(poly)
+    n = np.stack([np.interp(s, arc, normals[:, k]) for k in range(3)], axis=1)
+    n /= np.linalg.norm(n, axis=1, keepdims=True)
+    rot = (np.stack([tl.align_rotation(r_start[:, 2], -nk) @ r_start for nk in n]) if turn
+           else np.repeat(r_start[None], len(p), axis=0))
+    leg = _Leg(p, rot, True, PHASE_DRAW, _GROUP_DRAW, arc=float(from_arc_m) + s)
+    leg.axis = n
+    return leg
+
+
+def _plan_op_surface(op: dict, *, surface, q_seed: np.ndarray, kin: Kinematics, motion: dict, speed_m_s: float,
+                     from_arc_m: float, pen_down_at_start: bool, lift_at_end: bool, pen: PenDown | None,
+                     turn_pen: bool = True) -> Trajectory:
+    """plan_op on a curved page: the stroke's print points lifted pen.height_m along the surface's normal at each,
+    the pen turned to that normal along the stroke (`turn_pen`; else held square to the surface's page, as the gauge
+    holds were made: _pen_rotation), the approach and the lift along the normal at its two ends, and each knot's
+    depth axis its own normal (a trim moves the pen along it)."""
+    kind = op.get("op", "stroke")
+    seed = kin.fk(q_seed)
+    tip0, r0 = seed[:3, 3], seed[:3, :3]
+    if kind != "stroke":
+        raise NotImplementedError(f"op {kind!r}: plan_op plans strokes; tatbot_motion.dip plans a dip")
+    dt, _ = _cfg(motion)
+    pen = pen or pen_down(motion)
+    poly, normals = _trim_with(*surface_points(op, surface, pen.height_m), float(from_arc_m))
+    start, n0, n1 = poly[0], normals[0], normals[-1]
+    r_pen = _pen_rotation(surface, n0, r0, turn_pen)
+    joined = pen_down_at_start and _joined(tip0, start, motion, from_arc_m)
+    cruise0 = min(float(speed_m_s), float(motion["tip_speed"]["pen_down_max_m_s"]))
+    approach = motion["approach"]
+
+    def build(scales):
+        cruise = cruise0 * scales.get(_GROUP_DRAW, 1.0)
+        legs = []
+        if not joined:
+            legs = _surface_liftoff(tip0, r0, surface, motion, scales.get(_GROUP_LIFT, 1.0))
+            p_from = legs[-1].p[-1] if legs else tip0
+            legs += _travel_legs(p_from, r0, [start + approach["standoff_m"] * n0, start + approach["final_m"] * n0,
+                                              start], r_pen,
+                                 [motion["tip_speed"]["pen_up_max_m_s"], approach["descend_m_s"], approach["final_m_s"]],
+                                 scales.get(_GROUP_TRAVEL, 1.0), motion, float(q_seed[6]), gentle_end=True,
+                                 phases=[PHASE_TRAVEL, PHASE_DESCEND, PHASE_DESCEND])
+            p, r = tl.hold_rows(start, r_pen, pen.settle_s, dt)
+            legs.append(_Leg(p, r, False, PHASE_SETTLE, _GROUP_TRAVEL))
+        elif float(np.linalg.norm(tip0 - start)) > 1e-9:
+            p, r = tl.line_segment(tip0, start, r0, r_pen, cruise, dt)
+            legs = [_Leg(p, r, True, PHASE_DRAW, _GROUP_DRAW, arc=np.full(len(p), float(from_arc_m)))]
+        for leg in legs:
+            leg.axis = n0 if leg.axis is None else leg.axis
+        legs.append(_surface_draw_leg(poly, normals, from_arc_m, r_pen, cruise, motion, turn_pen))
+        if lift_at_end:
+            end, r_end = legs[-1].p[-1], legs[-1].rot[-1]
+            lift = _lift_leg(end, r_end, end + approach["standoff_m"] * n1, motion, scales.get(_GROUP_LIFT, 1.0))
+            lift.axis = n1
+            legs.append(lift)
+        return legs
+
+    traj = _solve(build, q_seed, kin, motion)
+    traj.info.update(op=op.get("id"), from_arc_m=float(from_arc_m), stroke_m=tl.polyline_length(poly), joined=joined,
+                     surface=True)
+    return traj
+
+
+def _pen_rotation(surface, normal, r0, turn: bool) -> np.ndarray:
+    """The pen's rotation over a curved page: along `normal` (turned the least from r0), or with `turn` False square
+    to the surface's page, as the flat planner holds it. Turned to each normal, the arm's own error moved with the
+    pen's tilt: a tool 8.6 deg over read the forearm's skin ~1.1 mm higher, and holds turned 5-23 deg disagreed by
+    1-3 mm (2026-10-07); held square, the pen is in the pose the gauge holds measured the skin in, and up to 14 deg off
+    the skin's normal on a 20 mm design it reaches cos 14 = 97% as deep."""
+    if turn:
+        return tl.align_rotation(r0[:, 2], -np.asarray(normal, float)) @ r0
+    return pen_rotation(np.asarray(surface.base, float), r0)
+
+
+def _plan_hover_surface(op: dict, *, surface, q_seed: np.ndarray, kin: Kinematics, motion: dict, from_arc_m: float,
+                        pen: PenDown | None, turn_pen: bool = True) -> Trajectory:
+    """plan_hover on a curved page: the standoff along the normal over the stroke's start, the pen along it (or
+    square to the page: _pen_rotation)."""
+    seed = kin.fk(q_seed)
+    poly, normals = _trim_with(*surface_points(op, surface, (pen or pen_down(motion)).height_m), float(from_arc_m))
+    hover = poly[0] + float(motion["approach"]["standoff_m"]) * normals[0]
+    r_pen = _pen_rotation(surface, normals[0], seed[:3, :3], turn_pen)
+
+    def build(scales):
+        legs = _surface_liftoff(seed[:3, 3], seed[:3, :3], surface, motion, scales.get(_GROUP_LIFT, 1.0))
+        p_from = legs[-1].p[-1] if legs else seed[:3, 3]
+        travel = _travel_legs(p_from, seed[:3, :3], [hover], r_pen, [motion["tip_speed"]["pen_up_max_m_s"]],
+                              scales.get(_GROUP_TRAVEL, 1.0), motion, float(q_seed[6]), gentle_end=False,
+                              phases=[PHASE_TRAVEL])
+        for leg in travel:
+            leg.axis = normals[0]
+        return legs + travel
+
+    traj = _solve(build, q_seed, kin, motion)
+    traj.info.update(op=op.get("id"), hover=True, surface=True)
+    return traj

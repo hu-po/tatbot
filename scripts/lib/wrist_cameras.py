@@ -11,8 +11,6 @@ import tomllib
 from tatbot_cli import arms as arm_registry
 from tatbot_cli import nodes
 
-SENSOR_PROFILES = ('deployment', 'legacy-two-view')
-
 REPO = Path(__file__).resolve().parents[2]
 
 
@@ -57,7 +55,7 @@ class CameraDescription:
 
 
 def describe(repo: Path, *, arms: tuple[str, ...] = ('right',),
-             profile: str = 'deployment', config: Path | None = None) -> tuple[CameraDescription, ...]:
+             config: Path | None = None) -> tuple[CameraDescription, ...]:
     """Resolve render/feature descriptions without checking device ownership.
 
     Live capture still uses ``for_arm`` to enforce ownership. Streams here are
@@ -68,20 +66,6 @@ def describe(repo: Path, *, arms: tuple[str, ...] = ('right',),
     configured = arm_registry.load(repo)
     if not arms or len(set(arms)) != len(arms) or any(a not in configured for a in arms):
         raise ValueError('camera description requires distinct configured arms')
-    if profile not in SENSOR_PROFILES:
-        raise ValueError(f'unknown sensor profile {profile!r}')
-    if profile == 'legacy-two-view':
-        if arms != ('right',) or config is not None:
-            raise ValueError('legacy-two-view describes the historical follower only')
-        # Frozen historical observation geometry, independent of today's rig.
-        focal = 480 / (2 * math.tan(0.96 / 2))
-        return tuple(CameraDescription(
-            role=role, arm='right', optical_frame=f'right/{stem}_color_optical_frame',
-            depth_optical_frame=f'right/{stem}_color_optical_frame',
-            width=640, height=480, fps=30.0,
-            intrinsic=(focal, focal, 320.0, 240.0), intrinsic_basis='nominal-fov',
-            geometry_basis='historical-two-view',
-        ) for role, stem in (('wrist_upper', 'camera'), ('wrist_lower', 'camera_lower')))
     cameras = registry(repo, config)
     if any(camera.get('arm') is None for camera in cameras):
         raise ValueError('D405 physical-arm assignment is incomplete')
@@ -128,14 +112,6 @@ def _intrinsics(camera: dict) -> tuple[tuple[float, ...], str]:
             or min(float(intrinsic[0]), float(intrinsic[1])) <= 0):
         raise ValueError(f"{camera['role']}: invalid camera intrinsics")
     return tuple(float(x) for x in intrinsic), basis
-
-
-def common_stream_profile(cameras: tuple[CameraDescription, ...], *, control_freq: float) -> tuple[int, int]:
-    """Dimensions for a synchronous dataset writer; reject implicit resampling."""
-    sizes = {(camera.width, camera.height) for camera in cameras}
-    if len(sizes) != 1 or any(camera.fps != control_freq for camera in cameras):
-        raise ValueError("dataset cameras require common dimensions and the control cadence")
-    return sizes.pop()
 
 
 def validate_checkpoint_views(checkpoint: dict, roles: tuple[str, ...], *, use_depth: bool,
@@ -201,8 +177,8 @@ def fixed_chain(repo: Path, parent: str, child: str, *, urdf: Path | None = None
 def registry_path(repo: Path) -> Path:
     """The deployment's vision registry, or the checked-in example when the
     checkout has none: vision.toml is the rig's profile and stays out of the
-    public export, whose copy of this module (and arm_kinematics, which reads
-    the wrist frames at import) must still resolve the stock right-arm camera.
+    public export, whose copy of this module must still resolve the stock
+    right-arm camera.
     The example names no real device (serial 000000000000), so nothing that
     opens a camera can mistake it for the rig."""
     path = repo / "rust/visiond/config/vision.toml"
@@ -269,26 +245,6 @@ def for_arm(repo: Path, arm: str, node: str, config: Path | None = None) -> list
             raise ValueError(f"{camera['name']}: {arm} wrist camera belongs to another capture host; "
                              "local LeRobot capture cannot open it")
     return selected
-
-
-def lerobot_config(repo: Path, arm: str, node: str, *, use_depth: bool,
-                   checkpoint: dict | None = None) -> str:
-    """Use local arm views only; refuse a checkpoint trained with different RGB keys."""
-    cameras = for_arm(repo, arm, node)
-    result = {}
-    for camera in cameras:
-        color, depth = camera["color"], camera["depth"]
-        if (color["fps_den"] != 1 or (use_depth and any(
-                color[key] != depth[key] for key in ("width", "height", "fps_num", "fps_den")))):
-            raise ValueError(f"{camera['name']}: unsupported LeRobot RGBD profile")
-        result[camera["role"]] = {
-            "type": "intelrealsense", "serial_number_or_name": camera["serial"],
-            "width": color["width"], "height": color["height"],
-            "fps": color["fps_num"], "use_depth": use_depth,
-        }
-    if checkpoint is not None:
-        validate_checkpoint_views(checkpoint, tuple(result), use_depth=use_depth)
-    return json.dumps(result)
 
 
 def optical_frames(repo: Path, *, arm: str, stream: str, config: Path | None = None,

@@ -28,7 +28,7 @@ async function waitForServer() {
 
 try {
   await waitForServer();
-  for (const script of ["sentence", "project", "editor", "bundle", "chart", "generation", "layout", "placement-fixes", "study-review"]) {
+  for (const script of ["sentence", "project", "editor", "chart", "generation", "layout", "placement-fixes", "study-review"]) {
     const env = { ...process.env };
     if (env.INKMAP_E2E_EVIDENCE) env.INKMAP_E2E_EVIDENCE = join(env.INKMAP_E2E_EVIDENCE, production ? "production" : "development");
     const test = spawn(process.execPath, ["--experimental-strip-types", `tests/e2e/${script}.mjs`, url], { stdio: "inherit", env });

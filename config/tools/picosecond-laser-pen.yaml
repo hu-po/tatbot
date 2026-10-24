@@ -103,8 +103,8 @@ com_z_m: null
 tip_tolerance_m: 0.030
 
 # --- ink supply -------------------------------------------------------------
-# A laser removes pigment; it has no ink and never dips. Tasks that need an
-# ink supply are refused with this tool fitted (tatbot_sim.tasks.validate_task).
+# A laser removes pigment; it has no ink and never dips. Work that needs an
+# ink supply is refused with this tool fitted (ink_spec.require_supply).
 ink:
   mode: none
 

@@ -1,8 +1,10 @@
 """The generated description: one root, the carriage travel, the TCP from workspace.yaml, and the
 <ros2_control> systems for mock, fake and real hardware."""
+import json
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 import pytest
 import yaml
@@ -11,7 +13,7 @@ from tatbot_description import hardware_params, load_stack, names, repo_root, ro
 # `real` needs the private arm addresses (config/profiles/<profile>.json); a public clone has none.
 HAS_PROFILE = (repo_root() / "config" / "profiles" / f"{load_stack()['profile']}.json").is_file()
 VARIANTS = [pytest.param(hw, arms, marks=pytest.mark.skipif(hw == "real" and not HAS_PROFILE, reason="no profile"))
-            for hw in (None, "mock", "fake", "real") for arms in (("right",), ("left", "right"))]
+            for hw in (None, "mock", "fake", "real") for arms in (names.ARMS,)]
 
 
 def _joints(robot):
@@ -167,11 +169,56 @@ def test_hardware_params_follow_the_stack():
     assert params["estop_relay_addr"] == "192.0.2.7"
     assert params["rt_cpus"] == "4,5"
     assert params["tip_lag_trip_m"] == repr(stack["safety"]["tip_lag"]["trip_m"])
+    assert params["snag_off_m"] == repr(stack["safety"]["snag"]["off_m"])
     assert params["landing_budget_s"] == repr(stack["safety"]["landing"]["budget_s"])
     assert params["flight_path"] == "/tmp/run"
     assert len(params["staged_positions"].split(",")) == 7
     stack["estop"]["source"] = "serial"
     assert hardware_params(None, "right", stack, "fake")["estop_timeout_s"] == repr(stack["estop"]["serial_timeout_s"])
+
+
+@pytest.mark.skipif(not (repo_root() / "config" / "workspace.yaml").is_file(), reason="no rig workspace")
+def test_a_stack_started_on_the_calibration_profile_connects_with_its_velocity_integral():
+    """stack.yaml tuning (tatbot ros up --tuning) lays ros_tuning.profiles.<name>.<role> over the role's tuning at
+    connect: calibration's velocity integral x1, the role's position gain kept (bench 2026-10-22)."""
+    drawing = hardware_params(None, "right", load_stack(), "fake")
+    calibration = hardware_params(None, "right", {**load_stack(), "tuning": "calibration"}, "fake")
+    assert [float(v) for v in calibration["velocity_ki_scale"].split(",")] == [1.0] * 6
+    assert drawing["velocity_ki_scale"] != calibration["velocity_ki_scale"]
+    assert calibration["position_kp_scale"] == drawing["position_kp_scale"]
+    with pytest.raises(ValueError, match="no profile 'nonesuch'"):
+        hardware_params(None, "right", {**load_stack(), "tuning": "nonesuch"}, "fake")
+
+
+@pytest.mark.skipif(not (repo_root() / "config" / "workspace.yaml").is_file(), reason="no rig workspace")
+def test_the_palm_and_carriage_offset_come_from_the_checkout(tmp_path):
+    root = repo_root()
+    workspace = yaml.safe_load((root / "config" / "workspace.yaml").read_text())
+    for arm in names.ARMS:
+        params = hardware_params(None, arm, load_stack(), "fake")
+        payload = workspace[arm].get("payload") or {}
+        if payload.get("identified_with") == workspace[arm]["tool_id"]:
+            assert params["palm_mass_kg"] == repr(float(payload["palm_mass_kg"]))
+            assert params["palm_com_m"] == ",".join(repr(float(v)) for v in payload["palm_com_m"])
+        assert params["motor_parameters"] == "wxai_v0_20250509"
+        assert [float(v) for v in params["idle_velocity_ki_scale"].split(",")] == [8.0, 8.0, 8.0, 3.0, 3.0, 3.0]
+        assert float(params["carriage_position_offset_m"]) == pytest.approx(0.0007)
+        role = Path(json.loads((root / "config" / "arms.json").read_text())["arms"][arm]["controller_config"]).stem
+        tuning = yaml.safe_load((root / "config" / "trossen" / "tatbot.yaml").read_text())["ros_tuning"].get(role)
+        for key in ("position_kp_scale", "velocity_kp_scale", "velocity_ki_scale"):
+            assert params[key] == ("" if tuning is None else ",".join(repr(float(v)) for v in tuning[key]))
+    # a payload identified with another tool, or on another preset, leaves the preset's palm
+    for field, value in (("identified_with", "another-tool"), ("preset", "wxai_v0_follower")):
+        copy = tmp_path / field
+        for rel in ("config/arms.json", "config/trossen/follower.yaml", "config/trossen/leader.yaml"):
+            (copy / rel).parent.mkdir(parents=True, exist_ok=True)
+            (copy / rel).write_text((root / rel).read_text())
+        changed = yaml.safe_load((root / "config" / "workspace.yaml").read_text())
+        changed["right"]["payload"] = {**changed["right"]["payload"], field: value}
+        (copy / "config" / "workspace.yaml").write_text(yaml.safe_dump(changed))
+        from tatbot_description import _palm
+        arm_cfg = json.loads((copy / "config" / "arms.json").read_text())["arms"]["right"]
+        assert _palm(copy, arm_cfg) == {"palm_mass_kg": "", "palm_com_m": ""}
 
 
 def test_real_needs_an_arm_address():

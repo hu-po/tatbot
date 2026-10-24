@@ -1,58 +1,11 @@
 ---
 summary: Public vision pipeline and timestamp contract
 tags: [vision, cameras, replay]
-updated: 2026-09-16
+updated: 2026-10-19
 audience: [dev, contributor]
 ---
 
 # Vision
-
-## Retained fiducial depth witness
-
-`tatbot vision board witness` compares original RGB-D captures against an
-independently measured board tag size. Provide an existing native-vision Python
-interpreter, the capture manifests, the fiducial inventory, the color sensor
-name, and a measurement JSON containing `target: "board"`, `edge_m`, `source`,
-and optional `uncertainty_m` (metres; absent means unavailable).
-
-```
-scripts/tatbot vision board witness --python /path/to/validated/python \
-  --capture /path/to/first/capture.json /path/to/last/capture.json \
-  --inventory /path/to/fiducials.json --measurement /path/to/measurement.json \
-  --color-sensor wrist_color --out /path/to/new-witness
-```
-
-The shared original-payload reader and surface pipeline verify the sensor pair
-and native alignment. The witness solves each detected board square using the
-camera's exact deprojection rays and retains every positive-depth planar pose
-branch. Each branch compares an 81-point interior grid of original depth with
-the size-derived RGB plane, preserving missing/saturated samples. Tags retain
-their family and ID; their spacing and the whole sheet's rigidity are not assumed.
-The report binds measurement, inventory, captures and payloads by SHA256.
-It reports observed discrepancies without adopting calibration. Measurement
-uncertainty, lens accuracy, board flatness, wrist mounting and joint timing
-still contribute to physical error qualification.
-
-For retained wrist captures, optional `--pose-inputs /path/to/snapshot` binds
-the same configuration used by wrist surface fusion: `bundle.json`,
-`registration.json`, `golden.json`, `config/arms.json`,
-`config/workspace.yaml`, `urdf/tatbot.urdf`, and `vision.toml`. The command
-verifies the capture's wrist identity, device, profile and bundle, then uses
-the shared registered wrist FK to compare each common tag across views.
-It retains every planar branch combination and hashes the configuration.
-These discrepancies assume each individual tag stayed fixed; they do not
-solve or adopt a camera mount, establish an absolute error bound, or assume
-the whole board is a rigid plane.
-
-Optional `--mount-fit-indices 0 2 4` fits unadopted hand-eye candidates from
-3–8 explicitly selected captures, requiring other captures for validation.
-Each common tag is solved separately through the shared flange FK using
-OpenCV's Park method. Every combination of positive-depth planar branches is
-retained, including unavailable/non-rigid solutions. The report checks every
-observed branch against each candidate and reports differences from the nominal
-mount. Excluding a capture does not make repeated captures of one held pose
-independent validation views. Candidates remain unselected and unadopted;
-small motion, tag geometry, registration and optics can still confound the fit.
 
 `rust/visiond/` ingests camera streams, records synchronized frames, and
 supports replay with the shared URDF. It is designed so downstream code can see
@@ -92,8 +45,9 @@ a matching calibration are omitted. Articulated wrist camera geometry remains
 on its arm's joint chain.
 
 The cockpit uses `--robot-world` (or the current local registration) to
-place world-frame tracking axes. An absent or mismatched registration makes
-the tracking geometry unavailable. Raw camera previews remain in sensor axes.
+place world-frame tracking axes in the URDF root, or `--camera-world` to draw
+them as published, in the camera world. An absent or mismatched registration
+makes the robot-root tracking geometry unavailable. Raw camera previews remain in sensor axes.
 Python FK refuses unknown links instead of substituting the root origin, and
 resolves mimic joints from their driven joint, multiplier and offset. The
 left laser attachment rides the opposite carriage and depends on this mapping.
@@ -115,11 +69,34 @@ records rather than in this page.
 The five-camera overhead calibration pipeline (`tatbot calib` capture phases,
 retained candidates, preview and apply) was removed in 2026-09 with the PoE
 scene cameras it measured. Tool-tip calibration on the demo rig is the ROS 2
-stack's station probe (`tatbot ros calib run`); `tatbot vision touchoff` still
-solves a tip from a teleop flight log.
+stack's station probe (`tatbot ros calib run`).
 
 On the demo stack the D555 is the only fixed camera, so its colour optical
-frame is the world. `tatbot ros register --arm <arm>` measures an arm in it.
+frame is the world. `tatbot ros calib overhead --arm <arm>` measures an arm in
+it through the wrist D405, and is the registration the stack adopts:
+
+- one D555 frame with the arm at rest, the wrist's holds over the palette's
+  roof tag, and its straight-down views of the fiducial tile on the holder;
+- both targets' corners placed in the arm base by the wrist (forward
+  kinematics and the URDF's chain to the D405, the tile's corners by bundle
+  adjustment with the D405's depth as a prior), fitted to where the D555 sees
+  them, together with the wrist's depth of the scene on the D555's own;
+- each region (the station, the holder) left out and predicted by the other:
+  one region alone misses the other by about ten millimetres, so both are
+  measured. A tile the D555 cannot read (the 12 mm forearm tile) has the
+  holder's views aimed at the page the overhead tracks, and the holder rests
+  on the wrist's depth there and on that tracked page's place: about 0.4-0.5°
+  from the silicone tile's registration, where the cube's is about 2°, and
+  the print within about 5 mm of where the wrist finds it. The silicone tile
+  on the holder remains the better registration.
+
+The wrist-tag registration below, `tatbot ros register --arm <arm>`, places
+the camera by the cube on the carriage instead. The cube gives under the
+tool's weight and its stickers stand millimetres off their measured layout,
+and its fit came out tilted about 2° against the wrist camera and the
+measured tool, which reads the palette station about 8 mm low; `tatbot ros
+setup` runs it as the coarse first step, and `ros calib overhead` replaces it.
+It measures an arm as follows.
 The ROS stack drives the arm through 27 holds over its side of the table: the
 tool points down, turned and tilted so that the wrist tag triplet shows the
 camera different faces. The D555 owner captures each hold the arm reached:
@@ -141,8 +118,7 @@ every tag seen from 3 of them, a corner residual median of at most 2.5 px
 (p95 6 px), and no single view moving the arm more than 5 mm or 0.5° when
 left out. Holds that repeat one pose fit that view closely and leave the arm
 anywhere else unmeasured. The owner then restarts so its frames carry the
-bundle. A new bundle is a new world, so the other arm's registration from the
-old world is moved aside until that arm is registered again.
+bundle. A new bundle is a new world: the arm is registered again in it.
 
 A rigid transform cannot take up an error in the chain it sees the tags
 through. The rest is modelled in `report.json`'s `chain`, two terms each
@@ -174,43 +150,124 @@ at 0.8 px. The holds of 2026-09-29 predicted 2.3–3.9.
 
 ## Stock wrist camera geometry
 
-Each arm carries one D405 on the original Trossen bracket. The canonical
+Each wrist D405 sits on the original Trossen bracket. The canonical
 `urdf/tatbot.urdf` contains a fixed chain from each arm's `link_6` to its
 `realsense_color_optical_frame` and `realsense_depth_optical_frame`. Its joint
 origins match the [Trossen WidowX AI model](https://github.com/TrossenRobotics/ManiSkill-WidowX_AI/blob/main/wxai_follower.urdf).
-The bracket pose is nominal CAD geometry, not a measured correction.
+The bracket pose is nominal CAD geometry, not a measured correction. The right
+wrist carries a second bracket under it: the same chain, its mount joint rolled
+180° about `link_6`'s x axis, as `right/realsense_lower_*`.
 
-The camera registry binds `wrist_left` to the left arm and `wrist_upper` to the
-right arm. Moving an arm changes camera pose through that arm's measured
-joint angles; it does not change the fixed mounting transform. Use color
-optical coordinates for depth explicitly aligned to color. Registering either
-view in the scene still needs exposure-time joint observations and the
-robot-to-scene transform.
+The camera registry binds `wrist_upper` and `wrist_lower` to the right arm, each
+naming its own optical frames (two cameras on one arm must). The left arm is the
+teleop leader alone and is not in the model. Moving an arm changes
+camera pose through that arm's measured joint angles; it does not change the
+fixed mounting transform. Use color optical coordinates for depth explicitly
+aligned to color. Registering either view in the scene still needs
+exposure-time joint observations and the robot-to-scene transform.
 
-The former lower camera on the right wrist is absent from the current model.
-Never register a retained `wrist_lower` image using another camera's transform;
-replay it with its original geometry. The separate
-single-arm simulator still contains its historical two-camera benchmark layout;
-that observation contract does not qualify the present physical arrangement.
+The lower bracket's mount joint is measured, not CAD: its pose to the upper
+camera from both cameras' reads of one print (`internal/evidence/wrist_pair.py`),
+1.76° and 1.96 mm off the stock bracket rolled 180°. The page filter reads it
+beside the upper camera at every hover and lift. An image kept from before it
+returned to the right wrist (it was the left arm's `wrist_left`, and before that
+an earlier right lower camera) keeps its original geometry.
 
 ## Live viewer
 
 Every live workflow (`tatbot live cockpit`, which subscribes to what the camera
-owners publish on the bus, and the ROS 2 stack's `tatbot ros up --rerun`) streams into one fleet Rerun viewer (a
+owners publish on the bus, and the ROS 2 stack's Rerun bridge) streams into one fleet Rerun viewer (a
 headless server on the `rerun-server` node; operator nodes attach windows) rather
 than opening a viewer of its own:
 
 ```bash
 tatbot viewer start            # on the server node: gRPC server on :9876 (+ web :9090)
-tatbot viewer open             # attach a capped window on this node
-tatbot viewer status           # server, window, version, proxy URL
+tatbot viewer open             # attach a capped window on this node (--memory-limit 4GB --fullscreen on the station)
+tatbot viewer status           # server, window, version, and the web viewer's ?url= address
+tatbot viewer reset            # send the fixed blueprint again: every window drops its own edits
 tatbot viewer view file.rrd    # stream a recording (.rrd, .wxtl, or a teleop run dir) into the fleet viewer
+tatbot viewer install          # on the server node (sudo): the server unit and its load monitor
+tatbot viewer station-install  # on the station (sudo): its load monitor
 ```
 
+`viewer open` runs the window as the transient user unit
+`tatbot-viewer-window`: the viewer drops its oldest rows at `--memory-limit`
+(default 1GB), and the unit's `MemoryMax`, the cap plus 1 GiB, is the hard
+ceiling. A window that already runs is left alone, so the station's launcher
+can call it every time; `--restart` closes it first, because a window never
+reconnects to a fleet viewer server that restarted. Once the window maps it is
+maximized, or with `--fullscreen` made fullscreen (no title bar, no GNOME top
+bar) and the focus handed back to the window that held it, so the station's
+demo page opens behind its agent terminal and the operator alt-tabs to it.
+Both are one EWMH request to the X11 window manager, no key typed; a window
+already in the state is not asked again, and nothing happens off X11.
+Each window keeps its own copy of the blueprint, and a tap or click edits it.
+The eye beside a pane's maximize button hides that pane: an empty title strip
+is left where it was, and while a pane is hidden Rerun 0.36 saves the whole
+layout again on every frame. The station's page shows no blueprint panel, so
+nothing on screen brings the pane back. `tatbot viewer reset` sends the fixed
+blueprint again, and every attached window adopts it: hidden panes, a dragged
+eye and dragged bounds return to the fixed ones, without restarting the hub or
+a window.
+`viewer status` prints the browser form,
+`http://<server>:9090/?url=rerun%2Bhttp%3A%2F%2F<server>%3A9876%2Fproxy`,
+with the server's rig address from the fleet map; it needs nothing installed
+on the viewing machine.
+
+A window pulls the heaviest stream on the rig, and the server may share its
+rig port with an arm controller, whose command packets then wait behind each
+depth chunk. A node with a direct cable to the server dials the server's
+address on that cable instead: the server's `links` entry in the fleet map,
+keyed by that node's role (`{"links": {"station": "<address>"}}`). The cable
+is used only while the kernel routes its address out another interface than
+the rig address and the server answers there within a second; otherwise the
+node dials the rig address, so a dead cable never costs the window. Producers
+on that node (its load monitor) follow the same rule. `viewer status` says
+which path the window rides (`direct link to the station over <interface>` or
+`rig LAN over <interface>`, with the reason the cable was passed over), and on
+the server lists each client by the path it arrived on. A window keeps the path
+it opened on: `viewer open --restart` moves it.
+
+`viewer install` and `viewer station-install` refuse with exit 3 unless
+`rerun --version` on that node reports the fleet's 0.36.0, and name the fix
+(`uv tool install 'rerun-sdk==0.36.0'`). Each installs `tatbot-sysmon@`, which
+logs the host's CPU and memory %, its hottest CPU/SoC thermal zone (deg C)
+and the station's GPU % and temperature at 1 Hz under
+`system/ros/` and `system/station/`: display only, about 0.1% of a core.
+Each source's legend is its host's `platform` in the fleet map, else its role.
+The station's monitor also reads each host whose `load_via` names the station's
+role (the e-stop relay's board, which has no checkout) into
+`system/estop-relay/`: one ssh session that reads `/proc/stat` and the thermal
+zones every 2 s with shell builtins and a `sleep`, so nothing is installed,
+started or written there. The ros node's monitor adds `system/robot/`: the
+hottest motor of the arm the drawing stack drives (the controller's rotor
+temperatures in the newest record of the stack's flight log) and that stack's
+controller process's CPU in % of one core. It reads both from the newest
+`ros-stack` run's files, never from the stack's graph or its control loop.
+The Demo tab plots `cpu_percent` and `temp_c` of these four sources, each
+in one colour in both panes: CPU % on a fixed 0-100 scale with the one
+legend above its lines, beside TEMP, both over the last ten minutes.
+The blueprint names only the entities. Each legend and colour is a static
+row the monitor logs, so a blueprint sent from a newer `tatbot-visiond`
+needs the monitors from the same revision, or older monitors show their
+own labels in Rerun's per-entity colours.
+On the ros node, `tatbot-cockpit.service` is the standing bus subscriber
+(`visiond subscribe --recording-id live-cameras --duration-seconds 0
+--camera-world`), installed by a fleet deploy of that node between draws. It
+shows the D555's depth out to `--overhead-depth-max-m` (0.85 m: the table and
+what stands on it, not the room behind; 0 shows all of it).
+`tatbot rig check` reports all of these under part `station`, never under
+`pink drawing`.
+
 `live cockpit --duration 30` runs a bounded check. It opens no camera: it
-subscribes to the frames the owners already publish on the bus, so it runs
-beside a LeRobot session or the ROS 2 stack. The operator needs the fleet
-viewer and the bus router, but no camera-LAN address.
+subscribes to the frames the owners already publish on the bus. The operator
+needs the fleet viewer and the bus router, but no camera-LAN address. It
+streams into a recording of its own (`Cockpit HH:MM`), and every window on the
+fleet viewer switches to a recording it has not seen, the station's demo page
+included, as `viewer view` does on purpose: while the station shows the demo,
+the standing `tatbot-cockpit.service` is the camera feed, and an ad hoc
+cockpit is not run. It refuses `--recording-id live-cameras`, whose overlays
+the standing cockpit places in camera world.
 
 `viewer view` streams from the node that holds the file: a path that does not
 exist where you typed it is looked for on the arm node, where flight logs
@@ -226,10 +283,13 @@ derived from the id, so it never flips between producers.
 Producers share one application id, join a session by recording id, stamp the
 `capture_time` wall-clock timeline, and log under fixed entity prefixes
 (`cameras/`, `robot/`, `world/`, `teleop/`, `surface/`, `draw/`,
-`session/`). One blueprint definition in `rust/visiond` always presents the
-fixed **Session / Telemetry / Calibration** top-level tab bar, in that order,
-with no nested tab stacks. The rerun-server installs it once per server
-generation. Workflows publish data only, and neither workflow startup nor
+`session/`, `system/`). One blueprint definition in `rust/visiond` always presents the
+fixed **Demo / Session / Telemetry / Calibration** top-level tab bar, in that
+order, with no nested tab stacks. Demo comes first because the Rust blueprint
+cannot select a tab: it is the portrait drawing page (status, the 3D scene in
+the camera world, the design map beside the two upright wrist RGBs, the D555 RGB with the markers the trackers read
+on it and the palette's tag, which the cockpit reads there itself once a second (`subscribe --fiducials`, the
+inventory's `palette` target, outlined green and named), beside CPU and temperatures). The rerun-server installs it once per server generation, and `viewer reset` sends it again. Workflows publish data only, and neither workflow startup nor
 recording selection resets the operator's selected tab.
 Every viewer and producer is memory- and rate-capped;
 `scripts/check rerun-caps` refuses a launcher or producer that is not. Python
@@ -241,27 +301,59 @@ either. Showcase does not turn reduced upstream bus derivatives into
 full-resolution sensor data. These controls affect display copies only, never
 capture, tracking, policy, journal, or sensor rates.
 
+Beneath that cap (`subscribe --max-fps`, default 5 Hz) each stream has its
+own rate: the overhead colour at 5 Hz (`--overhead-color-hz`), its depth at
+1 Hz (`--overhead-depth-hz`), each wrist tap's colour at 2 Hz (`--wrist-hz`).
+The hub streams every row on to the station over a link the pink
+controller's UDP may share, so no image the cockpit logs exceeds 60 KiB (its
+chunk stays within 64 KiB, about 0.5 ms at 1 Gbps), and images go out one per
+20 ms tick. Colour is re-encoded as a 640x360 JPEG of quality 70 (a lower
+quality, then half the size, only for a frame that would not fit); the depth
+is decimated to 320x180 by the nearest valid range in each block (zero stays
+invalid) and logged RVL-compressed, lossless (`EncodedDepthImage`, the
+Overhead depth pane). The Demo scene draws that depth instead as an RGB cloud
+(`cloud/<band>`, `depth_cloud.rs`): every second return each way on its
+pixel-centre ray under the same Pinhole, coloured with the mean of the colour
+pixels it stands for in the newest colour image and a tenth of a cool blue
+tint, each point 0.6 of the gap to its neighbours at its range so the cloud
+reads as a surface, in four rows of at most 3,600 points so each stays within
+the row cap: ~106 KB a second on the rig's table (2026-10-19), at most 230 KB.
+The Scene leaves the depth image out, so a window shows the RGB cloud only
+once it holds a blueprint sent since (`tatbot viewer reset`). The wrist tap's
+depth is not logged: the bridge draws the wrist cloud the same way, with a
+warm amber tint, so the two read apart where they overlap. The Demo tab has a
+pane per wrist camera, D405-1 (RealSense 1, the lower) and D405-2 (RealSense 2,
+the upper), each turned upright by its camera's display rotation (the lower is
+the upper's mount turned 180°). Each keeps a draw's last frame under its age
+label; a cockpit that starts
+covers that frame, which it cannot vouch for, with a black one, clears its
+label and shows "no frame yet" until that camera's first frame. The print's
+markers each wrist reading decodes in a frame (a gauge hold's, a curved page's
+locate view's, the tracker's hover and stroke-end frames) are drawn on that
+frame: each marker's outline, green when the reading's accepted fit kept it,
+amber when its fit kept it but was not accepted, red when read and left out,
+its id at its centre, and a line naming the reading under the age label. They
+come from the session's wrist tap as one `tatbot.wrist-markers/1` envelope on
+`tatbot/vision/d405/<camera>/markers`, stamped as their frame, a few hundred
+bytes each, about 0.6 s after it (the reading's own time); the cockpit logs
+them at that stamp in the pixels it logs the frame at, and the camera's next
+frame hides them. A flat page's locate views read a rectified page image and
+are not drawn. At the defaults
+the cockpit streams ~0.4 MB/s, ~0.5 while a draw's wrist tap sends; it
+streamed ~2.6 MB/s in rows up to ~470 KB before 2026-10-18. `--camera-world` draws trackd's and
+stencild's poses at identity in the camera world, the ROS `world` the Demo tab
+shows. `--output FILE.rrd` also writes an offline capture, and `--connect` may
+then be left out. `--duration-seconds 0` runs until SIGINT or SIGTERM. A
+malformed sample is counted, reported on stderr at most every 10 s and skipped;
+it never ends the subscriber.
+
 ## Evidence limits
 
 Timestamp alignment is not geometric calibration, and a synchronized recording
 is not proof of safe robot behavior. State those limits in every published
 result.
 
-### Lossless tracker diagnostics
-
-For detector comparisons, the native `capture-poe-all --lossless-evidence`
-option retains exact decoded subscriber pixels and their checksums. It requires
-an existing camera-owner socket, decoded recording, and a duration of 1–30
-seconds. Normal subscriber recordings retain their JPEG encoding. Use a bounded
-RAM-backed destination and archive it after capture; five full-resolution luma
-streams can require roughly 500 MB per second. This is diagnostic evidence,
-not a production latency measurement while the extra subscriber is attached.
-
-PoE subscriber recording drains the owner independently of encoding and disk
-writes, retaining only the latest complete pending set. A slow recorder drops
-superseded sets rather than blocking the camera-owner socket; the diagnostic
-counter `subscriber_superseded_sets` reports those drops. Frame timestamps and
-checksums remain authoritative; recording throughput is not camera throughput.
+### Tracker memory
 
 The tracker service allows up to eight malloc arenas for its parallel camera
 detectors. A single arena serialized the allocation-heavy planar initializer;
@@ -355,9 +447,10 @@ Each D405 in the vision registry declares a physical `arm` and an `owner_role`.
 The owner role resolves through the node registry and must have exactly one
 owner. It describes the USB host, independently of which computer controls the
 arm or which teleop role that arm takes. Device names and serials remain stable;
-view roles distinguish mounting locations. The remaining right view is
-`wrist_upper`; the moved left view is `wrist_left`. Its former `wrist_lower`
-role is retired so it cannot silently reuse the old right-wrist extrinsic.
+view roles distinguish mounting locations. Both views are on the right arm:
+`wrist_upper` and, under it, `wrist_lower` (the camera that was the left arm's
+`wrist_left` until 2026-10-23). Both are owned by the ROS stack's node, which
+opens them directly; no visiond D405 service runs for them.
 
 The D405 service resolves its node's cameras and passes explicit, repeatable
 `--sensor` arguments to `capture-realsense-all --group d405`. Unknown names,
@@ -412,18 +505,27 @@ at `/tmp/tatbot-d555-frames.sock`. It is deliberately separate from the two
 moving wrist D405s: opening, synchronizing, or restarting one group must not
 take ownership of the other.
 
-The cockpit includes overhead color/depth and 2 Hz wrist-depth previews at quarter
-width and height. Nearest-neighbour resizing preserves the depth scale. Full
-capture requests retain the original RGB-D frames. The viewer connection retains
-the camera owner's JPEG bytes, avoiding raw RGB expansion without changing
-image quality. Join an existing recording with
+The cockpit shows the overhead colour and depth and the wrist taps' colour as
+display copies within its row cap (above). Valid-min decimation preserves the
+depth scale and near edges. The overhead colour and depth each carry a Pinhole
+from the owner's full-resolution intrinsics scaled to the logged size, so the
+depth becomes a cloud in the camera world; the overhead 2D panes are rooted at
+those pinholes. Full capture requests retain the original RGB-D frames.
+Join an existing recording with
 `tatbot live cockpit --recording-id <id>`. Raw camera-world wrist tracking is not overlaid on the
 robot model without a measured registration between those frames.
 
-The installed profile is 640x360 at 30 Hz, depth preset 0, laser power 150 and
-a measured depth scale of 0.001 m per Z16 unit. In the installed view this
-profile gave substantially better valid-pixel coverage and repeatability than
-896x504 at 30 Hz or 1280x720 at 15 Hz. Preset 0 gave the best stable-pixel
+The installed profile is colour 1280x720 and depth 640x360, both at 30 Hz,
+depth preset 0, laser power 150 and a measured depth scale of 0.001 m per Z16
+unit; librealsense aligns the depth to the colour, so the aligned depth is
+1280x720 too. The colour's 0.86 px/mm on the page decodes skin-stencil
+markers (an 18 mm marker's 3 mm cells at ~2.6 px; 12 mm markers, ~1.7 px a
+cell, only upsampled twice: [the skin stencil](stencil-frames.md)), where
+640x360's 0.43 px/mm decoded none. The two streams
+together held 30 sets a second with no drop over a 30 s test on the camera
+node. The depth stays at 640x360: in the installed view it gave substantially
+better valid-pixel coverage and repeatability than 896x504 at 30 Hz or
+1280x720 at 15 Hz. Preset 0 gave the best stable-pixel
 coverage of presets 0-4. Laser 150 retained essentially the same coverage as
 240 or 360 while using less projector power. These are measured starting
 settings for this scene, not universal D555 recommendations or drawing
@@ -438,7 +540,7 @@ frames/s. The pre-stop coverage was consistent at 72.046% valid and 69.587%
 stable. No central-ROI interference attributable to active wrist capture was
 measurable in this unattended scene. This does not qualify whole-surface
 coverage, other arm/projector geometries, lighting changes or physical depth
-accuracy; repeat the comparison during the fiducial-board placement study.
+accuracy.
 
 The Ethernet transport requires a gigabit link, DDS discovery and an MTU of
 9000 from the camera owner through the PoE switch. The camera sends only
@@ -464,139 +566,86 @@ number separately, suppresses repeated-timestamp DDS framesets, and assigns a
 strictly increasing evidence sequence so a reconnect or repeated device frame
 number cannot overwrite a retained payload.
 
-The active bundle's two D555 entries come from guided board sweeps of the
-removed five-camera calibration (see Calibration above). Those sweeps solved the
-D555's native colour optical frame in the same multi-camera bundle, keeping its
-native intrinsics and distortion fixed so the solve agreed with the pixel grid
-the owner aligns depth to. The strict companion `overhead_depth_depth` entry
+The active bundle's two D555 entries hold the D555's native colour optical
+frame, solved with its native intrinsics and distortion fixed so the solve
+agrees with the pixel grid the owner aligns depth to. The strict companion `overhead_depth_depth` entry
 carries the same optical geometry, because the owner aligns Z16 into color
 before publishing.
 
 Once both D555 entries exist in the active bundle, its owner stamps that bundle
-and `trackd` timestamp-merges the freshest overhead set with each PoE cadence
-set (80 ms maximum separation) before one pose update. If the bundle lacks
+and `trackd` reads the D555's stamped sets for each pose update. If the bundle lacks
 either entry, the D555 stays available for camera-frame evidence and the
 tracker does not subscribe to it. This makes calibration membership explicit:
 an unstamped frame cannot become a world-frame tracking observation.
 
 `stencild` is the same kind of subscriber for printed stencils: one observer
-for the fleet on the camera node, reading the PoE socket where that node has
-the PoE cameras and, under the same stamped bundle, the overhead socket. The
-demo stack has no PoE cameras, so the D555 is the observer's only fixed view,
-and at 0.43 px/mm it cannot resolve a print. A coded print's knots are about a
-pixel there, so nothing is decoded or feature-matched. Where no fit measures a
-print, the observer can place it by its artwork instead (`--overhead-artwork-match`,
-which the launcher sets when the node has no PoE cameras). Inside each
-registered arm's drawing pad, it fits the table plane to the D555's depth and
-resamples the colour image onto that plane at 2 mm per pixel. It then correlates
-the reference artwork, band-passed, over position and turn. The printed frame
-shows as a grey ring on its sheet, and the band-pass keeps the sheet's own edge
-on a dark mat from winning. Only the frame is correlated: the clear centre
-(the reference's `clear_center_uv`) is where the arm draws, and a four-ink
-drawing there held an uncovered page at 0.61-0.69 when the whole artwork was
-correlated; on its frame alone it scored 0.79-0.82. A peak at 0.70 or more, at least 0.15 above any
-other, is the page: with the drawing arm over the sheet, false peaks a quarter
-turn round scored up to 0.60, and the uncovered page 0.77-0.87. The ring cannot tell a half turn apart, so the print's top
-faces away from the drawing arm unless the page's last pose says otherwise.
-Such a target is published `measured` with its identity unverified. It carries
-the match's score and margin (`support.method` `artwork_plane_match`) and sigma
-floors of 4 mm and 1.5°. The drawing stack measures the page again with its
-wrist camera and touches before it draws. On the installed view the match
-scored 0.84, with a margin of 0.54, in 0.4 s per turn. Its configured period is one second;
-`processing_p95_ms` and `capture_to_publication_p95_ms` report the achieved
-rate and age. Per-turn capture scratch uses the service's managed memory
-directory; durable estimates stay in its run log. It keeps the overhead set
-whose exposure the most PoE cameras share inside 40 ms. The first turn
-surveys every fixed camera. Later turns keep image flow tracks current in all
-fixed views and permit one rotating fixed view to run reference search every
-three turns when several fixed cameras are present. A lone fixed camera can
-search each turn. A lost track or changed image is searched when that view
-gets its turn; this bounds the time spent searching when an arm hides a print from several
-cameras at once. A still-empty view and an acquired print become due for a
-full search after three minutes. Each turn projects overhead depth into the
-current tracked views. A previous measured depth
-footprint bounds the next projection; missing support retries the full depth
-image and all current fixed views in the same turn. An anchor camera is chosen
-per print (a camera named by `--exclude-anchor` can be compared but never
-chosen). A valid previous anchor stays selected when another fit has at most
-four more anchors and a comparable residual, limiting jumps from marginal
-ranking changes; lost support switches immediately. Cross-camera pose
-disagreement remains visible and needs independent calibration review. The
-service publishes the print's pose as
-`tatbot.target-pose/1` on `tatbot/tracking/target/<pattern_id>` with a
-`support` block: the anchor camera, its measured anchors and leave-one-out
-residual, both sigmas, the page corners and plane, every camera's
-disagreement, the bundle id, and `motion_authority: false`.
+for the fleet beside the overhead camera's owner, reading its socket under the
+same stamped bundle. Each turn it hands the newest overhead RGB-D set to the
+observer; the D555 is its one view. The wrist camera's readings belong to the
+drawing session.
 
-A coded print (the default design, see [stencil frames](stencil-frames.md))
-is decoded, never matched by SIFT; legacy artwork keeps SIFT. The decode
-names the print and seeds the same flow track a SIFT acquisition seeds, and
-every tracked frame re-reads the print's own bits at the tracked junctions,
-so `physical_instance_id` is verified in the frame that carries the pose. A
-rejected or ambiguous decode, or bits that do not verify (a slipped lattice,
-another print put in its place), reads as `lost`, and the refusal is named
-in `support.reason`. A decode of a cluttered real frame takes from seconds to
-two minutes on the camera node, so it runs only inside search regions: each
-registered arm's drawing pad (a square 250 mm either side of its
-`config/workspace.yaml` pad pivot, through the arm's registration) projected
-into the view, where a close wrist view keeps the part of the pad it sees, and
-a box around a page the view already tracks. With no registered pad, a view of
-at most 1.4 Mpx is searched whole and a larger one not at all. The decode runs
-in one background process, one view at a time, and never holds up a turn: its
-junctions are carried to the view's newest frame by optical flow and must pass
-that frame's bit check, so a print that moved or went away meanwhile reads lost
-and is searched again. A pad seen coarser than 1.2 px/mm is not searched. Each turn reports its pad search areas, and why an arm with a pad
-has none, under `coded_search`. An installed reference the observer cannot
-use (a coded manifest without its bound `coded.json`, or a coded print the
-decoder cannot read) is published `lost` with the reason, listed under
-`refused_references`, and never stops the other prints' tracking.
+Only a [fiducial-tile](stencil-frames.md) print is placed, by its markers
+(`fiducials.stencil.rgbd_pose`). Each one found in the colour has each corner
+lifted along its ray to the depth about its own pixel: the mean of the middle
+half of a 15 x 15 px square (about 7 x 7 of the D555's own depth pixels),
+taken over pixels whose mirror through the corner is valid too, so the arm
+over one side does not shift it. No surface is fitted to the depth, under a
+marker or across the sheet. A read is kept when it spans its printed side
+within 15%, and the most reads, one per code, are kept whose corners all lie
+no farther apart than printed and no nearer than their chord on the tightest
+skin the layout goes on, within 4 mm (`Tile.curve_radius_m`: the forearm tile
+a 35 mm forearm, the silicone tile 100 mm, its mount reading 146-191 mm): a
+false read stands a pitch or more from where the others put it. Of equal
+groups the one nearest its printed distances is kept, never the first by
+code, so two true reads and a stray beside them keep the true pair. The
+published pose is the layout laid unstretched round a cylinder through the
+kept corners (`fiducials.stencil.bent`: any axis in the print's plane, convex
+to the camera, no tighter than 0.75 of the layout's skin radius): its origin
+the print's centre on that skin, its z the skin's normal there. Markers along
+one row or column, or fewer than three, cannot show a bend, and the pose is
+then the flat layout's rigid fit, the chord plane of the markers in view,
+whose tilt moves with whatever part the arm leaves visible (a synthetic 40 mm
+forearm, half hidden, turned it 22°). On a live forearm (2026-10-20) the chord
+plane tilted 16.7° median and 25.3° p95; the bent layout read a 59 mm skin and
+put the centre's normal at 14.3° median and 20.0° p95, the centre and turn
+within 0.2 mm and 0.3° of the chord plane's. The drawing session reads the
+pose for the page's centre and turn and for its first gauge holds and wrist
+locate views; it judges a moved sheet by the kept markers' rays and measures
+a curved skin at its gauge holds. The view that reads the most
+markers anchors the pose. Fewer than two agreeing markers is no pose for
+that turn (the arm over the sheet hides most of them), published `lost` with
+the reason. The translation sigma is the
+markers' residual floored at 2 mm, and the rotation sigma a fixed 1.5°: the
+depth and registration bias the markers cannot see. An installed reference
+that is not a tile, or fails to load, is published `lost` with the reason
+under the pattern its manifest names and never stops the other prints. The
+service publishes each print's pose as `tatbot.target-pose/1` on
+`tatbot/tracking/target/<pattern_id>` with a `support` block: the anchor
+camera, its marker count, ids and residual, both sigmas, the page corners
+(`corners_m`, the pose's flat outline the viewer draws), the kept markers'
+corners (`markers.ids[k]` names `anchor_points_m[4k:4k+4]`), the bundle id,
+and `motion_authority: false`.
 
-Each arm's wrist D405 is one more view in the turn. The observer reads the
-D405 registry (`vision.toml`: every camera of group `d405` with a physical
-`arm` and an `owner_role`), subscribes the run-agnostic
-`tatbot/session/*/arm/*/joints` (`tatbot.arm-joints/1`, the arms' measured
-joints, which the ROS 2 stack's `tatbot_bridge` publishes; the key keeps its
-historical `session` segment) and, for an arm whose joints are on the bus,
-queries its owner's `tatbot/vision/d405/capture/<node>` for the newest
-RGB-D pair at most once per `--wrist-capture-ms` (one second). The view is
-posed in the observer's world through the arm's own
-    `tatbot.arm-registration/1` (the `arm-registration-<arm>-current.json`
-beside the bundle under `--registrations`, accepted on the bundle or carried
-onto it, and folded into the input fingerprint so a new registration
-restarts the estimator on the new world) times the URDF chain at the joints sample
-nearest the frame's exposure, with the frame's own active intrinsics rather
-than a bundle entry. A joints sample farther than one capture interval from
-the exposure, an arm with no joints on the bus, no registration, a launch
-bound to another camera bundle, or a capture not of that arm refuses that
-view by name, never the turn; a view with no pose never enters the fusion.
-The tracked-wrist topic `tatbot/tracking/ee/<arm>` is never an input. A
-posed view is searched every turn it arrives, its fit and disagreement listed
-under `support.cameras` as `wrist_<arm>`, and every print's `support` names
-the turn's `wrist_views` — each posed one with its capture stamp, joint stamp
-and skew, the joints' bound bundle and the registration's carry, each refused
-one with its reason. Name `wrist_<arm>` under `--exclude-anchor` to compare a
-wrist without ever anchoring on it. References are
-installed under the log root (`stencils/references/<name>/tracking.json`
-beside its `stencil.png`, and a coded print's hash-bound `coded.json`) and
-rescanned by mtime, so installing one never
-restarts the service and none installed leaves it idle. A lost print is
-published as `lost`. `--max-age-ms` (3 s) gates the input only: a turn whose
-selected exposure is older than that, or in the future, is skipped before the
-estimator runs and counted as a stale set. A measured result is published as
-measured however long its turn took, stamped with its capture time, so a
-consumer reads its age from the sample. A late pose is never turned into
-`lost`: the ROS bridge holds the last measured pose through a `lost`, which
-would be older still. The observer decides nothing about motion. Each turn
-logs capture-write, estimator, publication, and observer-stage timings with
-cumulative per-camera unique socket and selected frame counts, sequence gaps,
-ring overwrites, unselected sets, and selected PoE-to-overhead skew. The
-service metrics also expose the stale-set count and the last
-capture-to-publication age.
+Its configured period is one second; `processing_p95_ms` and
+`capture_to_publication_p95_ms` report the achieved rate and age. Per-turn
+capture scratch uses the service's managed memory directory; durable
+estimates stay in its run log. References are installed under the log root
+(`stencils/references/<name>/tracking.json` beside its `stencil.png` and the
+tile's `tile.json`) and rescanned by mtime, so installing one never restarts
+the service and none installed leaves it idle. `--max-age-ms` (3 s) gates the
+input only: a turn whose selected exposure is older than that, or in the
+future, is skipped before the estimator runs and counted as a stale set. A
+measured result is published as measured however long its turn took, stamped
+with its capture time, so a consumer reads its age from the sample. A late
+pose is never turned into `lost`: the ROS bridge holds the last measured pose
+through a `lost`, which would be older still. The observer decides nothing
+about motion. Each turn logs capture-write, estimator, publication, and
+observer-stage timings with cumulative per-camera socket and selected frame
+counts, sequence gaps and ring overwrites. The service metrics also expose the
+stale-set count and the last capture-to-publication age.
 The shared Rerun Session view includes each measured target's live page outline
 under `/world/tracking/target/<pattern_id>` beside the calibrated robot. A
-`lost` sample clears that outline. The Calibration view can also show the
-camera-local labeled image from `tatbot vision stencil observe --connect`;
-that diagnostic image does not establish a world pose.
+`lost` sample clears that outline.
 
 With matching D555 camera and robot-world bundles, consumers deproject
 aligned Z16 using the native color rays and the paired depth-to-color
@@ -694,12 +743,12 @@ captured pixels or apply a fitted depth offset.
 
 The shared `rgbd_geometry` implementation uses that transform to intersect each
 color ray with its measured native-depth Z plane. Wrist and overhead scans,
-stencil anchors/interiors, paper-reference landmarks and recordings carrying
-this metadata use the resulting color-frame coordinates. Median captures retain
+the stencil observer's markers, the post-draw inspection's views and
+recordings carrying this metadata use the resulting color-frame coordinates. Median captures retain
 and freeze the alignment model for the whole batch. Geometry without the native
 alignment metadata remains historical evidence; it cannot establish a new
-calibrated live stencil surface. Calibration adoption still uses the existing
-preview/apply workflow and requires a consistent camera-to-robot registration.
+calibrated live surface. Calibration adoption is `tatbot ros calib overhead
+--adopt` and requires a consistent camera-to-robot registration.
 
 Run logs contain per-pair transforms, bidirectional overlap, geometric residual,
 separate read/preparation/solver/output timings, CPU consumption and optional

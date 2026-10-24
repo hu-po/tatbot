@@ -160,7 +160,7 @@ def test_wider_replacement_uses_its_own_bounds_without_moving_source_paths():
     design = drawing([('narrow', [element([[.002, .01], [.018, .01]])]),
                       ('wide', [element([[.002, .015], [.02, .015]])])])
     artwork = next(iter(design['artworks'].values()))
-    design['placements'][0]['placement']['target']['anchor_uv_m'] = [.02, 0]
+    design['placements'][0]['placement']['target']['anchor_uv_m'] = [.034, 0]
     digest = artwork['content_sha256']
     widths = {(digest, 'narrow'): .0005, (digest, 'wide'): .0005}
     strokes, _ = placed_strokes(design, tool_widths=widths)
@@ -168,7 +168,7 @@ def test_wider_replacement_uses_its_own_bounds_without_moving_source_paths():
     widths[digest, 'wide'] = .003
     with pytest.raises(CompileError, match='footprint leaves'):
         placed_strokes(design, tool_widths=widths)
-    design['placements'][0]['placement']['target']['anchor_uv_m'] = [.019, 0]
+    design['placements'][0]['placement']['target']['anchor_uv_m'] = [.033, 0]
     strokes, _ = placed_strokes(design, tool_widths=widths)
     np.testing.assert_allclose(strokes[1].points_m, before - [.001, 0])
     assert strokes[1].generation_width_m == .0005

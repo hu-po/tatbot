@@ -24,9 +24,7 @@ def drawing_seconds(op, speed, motion):
 
 
 def _workflow_kind(op):
-    if op["op"] == "tool_change" or (op["op"] == "pause" and op.get("reason", "").startswith("swap pen:")):
-        return "pen_change"
-    return op["op"]
+    return "pen_change" if op["op"] == "tool_change" else op["op"]
 
 
 def estimate_duration(ops, speed_m_s, travel_m, motion, *, resources=None):

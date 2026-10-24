@@ -1,6 +1,7 @@
 # Motion tuning; SI units.
-# Sources: config/motion_constants.json and scripts/lib/pen_path.py (proven on hardware),
-# cpp/teleop/square_probe.cpp (CLIK). Each value is a starting point to be re-measured on the bench.
+# Sources: config/motion_constants.json, the retired scripts/lib/pen_path.py (proven on hardware; "pen_path X"
+# below names its constant) and cpp/teleop/square_probe.cpp (CLIK). Each value is a starting point to be
+# re-measured on the bench.
 format: tatbot-motion
 version: 1
 
@@ -17,6 +18,9 @@ tip_speed:
 
 approach:
   standoff_m: 0.010               # pen-up height above the stroke start/end (motion_constants orbit.no_scan_lift_mm)
+  withdraw_m: 0.030               # a stack restarted with a pen away from rest (no page known) pulls it out this far along
+                                  # its axis before landing: the controller idles on a lost connection, and in the ~10 s
+                                  # before the restart the pink tip sagged 9-13 mm down and 12-17 mm aside (2026-10-08)
   descend_m_s: 0.010              # pen_path DESCENT_SPEED_M_S
   final_m: 0.005                  # the last 5 mm of the descent (pen_path FINAL_DESCENT_M)...
   final_m_s: 0.003                # ...at 3 mm/s (FINAL_DESCENT_SPEED_M_S), also the gentle stretch of a lift
@@ -40,9 +44,12 @@ pen:                              # pen-down path relative to the touch-derived 
                                   # the arm and EE mount give ~1.5 N/mm; -1 mm drew in the air (bench 2026-09-26)
     settle_s: 1.0                 # the dwell at touchdown before drawing (pen_path DESCENT_SETTLE_S)
   ride:                           # the machine running (stack.yaml machine): the tip meets the paper within its stroke
-    fraction: 0.75                # the 3RL (fitted 2026-10-05): its tube's end 3.0 mm over the skin, of its 4.0 mm stroke,
-                                  # the needles 1.0 mm in at the bottom (the last 25%: operator); the operator judged
-                                  # 3.0 mm best on a ride ladder. Put 1.057 back with the ballpoint:
+    fraction: 1.25                # the 3RL: its tube's end 5.0 mm over the skin the wrist gauge measures, of its 4.0 mm
+                                  # stroke (operator, 2026-10-20: at 0.75, 3.0 mm, they lifted it with Fn+W on nearly
+                                  # every run and never pressed deeper; on a silicone ink run they lifted the full
+                                  # +2.0 mm trim and called that the right height). By the datasheet the needles stop
+                                  # 1.0 mm short there, yet it inks: the gauge reads the skin about that much low (an
+                                  # open wrist-camera calibration question). Was 0.75 after a 2026-10-05 ride ladder. Put 1.057 back with the ballpoint:
                                   # this fraction of fitted stroke_mm over the page the wrist gauge measures: 3.70 mm for
                                   # the 3.5 mm stroke (2026-10-05: a fresh black pressed hard at 3.5 on a traced-twice
                                   # outline; the operator trimmed to 3.7 and it still inked). A ladder on gauge-measured paper (2026-10-03, close-up scored)
@@ -53,11 +60,15 @@ pen:                              # pen-down path relative to the touch-derived 
                                   # touch heights the guard tripped in the air; tune on ink, not FK
     settle_s: 0.0                 # a running tip that dwells dots the page
   trim:                           # the operator's height trim over that path, kept per cartridge for the run
-                                  # (tatbot_motion.trim; the numpad on the ros node: 8 up, 2 down, 5 back to 0)
+                                  # (tatbot_motion.trim; the station keyboard: Fn+W up, Fn+S down, Fn+X back to 0)
     step_m: 0.0001                # one key press. The ladder (2026-10-03) drew solid from 3.3 down to 2.5 mm and
                                   # pressed too hard at 2.9 with a swapped cartridge: 0.4 mm already shows
-    limit_m: 0.002                # the trim stays within +-this (operator, 2026-10-04); the first-order map to
-                                  # joints is within 18 um of its target at 2 mm on the pink arm's drawing poses
+    limit_m: 0.004                # the trim stays within +-this. At 2 mm (2026-10-04) the owner's forearm tattoo
+                                  # pressed Fn+S 141 times at -2 mm where the wrist read the skin up to 4.06 mm under
+                                  # the field (2026-10-20). At -4 mm the 3RL's tube rides 1.0 mm over the skin the
+                                  # gauge measures and its needles reach 3.0 mm past it by the datasheet (ride 5.0,
+                                  # reach 4.0). The first-order map to joints is within 53 um of its target at 4 mm
+                                  # (13 at 2) on that forearm's drawing poses
     speed_m_s: 0.002              # a change's peak speed along the depth axis (the final descent runs 3 mm/s)...
     min_s: 0.2                    # ...and its shortest ramp
     lead_s: 0.1                   # a change mid-goal starts this far ahead of now: the replacement goal reaches
@@ -104,25 +115,16 @@ probe:                            # touches on the station probe's ball (Touch G
   axial_cap_m: 0.0010             # travel past the expected contact: at most this along the stylus (base z)
   lateral_cap_m: 0.0025           # and this across it. Reaching the cap untriggered is a missing trigger, not a fault
   slow_m_s: 0.001                 # the slow leg, inside the probe's rated 0.8-3.3 mm/s feed
+  search_m_s: 0.003               # a calibration search pass's slow leg, still inside that feed: it only finds the
+                                  # stylus, and its contacts never reach the fit (2026-10-17: 30 s a touch, 13 s of it
+                                  # at 1 mm/s, 67 of 118 meeting nothing)
   back_off_m: 0.003               # after a trigger, back out this far the way the tip came; then the probe must
                                   # read released
   clearance_m: 0.030              # every approach goes up to this far over its start, across, and down onto it:
                                   # never a straight line past the ball
 
-collision:                        # the arms keep apart (tatbot_motion.collision.Guard; ros/README.md section 8).
-                                  # The unsafe state: one arm, or a cable it carries, meeting the other
-  arms_m: 0.020                   # the least planned gap between the two arms' bodies (link hulls, tool capsules)
-                                  # beyond a wrist's bubble: tracking lag and the model's own error
-  wrist_m: 0.080                  # each arm's wrist and end effector bubbled out this far: the reach of its cable
-                                  # loops (tied along the forearm, looped to the tool and the wrist D405 so the wrist
-                                  # can turn). A pair keeps the larger of its two bubbles: a loop must not reach the
-                                  # other arm's rigid parts; two loops may brush. 2026-09-29: the pink wrist's loops
-                                  # caught on the landed blue arm at a view planned 83-87 mm from it (pen to laser
-                                  # prop); views at 133-147 mm did not. A wrist keeps 100 mm from anything of the
-                                  # other arm, rigid links 20 mm from each other. 100 mm until 2026-09-30, when at
-                                  # palette v11, 12 cm from where blue lands, it left pink two headings by 1 mm each;
-                                  # 80 at the operator's call opens five with 15 mm to spare, above the snag
-  wrist_bodies: [link_5, link_6, carriage, realsense, tool]   # the padded bodies, by name after "<arm>/"
+collision:                        # the arm keeps off itself (tatbot_motion.collision.Guard; ros/README.md section 8).
+                                  # The unsafe state: the arm folding onto itself
   self_m: 0.010                   # the least planned gap between two of one arm's own bodies (Scene.self_pairs,
                                   # the wrist tag cube among them), no bubbles. 2026-09-30: an inspection view folded
                                   # the pink cube 11 mm into link_2 in the model; the arm met itself there

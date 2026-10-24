@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Recover both arms after a controller fault, in the same follower-then-leader
-# order used by normal session landing. Each single-arm launcher takes position
+# Recover both arms after a controller fault, follower first, then leader (the
+# order teleop lands them in). Each single-arm launcher takes position
 # control where that arm stands, then moves slowly staged -> sleep -> idle.
 set -uo pipefail
 

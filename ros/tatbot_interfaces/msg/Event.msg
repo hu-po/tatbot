@@ -15,6 +15,7 @@ string KIND_PAGE="page"
 string KIND_LANDED="landed"
 string KIND_MACHINE="machine"            # the tattoo machine switched on or off (ros/README.md 4.4)
 string KIND_PEN_TRIM="pen_trim"          # the operator's pen trim for the cartridge on the arm (ros/README.md 4.4)
+string KIND_DIP="dip"                    # the operator's dip scale and numpad dips, dips the charge adds or skips (ros/README.md 6)
 string KIND_ERROR="error"
 
 builtin_interfaces/Time stamp

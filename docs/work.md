@@ -8,16 +8,10 @@ neither landed nor parked with a reason.
 
 ## Why
 
-Two or three agents used to share one checkout and were told to "pull
---rebase and push often". A shared tree is never clean, so the rebase always
-refused. Agents improvised with cherry-picks into throwaway worktrees, which
-put every landed commit on origin under a new SHA while the original stayed
-on local `main`. After two weeks that local `main` was 25 commits ahead and 89
-behind, eleven "dirty" files were stale copies of landed commits nobody dared
-touch, and a real fix sat unpushed for a day because a commit-time gate had
-refused it. Work was durable only when someone remembered to land it.
-
-Here work is durable the moment it exists.
+Two or three agents work at once. A shared checkout is never clean, so a
+rebase in it refuses, and cherry-picks around that leave the same change under
+two SHAs. A worktree per session, its branch pushed after every commit, makes
+work durable the moment it exists.
 
 ## The commands
 
@@ -25,7 +19,7 @@ Here work is durable the moment it exists.
 | --- | --- |
 | `tatbot work start --task NAME` | A worktree under `~/tatbot-work/` on branch `agent/<node>/<session>`, cut from `origin/main` and pushed at once. `--adopt` moves uncommitted changes out of the mirror checkout into it, cutting the worktree at the mirror's own revision so they apply as written; `land` rebases them onto `main`. |
 | `tatbot work status` | Every worktree on this node: dirty files, commits ahead of `main`, unpushed commits, parked reason, idle time. Stale agent branches on origin with no worktree here. |
-| `tatbot work land` | Rebase onto `origin/main`, push the branch, run the land gate (lint, disclosure, the export gate, complexity of the changed files: what the author answers for, under a minute), push `HEAD:main`, retrying the rebase while `main` moves, then delete the agent branch. `--full-check` runs the whole fast tier first; `--no-check` skips the gate; CI runs everything on `main` regardless. `--done` removes the worktree. After the push, the repository's post-land hook (`internal/ci/post-land`, when present) receives the landed range as `base head`; a private tree uses it for infrastructure that must react to what landed — here, rebuilding the isolated CI worker's images when the diff changed an input they are built from, so the worker does not sit at "rebuild and redeploy required" until someone notices. A failing hook fails the land's exit code; the push is never undone. |
+| `tatbot work land` | Rebase onto `origin/main`, push the branch, run the land gate (lint, disclosure, the export gate, complexity of the changed files: what the author answers for, under a minute), push `HEAD:main`, retrying the rebase while `main` moves, then delete the agent branch. `--full-check` runs the whole fast tier first; `--no-check` skips the gate. `--done` removes the worktree. After the push, the repository's post-land hook (`internal/ci/post-land`, when present) receives the landed range as `base head`. A failing hook fails the land's exit code; the push is never undone. Landing does not deploy CI infrastructure or enable its scheduling. |
 | `tatbot work park "why"` | Leave the work unlanded on purpose: a `wip:` commit if the tree is dirty, pushed, with the reason recorded. |
 | `tatbot work sweep` | What the hourly timer runs: autosave dirty worktrees idle for 30 min as `wip:` commits, push anything unpushed, move edits left in the mirror for a day into a pushed `mirror-rescue` worktree, fast-forward the mirror, prune worktrees that are clean and landed and idle for a day, delete remote agent branches already contained in `main`. |
 | `tatbot work init` | Once per machine: mark this checkout as the mirror, arm the git hooks, install the user systemd timer. |
@@ -81,9 +75,12 @@ merged; a branch with unlanded commits is never deleted by anything here.
   `wip:` commits are what the sweeper and `park` make; squash or reword them
   before landing if they would be noise on `main`.
 - Land before you stop. Park only with a reason another person could act on.
-- Run `scripts/check` (the fast tier), `scripts/check rust` or `scripts/check
-  sim-fast` in the worktree as the change warrants; `land` runs only the gate
+- Run `scripts/check` (the fast tier), `scripts/check rust` or a project's own
+  job (`scripts/check --list`) in the worktree as the change warrants; `land` runs only the gate
   the author answers for, so that someone else's red job cannot strand a change.
+- Read CI's tested revision, execution age and reported suite coverage before
+  relying on a result. A fast pass does not establish native, simulator, GPU
+  or full test coverage; run the affected checks before landing.
 - A worktree costs a checkout of the tree, not a build: uv environments,
   `node_modules` and `rust/target` are per worktree and start cold. For a
   Rust or simulator task, keep the worktree for the whole task rather than

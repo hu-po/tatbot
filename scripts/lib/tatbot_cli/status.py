@@ -117,7 +117,7 @@ def _exists(path: Path) -> bool:
 
 def _estop_relay(device: str, nmap: dict) -> str:
     """The relay a `udp://[HOST]:PORT?from=SOURCE` e-stop reads: SOURCE's IPv4 address, or the `lan` of the
-    node carrying the role SOURCE names (lerobot_robot_tatbot.estop.udp_source reads it the same way)."""
+    node carrying the role SOURCE names (rust/tatbot-arm reads it the same way)."""
     source = (urllib.parse.parse_qs(urllib.parse.urlsplit(device).query).get("from") or [""])[0]
     try:
         return str(ipaddress.IPv4Address(source))
@@ -282,18 +282,7 @@ def _rig_power() -> dict | None:
     if state is None:
         return None
     return {"state": state["state"], "since": state.get("since"), "by": state.get("by"),
-            "run_id": state.get("run_id"), "wake_at": state.get("wake_at"),
-            "nodes": sorted(state.get("nodes", {}))}
-
-
-def _ink_session() -> dict | None:
-    import ink_session
-    s = ink_session.current()
-    if s is None:
-        return None
-    out = {k: v for k, v in vars(s).items() if isinstance(v, (str, int, float, bool)) or v is None}
-    out["describe"] = ink_session.describe(s)
-    return out
+            "run_id": state.get("run_id"), "nodes": sorted(state.get("nodes", {}))}
 
 
 def _serve() -> dict | None:
@@ -319,7 +308,7 @@ def _inkgen(timeout_s: float = 2.0) -> dict | None:
     """Is a design generator up on this node, and how long until it stops itself?
 
     A stopped generator is a negative fact, not a failed collection: it is meant
-    to come and go, and `tatbot design generate` starts one when it needs one.
+    to come and go, and `tatbot inkgen ctl -- start` starts one when it is needed.
     """
     import urllib.error
     import urllib.request
@@ -336,6 +325,19 @@ def _inkgen(timeout_s: float = 2.0) -> dict | None:
             "idle_stop_s": document.get("idle_stop_s"), "idle_stop_in_s": document.get("idle_stop_in_s"),
             "last_request_unix": document.get("last_request_unix"),
             "requests_in_flight": document.get("requests_in_flight")}
+
+
+def _gpu_record(nmap: dict, node: str) -> tuple[dict | None, str]:
+    """The node's `gpu` record (None: no lease here) and the row's reason."""
+    gpu = nmap.get(node, {}).get("gpu")
+    if gpu is None:
+        return None, "no `gpu` record for this node in config/nodes.json: no GPU lease"
+    return gpu, "slot holders, waiters and free memory; a GPU job takes its own slot"
+
+
+def _gpu_lease(gpu: dict, timeout_s: float) -> dict:
+    import gpu_lease
+    return gpu_lease.status(gpu, timeout_s=timeout_s)
 
 
 def _fleet_services(repo: Path, nmap: dict, timeout_s: float) -> dict:
@@ -355,6 +357,47 @@ def _fleet_services(repo: Path, nmap: dict, timeout_s: float) -> dict:
     return value
 
 
+class _Observer:
+    """Each observation of one local status pass, against one deadline. A required
+    observation that cannot be made leaves the report incomplete; a negative fact
+    does not."""
+
+    def __init__(self, node: str, deadline: float):
+        self.node, self.deadline = node, deadline
+        self.observations: dict[str, dict] = {}
+        self.complete = True
+
+    def __call__(self, name, probe=None, *, applicable=True, reason=None, boolean=False, value=None,
+                 informational=False):
+        state = "ok"
+        if not applicable:
+            state, value = "not_applicable", None
+            reason = reason or "not owned by this node's configured roles"
+        elif probe is None:
+            state = "unknown"
+            self.complete = self.complete and informational
+        elif time.monotonic() >= self.deadline:
+            state, value, reason = "unknown", None, "collection deadline expired"
+            self.complete = False
+        else:
+            try:
+                value = probe()
+                if boolean and value is False:
+                    state = "failed"
+            except (OSError, ValueError, TypeError, KeyError, ImportError, subprocess.SubprocessError) as exc:
+                state, value, reason = "unknown", None, f"{type(exc).__name__}: {exc}"
+                self.complete = self.complete and informational
+        self.observations[name] = {"node": self.node, "vantage_node": self.node, "checked_at": _utc(),
+                                   "status": state, "value": value, "reason": reason,
+                                   "required": applicable and not informational}
+        return value
+
+    def failed(self, name: str, reason: str | None = None) -> None:
+        self.observations[name]["status"] = "failed"
+        if reason is not None:
+            self.observations[name]["reason"] = reason
+
+
 def collect(repo: Path, *, cams: bool = False, timeout_s: float = 15.0, service_discovery: bool = True) -> dict:
     """Local only. Unknown collection failures make complete false; negative facts do not."""
     import tatbot_profile
@@ -364,36 +407,8 @@ def collect(repo: Path, *, cams: bool = False, timeout_s: float = 15.0, service_
     roles = nodes.roles_of(nmap, node)
     started = time.monotonic()
     deadline = started + timeout_s
-    observations = {}
-    complete = True
-
-    def observe(name, probe=None, *, applicable=True, reason=None, boolean=False, value=None,
-                informational=False):
-        nonlocal complete
-        state = "ok"
-        if not applicable:
-            state, value = "not_applicable", None
-            reason = reason or "not owned by this node's configured roles"
-        elif probe is None:
-            state = "unknown"
-            if not informational:
-                complete = False
-        elif time.monotonic() >= deadline:
-            state, value, reason = "unknown", None, "collection deadline expired"
-            complete = False
-        else:
-            try:
-                value = probe()
-                if boolean and value is False:
-                    state = "failed"
-            except (OSError, ValueError, TypeError, KeyError, ImportError, subprocess.SubprocessError) as exc:
-                state, value, reason = "unknown", None, f"{type(exc).__name__}: {exc}"
-                if not informational:
-                    complete = False
-        observations[name] = {"node": node, "vantage_node": node, "checked_at": _utc(),
-                              "status": state, "value": value, "reason": reason,
-                              "required": applicable and not informational}
-        return value
+    observe = _Observer(node, deadline)
+    observations = observe.observations
 
     profile = observe("profile", lambda: tatbot_profile.load(repo))
     driver = (profile or {}).get("driver") or {}
@@ -417,26 +432,27 @@ def collect(repo: Path, *, cams: bool = False, timeout_s: float = 15.0, service_
                         applicable="estop" in roles, informational=True,
                         reason=None if estop else "device path not configured")
     if heartbeat and heartbeat["state"] != "ok":
-        observations["estop_heartbeat"]["status"] = "failed"
+        observe.failed("estop_heartbeat")
     observe("arm_connection_ready", applicable="arm" in roles, informational=True,
             reason="not probed: ping does not establish driver readiness; status never opens an arm connection")
     observe("fitted_tool_last_touchoff", lambda: _tool(repo), reason="last touch-off record, not physical tool verification")
-    observe("ink_session", _ink_session)
     observe("runs_running", lambda: _runs(node))
     observe("unlanded_work", lambda: _unlanded_work(repo), informational=True,
             reason="worktrees with uncommitted or unpushed-to-main changes (tatbot work status)")
     rig_state = observe("rig_power", _rig_power, informational=True,
                         reason="the `tatbot rig sleep` marker on this node; absent means never slept here")
     if rig_state and rig_state.get("state") == "asleep":
-        observations["rig_power"]["status"] = "failed"
-        observations["rig_power"]["reason"] = "asleep: hardware verbs refuse until `tatbot rig wake`"
+        observe.failed("rig_power", "asleep: hardware verbs refuse until `tatbot rig wake`")
     root = gates.train_root()
     observe("training_lock", lambda: locks.held(root / ".tatbot-training.lock"), applicable="train" in roles,
             reason="point-in-time advisory-lock ownership; the launcher acquires its own lock")
     observe("sweep_pause", lambda: _exists(root / "SWEEP_PAUSE"), applicable="train" in roles)
+    gpu, gpu_reason = _gpu_record(nmap, node)
+    observe("gpu_lease", lambda: _gpu_lease(gpu, min(5.0, max(0.001, deadline - time.monotonic()))),
+            applicable=gpu is not None, reason=gpu_reason)
     server = observe("policy_server", _serve, applicable="serve" in roles)
     if server and not server["alive"]:
-        observations["policy_server"]["status"] = "failed"
+        observe.failed("policy_server")
     observe("inkgen", lambda: _inkgen(min(2.0, max(0.001, deadline - time.monotonic()))),
             applicable="inkgen" in roles,
             reason="the generator is started on demand and stops itself when idle; absent is normal")
@@ -447,7 +463,7 @@ def collect(repo: Path, *, cams: bool = False, timeout_s: float = 15.0, service_
             observe(f"cameras.{name}", lambda ip=ip: _ping(ip, min(1.5, deadline - time.monotonic())),
                     applicable="cameras-lan" in roles, boolean=True)
     return {"schema": SCHEMA, "schema_version": 2, "scope": "local", "node": node,
-            "vantage_node": node, "checked_at": _utc(), "roles": roles, "complete": complete,
+            "vantage_node": node, "checked_at": _utc(), "roles": roles, "complete": observe.complete,
             "elapsed_s": round(time.monotonic() - started, 3), "observations": observations}
 
 

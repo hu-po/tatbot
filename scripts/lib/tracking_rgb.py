@@ -5,8 +5,18 @@ import json
 
 import numpy as np
 from robot_world import root_from_world
-from stencil_cross_camera import rigid_transform
 from visiond_wire import decode_video
+
+
+def rigid_transform(value):
+    """A finite SE(3) matrix to a calibration bundle's float precision, else ValueError."""
+    matrix = np.asarray(value, float)
+    if (matrix.shape != (4, 4) or not np.isfinite(matrix).all()
+            or not np.allclose(matrix[3], [0, 0, 0, 1])
+            or not np.allclose(matrix[:3, :3].T @ matrix[:3, :3], np.eye(3), atol=1e-5)
+            or not np.isclose(np.linalg.det(matrix[:3, :3]), 1)):
+        raise ValueError('camera_transform_not_rigid')
+    return matrix
 
 
 def registered_frame(entry, camera, robot, manifest, calibration_id, read_payload):

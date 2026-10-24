@@ -4,16 +4,13 @@ from __future__ import annotations
 
 import os
 
-import stencil_arguments
-import stencil_bench_arguments
-import stencil_frame
 import stencil_generate
-import stencil_print
 import stencil_reference
+import stencil_tile
 
 from tatbot_cli import nodes
 from tatbot_cli.registry import MUTATES_CONFIG, OFFLINE, REMOTE, SENSOR, Plan, RoleFrom, verb
-from tatbot_cli.verbs._common import lerobot_py, py, sh, tool_flag
+from tatbot_cli.verbs._common import lerobot_py, py, sh
 
 
 def _depth_compare_args(p):
@@ -34,200 +31,38 @@ def depth_compare(ctx, ns, rest):
                       ctx.path('scripts/vision/depth_compare.py'), *args])
 
 
-def _board_witness_args(p):
-    p.add_argument('--python', required=True, help='existing native-vision interpreter; no installation')
-    p.add_argument('--capture', nargs='+', required=True, help='original retained RGB-D capture manifests')
-    for name in ('inventory', 'measurement', 'color-sensor', 'out'):
-        p.add_argument('--'+name, required=True)
-    p.add_argument('--pose-inputs', help='retained wrist configuration root for conditional static-tag consistency')
-    p.add_argument('--mount-fit-indices', type=int, nargs='+', help='explicit capture indices for unadopted mount candidates')
-
-
-@verb(effects=('read_files', 'write_files', 'start_process'), noun='vision', verb='board witness',
-      tier=OFFLINE, visibility='public', args=_board_witness_args, doc='docs/vision.md',
-      summary='compare retained board depth with independently measured fiducial size',
-      wraps=('scripts/vision/board_witness.py', 'scripts/vision/board_mount_witness.py'),
-      example=('--python', '/path/to/validated/python', '--capture', 'capture.json',
-               '--inventory', 'fiducials.json', '--measurement', 'measurement.json',
-               '--color-sensor', 'wrist_color', '--out', '/tmp/board-witness'),
-      invariants=('Uses the shared original capture reader and native alignment geometry.',
-                  'Retains all planar pose branches and missing depth; never adopts calibration or commands hardware.'))
-def board_witness(ctx, ns, rest):
-    args = ['--capture', *ns.capture]
-    for name in ('inventory', 'measurement', 'color_sensor', 'out'):
-        args += ['--'+name.replace('_', '-'), getattr(ns, name)]
-    if ns.pose_inputs:
-        args += ['--pose-inputs', ns.pose_inputs]
-    if ns.mount_fit_indices is not None:
-        args += ['--mount-fit-indices', *map(str, ns.mount_fit_indices)]
-    return Plan(argv=[ns.python, ctx.path('scripts/vision/board_witness.py'), *args],
-                env={'PYTHONPATH': os.pathsep.join((ctx.path('scripts/lib'), ctx.path('scripts/vision')))})
-
+# The throwaway uv environments' exact pins: the stencil renderer's, which the tests run (Pillow is
+# stencil_tile.PILLOW_REQUIREMENT).
+NUMPY, OPENCV = "numpy==2.5.3", "opencv-python-headless==5.0.0.93"
 CALIB_INV = ("config/fiducials.json is the only hand-edited fiducial inventory.",
              "Golden copies live outside the repo: ~/tatbot-logs/vision/calibration-current.json, robot-world-current.json.")
 
 
 @verb(effects=('read_files', 'write_files', 'start_process'), visibility="public",
       noun="vision", verb="stencil generate", tier=OFFLINE, output="json",
-      summary="generate a stencil frame: the coded flower-of-life (default) or the legacy floral frame, with print sheets",
-      wraps=("scripts/lib/stencil_generate.py",), args=stencil_generate.add_arguments,
-      example=("--seed", "101", "--output", "~/tatbot-logs/stencils/coded-101"),
+      summary="generate the skin stencil: a fiducial tile of AprilTag 16h5 markers with its 300 dpi print",
+      wraps=("scripts/lib/stencil_generate.py", "scripts/lib/stencil_tile.py"), args=stencil_generate.add_arguments,
+      example=("--preset", "silicone", "--seed", "0", "--output", "~/tatbot-logs/stencils/silicone-tile-0"),
       doc="docs/stencil-frames.md",
-      invariants=("Writes the artwork (PNG, SVG, settings.json, tracking.json; coded.json for a coded print) into --output "
-                  "and print sheets into its print/ locally; first use may download the pinned numpy and Pillow environment.",
-                  "The coded frame is an encoded print code: the print ID, from --seed or freshly minted, seeds every "
-                  "lattice bit; there is no separate print-ID grid.",
-                  "The centre is left for the tattoo, but coded knots can reach up to about 0.9 mm into the nominal "
-                  "clear centre; settings.json border_inner_mm records each side's innermost ink.",
-                  "The same design, seed and settings reproduce the artwork; a marked flower-of-life print also needs "
-                  "its --instance-id."))
+      invariants=("Writes the artwork (stencil.png, tile.json, settings.json, tracking.json) into --output and the "
+                  "printable PNG into its print/ locally; first use may download the pinned numpy, Pillow and OpenCV "
+                  "environment.",
+                  "Every code on a sheet is distinct; the same layout and seed reproduce the print."))
 def stencil_generate_frame(ctx, ns, rest):
     stencil_generate.validate(ns)
-    return Plan(argv=["uv", "run", "--no-project", "--python", "3.12", "--with", "numpy==2.5.3",
-                      "--with", stencil_frame.PILLOW_REQUIREMENT,
+    return Plan(argv=["uv", "run", "--no-project", "--python", "3.12", "--with", NUMPY,
+                      "--with", stencil_tile.PILLOW_REQUIREMENT, "--with", OPENCV,
                       "python", ctx.path("scripts/lib/stencil_generate.py"), *stencil_generate.forward(ns), *rest])
 
 
 @verb(effects=('read_files', 'write_files', 'start_process'), noun="vision", verb="stencil reference", visibility="public",
       tier=OFFLINE, output="json", args=stencil_reference.add_arguments,
-      summary="export a tracking manifest for existing generated stencil artwork",
+      summary="export a tracking manifest for a generated fiducial tile, and install it where the observer reads",
       wraps=("scripts/lib/stencil_reference.py",), doc="docs/stencil-frames.md",
       example=("--settings", "stencil/settings.json"))
 def stencil_reference_export(ctx, ns, rest):
     return py(ctx, "scripts/lib/stencil_reference.py", "--settings", ns.settings,
               *(["--install"] if ns.install else []))
-
-
-@verb(effects=('read_files', 'write_files', 'start_process'), noun="vision", verb="stencil print", visibility="public",
-      tier=OFFLINE, output="json", args=stencil_print.add_arguments,
-      summary="print sheets for a stencil: millimetre rulers, a pattern and size label, stencil-app PNG and paper PDFs",
-      wraps=("scripts/lib/stencil_print.py",), doc="docs/stencil-frames.md",
-      example=("--seed", "101", "--output", "~/tatbot-logs/stencils/coded-101"),
-      invariants=("Writes print/ (stencil-app.png, paper-a4.pdf, paper-letter.pdf, sheet.svg, sheet.json) locally.",
-                  "With --seed it first generates the coded flower-of-life default design into artwork/.",
-                  "The rulers and label sit outside the stencil page; tracking.json page coordinates are unchanged."))
-def stencil_print_sheets(ctx, ns, rest):
-    stencil_print.validate(ns)
-    argv = ["--output", ns.output, "--dpi", str(ns.dpi)]
-    argv += ["--artwork", ns.artwork] if ns.artwork else ["--seed", ns.seed]
-    argv += ["--fit-area", ns.fit_area] if ns.fit_area else []
-    for pair in ns.set or ():
-        argv += ["--set", pair]
-    return Plan(argv=["uv", "run", "--no-project", "--python", "3.12", "--with", "numpy==2.5.3",
-                      "--with", stencil_frame.PILLOW_REQUIREMENT,
-                      "python", ctx.path("scripts/lib/stencil_print.py"), *argv, *rest])
-
-
-def _stencil_plan(ctx, ns, mode):
-    stencil_arguments.validate(ns, ctx.repo)
-    argv = [mode, "--instance", ns.instance, "--output", ns.output, "--max-frames", str(ns.max_frames)]
-    for reference in ns.reference:
-        argv += ["--reference", reference]
-    for option in ("all_references", "surface", "rerun"):
-        if getattr(ns, option):
-            argv += ["--"+option.replace("_", "-")]
-    for option in ("frames", "recording", "truth", "socket", "sensor", "duration_s", "connect", "recording_id"):
-        value = getattr(ns, option, None)
-        if value is not None:
-            argv += ["--"+option.replace("_", "-"), str(value)]
-    if ns.region is not None:
-        argv += ["--region", ",".join(str(value) for value in ns.region)]
-    display = ["--with", "rerun-sdk==0.36.0"] if ns.rerun or ns.connect else []
-    return Plan(argv=["uv", "run", "--no-project", "--python", "3.12", *display,
-                      "--with", "numpy==2.5.3", "--with", "opencv-python-headless==5.0.0.93",
-                      "python", ctx.path("scripts/vision/stencil_observe.py"), *argv])
-
-
-@verb(effects=('read_files', 'write_files', 'start_process', 'network'), noun="vision", verb="stencil replay", visibility="public",
-      tier=OFFLINE, args=stencil_arguments.replay, wraps=("scripts/vision/stencil_observe.py",),
-      summary="replay known stencil tracking and optional advisory surface candidates",
-      doc="docs/stencil-frames.md", example=("--reference", "stencil/tracking.json", "--instance", "skin-a",
-                                            "--frames", "frames.jsonl", "--output", "/tmp/stencil-replay"),
-      invariants=("Optional surface candidates remain unqualified; geometry_valid and motion_authority stay false.",
-                  "Evaluation labels are read after tracking and cannot influence detections."))
-def stencil_replay(ctx, ns, rest):
-    return _stencil_plan(ctx, ns, "replay")
-
-
-@verb(effects=('read_files', 'write_files', 'start_process', 'sensor_read', 'network'), noun="vision", verb="stencil observe", visibility="public",
-      tier=SENSOR, args=stencil_arguments.observe, wraps=("scripts/vision/stencil_observe.py",),
-      summary="observe known stencils from an existing visiond owner socket",
-      doc="docs/stencil-frames.md", example=("--reference", "stencil/tracking.json", "--instance", "skin-a",
-                                            "--socket", "/tmp/frames.sock", "--sensor", "rgb",
-                                            "--output", "/tmp/stencil-observation"),
-      invariants=("Subscribes to the existing frame owner.",
-                  "Writes advisory image and optional surface observations without publishing material poses.",
-                  "Capture age is reported but clock synchronization and geometry are not certified."))
-def stencil_observe(ctx, ns, rest):
-    return _stencil_plan(ctx, ns, "observe")
-
-
-@verb(effects=('read_files', 'write_files', 'start_process'), noun="vision", verb="stencil bench", visibility="public",
-      tier=OFFLINE, output="json", args=stencil_bench_arguments.add_arguments,
-      wraps=("scripts/vision/stencil_bench.py",),
-      summary="score a stencil design and tracker in mm on seeded 2-D transfer scenes (tier 0)",
-      doc="docs/stencil-bench.md", example=("--seed", "tatbot-42", "--tracker", "sift"),
-      invariants=("CPU only: renders synthetic scenes; reads no camera, arm or network.",
-                  "Writes scorecard.json, scenes.jsonl and contact sheets to the stencil-bench run directory.",
-                  "The holdout bank is for reports; a design search tunes on the train bank only."))
-def stencil_bench(ctx, ns, rest):
-    stencil_bench_arguments.validate(ns)
-    argv = []
-    for option in ("candidate", "artwork", "seed", "tracker", "bank", "scenes", "camera", "degradation",
-                   "workers", "worst", "calibration", "robot_world", "output"):
-        value = getattr(ns, option)
-        if value is not None and not (option == "candidate" and ns.artwork):
-            argv += ["--"+option.replace("_", "-"), str(value)]
-    for pair in ns.set or ():
-        argv += ["--set", pair]
-    if ns.marked:
-        argv += ["--marked"]
-    learned = [arg for requirement in stencil_bench_arguments.LEARNED_REQUIREMENTS for arg in ("--with", requirement)]
-    return Plan(argv=["uv", "run", "--no-project", "--python", "3.12", "--with", "numpy==2.5.3",
-                      "--with", "opencv-python-headless==5.0.0.93", "--with", stencil_frame.PILLOW_REQUIREMENT,
-                      *(learned if ns.tracker == "lightglue" else []),
-                      "python", ctx.path("scripts/vision/stencil_bench.py"), *argv, *rest])
-
-
-def _touchoff_args(p):
-    p.add_argument("target", help="session dir (touches.json / teleop.wxtl) or a .wxtl")
-    p.add_argument("--write", action="store_true", help="write config/workspace.yaml (else print only)")
-
-
-def _measurement_effects(effects, ns, rest):
-    return effects if ns.write else effects - {"write_config"}
-
-
-@verb(refine_effects=_measurement_effects, effects=('read_files', 'write_config'), noun="vision", verb="touchoff", tier=MUTATES_CONFIG, summary="solve the pen-tip offset and paper plane from touch-off samples",
-      wraps=("scripts/il_touchoff.py",), passthrough="il_touchoff.py", args=_touchoff_args, needs_tool=True,
-      example=("~/tatbot-logs/vision/calib-sessions/sweep-20260826_122203",), doc="docs/tools.md",
-      invariants=("--write records the stated tool in config/workspace.yaml; a swap invalidates it.",))
-def touchoff(ctx, ns, rest):
-    flag = ["--write"] if ns.write else []
-    # The solver needs numpy (il_touchoff.py:54); bare python3 lacks it.
-    return _vision_py(ctx, "scripts/il_touchoff.py", ns.target, *tool_flag(ctx), *flag, *rest)
-
-
-# --- tracking --------------------------------------------------------------------
-
-
-def _dur_arg(p):
-    p.add_argument("duration_s", nargs="?")
-    sources = p.add_mutually_exclusive_group()
-    sources.add_argument("--subscribe", metavar="SOCKET", help="run the Python reference tracker against an existing camera-owner socket")
-    sources.add_argument("--subscribe-native", metavar="SOCKET", help="run the existing native shadow tracker against an existing camera-owner socket")
-
-
-@verb(effects=('read_files', 'write_files', 'sensor_read', 'network'), noun="vision", verb="track", tier=SENSOR, summary="vision-only 5-camera EE tracking shadow — never opens an arm connection",
-      role="poe-cameras", auto_hop=True, wraps=("scripts/vision/ee_tracking_shadow.sh", "scripts/vision/ee_tracker.py"),
-      args=_dur_arg, example=("30",), doc="docs/ee_fiducial_tracking.md",
-      invariants=("Runs on the camera node (cameras, credentials, NVDEC, the fiducials build); from any other node "
-                  "the CLI hops there — the script no longer delegates itself.",))
-def track(ctx, ns, rest):
-    pos = [ns.duration_s or "30", "--subscribe", ns.subscribe] if ns.subscribe else ([ns.duration_s] if ns.duration_s else [])
-    if ns.subscribe_native:
-        pos = [ns.duration_s or "30", "--subscribe-native", ns.subscribe_native]
-    return sh(ctx, "scripts/vision/ee_tracking_shadow.sh", *pos, *rest)
 
 
 # --- tags ------------------------------------------------------------------------
@@ -243,22 +78,14 @@ def _vision_py(ctx, rel, *args, **kw):
     return Plan(argv=[interp, ctx.path(rel), *args], **kw)
 
 
-@verb(effects=('read_files', 'write_files', 'sensor_read', 'network'), noun="vision", verb="tags scan", tier=SENSOR, summary="scan the cameras for the inventory's AprilTags (runs on the camera node)",
-      role="poe-cameras", auto_hop=True, wraps=("scripts/vision/tag_scan.py",), passthrough="tag_scan.py",
-      example=("--", "--help"), doc="docs/fiducials.md",
-      invariants=("tag_scan.py imports cv2, which only the camera node's system python has (the operator vision venv is "
-                  "numpy + faster-whisper), so this hops there; every camera is on that node's LAN.",))
-def tags_scan(ctx, ns, rest):
-    return py(ctx, "scripts/vision/tag_scan.py", *rest)
-
-
 @verb(effects=('read_files', 'write_files'), visibility="public", noun="vision", verb="tags print", tier=OFFLINE, summary="render the wrist-tag print sheet",
       wraps=("scripts/vision/generate_wrist_tags.py",), passthrough="generate_wrist_tags.py", example=("--", "--help"), doc="docs/fiducials.md")
 def tags_print(ctx, ns, rest):
     # cv2 lives on no operator node (the vision venv has numpy only; cv2 is on the camera node), and the
     # sheet is a tracked file in THIS checkout — so a throwaway uv env, not a hop.
-    return Plan(argv=["uv", "run", "--no-project", "--with", "opencv-python-headless", "--with", "numpy",
-                      "--with", "Pillow", "python", ctx.path("scripts/vision/generate_wrist_tags.py"), *rest],
+    return Plan(argv=["uv", "run", "--no-project", "--with", OPENCV, "--with", NUMPY,
+                      "--with", stencil_tile.PILLOW_REQUIREMENT, "python", ctx.path("scripts/vision/generate_wrist_tags.py"),
+                      *rest],
                 notes=["renders with a throwaway uv env (opencv-python-headless, Pillow): first run downloads it"])
 
 
@@ -305,7 +132,7 @@ def _target_track_args(p):
     p.add_argument('--layout', required=True, help='measured target layout; tag transforms are target-from-tag')
     p.add_argument('--calibration', required=True, help='camera calibration used by the running frame owner')
     p.add_argument('--connect', required=True, help='existing session bus endpoint')
-    p.add_argument('--socket', required=True, help='existing PoE frame-owner socket')
+    p.add_argument('--socket', required=True, help='existing camera-owner frame socket')
     p.add_argument('--output', required=True, help='estimate JSONL outside the repository')
 
 
@@ -359,7 +186,7 @@ def surface_replay(ctx, ns, rest):
         args.append("--recover")
     if ns.rerun:
         args.append("--rerun")
-    return Plan(argv=["uv", "run", "--no-project", "--with", "numpy", "--with", "opencv-python-headless",
+    return Plan(argv=["uv", "run", "--no-project", "--with", NUMPY, "--with", OPENCV,
                       *(["--with", "rerun-sdk==0.36.0"] if ns.rerun else []),
                       "python", ctx.path("scripts/vision/surface_replay.py"), *args])
 
@@ -400,9 +227,9 @@ def surface_rgbd(ctx, ns, rest):
     if ns.rerun:
         args.append("--rerun")
     open3d = [] if ns.stationary_depth else ["--with", "open3d==0.19.0"]
-    realsense = [] if ns.stationary_depth else ["--with", "pyrealsense2"]
+    realsense = [] if ns.stationary_depth else ["--with", "pyrealsense2==2.58.4.10922"]   # the nodes' librealsense
     return Plan(argv=["uv", "run", "--no-project", "--python", "3.12", *open3d,
-                      "--with", "opencv-python-headless", "--with", "threadpoolctl", *realsense,
+                      "--with", OPENCV, "--with", "threadpoolctl==3.6.0", *realsense,
                       *(["--with", "rerun-sdk==0.36.0"] if ns.rerun else []),
                       "python", ctx.path("scripts/vision/surface_rgbd.py"), *args])
 
@@ -447,8 +274,8 @@ def surface_attachment_benchmark(ctx, ns, rest):
 def _capture_args(p):
     p.add_argument("mode", choices=("once",), help="once: one capture")
     p.add_argument("dir", help="where capture-<k>.npz go")
-    p.add_argument("--arm", choices=("left", "right"),
-                   help="the arm whose wrist cameras answer (required, never a default)")
+    p.add_argument("--arm", choices=("right",),
+                   help="the arm whose wrist cameras answer (required, never a default; the pink arm's alone carry any)")
     p.add_argument("--fake", action="store_true", help="synthetic tilted-plane depth; no cameras opened")
     p.add_argument("--from-owner", action="store_true", help="subscribe to the existing D405 camera owner")
 
@@ -456,7 +283,7 @@ def _capture_args(p):
 def _capture_arm(ns) -> str:
     """The arm a capture invocation names: stated, never defaulted."""
     if not ns.arm:
-        raise ValueError("vision capture once needs --arm left|right: the arm whose wrist cameras answer")
+        raise ValueError("vision capture once needs --arm right: the arm whose wrist cameras answer")
     return ns.arm
 
 

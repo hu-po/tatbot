@@ -8,10 +8,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import arm_kinematics as kin
-import numpy as np
 import pytest
 import wrist_cameras
-import yaml
 from tatbot_cli import arms
 
 REPO = Path(__file__).resolve().parents[2]
@@ -118,33 +116,18 @@ def test_collection_bindings_and_wrist_variations(tmp_path, count):
     assert roles['pink'] == ('wrist_upper',)
     for arm in expected:
         model = kin.ArmModel(arm, repo=repo)
-        model.assert_cpp_wxai_compatible()
-        assert model.frame == f'{arms.load(repo)[arm].urdf_prefix}/base_link'
-        np.testing.assert_allclose(model.root_from_base(model.base_from_root([0., 0., 0.])), [0., 0., 0.])
+        prefix = arms.load(repo)[arm].urdf_prefix
+        assert model.frame == f'{prefix}/base_link' and model.carriage_joint == f'{prefix}/left_carriage_joint'
     pink = kin.ArmModel('pink', repo=repo)
-    assert pink.prefix == 'right' and pink.golden_path.name == 'follower.yaml'
+    assert pink.prefix == 'right' and pink.controller_role == 'follower'
     assert wrist_cameras.capture_arm(['wrist_upper'], repo=repo) == 'pink'
     if count >= 2:
         assert roles['blue'] == ()
         assert wrist_cameras.optical_frames(repo, arm='blue', stream='depth') == {}
     if count >= 3:
-        green = kin.ArmModel('green', repo=repo)
-        np.testing.assert_allclose(green.base_in_root, [0.8, -0.3, 0.0])
         frames = wrist_cameras.optical_frames(repo, arm='green', stream='depth')
         assert set(frames) == {'probe_a', 'probe_b'}
         assert wrist_cameras.capture_arm(['probe_a', 'probe_b'], repo=repo) == 'green'
-        seed = np.array([0.2, 1.3, 0.7, 0.0, 0.0, 1.1])
-        target, rotation, _ = green.fk_tcp(seed, 0.0)
-        np.testing.assert_allclose(green.solve_ik(target, rotation, seed), seed, atol=1e-12)
-
-
-def test_tool_swap_refuses_stale_touch_off(tmp_path):
-    repo, _ = configured_repo(tmp_path, 1)
-    path = repo / 'config/workspace.yaml'
-    fitted = yaml.safe_load(path.read_text())['right']['tool_id']
-    path.write_text(path.read_text().replace(f'  tool_id: {fitted}', '  tool_id: picosecond-laser-pen', 1))
-    with pytest.raises(ValueError, match='fitted tool differs from retained tip calibration'):
-        kin.ArmModel('pink', repo=repo).tcp_in_link6()
 
 
 def test_cross_arm_camera_frame_is_refused(tmp_path):
@@ -154,37 +137,3 @@ def test_cross_arm_camera_frame_is_refused(tmp_path):
                                              'right/realsense_depth_optical_frame', 1))
     with pytest.raises(ValueError, match='another arm'):
         wrist_cameras.optical_frames(repo, arm='green', stream='depth')
-
-
-@pytest.mark.parametrize(('change', 'match'), [
-    ('origin', 'joint_2 differs from the C\\+\\+ WXAI joint model'),
-    ('axis', 'joint_2 differs from the C\\+\\+ WXAI joint model'),
-    ('urdf_limit', 'joint_2 differs from the C\\+\\+ WXAI joint model'),
-    ('carriage', 'carriage differs from the C\\+\\+ WXAI \\+Y model'),
-    ('controller_limit', 'controller limits exclude the C\\+\\+ planning window'),
-])
-def test_cpp_wxai_admission_refuses_a_different_third_chain_or_limit(tmp_path, change, match):
-    repo, _ = configured_repo(tmp_path, 3)
-    kin.ArmModel('green', repo=repo).assert_cpp_wxai_compatible()
-    if change == 'controller_limit':
-        path = repo / 'config/trossen/third.yaml'
-        profile = yaml.safe_load(path.read_text())
-        profile['joint_limits'][2]['position_max'] = 2.0
-        path.write_text(yaml.safe_dump(profile))
-    else:
-        path = repo / 'urdf/tatbot.urdf'
-        urdf = ET.parse(path)
-        joint = next(row for row in urdf.getroot().findall('joint')
-                     if row.get('name') == ('third/left_carriage_joint' if change == 'carriage'
-                                            else 'third/joint_2'))
-        if change == 'origin':
-            joint.find('origin').set('xyz', '-0.263 0 0')
-        elif change == 'axis':
-            joint.find('axis').set('xyz', '0 1 0')
-        elif change == 'urdf_limit':
-            joint.find('limit').set('upper', '2.0')
-        else:
-            joint.find('axis').set('xyz', '0 -1 0')
-        urdf.write(path)
-    with pytest.raises(ValueError, match=match):
-        kin.ArmModel('green', repo=repo).assert_cpp_wxai_compatible()

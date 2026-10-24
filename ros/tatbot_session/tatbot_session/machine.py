@@ -16,6 +16,8 @@ import threading
 import time
 from dataclasses import dataclass
 
+from tatbot_session.ports import WALL
+
 ESTOP_PRESSED, ESTOP_RELEASED, ESTOP_SILENT = 0, 1, 2   # MCS1's e-stop field (the relay's)
 
 
@@ -34,6 +36,15 @@ class Answer:
     powered: bool
     estop: int
     at: float   # monotonic
+
+
+def reply(switch) -> tuple[bool, float]:
+    """SafetyState's (machine_powered, machine_reply_age_s): the newest reply's powered field and its age in s;
+    (False, -1) with no switch or before its first reply. Display only: nothing gates on it."""
+    answer = getattr(switch, "answer", None)
+    if answer is None:
+        return False, -1.0
+    return answer.powered, max(0.0, time.monotonic() - answer.at)
 
 
 class PiSwitch:
@@ -118,13 +129,32 @@ class PiSwitch:
 
 
 class SimSwitch:
-    """A switch that does what it is asked at once (mock and fake hardware)."""
+    """A switch that does what it is asked at once (mock, fake and simulated hardware). A simulated machine hears each
+    change: `sink(on, t_ns)` in process, or to `endpoint` (udp://host:port, stack.yaml machine.sim_endpoint) the
+    datagram `machine <0|1> <seq> <t_ns>`; t_ns is `clock`'s (the session's) now."""
 
-    def __init__(self):
-        self.on = False
+    def __init__(self, sink=None, endpoint=None, clock=None):
+        self.on, self.sink, self.clock, self._seq, self._dest = False, sink, clock, 0, None
+        if endpoint:
+            host, port = str(endpoint).removeprefix("udp://").rsplit(":", 1)
+            self._dest, self._sock = (host, int(port)), socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    @property
+    def answer(self) -> Answer:
+        """It answers at once: the machine powered as asked, now."""
+        return Answer(0, self.on, self.on, ESTOP_RELEASED, time.monotonic())
 
     def set(self, on: bool) -> None:
-        self.on = bool(on)
+        changed, self.on = bool(on) != self.on, bool(on)
+        if not changed or (self.sink is None and self._dest is None):
+            return
+        self._seq += 1
+        t_ns = int(round((self.clock or WALL).now() * 1e9))
+        if self.sink is not None:
+            self.sink(self.on, t_ns)
+        if self._dest is not None:
+            with contextlib.suppress(OSError):
+                self._sock.sendto(b"machine %d %d %d" % (self.on, self._seq, t_ns), self._dest)
 
     def wait(self, on: bool, timeout_s: float) -> bool:
         self.set(on)
@@ -138,16 +168,19 @@ class SimSwitch:
 
     def close(self) -> None:
         self.set(False)
+        if self._dest is not None:
+            self._sock.close()
 
 
-def from_stack(stack: dict, arm: str):
-    """stack.yaml `machine`: the switch of the arm it names, or None."""
+def from_stack(stack: dict, arm: str, clock=None, sink=None):
+    """stack.yaml `machine`: the switch of the arm it names, or None. A sim switch tells `sink` (an in-process
+    simulator), else machine.sim_endpoint, each change on `clock`."""
     cfg = stack.get("machine") or {}
     kind = cfg.get("switch", "none")
     if kind == "none" or cfg.get("arm") != arm:
         return None
     if kind == "sim":
-        return SimSwitch()
+        return SimSwitch(sink, None if sink is not None else cfg.get("sim_endpoint"), clock)
     if kind != "pi":
         raise ValueError(f"stack.yaml machine.switch is none, pi or sim, not {kind!r}")
     if not cfg.get("addr"):

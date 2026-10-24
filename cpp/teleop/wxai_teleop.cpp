@@ -64,9 +64,9 @@
 // the tatbot CLI from the hardware profile) or the two positionals; leader =
 // arm with the standard Trossen leader handle, follower = arm with the fixed
 // tool mount on its left finger carriage. The optional YAML configs are the
-// per-arm files saved by src/tatbot/bot/trossen_config.py (joint
-// characteristics etc.); their stale tatbot 1.0 end-effector section is
-// overridden with the standard EE model after loading.
+// per-arm controller files in config/trossen/ (joint characteristics etc.);
+// their end-effector section is overridden with the standard EE model after
+// loading.
 //
 // The loop pins itself to the machine's fastest cores and asks for SCHED_FIFO
 // before the drivers connect, so the SDK's UDP daemon threads inherit both.
@@ -88,6 +88,7 @@
 // device; --no-estop is an explicit hardware-free bench opt-out rejected by
 // production launchers.
 
+#include "arm_model.hpp"
 #include "driver_lease.hpp"
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -156,21 +157,6 @@ constexpr int estop_fault = tatbot::estop::fault;
 std::atomic<int> g_estop{estop_disabled};
 
 using tatbot::teleop::StopChoice;
-
-bool request_probe_landing(const char * tag = "operator-release")
-{
-  const char * raw_path = std::getenv("TATBOT_PROBE_LAND_SENTINEL");
-  if (!raw_path || !*raw_path) {return false;}
-  const std::filesystem::path path(raw_path);
-  if (path.parent_path() != "/tmp" ||
-    path.filename().string().rfind("tatbot-probe-land-", 0) != 0)
-  {
-    return false;
-  }
-  std::ofstream sentinel(path);
-  sentinel << tag << "\n";
-  return static_cast<bool>(sentinel);
-}
 
 // Wait at the controlled-stop prompt: Enter releases to idle, a line
 // containing 'r' resumes teleoperation, a further stop signal is an
@@ -244,7 +230,7 @@ constexpr int CONTACT_BASELINE_TICKS = 800;      // ticks of tracking that defin
 constexpr double CONTACT_BASELINE_TAU_S = 10.0;  // slow drift tracking of the rest baseline
 constexpr double CONTACT_BASELINE_TRACK = 0.25;  // ...only while within this fraction of the cap
 constexpr double CARRIAGE_TRIP_GOAL_S = 0.6;     // s, retract goal time (30 mm -> 0.05 m/s, gentle on the trajectory limits)
-// In-session landing (recovery.py's STAGED_POSE_S / LANDED_TOLERANCE_RAD).
+// In-session landing (arm_recover's STAGED_POSE_S / LANDED_TOLERANCE_RAD).
 constexpr double LAND_STAGED_S = 4.0;
 constexpr double LAND_SETTLE_S = 0.5;
 constexpr double LAND_TOLERANCE_RAD = 0.20;
@@ -421,7 +407,7 @@ void resolve_tool(const std::string & tool_id, bool uncalibrated = false,
 
 }  // namespace tool_registry
 
-// Arm addresses come from the hardware profile (plan Phase 2): the tatbot
+// Arm addresses come from the hardware profile: the tatbot
 // CLI and launchers export TATBOT_LEADER_IP / TATBOT_FOLLOWER_IP from the
 // resolved profile; positionals still override. No baked-in addresses.
 inline std::string env_or(const char * name, const char * fallback)
@@ -446,8 +432,8 @@ struct Options
   double assist = 0.0;         // --assist: gain on the leader's own external-
                                // effort estimate, pushing WITH the operator —
                                // lowers the force needed to break away at v=0
-  double contact_cap_n = CARRIAGE_CONTACT_CAP_N;
-  double contact_deflect_m = CARRIAGE_CONTACT_DEFLECT_M;    // --contact-cap: trip threshold, N
+  double contact_cap_n = CARRIAGE_CONTACT_CAP_N;          // --contact-cap: trip threshold, N
+  double contact_deflect_m = CARRIAGE_CONTACT_DEFLECT_M;  // --contact-deflect: trip deflection, m
   double carriage_retract_m = CARRIAGE_RETRACT_M;   // --carriage-retract: trip travel, m
   std::string ee_tool;         // required: which tool is seated in the mount
   bool tool_required = true;   // --no-tool is the explicit bench opt-out
@@ -456,8 +442,6 @@ struct Options
   double goal_time = 0.005;    // follower interpolation horizon, s
   // loop period, us (2500 = 400 Hz): config/motion_constants.json period_s
   int64_t period_us = static_cast<int64_t>(std::llround(tatbot::motion_constants::PERIOD_S * 1e6));
-  bool supervised_start = false;  // conductor must release a gate before any arm connection
-  bool wrist_calibration = false;  // right input, left receiver, mirror 0/4/5; free-space only
   bool absolute = true;        // --relative: keep the old delta mapping
   double align_rate = 0.35;    // peak joint speed of the startup alignment, rad/s
   double align_confirm_deg = 15.0;  // ask before an alignment move larger than this
@@ -469,13 +453,12 @@ struct Options
   std::vector<double> staged_positions;
   bool realtime = true;        // --no-rt: leave scheduling to the kernel
   int rt_priority = 80;        // SCHED_FIFO priority for the control loop
-  std::string log_path;        // empty = auto under teleop_logs/
+  std::string log_path;        // empty = the run dir's teleop.wxtl, else the log root's teleop/
   bool log_enabled = true;
   std::string telemetry_udp;  // empty disables optional visualization telemetry
   double telemetry_fps = 30.0;
   std::string estop_dev = "/dev/tatbot-estop";  // udev symlink for the Pico box
-  bool estop_required = true;   // production fails closed; --no-estop is explicit bench opt-out
-  bool estop_enabled = true;    // --no-estop: opt out of the hardware e-stop
+  bool estop_enabled = true;    // production fails closed; --no-estop is the explicit bench opt-out
 };
 
 Options parse_args(int argc, char ** argv)
@@ -511,8 +494,6 @@ Options parse_args(int argc, char ** argv)
     if (arg == "--tau") {opt.tau = std::stod(value());} else
     if (arg == "--goal-time") {opt.goal_time = std::stod(value());} else
     if (arg == "--period-us") {opt.period_us = std::stoll(value());} else
-    if (arg == "--supervised-start") {opt.supervised_start = true;} else
-    if (arg == "--wrist-calibration") {opt.wrist_calibration = true;} else
     if (arg == "--relative") {opt.absolute = false;} else
     if (arg == "--align-rate") {
       opt.align_rate = std::clamp(std::stod(value()), 0.01, 1.5);
@@ -532,7 +513,7 @@ Options parse_args(int argc, char ** argv)
     if (arg == "--no-log") {opt.log_enabled = false;} else
     if (arg == "--telemetry-udp") {opt.telemetry_udp = value();} else
     if (arg == "--telemetry-fps") {opt.telemetry_fps = std::stod(value());} else
-    if (arg == "--estop") {opt.estop_dev = value(); opt.estop_required = true;} else
+    if (arg == "--estop") {opt.estop_dev = value();} else
     if (arg == "--no-estop") {opt.estop_enabled = false;} else
     if (!arg.empty() && arg[0] == '-') {
       throw std::runtime_error("unknown option: " + arg);
@@ -543,11 +524,6 @@ Options parse_args(int argc, char ** argv)
   if (positional.size() > 2) {opt.leader_config = positional[2];}
   if (positional.size() > 3) {opt.follower_config = positional[3];}
 
-  if (opt.wrist_calibration && opt.ee_tool.empty()) {
-    throw std::runtime_error("--wrist-calibration is free-space mirrored teleop only; no reference, contact or scripted motion");
-  }
-  // Calibration mirrors increments from the measured poses, never encoder zero.
-  if (opt.wrist_calibration) {opt.absolute = false;}
   if (opt.period_us <= 0) {
     throw std::runtime_error("--period-us must be positive");
   }
@@ -567,12 +543,6 @@ Options parse_args(int argc, char ** argv)
   }
   if (!opt.ee_tool.empty()) {
     tool_registry::resolve_tool(opt.ee_tool, opt.tool_uncalibrated);
-    if (opt.wrist_calibration) {
-      const auto left_tool = tool_registry::scrape_workspace_tool(
-        tool_registry::repo_root() / "config/workspace.yaml", "left");
-      if (left_tool.empty()) {throw std::runtime_error("wrist calibration needs the left arm tool identity");}
-      tool_registry::resolve_tool(left_tool, false, "left");
-    }
   }
   return opt;
 }
@@ -626,15 +596,18 @@ void configure_arm(
   if (!config_file.empty()) {
     std::cout << "Loading " << label << " config from " << config_file << std::endl;
     driver.load_configs_from_file(config_file);
-    // The per-arm YAMLs predate the standard end effectors (they carry the
-    // tatbot 1.0 custom EE mass properties), so re-apply the correct standard
-    // model after the load — gravity compensation depends on it.
+    // The per-arm YAMLs carry the tatbot 1.0 custom EE mass properties, so
+    // re-apply the arm's model after the load (arm_model.hpp: the dated
+    // preset with the fitted tool's identified palm) — gravity compensation
+    // depends on it. The golden supplies the 2025-05-09 gains.
     driver.set_end_effector(end_effector);
+  } else {
+    // No golden: Trossen's 2025-05-09 gains by name (firmware 1.10+ boots with 2026-03-17's).
+    driver.set_motor_parameters(arm_model::gains());
   }
 }
 
 using tatbot::teleop::Alignment;
-using tatbot::teleop::map_joint;
 
 constexpr double rad_to_deg = 57.29577951308232;
 
@@ -761,7 +734,7 @@ bool announce_alignment(
 //   follower_pos[n], follower_vel[n], follower_eff[n], target[n]
 struct LogHeader
 {
-  char magic[8];  // WXTLOG1, or WXTLOG2 for the explicit mirrored calibration roles
+  char magic[8];  // WXTLOG1 (WXTLOG2 logs, from the retired mirrored calibration, stay readable)
   uint64_t num_joints;
   double period_s;
   double tau_s;
@@ -777,6 +750,9 @@ static_assert(sizeof(LogHeader) == 64);
 // performs filesystem I/O.
 std::string default_log_path()
 {
+  // Under a launcher the run directory owns the flight log (scripts/lib/tatbot_runlog.py's layout).
+  const char * run_dir = std::getenv("TATBOT_RUN_DIR");
+  if (run_dir && *run_dir) {return std::string(run_dir) + "/teleop.wxtl";}
   const auto now = std::chrono::system_clock::now();
   const std::time_t t = std::chrono::system_clock::to_time_t(now);
   char stamp[32];
@@ -811,16 +787,6 @@ int run(int argc, char ** argv)
   std::signal(SIGINT, handle_signal);
   std::signal(SIGTERM, handle_signal);
   std::cout << "WXAI_TELEOP_PID=" << getpid() << std::endl;
-  if (opt.supervised_start) {
-    // The conductor learns this PID before permitting any arm connection.
-    // If it is interrupted first, a late-starting child remains inert here.
-    std::cout << "SUPERVISED_START_READY: no arm connection opened" << std::endl;
-    if (!tatbot::teleop::wait_for_alignment_confirmation(
-        STDIN_FILENO, g_stop_signals, 0, g_estop, estop_ok)) {
-      std::cout << "Supervised startup cancelled before arm connection." << std::endl;
-      return 130;
-    }
-  }
 
   // Before anything spawns a thread: the SDK's UDP daemon threads inherit both
   // the affinity mask and the scheduling policy from whoever creates them, so
@@ -884,7 +850,7 @@ int run(int argc, char ** argv)
   std::unique_ptr<tatbot::estop::Monitor> estop;
   if (opt.estop_enabled) {
     estop = std::make_unique<tatbot::estop::Monitor>(
-      opt.estop_dev, opt.estop_required, g_estop);
+      opt.estop_dev, g_estop);
   }
 
   for (const auto & [label, ip] : {
@@ -904,22 +870,16 @@ int run(int argc, char ** argv)
   }
 
   // Controllers, profiles and SDK end-effectors stay with their physical arms.
+  std::string left_model, right_model;
+  const auto left_end_effector = arm_model::end_effector(tool_registry::repo_root(), "left", &left_model);
+  const auto right_end_effector = arm_model::end_effector(tool_registry::repo_root(), "right", &right_model);
+  std::cout << "physical left: " << left_model << "\nphysical right: " << right_model << std::endl;
   trossen_arm::TrossenArmDriver left_arm;
   trossen_arm::TrossenArmDriver right_arm;
-  configure_arm(
-    left_arm, opt.leader_ip, opt.leader_config, "physical left",
-    trossen_arm::StandardEndEffector::wxai_v0_leader);
-  configure_arm(
-    right_arm, opt.follower_ip, opt.follower_config, "physical right",
-    trossen_arm::StandardEndEffector::wxai_v0_follower);
-  auto & leader = opt.wrist_calibration ? right_arm : left_arm;
-  auto & follower = opt.wrist_calibration ? left_arm : right_arm;
-  if (opt.wrist_calibration) {
-    std::cout << "Wrist calibration: pink/right ballpoint is LEADER; left laser is FOLLOWER.\n"
-              << "Joints 0, 4 and 5 mirror movement from the measured starting poses; carriage is independent.\n"
-              << "Free-space capture: keep both tools clear of the table and laser emission off."
-              << std::endl;
-  }
+  configure_arm(left_arm, opt.leader_ip, opt.leader_config, "physical left", left_end_effector);
+  configure_arm(right_arm, opt.follower_ip, opt.follower_config, "physical right", right_end_effector);
+  auto & leader = left_arm;
+  auto & follower = right_arm;
   if (g_stop_signals.load() > 0) {
     std::cout << "Interrupted during startup; both arms left idle." << std::endl;
     return 0;
@@ -944,7 +904,6 @@ int run(int argc, char ** argv)
   const size_t num_joints = leader.get_num_joints();
   const size_t gripper = num_joints - 1;  // tool carriage (ex-gripper) is the last joint
 
-  // Ordinary teleop fades its startup offset; wrist calibration preserves it.
   // Baselines for the alignment ramp: the follower starts at its own pose and
   // is walked onto the leader's absolute joint angles (see Alignment).
   // Recomputed on every resume, so a stop can never leave the two arms
@@ -966,8 +925,7 @@ int run(int argc, char ** argv)
     };
   take_baselines();
 
-  Alignment alignment = opt.wrist_calibration ? Alignment::wrist_calibration(opt.align_rate) :
-    Alignment(opt.absolute, opt.align_rate);
+  Alignment alignment(opt.absolute, opt.align_rate);
   alignment.restart(leader_start, follower_start);
 
   // Flight recorder.
@@ -983,7 +941,7 @@ int run(int argc, char ** argv)
   if (!opt.telemetry_udp.empty()) {
     try {
       telemetry = std::make_unique<tatbot::telemetry::UdpPublisher>(
-        opt.telemetry_udp, opt.telemetry_fps, opt.wrist_calibration);
+        opt.telemetry_udp, opt.telemetry_fps);
       std::cout << "Visualization telemetry -> " << telemetry->endpoint()
                 << " at up to " << opt.telemetry_fps << " Hz (nonblocking)" << std::endl;
     } catch (const std::exception & error) {
@@ -994,7 +952,6 @@ int run(int argc, char ** argv)
   const double dt = static_cast<double>(opt.period_us) * 1e-6;
   LoopHealth health(dt);
   bool emergency = false;
-  bool handoff_holding = false;  // an in-session landing that fell back: exit still holding
   try {  // any driver throw below is caught to attempt a hold before idling
 
   // Leader: external_effort mode on all joints — zero effort is pure gravity
@@ -1093,11 +1050,6 @@ int run(int argc, char ** argv)
     if (!confirm_and_rebaseline(opt.align_confirm_deg, "Startup alignment", 0)) {
       g_stop_signals.fetch_add(g_stop_signals.load() == 0 ? 1 : 0);
     }
-  } else if (opt.wrist_calibration) {
-    take_baselines();
-    alignment.restart(leader_start, follower_start);
-    std::cout << "Wrist mapping anchored at current poses; no startup alignment; tracking immediately."
-              << std::endl;
   } else {
     std::cout << "Relative mapping (--relative): the follower keeps its "
               << alignment.largest_rad() * rad_to_deg
@@ -1126,14 +1078,13 @@ int run(int argc, char ** argv)
     std::chrono::system_clock::now().time_since_epoch()).count();
   if (log_file) {
     LogHeader header{};
-    std::memcpy(header.magic, opt.wrist_calibration ? "WXTLOG2" : "WXTLOG1", 8);
+    std::memcpy(header.magic, "WXTLOG1", 8);
     header.num_joints = num_joints;
     header.period_s = static_cast<double>(opt.period_us) * 1e-6;
     header.tau_s = opt.tau;
     header.goal_time_s = opt.goal_time;
     header.ff_gain = opt.ff_gain;
-    // v2 bits 0..5: absolute carriage, right leader, mirror 0/4/5, start-pose anchoring.
-    header.abs_gripper = opt.wrist_calibration ? 63 : 1;
+    header.abs_gripper = 1;
     header.wall_start_ns = wall_start_ns;
     if (!log_file->write_header(&header, sizeof(header))) {
       throw std::runtime_error("cannot queue the flight-log header");
@@ -1284,7 +1235,7 @@ int run(int argc, char ** argv)
     // and a short interpolation horizon. The carriage remains safety-owned.
     std::copy(target.begin(), target.end() - 1, arm_target.begin());
     for (size_t i = 0; i < gripper; ++i) {
-      arm_vel[i] = map_joint(vel_filt[i], i, opt.wrist_calibration);
+      arm_vel[i] = vel_filt[i];
     }
     follower.set_arm_positions(arm_target, opt.goal_time, false, arm_vel);
 
@@ -1301,7 +1252,7 @@ int run(int argc, char ** argv)
         }
       }
       for (size_t i = 0; i < num_joints; ++i) {
-        leader_efforts[i] = -opt.ff_gain * map_joint(follower_eff[i], i, opt.wrist_calibration);
+        leader_efforts[i] = -opt.ff_gain * follower_eff[i];
         if (antistiction_off || i >= ANTISTICTION_JOINTS) {continue;}
         if (opt.damping > 0.0) {
           leader_efforts[i] += std::clamp(
@@ -1420,12 +1371,8 @@ int run(int argc, char ** argv)
       released_from_estop = true;
     }
   }
-  // A release that cannot land in-session hands the arms to the wrapper's
-  // landing routine STILL HOLDING: idling here dropped the follower ~2 cm under
-  // gravity in the seconds before il_recover_arm.sh reconnected (2026-09-01).
-  // The landing takes control softly at the current pose (recovery.py), so the
-  // process exits without idling and without running the driver destructors,
-  // which would idle too. The e-stop stays live.
+  // A release lands both arms here, in the live session. One that cannot land
+  // idles them at exit like any other release; `tatbot arm recover` lands them.
   bool landed_in_session = false;
   const bool lands_here = opt.staged_positions.size() == num_joints;
   if (lands_here && choice == StopChoice::release) {
@@ -1477,21 +1424,9 @@ int run(int argc, char ** argv)
     const bool follower_landed = land_arm(follower, "follower");
     const bool leader_landed = follower_landed && land_arm(leader, "leader");
     landed_in_session = follower_landed && leader_landed;
-    if (landed_in_session) {
-      if (!request_probe_landing("landed-in-session")) {
-        std::cerr << "WARNING: could not record the in-session landing for the wrapper." << std::endl;
-      }
-    } else {
-      std::cout << "Falling back to the holding handover; the wrapper lands what is not landed." << std::endl;
-    }
-  }
-  if (lands_here && choice == StopChoice::release && !landed_in_session) {
-    if (request_probe_landing()) {
-      handoff_holding = true;
-    } else {
-      std::cerr << "WARNING: could not record the operator's automatic-landing request; "
-                   "the wrapper will leave the arms idle instead of moving them."
-                << std::endl;
+    if (!landed_in_session) {
+      std::cout << "Landing did not complete; both arms idle at exit. "
+                   "`tatbot arm recover` lands them." << std::endl;
     }
   }
   if (choice == StopChoice::resume) {
@@ -1576,11 +1511,6 @@ int run(int argc, char ** argv)
                   << std::endl;
         return 130;
       }
-      if (!request_probe_landing()) {
-        std::cerr << "WARNING: could not record the operator's automatic-landing request; "
-                     "the wrapper will not move the arms after this fault."
-                  << std::endl;
-      }
     }
     throw;
   }
@@ -1588,10 +1518,8 @@ int run(int argc, char ** argv)
   if (emergency) {
     std::cout << "EMERGENCY RELEASE: idling both arms now." << std::endl;
   }
-  if (!(handoff_holding && !emergency)) {
-    leader.set_all_modes(trossen_arm::Mode::idle);
-    follower.set_all_modes(trossen_arm::Mode::idle);
-  }
+  leader.set_all_modes(trossen_arm::Mode::idle);
+  follower.set_all_modes(trossen_arm::Mode::idle);
 
   const std::string health_summary = health.summary();
   if (!health_summary.empty()) {
@@ -1613,14 +1541,6 @@ int run(int argc, char ** argv)
   }
 
   if (emergency) {return 130;}
-  if (handoff_holding) {
-    std::cout << "Arms handed to the landing routine still holding (not idled); "
-                 "the wrapper lands follower, then leader." << std::endl;
-    std::cout.flush();
-    std::cerr.flush();
-    // Skip the driver destructors: their cleanup idles the arms.
-    std::_Exit(0);
-  }
   return 0;
 }
 

@@ -1,5 +1,5 @@
-"""Production draw startup/hold/landing, a draw after a land and a wake, and a draw interrupted while it lands for a
-cartridge swap, each on a fresh isolated fake driver; no physical arm or camera."""
+"""Production paired draw and its wake recovery, plus a draw interrupted while it lands for a cartridge swap,
+each on a fresh isolated fake driver; no physical arm or camera."""
 import importlib.util
 import json
 import shlex
@@ -11,7 +11,8 @@ import pytest
 import session_graph as sg
 from test_session_fake_e2e import Pico, _fake_urdf, _status
 
-pytestmark = pytest.mark.skipif(not sg.ZENOHD.exists(), reason='needs ROS 2 Jazzy with rmw_zenoh_cpp')
+pytestmark = [pytest.mark.slow,
+              pytest.mark.skipif(not sg.ZENOHD.exists(), reason='needs ROS 2 Jazzy with rmw_zenoh_cpp')]
 
 
 @pytest.fixture
@@ -23,7 +24,7 @@ def graph(tmp_path):
     urdf = _fake_urdf(stack)
     pico, graph = Pico(port), sg.Graph(tmp_path)
     try:
-        graph.up(urdf, stack)
+        graph.up(urdf, stack, motion=sg.fast_motion())
         if _status(graph)['latched']:
             assert sg.last_json(graph.client('decide', 'right', 'continue').stdout)['accepted']
         yield graph
@@ -32,7 +33,7 @@ def graph(tmp_path):
         pico.running = False
 
 
-def test_production_draw_holds_between_research_sides_and_lands_after_pair(graph, tmp_path, monkeypatch):
+def test_production_pair_holds_lands_and_draws_again_after_wake(graph, tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location('paired_ros_backend', sg.repo()/'scripts/lib/tatbot_cli/tatbot_ros.py')
     backend = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(backend)
@@ -75,22 +76,14 @@ def test_production_draw_holds_between_research_sides_and_lands_after_pair(graph
         (tmp_path/f'evidence-{index}.json').write_text(json.dumps(evidence, indent=2)+'\n')
         runtimes.append(evidence['runtime'])
     assert runtimes[0] == runtimes[1]
-
-
-def test_a_woken_arm_draws_again_after_landing_from_a_draw(graph):
-    """Land after a draw, wake, draw: the keypad cartridge swap's land -> Enter -> wake -> resume. The first goal
-    after the wake latched over_velocity 7 ms in, at the sleep pose (fake driver, 2026-10-04)."""
-    for name in ('before-land', 'after-wake'):
-        draw = graph.client('draw', str(sg.square_program(graph.tmp, name=name, sides=(.004,))), '--arm', 'right',
-                            timeout=240)
-        assert draw.returncode == 0, draw.stdout + draw.stderr
-        if name == 'before-land':
-            land = graph.client('land', '--arm', 'right', timeout=150)
-            assert land.returncode == 0, land.stdout + land.stderr
-            wake = graph.client('wake', '--arm', 'right', timeout=60)
-            assert wake.returncode == 0, wake.stdout + wake.stderr
+    # The pair's second draw already landed this driver. Its next draw exercises recovery from that sleep pose.
+    wake = graph.client("wake", "--arm", "right", timeout=60)
+    assert wake.returncode == 0, wake.stdout + wake.stderr
+    draw = graph.client("draw", str(sg.square_program(graph.tmp, name="after-wake", sides=(.004,))),
+                        "--arm", "right", timeout=240)
+    assert draw.returncode == 0, draw.stdout + draw.stderr
     right = _status(graph)
-    assert right['latched'] is False and right['landed'] is False, right
+    assert right["latched"] is False and right["landed"] is False, right
 
 
 def _swap_program(graph):
@@ -110,7 +103,7 @@ def test_a_draw_interrupted_landing_for_a_swap_does_not_wait_for_the_keypad(grap
     """SIGTERM while a draw lands for a cartridge swap: the client cancels it and exits once the arm has landed. It
     used to go on to wait for the keypad's Enter with every signal ignored after the cancel."""
     keypad = sg.base_stack()['keypad']   # the committed stack.yaml, which the client reads through the install
-    assert keypad.get('device') and keypad.get('arm') == 'right', keypad
+    assert keypad.get('port') and keypad.get('arm') == 'right', keypad
     log = 'swap-sigterm.log'
     proc = graph.client_bg('draw', str(_swap_program(graph)), '--arm', 'right', log=log)
     try:
@@ -120,7 +113,7 @@ def test_a_draw_interrupted_landing_for_a_swap_does_not_wait_for_the_keypad(grap
     finally:
         graph.end(proc)
     text = (graph.tmp/log).read_text()
-    assert 'cancelling; the arm holds' in text and 'on the keypad' not in text, text
+    assert 'cancelling; the arm holds' in text and 'on the station keyboard' not in text, text
     rows = sg.ledger(sg.last_json(text)['run_dir'])
     assert [r['event'] for r in rows if r.get('op') == 't9002'] == ['sent']
     assert _status(graph)['landed'] is True

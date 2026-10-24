@@ -6,7 +6,6 @@ import { useStore } from "../store.ts";
 import { useUi, workspaceTab, type WorkspaceTab } from "../ui.ts";
 import { exportArtworkSvg, exportBodyDesign, exportChartArtworkSvg, exportChartDesign, exportPlacementFile, exportProjectBackup, loadPlacementFile, openDesign, openProject, type UnsupportedFile } from "../exports.ts";
 import { Menu } from "./Menu.tsx";
-import { SimulationExport } from "./SimulationExport.tsx";
 
 const TABS: { id: WorkspaceTab; label: string }[] = [{ id: "body", label: "Body" }, { id: "paper", label: "Paper" }, { id: "cylinder", label: "Cylinder" }];
 
@@ -102,7 +101,6 @@ function FileMenu({ onReview }: { onReview: () => void }) {
         <summary>Advanced</summary>
         <button type="button" className="menu-item" disabled={!ready || !hasBody} onClick={exportPlacementFile}>Placement file (v{SCHEMA_VERSION} JSON) — robot pipeline contract</button>
         {file("Load placement file…", "application/json,.json", (f) => void loadPlacementFile(f), !ready)}
-        <SimulationExport />
       </details>}
     </Menu>
   );

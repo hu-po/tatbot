@@ -1,4 +1,4 @@
-# controller_manager and controllers for both arms; stack.launch.py spawns only the configured arms'.
+# controller_manager and the pink arm's controllers (names.ARMS); stack.launch.py spawns the configured arms'.
 # Names: ros/README.md "Names". JTC holds with the command interfaces' values on activation, which
 # the driver sets to the measured pose.
 #
@@ -19,10 +19,6 @@ controller_manager:
     right_arm_controller:
       type: joint_trajectory_controller/JointTrajectoryController
     right_safety_controller:
-      type: gpio_controllers/GpioCommandController
-    left_arm_controller:
-      type: joint_trajectory_controller/JointTrajectoryController
-    left_safety_controller:
       type: gpio_controllers/GpioCommandController
 
 right_arm_controller:
@@ -53,30 +49,3 @@ right_safety_controller:
                      guard_tripped, trip_q0, trip_q1, trip_q2, trip_q3, trip_q4, trip_q5, trip_q6,
                      unlatch_ack, land_ack, landing, landed, controller_error, rt_period_max_ms]
 
-left_arm_controller:
-  ros__parameters:
-    joints: [left/joint_0, left/joint_1, left/joint_2, left/joint_3, left/joint_4, left/joint_5, left/left_carriage_joint]
-    command_interfaces: [position, velocity]
-    state_interfaces: [position, velocity]
-    interpolation_method: splines
-    allow_partial_joints_goal: false
-    allow_nonzero_velocity_at_trajectory_end: false
-    set_last_command_interface_value_as_state_on_activation: true
-    open_loop_control: false
-    action_monitor_rate: 20.0
-    constraints:
-      stopped_velocity_tolerance: 0.0
-      goal_time: 0.0
-
-left_safety_controller:
-  ros__parameters:
-    update_rate: 100
-    gpios: [left_safety]
-    command_interfaces:
-      left_safety:
-        interfaces: [guard_mode, unlatch, land]
-    state_interfaces:
-      left_safety:
-        interfaces: [estop_source, estop_ok, estop_age_s, probe_triggered, latched, latch_reason, guard_mode,
-                     guard_tripped, trip_q0, trip_q1, trip_q2, trip_q3, trip_q4, trip_q5, trip_q6,
-                     unlatch_ack, land_ack, landing, landed, controller_error, rt_period_max_ms]

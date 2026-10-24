@@ -27,15 +27,12 @@
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Physical roles are validated before profiles, tools, probes or driver access.
-# The wrist-calibration mode changes control roles inside the executor.
 # Controller addresses, profiles and SDK end-effectors stay physically bound.
-WRIST_CALIBRATION=0
 LEADER_ARM=""
 FOLLOWER_ARM=""
 ROLE_ARGS=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --wrist-calibration) WRIST_CALIBRATION=1; ROLE_ARGS+=("$1"); shift ;;
     --leader|--follower)
       [ "$#" -ge 2 ] || { echo "$1 needs a physical arm" >&2; exit 2; }
       [ -n "$2" ] || { echo "$1 needs a physical arm" >&2; exit 2; }
@@ -47,11 +44,7 @@ while [ "$#" -gt 0 ]; do
     *) ROLE_ARGS+=("$1"); shift ;;
   esac
 done
-if [ "$WRIST_CALIBRATION" -eq 1 ]; then
-  LEADER_ARM="${LEADER_ARM:-right}"
-  FOLLOWER_ARM="${FOLLOWER_ARM:-left}"
-fi
-python3 - "$REPO" "$LEADER_ARM" "$FOLLOWER_ARM" "$WRIST_CALIBRATION" <<'PY'
+python3 - "$REPO" "$LEADER_ARM" "$FOLLOWER_ARM" <<'PY'
 import sys
 from pathlib import Path
 repo = Path(sys.argv[1])
@@ -63,7 +56,7 @@ except ValueError as exc:
     print(f"teleop_start: {exc}", file=sys.stderr)
     sys.exit(2)
 try:
-    require_current_executor(repo, roles, wrist_calibration=sys.argv[4] == "1")
+    require_current_executor(repo, roles)
 except ValueError as exc:
     print(f"teleop_start: {exc}", file=sys.stderr)
     sys.exit(3)

@@ -43,3 +43,12 @@ def test_another_tools_candidate_and_a_nonfinite_tip_are_refused():
     bad = candidate()
     bad["fit"]["tip_m"][0] = float("nan")
     assert adopt.apply(bad, WORKSPACE)[1] == ["the candidate's tip is not finite"]
+
+
+def test_an_adoption_leaves_the_payload_alone():
+    """The payload's keys are its own (identified_*), so the line edits of an adoption touch only the touch-off."""
+    edited, why = adopt.apply(candidate(), WORKSPACE)
+    assert why == []
+    before, after = (tool_spec.parse_simple_yaml(t)["right"] for t in (WORKSPACE, edited))
+    assert after["payload"] == before["payload"]
+    assert after["touchoff"]["utc"] == candidate()["utc"] and after["tool_id"] == before["tool_id"]

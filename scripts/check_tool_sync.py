@@ -7,16 +7,11 @@ Two things drift if nobody checks them:
 
 - The CARRIAGE CONSTANTS (rest, retract, contact cap — since 2026-08-30 the
   carriage is the tool's contact axis)
-  live in config/trossen/tatbot.yaml and are copied into the Python follower
-  config defaults and the C++ teleop's compiled defaults. Three copies of
-  four numbers; this checks them against tatbot.yaml.
+  live in config/trossen/tatbot.yaml and are copied into the C++ teleop's
+  compiled defaults. Two copies of four numbers; this checks the compiled
+  one against tatbot.yaml.
 - The MEASURED TIP in config/workspace.yaml against the fitted tool's
   datasheet nominal, and its lean off the mount's bore axis.
-
-It also REPORTS, without changing anything, the workspace floor that the tool
-geometry implies — see ``tool_spec.derive_z_floor_m`` for why that number is
-usually not yet trustworthy, and why a safety constant is not something to
-derive automatically.
 
 Nothing here moves the arm and nothing writes a file.
 """
@@ -40,23 +35,15 @@ SOURCE = "config/trossen/tatbot.yaml"
 # key -> (label, path, regex capturing the value) for every copy of it
 CARRIAGE_SITES = {
     "carriage_rest_m": (
-        ("python/lerobot_robot_tatbot/src/lerobot_robot_tatbot/config_tatbot_follower.py",
-         r"^\s*carriage_rest_m:\s*float\s*=\s*([0-9.]+)"),
         ("cpp/teleop/wxai_teleop.cpp", r"CARRIAGE_REST_M\s*=\s*([0-9.]+)"),
     ),
     "carriage_retract_m": (
-        ("python/lerobot_robot_tatbot/src/lerobot_robot_tatbot/config_tatbot_follower.py",
-         r"^\s*carriage_retract_m:\s*float\s*=\s*([0-9.]+)"),
         ("cpp/teleop/wxai_teleop.cpp", r"CARRIAGE_RETRACT_M\s*=\s*([0-9.]+)"),
     ),
     "carriage_contact_deflect_m": (
-        ("python/lerobot_robot_tatbot/src/lerobot_robot_tatbot/config_tatbot_follower.py",
-         r"^\s*carriage_contact_deflect_m:\s*float\s*=\s*([0-9.]+)"),
         ("cpp/teleop/wxai_teleop.cpp", r"CARRIAGE_CONTACT_DEFLECT_M\s*=\s*([0-9.]+)"),
     ),
     "carriage_contact_cap_n": (
-        ("python/lerobot_robot_tatbot/src/lerobot_robot_tatbot/config_tatbot_follower.py",
-         r"^\s*carriage_contact_cap_n:\s*float\s*=\s*([0-9.]+)"),
         ("cpp/teleop/wxai_teleop.cpp", r"CARRIAGE_CONTACT_CAP_N\s*=\s*([0-9.]+)"),
     ),
 }
@@ -108,7 +95,7 @@ def check_tip(spec, workspace, arm: str = "right") -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ee-tool", "--tool-id", dest="tool_id", default=None, help="override the fitted tool")
-    ap.add_argument("--arm", default="right", choices=("right", "left"))
+    ap.add_argument("--arm", default="right", choices=("right",))
     args = ap.parse_args()
 
     workspace = tool_spec.read_workspace(REPO)
@@ -128,11 +115,6 @@ def main() -> int:
     print(f"  TCP    {geometry.contact_status}{uncertainty}")
     if geometry.contact_qualification_error:
         print(f"  --  contact qualification: {geometry.contact_qualification_error}")
-    requested_body_status = (workspace.get(args.arm) or {}).get("tool_body_status")
-    if requested_body_status == "qualified" and geometry.status != "qualified":
-        problems.append(
-            "config/workspace.yaml: tool body claims qualified but its evidence "
-            f"does not revalidate: {geometry.qualification_error or 'unknown reason'}")
     if not spec.mounted:
         problems.append(f"{spec.source.relative_to(REPO)}: mount is none — this tool has no "
                         "mount on the arm and cannot be fitted, calibrated or flown")
@@ -144,16 +126,6 @@ def main() -> int:
             "status before flying it.")
     if spec.mass_kg is None:
         print("  --  mass_kg not recorded")
-
-    floor = tool_spec.derive_z_floor_m(spec, workspace, args.arm)
-    if floor["trustworthy"]:
-        print(f"\nz_floor_m derivable as {floor['z_floor_m']:.4f} m — {floor['note']}")
-        print("  compare against config_tatbot_follower.z_floor_m and change it "
-              "deliberately; a safety floor is not derived behind your back.")
-    else:
-        print("\nz_floor_m not derivable yet:")
-        for reason in floor["reasons"]:
-            print(f"  - {reason}")
 
     if problems:
         print("\nMISMATCH:")

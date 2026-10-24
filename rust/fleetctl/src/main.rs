@@ -32,7 +32,7 @@ fn run() -> anyhow::Result<()> {
     let args = Args::parse();
     anyhow::ensure!(!args.connect.is_empty(), "explicit bus endpoint required");
     let bus =
-        tatbot_bus::transport::Bus::open(&args.connect, &[]).map_err(|e| anyhow::anyhow!("{e}"))?;
+        tatbot_bus::transport::Bus::open(&args.connect).map_err(|e| anyhow::anyhow!("{e}"))?;
     if let Command::Advertise {
         node,
         service,
@@ -52,14 +52,7 @@ fn run() -> anyhow::Result<()> {
         anyhow::ensure!(active(), "supervised service is not active");
         let _lease = tatbot_bus::service::ServiceLease::declare(
             &bus,
-            tatbot_bus::Producer {
-                node: node.clone(),
-                pid: std::process::id(),
-                sha: option_env!("TATBOT_SOURCE_COMMIT")
-                    .unwrap_or("development")
-                    .into(),
-                run_id: std::env::var("TATBOT_RUN_ID").unwrap_or_else(|_| "service".into()),
-            },
+            tatbot_bus::Producer::this_process(node.clone(), "fleetctl"),
             service,
             Vec::new(),
         )
@@ -152,10 +145,8 @@ fn run() -> anyhow::Result<()> {
 }
 fn main() {
     if let Err(e) = run() {
-        println!(
-            "{}",
-            serde_json::json!({"schema":"tatbot.session-status/1","available":false,"reason":format!("{e:#}")})
-        );
+        // Callers read a failure's reason from stderr; stdout carries only results.
+        eprintln!("fleetctl: {e:#}");
         std::process::exit(5);
     }
 }

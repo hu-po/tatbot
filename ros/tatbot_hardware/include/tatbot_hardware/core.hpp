@@ -3,6 +3,7 @@
 // No ROS, no SDK, no clock of its own: the adapter (tatbot_arm.cpp) or a test feeds it measured
 // feedback, the incoming commands and the e-stop status, and sends what it returns.
 #include <array>
+#include <cstdint>
 #include <functional>
 #include <limits>
 #include <string>
@@ -29,6 +30,11 @@ using TipFk = std::function<TipPose(const Vec7 &)>;
 struct Feedback
 {
   Vec7 q{}, qd{}, effort{};
+  // For the flight log only: the controller's compensation effort (gravity and friction model) and rotor
+  // temperatures, and its output header (an id counting up since configure, its µs clock); zero on the fake.
+  Vec7 compensation{}, rotor_temp{};
+  uint32_t controller_id = 0;
+  uint64_t controller_us = 0;
 };
 
 struct Config
@@ -50,6 +56,8 @@ struct Config
   // The touch guard's contact trigger: the tip force along the tool axis from the joint torques,
   // over its mean in the first contact_baseline_s after arming (<= 0 turns it off).
   double contact_force_n = 2.5, contact_hold_s = 0.05, contact_baseline_s = 0.3;
+  // The snag guard: the measured tip farther than snag_off_m from the commanded one for snag_hold_s.
+  double snag_off_m = 0.0015, snag_hold_s = 0.2;
   double landing_takeover_s = 0.5, landing_staged_s = 4.0, landing_sleep_s = 3.0;
   double landing_verify_rad = 0.2, landing_verify_carriage_m = 0.0005, landing_budget_s = 45.0;
   Vec7 staged_positions{0, 0, 0, 0, 0, 1.5707963267948966, 0};
@@ -86,7 +94,7 @@ enum class Phase { kInactive, kRunning, kLatched, kRetracting, kLanding, kLanded
 struct Output
 {
   bool send = false;            // false: send nothing (inactive, or landed and idle)
-  bool idle_request = false;    // landed and verified: switch the motors to idle, once
+  bool idle_request = false;    // landed and verified: idle the motors, once (the adapter closes its session)
   bool reset_commands = false;  // set the command interfaces to the measured pose (unlatch)
   Vec7 q{}, qd{};               // position target and velocity feed-forward
 };
@@ -99,8 +107,6 @@ class ContactCap
 public:
   void configure(const Config & c);
   bool observe(double effort_n, double position_m, double target_m, double arm_speed, bool aligning);
-  bool armed() const {return armed_;}
-  double baseline() const {return baseline_;}
 
 private:
   std::vector<double> samples_;
@@ -134,7 +140,6 @@ public:
   // The GPIO state interfaces in names::kSafetyState order (rt_period_max_ms is the adapter's).
   const std::array<double, names::kSafetyState.size()> & safety() const {return safety_;}
   const Vec7 & hold_pose() const {return hold_;}
-  const Config & config() const {return cfg_;}
   // One line for the log when something latched, unlatched or landed; "" otherwise.
   std::string take_event();
 
@@ -147,10 +152,14 @@ private:
   void start_landing(double now, const Feedback & fb);
   bool stalled(double now, const Vec7 & target, const Vec7 & q);
   bool guard_tripped(double now, const Vec7 & target, const Feedback & fb);
+  // The armed snag guard: true to stop, the needle held in the work (README section 8).
+  bool snagged(double now, const Vec7 & target, const Feedback & fb);
   // The armed probe guard: true to stop. `fault` when it cannot protect (no fresh probe, or the probe
   // already triggered when armed); else a touch, with the joints at its edge in q_edge.
   bool probe_stop(double now, const ProbeStatus & probe, Vec7 & q_edge, bool & fault);
   Output track(const Vec7 & q, const Vec7 & qd);
+  // A guard's stop: latched with its reason, tripped, the measured joints as the trip pose.
+  Output trip(double now, const Feedback & fb, int reason);
   Output hold() const;
   Output landing(double now, const Feedback & fb);
   Vec7 clamp(Vec7 q) const;
@@ -173,6 +182,8 @@ private:
   int guard_level_ = 0;
   double guard_armed_at_ = -1, lag_since_ = -1, contact_since_ = -1, force_sum_ = 0;
   int force_n_ = 0;
+  // snag guard: since when the tip has stood off its command
+  double snag_since_ = -1;
   // probe guard: a touch needs the probe seen at rest since arming
   bool probe_clear_ = false;
   // the measured joints of the last kHistory ticks (2.5 s at 400 Hz), for the probe's edge time

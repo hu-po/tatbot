@@ -45,7 +45,7 @@ pub struct SynchronizedFrameSet {
 /// Each configured sensor contributes at most one frame to a set. Frames that
 /// cannot meet the configured tolerance are discarded as stale rather than
 /// silently paired with a frame from the wrong time. The assembler is agnostic
-/// to RTSP versus RealSense; it uses normalized source time first and host time
+/// to the device; it uses normalized source time first and host time
 /// only as an explicitly weaker fallback.
 #[derive(Debug)]
 pub struct FrameSynchronizer {

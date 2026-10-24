@@ -81,7 +81,7 @@ def source_pin(repo, root, arm, hashes):
 
 
 def original_capture(root, shared):
-    from board_rgbd_evidence import unpack
+    from frame_set_wire import unpack
 
     manifest = json.loads((root / 'overhead/capture.json').read_text())
     packet = root / 'overhead/owner-packet.bin'
@@ -235,7 +235,7 @@ def _seat_report(shared, kin, arm, target, bundle, rows, report, output):
 
 def implementation_inputs(repo):
     names = ('scripts/vision/native_registration.py', 'scripts/lib/arm_calibration.py',
-             'scripts/lib/board_rgbd_evidence.py', 'scripts/vision/urdf_kinematics.py',
+             'scripts/lib/frame_set_wire.py', 'scripts/vision/urdf_kinematics.py',
              'scripts/vision/fiducials/detector.py', 'scripts/vision/fiducials/geometry.py',
              'ros/tatbot_calib/tatbot_calib/register.py', 'ros/tatbot_bridge/tatbot_bridge/capture.py',
              'ros/tatbot_description/tatbot_description/__init__.py', 'scripts/lib/kinematic_calibration.py',
@@ -255,7 +255,7 @@ def _fit(shared, arm, bundle, sightings, target):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--arm', required=True, choices=('blue', 'pink'))
+    parser.add_argument('--arm', required=True, choices=('pink',))
     parser.add_argument('--capture', required=True, nargs='+', type=Path)
     parser.add_argument('--bundle', required=True, type=Path)
     parser.add_argument('--setup-id', required=True, help='label for this explicitly selected physical setup window')

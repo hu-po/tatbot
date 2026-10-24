@@ -89,7 +89,7 @@ mod tests {
             .unwrap();
         drop(socket);
         let _router = zenoh::open(config).wait().unwrap();
-        let publisher = Bus::open(&endpoints, &[]).unwrap();
+        let publisher = Bus::open_with(&endpoints, None).unwrap();
         let _lease = ServiceLease::declare(
             &publisher,
             Producer {
@@ -102,7 +102,7 @@ mod tests {
             vec![],
         )
         .unwrap();
-        let client = Bus::open(&endpoints, &[]).unwrap();
+        let client = Bus::open_with(&endpoints, None).unwrap();
         let replies = client
             .session
             .liveliness()
@@ -133,7 +133,7 @@ mod tests {
     }
     #[test]
     fn token_and_sha_query_have_the_same_lifetime() {
-        let bus = Bus::open(&[], &[]).unwrap();
+        let bus = Bus::open(&[]).unwrap();
         let observer = bus
             .session
             .liveliness()

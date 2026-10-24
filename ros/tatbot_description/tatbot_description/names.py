@@ -4,8 +4,7 @@ C++ mirrors the GPIO part in tatbot_hardware/include/tatbot_hardware/names.hpp; 
 """
 from __future__ import annotations
 
-ARMS = ("left", "right")
-DEFAULT_ARMS = ("right",)  # this stack never connects to the left arm unless told to
+ARMS = ("right",)  # the pink arm; the blue (left) one is the teleop leader alone, never on this stack
 WORLD = "world"
 
 REVOLUTE = tuple(f"joint_{i}" for i in range(6))
@@ -91,12 +90,20 @@ HARDWARE_PARAMETERS = (
     "over_velocity_rad_s", "over_velocity_m_s", "carriage_baseline_samples", "carriage_trip_ticks", "carriage_settle_ticks",
     "carriage_rebaseline_samples",
     "carriage_judge_below_rad_s", "carriage_retract_s", "tip_lag_trip_m", "tip_lag_hold_s", "tip_lag_arm_after_s",
-    "contact_force_n", "contact_hold_s", "contact_baseline_s",
+    "contact_force_n", "contact_hold_s", "contact_baseline_s", "snag_off_m", "snag_hold_s",
     "landing_takeover_s", "landing_staged_s", "landing_sleep_s", "landing_verify_rad", "landing_verify_carriage_m",
     "landing_budget_s",
     # config/trossen/tatbot.yaml follower; staged_positions is 7 comma-separated values
     "carriage_contact_cap_n", "carriage_contact_deflect_m", "carriage_retract_m", "staged_positions",
+    "motor_parameters",  # tatbot.yaml follower: Trossen's named position-mode gain set, set at connect
+    "idle_velocity_ki_scale",  # tatbot.yaml follower: 6 factors on that set's idle velocity ki (a lost connection idles)
     "carriage_qualified",  # tatbot.yaml <controller role>: false for the leader, whose carriage never retracts
+    "carriage_position_offset_m",  # config/trossen/<role>.yaml joint_characteristics[6].position_offset
+    "palm_mass_kg", "palm_com_m",  # config/workspace.yaml <arm>.payload for its calibrated tool; empty: the preset's
+    # tatbot.yaml ros_tuning.<controller role>: position-mode gain factors on the named set (arm joints 0-5), and
+    # friction terms written into the controller's joint characteristics where they differ (nan keeps its own)
+    "position_kp_scale", "velocity_kp_scale", "velocity_ki_scale",
+    "friction_transition_velocity", "friction_constant_term",
     "flight_path",  # the ros-stack run directory
 )
 
@@ -112,9 +119,11 @@ LATCH_GUARD_PROBE = 7
 LATCH_CONTROLLER_ERROR = 8
 LATCH_DEACTIVATED = 9
 LATCH_STEP_REFUSED = 10
+LATCH_GUARD_SNAG = 11
 GUARD_NONE = 0
 GUARD_TIP_LAG = 1
 GUARD_PROBE = 2
+GUARD_SNAG = 3
 
 # --- controllers --------------------------------------------------------------------------
 CONTROL_RATE_HZ = 400
@@ -161,11 +170,12 @@ def ee_topic(arm: str) -> str:
     return f"/tatbot/ee/{arm}"
 
 
-KEYS = ("up", "down", "reset", "enter")   # the operator's keys: the pen trim a step up or down, back to 0; continue
+# the operator's keys: the pen trim a step up or down, back to 0; a dip now and sooner, later (the dip scale); continue
+KEYS = ("up", "down", "reset", "dip", "fewer_dips", "enter")
 
 
 def keys_topic(arm: str) -> str:
-    """std_msgs/String, one of KEYS per press: the operator's numpad (tatbot_session.keypad) for this arm."""
+    """std_msgs/String, one of KEYS per press: the operator's drawing keys (tatbot_session.keypad) for this arm."""
     return f"/tatbot/keys/{arm}"
 
 
@@ -187,12 +197,13 @@ RUN_WORKFLOW_STACK = "ros-stack"
 def bag_topics(arms) -> tuple[str, ...]:
     """What an MCAP of the stack records: the stack-wide bag (launch `record`) and each run's bag/.
 
-    JTC's controller_state carries the reference it tracks, so the executed goals are in the bag;
-    the action feedback and status topics are hidden (`_action`) and need --include-hidden-topics.
+    JTC's controller_state carries the reference it tracks, so the executed goals are in the bag; Draw's
+    feedback (the current op, phase and arc) lets a replay show the stroke being drawn. The action feedback
+    and status topics are hidden (`_action`) and need --include-hidden-topics.
     """
     per_arm = []
     for arm in arms:
         per_arm += [f"/{arm_controller(arm)}/controller_state", f"{follow_joint_trajectory(arm)}/_action/feedback",
                     f"{follow_joint_trajectory(arm)}/_action/status", safety_states_topic(arm), ee_topic(arm)]
     return (JOINT_STATES_TOPIC, "/tf", "/tf_static", ROBOT_DESCRIPTION_TOPIC, EVENTS_TOPIC, SAFETY_TOPIC, PAGE_TOPIC,
-            *per_arm)
+            f"{DRAW_ACTION}/_action/feedback", *per_arm)

@@ -15,13 +15,12 @@ import {
   type InkLangResolution,
 } from "./core/inklang/index.ts";
 import { POSE_CATALOG } from "./core/pose.ts";
-import { type TattooScenario } from "./core/scenario.ts";
 import { buildDecal } from "./core/decal.ts";
 import { makeProject, type InkmapProject, type ProjectCamera } from "./core/project.ts";
 import type { InkmapDesign } from "./core/design.ts";
 import { chartDocumentFromDraft, chartDraftFromDocument, chartItemRefusal, EMPTY_DRAFT, freshChartDraft, MAX_CHART_ITEMS, newChartItem, type ChartDraft, type ChartItem } from "./core/chart-draft.ts";
 import { frozenArtwork } from "./core/frozen-artwork.ts";
-import { artworkSizeM, type ArtworkRecord } from "./core/artwork-record.ts";
+import { artworkSizeM } from "./core/artwork-record.ts";
 import { renderTattooProgramSvg } from "./core/human-representation/program-svg.ts";
 import { artworkSources } from "./core/design-assets.ts";
 
@@ -139,9 +138,8 @@ export interface State {
   toast: string | null;
   /** Bumps once per accepted tattoo; the picker pulses on change. */
   accepted: number;
-  /** Guided-showcase payload. Its trace uses the same canonical anchors as the visible placement. */
-  showcaseScenario: TattooScenario | null;
-  showcaseTraceVisible: boolean;
+  /** The guided showcase's current slide: one collection artwork placed on a named pose. */
+  showcaseSlide: ShowcaseSlide | null;
   showcaseFocus: boolean;
 
   setBody: (b: LoadedBody) => void;
@@ -184,9 +182,21 @@ export interface State {
   /** The accepted body placements as one portable design, and back again. */
   toDesign: () => Promise<InkmapDesign>;
   loadDesign: (design: InkmapDesign) => Promise<void>;
-  loadShowcaseScenario: (raw: unknown) => Promise<void>;
-  toggleShowcaseTrace: () => void;
+  loadShowcaseSlide: (slide: ShowcaseSlide) => void;
   toggleShowcaseFocus: () => void;
+}
+
+/** One slide of public/showcase/manifest.json. */
+export interface ShowcaseSlide {
+  id: string;
+  eyebrow: string;
+  title: string;
+  description: string;
+  artwork_id: string;
+  /** The artwork record's source_sha256: the slide names the exact collection bytes it shows. */
+  artwork_sha256: string;
+  pose_id: string;
+  placement: Placement;
 }
 
 /** The design a sentence's motif refers to, if one already exists. */
@@ -526,8 +536,7 @@ export const useStore = create<State>((set, get) => ({
   error: null,
   toast: null,
   accepted: 0,
-  showcaseScenario: null,
-  showcaseTraceVisible: true,
+  showcaseSlide: null,
   showcaseFocus: false,
 
   setBody: (body) => set((s) => {
@@ -851,37 +860,21 @@ export const useStore = create<State>((set, get) => ({
       projectEpoch: s.projectEpoch + 1,
     }));
   },
-  loadShowcaseScenario: async (raw) => {
-    if ((raw as { schema_version?: unknown } | null)?.schema_version !== 3) {
-      throw new Error("Legacy compiled preview: regenerate with acquired DBV3 artwork.json and the current simulator compiler.");
+  loadShowcaseSlide: (slide) => {
+    if (!POSE_CATALOG.pose_ids.includes(slide.pose_id)) throw new Error(`showcase slide uses unknown pose ${slide.pose_id}`);
+    if (slide.placement.design_id !== slide.artwork_id) throw new Error(`showcase slide ${slide.id} places another artwork`);
+    const design = get().designs.find((d) => d.id === slide.artwork_id);
+    if (!design?.embedded) throw new Error(`showcase artwork ${slide.artwork_id} is not in the collection`);
+    if (design.embedded.source_sha256 !== slide.artwork_sha256) {
+      throw new Error(`showcase artwork ${slide.artwork_id} differs from the bytes the slide names`);
     }
-    const atlas = get().atlas?.atlas;
-    if (!atlas) throw new Error("compiled preview requires the reviewed body atlas to be loaded");
-    const { validateCompiledScenario } = await import("./core/sim-bundle.ts");
-    const scenario: TattooScenario = await validateCompiledScenario(raw, atlas);
-    if (scenario.body.model_spec_id !== BODY_SPEC.id) {
-      throw new Error("showcase scenario uses an unsupported schema/model");
-    }
-    if (!POSE_CATALOG.pose_ids.includes(scenario.pose.id)) {
-      throw new Error(`showcase scenario uses unknown pose ${scenario.pose.id}`);
-    }
-    const placement = scenario.placement as unknown as Placement;
-    const embedded = (scenario.program_binding as { bundle: { artworks: Record<string, ArtworkRecord> } }).bundle.artworks[scenario.design.id];
-    requireAcquiredArtwork(embedded);
-    const design: DesignMeta = { id: scenario.design.id, name: embedded.name,
-      path: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(renderTattooProgramSvg(embedded.program))}`,
-      default_size_mm: artworkSizeM(embedded).map(m => m * 1000) as [number, number], embedded };
     set((s) => {
-      const reloadBody = s.poseId !== scenario.pose.id;
+      const reloadBody = s.poseId !== slide.pose_id;
       return {
-        poseId: scenario.pose.id,
-        ...(scenario.schema_version === 3
-          ? { skinTone: ((scenario.program_binding as { bundle: { request: { skin_tone: string } } }).bundle.request.skin_tone) }
-          : {}),
+        poseId: slide.pose_id,
         body: reloadBody ? null : s.body,
         atlas: reloadBody ? null : s.atlas,
-        designs: [...s.designs.filter((d) => d.id !== design.id), design],
-        placements: [placement],
+        placements: [structuredClone(slide.placement)],
         selected: null,
         placing: null,
         hover: null,
@@ -889,11 +882,10 @@ export const useStore = create<State>((set, get) => ({
         intentRevision: s.intentRevision + 1,
         projectEpoch: s.projectEpoch + 1,
         error: null,
-        showcaseScenario: scenario,
+        showcaseSlide: slide,
         showcaseFocus: false,
       };
     });
   },
-  toggleShowcaseTrace: () => set((s) => ({ showcaseTraceVisible: !s.showcaseTraceVisible })),
   toggleShowcaseFocus: () => set((s) => ({ showcaseFocus: !s.showcaseFocus })),
 }));

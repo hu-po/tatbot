@@ -117,10 +117,15 @@ def max_width_m(record: dict) -> float:
     return max(element["width_m"] for layer in record["program"]["layers"] for element in layer["elements"])
 
 
+# DBV3 traces; centreline-trace/1 draws a line drawing's 1 px skeleton once, a single-pass baseline
+# beside DBV3's ECS, which goes round every line (owner, 2026-10-17).
+ACQUIRED_ADAPTERS = ("dbv3-batik-paths/1", "centreline-trace/1")
+
+
 def require_acquired_artwork(record: dict) -> dict:
     """Production admission; generic source/fixture paint records are not finished artwork."""
-    if (not isinstance(record, dict) or record.get("conversion", {}).get("adapter") != "dbv3-batik-paths/1"
-            or record["conversion"].get("recipe_sha256") is None
-            or record.get("program", {}).get("provenance", {}).get("producer") != "dbv3-batik-paths/1"):
+    adapter = record.get("conversion", {}).get("adapter") if isinstance(record, dict) else None
+    if (adapter not in ACQUIRED_ADAPTERS or record["conversion"].get("recipe_sha256") is None
+            or record.get("program", {}).get("provenance", {}).get("producer") != adapter):
         raise ValueError("Acquired DBV3 artwork is required. Generate with DrawingBot V3 and import artwork.json; legacy artwork requires regeneration")
     return validate_path_artwork(record)

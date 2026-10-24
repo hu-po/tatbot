@@ -18,7 +18,8 @@ enum State : int {
 class Monitor
 {
 public:
-  Monitor(const std::string & device, bool required, std::atomic<int> & state);
+  // Throws when the device cannot be opened: a monitor never runs without its e-stop.
+  Monitor(const std::string & device, std::atomic<int> & state);
   ~Monitor();
 
   Monitor(const Monitor &) = delete;

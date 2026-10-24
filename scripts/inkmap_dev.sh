@@ -17,11 +17,5 @@ while [ $# -gt 0 ]; do
 done
 command -v npm >/dev/null || { echo "inkmap_dev: need node >= 22 and npm" >&2; exit 3; }
 [ -d "$root/node_modules" ] || (cd "$root" && npm ci --no-audit --no-fund)
-# ?showcase=1 fetches compiled scenarios that are not tracked; say so plainly
-# rather than letting the gallery 404 on a fresh clone.
-if ! compgen -G "$root/public/showcase/*.scenario.json" >/dev/null; then
-  echo "inkmap_dev: no compiled showcase scenarios (?showcase=1 will be empty). Build them with:" >&2
-  echo "  uv run --project $repo/python/tatbot_sim python -m tatbot_sim.inkmap.showcase --output-dir $root/public/showcase --install" >&2
-fi
 echo "inkmap_dev: http://$host:$port/"
 cd "$root" && exec npx vite --host "$host" --port "$port"

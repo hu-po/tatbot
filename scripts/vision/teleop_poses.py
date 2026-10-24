@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Export one arm's measured tool poses from explicit recorded inputs; no motion authority.
+"""Export the follower's measured tool poses from explicit recorded inputs; no motion authority.
 
-The follower (right arm) is the default and its export is unchanged. `--arm left`
-exports the leader's recorded joints through the left chain to its own tool
-mount; a leader tool without a touch-off is placed at its datasheet nominal
-and the manifest says so (`tip_source`). The npz keys keep their historical
-`follower_*` names for either arm; `arm` in the manifest is authoritative.
+The follower (the pink, right arm) is the one arm the model carries; the teleop
+leader has no chain in urdf/tatbot.urdf. A tool without a touch-off is placed
+at its datasheet nominal and the manifest says so (`tip_source`).
+
+Poses carry the workspace's `joint_offsets_rad`, the encoder-zero model
+correction the drawing stack's arm model carries (`kinematic_calibration`);
+the npz keeps the recorded joints as they were read.
 """
 import argparse
 import hashlib
@@ -25,6 +27,8 @@ from tatbot_paths import bootstrap  # noqa: E402
 bootstrap()
 import arm_kinematics as kin  # noqa: E402
 import tool_spec  # noqa: E402
+from kinematic_calibration import KEY as JOINT_OFFSETS_KEY  # noqa: E402
+from kinematic_calibration import validate_offsets  # noqa: E402
 from teleop_log import HEADER_LEN, MAGIC, TeleopLog  # noqa: E402
 
 
@@ -59,10 +63,6 @@ def _log_bytes(data):
 def _model(chain, model):
     """Walk the tool mount back to the root; only this arm's driven joints may move."""
     required = set(model.joint_names) | {model.carriage_joint}
-    # The leader's mount rides the thumb-side carriage, a URDF mimic of its driven
-    # carriage joint; it is movable but not one of the driver's seven axes.
-    mimics = {name for name, joint in chain.joints.items()
-              if joint.get('mimic') and joint['mimic'].get('joint') == model.carriage_joint}
     seen = set()
     links = set()
     link = model.tool_mount
@@ -73,25 +73,25 @@ def _model(chain, model):
         seen.add(name)
         links.add(link)
         joint = chain.joints[name]
-        _joint(name, joint, required, mimics, model)
+        _joint(name, joint, required, model)
         link = joint['parent']
-    if not set(model.joint_names) <= seen or not (seen & ({model.carriage_joint} | mimics)) or model.link6 not in links:
+    if not required <= seen or model.link6 not in links:
         raise ValueError(f'incomplete {model.arm} arm/tool-mount chain')
     return link
 
 
-def _joint(name, joint, required, mimics, model):
+def _joint(name, joint, required, model):
     kind = joint['type']
     if kind not in ('fixed', 'revolute', 'continuous', 'prismatic'):
         raise ValueError('unsupported pose-model joint')
     if (not np.isfinite(joint['origin']).all() or joint['axis'].shape != (3,)
             or not np.isfinite(joint['axis']).all()):
         raise ValueError('nonfinite pose model')
-    if kind != 'fixed' and (name not in required | mimics or np.linalg.norm(joint['axis']) <= 0):
+    if kind != 'fixed' and (name not in required or np.linalg.norm(joint['axis']) <= 0):
         raise ValueError('unknown movable joint or invalid axis')
     if name in model.joint_names and kind not in ('revolute', 'continuous'):
         raise ValueError('arm joints must be revolute')
-    if name in {model.carriage_joint} | mimics and kind != 'prismatic':
+    if name == model.carriage_joint and kind != 'prismatic':
         raise ValueError('carriage must be prismatic')
     if kind == 'prismatic' and not np.isclose(np.linalg.norm(joint['axis']), 1., rtol=0, atol=1e-9):
         raise ValueError('prismatic axis must have unit length for measured metres')
@@ -100,8 +100,7 @@ def _joint(name, joint, required, mimics, model):
 def _source_paths():
     return [Path(__file__), REPO / 'scripts/vision/teleop_log.py',
             REPO / 'scripts/vision/urdf_kinematics.py', REPO / 'scripts/lib/arm_kinematics.py',
-            REPO / 'scripts/lib/tool_spec.py', REPO / 'scripts/lib/motion_constants.py',
-            REPO / 'config/motion_constants.json']
+            REPO / 'scripts/lib/kinematic_calibration.py', REPO / 'scripts/lib/tool_spec.py']
 
 
 def _poses(positions, chain, tip, model):
@@ -162,9 +161,8 @@ def _tip(spec, workspace, arm):
     return np.asarray(spec.nominal_tip_offset_m, dtype=float), 'datasheet nominal'
 
 
-def export(log_path, out, urdf_path, workspace_path, ee_tool, arm='right'):
-    if arm not in kin.ARM_IDS:
-        raise ValueError(f'unknown arm {arm!r}')
+def export(log_path, out, urdf_path, workspace_path, ee_tool):
+    arm = 'right'
     out = Path(out).expanduser()
     if out.exists():
         raise ValueError('pose output already exists')
@@ -174,6 +172,7 @@ def export(log_path, out, urdf_path, workspace_path, ee_tool, arm='right'):
               'workspace': _read(workspace_path, 1024**2)}
     _log_bytes(inputs['log'])
     workspace = _workspace(inputs['workspace'], arm)
+    offsets = np.asarray(validate_offsets(workspace[arm].get(JOINT_OFFSETS_KEY)))
     if tool_spec.active_tool_id(workspace=workspace, arm=arm) != ee_tool:
         raise ValueError('stated tool differs from recorded workspace')
     tool_path = REPO / 'config/tools' / (ee_tool + '.yaml')
@@ -191,11 +190,10 @@ def export(log_path, out, urdf_path, workspace_path, ee_tool, arm='right'):
             (temporary / key).write_bytes(inputs[key])
         log = TeleopLog(temporary / 'log')
         chain = kin.urdf_chain(temporary / 'urdf')
-        model = kin.ArmModel(arm, chain=chain, workspace=workspace)
+        model = kin.ArmModel(arm)
         root = _model(chain, model)
-        positions = log.follower_pos if arm == 'right' else log.leader_pos
-        read_offset_s = log.t_follower_read if arm == 'right' else log.t_leader_read
-        tcp, link6 = _poses(positions, chain, tip, model)
+        positions, read_offset_s = log.follower_pos, log.t_follower_read
+        tcp, link6 = _poses(positions + offsets, chain, tip, model)
     stamps = log.wall_start_ns + np.rint(read_offset_s * 1e9).astype(np.int64)
     if np.any(np.diff(stamps) <= 0):
         raise ValueError('integer read timestamps are not strictly increasing')
@@ -207,8 +205,8 @@ def export(log_path, out, urdf_path, workspace_path, ee_tool, arm='right'):
               'samples': len(log), 'root_frame': root, 'tool_id': ee_tool,
               'orientation': f'tool_mount axes at the {tip_source} working point; root_from_link6 retained separately',
               'timestamp_semantics': f'host {role} read completion, not hardware sample time; no camera synchronization claim',
-              'joint_source': f'recorded measured {role}_pos; six arm radians then carriage metres '
-                              '(npz keys keep their historical follower_* names for either arm)',
+              'joint_source': f'recorded measured {role}_pos; six arm radians then carriage metres',
+              JOINT_OFFSETS_KEY: offsets.tolist(),
               'wall_start_ns': log.wall_start_ns, 'period_s': log.period_s,
               'inputs': {key: hashlib.sha256(data).hexdigest() for key, data in inputs.items()},
               'tool_sha256': hashlib.sha256(frozen[tool_path]).hexdigest(),
@@ -230,11 +228,9 @@ def main(argv=None):
     parser.add_argument('--urdf', required=True)
     parser.add_argument('--workspace', required=True)
     parser.add_argument('--ee-tool', required=True)
-    parser.add_argument('--arm', choices=kin.ARM_IDS, default='right',
-                        help='which arm the poses belong to: the follower (default) or the leader')
     args = parser.parse_args(argv)
     try:
-        report = export(args.log, args.out, args.urdf, args.workspace, args.ee_tool, args.arm)
+        report = export(args.log, args.out, args.urdf, args.workspace, args.ee_tool)
     except (ValueError, OSError, KeyError, TypeError, OverflowError, ParseError) as error:
         parser.exit(3, f'pose export refused: {error}\n')
     print(json.dumps(report, allow_nan=False))

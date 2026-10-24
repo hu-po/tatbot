@@ -24,19 +24,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PATH = ROOT / "config" / "schemas.json"
 
-JOB = "tatbot.session-job/4"
-PROGRAM = "tatbot.session-program/2"
 SURFACE = "tatbot.session-surface/1"
-EVENT = "tatbot.session-event/1"
 RECEIPT = "tatbot.receipt/1"
 
-# The scan set: the fleet, stencil and stroke sources, never their test modules.
+# The scan set: the fleet and stencil sources, never their test modules.
 SCAN_DIRS = ("rust/fleetctl/src", "rust/tatbot-arm/src")
-SCAN_GLOBS = ("scripts/lib/fleet_*.py", "scripts/lib/stroke_*.py",
+SCAN_GLOBS = ("scripts/lib/fleet_*.py",
               *(f"scripts/lib/{name}.py" for name in (
-                  "stencil_origin", "stencil_outline", "stencil_scan", "stencil_state", "candidate_plan",
-                  "live_inputs", "schemas", "stencils", "surface_rgb",
-                  "tracking_rgb", "view_assets")))
+                  "live_inputs", "schemas", "tracking_rgb", "view_assets")))
 LITERAL = re.compile(r"""["'](tatbot\.[a-z0-9-]+/[0-9]+)["']""")
 
 

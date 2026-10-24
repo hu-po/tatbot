@@ -2,11 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { SvgDOMParser } from "../tools/svg-dom.ts";
-import { designFromBodyFile } from "../src/core/body-design.ts";
+import { bodyArtworks, designFromBodyFile, surfaceBindings } from "../src/core/body-design.ts";
 import { makeDesign, parseDesign, validateDesign } from "../src/core/design.ts";
 import { makeSurfacePlacement } from "../src/core/surface-placement.ts";
 import { canonicalDigest } from "../src/core/human-representation/schema.ts";
-import { makeSimulationBundle, simulationRequest } from "../src/core/sim-bundle.ts";
 import type { AtlasData } from "../src/core/atlas.ts";
 import type { PlacementFile } from "../src/core/schema.ts";
 
@@ -14,13 +13,14 @@ Object.assign(globalThis, { DOMParser: SvgDOMParser });
 const atlas = JSON.parse(readFileSync(new URL("../public/bodies/mhr-soma-v1.regions.json", import.meta.url), "utf8")) as AtlasData;
 const file = JSON.parse(readFileSync(new URL("../../../config/inkmap/examples/forearm-placement-v6.json", import.meta.url), "utf8")) as PlacementFile;
 
-test("body design and simulation export use identical frozen artwork and placement intent", async () => {
+test("body design keeps the frozen artwork and the surface binding's placement intent", async () => {
   const design = await designFromBodyFile("Body artwork", file, atlas);
-  const bundle = await makeSimulationBundle(file, atlas, simulationRequest("supine", "#c07f57", null, "lutin-3rl-bugpin", 42));
-  assert.deepEqual(design.artworks, bundle.artworks);
-  assert.deepEqual(design.placements.map(item => item.id), bundle.surface_placements.map(item => item.id));
+  const artworks = await bodyArtworks(file);
+  const bindings = await surfaceBindings(file, artworks, atlas);
+  assert.deepEqual(design.artworks, artworks);
+  assert.deepEqual(design.placements.map(item => item.id), bindings.map(item => item.id));
   const placed = design.placements[0].placement;
-  const old = bundle.surface_placements[0].placement;
+  const old = bindings[0].placement as Record<string, unknown>;
   assert.equal(placed.target.kind, "body");
   assert.deepEqual(placed.target.anchor, old.anchor);
   assert.deepEqual(placed.target.supported_domain, old.supported_domain);
@@ -65,10 +65,8 @@ test("rehashed designs cannot detach source artwork, omit bindings or duplicate 
   await assert.rejects(parseDesign('{"schema":1,"schema":2}'), /duplicate/);
 });
 
-// The Python design builder (tatbot_sim.inkmap.design_build, `tatbot design place`)
-// writes designs this reader must accept. The fixture is regenerated and compared
-// byte for byte by python/tatbot_sim/tests/test_design_build.py, so the two
-// builders cannot drift apart without one of these two tests failing.
+// A design written by the former headless Python builder (`tatbot design place`,
+// removed with the ManiSkill simulator): designs it wrote must keep opening.
 test("a cylinder design built by the Python CLI opens in this reader", async () => {
   const raw = readFileSync(new URL("fixtures/python-cylinder-design.json", import.meta.url), "utf8");
   const design = await parseDesign(raw);

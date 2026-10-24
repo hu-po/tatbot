@@ -3,7 +3,7 @@
 A façade over the launchers and tools in this repo. It adds a noun-verb
 grammar, safety tiers, node routing, ``--dry-run``/``--explain``/``--json``
 and a machine-readable schema; it does **not** reimplement the bash safety
-libraries (``estop_guard``, ``arm_gate``, ``ink_hook``, ``ee_tool``) — every
+libraries (``estop_guard``, ``arm_gate``, ``ee_tool``) — every
 hardware verb ``exec``s the launcher that sources them, so they run exactly
 as they do when the launcher is called by path.
 

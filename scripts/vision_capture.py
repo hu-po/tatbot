@@ -7,9 +7,9 @@ was asked to stamp) followed by capture-<k>.done. docs/surface-formats.md
 "Wrist captures" is the contract; the keys written here are exactly the ones
 listed there.
 
-    vision_capture.py once <dir> --arm left --k 1 --joints j0..j5 --carriage 0.002
+    vision_capture.py once <dir> --arm right --k 1 --joints j0..j5 --carriage 0.002
                                                 # --arm names the physical arm whose wrist
-                                                # cameras answer (left|right, never a default);
+                                                # cameras answer (never a default);
                                                 # the arm's registry roles must be ones this
                                                 # checkout retains geometry for (ROLES)
     vision_capture.py once ... --fake          # tilted-plane synthetic depth
@@ -138,9 +138,8 @@ class RealSense:
                 disconnect()
 
 
-# The synthetic plane's tilt per role: the two right mounts look at it from
-# either side, the left wrist from a third.
-FAKE_TILT_RAD = {"wrist_upper": 0.12, "wrist_lower": -0.08, "wrist_left": 0.10}
+# The synthetic plane's tilt per role: the pink wrist's two mounts look at it from either side.
+FAKE_TILT_RAD = {"wrist_upper": 0.12, "wrist_lower": -0.08}
 
 
 class FakeCamera:

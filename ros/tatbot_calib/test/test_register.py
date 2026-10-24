@@ -118,7 +118,7 @@ def test_holds_that_repeat_one_pose_are_one_view_and_refused():
     assert register.pose_views([np.eye(4), np.eye(4)]) == [0, 0]
 
 
-def _metadata(coefficients=(-0.0527, 0.057, -0.0008, -0.0001, -0.0179), serial="262422301129"):
+def _metadata(coefficients=(-0.0527, 0.057, -0.0008, -0.0001, -0.0179), serial="000000000000"):
     intrinsics = {"schema": "tatbot.camera-intrinsics/1", "width": 640, "height": 360, "fx": 322.2, "fy": 321.7,
                   "ppx": 323.4, "ppy": 181.4, "distortion_model": "BrownConrady",
                   "distortion_coefficients": list(coefficients)}

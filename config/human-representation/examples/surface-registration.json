@@ -1,9 +1,9 @@
 {
-  "body_state_sha256": "93ff21cbb19fc061f0c97e5556a00fddbfe619c1dcab31e2ab7d42924567be98",
+  "body_state_sha256": "c7a7ac08a93afdc2a3fe6eb27a555ecb3d3de833d3e7917a01ff04a483f4b1f9",
   "calibration_sha256": "c94919d7f2ce44ff1d9768c9cde0cc742caccf0147893d8fc1b312e61a09e5ce",
   "capture_sha256": "20b9dba1ad573ab771a59553f3f05f79476221b7e268454a19949b00024f564b",
   "confidence": 1,
-  "content_sha256": "e172991374c279676fe2e3541a899b51c48672cf5852eb011f043b0ae0c5e22c",
+  "content_sha256": "242880b6adb2cc11dccd6cf316fa00767f3d93683fc842e8ae6b26d3e034117e",
   "correspondences": [
     {
       "canonical": {

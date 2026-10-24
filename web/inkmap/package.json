@@ -10,7 +10,6 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "pretest": "node tools/prepare-showcase.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "test:e2e": "node tests/e2e/run_sentence.mjs",
     "test:e2e:production": "node tests/e2e/run_sentence.mjs --production",
@@ -39,6 +38,6 @@
     "@vitejs/plugin-react": "^5.2.0",
     "playwright": "^1.62.1",
     "typescript": "^5.9.3",
-    "vite": "^7.3.6"
+    "vite": "^7.3.7"
   }
 }

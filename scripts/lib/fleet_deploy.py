@@ -24,9 +24,8 @@ from tatbot_cli import nodes as _nodes  # noqa: E402
 
 # Deploy targets are ROLES, resolved through config/nodes.json, so no node name
 # is frozen here and a clone describing a different fleet deploys to its own
-# nodes: the fleet viewer, the camera nodes (PoE and the overhead D555), the
-# arm node.
-DEPLOY_ROLES = ('rerun-server', 'poe-cameras', 'overhead-depth', 'arm')
+# nodes: the fleet viewer, the overhead D555's owner, the arm node.
+DEPLOY_ROLES = ('rerun-server', 'overhead-depth', 'arm')
 
 
 def _role_node(role):
@@ -365,12 +364,11 @@ OBSERVER_REQUIREMENTS = 'scripts/vision/requirements-observer.txt'
 SERVICE_ENVIRONMENTS = {
     'tatbot-zenohd.service': (),
     'tatbot-zenoh-presence.service': (),
-    'tatbot-visiond-poe.service': (),
     'tatbot-visiond-d405.service': (),
     'tatbot-visiond-d555.service': (),
     'tatbot-trackd.service': (),
-    'tatbot-trackd-left.service': (),
     OBSERVER_UNIT: ('observer-venv',),
+    'tatbot-cockpit.service': (),
 }
 
 
@@ -474,7 +472,7 @@ def cargo_build_steps(binaries, services, stage):
                   f'install -m 755 "$CARGO_TARGET_DIR/release/{binary}" {shlex.quote(stage + "/bin/" + binary + ".next")}',
                   shlex.join(["mv", "-f", stage + "/bin/" + binary + ".next", stage + "/bin/" + binary])]
     if any(s['binary'] == 'zenohd' for s in services):
-        build += ['cargo install zenohd --version 1.10.0 --locked --no-default-features --features zenoh/transport_tcp --root ' + shlex.quote(stage)]
+        build += ['cargo install zenohd --version 1.10.0 --locked --no-default-features --features zenoh/transport_tcp,zenoh/auth_usrpwd --root ' + shlex.quote(stage)]
     return build
 
 
@@ -577,8 +575,9 @@ def _claim_fresh_stage(parser, target, stage):
     try:
         remote(target, ['mkdir', stage])
     except subprocess.CalledProcessError:
-        parser.exit(3, 'deploy refused: existing same-SHA stage failed reuse verification; '
-                       'preserve it for inspection and use a fresh release identity\n')
+        parser.exit(3, f'deploy refused: {stage} already holds this sha and was not reused (a `--service` '
+                       'deploy never reuses a stage); preserve it for inspection: select every unit this sha needs '
+                       'in one command (`--service` repeats), or deploy a new sha\n')
 
 
 def _build_commands(args, context, sha):
@@ -791,15 +790,31 @@ def bus_controller(parser, stages, nodes):
     if staged:
         return target, endpoint, staged
     checkout = str(checkout_of(router, Path('/home') / target.split('@', 1)[0]))
+    path = _verified_controller(target, checkout)
+    if not path:
+        # The checkout moves past its stamp (a daily merge, a CLI hop's pull) while the stamped
+        # release, kept from pruning, still verifies against its own archived source.
+        try:
+            release = remote_output(target, ['python3', '-c', 'import json,sys; print(json.load(open(sys.argv[1]))'
+                                             '["release"])', checkout + '/.tatbot-build.json'])
+        except subprocess.CalledProcessError:
+            release = ''
+        path = _verified_controller(target, release + '/source') if release.startswith('/') else ''
+    if not path:
+        parser.exit(3, 'deploy: the selected units were installed and restarted, but the bus-router node has no '
+                    'verified controller for the liveliness check; a full deploy of that node stamps its '
+                    'checkout with one\n')
+    return target, endpoint, path
+
+
+def _verified_controller(target, checkout):
+    """The receipt-verified `fleetctl` path for `checkout` on `target`, else ''."""
     try:
         path = remote_output(target, ['python3', checkout + '/scripts/lib/fleet_release.py',
                                       'verify', '--checkout', checkout, '--binary', 'fleetctl'])
     except subprocess.CalledProcessError:
-        path = ''
-    if len(path.splitlines()) != 1 or not path.endswith('/bin/fleetctl'):
-        parser.exit(3, 'deploy: the bus-router node has no verified controller for the liveliness check; '
-                    'a full deploy of that node stamps its checkout with one\n')
-    return target, endpoint, path
+        return ''
+    return path if len(path.splitlines()) == 1 and path.endswith('/bin/fleetctl') else ''
 
 
 def verify_deployment(parser, stages, nodes, requested, run_dir, sha):
@@ -841,6 +856,25 @@ def verify_deployment(parser, stages, nodes, requested, run_dir, sha):
             sys.exit(result.returncode)
         time.sleep(2)
     print('Selected services have matching source liveliness; hardware phase acceptance is separate.')
+    verify_bus_admission(parser, target, endpoint, controller)
+
+
+def verify_bus_admission(parser, target, endpoint, controller):
+    """Where the router node holds the fleet bus credential, a client without it must be refused: zenohd only
+    warns about configuration it cannot apply, so a router built without auth_usrpwd would admit everyone."""
+    probe = ('test -f "${TATBOT_BUS_CREDENTIALS-$HOME/.config/tatbot/bus-credentials}" || exit 10; '
+             f'TATBOT_BUS_CREDENTIALS= {shlex.join([controller, "--connect", endpoint, "services"])} '
+             '>/dev/null 2>&1 && exit 11; exit 0')
+    result = subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', target, probe])
+    if result.returncode == 10:
+        print('The fleet bus is open: its router node holds no bus credential (docs/fleet.md).')
+    elif result.returncode == 11:
+        parser.exit(3, 'deploy: the bus router admits a client without the fleet credential; '
+                       'rebuild zenohd with zenoh/auth_usrpwd\n')
+    elif result.returncode:
+        parser.exit(5, f'deploy: could not ask the bus router whether it admits strangers (exit {result.returncode})\n')
+    else:
+        print('The fleet bus refuses clients without the fleet credential.')
 
 
 if __name__ == '__main__':

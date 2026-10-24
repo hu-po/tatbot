@@ -33,8 +33,8 @@ TIER_MEANING = {
 }
 
 # What a tier implies, for the tier table. A verb's own gates (``Verb.gates``)
-# are computed from what it actually declares — ``needs_tool``, ``launch_id``,
-# ``ink_hook`` — so a verb never advertises a gate its launcher does not run.
+# are computed from what it actually declares — ``needs_tool``, ``launch_id`` —
+# so a verb never advertises a gate its launcher does not run.
 GATE_ESTOP = "e-stop required (launcher: estop_guard)"
 GATE_TOOL = "tool named to the launcher: --ee-tool, else TATBOT_EE_TOOL, else the owner's fitted tool"
 GATE_LAUNCH_ID = "launch id ledgered and audited (launcher: arm_gate)"
@@ -59,12 +59,15 @@ MOTION_TIERS = (MOTION_HUMAN, MOTION_AUTO)
 #                ownership refuses (exit 4) even when some node happens to
 #                carry the role: an arm workflow that ran on "whichever node
 #                answered" would command hardware the operator is not at.
-#   prefer-local this node runs it when it owns the role; otherwise a single
-#                owner is hopped to, and a shared role is refused with the
-#                eligible targets so `--on` can name one.
+#   prefer-local an explicit `--on` naming an owner runs it there (one naming
+#                a node without the role refuses); otherwise this node runs it
+#                when it owns the role, a single owner is hopped to, and a
+#                shared role is refused with the eligible targets so `--on`
+#                can name one.
 OWNER = "owner"
 PREFER_LOCAL = "prefer-local"
 ROUTING_POLICIES = (OWNER, PREFER_LOCAL)
+
 
 @dataclass
 class Plan:
@@ -99,11 +102,10 @@ class Invocation:
 
     original: list[str]
     global_tokens: list[str]          # normalized globals, routing excluded
-    command_tokens: list[str]         # [noun, *owned tokens], after alias translation
+    command_tokens: list[str]         # [noun, *owned tokens]
     passthrough: list[str]
     routing_tokens: list[str] = field(default_factory=list)
     has_passthrough: bool = False     # an explicit `--` was typed, even with an empty tail
-    deprecations: list[str] = field(default_factory=list)
 
     @property
     def tail_tokens(self) -> list[str]:
@@ -168,8 +170,7 @@ class Verb:
     args: Callable[[argparse.ArgumentParser], None] | None = None
     needs_tool: bool = False       # --ee-tool must be stated
     tool_arm: str = "right"        # physical arm whose fitted-tool pointer supplies the default
-    launch_id: bool = False        # the launch carries an automatic launch id (ledgered + audited by arm_gate); --tag labels it
-    ink_hook: bool = False         # takes --no-ink (scripts/lib/ink_hook.sh)
+    launch_id: bool = False        # the launch carries an automatic launch id (ledgered + audited by arm_gate)
     passthrough: str | None = None # what receives the args after `--`
     tty: bool = False              # --on hops with `ssh -t`
     auto_hop: bool = False         # route to the role owner before execution-node gates
@@ -240,17 +241,14 @@ NOUNS = {
     "ink": ("operator", "inks, caps, palette and the ledger"),
     "teleop": ("operator", "leader→follower teleoperation"),
     "ros": ("operator", "the ROS 2 drawing stack: deploy, up/down, compile, draw, touch, decide"),
-    "rollout": ("operator", "run and read trained policies on the arm"),
+    "rollout": ("development", "offline checks of a trained policy: its contract, its action plausibility"),
     "serve": ("administration", "the async policy server"),
     "train": ("development", "policy training on the training nodes"),
     "data": ("development", "datasets: the hub archive and the LeRobot dataset tools"),
-    "sim": ("development", "scenario, dataset, evaluation and render tools"),
-    "travel": ("development", "travel demo previews and synthetic tracing episodes"),
     "calib": ("operator", "native arm measurements and retained overhead registration"),
     "vision": ("operator", "cameras, calibration, tracking, deploy"),
     "live": ("operator", "every live sensor in one Rerun viewer"),
     "node": ("administration", "the node→role map and ssh dispatch"),
-    "design": ("development", "an image or an SVG to a portable design, without a browser"),
     "research": ("development", "DBV3 paired drawing research with frozen inputs and durable recovery"),
     "drawingbot": ("development", "DrawingBotV3 stroke experiments and preference review"),
     "inkmap": ("development", "ground InkLang placements and preview tattoos on canonical bodies"),
@@ -266,6 +264,25 @@ NOUN_ORDER = tuple(NOUNS)
 NOUN_SUMMARY = {name: summary for name, (_, summary) in NOUNS.items()}
 
 
+def declare_noun(name: str, group: str, summary: str) -> None:
+    """Declare a noun from a verb module the package discovers rather than lists.
+
+    It sorts after every noun above. A noun already declared keeps its line, so
+    a discovered module can never reword or reorder a listed one.
+    """
+    global NOUN_ORDER
+    if group not in ("operator", "development", "administration"):
+        raise ValueError(f"noun {name!r}: unknown group {group!r}")
+    if name in NOUNS:
+        return
+    NOUNS[name] = (group, summary)
+    NOUN_SUMMARY[name] = summary
+    NOUN_ORDER = tuple(NOUNS)
+    from tatbot_cli import metadata  # its GROUPS were read from NOUNS when it loaded
+    if name not in metadata.GROUPS[group]:
+        metadata.GROUPS[group] = (*metadata.GROUPS[group], name)
+
+
 _REGISTRY: list[Verb] = []
 
 
@@ -274,6 +291,8 @@ def verb(**kw) -> Callable[[Handler], Handler]:
 
     def deco(fn: Handler) -> Handler:
         record = Verb(run=fn, **kw)
+        if record.routing not in ROUTING_POLICIES:
+            raise ValueError(f"{record.name}: routing {record.routing!r} is not one of {ROUTING_POLICIES}")
         record.argument_spec = Arguments.capture(record.args)
         from tatbot_cli.metadata import apply_metadata
         apply_metadata(record)
@@ -291,7 +310,7 @@ _TREE = Path(__file__).resolve().parents[3]
 
 def _available(v: "Verb") -> bool:
     """A verb exists only where its wrapped scripts do. The public export
-    excludes fleet-orchestration scripts (plan Phase 5), and the CLI's help
+    excludes fleet-orchestration scripts, and the CLI's help
     must be truthful on that tree: a verb missing any backing script is
     hidden rather than advertised and broken. Native verbs (no wraps) are
     always available."""

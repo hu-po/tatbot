@@ -79,17 +79,11 @@ pub struct TargetSpec {
     pub parent_frame: Option<String>,
     pub minimum_acquisition_ids: Option<usize>,
     pub ambiguity_group: Option<String>,
-    pub root_id: Option<usize>,
-    pub calibration_root_id: Option<usize>,
-    pub grid: Option<Vec<Vec<usize>>>,
     pub minimum_calibration_observations: Option<usize>,
     pub minimum_calibration_poses_per_id: Option<usize>,
     pub max_calibration_corner_px: Option<f64>,
     pub max_calibration_residual_mm: Option<f64>,
     pub max_calibration_parent_distance_mm: Option<f64>,
-    pub max_calibration_reprojection_px: Option<f64>,
-    pub max_calibration_consensus_mm: Option<f64>,
-    pub max_calibration_regression_mm: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -184,27 +178,6 @@ impl FiducialInventory {
             {
                 anyhow::bail!("invalid minimum acquisition count for {name}");
             }
-            if target.root_id.is_some_and(|id| !target.ids.contains(&id)) {
-                anyhow::bail!("target {name} root_id is not one of its ids");
-            }
-            if target
-                .calibration_root_id
-                .is_some_and(|id| !target.ids.contains(&id))
-            {
-                anyhow::bail!("target {name} calibration_root_id is not one of its ids");
-            }
-            if let Some(grid) = &target.grid {
-                let width = grid.first().map(Vec::len).unwrap_or_default();
-                let flattened: Vec<_> = grid.iter().flatten().copied().collect();
-                if width == 0
-                    || grid.iter().any(|row| row.len() != width)
-                    || flattened.iter().collect::<BTreeSet<_>>().len() != flattened.len()
-                    || flattened.iter().copied().collect::<BTreeSet<_>>()
-                        != target.ids.iter().copied().collect::<BTreeSet<_>>()
-                {
-                    anyhow::bail!("target {name} grid must contain each id once in a rectangle");
-                }
-            }
             if target
                 .minimum_calibration_observations
                 .is_some_and(|count| count < 4)
@@ -219,15 +192,6 @@ impl FiducialInventory {
                     .is_some_and(|value| !value.is_finite() || value <= 0.0)
                 || target
                     .max_calibration_parent_distance_mm
-                    .is_some_and(|value| !value.is_finite() || value <= 0.0)
-                || target
-                    .max_calibration_reprojection_px
-                    .is_some_and(|value| !value.is_finite() || value <= 0.0)
-                || target
-                    .max_calibration_consensus_mm
-                    .is_some_and(|value| !value.is_finite() || value <= 0.0)
-                || target
-                    .max_calibration_regression_mm
                     .is_some_and(|value| !value.is_finite() || value <= 0.0)
             {
                 anyhow::bail!("invalid calibration quality gate for {name}");
@@ -250,16 +214,6 @@ impl FiducialInventory {
                 if instances.len() > 1 && (groups.len() != 1 || groups.contains(&None)) {
                     anyhow::bail!("id {id} is duplicated without one ambiguity_group");
                 }
-            }
-        }
-        for (name, target) in &raw.targets {
-            if let Some(id) = target.calibration_root_id
-                && owners.get(&id).is_some_and(|matches| matches.iter()
-                    .filter(|(name, _)| raw.targets[*name].family == target.family).count() != 1)
-            {
-                anyhow::bail!(
-                    "target {name} calibration_root_id must identify one physical instance"
-                );
             }
         }
         let spare_ids = raw
@@ -288,13 +242,6 @@ impl FiducialInventory {
         self.targets
             .get(name)
             .with_context(|| format!("{} has no target {name}", self.source.display()))
-    }
-
-    pub fn known_ids(&self) -> BTreeSet<usize> {
-        self.targets
-            .values()
-            .flat_map(|target| target.ids.iter().copied())
-            .collect()
     }
 }
 
@@ -477,46 +424,6 @@ pub struct DetectionRoi {
     pub y0: usize,
     pub x1: usize,
     pub y1: usize,
-}
-
-/// Bound detections in the calibrated full-resolution image, expanding and
-/// clamping the half-open ROI. Keeping this next to [`DetectionRoi`] lets the
-/// crop geometry be tested without a GStreamer build.
-pub fn expanded_detection_roi(
-    detections: &[&FiducialDetection],
-    width: usize,
-    height: usize,
-    margin_px: usize,
-) -> Option<DetectionRoi> {
-    let corners = detections
-        .iter()
-        .flat_map(|detection| detection.corners_px)
-        .filter(|corner| corner[0].is_finite() && corner[1].is_finite())
-        .collect::<Vec<_>>();
-    if corners.is_empty() || width == 0 || height == 0 {
-        return None;
-    }
-    let min_x = corners
-        .iter()
-        .map(|corner| corner[0])
-        .fold(f64::INFINITY, f64::min);
-    let min_y = corners
-        .iter()
-        .map(|corner| corner[1])
-        .fold(f64::INFINITY, f64::min);
-    let max_x = corners
-        .iter()
-        .map(|corner| corner[0])
-        .fold(f64::NEG_INFINITY, f64::max);
-    let max_y = corners
-        .iter()
-        .map(|corner| corner[1])
-        .fold(f64::NEG_INFINITY, f64::max);
-    let x0 = (min_x.floor() as isize - margin_px as isize).clamp(0, width as isize - 1) as usize;
-    let y0 = (min_y.floor() as isize - margin_px as isize).clamp(0, height as isize - 1) as usize;
-    let x1 = (max_x.ceil() as isize + margin_px as isize + 1).clamp(1, width as isize) as usize;
-    let y1 = (max_y.ceil() as isize + margin_px as isize + 1).clamp(1, height as isize) as usize;
-    (x0 < x1 && y0 < y1).then_some(DetectionRoi { x0, y0, x1, y1 })
 }
 
 #[derive(Debug)]
@@ -2051,7 +1958,6 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let inventory = FiducialInventory::load(root.join("config/fiducials.json")).unwrap();
         assert_eq!(inventory.target("wrist").unwrap().ids, [2, 3, 4]);
-        assert_eq!(inventory.target("wrist_left").unwrap().ids, [5, 30, 1]);
         let layout = WristLayout::load(
             root.join("config/wrist_tags_measured.json"),
             &inventory,
@@ -2094,33 +2000,6 @@ mod tests {
         raw["calibration_status"] = "pending".into();
         fs::write(&path, serde_json::to_vec(&raw).unwrap()).unwrap();
         assert!(WristLayout::load_target(&path, &inventory, "paper", false).is_err());
-    }
-
-    #[test]
-    fn detector_roi_expands_clamps_and_ignores_nonfinite_corners() {
-        let detection = FiducialDetection {
-            family: None,
-            camera: "camera1".into(),
-            tag_id: 3,
-            corners_px: [[3.2, 4.8], [22.1, 5.0], [f64::NAN, 19.7], [2.9, 20.2]],
-            timestamp_ns: 0,
-            side_px: 20.0,
-            decision_margin: 100.0,
-            hamming: 0,
-            camera_from_tag_candidates: Vec::new(),
-        };
-
-        assert_eq!(
-            expanded_detection_roi(&[&detection], 24, 30, 5),
-            Some(DetectionRoi {
-                x0: 0,
-                y0: 0,
-                x1: 24,
-                y1: 27,
-            })
-        );
-        assert_eq!(expanded_detection_roi(&[], 24, 30, 5), None);
-        assert_eq!(expanded_detection_roi(&[&detection], 0, 30, 5), None);
     }
 
     #[test]
@@ -2296,9 +2175,10 @@ mod tests {
         assert!(detectable_frame(&color));
         let mut detector = AprilTagDetector::new(&inventory, None, Some(1.)).unwrap();
         let found = detector.detect_frame(&camera, &color).unwrap();
+        // The fixture's tag 5 is in no inventory target.
         assert_eq!(
             found.iter().map(|d| d.tag_id).collect::<BTreeSet<_>>(),
-            BTreeSet::from([3, 5])
+            BTreeSet::from([3])
         );
 
         let depth = crate::FrameRecord {
@@ -2395,14 +2275,9 @@ mod tests {
                     bytes: canvas.into_raw(),
                 },
             };
-            // Each physical arm's triplet is its own target: a pink sighting
-            // never counts for blue and vice versa.
-            for (target, ids) in [
-                (None, vec![3, 5]),
-                (Some("board"), vec![3]),
-                (Some("wrist"), vec![3]),
-                (Some("wrist_left"), vec![5]),
-            ] {
+            // Tag 5 (36h11) and the scene's 16h5 tag are in no inventory
+            // target, so no detector keeps them.
+            for (target, ids) in [(None, vec![3]), (Some("wrist"), vec![3])] {
                 let mut detector = AprilTagDetector::new(&inventory, target, Some(1.)).unwrap();
                 let found = detector.detect_frame(&camera, &frame).unwrap();
                 assert_eq!(
@@ -2410,17 +2285,14 @@ mod tests {
                     ids.into_iter().collect()
                 );
                 for detection in found {
-                    let x = match (detection.family.as_deref(), detection.tag_id) {
-                        (Some("apriltag_16h5"), 3) => 40.,
-                        (Some("apriltag_36h11"), 3) => 360.,
-                        _ => 1000.,
-                    };
+                    assert_eq!(detection.family.as_deref(), Some("apriltag_36h11"));
+                    let x = if detection.tag_id == 3 { 360. } else { 1000. };
                     let expected = [[x, 40.], [x + 239., 40.], [x + 239., 279.], [x, 279.]];
                     for (index, actual) in detection.corners_px.iter().enumerate() {
                         let expected = expected[(index + 4 - turns) % 4];
                         assert!((actual[0] - expected[0]).hypot(actual[1] - expected[1]) < 2.);
                     }
-                    let edge = if detection.family.as_deref() == Some("apriltag_16h5") { 0.044 } else { 0.047 };
+                    let edge = 0.047;
                     assert!(!detection.camera_from_tag_candidates.is_empty());
                     assert!(
                         detection.camera_from_tag_candidates.iter().any(|pose| (pose
@@ -2437,14 +2309,25 @@ mod tests {
 
     #[test]
     fn decimated_quad_search_preserves_refined_tag_corners() {
-        if !deployed("../../config/fiducials.json") {
-            return;
-        }
-        let inventory = FiducialInventory::load(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/fiducials.json"),
-        )
+        let target: TargetSpec = serde_json::from_value(serde_json::json!({
+            "family": "apriltag_16h5", "role": "test", "ids": [8], "edge_m": 0.056,
+        }))
         .unwrap();
-        let factory = AprilTagDetectorFactory::new(&inventory, Some("board"), Some(1.0)).unwrap();
+        let live = DetectorProfile {
+            scale: 1.0,
+            min_side_px: 12.0,
+            corner_refinement: true,
+            quad_decimate: 1.0,
+        };
+        let inventory = FiducialInventory {
+            family: "apriltag_16h5".into(),
+            detector: BTreeMap::from([("live".into(), live)]),
+            targets: BTreeMap::from([("sixteen".into(), target)]),
+            spare_ids: Vec::new(),
+            inventory_hash: "synthetic-inventory".into(),
+            source: PathBuf::from("synthetic"),
+        };
+        let factory = AprilTagDetectorFactory::new(&inventory, Some("sixteen"), Some(1.0)).unwrap();
         let tag = image::open(
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../urdf/meshes/tags/16h5_008_56mm/tag.png"),
@@ -2556,17 +2439,11 @@ mod tests {
                     parent_frame: Some("right/gripper_left".into()),
                     minimum_acquisition_ids: Some(2),
                     ambiguity_group: None,
-                    root_id: None,
-                    calibration_root_id: None,
-                    grid: None,
                     minimum_calibration_observations: None,
                     minimum_calibration_poses_per_id: None,
                     max_calibration_corner_px: None,
                     max_calibration_residual_mm: None,
                     max_calibration_parent_distance_mm: None,
-                    max_calibration_reprojection_px: None,
-                    max_calibration_consensus_mm: None,
-                    max_calibration_regression_mm: None,
                 },
             )]),
             spare_ids: Vec::new(),

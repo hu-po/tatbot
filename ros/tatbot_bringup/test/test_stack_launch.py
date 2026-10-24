@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+import yaml
 from tatbot_description import names
 
 pytest.importorskip("launch_ros")
@@ -15,31 +16,36 @@ spec.loader.exec_module(stack_launch)
 def test_arguments():
     assert tuple(stack_launch.ARGUMENTS) == (
         "config", "repo", "runtime_record", "arms", "hardware", "profile", "estop_source", "estop_device",
-        "estop_udp_port", "estop_relay_addr", "probe", "probe_relay_addr", "machine_addr", "page_source", "pattern_id",
-        "touch", "rerun", "record")
+        "estop_udp_port", "estop_relay_addr", "probe", "probe_relay_addr", "machine_addr", "keypad_from", "page_source",
+        "pattern_id", "page_surface", "touch", "rerun", "record", "sim_endpoint", "tuning")
     assert all(default == "" for default, _ in stack_launch.ARGUMENTS.values())
     assert set(stack_launch.OVERRIDES) == set(stack_launch.ARGUMENTS) - {"config", "repo", "runtime_record"}
 
 
 def test_empty_arguments_keep_stack_yaml():
     stack = stack_launch.effective_stack(dict.fromkeys(stack_launch.ARGUMENTS, ""))
-    assert (stack["arms"], stack["hardware"], stack["estop"]["source"]) == (["right"], "mock", "udp")
-    assert stack["record"] is False
+    expected = yaml.safe_load((LAUNCH.parents[1] / "config" / "stack.yaml").read_text())
+    assert {key: value for key, value in stack.items() if key not in ("config_path", "runtime_record")} == expected
 
 
 def test_overrides():
     stack = stack_launch.effective_stack({
         "arms": "left,right", "hardware": "fake", "estop_source": "udp", "estop_udp_port": "7641",
         "estop_relay_addr": "192.0.2.9", "estop_device": "/dev/ttyACM3", "page_source": "fixed",
-        "touch": "false", "rerun": "true", "record": "true", "profile": "bench", "pattern_id": "stencil-half"})
+        "touch": "false", "rerun": "true", "record": "true", "profile": "bench", "pattern_id": "stencil-half",
+        "page_surface": "fitted", "keypad_from": "192.0.2.4"})
+    assert stack["keypad"] == {**stack["keypad"], "from_addr": "192.0.2.4"}
     assert stack["arms"] == ["left", "right"]
     assert stack["estop"] == {**stack["estop"], "source": "udp", "udp_port": 7641, "relay_addr": "192.0.2.9",
                               "serial_device": "/dev/ttyACM3"}
     assert (stack["hardware"], stack["profile"], stack["page"]["source"]) == ("fake", "bench", "fixed")
     assert stack["page"]["pattern_id"] == "stencil-half"
+    assert stack["page"]["surface"]["mode"] == "fitted"
     assert (stack["touch"]["enabled"], stack["rerun"]["enabled"], stack["record"]) == (False, True, True)
     with pytest.raises(ValueError):
         stack_launch.effective_stack({"touch": "maybe"})
+    with pytest.raises(ValueError):
+        stack_launch.effective_stack({"page_surface": "cylinder"})
 
 
 def test_registrations_only_existing(tmp_path):
@@ -53,6 +59,7 @@ def test_bag_topics():
     topics = names.bag_topics(["right"])
     assert "/joint_states" in topics and "/tatbot/safety" in topics
     assert "/right_arm_controller/follow_joint_trajectory/_action/feedback" in topics
+    assert "/tatbot/draw/_action/feedback" in topics          # a replay's current stroke, phase and arc
     assert len(set(topics)) == len(topics)
 
 
@@ -86,3 +93,17 @@ def test_real_stencil_needs_a_registration(hardware, source, raises):
     else:
         stack_launch.check_placement(stack, placed)
     stack_launch.check_placement(stack, {"right": "/some/file.json"})
+
+
+def test_the_bridge_gets_its_isolated_sdk_and_never_the_helper_that_shadows_it(tmp_path, monkeypatch):
+    """rerun-sdk from <stack root>/rerun-sdk (`tatbot ros deploy`) on the bridge's PYTHONPATH alone, and scripts/lib
+    off it: its tatbot_rerun.py would shadow the bridge's own package."""
+    repo, sdk = tmp_path / "repo", tmp_path / "rerun-sdk"
+    (repo / "scripts" / "lib").mkdir(parents=True)
+    (repo / "scripts" / "lib" / "tatbot_rerun.py").write_text("")
+    (sdk / "rerun_sdk" / "rerun").mkdir(parents=True)
+    (sdk / "rerun_sdk" / "rerun" / "__init__.py").write_text("")
+    monkeypatch.setenv("PYTHONPATH", f"{repo / 'scripts' / 'lib'}:{tmp_path / 'contracts'}")
+    env = stack_launch._rerun({"rerun": {"enabled": True}}, repo)
+    assert env["PYTHONPATH"].split(":") == [str(sdk), str(sdk / "rerun_sdk"), str(tmp_path / "contracts")]
+    assert stack_launch._rerun({"rerun": {"enabled": False}}, repo) is None

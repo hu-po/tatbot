@@ -50,11 +50,6 @@ def rig_subnet(repo: Path) -> ipaddress.IPv4Network | None:
     return ipaddress.IPv4Network(subnet, strict=False)
 
 
-def repo_root() -> Path:
-    from tatbot_paths import repo_root as _root
-    return _root()
-
-
 def remote_checkout(nodes: dict, node: str) -> str:
     """`node`'s checkout as a remote shell sees it: `~/x` becomes `$HOME/x` so
     it expands inside a quoted command sent over ssh, where a tilde would not."""
@@ -101,6 +96,28 @@ def bus_endpoint(nmap: dict, *, address: str = "ssh") -> str:
     return f"tcp/{host}:7447"
 
 
+def bus_credentials() -> tuple[str, str] | None:
+    """The fleet bus credential, (user, password) from the first non-blank line, `user:password`, of the file
+    $TATBOT_BUS_CREDENTIALS names, else ~/.config/tatbot/bus-credentials; None without one (an empty variable
+    states none), and the bus is then open. The router admits only it once its node holds the file (docs/fleet.md);
+    tatbot_bus::transport::Credentials reads the same file the same way."""
+    given = os.environ.get("TATBOT_BUS_CREDENTIALS")
+    if given == "":
+        return None
+    path = Path(given or Path.home() / ".config/tatbot/bus-credentials")
+    try:
+        text, mode = path.read_text(), path.stat().st_mode
+    except FileNotFoundError:
+        return None
+    if mode & 0o077:
+        raise ValueError(f"{path} is readable by others: chmod 600 it")
+    line = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    user, sep, password = line.partition(":")   # zenohd reads the file as its dictionary: no comments
+    if not (sep and user.strip() and password.strip()):
+        raise ValueError(f"{path}: no user:password line")
+    return user.strip(), password.strip()
+
+
 def lan_ip(repo: Path | None = None) -> str | None:
     """This host's address on the rig subnet (`__rig__` in config/nodes.json), or
     TATBOT_RERUN_LAN_IP; None without one. A checkout that names no rig subnet
@@ -113,6 +130,8 @@ def lan_ip(repo: Path | None = None) -> str | None:
         out = subprocess.run(["ip", "-4", "-o", "addr"], capture_output=True, text=True, timeout=5, check=False).stdout
     except (OSError, subprocess.SubprocessError):
         return None
+    from tatbot_cli.registry import repo_root
+
     return pick_lan_ip(out, rig_subnet(repo or repo_root()))
 
 
@@ -185,7 +204,7 @@ def hop_argv(nodes: dict, node: str, argv: list[str], *, tty: bool, sync: bool =
     if not target:
         raise KeyError(node)
     # Every private node states its checkout explicitly in config/nodes.json;
-    # the fallback is the public repo's conventional path (plan Phase 1).
+    # the fallback is the public repo's conventional path.
     checkout = nodes[node].get("checkout") or "~/tatbot"
     # sync: bring the remote checkout to origin/main first (fast-forward only, so a
     # diverged or conflicting tree fails loudly instead of running stale code).
@@ -200,11 +219,10 @@ def hop_argv(nodes: dict, node: str, argv: list[str], *, tty: bool, sync: bool =
 
     profile = _os.environ.get("TATBOT_PROFILE", "").strip()
     env_prefix = f"TATBOT_PROFILE={shlex.quote(profile)} " if profile else ""
-    # The fiducial tracker is configured by environment (EE_TRACKING_*, TATBOT_VISIOND_*);
-    # its wrapper used to forward 31 of them through its own ssh, which the CLI hop
-    # replaced on 2026-09-02. Forward that allowlist, and nothing else.
+    # visiond reads its own TATBOT_VISIOND_* overrides (the record root). Forward
+    # that allowlist, and nothing else.
     for key, value in sorted(_os.environ.items()):
-        if key.startswith(("EE_TRACKING_", "TATBOT_VISIOND_")) and value:
+        if key.startswith("TATBOT_VISIOND_") and value:
             env_prefix += f"{key}={shlex.quote(value)} "
     remote = (f"cd {_quote_remote(checkout)} && {pull}{env_prefix}scripts/tatbot --no-hop "
               + " ".join(_quote_remote(a) for a in argv))

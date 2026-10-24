@@ -1,6 +1,7 @@
 """URDF kinematics and damped-least-squares CLIK; test_clik_parity checks the C++ reference."""
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 
 import numpy as np
@@ -17,7 +18,8 @@ def orientation_error(r_cur: np.ndarray, r_tgt: np.ndarray) -> np.ndarray:
 
 class Kinematics:
     """pinocchio model of one arm from URDF text (tatbot_description.robot_description(), or the
-    /robot_description topic). Frames: <arm>/base_link -> <arm>/tcp; joints: names.joint_names(arm)."""
+    /robot_description topic). Frames: <arm>/base_link -> <arm>/tcp; joints: names.joint_names(arm). Each thread
+    has its own pinocchio data: sharing one with the stroke pre-planner, a lift read its placements (2026-10-21)."""
 
     def __init__(self, urdf_xml: str, arm: str = "right"):
         import pinocchio as pin
@@ -26,14 +28,13 @@ class Kinematics:
         self._pin = pin
         self.arm = arm
         self.model = pin.buildModelFromXML(urdf_xml)
-        self.data = self.model.createData()
+        self._local = threading.local()
         self.joint_names = names.joint_names(arm)
         ids = [self.model.getJointId(name) for name in self.joint_names]
         if any(i >= self.model.njoints for i in ids):
             raise ValueError(f"URDF lacks a joint of {self.joint_names}")
         self._iq = np.array([self.model.idx_qs[i] for i in ids])
         self._iv = np.array([self.model.idx_vs[i] for i in ids])
-        self._q = pin.neutral(self.model)
         self._tcp = self.model.getFrameId(names.tcp_frame(arm))
         self._base = self.model.getFrameId(names.base_frame(arm))
         for frame, fid in ((names.tcp_frame(arm), self._tcp), (names.base_frame(arm), self._base)):
@@ -41,7 +42,7 @@ class Kinematics:
                 raise ValueError(f"URDF lacks frame {frame}")
         self.lower = np.array(self.model.lowerPositionLimit[self._iq], float)
         self.upper = np.array(self.model.upperPositionLimit[self._iq], float)
-        pin.framesForwardKinematics(self.model, self.data, self._q)
+        pin.framesForwardKinematics(self.model, self.data, pin.neutral(self.model))
         world_from_base = self.data.oMf[self._base]
         self._r_bw = np.array(world_from_base.rotation).T
         self._p_bw = -self._r_bw @ np.array(world_from_base.translation)
@@ -52,15 +53,26 @@ class Kinematics:
 
         return cls(robot_description(repo, arms=(arm,)), arm)
 
-    def _full(self, q) -> np.ndarray:
-        self._q[self._iq] = q
-        return self._q
+    @property
+    def data(self):
+        """This thread's pinocchio data (the model is shared and never written)."""
+        local = self._local
+        if not hasattr(local, "data"):
+            local.data, local.q = self.model.createData(), self._pin.neutral(self.model)
+        return local.data
+
+    def _full(self, q) -> tuple:
+        """(this thread's data, its full configuration set to q)."""
+        data, full = self.data, self._local.q
+        full[self._iq] = q
+        return data, full
 
     def evaluate(self, q) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """(tcp position (3,), tcp rotation (3, 3), Jacobian (6, 7) [linear; angular]), all in the base."""
         pin = self._pin
-        jac = pin.computeFrameJacobian(self.model, self.data, self._full(q), self._tcp, pin.LOCAL_WORLD_ALIGNED)
-        placement = self.data.oMf[self._tcp]
+        data, full = self._full(q)
+        jac = pin.computeFrameJacobian(self.model, data, full, self._tcp, pin.LOCAL_WORLD_ALIGNED)
+        placement = data.oMf[self._tcp]
         r = self._r_bw
         j = jac[:, self._iv]
         return (r @ placement.translation + self._p_bw, r @ placement.rotation,
@@ -79,8 +91,9 @@ class Kinematics:
 
     def _frame(self, q, fid):
         pin = self._pin
-        pin.forwardKinematics(self.model, self.data, self._full(q))
-        placement = pin.updateFramePlacement(self.model, self.data, fid)
+        data, full = self._full(q)
+        pin.forwardKinematics(self.model, data, full)
+        placement = pin.updateFramePlacement(self.model, data, fid)
         out = np.eye(4)
         out[:3, :3] = self._r_bw @ placement.rotation
         out[:3, 3] = self._r_bw @ placement.translation + self._p_bw
@@ -108,7 +121,7 @@ class Kinematics:
 def depth_sensitivity(kin: Kinematics, q, axis, damping: float = 1e-4) -> np.ndarray:
     """(M, 7) joints per metre of TCP travel along `axis` (M, 3, unit, base) at each row of q (M, 7), the tool's
     rotation and the carriage held: a pen-height change's first-order map to joints, so a trim h composes as
-    q + h * dq_dh. On the pink arm's drawing poses that is within 4 um of the target at 1 mm and 18 um at 2 mm,
+    q + h * dq_dh. On the pink arm's drawing poses that is within 18 um of the target at 2 mm and 53 um at 4 mm,
     and on the plan's own IK branch by construction (ros/README.md 4.4, Trim)."""
     out = np.zeros((len(q), 7))
     twist, eye6 = np.zeros(6), np.eye(6)
@@ -147,7 +160,10 @@ def clik(kin: Kinematics, q0, p, v, rot, pen, period_s: float, clik_cfg: dict, c
     window = carriage_cfg["window_m"]
     inverse_weights = np.array([1.0] * 6 + [1.0 / (weight * weight)])
     margin = np.array([float(clik_cfg.get("joint_limit_margin_rad", 0.0))] * 6 + [0.0])  # carriage: its own travel
-    lower, upper = kin.lower + margin, kin.upper - margin
+    # a start already inside the margin (the rest pose lies ~1 deg off its stops; a trip leaves the arm there) may
+    # move, never farther toward the stop than it stands: before, its every plan failed at sample 0 (2026-10-21)
+    lower = np.minimum(kin.lower + margin, np.where(np.isfinite(q), q, np.inf))
+    upper = np.maximum(kin.upper - margin, np.where(np.isfinite(q), q, -np.inf))
     eye6 = np.eye(6)
 
     def dls(jac6, twist):

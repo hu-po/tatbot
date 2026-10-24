@@ -21,5 +21,5 @@ Keep pages focused, current, and useful without private infrastructure.
 
 Before publishing, check links, build with warnings as errors, and search for
 private paths, hostnames, addresses, identifiers, credentials, business plans,
-and human-use claims. If a page needs those details to be useful, keep it under
+and unmeasured safety claims. If a page needs those details to be useful, keep it under
 `internal/` and publish a conceptual summary instead.

@@ -14,6 +14,18 @@ def observe(io):
     return {'q': q.tolist(), 'measured_monotonic_s': at}
 
 
+def base_points(cam, depths, base_from_depth):
+    """The frames' per-pixel median depth as points in the arm's base (no depth: no point), and that median."""
+    stack = np.asarray(depths, float)
+    stack[stack <= 0] = np.nan
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', RuntimeWarning)
+        median = np.nan_to_num(np.nanmedian(stack, axis=0), nan=0.)
+    pts = depth_points(median, cam.k_depth, intrinsics=cam.depth_metadata['intrinsics'])
+    return pts @ base_from_depth[:3, :3].T + base_from_depth[:3, 3], median
+
+
 def retain(cam, images, depths, kin, q, page, out, arm, *, reference=None, overhead=None):
     """Keep all paired native frames, optical calibration and the exact FK/reference used by the fit."""
     evaluated = (reference or {}).get('captured_at_monotonic_s', time.monotonic())
@@ -22,12 +34,7 @@ def retain(cam, images, depths, kin, q, page, out, arm, *, reference=None, overh
     base_from_tcp = kin.fk(q)
     stack = np.asarray(depths, float)
     stack[stack <= 0] = np.nan
-    import warnings
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore', RuntimeWarning)
-        median = np.nan_to_num(np.nanmedian(stack, axis=0), nan=0.)
-    pts = depth_points(median, cam.k_depth, intrinsics=cam.depth_metadata['intrinsics'])
-    base = pts @ base_from_depth[:3, :3].T + base_from_depth[:3, 3]
+    base, median = base_points(cam, depths, base_from_depth)
     diagnostics = {}
     fit = page_height_from_depth(base, page, diagnostics=diagnostics)
     times = cam.capture_timestamps

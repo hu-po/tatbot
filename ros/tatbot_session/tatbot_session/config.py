@@ -56,21 +56,17 @@ def revision(repo: Path) -> dict | None:
 
 
 def print_page(repo: Path, page: dict, root=None) -> dict:
-    """stack.yaml's `page` with the geometry of the print it names: size_m, clear_m and inner_edges_m from the
-    reference installed for page.pattern_id (scripts/lib/stencil_reference.installed_page), so a print of any
-    size is drawn on as it was generated. Without one, stack.yaml's size_m and clear_m stand (the nominal
-    page of a mock or a fixed bench page). `geometry` says which."""
+    """stack.yaml's `page` with the geometry of the print it names: size_m and clear_m from the reference installed
+    for page.pattern_id (scripts/lib/stencil_reference.installed_page), so a print of any size is drawn on as it
+    was generated. Without one, stack.yaml's size_m and clear_m stand (the nominal page of a mock or a fixed bench
+    page). `geometry` says which."""
     capture._lib(Path(repo))
     import stencil_reference
 
     found = stencil_reference.installed_page(str(page.get("pattern_id") or ""), root)
     if found is None:
         return {**page, "geometry": "stack.yaml"}
-    out = {key: value for key, value in page.items() if key != "inner_edges_m"}
-    out.update(size_m=found["size_m"], clear_m=found["clear_m"], geometry=f"print {found['pattern_id']}")
-    if "inner_edges_m" in found:
-        out["inner_edges_m"] = found["inner_edges_m"]
-    return out
+    return {**page, "size_m": found["size_m"], "clear_m": found["clear_m"], "geometry": f"print {found['pattern_id']}"}
 
 
 def page_trim(path: str | None) -> dict | None:

@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
-# `tatbot viewer <start|stop|status|open|view|install|serve>`:
+# `tatbot viewer <start|stop|status|open|reset|view|install|station-install|serve|sysmon>`:
 # the one fleet Rerun viewer every workflow streams into (docs/vision.md).
 #
 #   start     on the rerun-server node: headless server on :9876 (+ web :9090)
-#   open      attach a capped window on THIS node to the fleet viewer
+#   open      attach a capped window on THIS node to the fleet viewer [--memory-limit SIZE] [--restart] [--fullscreen]
 #   stop      here: close this node's window; on the server node: also the server
-#   status    fleet reachability / local server / window / version / proxy URL
+#   status    fleet reachability / local server / window / version / web viewer URL
+#   reset     on the rerun-server node: send the fixed blueprint again; every window drops its own edits
 #   view F    stream a recorded .rrd/.wxtl (or a teleop run dir) into the fleet viewer
-#   install   on the rerun-server node: enable the headless tatbot-viewer@ (sudo)
+#   install   on the rerun-server node: enable tatbot-viewer@ and its tatbot-sysmon@ (sudo)
+#   station-install  on the station: enable its tatbot-sysmon@ (sudo)
 #   serve     run the server in the foreground (what tatbot-viewer@ execs)
+#   sysmon    stream this host's load and temperature in the foreground (what tatbot-sysmon@ execs)
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/cli_hint.sh
@@ -16,7 +19,7 @@ source "$REPO/scripts/lib/cli_hint.sh"; cli_hint::note "tatbot viewer"
 # shellcheck source=scripts/vision/rerun_session.sh
 source "$REPO/scripts/vision/rerun_session.sh"
 
-usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; }
 cmd="${1:-status}"; shift || true
 SERVER="$(rerun_session::fleet_server)" || true
 SERVER_NODE="${SERVER%% *}"
@@ -26,6 +29,20 @@ need_server_node() {
     echo "tatbot viewer $cmd runs on the rerun-server node ($SERVER_NODE): tatbot --on $SERVER_NODE viewer $cmd" >&2
     exit 4
   fi
+}
+
+# tatbot-sysmon@ for this login user, (re)started on this checkout. A node
+# whose roles name no sysmon entity (tatbot_sysmon.SYSMON_ROLES) is skipped.
+install_sysmon() {
+  if ! python3 "$REPO/scripts/lib/tatbot_sysmon.py" --print-role >/dev/null; then
+    echo "no host-load monitor here: this node reports under no sysmon role"
+    return 0
+  fi
+  sudo install -m 644 "$REPO/config/systemd/tatbot-sysmon@.service" /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl enable "tatbot-sysmon@$USER.service"
+  sudo systemctl restart "tatbot-sysmon@$USER.service"
+  echo "tatbot-sysmon@$USER.service $(systemctl is-active "tatbot-sysmon@$USER.service" 2>/dev/null || true)"
 }
 
 serve_args() {
@@ -44,6 +61,17 @@ case "$cmd" in
     TATBOT_RERUN_LOCAL=1 rerun_session::ensure_viewer "$@"
     ;;
   open)
+    limit="$VIEWER_MEMORY_LIMIT"; restart=""; state=maximized
+    while (($#)); do
+      case "$1" in
+        --memory-limit) limit="${2:?--memory-limit needs a size such as 4GB}"; shift 2 ;;
+        --memory-limit=*) limit="${1#*=}"; shift ;;
+        --restart) restart=restart; shift ;;
+        --fullscreen) state=fullscreen; shift ;;
+        -*) echo "viewer open takes --memory-limit SIZE, --restart and --fullscreen only: $1" >&2; exit 2 ;;
+        *) limit="$1"; shift ;;   # the older positional cap
+      esac
+    done
     proxy="$(rerun_session::fleet_proxy)"
     if rerun_session::is_server_node || [ -z "$SERVER" ]; then
       rerun_session::start_server
@@ -51,9 +79,12 @@ case "$cmd" in
     elif ! rerun_session::reachable "$proxy"; then
       echo "fleet viewer $proxy not answering (tatbot --on $SERVER_NODE viewer start)" >&2; exit 1
     fi
-    rerun_session::open_gui "${1:-$VIEWER_MEMORY_LIMIT}" "$proxy" borrow \
-      || { echo "no display on this node; the web viewer still shows everything" >&2; exit 1; }
-    echo "window attached to $proxy (cap ${1:-$VIEWER_MEMORY_LIMIT})"
+    rc=0; rerun_session::open_window "$limit" "$proxy" "$restart" "$state" || rc=$?
+    if [ "$rc" = 1 ]; then
+      echo "no display on this node; the web viewer still shows everything: $(rerun_session::web_url || echo "port ${RERUN_WEB_PORT:-9090} on the server")" >&2
+    fi
+    [ "$rc" = 0 ] || exit "$rc"
+    echo "window attached to $proxy (cap $limit, $state; $(rerun_session::proxy_path "$proxy"))"
     ;;
   stop)
     if rerun_session::is_server_node && systemctl is-active "tatbot-viewer@$USER.service" >/dev/null 2>&1; then
@@ -65,7 +96,7 @@ case "$cmd" in
   status)
     rerun_session::status
     if rerun_session::is_server_node; then
-      u="tatbot-viewer@$USER"
+      u="tatbot-viewer@${USER:-$(id -un)}"
       if systemctl cat "$u.service" >/dev/null 2>&1; then
         echo "unit:   $u.service $(systemctl is-active "$u.service" 2>/dev/null || true) ($(systemctl is-enabled "$u.service" 2>/dev/null || true))"
       else
@@ -73,8 +104,9 @@ case "$cmd" in
       fi
     fi
     ;;
-  blueprint)
-    # Internal display bootstrap. Workflows never call this or choose a view.
+  blueprint|reset)
+    # The hub's ExecStartPost, and `viewer reset`: a window adopts each blueprint
+    # it receives, so a pane a tap hid comes back. Workflows never choose a view.
     VISIOND="${VISIOND:-$REPO/rust/target/release/tatbot-visiond}"
     if ! [ -x "$VISIOND" ] || ! "$VISIOND" send-blueprint --help >/dev/null 2>&1; then
       echo "the fixed blueprint lives in visiond (rust/visiond/src/rerun_viewer.rs); build it here:" >&2
@@ -149,16 +181,12 @@ PY
         "$VISIOND" sanitize-rrd --input "$target" --output "$import_tmp/data-only.rrd" \
           --recording-id "$rid"
         "$RERUN_BIN" rrd verify "$import_tmp/data-only.rrd"
-        PYTHONPATH="$REPO/scripts/lib" uv run --no-project --with "rerun-sdk==0.36.0" python - \
+        PYTHONPATH="$REPO/scripts/lib" uv run --no-project --with "rerun-sdk==$RERUN_PIN" python - \
           "$import_tmp/data-only.rrd" "$proxy" "$rid" <<'PY'
-import sys, rerun as rr
-from tatbot_rerun import recording_name
+import sys
+from tatbot_rerun import forward_file
 path, proxy, rid = sys.argv[1:4]
-rr.init("tatbot", recording_id=rid)
-rr.connect_grpc(proxy)
-rr.send_recording_name(recording_name(rid))
-rr.log_file_from_path(path)
-rr.disconnect()
+forward_file(path, proxy, rid)
 print("forwarded", path)
 PY
         )
@@ -168,6 +196,7 @@ PY
     ;;
   install)
     need_server_node
+    rerun_session::require_pin || exit 3
     VISIOND="${VISIOND:-$REPO/rust/target/release/tatbot-visiond}"
     [ -x "$VISIOND" ] && "$VISIOND" send-blueprint --help >/dev/null 2>&1 || {
       echo 'build the fixed-blueprint sender: cargo build --manifest-path rust/Cargo.toml -p tatbot-visiond --features rerun --release' >&2
@@ -195,6 +224,17 @@ PY
       exit 1
     fi
     sudo systemctl start "tatbot-viewer@$USER.service"
+    install_sysmon
+    echo "the hub restarted empty and producers never redial it: its start restarted the cockpit here;" \
+      "on the station run tatbot viewer open --restart; the drawing stack's bridge rejoins by itself within ~15 s"
+    ;;
+  station-install)
+    rerun_session::require_pin || exit 3
+    install_sysmon
+    ;;
+  sysmon)
+    py="$(rerun_session::sdk_python)" || exit 1
+    exec "$py" "$REPO/scripts/lib/tatbot_sysmon.py" --connect "$(rerun_session::fleet_proxy)" "$@"
     ;;
   serve)
     if rerun_session::server_pid >/dev/null; then

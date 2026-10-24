@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import json
 import os
 import subprocess
@@ -20,13 +19,6 @@ from tatbot_contracts.canonical import (  # noqa: E402
     canonical_digest,
     parse_json,
 )
-
-# Load the adapter itself so this offline suite needs no Torch/NumPy installation.
-_loader = importlib.util.spec_from_file_location(
-    "runtime_io", REPO / "python/tatbot_sim/src/tatbot_sim/body_models/io.py",
-)
-runtime = importlib.util.module_from_spec(_loader)
-_loader.loader.exec_module(runtime)
 
 
 @pytest.fixture
@@ -61,8 +53,8 @@ def cache_fixture(tmp_path):
     ("metadata", "body_asset_hash_mismatch"),
     ("permissions", "body_asset_path_denied"),
 ])
-def test_bootstrap_audit_and_runtime_refuse_same_cache_bytes(cache_fixture, tmp_path, monkeypatch, case, code):
-    spec, path, cache = cache_fixture
+def test_bootstrap_and_audit_refuse_bad_cache_bytes(cache_fixture, tmp_path, monkeypatch, case, code):
+    _, path, cache = cache_fixture
     asset = cache / "data.bin"
     if case == "missing":
         asset.unlink()
@@ -97,13 +89,10 @@ def test_bootstrap_audit_and_runtime_refuse_same_cache_bytes(cache_fixture, tmp_
         monkeypatch.setattr(Path, "open", denied)
     with pytest.raises((body.BodyCacheError, OSError)):
         body.audit(path, cache)
-    with pytest.raises(runtime.BodyModelError) as caught:
-        runtime.verify_body_cache(spec, cache)
-    assert caught.value.code == code
 
 
-def test_both_boundaries_reject_cache_inside_repository(cache_fixture, tmp_path):
-    spec, path, cache = cache_fixture
+def test_audit_rejects_cache_inside_repository(cache_fixture, tmp_path):
+    _, path, cache = cache_fixture
     repository = tmp_path / "repository"
     marker = repository / ".git"
     marker.mkdir(parents=True)
@@ -113,37 +102,16 @@ def test_both_boundaries_reject_cache_inside_repository(cache_fixture, tmp_path)
     cache.rename(inside)
     with pytest.raises(body.BodyCacheError, match="repository"):
         body.audit(path, inside)
-    with pytest.raises(runtime.BodyModelError) as caught:
-        runtime.verify_body_cache(spec, inside)
-    assert caught.value.code == "body_asset_path_denied"
 
 
-def test_runtime_rechecks_spec_before_reading_assets(cache_fixture, monkeypatch):
-    spec, _, cache = cache_fixture
-    spec["assets"][0]["path"] = "../outside"
-    spec["content_sha256"] = canonical_digest(spec)
-    def no_read(*args, **kwargs):
-        pytest.fail("asset read before spec validation")
-    monkeypatch.setattr(Path, "open", no_read)
-    with pytest.raises(runtime.BodyModelError) as caught:
-        runtime.verify_body_cache(spec, cache)
-    assert caught.value.code == "body_asset_path_denied"
-
-
-def test_strict_distribution_paths_and_unreviewed_specs(cache_fixture):
+def test_strict_distribution_paths(cache_fixture):
     spec, path, _ = cache_fixture
-    with pytest.raises(runtime.BodyModelError) as caught:
-        runtime.load_body_model_spec(path)
-    assert caught.value.code == "body_model_unpinned"
     spec["python_package"]["wheel"]["filename"] = "../wheel"
     spec["content_sha256"] = canonical_digest(spec)
     path.write_bytes(canonical_bytes(spec))
     with pytest.raises(body.BodyCacheError) as caught:
         body.load_spec(path)
     assert caught.value.code == "path_escape"
-    with pytest.raises(runtime.BodyModelError) as caught:
-        runtime.load_body_model_spec(path)
-    assert caught.value.code == "body_asset_path_denied"
 
 
 @pytest.mark.parametrize("data,code", [
@@ -157,6 +125,16 @@ def test_strict_json(data, code):
     with pytest.raises(ContractError) as caught:
         parse_json(data)
     assert caught.value.code == code
+
+
+def test_a_contract_error_survives_pickling():
+    """A worker process's refusal reaches the parent as itself, not as a broken process pool."""
+    import pickle
+
+    error = pickle.loads(pickle.dumps(ContractError("out_of_range", "$.depth_m", "past the backing")))
+    assert (type(error), error.code, error.path, error.detail) == (ContractError, "out_of_range", "$.depth_m",
+                                                                   "past the backing")
+    assert str(error) == "out_of_range at $.depth_m: past the backing"
 
 
 def test_canonical_bytes_remain_browser_compatible():
@@ -173,7 +151,7 @@ from tatbot_contracts.body import load_spec
 from tatbot_contracts.canonical import canonical_digest
 spec, digest = load_spec(__import__('pathlib').Path(sys.argv[2]))
 assert canonical_digest(spec) == digest
-assert not {'numpy', 'torch', 'soma', 'tatbot_sim'} & set(sys.modules)
+assert not {'numpy', 'torch', 'soma'} & set(sys.modules)
 '''
     result = subprocess.run([
         sys.executable, "-S", "-c", program, str(REPO / "scripts/lib"),

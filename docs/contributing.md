@@ -31,9 +31,9 @@ behavior, test command, and any remaining uncertainty in the change description.
 
 ## Art and data
 
-Artists can contribute SVG designs and placement examples using the public
-[design format](design-format.md). Do not commit personal data, private
-recordings, credentials, or artifacts that imply consent for human operation.
+Artists can contribute licensed source artwork (raster or SVG) and placement
+examples using the public [design format](design-format.md). Do not commit personal data, private
+recordings, credentials, or consent records.
 
 ## Hardware work
 

@@ -12,7 +12,6 @@ from tatbot_contracts.canonical import canonical_digest
 from tatbot_ink.errors import CompileError
 
 DESIGN_SCHEMA = "tatbot.inkmap-design/1"
-ADAPTER = "dbv3-batik-paths/1"
 
 
 def _keys(value, expected):
@@ -97,17 +96,38 @@ def _artwork(record):
             raise CompileError("variable deposition is not implemented by the ROS executor")
 
 
-def read_input(document):
-    """Return validated records and ordered placements; raw artwork uses a centred stencil."""
+def _centred(document):
     from tatbot_ink.place import STENCIL_MARGIN_M, STENCIL_SIZE_M
 
+    return {"physical_scale_m": canvas_m(document), "rotation_rad": 0, "mirrored": False,
+            "target": {"kind": "plane", "canvas_m": list(STENCIL_SIZE_M), "anchor_uv_m": [0, 0],
+                       "margin_m": STENCIL_MARGIN_M}}
+
+
+def read_layers(documents):
+    """Acquired artworks drawn as layers in the order given, each centred on the page like a single artwork:
+    one DBV3 acquisition per pen (a design's colour layers, generated at one canvas size) without composing an
+    Inkmap Design/1 by hand, which the demo designs needed a script for (2026-10-13)."""
+    if not 1 <= len(documents) <= 100:
+        raise CompileError("expected 1..100 artwork layers")
+    for document in documents:
+        if document.get("schema") != SCHEMA:
+            raise CompileError(f"a layer must be {SCHEMA}")
+        _artwork(document)
+    if len({tuple(canvas_m(document)) for document in documents}) != 1:
+        raise CompileError("layers drawn together must share one canvas size: regenerate them at one size")
+    return {"name": " + ".join(document["name"] for document in documents),
+            "artworks": {f"layer{i}": document for i, document in enumerate(documents, 1)},
+            "placements": [{"id": f"layer{i}", "artwork_id": f"layer{i}", "placement": _centred(document)}
+                           for i, document in enumerate(documents, 1)]}
+
+
+def read_input(document):
+    """Return validated records and ordered placements; raw artwork uses a centred stencil."""
     if document.get("schema") == SCHEMA:
         _artwork(document)
         return {"name": document["name"], "artworks": {"artwork": document}, "placements": [
-            {"id": "placement", "artwork_id": "artwork", "placement": {
-                "physical_scale_m": canvas_m(document), "rotation_rad": 0, "mirrored": False,
-                "target": {"kind": "plane", "canvas_m": list(STENCIL_SIZE_M),
-                           "anchor_uv_m": [0, 0], "margin_m": STENCIL_MARGIN_M}}}]}
+            {"id": "placement", "artwork_id": "artwork", "placement": _centred(document)}]}
     _keys(document, "schema content_sha256 name artworks placements")
     if document["schema"] != DESIGN_SCHEMA:
         raise CompileError(f"expected {SCHEMA} or {DESIGN_SCHEMA}")

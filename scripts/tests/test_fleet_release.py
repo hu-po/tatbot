@@ -20,7 +20,7 @@ def make_release(root, *, arm=True):
     paths = {stage / release.LAUNCH_BINARIES[name]: body for name, body in binaries.items()}
     if arm:
         # A generated environment tree the arm build may receipt.
-        paths[stage / 'source/python/tatbot_sim/.venv/bin/python'] = b'#!/bin/sh\nexit 4\n'
+        paths[stage / 'source/python/lerobot_robot_tatbot/.venv/bin/python'] = b'#!/bin/sh\nexit 4\n'
     for path, body in paths.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(body)
@@ -184,7 +184,7 @@ def test_arm_reuse_requires_exact_generated_trees_and_base_python(tmp_path):
     stage = make_release(tmp_path)
     source = stage / 'source'
     (source / 'tracked').write_text('source')
-    venv = source / 'python/tatbot_sim/.venv'
+    venv = source / 'python/lerobot_robot_tatbot/.venv'
     (venv / 'lib').mkdir()
     (venv / 'lib/package.py').write_text('module = 1\n')
     interpreter = venv / 'bin/python'
@@ -203,7 +203,7 @@ def test_arm_reuse_requires_exact_generated_trees_and_base_python(tmp_path):
     manifest_bytes = json.dumps(manifest).encode()
     (stage / 'source-manifest.json').write_bytes(manifest_bytes)
     (stage / 'build.sha').write_text(SHA)
-    trees = ['source/cpp/teleop/build', 'source/python/tatbot_sim/.venv']
+    trees = ['source/cpp/teleop/build', 'source/python/lerobot_robot_tatbot/.venv']
     binaries = list(release.LAUNCH_BINARIES)
     receipt = release.build(stage, SHA, 'arm-node', ['rerun', 'trossen'], binaries, trees=trees)
     (stage / release.RECEIPT).write_text(json.dumps(receipt))
@@ -215,7 +215,7 @@ def test_arm_reuse_requires_exact_generated_trees_and_base_python(tmp_path):
 
     assert reused() == receipt
     assert set(receipt['generated_trees']) == set(trees)
-    assert receipt['python_toolchains']['source/python/tatbot_sim/.venv']['path'] == str(toolchain)
+    assert receipt['python_toolchains']['source/python/lerobot_robot_tatbot/.venv']['path'] == str(toolchain)
     with pytest.raises(ValueError, match='component set differs'):
         release.reusable(stage, SHA, 'arm-node', ['rerun', 'trossen'], binaries,
                          [], manifest_digest, trees[:1])
@@ -244,7 +244,7 @@ def test_arm_reuse_requires_exact_generated_trees_and_base_python(tmp_path):
 
 def test_unbounded_system_python_is_built_but_never_reused(tmp_path):
     stage = make_release(tmp_path)
-    venv = stage / 'source/python/tatbot_sim/.venv'
+    venv = stage / 'source/python/lerobot_robot_tatbot/.venv'
     interpreter = venv / 'bin/python'
     interpreter.unlink()
     system = tmp_path / 'system-python'
@@ -253,7 +253,7 @@ def test_unbounded_system_python_is_built_but_never_reused(tmp_path):
     (system / 'bin/python3').write_bytes(b'system interpreter')
     (system / 'lib/os.py').write_bytes(b'system standard library')
     interpreter.symlink_to(system / 'bin/python3')
-    trees = ['source/python/tatbot_sim/.venv']
+    trees = ['source/python/lerobot_robot_tatbot/.venv']
     receipt = release.build(stage, SHA, 'arm-node', [], ['fleetctl'], trees=trees)
     assert receipt['generated_trees'] and receipt['python_toolchains'] == {}
     (stage / release.RECEIPT).write_text(json.dumps(receipt))
@@ -426,26 +426,3 @@ def test_gitless_viewer_overlay_verifies_only_manifested_source(tmp_path):
     (checkout / '.tatbot-deploy.json').write_text(json.dumps({'source_commit': 'b' * 40}))
     with pytest.raises(ValueError, match='viewer overlay source differs'):
         release.verify(checkout)
-
-
-def test_an_offline_rung_plans_with_the_receipts_planner_on_a_stamped_checkout(tmp_path):
-    """The compile's executor preflight runs the receipt's planner, never a
-    checkout build left over from an earlier
-    constants sha; an unstamped worktree keeps its own build, and a node whose
-    receipt names no planner falls back to the checkout's."""
-    stage = make_release(tmp_path)
-    repo = make_checkout(tmp_path)
-    own = repo / 'cpp/teleop/build/path_plan_check'
-    assert release.planner_binary(repo) == own
-    receipt = release.build(stage, git(repo, 'rev-parse', 'HEAD'), 'arm-node', ['trossen', 'rerun'],
-                            list(release.LAUNCH_BINARIES))
-    (repo / '.tatbot-build.json').write_text(json.dumps(receipt))
-    assert release.planner_binary(repo) == stage / release.LAUNCH_BINARIES['path_plan_check']
-    viewer = release.build(make_release(tmp_path / 'viewer', arm=False), git(repo, 'rev-parse', 'HEAD'), 'viewer', [],
-                           ['fleetctl'])
-    (repo / '.tatbot-build.json').write_text(json.dumps(viewer))
-    assert release.planner_binary(repo) == own
-    (repo / 'tracked').write_text('edited')
-    (repo / '.tatbot-build.json').write_text(json.dumps(receipt))
-    with pytest.raises(ValueError, match='tracked edits'):
-        release.planner_binary(repo)

@@ -3,10 +3,9 @@
 //   arm_recover <ip> <leader|follower> --staged a,b,c,d,e,f,g --estop DEV
 //               [--golden PATH] [--attempts N]
 //
-// This is the native landing routine behind `tatbot arm recover`. It is the
-// same ritual the LeRobot plugins run on a failed disconnect (recovery.py's
-// land_arm), ported to the C++ arm stack so a recovery needs no Python
-// environment: a FRESH driver session with clear_error, the golden pushed
+// This is the native landing routine behind `tatbot arm recover`, so a
+// recovery needs no Python environment: a FRESH driver session with
+// clear_error, the golden pushed
 // when the controller boots faulted or outside its own limits, a soft
 // position-mode takeover at the measured pose, then staged -> sleep -> idle,
 // verified rather than assumed. An arm joint measured past its limits by more
@@ -61,6 +60,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "arm_model.hpp"
 #include "driver_lease.hpp"
 #include "estop_monitor.hpp"
 #include "recover_guard.hpp"
@@ -68,7 +68,7 @@
 namespace
 {
 
-// recovery.py constants, kept identical so both landing paths behave alike.
+// Landing timing; wxai_teleop's in-session landing uses the same staged-pose time.
 constexpr double TAKEOVER_S = 0.5;
 constexpr double STAGED_POSE_S = 4.0;
 constexpr double SLEEP_POSE_S = 3.0;
@@ -197,10 +197,13 @@ bool parse_csv(const std::string & text, std::vector<double> & out)
   return out.size() == NUM_JOINTS;
 }
 
-trossen_arm::EndEffector end_effector_for(const std::string & role)
+// The physical arm's model (arm_model.hpp), its fitted palm read from the repo the golden sits in
+// (config/trossen/<role>.yaml); the leader role is the left arm here.
+trossen_arm::EndEffector end_effector_for(const Options & opt)
 {
-  return role == "leader" ? trossen_arm::StandardEndEffector::wxai_v0_leader :
-         trossen_arm::StandardEndEffector::wxai_v0_follower;
+  const auto repo = opt.golden.empty() ? std::filesystem::path{} :
+    std::filesystem::path(opt.golden).parent_path().parent_path().parent_path();
+  return arm_model::end_effector(repo, opt.role == "leader" ? "left" : "right");
 }
 
 // Push the arm's golden (config/trossen/<role>.yaml) into the controller.
@@ -216,18 +219,19 @@ trossen_arm::EndEffector end_effector_for(const std::string & role)
 bool apply_golden(
   trossen_arm::TrossenArmDriver & driver, const Options & opt, const std::string & name)
 {
-  if (opt.golden.empty()) {
-    std::cerr << name << " landing: no golden given; controller keeps its boot limits" << std::endl;
-    return false;
-  }
-  if (!std::filesystem::is_regular_file(opt.golden)) {
-    std::cerr << name << " landing: golden " << opt.golden
-              << " missing; controller keeps its boot limits" << std::endl;
+  if (opt.golden.empty() || !std::filesystem::is_regular_file(opt.golden)) {
+    std::cerr << name << " landing: golden " << (opt.golden.empty() ? "not given" : opt.golden + " missing")
+              << "; controller keeps its boot limits" << std::endl;
+    try {  // firmware 1.10+ boots with 2026-03-17's gains; land on 2025-05-09's
+      driver.set_motor_parameters(arm_model::gains());
+    } catch (const std::exception & e) {
+      std::cerr << name << " gains not set at landing: " << e.what() << std::endl;
+    }
     return false;
   }
   try {  // a landing must never die on its own config
     driver.load_configs_from_file(opt.golden);
-    driver.set_end_effector(end_effector_for(opt.role));
+    driver.set_end_effector(end_effector_for(opt));
     return true;
   } catch (const std::exception & e) {
     std::cerr << name << " golden not applied at landing: " << e.what() << std::endl;
@@ -319,7 +323,7 @@ std::unique_ptr<trossen_arm::TrossenArmDriver> fresh_session(const Options & opt
   auto driver = std::make_unique<trossen_arm::TrossenArmDriver>();
   try {
     driver->configure(
-      trossen_arm::Model::wxai_v0, end_effector_for(opt.role), opt.ip, true, CONFIGURE_TIMEOUT_S);
+      trossen_arm::Model::wxai_v0, end_effector_for(opt), opt.ip, true, CONFIGURE_TIMEOUT_S);
   } catch (...) {
     (void)driver.release();
     throw;
@@ -364,7 +368,7 @@ int attempt_once(const Options & opt, int attempt)
   // time — silence and an undecided startup state are both stop conditions.
   std::unique_ptr<tatbot::estop::Monitor> estop;
   try {
-    estop = std::make_unique<tatbot::estop::Monitor>(opt.estop_device, true, g_estop);
+    estop = std::make_unique<tatbot::estop::Monitor>(opt.estop_device, g_estop);
   } catch (const std::exception & e) {
     std::cerr << "arm_recover: " << e.what() << std::endl;
     return estop_refused;

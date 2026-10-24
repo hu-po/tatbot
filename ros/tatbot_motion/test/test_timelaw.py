@@ -158,6 +158,18 @@ def test_pen_up_leg_is_one_continuous_profile_on_the_exact_polyline():
         tl.pen_up_leg(np.array([points[1], points[1], points[2]]), r0, r1, [0.010, 0.003], retime, PERIOD)
 
 
+
+@pytest.mark.parametrize("length_m", [2e-9, 1e-7, 5e-6, 1e-5])
+def test_a_pen_up_leg_shorter_than_its_knot_step_still_moves(length_m):
+    """A travel to where the pen already stands, off only by IK round-off, is a leg under one knot step: its
+    two ends are at rest, so it needs an interior knot to move at all."""
+    retime = tl.Retime()
+    points = np.array([[0.30, 0.0, 0.15], [0.30 + length_m, 0.0, 0.15]])
+    p, r, chord = tl.pen_up_leg(points, np.eye(3), np.eye(3), [0.05], retime, PERIOD)
+    np.testing.assert_allclose(p[-1], points[-1], atol=1e-15)
+    assert np.all(np.diff(p[:, 0]) >= 0.0) and np.all(chord == 0)
+    assert len(p) * PERIOD < 0.25
+
 def test_pen_up_turn_keeps_the_rotary_budget():
     """pen_path's rotary budget: a leg that turns 0.3 rad changes its angular velocity at <= alpha."""
     points = np.array([[0.30, 0.0, 0.15], [0.31, 0.0, 0.15]])

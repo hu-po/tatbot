@@ -18,21 +18,20 @@ def rot(axis, angle):
     return np.eye(3) + math.sin(angle) * k + (1 - math.cos(angle)) * k @ k
 
 
-def test_identities_resolve_each_label_to_its_arm_controller_and_tag_triplet():
+def test_the_drawing_arms_label_resolves_to_its_controller_and_tag_triplet():
+    """Only the pink (drawing) arm is calibrated here; the blue leader is teleop's alone (owner, 2026-10-23)."""
     pink = recipe.selected_arm(REPO, "pink")
-    blue = recipe.selected_arm(REPO, "blue")
     assert (pink.arm_id, pink.controller_role, pink.wrist_target, pink.tag_parent) == ("right", "follower", "wrist", "right/gripper_left")
-    assert (blue.arm_id, blue.controller_role, blue.wrist_target, blue.tag_parent) == ("left", "leader", "wrist_left", "left/carriage_left")
-    assert recipe.fiducial_target(REPO, "wrist")["ids"] == [2, 3, 4] and recipe.fiducial_target(REPO, "wrist_left")["ids"] == [5, 30, 1]
-    assert pink.other_arm_id == "left" and blue.other_arm_id == "right"
-    with pytest.raises(recipe.RecipeError, match="unknown physical arm"):
-        recipe.selected_arm(REPO, "right")
+    assert recipe.fiducial_target(REPO, "wrist")["ids"] == [2, 3, 4]
+    for label in ("right", "blue"):
+        with pytest.raises(recipe.RecipeError, match="unknown physical arm"):
+            recipe.selected_arm(REPO, label)
 
 
 def test_root_and_arm_base_frames_are_distinct_and_composed_once():
     from urdf_kinematics import UrdfChain
     chain = UrdfChain(REPO / "urdf/tatbot.urdf")
-    for arm_id, y in (("right", -0.2675), ("left", 0.2675)):
+    for arm_id, y in (("right", -0.2675),):
         root_from_base = chain.link_pose(f"{arm_id}/base_link", {})
         assert root_from_base[1, 3] == pytest.approx(y)
         z = np.eye(4)
@@ -61,7 +60,6 @@ def test_telemetry_reader_refuses_nonfinite_and_reversed_records(tmp_path):
     path.write_bytes(header + good + bad)
     with pytest.raises(recipe.RecipeError, match="nonfinite"):
         recipe.read_telemetry(path)
-    assert recipe.unchanged_feedback_ns(rows) == 100, "identical tuples count as unchanged time"
 
 
 
@@ -77,9 +75,9 @@ def test_owner_capture_binding_keeps_per_frame_joints_and_reports_motion(tmp_pat
         *([i*.01]*7 + [.2]*7 + [0.]*7), 1, 0, 1) for i,t in enumerate([100_000_000,110_000_000,120_000_000,130_000_000])))
     def metadata(stamp, seq):
         return {'sequence': seq, 'timestamps': {'normalized_unix_ns': stamp}}
-    np.savez(capture, camera_roles=np.array(json.dumps(['wrist_left'])),
-             owner_frames_wrist_left=np.array(json.dumps([{'metadata': metadata(112_000_000, 8)}])),
-             owner_color_metadata_wrist_left=np.array(json.dumps(metadata(121_000_000, 9))))
+    np.savez(capture, camera_roles=np.array(json.dumps(['wrist_upper'])),
+             owner_frames_wrist_upper=np.array(json.dumps([{'metadata': metadata(112_000_000, 8)}])),
+             owner_color_metadata_wrist_upper=np.array(json.dumps(metadata(121_000_000, 9))))
     result = recipe.bind_wrist_capture(capture, telemetry)
     assert not result['motion_authority'] and result['physical_accuracy_bound_m'] is None
     assert [pair['stream'] for pair in result['pairs']] == ['depth', 'color']
@@ -88,9 +86,9 @@ def test_owner_capture_binding_keeps_per_frame_joints_and_reports_motion(tmp_pat
     assert result['maximum_skew_ms'] == 2
     assert result['capture_joint_span_rad'] == pytest.approx([.02]*6)
     assert result['capture_max_measured_velocity_rad_s'] == .2
-    np.savez(capture, camera_roles=np.array(json.dumps(['wrist_left'])),
-             owner_frames_wrist_left=np.array(json.dumps([{'metadata': metadata(140_000_000, 10)}])),
-             owner_color_metadata_wrist_left=np.array(json.dumps(metadata(121_000_000, 9))))
+    np.savez(capture, camera_roles=np.array(json.dumps(['wrist_upper'])),
+             owner_frames_wrist_upper=np.array(json.dumps([{'metadata': metadata(140_000_000, 10)}])),
+             owner_color_metadata_wrist_upper=np.array(json.dumps(metadata(121_000_000, 9))))
     with pytest.raises(recipe.RecipeError, match='bracketed'):
         recipe.bind_wrist_capture(capture, telemetry)
 

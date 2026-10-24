@@ -7,7 +7,7 @@
 #
 # Resolution: TATBOT_LOG_ROOT > config/runlog.json log_root (via
 # tatbot_runlog.py, which layers ~/.config/tatbot/runlog.json) > XDG state.
-# No script may default to a literal $HOME/tatbot-logs (plan Phase 1).
+# No script may default to a literal $HOME/tatbot-logs.
 
 tatbot_paths::repo_root() {
   if [[ -n "${TATBOT_REPO:-}" ]]; then echo "$TATBOT_REPO"; return; fi

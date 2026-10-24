@@ -21,7 +21,10 @@ class UnmeasuredError(RuntimeError):
 
 
 def observe(repo: Path, arm: str, shots: int, run_dir: Path, registration_path):
-    """The fix from `shots` D555 captures of the roof tag, through the arm's adopted registration."""
+    """The fix from `shots` D555 captures of the roof tag, through the arm's adopted registration: half of them must
+    place the tag, and while fewer have it goes on shooting, up to three times as many. A ship drawing stopped twice
+    in one evening (2026-10-06) at 2 and 1 of 8 as the room dimmed (frames gray 117 -> 86) with the tag in plain
+    view, and once before when a hand passed over the palette."""
     register._lib(repo)
     from fiducials import load_inventory
     from fiducials.detector import DetectorConfig, FiducialDetector
@@ -43,9 +46,11 @@ def observe(repo: Path, arm: str, shots: int, run_dir: Path, registration_path):
     palette_urdf = repo / "urdf" / "palette.urdf"
     view = _TagView(inventory.target("palette"), station.palette_from_tag(palette_urdf, require_confirmed=True), registration)
     camera = register.Camera(repo)
-    rows = []
+    rows, need = [], max(2, shots // 2)
     try:
-        for i in range(shots):
+        for i in range(3 * shots):
+            if i >= shots and len(_poses(rows)) >= need:
+                break
             shot = camera.capture(time.time_ns())
             if shot["metadata"].get("calibration_id") != registration.get("calibration_id"):
                 raise UnmeasuredError(f"the D555's frames are in camera bundle "
@@ -62,15 +67,13 @@ def observe(repo: Path, arm: str, shots: int, run_dir: Path, registration_path):
         camera.close()
         with (run_dir / "shots.jsonl").open("w") as out:
             out.writelines(json.dumps(row) + "\n" for row in rows)
-    # a shot placed by depth and one by its corners alone differ by the light's error (station.tag_centre_by_depth)
-    by_depth = [row for row in rows if row.get("placed_by") == "depth"]
-    poses = [row["base_from_palette"] for row in (by_depth or rows) if "base_from_palette" in row]
-    if len(poses) < max(2, shots // 2):
+    poses = _poses(rows)
+    if len(poses) < need:
         why = sorted({row["why"] for row in rows if "why" in row})
         gray = float(np.median([row["gray"] for row in rows if "gray" in row] or [255.0]))
         dark = (f"; the frames average gray {gray:.0f} of 255, and under {DARK_GRAY:.0f} the tag has not been found: "
                 "the room may need a light" if gray < DARK_GRAY else "")
-        raise UnmeasuredError(f"the D555 measured the roof tag in {len(poses)} of {shots} shots "
+        raise UnmeasuredError(f"the D555 measured the roof tag in {len(poses)} of {len(rows)} shots "
                               f"({'; '.join(why)}){dark}")
     first = dt.datetime.fromtimestamp(rows[0]["stamp_ns"] / 1e9, dt.timezone.utc)
     # the camera's optical centre in the arm base: the post it stands on is the wrist's to keep clear of (reach)
@@ -83,6 +86,13 @@ def observe(repo: Path, arm: str, shots: int, run_dir: Path, registration_path):
                                palette_urdf, "overhead_tag", detail)
     (run_dir / 'station.json').write_text(json.dumps(found.as_dict(), indent=1)+'\n')
     return found
+
+
+def _poses(rows) -> list:
+    """The shots' palette poses: those placed by depth when any are, since a shot placed by depth and one by its corners
+    alone differ by the light's error (station.tag_centre_by_depth)."""
+    by_depth = [row for row in rows if row.get("placed_by") == "depth"]
+    return [row["base_from_palette"] for row in (by_depth or rows) if "base_from_palette" in row]
 
 
 def _stretched(image):

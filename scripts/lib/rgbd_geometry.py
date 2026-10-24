@@ -197,6 +197,46 @@ def verify_pair(color, depth):
 
 
 # Native wrist page-plane fitting, also used by the ROS owner and capture replay.
+def rgbd_frame(frame):
+    """An aligned RGB-D frame's depth in metres on the colour pixels and its rays, checked as one exposure:
+    ({"depth_m", "rays", "depth_range"}, warnings)."""
+    depth = frame.get("depth_m")
+    if depth is None:
+        raise ValueError("depth_unavailable")
+    cm, dm = frame["color_metadata"], frame["depth_metadata"]
+    if cm["timestamps"]["normalized_unix_ns"] != frame["timestamp_ns"]:
+        raise ValueError("rgbd_capture_timestamp_mismatch")
+    ca, da = cm.get("attributes", {}), dm.get("attributes", {})
+    if da.get("aligned_to") != cm["sensor_name"]:
+        raise ValueError("depth_alignment_unverified")
+    verify_pair(cm, dm)
+    intr = da["intrinsics"]
+    intr = json.loads(intr) if isinstance(intr, str) else intr
+    if any(intr[key] != dm["profile"][key] for key in ("width", "height")):
+        raise ValueError("depth_intrinsics_profile_mismatch")
+    rays = camera_rays(json.dumps(intr, sort_keys=True))
+    if depth.shape != rays.shape[:2] or depth.shape != frame["image"].shape[:2]:
+        raise ValueError("aligned_depth_shape_mismatch")
+    color_intr = ca["intrinsics"]
+    color_intr = json.loads(color_intr) if isinstance(color_intr, str) else color_intr
+    warnings = ["aligned_color_depth_intrinsics_disagree"] if color_intr != intr else []
+    alignment = paired_alignment(ca, da, intr)
+    depth = color_depth_m(depth, rays, alignment, intr)
+    return {"depth_m": depth, "rays": rays, "depth_range": (.03, 2.)}, warnings
+
+
+RS_DISTORTION_MODELS = {'distortion.none': 'None', 'distortion.brown_conrady': 'BrownConrady',
+                        'distortion.inverse_brown_conrady': 'BrownConradyInverse'}
+
+
+def camera_intrinsics(intrinsics: dict, width: int, height: int) -> dict:
+    """A pyrealsense2 stream's intrinsics ({fx, fy, ppx, ppy, coeffs, model}) as tatbot.camera-intrinsics/1."""
+    return {'schema': 'tatbot.camera-intrinsics/1', 'width': width, 'height': height,
+            **{key: float(intrinsics[key]) for key in ('fx', 'fy', 'ppx', 'ppy')},
+            'distortion_coefficients': [float(c) for c in intrinsics['coeffs']],
+            'distortion_model': RS_DISTORTION_MODELS.get(str(intrinsics['model']))}
+
+
 def depth_points(depth_m: np.ndarray, k: np.ndarray, *, stride: int = 4, near_m: float = 0.07,
                  far_m: float = 0.5, intrinsics: dict | None = None) -> np.ndarray:
     """Sampled in-range pixels as native depth optical points (N, 3)."""
@@ -205,11 +245,7 @@ def depth_points(depth_m: np.ndarray, k: np.ndarray, *, stride: int = 4, near_m:
     ok = (d > near_m) & (d < far_m)
     z = d[ok]
     if intrinsics is not None:
-        models = {'distortion.none': 'None', 'distortion.brown_conrady': 'BrownConrady',
-                  'distortion.inverse_brown_conrady': 'BrownConradyInverse'}
-        intr = {'schema': 'tatbot.camera-intrinsics/1', 'width': depth_m.shape[1], 'height': depth_m.shape[0],
-                **{key: intrinsics[key] for key in ('fx', 'fy', 'ppx', 'ppy')},
-                'distortion_coefficients': intrinsics['coeffs'], 'distortion_model': models.get(intrinsics['model'])}
+        intr = camera_intrinsics(intrinsics, depth_m.shape[1], depth_m.shape[0])
         return deproject_pixels(intr, np.c_[u[ok], v[ok]]) * z[:, None]
     return np.c_[(u[ok] - k[0, 2]) * z / k[0, 0], (v[ok] - k[1, 2]) * z / k[1, 1], z]
 

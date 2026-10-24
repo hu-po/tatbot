@@ -1,29 +1,26 @@
 """Wrist camera observation, page-depth fitting and print/ink inspection; see ros/README.md."""
 from __future__ import annotations
 
+import itertools
 import sys
+import threading
 import time
 
 import numpy as np
 from tatbot_description import repo_root
 from tatbot_description.transforms import rpy_matrix
 
-from tatbot_session.geometry import SIDES, inner_edges
-
 sys.path.insert(0, str(repo_root(None) / "scripts/lib"))
+import wrist_tap  # noqa: E402,F401  (the executor's tap factory)
 from rgbd_geometry import depth_points, page_height_from_depth  # noqa: E402,F401
 
 CAMERA_FRAME = "{arm}/realsense_color_optical_frame"   # optical: z forward, x right, y down
-PAGE_SIZE = (0.100, 0.150)                              # the nominal stencil page
 
 
 def page_extent(size_m, more_m: float = 0.010) -> tuple[float, float, float, float]:
     """A page image's extent in the page frame (xmin, ymin, xmax, ymax), metres: the page and `more_m` round it."""
     hx, hy = size_m[0] / 2.0 + more_m, size_m[1] / 2.0 + more_m
     return (-hx, -hy, hx, hy)
-
-
-PAGE_EXTENT = page_extent(PAGE_SIZE)                    # page images of the nominal page
 
 
 def camera_frame(arm: str) -> str:
@@ -51,11 +48,6 @@ def look_at(base_from_page: np.ndarray, xy, *, tilt_rad: float, azimuth_rad: flo
     return out
 
 
-def look_down(base_from_page: np.ndarray, xy, height_m: float) -> np.ndarray:
-    """look_at straight down the page normal from height_m."""
-    return look_at(base_from_page, xy, tilt_rad=0.0, azimuth_rad=0.0, distance_m=height_m)
-
-
 def tcp_target(base_from_camera: np.ndarray, tcp_from_camera: np.ndarray) -> np.ndarray:
     """The tcp pose that puts the camera at base_from_camera (the camera rides the wrist with the tool)."""
     return np.asarray(base_from_camera) @ np.linalg.inv(tcp_from_camera)
@@ -67,10 +59,13 @@ JOINT_WEIGHTS = np.array([1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 0.0])            # wrist
 
 SIDE_LINKS = ("{arm}/link_3", "{arm}/link_4", "{arm}/link_5", "{arm}/link_6")
 # The wrist's own bodies, which the pen's clearance says nothing about: the fiducial cube's tag faces, the
-# camera and the tool mount. A view keeps each on the arm's side and BODY_CLEARANCE_M over the page: the last
-# post-draw view (roll 90) put the cube's lowest tag face 33 mm over the table and 140-180 mm past the camera
-# toward the palette (2026-09-30). The cube's tags are 47 mm, so 70 mm to a face centre keeps its corners clear.
-WRIST_BODY = ("{arm}/wrist_tag2", "{arm}/wrist_tag3", "{arm}/wrist_tag4", "{arm}/realsense_link", "{arm}/tool_mount")
+# cameras (the lower D405 under the wrist since 2026-10-23) and the tool mount. A view keeps each on the arm's side
+# and BODY_CLEARANCE_M over the page: the last post-draw view (roll 90) put the cube's lowest tag face 33 mm over
+# the table and 140-180 mm past the camera toward the palette (2026-09-30). The cube's tags are 47 mm, so 70 mm to
+# a face centre keeps its corners clear. Over 51 locate views of 2026-10-23 the lower camera stood 141 mm over the
+# page at least and up to 69 mm past its centre line: within a top-down view's TOP_DOWN_SIDE_M (41 of 42 were).
+WRIST_BODY = ("{arm}/wrist_tag2", "{arm}/wrist_tag3", "{arm}/wrist_tag4", "{arm}/realsense_link",
+              "{arm}/realsense_lower_link", "{arm}/tool_mount")
 BODY_CLEARANCE_M = 0.070
 # A view stays near the pen-down pose over its target, not the folded sleep pose: scored from the sleep pose, the
 # chooser picked contortions, and one folded the wrist's fiducial cube into the arm's own upper link (2026-09-30).
@@ -81,6 +76,83 @@ MAX_PEN_TILT_DEG = 30.0
 MAX_WRIST_RAD = 0.7         # 40 deg
 CUBE_UP_M = 0.030
 HOVER_M = 0.120          # the reference: the pen straight down this high over the target
+# The locate looks straight down on the page first (owner, 2026-10-21: views 35-40 deg off from 0.18-0.22 m saw a
+# forearm print's 12 mm markers 20-35 px and squashed, and read none; hovers facing them read 40-53 px). The D405's
+# colour fx is ~651 px at 1280x720, so a 12 mm marker spans 41 px from TOP_DOWN_M; the tip, on the camera's axis
+# 159 mm out, then stands 31 mm over the target. The D405 sits 48 deg off the pen, so a camera within 10 deg of the
+# base's z (top_down: the page levelled) tips the pen 40-55 deg, which aim's 30 deg would refuse; and its wrist cube
+# then stands level with the tool mount at best, and reaches up to ~0.1 m across the page centre's y (on a forearm's
+# page of 2026-10-21 the ready pose's own reached 59 mm across). The view keeps every other check, its arm joints
+# within TOP_DOWN["max_arm_rad"] of the pen-down reference (the straight-down view over that page's centre: 0.71).
+TOP_DOWN_M, TOP_DOWN_SIDE_M = 0.19, 0.10
+TOP_DOWN = {"tilts_deg": (0, 5, 10), "distances_m": (TOP_DOWN_M,), "max_pen_tilt_deg": 60.0, "cube_up_m": 0.0,
+            "max_arm_rad": 0.8}
+# A straight-down view also hides the print behind the tool: the pen and the machine stand on the camera's own axis,
+# over the middle of the frame. Over the silicone tile (2026-10-22, 13 views) the markers in view read 75% and those
+# the tool did not cover 92% (by tool_footprint); the views are chosen by the markers they see (markers_seen) before
+# their joint cost, from as high as the print's smallest marker keeps MARKER_PX a side (a 12 mm marker TOP_DOWN_M,
+# an 18 mm one up to TOP_DOWN_MAX_M), looking at the print's centre or AROUND_M aside: the pen beside the print, not
+# over it. There a view from 0.265 m 40 mm aside read 21 of its 23 markers, 0.75 mm rms; the deployed 50 deg view 18,
+# 1.39 mm (3.86 at most).
+MARKER_PX, TOP_DOWN_MAX_M, AROUND_M = 40.0, 0.27, 0.04
+AROUND = ((0.0, 0.0),) + tuple((AROUND_M * np.cos(a), AROUND_M * np.sin(a)) for a in np.radians(range(0, 360, 45)))
+# The datasheet's tool moved onto the gauge's measured tip (the CAD mount puts that 11 mm off it), every radius
+# TOOL_PAD_M wider: of the 477 markers in view over 18 views of the silicone tile (2026-10-22) it told the read from the
+# missed in 91% (the CAD tool slid a fitted 80 px in the image: 87%), and 94% of those it leaves clear were read.
+TOOL_PAD_M = 0.002
+
+
+def tool_footprint(kin, q, k, profile, frame: str, tip_cam=None, shape=(720, 1280)) -> np.ndarray:
+    """The wrist colour image's pixels the tool covers (bool, `shape`): its datasheet profile of revolution about the
+    tool mount's z (tool_spec: (z, r) from the mount toward the tip), moved so its tip lies on `tip_cam` (the gauge's
+    measured tip in the camera's frame) when given, projected by `k`. The tool rides the camera, so it covers these
+    pixels in every view."""
+    import cv2
+    from tatbot_description import names
+
+    cam_from_mount = np.linalg.inv(kin.frame(q, frame)) @ kin.frame(q, names.tool_mount_frame(kin.arm))
+    ring, out = np.linspace(0.0, 2 * np.pi, 24, endpoint=False), np.zeros(shape, np.uint8)
+    points = sorted((float(z), float(r)) for z, r in profile)
+    if tip_cam is not None and points:
+        cam_from_mount[:3, 3] += np.asarray(tip_cam, float) - cam_from_mount[:3, :] @ [0.0, 0.0, points[-1][0], 1.0]
+    for (z0, r0), (z1, r1) in zip(points, points[1:], strict=False):
+        r = max(r0, r1) + TOOL_PAD_M
+        rim = np.concatenate([np.c_[r * np.cos(ring), r * np.sin(ring), np.full(len(ring), z)] for z in (z0, z1)])
+        rim = rim @ cam_from_mount[:3, :3].T + cam_from_mount[:3, 3]
+        rim = rim[rim[:, 2] > 0.01]
+        if len(rim) >= 3:
+            uv = rim[:, :2] / rim[:, 2:] * k[[0, 1], [0, 1]] + k[:2, 2]
+            cv2.fillConvexPoly(out, cv2.convexHull(np.clip(uv, -1e4, 1e4).astype(np.float32)).astype(np.int32), 1)
+    return out.astype(bool)
+
+
+SEEN_AT = np.array([(s, t) for s in (0.0, 0.5, 1.0) for t in (0.0, 0.5, 1.0)])   # a marker's corners, edges' midpoints, centre
+
+
+def markers_seen(page, base_from_camera, tile, k, hidden: np.ndarray, min_px: float = MARKER_PX) -> int:
+    """How many of the print's markers (fiducials.stencil.Tile, laid on `page`) a camera at base_from_camera sees: its
+    corners in the frame, none of its corners, edges' midpoints and centre on `hidden` (tool_footprint: the needle across
+    a marker's middle hides it), its sides min_px long on average."""
+    c = np.stack([tile.corners[i] for i in sorted(tile.ids)])   # (N, 4, 2): TL, TR, BR, BL
+    at = c[:, :1] + SEEN_AT[:, :1] * (c[:, 1:2] - c[:, :1]) + SEEN_AT[:, 1:] * (c[:, 3:4] - c[:, :1])   # (N, 9, 2)
+    cam = np.linalg.inv(base_from_camera) @ np.asarray(page, float) @ np.c_[at.reshape(-1, 2), np.zeros(at.size // 2),
+                                                                              np.ones(at.size // 2)].T
+    if (cam[2] < 0.05).any():
+        return 0
+    uv = (cam[:2] / cam[2] * k[[0, 1], [0, 1], None] + k[:2, 2, None]).T.reshape(len(c), len(SEEN_AT), 2)
+    u, v = uv[..., 0].astype(int), uv[..., 1].astype(int)
+    corner = [0, 6, 8, 2]   # SEEN_AT's TL, TR, BR, BL
+    inside = ((u >= 0) & (u < hidden.shape[1]) & (v >= 0) & (v < hidden.shape[0]))[:, corner].all(axis=1)
+    clear = ~hidden[np.clip(v, 0, hidden.shape[0] - 1), np.clip(u, 0, hidden.shape[1] - 1)].any(axis=1)
+    side = np.linalg.norm(uv[:, corner] - np.roll(uv[:, corner], 1, axis=1), axis=2).mean(axis=1)
+    return int((inside & clear & (side >= min_px)).sum())
+
+
+def top_down_distances(tile, fx: float) -> tuple[float, ...]:
+    """top_down's camera distances for a print: TOP_DOWN_M, and as high as its smallest marker keeps MARKER_PX a side
+    (at most TOP_DOWN_MAX_M) when that is higher."""
+    far = min(TOP_DOWN_MAX_M, fx * min(tile.sides_m.values()) / MARKER_PX)
+    return (TOP_DOWN_M, far) if far > TOP_DOWN_M + 0.01 else (TOP_DOWN_M,)
 
 
 def pen_down_reference(kin, solve_ik, page, xy, rest=REST, height_m: float = HOVER_M):
@@ -164,26 +236,27 @@ def path_clear(self_gap, q_from, q_to, samples: int = 12, end_margin_m: float = 
 
 
 def view_targets(page, xy, tcp_from_cam, down, *, tilts_deg, distances_m, azimuths, rolls_deg,
-                 max_pen_tilt_deg: float):
-    """Each candidate view ({"tilt_deg", "azimuth_deg", "distance_m", "roll_deg"}, base_from_tcp target) whose
-    pen stays within max_pen_tilt_deg of `down`, before any IK: most of the grid never needs solving."""
+                 max_pen_tilt_deg: float, around=((0.0, 0.0),)):
+    """Each candidate view ({"tilt_deg", "azimuth_deg", "distance_m", "roll_deg", "aside_m"}, base_from_tcp target)
+    looking at xy, or at xy moved by each of `around`, whose pen stays within max_pen_tilt_deg of `down`, before any
+    IK: most of the grid never needs solving."""
     cos_max = float(np.cos(np.radians(max_pen_tilt_deg)))
-    for tilt in np.asarray(list(tilts_deg), dtype=float):
-        for d in distances_m:
-            for az in np.asarray(azimuths, dtype=float):
-                for roll in np.asarray(list(rolls_deg), dtype=float):
-                    cam = look_at(page, xy, tilt_rad=np.radians(tilt), azimuth_rad=az, distance_m=d,
-                                  roll_rad=np.radians(roll))
-                    target = tcp_target(cam, tcp_from_cam)
-                    if float(target[:3, 2] @ down) >= cos_max:
-                        yield ({"tilt_deg": float(tilt), "azimuth_deg": float(np.degrees(az)) % 360,
-                                "distance_m": float(d), "roll_deg": float(roll)}, target)
+    for tilt, d, (dx, dy) in itertools.product(np.asarray(list(tilts_deg), dtype=float), distances_m, around):
+        for az in np.asarray(azimuths, dtype=float):
+            for roll in np.asarray(list(rolls_deg), dtype=float):
+                cam = look_at(page, (xy[0] + dx, xy[1] + dy), tilt_rad=np.radians(tilt), azimuth_rad=az, distance_m=d,
+                              roll_rad=np.radians(roll))
+                target = tcp_target(cam, tcp_from_cam)
+                if float(target[:3, 2] @ down) >= cos_max:
+                    yield ({"tilt_deg": float(tilt), "azimuth_deg": float(np.degrees(az)) % 360, "distance_m": float(d),
+                            "roll_deg": float(roll), "aside_m": [float(dx), float(dy)]}, target)
 
 
 def aim(kin, solve_ik, base_from_page, xy, q_seed, *, frame: str, clearance_m: float, azimuths=None,
         tilts_deg=(20, 30, 35, 40, 45, 50), distances_m=(0.18, 0.20, 0.22, 0.24), rolls_deg=range(0, 360, 45),
         rest=REST, max_y: float | None = None, margin_rad: float = 0.0667, body_clearance_m: float = BODY_CLEARANCE_M,
-        reference=None, self_gap=None, max_pen_tilt_deg: float = MAX_PEN_TILT_DEG, cube_up_m: float = CUBE_UP_M):
+        reference=None, self_gap=None, max_pen_tilt_deg: float = MAX_PEN_TILT_DEG, cube_up_m: float = CUBE_UP_M,
+        max_arm_rad: float | None = None, see=None, around=((0.0, 0.0),)):
     """Joints that point the camera at page point xy with the pen at least `clearance_m` over the page: the
     least contorted of every reachable view, tilt x azimuth (default every 15 deg) x distance x roll about the
     view axis (rectification does not care which way the image is turned).
@@ -200,8 +273,10 @@ def aim(kin, solve_ik, base_from_page, xy, q_seed, *, frame: str, clearance_m: f
     wrist's bodies (WRIST_BODY) keep to it too, and stay `body_clearance_m` over the page wherever the pen is.
     A view whose revolute joints come within `margin_rad` of their limits is skipped (ready.MARGIN_RAD, twice
     the planner's guard): the next plan starts from it, and one left joint_1 at -0.004 rad, which the planner
-    refused to leave (bench 2026-09-27).
-    Returns (q, {"tilt_deg", "azimuth_deg", "distance_m", "roll_deg", "cost"}) or None."""
+    refused to leave (bench 2026-09-27). With `max_arm_rad`, joint_0-joint_2 within it of the reference too.
+    With `see` (base_from_camera -> the print's markers it sees: markers_seen) the views seeing the most that are
+    reachable come first, solved in that order (most never are), and `around` moves the point looked at aside.
+    Returns (q, {"tilt_deg", "azimuth_deg", "distance_m", "roll_deg", "aside_m", "seen", "cost"}) or None."""
     page = np.asarray(base_from_page, dtype=float)
     tcp_from_cam = np.linalg.inv(kin.fk(q_seed)) @ kin.frame(q_seed, frame)
     body = frames_of(kin, q_seed, WRIST_BODY)
@@ -216,12 +291,17 @@ def aim(kin, solve_ik, base_from_page, xy, q_seed, *, frame: str, clearance_m: f
 
     def accept(q):
         return (upright(kin, q, seed, page, cube, mount, max_pen_tilt_deg=max_pen_tilt_deg, cube_up_m=cube_up_m)
+                and (max_arm_rad is None or float(np.max(np.abs(q[:3] - seed[:3]))) <= max_arm_rad)
                 and (self_gap is None or path_clear(self_gap, q_seed, q)))
 
+    views = list(view_targets(page, xy, tcp_from_cam, kin.fk(seed)[:3, 2], tilts_deg=tilts_deg, distances_m=distances_m,
+                              azimuths=azimuths, rolls_deg=rolls_deg, max_pen_tilt_deg=max_pen_tilt_deg, around=around))
+    for view, target in views:
+        view["seen"] = 0 if see is None else see(target @ tcp_from_cam)
     best = None
-    for view, target in view_targets(page, xy, tcp_from_cam, kin.fk(seed)[:3, 2], tilts_deg=tilts_deg,
-                                      distances_m=distances_m, azimuths=azimuths, rolls_deg=rolls_deg,
-                                      max_pen_tilt_deg=max_pen_tilt_deg):
+    for view, target in sorted(views, key=lambda vt: -vt[0]["seen"]):
+        if best is not None and view["seen"] < best[1]["seen"]:
+            break   # every view seeing as many as the best reachable one is solved
         try:
             q = solve_ik(kin, target, seed)
         except ValueError:
@@ -233,6 +313,105 @@ def aim(kin, solve_ik, base_from_page, xy, q_seed, *, frame: str, clearance_m: f
         if best is None or cost < best[1]["cost"]:
             best = (q, {**view, "cost": cost})
     return best
+
+
+def top_down(kin, solve_ik, base_from_page, xy, q_seed, *, max_y: float | None = None, **kw):
+    """aim's view of page point xy looking straight down (TOP_DOWN): about the page levelled (its z turned the least
+    onto the base's, its centre kept), the side line TOP_DOWN_SIDE_M farther."""
+    from tatbot_session.closeup import _turn
+
+    level = np.array(base_from_page, float)
+    level[:3, :3] = _turn(level[:3, 2], [0.0, 0.0, 1.0]) @ level[:3, :3]
+    return aim(kin, solve_ik, level, xy, q_seed, max_y=None if max_y is None else max_y + TOP_DOWN_SIDE_M,
+               **{**TOP_DOWN, **kw})
+
+
+# The locate's first look, wide -> narrow: the overhead places the print within a few mm, then the pen goes square
+# to the page over its centre, page.locate.over_m up, at the ready move's heading and IK branch (the gauge holds' own arm
+# configuration, so the ready move under it only descends), and both wrist D405s read the print there; it rises to the
+# next height when they read too little, and the top-down views (top_down, aim) come only after. Over 37 setups'
+# overhead pages (2026-10-16..24) the 50 mm view was reachable on every one and stood all six of the 981a tile's
+# markers in both cameras (markers_seen); the silicone tile 22 of 23, the forearm's 3x4 five or six of twelve. The
+# top-down views took ~30 s of view search and two ~5.5 rad swings (rest -> view, view -> holds) of a 160 s setup.
+
+
+def over_centre(kin, solve_ik, base_from_page, xy, q_seed, heading, *, frame: str, clearance_m: float,
+                height_m: float, seed=REST, margin_rad: float = 0.0667, body_clearance_m: float = BODY_CLEARANCE_M,
+                self_gap=None, see=None):
+    """Joints with the pen square to the page `height_m` over page point xy at `heading` (a tcp pose whose x axis is
+    the pen's heading), solved from `seed`, as a locate view: clear of the limits, the pen and the wrist's bodies over
+    the page (view_clear), its straight way from q_seed off the arm itself (path_clear); with `see`, the print's markers
+    the camera `frame` sees there (else None). (q, {"over_m", "seen"}) or None. No side line: the ready pose under it
+    has none, and a wrist tag stood 1-13 mm past the top-down views' over 5 of those 37 pages."""
+    from tatbot_session import geometry
+
+    page = np.asarray(base_from_page, float)
+    start = np.asarray(seed, float).copy()
+    start[6] = q_seed[6]
+    try:
+        q = np.asarray(solve_ik(kin, geometry.tool_down_pose(page, xy, height_m, heading), start), float)
+    except ValueError:
+        return None
+    body = frames_of(kin, q_seed, WRIST_BODY)
+    if not view_clear(kin, q, page, margin_rad=margin_rad, clearance_m=clearance_m, body=body,
+                      body_clearance_m=body_clearance_m, side=[], max_y=None,
+                      posture=None if self_gap is None else (lambda v: path_clear(self_gap, q_seed, v))):
+        return None
+    return q, {"over_m": float(height_m), "seen": None if see is None else int(see(kin.frame(q, frame)))}
+
+
+SEARCH_BAND_M = 0.05      # the skin a search reads: within this of the last page along its normal (a limb moved since)
+SEARCH_MIN_POINTS = 50    # ... and a search point needs this many of its depth points about it
+
+
+def skin_aims(points, half, *, lift_m: float, band_m: float = SEARCH_BAND_M,
+              min_points: int = SEARCH_MIN_POINTS) -> list[dict]:
+    """A wrist search's aims over the skin the overhead's depth reads when it reads no print: `points` (N, 3) in the
+    last page's frame. Centred on the skin there now (the median of its points within twice `half`, the print's
+    extent about its centre, of the last page's: a stale page put the views and holds on a forearm's flank,
+    2026-10-21), that centre and the eight points `half` from it, each with min_points of the skin within `half` of
+    it, the centre first; each with its rise, `lift_m` over the highest of those points and never below the page,
+    which its view keeps its standoff over. No surface is fitted to the skin: each aim stands over its own highest
+    point."""
+    p = np.asarray(points, float).reshape(-1, 3)
+    hx, hy = half
+    p = p[np.isfinite(p).all(axis=1) & (np.abs(p[:, 2]) <= band_m) & (np.abs(p[:, 0]) <= 2 * hx) &
+          (np.abs(p[:, 1]) <= 2 * hy)]
+    at, out = np.median(p[:, :2], axis=0) if len(p) else np.zeros(2), []
+    for xy in (at + [i * hx, j * hy] for i in (0, -1, 1) for j in (0, -1, 1)):
+        near = p[(np.abs(p[:, 0] - xy[0]) <= hx) & (np.abs(p[:, 1] - xy[1]) <= hy), 2]
+        if len(near) >= min_points:
+            out.append({"xy": [float(v) for v in xy], "rise_m": max(float(near.max()) + lift_m, 0.0),
+                        "points": int(len(near))})
+    return sorted(out, key=lambda a: float(np.hypot(*(np.asarray(a["xy"]) - at))))
+
+
+WIDE_SEARCH_M = 0.15   # with no skin by the last page, the mat this far about it is read for skin (the arm's reach)
+RAISED_M = (0.015, 0.12)   # ... skin standing this far over the mat there (its 10th percentile of depth): a
+# forearm on its rest, not the mat, nor an arm's wrist or a hand over it
+
+
+def wide_aims(points, half, *, lift_m: float, reach_m: float = WIDE_SEARCH_M, raised_m=RAISED_M,
+              min_points: int = SEARCH_MIN_POINTS) -> list[dict]:
+    """skin_aims about the skin nearest the last page anywhere within reach_m of it, when none lies by it: a limb
+    put back elsewhere on the mat (2026-10-21: the overhead's depth read no skin within 50 mm of the last page's
+    plane about it, the forearm moved since). The skin is what stands raised_m (lowest, highest) over the mat (no
+    surface fitted); its min_points nearest the last page's centre centre the search, at their median height. Aims
+    as skin_aims', in the last page's frame, "wide" set; none without such skin. They only aim views: a view places
+    the page only by markers that agree with their printed layout."""
+    p = np.asarray(points, float).reshape(-1, 3)
+    p = p[np.isfinite(p).all(axis=1) & (np.abs(p[:, 0]) <= reach_m) & (np.abs(p[:, 1]) <= reach_m)]
+    if len(p) < min_points:
+        return []
+    over = p[:, 2] - np.percentile(p[:, 2], 10)
+    up = p[(over > raised_m[0]) & (over < raised_m[1])]
+    if len(up) < min_points:
+        return []
+    nearest = up[np.argsort(np.hypot(up[:, 0], up[:, 1]))[:min_points]]
+    shift = np.r_[np.median(nearest[:, :2], axis=0), np.median(nearest[:, 2])]
+    return [{**a, "xy": [a["xy"][0] + float(shift[0]), a["xy"][1] + float(shift[1])],
+             "rise_m": a["rise_m"] + float(shift[2]), "wide": True}
+            for a in skin_aims(up - shift, half, lift_m=lift_m, min_points=min_points)]   # the skin, not the mat
 
 
 def newest_run(root, name: str = ""):
@@ -252,12 +431,24 @@ def page_grid(extent_m, px_per_mm: float):
     return np.meshgrid(xs, ys)
 
 
+SKIN_FACING = 0.3   # a curved page's skin is rectified where it faces the camera within ~73 deg
+
+
 def page_to_pixel(points_page: np.ndarray, base_from_page: np.ndarray, base_from_camera: np.ndarray,
-                  k: np.ndarray, dist: np.ndarray) -> np.ndarray:
-    """Pixel (u, v) of page-plane points (N, 2), with the Brown-Conrady distortion (k1 k2 p1 p2 k3)."""
+                  k: np.ndarray, dist: np.ndarray, surface=None) -> np.ndarray:
+    """Pixel (u, v) of page-plane points (N, 2), with the Brown-Conrady distortion (k1 k2 p1 p2 k3). With a curved
+    page's `surface` (tatbot_motion.surface.PageSurface, its base base_from_page) the points are print points (u, v)
+    on it (PageSurface.lift), not on the plane."""
     pts = np.asarray(points_page, dtype=float).reshape(-1, 2)
-    homog = np.c_[pts, np.zeros(len(pts)), np.ones(len(pts))]
-    cam = (np.linalg.inv(base_from_camera) @ base_from_page @ homog.T)[:3].T
+    if surface is None:
+        homog = np.c_[pts, np.zeros(len(pts)), np.ones(len(pts))]
+        cam = (np.linalg.inv(base_from_camera) @ base_from_page @ homog.T)[:3].T
+    else:   # print points on the skin; where it faces away from the camera (past a forearm's flank), no pixel
+        lifted, normals = surface.moved(base_from_page).lift(pts)
+        cam_from_base = np.linalg.inv(base_from_camera)
+        cam = (cam_from_base @ np.c_[lifted, np.ones(len(lifted))].T)[:3].T
+        facing = -np.sum((normals @ cam_from_base[:3, :3].T) * cam, axis=1) / np.linalg.norm(cam, axis=1)
+        cam[facing < SKIN_FACING] = np.nan
     x, y = cam[:, 0] / cam[:, 2], cam[:, 1] / cam[:, 2]
     k1, k2, p1, p2, k3 = (list(np.asarray(dist, float)) + [0.0] * 5)[:5]
     r2 = x * x + y * y
@@ -267,12 +458,15 @@ def page_to_pixel(points_page: np.ndarray, base_from_page: np.ndarray, base_from
     return np.c_[k[0, 0] * xd + k[0, 2], k[1, 1] * yd + k[1, 2]]
 
 
-def rectify(image: np.ndarray, base_from_page, base_from_camera, k, dist, extent_m, px_per_mm: float) -> np.ndarray:
-    """The camera image resampled onto the page plane (page_grid layout); outside the frame is black."""
+def rectify(image: np.ndarray, base_from_page, base_from_camera, k, dist, extent_m, px_per_mm: float,
+            surface=None) -> np.ndarray:
+    """The camera image resampled onto the page plane (page_grid layout); outside the frame is black. With a
+    curved page's `surface` onto it, in the print's millimetres (page_to_pixel)."""
     import cv2
 
     gx, gy = page_grid(extent_m, px_per_mm)
-    uv = page_to_pixel(np.c_[gx.ravel(), gy.ravel()], base_from_page, base_from_camera, k, dist)
+    uv = page_to_pixel(np.c_[gx.ravel(), gy.ravel()], base_from_page, base_from_camera, k, dist, surface)
+    uv = np.where(np.isfinite(uv), uv, -1.0)   # unseen skin: outside the image, black
     mx = uv[:, 0].reshape(gx.shape).astype(np.float32)
     my = uv[:, 1].reshape(gx.shape).astype(np.float32)
     return cv2.remap(image, mx, my, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
@@ -311,17 +505,35 @@ def median_stack(images) -> np.ndarray:
     return np.nan_to_num(med, nan=0.0).astype(np.uint8)
 
 
+def configured_serial() -> str:
+    """The serial of the wrist D405 stack.yaml's page.locate.camera names by its vision.toml role, "" when it names none:
+    every opener's default, as a second D405 shares the ros node's USB (2026-10-23) and no serial opened whichever
+    enumerated first."""
+    import wrist_cameras
+    from tatbot_description import load_stack
+
+    if not (role := (load_stack()["page"].get("locate") or {}).get("camera")):
+        return ""
+    for camera in wrist_cameras.registry(repo_root()):
+        if camera["role"] == role:
+            return camera["serial"]
+    raise RuntimeError(f"stack.yaml page.locate.camera {role!r}: no D405 of that role in vision.toml")
+
+
 class WristCamera:
-    """Exclusive ROS wrist D405: colour and optional native or colour-aligned depth in metres."""
+    """Exclusive ROS wrist D405: colour and optional native or colour-aligned depth in metres; with no `serial`, the one
+    stack.yaml names by role (configured_serial). `tap` (wrist_tap) republishes each grab_both's last frames for display; `lock`
+    is held while the pipeline is read (the tap's poll). `preview` (wrist_tap.previews) opens display-only D405s beside
+    it, closed with it."""
 
     def __init__(self, serial: str = "", width: int = 1280, height: int = 720, fps: int = 30, depth: bool = False,
-                 aligned: bool = False):
+                 aligned: bool = False, tap=None, preview=None):
         import pyrealsense2 as rs
 
         self.rs = rs
         self.pipe = rs.pipeline()
         cfg = rs.config()
-        if serial:
+        if serial := serial or configured_serial():
             cfg.enable_device(serial)
         cfg.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
         if depth:
@@ -332,7 +544,7 @@ class WristCamera:
         self.dist = np.array(intr.coeffs[:5], dtype=float)
         self.model = str(intr.model)
         self.serial = profile.get_device().get_info(rs.camera_info.serial_number)
-        self.depth = depth
+        self.depth, self.fps, self.lock, self.stamp_ns = depth, fps, threading.Lock(), None
         self.align = rs.align(rs.stream.color) if depth and aligned else None
         if depth:
             dp = profile.get_stream(rs.stream.depth).as_video_stream_profile()
@@ -349,34 +561,50 @@ class WristCamera:
                                                   "model": str(di.model), "coeffs": list(di.coeffs)}}
         for _ in range(30):   # auto exposure settles
             self.pipe.wait_for_frames(5000)
+        self.tap = tap(self) if tap else None
+        self.preview = preview() if preview else None
 
     def grab(self, n: int) -> list[np.ndarray]:
         return self.grab_both(n)[0]
 
-    def grab_both(self, n: int, observe=None) -> tuple[list[np.ndarray], list[np.ndarray]]:
-        """n colour frames, and n depth frames in metres (empty without depth)."""
+    def grab_both(self, n: int, observe=None, fresh: bool = False) -> tuple[list[np.ndarray], list[np.ndarray]]:
+        """n colour frames, and n depth frames in metres (empty without depth); `fresh`: none queued before the call
+        (a camera kept open while the arm moved), so they are taken where the arm stands now."""
         colors, depths = [], []
         self.capture_timestamps = []
         self.raw_depth = []
-        for _ in range(n):
-            fs = self.pipe.wait_for_frames(5000)
-            if self.align is not None:
-                fs = self.align.process(fs)
-            colors.append(np.asanyarray(fs.get_color_frame().get_data()).copy())
-            if self.depth:
-                frame = fs.get_depth_frame()
-                self.raw_depth.append(np.asanyarray(frame.get_data()).copy())
-                depths.append(self.raw_depth[-1].astype(np.float32) * self.depth_scale)
-                self.capture_timestamps.append({"received_at_ns": time.time_ns(), "depth_ms": frame.get_timestamp(),
-                                                "received_monotonic_s": time.monotonic(),
-                                                "joints": None if observe is None else observe(),
-                                                "depth_domain": str(frame.get_frame_timestamp_domain()),
-                                                "color_ms": fs.get_color_frame().get_timestamp(),
-                                                "color_domain": str(fs.get_color_frame().get_frame_timestamp_domain())})
+        with self.lock:
+            while fresh and self.pipe.poll_for_frames():
+                pass
+            for _ in range(n):
+                fs = self.pipe.wait_for_frames(5000)
+                if self.align is not None:
+                    fs = self.align.process(fs)
+                colors.append(np.asanyarray(fs.get_color_frame().get_data()).copy())
+                if self.depth:
+                    frame = fs.get_depth_frame()
+                    self.raw_depth.append(np.asanyarray(frame.get_data()).copy())
+                    depths.append(self.raw_depth[-1].astype(np.float32) * self.depth_scale)
+                    self.capture_timestamps.append({"received_at_ns": time.time_ns(), "depth_ms": frame.get_timestamp(),
+                                                    "received_monotonic_s": time.monotonic(),
+                                                    "joints": None if observe is None else observe(),
+                                                    "depth_domain": str(frame.get_frame_timestamp_domain()),
+                                                    "color_ms": fs.get_color_frame().get_timestamp(),
+                                                    "color_domain": str(fs.get_color_frame().get_frame_timestamp_domain())})
+        self.stamp_ns = time.time_ns()   # the stamp the tap publishes the last frame at (wrist_tap.show_markers)
+        if self.tap is not None and colors:   # references only; the tap thread encodes and publishes
+            self.tap.put(colors[-1], self.raw_depth[-1] if self.depth else None, self.stamp_ns)
         return colors, depths
 
     def close(self) -> None:
-        self.pipe.stop()
+        """The previews close, the tap is told to stop (it waits for nothing and never touches a stopped pipeline),
+        then the pipeline."""
+        if self.preview is not None:
+            self.preview.close()
+        if self.tap is not None:
+            self.tap.close()
+        with self.lock:
+            self.pipe.stop()
 
 
 DEPTH_FRAME = "{arm}/realsense_depth_optical_frame"
@@ -411,291 +639,194 @@ def print_mask(page_image: np.ndarray, px_per_mm: float, *, darkness: float = 0.
     return dark, valid
 
 
+def print_artwork(pattern_id: str | None):
+    """The installed fiducial-tile print's markers (scripts/vision/fiducials/stencil.Tile, from the tile.json beside
+    its tracking.json); None without one."""
+    from stencil_reference import observer_references
 
-
-def _strip_density(dark, valid, extent_m, px_per_mm: float, axis: int, scan, along, step_m: float,
-                   min_valid: float) -> np.ndarray:
-    """The dark share of each strip `step_m` wide at the scan positions, across the segment `along`
-    (a0, a1) of a side along `axis`; nan where the camera saw less than `min_valid` of it."""
-    xmin, _, _, ymax = extent_m
-    px = 1e-3 / px_per_mm
-    a0, a1 = along
-
-    def to_px(x, y):
-        return int(round((x - xmin) / px)), int(round((ymax - y) / px))
-
-    dens = []
-    for s in scan:
-        if axis == 0:
-            (c0, r0), (c1, r1) = to_px(s - step_m / 2, a1), to_px(s + step_m / 2, a0)
-        else:
-            (c0, r0), (c1, r1) = to_px(a0, s + step_m / 2), to_px(a1, s - step_m / 2)
-        r0, r1, c0, c1 = max(r0, 0), max(r1, r0 + 1), max(c0, 0), max(c1, c0 + 1)
-        v = valid[r0:r1, c0:c1]
-        dens.append(np.nan if v.size == 0 or v.mean() < min_valid else float(dark[r0:r1, c0:c1][v].mean()))
-    return np.asarray(dens)
-
-
-def _first_run(dens: np.ndarray, inside: int, need: int, need_clear: int, density: float) -> int | None:
-    """The first scan index that starts `need` strips over `density` after `need_clear` clean ones, or
-    None; None too when the first `inside` strips (inside the nominal edge) were not all seen."""
-    if np.isnan(dens[:inside]).any():
-        return None   # the scan inside the nominal edge must be seen whole, or a cut edge could pass for the border
-    over = np.nan_to_num(dens, nan=0.0) > density
-    hit = next((i for i in range(len(over) - need) if over[i:i + need].all()), None)
-    if hit is not None and (hit < need_clear or over[hit - need_clear:hit].any()):
+    if not pattern_id:
         return None
-    return hit
+    sys.path.insert(0, str(repo_root(None) / "scripts/vision"))
+    from fiducials import stencil
+
+    return stencil.load(observer_references() / pattern_id)
 
 
-def drawing_extent(program: dict | None):
-    """(xmin, ymin, xmax, ymax), page metres, of every stroke the program plans; None without one."""
-    points = [p for op in (program or {}).get("ops", []) if op.get("op") == "stroke" for p in op["points_m"]]
-    if not points:
-        return None
-    pts = np.asarray(points, dtype=float)[:, :2]
-    return (*(float(v) for v in pts.min(axis=0)), *(float(v) for v in pts.max(axis=0)))
-
-
-def border_edges(page_image: np.ndarray, extent_m, px_per_mm: float, clear_m, *, inner_m=None, size_m=PAGE_SIZE,
-                 drawn_m=None, search_m: float = 0.020, segments: int = 8, step_m: float = 0.00025,
-                 density: float = 0.12, run_m: float = 0.002, clear_run_m: float = 0.003,
-                 min_valid: float = 0.6) -> list[dict]:
-    """The inner edge of the printed border, segment by segment along each side of the clear centre:
-    scanning outward from `search_m` inside the side's nominal edge (inner_edges: `inner_m`, else
-    +-clear_m / 2), or from the drawing's own edge where that is nearer (`drawn_m`, drawing_extent),
-    the first place where the dark density across a strip stays over `density` for
-    `run_m` (a 0.5 mm ink line does not), after at least `clear_run_m` of clean paper (the pen cone and
-    arm shadows start dark and fail). Outward the scan stops at `search_m`, or sooner, where a run
-    found would end `run_m` short of the page's own edge (`size_m`, the page centred; None: no bound):
-    the side's margin + frame is all paper and border, and a dark mat beyond the page, which a border
-    too faint to find lets the scan reach, could otherwise pass for it. The mat's run then needs the
-    page's edge 2 run_m inside where it is believed to be. Returns [{"side", "axis", "offset_m" (along
-    the edge normal from the nominal edge, page frame), "edge_m", "along_m"}] in the page image's
-    (believed) frame; occluded or shadow-cut segments are left out. Started inside a drawing, the first
-    dark run after clean paper is ink: a resume's wrist locate took a drawn wave 14-17 mm inside the
-    border for it, and the fit's free x scale (1.21-1.26) carried that into a page 10-13 mm off
-    (2026-10-05). Started at the drawing's edge, a scan either begins on clean paper or on ink, which the
-    clean run refuses."""
-    dark, valid = print_mask(page_image, px_per_mm)
-    edges = inner_edges(clear_m, inner_m)
-    mid = ((edges["left"] + edges["right"]) / 2.0, (edges["bottom"] + edges["top"]) / 2.0)
-    span = ((edges["right"] - edges["left"]) / 2.0, (edges["top"] - edges["bottom"]) / 2.0)
-    deepest = dict.fromkeys(SIDES, search_m)
-    if drawn_m is not None:
-        x0, y0, x1, y1 = drawn_m
-        room = {"left": x0 - edges["left"], "right": edges["right"] - x1,
-                "bottom": y0 - edges["bottom"], "top": edges["top"] - y1}
-        deepest = {side: float(np.clip(room[side], 0.0, search_m)) for side in SIDES}
-    need, need_clear = (int(round(v / step_m)) for v in (run_m, clear_run_m))
-    out = []
-    for side, (axis, sign) in SIDES.items():
-        nominal = edges[side]
-        inside = int(round(deepest[side] / step_m))
-        half = span[1 - axis] * 0.85   # segments over the middle of the side, between its neighbours' edges
-        bounds = mid[1 - axis] + np.linspace(-half, half, segments + 1)
-        outward = search_m if size_m is None else min(search_m, size_m[axis] / 2.0 - sign * nominal - run_m)
-        scan = nominal + sign * np.arange(-deepest[side], outward, step_m)   # inside -> outside
-        for a0, a1 in zip(bounds[:-1], bounds[1:], strict=True):
-            dens = _strip_density(dark, valid, extent_m, px_per_mm, axis, scan, (a0, a1), step_m, min_valid)
-            hit = _first_run(dens, inside, need, need_clear, density)
-            if hit is not None:
-                out.append({"side": side, "axis": axis, "offset_m": float(scan[hit] - nominal),
-                            "edge_m": float(scan[hit]), "along_m": float((a0 + a1) / 2)})
+def snap_to_plane(cam_from_print: np.ndarray, n: np.ndarray, d: float) -> np.ndarray:
+    """The pose moved onto a measured plane n.x = d: its origin along its camera ray, its x projected into the plane."""
+    o, x = cam_from_print[:3, 3], cam_from_print[:3, 0]
+    zc = n if cam_from_print[:3, 2] @ n >= 0 else -n
+    x2 = x - (x @ zc) * zc
+    x2 /= np.linalg.norm(x2)
+    out = np.eye(4)
+    out[:3, 0], out[:3, 1], out[:3, 2], out[:3, 3] = x2, np.cross(zc, x2), zc, o * (d / (n @ o))
     return out
 
 
-def solve_in_plane(edges: list[dict], clear_m, *, inner_m=None, centre_m=(0.0, 0.0),
-                   outlier_m: float = 0.0012, free_scale=(True, True)) -> dict | None:
-    """The in-plane correction (tx, ty, theta) that moves the detected border edges onto the print's
-    nominal inner edges (inner_edges: `inner_m`, else the clear-centre outline): p_true = R(theta)
-    (c + S (p - c)) + t in page coordinates, linearised in theta. S = diag(sx, sy) absorbs the page
-    image's scale error (the camera's mount pose is CAD, so an oblique view comes out a few % too large
-    or small along an axis); an axis is scaled only when both of its opposite sides were seen, else its
-    scale is 1. S is about c = `centre_m`, the page point the views aim at: the view axis meets the
-    page there wherever the camera sits along it, so the error scales the image about c and t is the
-    print's own offset; about another point c', t would carry (I - S)(c - c'). The per-side edges
-    change only the targets, not c: for an edge point on a left/right side (x = e, y = a), sx (e - cx)
-    + cx - theta a + tx = that side's nominal x; on a top/bottom side (y = e, x = a), sy (e - cy) + cy
-    + theta a + ty = its nominal y. The worst point is dropped and the fit redone until every residual
-    is within `outlier_m`. `free_scale` (x, y) False holds that axis's scale at 1 even with both sides
-    seen: a side found by one or two segments is fitted exactly by the scale, so they can never be
-    rejected. Returns {"tx_m", "ty_m", "theta_rad", "scale", "rms_m", "sigma" (tx, ty, theta),
-    "points", "sides"} or None without three sides covering both axes."""
-    nominal = inner_edges(clear_m, inner_m)
-    cx, cy = centre_m
-    keep = np.ones(len(edges), dtype=bool)
-    while True:
-        kept = [e for e, k in zip(edges, keep, strict=True) if k]
-        sides = {e["side"] for e in kept}
-        if keep.sum() < 5 or len(sides) < 3 or len({e["axis"] for e in kept}) < 2:
-            return None
-        free_x = bool(free_scale[0]) and {"left", "right"} <= sides
-        free_y = bool(free_scale[1]) and {"bottom", "top"} <= sides
-        rows, rhs = [], []
-        for e in edges:
-            if e["axis"] == 0:
-                rows.append([1.0, 0.0, -e["along_m"], e["edge_m"] - cx if free_x else 0.0, 0.0])
-                rhs.append(nominal[e["side"]] - (cx if free_x else e["edge_m"]))
-            else:
-                rows.append([0.0, 1.0, e["along_m"], 0.0, e["edge_m"] - cy if free_y else 0.0])
-                rhs.append(nominal[e["side"]] - (cy if free_y else e["edge_m"]))
-        cols = [0, 1, 2] + ([3] if free_x else []) + ([4] if free_y else [])
-        a, b = np.asarray(rows)[:, cols], np.asarray(rhs)
-        x, *_ = np.linalg.lstsq(a[keep], b[keep], rcond=None)
-        res = np.where(keep, np.abs(b - a @ x), -1.0)
-        worst = int(np.argmax(res))
-        if res[worst] <= outlier_m:
-            break
-        keep[worst] = False
-    full = dict(zip(cols, x, strict=True))
-    res = (b - a @ x)[keep]
-    var = float(res @ res) / max(1, int(keep.sum()) - len(cols))
-    cov = var * np.linalg.pinv(a[keep].T @ a[keep])
-    return {"tx_m": float(x[0]), "ty_m": float(x[1]), "theta_rad": float(x[2]),
-            "scale": [float(full.get(3, 1.0)), float(full.get(4, 1.0))], "rms_m": float(np.sqrt(var)),
-            "sigma": [float(np.sqrt(max(cov[i, i], 0.0))) for i in range(3)], "points": int(keep.sum()),
-            "sides": sorted(sides)}
+def tip_on_print(cam_from_print: np.ndarray, tip_cam) -> np.ndarray:
+    """A camera-frame point in the print's frame: (x, y, height over the paper)."""
+    pfc = np.linalg.inv(cam_from_print)
+    return pfc[:3, :3] @ np.asarray(tip_cam, float) + pfc[:3, 3]
 
 
-def fit_view(page_image: np.ndarray, extent_m, px_per_mm: float, page: dict, *, inner_m, drawn_m, centre_m,
-             free_scale, artwork=None) -> dict | None:
-    """One wrist view's in-plane correction: its border's inner edges (border_edges, solve_in_plane), else,
-    with the print's `artwork`, its frame as a whole (artwork_fit); None when neither fits."""
-    clear = page["clear_m"]
-    found = border_edges(page_image, extent_m, px_per_mm, clear, inner_m=inner_m, size_m=page["size_m"],
-                         drawn_m=drawn_m)
-    sol = solve_in_plane(found, clear, inner_m=inner_m, centre_m=centre_m, free_scale=free_scale)
-    if sol is None and artwork is not None:
-        sol = artwork_fit(page_image, artwork, extent_m, px_per_mm, page["size_m"], clear)
-    return sol
-
-
-def print_artwork(pattern_id: str | None):
-    """The installed print's artwork (stencil.png beside its tracking.json; grey, u right, v down), None
-    without one."""
-    import cv2
-    from stencil_reference import observer_references
-
-    return cv2.imread(str(observer_references() / pattern_id / "stencil.png"), cv2.IMREAD_GRAYSCALE) \
-        if pattern_id else None
-
-
-def artwork_fit(page_image: np.ndarray, artwork: np.ndarray, extent_m, px_per_mm: float, size_m, clear_m, *,
-                step_m: float = 0.002, search_m: float = 0.015, max_turn_deg: float = 6.0,
-                min_score: float = 0.3) -> dict | None:
-    """The in-plane correction from the printed frame as a whole, for a view whose border_edges fit fails: the
-    page image averaged to `step_m` per pixel, where the frame's 14 mm band shows but not its 2 mm knots or code
-    bits (so any print of the layout matches, and a lattice step is never taken for the page), correlated with
-    the print's `artwork` over the frame only, never the clear centre (stencil_plane_match's band-pass and
-    frame mask), within `search_m` and `max_turn_deg` of the believed page. A thermal transfer on silicone
-    showed a half-skin print's top and right bands solid and the other two as scattered knots, and the hex
-    lattice's inner edge steps ~3 mm row to row: the edge scan found three agreeing sides in no view, while
-    this put all three views within 3 mm of each other (2026-10-06). Returns solve_in_plane's correction with
-    the peak's "score", or None when the peak scores under `min_score` or sits on the search window's edge."""
-    import cv2
-
-    sys.path.insert(0, str(repo_root(None) / "scripts/vision"))
-    import stencil_plane_match as pm
-
-    block = max(1, int(round(step_m * 1000 * px_per_mm)))
-    gray = page_image if page_image.ndim == 2 else cv2.cvtColor(page_image, cv2.COLOR_BGR2GRAY)
-    rows, cols = gray.shape[0] // block, gray.shape[1] // block
-    small = cv2.resize(gray[:rows * block, :cols * block].astype(np.float32), (cols, rows),
-                       interpolation=cv2.INTER_AREA)
-    step = block / px_per_mm / 1000.0   # small pixel j's centre is at xmin + (j + 0.5) step
-    template = pm.reference_template(artwork, size_m, step)
-    u0, v0 = 0.5 - clear_m[0] / size_m[0] / 2.0, 0.5 - clear_m[1] / size_m[1] / 2.0
-    keep = pm.frame_mask(template, (u0, v0, 1.0 - u0, 1.0 - v0))
-    template = pm.band_pass(template)
-    pad = int(np.ceil(search_m / step))
-    image = cv2.copyMakeBorder(pm.band_pass(small), pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=0.0)
-    th, tw = template.shape
-    centre = ((tw - 1) / 2.0, (th - 1) / 2.0)   # the page centre in the template
-
-    def correlate(degrees):   # the template turned counter-clockwise on the page (y up)
-        turn = cv2.getRotationMatrix2D(centre, degrees, 1.0)
-        turned = cv2.warpAffine(template, turn, (tw, th), flags=cv2.INTER_LINEAR, borderValue=0.0)
-        mask = cv2.warpAffine(keep, turn, (tw, th), flags=cv2.INTER_NEAREST, borderValue=0.0)
-        result = cv2.matchTemplate(image, turned, cv2.TM_CCOEFF_NORMED, mask=mask)
-        return np.where(np.abs(result) <= 1.0 + 1e-6, result, -1.0)   # OpenCV 4.6 gives a blank window FLT_MAX
-
-    def vertex(a, b, c):   # the parabola's peak through three equally spaced samples, in steps from the middle
-        curve = a - 2.0 * b + c
-        return 0.5 * (a - c) / curve if curve < 0 else 0.0
-
-    coarse = np.arange(-max_turn_deg, max_turn_deg + 1e-9, 1.0)
-    turn = coarse[int(np.argmax([correlate(d).max() for d in coarse]))]
-    fine = np.arange(turn - 0.75, turn + 0.76, 0.25)
-    peaks = [float(correlate(d).max()) for d in fine]
-    i = int(np.clip(np.argmax(peaks), 1, len(fine) - 2))
-    degrees = fine[i] + 0.25 * float(np.clip(vertex(*peaks[i - 1:i + 2]), -1.0, 1.0))
-    result = correlate(degrees)
-    score = float(result.max())
-    y, x = np.unravel_index(int(np.argmax(result)), result.shape)
-    if score < min_score or not (0 < x < result.shape[1] - 1 and 0 < y < result.shape[0] - 1):
+def view_fit(page_image: np.ndarray, tile, extent_m, px_per_mm: float) -> dict | None:
+    """One locate view's in-plane correction by the print's markers in its page image (fiducials.stencil.fit); None
+    without a print or when its markers are not accepted."""
+    if tile is None:
         return None
-    col = x + vertex(*result[y, x - 1:x + 2]) + centre[0] - pad
-    row = y + vertex(*result[y - 1:y + 2, x]) + centre[1] - pad
-    xmin, _, _, ymax = extent_m
-    shift = np.array([xmin + (col + 0.5) * step, ymax - (row + 0.5) * step])   # the print's centre, believed frame
-    phi = np.radians(degrees)
-    c, s = np.cos(phi), np.sin(phi)
-    t = -np.array([c * shift[0] + s * shift[1], -s * shift[0] + c * shift[1]])   # p_print = R(-phi) (p - shift)
-    return {"tx_m": float(t[0]), "ty_m": float(t[1]), "theta_rad": float(-phi), "scale": [1.0, 1.0],
-            "rms_m": None, "sigma": [step / 2.0, step / 2.0, float(np.radians(1.0))], "points": 0,
-            "sides": ["artwork"], "score": score}
+    sys.path.insert(0, str(repo_root(None) / "scripts/vision"))
+    from fiducials import stencil
+
+    fit = stencil.fit(page_image, tile, extent_m, px_per_mm)
+    return fit if fit is not None and fit["accepted"] else None
 
 
-def hold_tip(colors, frames, meta: dict, tip_cam, cam_from_page: np.ndarray, page: dict, artwork,
-             px_per_mm: float = 5.0) -> dict | None:
+def hold_tip(colors, frames, meta: dict, tip_cam, cam_from_page: np.ndarray, page: dict, tile,
+             surface=None, markers: dict | None = None, every=None) -> dict | None:
     """Where the pen's tip is on the print in one gauge hold's wrist frames, from the camera's own geometry: the
     surface the gauge fitted (gauge.Frame, the paper's plane by the pen: a whole-frame plane fit takes the mat under
-    a 5 mm silicone skin, 3.8 mm off), the frames rectified onto it about the page believed there (`cam_from_page`,
-    FK: it only seeds the fit), the print's frame matched to its `artwork` (artwork_fit), and the gauge's tip point
-    `tip_cam` carried into the print's frame. Neither FK nor the camera's CAD mount enters: the wrist locate's far
-    views put a half-skin print 6 mm apart in y, these frames within ~1-2 mm of each other (2026-10-06). Not the
-    border's edges: on that print the edge scan's answer jumped 5 mm when its seed moved 2.6 mm (the hex lattice's
-    inner edge steps row to row), the artwork's moved 0.4 mm at most. {"tip_m": (x, y, height over the print),
-    "score"}, or None when the gauge saw no surface or the artwork does not match."""
-    sys.path.insert(0, str(repo_root(None) / "scripts/vision"))
-    import stencil_tip
-
+    a 5 mm silicone skin, 3.8 mm off), the page believed there (`cam_from_page`, FK: it only seeds the fit) carried
+    onto it, the print's markers read in the frames (tile_fit), and the gauge's tip point `tip_cam` carried into the
+    print's frame. Neither FK nor the camera's CAD mount enters. {"tip_m": (x, y, height over the print), "score",
+    "margin", "markers", "ids" (theirs), "rms_m", "accepted", "cam_from_print"}, or None when the gauge saw no surface or no marker
+    of the print keeps its shape. On a curved page (`surface`, a PageSurface: its shape, carried by cam_from_page)
+    the page is the skin in the print's millimetres, moved along its normal onto the skin the gauge measured under
+    the tip, and the tip's place is the print point under it. `markers` (a dict) takes every marker read (tile_fit).
+    `every`: every colour frame the hold took, its markers read in all of them (else in the gauge frames' own). A
+    curved hold's 25 frames read in fives (gauge.WristGauge._pooled) left 20 unread: on a faint bicep transfer
+    (2026-10-24) a frame decoded 0-4 of its six markers, a different few each time, and three of five holds read
+    none or one in their five; in all 25 they read 4-5, two of them keeping their printed shape (OpenCV 4.6, the
+    ros node's)."""
     seen = [(c, f) for c, f in zip(colors, frames, strict=True) if f is not None]
     if not seen:
         return None
-    surface = seen[0][1]
-    n = -np.asarray(surface.n, float)   # away from the camera, as stencil_tip takes a plane
-    snapped = stencil_tip.snap_to_plane(np.asarray(cam_from_page, float), n, float(n @ np.asarray(surface.c, float)))
+    measured = seen[0][1]
     k, dist = (np.asarray(meta["color_intrinsics"][key], float) for key in ("k", "coeffs"))
     extent = page_extent(page["size_m"])
-    view = median_stack([rectify(c, snapped, np.eye(4), k, dist, extent, px_per_mm) for c, _ in seen])
-    fit = artwork_fit(view, artwork, extent, px_per_mm, page["size_m"], page["clear_m"])
+    if surface is None:
+        n = -np.asarray(measured.n, float)   # away from the camera
+        snapped = snap_to_plane(np.asarray(cam_from_page, float), n, float(n @ np.asarray(measured.c, float)))
+        skin = None
+    else:   # the skin moved along its normal onto the skin the gauge saw about the tip (else its point under it)
+        from tatbot_session import curved, gauge
+
+        placed = surface.moved(cam_from_page)
+        gap, normal = placed.height_over(measured.c)
+        about = curved.skin_gap(placed, gauge.ring(measured))
+        snapped = np.asarray(cam_from_page, float).copy()
+        snapped[:3, 3] += (gap if about is None else about) * normal
+        skin = surface.moved(snapped)
+    fit = tile_fit(colors=[c for c, _ in seen] if every is None else list(every), tile=tile, cam_from_page=snapped,
+                   k=k, dist=dist, extent_m=extent, surface=skin, markers=markers)
     if fit is None:
         return None
-    on_print = snapped @ np.linalg.inv(correction_matrix(fit["tx_m"], fit["ty_m"], fit["theta_rad"]))
-    return {"tip_m": [float(v) for v in stencil_tip.tip_on_print(on_print, tip_cam)], "score": fit["score"]}
+    correction = correction_matrix(fit["tx_m"], fit["ty_m"], fit["theta_rad"])
+    on_print = snapped @ np.linalg.inv(correction)
+    tip = tip_on_print(on_print, tip_cam)
+    if skin is not None:   # the print point under the tip, in the print's frame
+        uv = skin.foot(tip_cam)[0]
+        tip[:2] = (correction @ [uv[0], uv[1], 0.0, 1.0])[:2]
+    return {"tip_m": [float(v) for v in tip], "score": fit["score"], "margin": fit["margin"], "markers": fit["markers"],
+            "ids": fit["ids"], "rms_m": fit["rms_m"], "accepted": fit["accepted"], "cam_from_print": on_print.tolist(),
+            "turn_rad": float(fit["theta_rad"])}
 
 
-def holds_shift(holds, *, outlier_m: float = 0.003, min_holds: int = 3) -> dict | None:
-    """The page's in-plane shift from the gauge holds: each hold's commanded page point "xy" and the tip's measured
-    point on the print "tip_m" (hold_tip), believed + shift = print, the median of tip - xy over the holds within
-    `outlier_m` of the first median (one hold's fit jumped a band, 20 mm, 2026-10-06). The turn stays the
-    locate's: across a 35 x 40 mm square the holds' 1-2 mm scatter is a 3 deg turn. {"shift_m", "spread_m" (1.4826
-    MAD per axis), "holds", "dropped"}, or None with fewer than `min_holds` agreeing."""
-    r = np.array([np.subtract(h["tip_m"][:2], h["xy"]) for h in holds], float).reshape(-1, 2)
+def tile_fit(colors, tile, cam_from_page, k, dist, extent_m, surface=None, grid_px_per_mm: float = 2.5,
+             reach_px: float = 12.0, markers: dict | None = None) -> dict | None:
+    """A fiducial-tile print's in-plane correction (fiducials.stencil.fit_points) from its markers found in the
+    camera's own frames, each corner carried onto the page through the map rectify samples by (page_to_pixel, onto
+    a curved page's skin), inverted by an affine fit to the eight map points nearest it. Over the curved holder
+    (2026-10-18) the raw frames held 9 markers a view, the rectified page 5: a curved page's resampling lost the
+    markers its field bends. A corner farther than reach_px from the map (skin facing away) drops its marker.
+    `markers` (a dict) takes every marker read, kept or dropped: id -> its corners' median in the frames' pixels."""
+    from scipy.spatial import cKDTree
+
+    sys.path.insert(0, str(repo_root(None) / "scripts/vision"))
+    from fiducials import stencil
+
+    gx, gy = page_grid(extent_m, grid_px_per_mm)
+    page = np.c_[gx.ravel(), gy.ravel()]
+    uv = page_to_pixel(page, cam_from_page, np.eye(4), k, dist, surface)
+    ok = np.isfinite(uv).all(axis=1)
+    page, uv = page[ok], uv[ok]
+    if len(uv) < 8:
+        return None
+    tree, det, found = cKDTree(uv), stencil.detector(tile), {}
+    for color in colors:
+        for tag_id, corners in stencil.find(color, tile, det).items():
+            found.setdefault(tag_id, []).append(corners)
+    seen = {}
+    for tag_id, reads in found.items():
+        corners = np.median(np.stack(reads), axis=0)
+        if markers is not None:
+            markers[tag_id] = corners
+        dists, near = tree.query(corners, k=8)
+        if float(dists.max()) > reach_px:
+            continue
+        seen[tag_id] = np.array([np.r_[c, 1.0] @ np.linalg.lstsq(np.c_[uv[j], np.ones(len(j))], page[j], rcond=None)[0]
+                                 for c, j in zip(corners, near, strict=True)])
+    return stencil.fit_points(seen, tile)
+
+
+READ_MARGIN = 0.5   # a reading's margin to be taken: a tile reading's is 1 when its markers were accepted, else 0
+
+
+def holds_shift(holds, *, outlier_m: float = 0.003, min_holds: int = 3, min_margin: float = READ_MARGIN,
+                turned: bool = False, turn_holds: int = 5, span_m: float = 0.005,
+                max_turn_rad: float = 0.087) -> dict | None:
+    """The page's in-plane move from the gauge holds: each hold's believed page point "xy" and the tip's measured
+    point on the print "tip_m" (hold_tip), the believed point moved = print. With `turned` (a curved page) the
+    median of each hold's own marker fit's turn ("turn_rad", hold_tip; 0.1-0.4 deg apart over 9-10 holds on a
+    forearm, 2026-10-19) within max_turn_rad turns the believed points first, and the holds within `outlier_m` of
+    the median of tip - xy turn them on about their centre (a 2-D Kabsch fit of their places); the median of what
+    they leave shifts them. Else the turn stays the locate's. A hold whose "margin" is under `min_margin` (its
+    markers not accepted) is left out, as the track leaves out such a reading. {"shift_m" at "about_m" (the holds'
+    centre), "turn_rad" (taken in all), "fit_turn_rad" (the places' in all), "move" (as correction_matrix's tx, ty,
+    theta), "spread_m" (1.4826 MAD per axis about it), "off_m", "places" (below), "holds", "dropped"}, or None with
+    fewer than `min_holds`."""
+    # "off_m": the farthest from the shift of the holds kept and of every one read by two "markers" or more, dropped or
+    # not; "places": the kept ones' read by two markers or more. A curved page's holds past their limit move it only
+    # on these (executor._hold_page): three lone markers outvoted two holds by three, or one place read again counted
+    # as agreeing readings, under a MAD spread and a count of records (2026-10-20 review).
+    # The places' turn is what the track's residual sees: on a forearm print (2026-10-19) the holds' places put the
+    # page 2-3 deg off the locate's while their markers read it within 1 deg (a camera mount's yaw turns the markers'
+    # reading, not the places'), a spot read again later agreed to 0.04-0.23 mm, and the track carried the turn as
+    # corrections of up to 2.4 mm. It is not taken from fewer than turn_holds places (one misread then turns the page
+    # and nothing is left to show it: four holds turned one 3.3 deg the track read as 0.7; holds nearer each other
+    # than span_m are one place: a hold made again is recorded again, 2026-10-19's runs), from holds spanning under
+    # span_m one way (the track's Field takes no turn there either), or past max_turn_rad in all: the locate holds the
+    # yaw to 1-1.5 deg and a curved page is set up again past 5 deg (page.surface.rigid.max_rad), so it is a misread.
+    holds = [h for h in holds if h.get("margin") is None or h["margin"] >= min_margin]
+    turns = [h["turn_rad"] for h in holds if turned and h.get("turn_rad") is not None]
+    marks = float(np.median(turns)) if len(turns) >= min_holds and abs(np.median(turns)) <= max_turn_rad else 0.0
+    xy = np.array([h["xy"] for h in holds], float).reshape(-1, 2) @ correction_matrix(0.0, 0.0, marks)[:2, :2].T
+    r = np.array([h["tip_m"][:2] for h in holds], float).reshape(-1, 2) - xy
     if len(r) < min_holds:
         return None
     keep = np.linalg.norm(r - np.median(r, axis=0), axis=1) <= outlier_m
     if keep.sum() < min_holds:
         return None
-    shift = np.median(r[keep], axis=0)
-    spread = 1.4826 * np.median(np.abs(r[keep] - shift), axis=0)
-    return {"shift_m": shift.tolist(), "spread_m": spread.tolist(), "holds": int(keep.sum()),
-            "dropped": int((~keep).sum())}
+    sure = np.array([h.get("markers", 0) >= 2 for h in holds])
+    about = xy[keep].mean(axis=0)
+    a, b = xy[keep] - about, (xy + r)[keep] - (xy + r)[keep].mean(axis=0)
+    fit = float(np.arctan2((a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0]).sum(), (a * b).sum())) if turned else 0.0
+    wide = _places(xy[keep], span_m) >= turn_holds and np.linalg.eigvalsh(a.T @ a / len(a))[0] >= span_m ** 2
+    turn = fit if wide and abs(marks + fit) <= max_turn_rad else 0.0
+    rot = np.array([[np.cos(turn), -np.sin(turn)], [np.sin(turn), np.cos(turn)]])
+    left = r + (xy - about) - (xy - about) @ rot.T   # each hold's shift at the centre once the turn is out
+    shift = np.median(left[keep], axis=0)
+    spread, off = 1.4826 * np.median(np.abs(left[keep] - shift), axis=0), np.linalg.norm(left - shift, axis=1)
+    return {"shift_m": shift.tolist(), "about_m": about.tolist(), "turn_rad": marks + turn, "fit_turn_rad": marks + fit,
+            "move": [*(about + shift - rot @ about).tolist(), marks + turn], "spread_m": spread.tolist(),
+            "off_m": float(off[keep | sure].max()), "places": _places(xy[keep & sure], span_m),
+            "holds": int(keep.sum()), "dropped": int((~keep).sum())}
 
 
-def combine_views(solutions: list[dict], floor=(0.0, 0.0, 0.0)) -> dict | None:
+def _places(xy: np.ndarray, span_m: float) -> int:   # points nearer an earlier one than span_m are its place again
+    return int(sum(np.linalg.norm(xy[:k] - p, axis=1).min(initial=np.inf) >= span_m for k, p in enumerate(xy)))
+
+
+def combine_views(solutions: list[dict | None], floor=(0.0, 0.0, 0.0)) -> dict | None:
     """One wrist estimate from per-pose border fits: the median correction, with each sigma the
     largest of the fits' own, the spread between poses (1.4826 MAD, or half the range for two), and
     `floor` (the camera mount's CAD error). A pose seeing all four sides counts double."""
@@ -801,45 +932,46 @@ def ink_alignment(page_image: np.ndarray, program: dict, extent_m, px_per_mm: fl
             "p50_gap_m": best[4], "p95_gap_m": best[5], "found": bool(not edge and best[3] >= min_coverage)}
 
 
-def analyse(views, program: dict, clear_m, extent_m, px_per_mm: float, *, floor=(0.0, 0.0, 0.0),
-            ink_prior_m=None, ink_gate_m: float = 0.003, inner_m=None, size_m=PAGE_SIZE, centre_m=(0.0, 0.0)) -> dict:
-    """Post-draw analysis of per-pose page images: where the print is against the page the run used
-    (the border fit, combined over poses), where the ink is against the plan (the shift: camera mount
-    plus arm), the coverage of the plan, and the ink's placement error on the print (shift + border
-    correction: what a page trim would take out). The border fit takes the print's inner edges
-    `inner_m` and page size `size_m` (border_edges), and its scale about `centre_m`, the page point
-    the views aim at (solve_in_plane): the ink's shift is measured there.
+def analyse(views, program: dict, clear_m, extent_m, px_per_mm: float, *, tile, floor=(0.0, 0.0, 0.0),
+            ink_prior_m=None, ink_gate_m: float = 0.003, centre_m=(0.0, 0.0)) -> dict:
+    """Post-draw analysis of per-pose page images: where the print is against the page the run used (each view's
+    markers of the fiducial `tile`, fiducials.stencil.fit, combined over poses: "border", for its readers), where
+    the ink is against the plan (the shift: camera mount plus arm), the coverage of the plan, and the ink's
+    placement error on the print (shift + the print's correction: what a page trim would take out). The ink's shift
+    is measured about `centre_m`, the page point the views aim at.
 
     With `ink_prior_m` (the ink-vs-plan shift this rig draws with; a trim moves the ink and the plan
     together, so it does not change it), a view whose shift lies farther than `ink_gate_m` from it is
     not used: a view the wrist registers off by more than that, or whose search matched other ink,
     moved the median by 5-15 mm on a page of small drawings. The placement pairs each used view's
-    shift with that view's own border fit, so a view's registration error cancels, and falls back to
-    the combined border for a view without one. No view near the prior: every found view is used and
+    shift with that view's own print fit, so a view's registration error cancels, and falls back to
+    the combined fit for a view without one. No view near the prior: every found view is used and
     `ink["gated"]` says so."""
-    drawn = drawing_extent(program)
-    borders = [solve_in_plane(border_edges(v, extent_m, px_per_mm, clear_m, inner_m=inner_m, size_m=size_m,
-                                           drawn_m=drawn), clear_m, inner_m=inner_m, centre_m=centre_m)
-               for v in views]
+    sys.path.insert(0, str(repo_root(None) / "scripts/vision"))
+    from fiducials import stencil
+
+    fits = [stencil.fit(v, tile, extent_m, px_per_mm) for v in views]
+    borders = [f if f is not None and f["accepted"] else None for f in fits]
     inks = [ink_alignment(v, program, extent_m, px_per_mm, clear_m) for v in views]
     border = combine_views(borders, floor)
     found = [i for i, k in enumerate(inks) if k is not None and k.get("found", True)]
     used, gated = found, False
     if ink_prior_m is not None:
         prior = np.asarray(ink_prior_m, dtype=float)[:2]
-        near = [i for i in found if np.hypot(inks[i]["dx_m"] - prior[0], inks[i]["dy_m"] - prior[1]) <= ink_gate_m]
+        near = [i for i in found if (k := inks[i]) is not None and np.hypot(k["dx_m"] - prior[0], k["dy_m"] - prior[1]) <= ink_gate_m]
         if near:
             used, gated = near, len(near) < len(found)
     ink = None
     if used:
-        good = [inks[i] for i in used]
-        ink = {"dx_m": float(np.median([k["dx_m"] for k in good])), "dy_m": float(np.median([k["dy_m"] for k in good])),
-               "coverage": float(np.median([k["coverage"] for k in good])),
-               "p50_gap_m": float(np.median([k["p50_gap_m"] for k in good])),
-               "p95_gap_m": float(np.median([k["p95_gap_m"] for k in good])), "views": len(good),
-               "found": len(found), "used": used, "gated": bool(gated)}
+        good = [k for i in used if (k := inks[i]) is not None]
+        if good:
+            ink = {"dx_m": float(np.median([k["dx_m"] for k in good])), "dy_m": float(np.median([k["dy_m"] for k in good])),
+                   "coverage": float(np.median([k["coverage"] for k in good])),
+                   "p50_gap_m": float(np.median([k["p50_gap_m"] for k in good])),
+                   "p95_gap_m": float(np.median([k["p95_gap_m"] for k in good])), "views": len(good),
+                   "found": len(found), "used": used, "gated": bool(gated)}
     placement = None
-    pairs = [(inks[i], borders[i] or border) for i in used if (borders[i] or border) is not None]
+    pairs = [(k, b) for i in used if (k := inks[i]) is not None and (b := (borders[i] or border)) is not None]
     if pairs:
         placement = {"dx_m": float(np.median([k["dx_m"] + b["tx_m"] for k, b in pairs])),
                      "dy_m": float(np.median([k["dy_m"] + b["ty_m"] for k, b in pairs])),
@@ -869,6 +1001,17 @@ def summary(analysis: dict) -> str:
             k.get("p95_gap_m", float("nan")) * 1e3, k.get("views", 0), k.get("found", k.get("views", 0))))
     if p:
         parts.append("ink on the print off by {:+.1f} {:+.1f} mm".format(p["dx_m"] * 1e3, p["dy_m"] * 1e3))
-    if analysis.get("coded_summary"):
-        parts.append(analysis["coded_summary"])
-    return "inspect: " + ("; ".join(parts) if parts else "no border or ink found")
+    return "inspect: " + ("; ".join(parts) if parts else "no print or ink found")
+
+
+def write_inspection(out_dir, views, analysis: dict, program: dict, clear_m, extent_m, px_per_mm: float) -> None:
+    """The inspection's page images (page<n>.png), the plan over each (overlay<n>.png), analysis.json and the line."""
+    import json
+
+    import cv2
+
+    for n, view in enumerate(views):
+        cv2.imwrite(str(out_dir / f"page{n}.png"), view)
+        cv2.imwrite(str(out_dir / f"overlay{n}.png"), overlay(view, program, clear_m, extent_m, px_per_mm))
+    (out_dir / "analysis.json").write_text(json.dumps(analysis, indent=1))
+    print(summary(analysis), flush=True)

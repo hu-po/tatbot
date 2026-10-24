@@ -20,7 +20,7 @@ from tatbot_motion.dip import (
     plan_axial,
     plan_return,
     read_cap,
-    verify_return,
+    return_miss,
 )
 
 REPO = Path(__file__).resolve().parents[3]
@@ -105,8 +105,7 @@ def test_a_tilted_cap_turns_the_tool_down_its_own_axis():
 
 @pytest.mark.parametrize(('changes', 'message'), [
     ({'level': 0.0}, 'over the inner floor'),
-    ({'level': .0136}, 'over the inner floor|stays over the rim'),
-    ({'level': .013}, 'stays over the rim'),
+    ({'level': .0136}, 'over the inner floor'),
     ({'cap': Cap('inkcap_small_1', np.eye(4), .0005, .010, .0035), 'level': .002}, 'bore beyond its wall margin'),
     ({'recipe': {'above_ink_m': -.001}}, 'nonnegative'),
     ({'reach_m': .0004}, 'never touch it'),
@@ -235,8 +234,21 @@ def test_the_return_leaves_up_the_axis_and_restores_the_page_standoff(kin, motio
     for q in stages[0][1]:
         pose = kin.fk(q)
         assert dip.local(pose)[1] < dip.local(first)[1] + motion['clik']['max_model_error_m']
-    verify_return(kin.fk(traj.q[-1]), target, motion)
+    assert return_miss(kin.fk(traj.q[-1]), target) is None
     assert traj.info['return_tcp'] == target.tolist()
+
+
+@pytest.mark.parametrize(('shift_m', 'turn_rad', 'missed'), [
+    (.0019, .0, False), (.0021, .0, True), (.0, .0095, False), (.0, .0105, True),
+    (.00166, .0052, False),   # the second miss that ended a tattoo (2026-10-20): within twice the old bounds
+])
+def test_a_return_is_judged_against_twice_the_stroke_join_and_the_clik_bound(shift_m, turn_rad, missed):
+    target = np.eye(4)
+    target[:3, :3] = DOWN
+    pose = target.copy()
+    pose[:3, 3] += [shift_m, 0, 0]
+    pose[:3, :3] = DOWN @ Rotation.from_rotvec([0, 0, turn_rad]).as_matrix()
+    assert (return_miss(pose, target) is not None) is missed
 
 
 def test_ticks_off_the_axis_under_the_dwell_or_low_over_the_station_are_faults(reachable):
@@ -304,3 +316,12 @@ def test_a_travel_the_clik_cannot_track_is_planned_again_slower(kin, motion, rea
     monkeypatch.setattr(pplan, '_solve', lambda *a, **k: (_ for _ in ()).throw(PlanError('joint 3 reaches its limit')))
     with pytest.raises(PlanError, match='limit'):   # only a lagging tip is worth a slower try
         dips.plan_axial(dip, 'descend', q_seed=seed, kin=kin, motion=motion)
+
+
+def test_a_cap_filled_nearly_to_its_rim_is_dipped_just_under_the_rim():
+    """2026-10-13: caps declared 8.5 mm deep in 9.5 refused the 11RL's dip; a full cap must not prevent drawing."""
+    from tatbot_motion.dip import RIM_UNDER_M
+
+    dip = make_dip(level=.013)
+    assert dip.dwell_height_m == pytest.approx(dip.cap.rim_m - RIM_UNDER_M)
+    assert dip.dwell_height_m < dip.cap.inner_floor_m + .013 + dip.settings['above_ink_m']

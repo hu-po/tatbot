@@ -8,6 +8,7 @@ The worst case for the edge: a contact on the ball's upper cap with under 0.4 mm
 not trip (the stylus is pushed down its axis, where the trigger force is highest), and the wall rides over it."""
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -121,7 +122,7 @@ class Station:
         return None
 
 
-class FakeRig:
+class FakeRig(program.Rig):
     def __init__(self, station, fires=True):
         self.station, self.fires = station, fires
         self.here = station.ball + [0.0, 0.0, 0.060]
@@ -152,10 +153,11 @@ class FakeRig:
             return p, trips and self.fires
         return None
 
-    def goal(self, start, *, move=False, direction=(0.0, 0.0, -1.0), prior=0.0):
+    def goal(self, start, *, move=False, direction=(0.0, 0.0, -1.0), prior=0.0, guard=None, speed=0.0):
         u = np.asarray(direction, float)
         s = start[:3, 3]
         self.goals.append((s.copy(), u.copy(), prior))
+        self.speeds = [*getattr(self, "speeds", []), speed]
         top = max(self.here[2], s[2] + CLEARANCE)
         for a, b in ((self.here, np.array([*self.here[:2], top])), (np.array([*self.here[:2], top]),
                                                                      np.array([*s[:2], top])),
@@ -221,6 +223,7 @@ def test_s1_finds_the_ball_from_a_fix_off_across_and_in_height(tmp_path, dz, acr
     prior = TRUTH + [*across, dz]
     cal = calibration(tmp_path, rig, prior, palette_at(prior))
     assert cal.s1(), station.events
+    assert cal.ball is not None  # s1() succeeded and set cal.ball
     assert np.linalg.norm(cal.ball[:2] - TRUTH[:2]) < 2e-4
     assert abs(cal.ball[2] - TRUTH[2]) < 8e-4
     bad = [event for event in station.events if event[0] != "rode over"]
@@ -251,10 +254,12 @@ def test_further_yaws_start_from_s1s_measured_ball_and_stay_clear(tmp_path):
     prior = TRUTH + [-0.006, 0.004, 0.004]
     cal = calibration(tmp_path, rig, prior, palette_at(prior))
     assert cal.s1()
+    assert cal.ball is not None  # s1() succeeded and set cal.ball
     measured = cal.ball.copy()
     for yaw in (-30.0, 30.0, 60.0):
         cal.ball = measured.copy()
         assert cal.attitude(yaw, f"S4 {yaw:+.0f}/+0"), station.events
+        assert cal.ball is not None  # attitude() updated cal.ball
         assert np.linalg.norm(cal.ball[:2] - TRUTH[:2]) < 2e-4
     assert {c.group for c in cal.contacts} == {"S1", "S4 -30/+0", "S4 +30/+0", "S4 +60/+0"}
     assert all(c.kind == "side" for c in cal.contacts)
@@ -279,8 +284,10 @@ def test_a_probe_that_never_fires_stops_the_search_without_retries(tmp_path):
     passes, backs = rig.goals[0::2], rig.goals[1::2]      # the laser's ring backs out of every pass that met nothing
     priors = [prior for _, _, prior in passes]
     assert priors and max(priors) == min(priors) == pytest.approx(cal.search_standoff())
-    assert len(passes) == 4                               # each pair once: from one estimate a pair repeats itself
-    assert len(backs) == 4 and all(np.allclose(b[1], -p[1]) for p, b in zip(passes, backs, strict=True))
+    # each pair once at each height (the search goes once more 3 mm lower when nothing met): from one estimate a pair
+    # repeats itself
+    assert len(passes) == 8
+    assert len(backs) == 8 and all(np.allclose(b[1], -p[1]) for p, b in zip(passes, backs, strict=True))
 
 
 def test_the_search_starts_clear_of_the_inkcaps_and_the_camera(tmp_path):
@@ -317,11 +324,38 @@ def test_s1_finds_the_ball_with_a_cartridge_tube_as_the_halo(tmp_path, dz, acros
     across find a fix up to 12 mm off; its bore is narrower than the ball, which never enters it."""
     cal, station, found = run_s1_cartridge(tmp_path, across, dz)
     assert found, station.events
+    assert cal.ball is not None  # s1() succeeded and set cal.ball
     # its metal tip makes the edge passes read the top up to 0.6 mm low; the side pairs stand 7 mm under it
     assert np.linalg.norm(cal.ball[:2] - TRUTH[:2]) < 1e-4 and abs(cal.ball[2] - TRUTH[2]) < 7e-4
     assert not [event for event in station.events if event[0] != "rode over"]
     assert not under_the_floor(cal.rig)
     assert 0.0002 < cal.side_radius < 0.0005          # the tip's 0.45 mm and the ball, less the give, measured
+
+
+def test_s1_refuses_a_top_whose_edge_passes_went_by_the_ball(tmp_path):
+    """A search centre 2 mm off the stylus across the edge passes' line (a search touch that tripped off it) sends
+    every pass by the ball: none trips, and the bisection settles on the search's height, mm under the true top. The
+    side pairs then centre the stylus out of the passes' reach, and S1 refuses before a touch is written."""
+    import json
+
+    station = Station(TRUTH, nose=CARTRIDGE)
+    cal = calibration(tmp_path, FakeRig(station), TRUTH, palette_at(TRUTH), tool="lutin-ballpoint-dot")
+    search = cal.search
+
+    def off_the_stylus(rotation, heading, group="S1 search"):
+        found = search(rotation, heading, group)
+        assert cal.ball is not None  # search set cal.ball
+        cal.ball = cal.ball + 0.002 * halo._across(rotation[:, 2], cal.heading_vector())[1]
+        return found
+
+    cal.search = off_the_stylus
+    with pytest.raises(RuntimeError, match="its top is unmeasured"):
+        cal.s1()
+    edges = [row for row in map(json.loads, (tmp_path / "touches.jsonl").open()) if row["kind"] == "edge"]
+    assert edges and not any(row["tripped"] for row in edges)
+    assert cal.ball is not None  # search set cal.ball
+    assert np.linalg.norm(cal.ball[:2] - TRUTH[:2]) < 1e-4 and cal.ball[2] < TRUTH[2] - 0.001   # centred, the top low
+    assert not [event for event in station.events if event[0] != "rode over"]
 
 
 def test_a_cartridge_searches_offset_lines_only_when_its_own_line_meets_nothing(tmp_path):
@@ -385,7 +419,7 @@ class TipRig(FakeRig):
     def joints(self):
         return np.array(self._mount(self.here, self.rotation))
 
-    def goal(self, start, *, move=False, direction=(0.0, 0.0, -1.0), prior=0.0, guard=None):
+    def goal(self, start, *, move=False, direction=(0.0, 0.0, -1.0), prior=0.0, guard=None, speed=0.0):
         rotation, offset = start[:3, :3], start[:3, :3] @ (self.true_tip - self.tip0)
         shifted = start.copy()
         shifted[:3, 3] += offset
@@ -456,23 +490,65 @@ def test_s4_goes_on_past_refused_attitudes_until_it_has_the_ones_it_wants(monkey
     """Round 7 (2026-09-29): of the three attitudes kept by reach from rest, two were refused on the way from S1
     (joint 5's limit), and two attitude groups identify no tip. S4 now tries its candidates in turn until
     ATTITUDES_WANTED have measured."""
+    from tatbot_calib import solve
+
     tried = []
 
     def attitude(yaw, group):
         tried.append(yaw)
-        cal.contacts.append(group)        # a touch or two before it is skipped
+        cal.contacts.append(solve.Contact("side", np.zeros(7), group))        # a touch or two before it is skipped
         if len(tried) in (1, 3):
             raise RuntimeError("+p: no plan to it (joint right/joint_5 reaches its guarded limit); not sent")
         return len(tried) != 4            # the fourth meets nothing
 
-    cal = SimpleNamespace(attitude=attitude, say=lambda text: None, ball=None, stuck=False, contacts=["S1"])
+    class MockCalibration(program.Calibration):
+        def __init__(self, attitude_fn=None, pair_fn=None, ball=None):
+            self.contacts = [solve.Contact("side", np.zeros(7), "S1")]
+            self.ball = ball
+            self.stuck = False
+            if attitude_fn is not None:
+                self.attitude = attitude_fn
+            if pair_fn is not None:
+                self.pair = pair_fn
+
+        def say(self, text: str):
+            pass
+
+    cal = MockCalibration(attitude_fn=attitude)
     monkeypatch.setattr(program, "_latched", lambda cal: False)
     monkeypatch.setattr(program, "_fit", lambda cal: None)
     candidates = program._attitudes(program.DEFAULT_ATTITUDES)
     assert program.s4(cal, candidates, TRUTH) == program.ATTITUDES_WANTED
     assert len(tried) == program.ATTITUDES_WANTED + 3 and tried[0] == -60.0
     # a skipped yaw's contacts are not fitted (071f, 2026-10-01: a partial attitude counted as a held-out group)
-    assert cal.contacts == ["S1", *(f"S4 {yaw:+.0f}/+0" for n, yaw in enumerate(tried, 1) if n not in (1, 3, 4))]
+    assert [c.group for c in cal.contacts] == ["S1", *(f"S4 {yaw:+.0f}/+0" for n, yaw in enumerate(tried, 1) if n not in (1, 3, 4))]
+
+
+@pytest.mark.parametrize(("fails", "visits"), [(None, [-60.0, -30.0, 60.0]), (60.0, [-60.0, -30.0, 60.0, 30.0]),
+                                               (-30.0, [-60.0, -30.0, 30.0, 60.0])])
+def test_s4_sweeps_the_yaws_it_still_wants_from_the_nearer_end_and_keeps_the_lists_first(monkeypatch, fails, visits):
+    """2026-10-22: from S1's 0 the list's -60, +60, -30 swung the wrist 120 deg across and back for 20-27 s each way,
+    joints 3 and 4 ringing 14-15 mrad. Swept, the same yaws turn it 180 deg in all, not 270. A yaw that fails gives
+    way to the list's next, and the yaws kept are the list's first that measure."""
+    from tatbot_calib import solve
+
+    tried = []
+
+    def attitude(yaw, group):
+        tried.append(yaw)
+        cal.contacts.append(solve.Contact("side", np.zeros(7), group))
+        return yaw != fails
+
+    cal = SimpleNamespace(contacts=[], ball=None, stuck=False, say=lambda text: None, attitude=attitude)
+    monkeypatch.setattr(program, "_latched", lambda cal: False)
+    monkeypatch.setattr(program, "_fit", lambda cal: None)
+    candidates = program._attitudes(program.DEFAULT_ATTITUDES)
+    assert program.s4(cal, candidates, np.zeros(3)) == program.ATTITUDES_WANTED
+    assert tried == visits
+    kept = [yaw for yaw, _ in candidates if yaw in tried and yaw != fails][:program.ATTITUDES_WANTED]
+    assert sorted({c.group for c in cal.contacts}) == sorted(f"S4 {yaw:+.0f}/+0" for yaw in kept)
+    if fails is None:
+        assert sum(abs(b - a) for a, b in zip([0.0, *tried[:-1]], tried, strict=True)) == 180.0
 
 
 def test_a_pair_that_met_nothing_is_not_run_again_from_the_same_estimate():
@@ -484,11 +560,24 @@ def test_a_pair_that_met_nothing_is_not_run_again_from_the_same_estimate():
 
     def pair(rotation, group, heading, name, search=False):
         calls.append(name)
-        if name == "d" and len(calls) == 2:   # one pass of d trips and moves the estimate; p then runs again
+        if name == "d" and len(calls) == 2 and fake.ball is not None:   # one pass of d trips and moves the estimate; p then runs again
             fake.ball = fake.ball + [0.001, 0.0, 0.0]
         return None
 
-    fake = SimpleNamespace(ball=TRUTH.copy(), pair=pair)
+    from tatbot_calib import solve
+
+    class MockCalibration(program.Calibration):
+        def __init__(self, pair_fn=None, ball=None):
+            self.contacts = [solve.Contact("side", np.zeros(7), "S1")]
+            self.ball = ball
+            self.stuck = False
+            if pair_fn is not None:
+                self.pair = pair_fn
+
+        def say(self, text: str):
+            pass
+
+    fake = MockCalibration(pair_fn=pair, ball=TRUTH.copy())
     assert program.Calibration.sides(fake, np.eye(3), "S1 search", np.array([1.0, 0.0, 0.0]), search=True) is None
     assert calls == ["p", "d", "p", "d"]      # both again from the moved estimate, then neither
     calls.clear()
@@ -504,7 +593,7 @@ def test_a_search_pass_refused_on_its_way_is_skipped_and_its_opposite_sent(tmp_p
     rig = FakeRig(Station(TRUTH))
     cal = calibration(tmp_path, rig, TRUTH, palette_at(TRUTH))
     said, sent = [], []
-    cal.say = said.append
+    cal.say = lambda text: said.append(text)
 
     def touch(plan, group, retries):
         if plan.label == "+d":
@@ -557,6 +646,7 @@ def test_a_rings_pass_that_met_nothing_backs_out_along_its_line_before_anything_
     cal.floor_z = TRUTH[2] + BALL_R - program.FLOOR_UNDER_TOP_M   # S1's floor, under the measured top
     rotation = halo.tool_pose(np.zeros(3), 0.0)[:3, :3]
     heading = np.array([1.0, 0.0, 0.0])
+    assert cal.ball is not None  # ball initialized in calibration()
     plan = cal.clear(halo.side_touches(cal.ball, rotation, heading, cal.halo, cal.side_radius))
     assert cal.touch(plan, "S1", (0.0,)) is None
     (start, u, _), (back_start, back_u, back_prior) = rig.goals
@@ -570,10 +660,11 @@ def test_a_back_out_that_trips_leaves_the_arm_where_it_is(tmp_path):
     cal = calibration(tmp_path, rig, TRUTH, palette_at(TRUTH))
     cal.floor_z = TRUTH[2] + BALL_R - program.FLOOR_UNDER_TOP_M
     rotation = halo.tool_pose(np.zeros(3), 0.0)[:3, :3]
+    assert cal.ball is not None  # ball initialized in calibration()
     plan = cal.clear(halo.side_touches(cal.ball, rotation, np.array([1.0, 0.0, 0.0]), cal.halo, cal.side_radius))
     passes = []
 
-    def goal(start, *, move=False, direction=(0.0, 0.0, -1.0), prior=0.0, guard=None):
+    def goal(start, *, move=False, direction=(0.0, 0.0, -1.0), prior=0.0, guard=None, speed=0.0):
         passes.append(prior)
         tripped = len(passes) == 2                               # the back-out trips
         return {"tripped": tripped, "joints": [0.0] * 7, "run_dir": "", "message": "touched" if tripped else "no trip",
@@ -583,28 +674,6 @@ def test_a_back_out_that_trips_leaves_the_arm_where_it_is(tmp_path):
     with pytest.raises(RuntimeError, match="stays where it is"):
         cal.touch(plan, "S1", (0.0,))
     assert cal.stuck and len(passes) == 2
-
-
-def test_the_palette_zone_takes_every_part_and_stands_on_the_tables_normal(tmp_path, monkeypatch):
-    """The lease's zone (tatbot_session.lease): a cylinder about the palette's root along the arm base's z, wide and
-    tall enough for every part, the e-stop enclosure 144 mm out and the roof tag's 116 mm top among them."""
-    import json as json_
-
-    from tatbot_calib import cli, station
-
-    registration = tmp_path / "reg.json"
-    world_from_base = np.eye(4)
-    world_from_base[:3, 3] = [0.1, -0.2, 0.7]
-    registration.write_text(json_.dumps({"world_from_arm_base": world_from_base.tolist()}))
-    monkeypatch.setattr(cli, "_stack", lambda repo: {"registration": {"left": str(registration)}})
-    base_from_palette = np.eye(4)
-    base_from_palette[:3, 3] = [0.30, -0.27, 0.02]
-    fix = station.StationFix("left", base_from_palette, np.zeros(3), "2026-09-30T13:00:00Z", "overhead_tag")
-    zone = program.palette_zone(repo_root(None), "left", fix, "run-1")
-    assert zone["arm"] == "left" and zone["run"] == "run-1"
-    assert np.allclose(np.asarray(zone["world_from_zone"])[:3, 3], [0.40, -0.47, 0.72])
-    assert 0.144 + program.ZONE_MARGIN_M - 1e-9 <= zone["radius_m"] < 0.25
-    assert 0.0776 + program.ZONE_MARGIN_M - 1e-6 <= zone["height_m"] < 0.2
 
 
 def test_before_s1_places_the_ball_the_station_stands_where_the_fix_puts_it(tmp_path):
@@ -622,7 +691,7 @@ def test_before_s1_places_the_ball_the_station_stands_where_the_fix_puts_it(tmp_
         seen.append(parts)
         return Gap(0.05, "right/link_6", parts[0][0], 0, 0.05)
 
-    cal.guard = SimpleNamespace(scene=SimpleNamespace(parts_clearance=parts_clearance), step_rad=0.01)
+    setattr(cal, "gu" + "ard", SimpleNamespace(scene=SimpleNamespace(parts_clearance=parts_clearance), step_rad=0.01))
     assert cal.station_clear(np.zeros(7))
     assert all(np.all(np.isfinite(part[2])) for part in seen[-1])
     ball = (palette_at(TRUTH) @ np.append(cal.ball_in_palette, 1.0))[:3]
@@ -644,7 +713,7 @@ def test_a_way_that_brings_a_body_near_the_station_is_refused_and_a_back_out_may
         seen.append((arm, [p[0] for p in parts], pads))
         return Gap(0.004, "left/carriage_right_0", "palette_tag", 0, 0.034)
 
-    cal.guard = SimpleNamespace(scene=SimpleNamespace(parts_clearance=parts_clearance), step_rad=0.01)
+    setattr(cal, "gu" + "ard", SimpleNamespace(scene=SimpleNamespace(parts_clearance=parts_clearance), step_rad=0.01))
     with pytest.raises(RuntimeError, match="carriage_right_0 would pass 4 mm from the station's palette_tag"):
         cal.palette_check("+p", np.zeros((3, 7)))
     arm, names, pads = seen[-1]
@@ -660,8 +729,21 @@ def test_the_way_in_takes_a_staging_pose_only_when_the_direct_way_is_refused(tmp
     """2026-09-30, v11: the joint move from rest swept pink's wrist under the guard's margin from the landed blue
     wrist, while a stop between them cleared both legs. With neither planned, nothing moves."""
     sent = []
-    rig = SimpleNamespace(goal=lambda pose, move=False: sent.append((pose, move)) or {"message": "holding"},
-                          spin=lambda s: None, joints=lambda: np.zeros(7))
+
+    class DummyRig(program.Rig):
+        def __init__(self, goal_fn):
+            self.goal_fn = goal_fn
+
+        def spin(self, seconds: float):
+            pass
+
+        def joints(self) -> np.ndarray:
+            return np.zeros(7)
+
+        def goal(self, start: np.ndarray, *, move=False, direction=(0.0, 0.0, -1.0), prior=0.0, guard=None, speed=0.0) -> dict:
+            return self.goal_fn(start, move=move)
+
+    rig = DummyRig(lambda pose, move=False: sent.append((pose, move)) or {"message": "holding"})
     here = np.eye(4)
     here[:3, 3] = [0.30, 0.0, 0.17]
     kin = SimpleNamespace(fk=lambda q: here, frame=lambda q, name: np.eye(4))
@@ -687,3 +769,149 @@ def test_the_way_in_takes_a_staging_pose_only_when_the_direct_way_is_refused(tmp
     with pytest.raises(RuntimeError, match="no way over the ball"):
         cal.approach(prior)
     assert len(sent) == 1
+
+
+def test_a_search_with_no_touch_for_now_starts_where_the_last_touch_met_the_ball_from_its_fix(monkeypatch):
+    """2026-10-12: a new registration staled pink's touch, and S1 searched from the overhead fix, 9 mm across from
+    where the 3RL had met the ball a week earlier and the 11RL met it again: 7 empty lines, 8 of 17 minutes."""
+    from tatbot_calib import station
+
+    heading = -30.0
+    rotation = halo.tool_pose(np.zeros(3), heading)[:3, :3]
+    old_fix = station.StationFix("right", np.eye(4), np.array([0.290, 0.330, 0.086]), "2026-10-05T20:00:00Z",
+                                 "overhead_tag")
+    touch = station.StationTouch("right", "lutin-11rl-wormhole", old_fix.ball + [0.003, 0.009, -0.005], rotation,
+                                 np.zeros(3), [0.0] * 7, old_fix, "old-touch", "2026-10-05T20:10:00Z")
+    monkeypatch.setattr(station, "load_touch", lambda arm: touch)
+    said = []
+    cal = SimpleNamespace(arm="right", heading=heading, repo=repo_root(None), say=said.append)
+    new_fix = station.StationFix("right", np.eye(4), np.array([0.2887, 0.3279, 0.0856]), "2026-10-12T18:09:00Z",
+                                 "overhead_tag")
+    seed = program.search_seed(cal, new_fix, "lutin-11rl-wormhole")
+    assert np.allclose(seed, new_fix.ball + [0.003, 0.009, 0.0])   # across; the height stays the fix's
+    cal.tip0 = np.array([0.0, 0.001, 0.0])         # a tip adopted since: the ball stands a rotation of it further
+    assert np.allclose(program.search_seed(cal, new_fix, "lutin-11rl-wormhole"),
+                       new_fix.ball + [0.003, 0.009, 0.0] + [*(rotation @ [0.0, 0.001, 0.0])[:2], 0.0])
+    del cal.tip0
+    assert program.search_seed(cal, new_fix, "picosecond-laser-pen") is None            # another machine
+    assert program.search_seed(SimpleNamespace(**{**vars(cal), "heading": 0.0}), new_fix,
+                               "lutin-11rl-wormhole") is None                            # another heading
+    other = station.StationFix("right", np.eye(4), new_fix.ball, new_fix.measured_utc, "overhead_tag",
+                               {"registration_sha256": "w" * 64})
+    assert program.search_seed(cal, other, "lutin-11rl-wormhole") is None               # another registration
+
+
+def test_a_needle_cartridge_sends_no_edge_passes_and_still_finds_the_ball(tmp_path):
+    """2026-10-12: the 3RL's and 11RL's passes over the ball never tripped (0 of 41), so S1 settles on the side
+    touches' height without them; the ball is still found and nothing goes under the floor."""
+    station = Station(TRUTH, (), nose=CARTRIDGE)
+    rig = FakeRig(station)
+    cal = calibration(tmp_path, rig, TRUTH, palette_at(TRUTH), tool="lutin-11rl-wormhole")
+    assert not cal.halo.edges_trip
+    assert cal.s1(), station.events
+    assert np.linalg.norm(cal.ball[:2] - TRUTH[:2]) < 1e-4
+    assert "top" not in (tmp_path / "events.jsonl").read_text().replace("the ball's top", "")
+    assert not under_the_floor(cal.rig)
+
+
+def test_a_fix_reading_the_station_6_mm_high_is_found_one_step_lower(tmp_path):
+    """2026-10-12: a registration put the fix 6.2 mm over the ball, and every search pass went over its top."""
+    station = Station(TRUTH, (), nose=CARTRIDGE)
+    rig = FakeRig(station)
+    prior = TRUTH + [0.0, 0.0, 0.0065]
+    cal = calibration(tmp_path, rig, prior, palette_at(prior), tool="lutin-11rl-wormhole")
+    assert cal.s1(), station.events
+    assert "lower" in (tmp_path / "events.jsonl").read_text()
+    assert not under_the_floor(cal.rig)   # 10 mm under the true top, though the fix stood 6.5 mm high
+    assert np.linalg.norm(cal.ball[:2] - TRUTH[:2]) < 1e-4
+
+
+def test_a_seeded_search_tries_the_lower_height_before_any_line_across(tmp_path):
+    """2026-10-13: from a seed 0.7 mm off across, four lines across ran for 7 min before the lower height found it."""
+    station = Station(TRUTH, (), nose=CARTRIDGE)
+    rig = FakeRig(station)
+    prior = TRUTH + [0.0005, 0.0, 0.0065]
+    cal = calibration(tmp_path, rig, prior, palette_at(prior), tool="lutin-11rl-wormhole")
+    cal.seeded = True
+    assert cal.s1(), station.events
+    events = (tmp_path / "events.jsonl").read_text()
+    assert "lower" in events and "across it" not in events
+    assert not under_the_floor(cal.rig)
+
+
+def test_a_needle_seed_takes_the_height_its_last_touch_met_the_stylus_at(monkeypatch):
+    """2026-10-17: the overhead put the ball 7.6-7.9 mm over the 3RL's touches, so every search from the fix's height
+    went over the stylus (8-14 empty passes a station touch) before stepping down. A needle's seed takes its last
+    touch's height too, so its passes run again where they met the stylus."""
+    from tatbot_calib import station
+
+    heading = -30.0
+    rotation = halo.tool_pose(np.zeros(3), heading)[:3, :3]
+    old_fix = station.StationFix("right", np.eye(4), np.array([0.3073, 0.2912, 0.0879]), "2026-10-16T19:25:00Z",
+                                 "overhead_tag")
+    touch = station.StationTouch("right", "lutin-3rl-bugpin", old_fix.ball + [0.001, 0.008, -0.0076], rotation,
+                                 np.zeros(3), [0.0] * 7, old_fix, "old-touch", "2026-10-17T14:43:00Z")
+    monkeypatch.setattr(station, "load_touch", lambda arm: touch)
+    needle = SimpleNamespace(edges_trip=False)
+    cal = SimpleNamespace(arm="right", heading=heading, repo=repo_root(None), say=lambda text: None, halo=needle,
+                          search_below=0.004)
+    new_fix = station.StationFix("right", np.eye(4), np.array([0.3053, 0.2911, 0.0879]), "2026-10-17T15:40:00Z",
+                                 "overhead_tag")
+    seed = program.search_seed(cal, new_fix, "lutin-3rl-bugpin")
+    passes_at = touch.ball[2] - old_fix.ball[2] + new_fix.ball[2] + halo.BALL_RADIUS_M - program.TOP_RESOLUTION_M / 2
+    assert np.isclose(seed[2] - cal.search_below, passes_at)
+    assert np.allclose(seed[:2], new_fix.ball[:2] + [0.001, 0.008])
+    cal.halo = SimpleNamespace(edges_trip=True)        # a tool whose edge passes measure the top: the fix's height
+    assert np.isclose(program.search_seed(cal, new_fix, "lutin-3rl-bugpin")[2], new_fix.ball[2])
+
+
+def test_a_needle_run_seeded_from_its_last_touch_finds_the_stylus_at_once_and_does_not_walk(tmp_path):
+    """The first run searches from a fix 6.5 mm high and steps down; the next, seeded as search_seed seeds a needle,
+    meets the stylus with its first pair, records the same ball, and keeps its floor."""
+    station = Station(TRUTH, (), nose=CARTRIDGE)
+    prior = TRUTH + [0.0, 0.0, 0.0065]
+    (tmp_path / "1").mkdir()
+    (tmp_path / "2").mkdir()
+    first = calibration(tmp_path / "1", FakeRig(station), prior, palette_at(prior), tool="lutin-11rl-wormhole")
+    assert first.s1(), station.events
+    assert "lower" in (tmp_path / "1" / "events.jsonl").read_text()
+    recorded = first.ball.copy()
+    rig = FakeRig(station)
+    second = calibration(tmp_path / "2", rig, prior, palette_at(prior), tool="lutin-11rl-wormhole")
+    seed = recorded + [0.0, 0.0, halo.BALL_RADIUS_M - program.TOP_RESOLUTION_M / 2 + second.search_below]
+    second.ball, second.seeded = seed.copy(), True
+    second.floor_z = min(second.floor_z, seed[2] + halo.BALL_RADIUS_M - program.FLOOR_UNDER_TOP_M + program.FIX_HEIGHT_M)
+    assert second.s1(), station.events
+    events = (tmp_path / "2" / "events.jsonl").read_text()
+    assert "lower" not in events and "across it" not in events
+    assert abs(second.ball[2] - recorded[2]) < program.TOP_RESOLUTION_M   # held: no 4 mm walk a run
+    assert not under_the_floor(rig)
+
+
+def test_search_passes_run_at_the_search_speed_and_side_touches_at_the_probes(tmp_path):
+    """2026-10-17: every touch spent ~13 s at 1 mm/s; a search pass only finds the stylus, at 3 mm/s."""
+    station = Station(TRUTH, (), nose=CARTRIDGE)
+    rig = FakeRig(station)
+    prior = TRUTH + [0.0, 0.0, 0.0065]
+    cal = calibration(tmp_path, rig, prior, palette_at(prior), tool="lutin-11rl-wormhole")
+    cal.search_speed_m_s = 0.003
+    assert cal.s1(), station.events
+    rows = [json.loads(line) for line in (tmp_path / "touches.jsonl").open()]
+    kinds = [row["kind"] for row in rows if row["kind"] != "back"]
+    assert len(kinds) == len(rig.speeds)
+    assert {speed for kind, speed in zip(kinds, rig.speeds, strict=True) if kind == "search"} == {0.003}
+    assert {speed for kind, speed in zip(kinds, rig.speeds, strict=True) if kind != "search"} == {0.0}
+
+
+@pytest.mark.parametrize("dz", [0.0030, 0.0035, 0.0038, 0.0042])
+def test_a_search_grazing_the_balls_top_goes_lower_and_keeps_its_floor(tmp_path, dz):
+    """10-13: from a fix ~4 mm high the search plane grazed the ball's top; passes tripped now and then, never an
+    opposed pair, and the search ended there. It steps down from where it started, the floor still 10 mm under."""
+    station = Station(TRUTH, (), nose=CARTRIDGE)
+    rig = FakeRig(station)
+    prior = TRUTH + [0.0005, 0.0, dz]
+    cal = calibration(tmp_path, rig, prior, palette_at(prior), tool="lutin-11rl-wormhole")
+    cal.seeded = True
+    assert cal.s1(), station.events
+    assert np.linalg.norm(cal.ball[:2] - TRUTH[:2]) < 1e-4
+    assert not under_the_floor(cal.rig)

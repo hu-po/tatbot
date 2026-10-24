@@ -13,7 +13,6 @@ from tatbot_motion.plan import (
     PHASE_DESCEND,
     PHASE_DRAW,
     PHASE_LIFT,
-    PHASE_PAUSED,
     PHASE_SETTLE,
     PHASE_TOUCH,
     PHASE_TRAVEL,
@@ -21,8 +20,11 @@ from tatbot_motion.plan import (
     RIDE,
     PenDown,
     Trajectory,
+    blend_start,
     dispatch_drift,
     guard_arm_time_s,
+    hop_via,
+    joins,
     pen_down,
     plan_hover,
     plan_lift,
@@ -38,9 +40,10 @@ MOTION_FORMAT = "tatbot-motion"
 MOTION_VERSION = 1
 
 __all__ = [
-    "Kinematics", "PlanError", "Trajectory", "load_motion", "motion_path", "plan_op", "plan_travel", "plan_hover", "plan_lift", "plan_touch",
-    "probe_travel_m", "to_knots", "dispatch_drift", "guard_arm_time_s", "PenDown", "pen_down", "PRESS", "RIDE", "HOVER",
-    "PHASE_TRAVEL", "PHASE_DESCEND", "PHASE_SETTLE", "PHASE_DRAW", "PHASE_LIFT", "PHASE_TOUCH", "PHASE_PAUSED",
+    "Kinematics", "PlanError", "Trajectory", "load_motion", "motion_path", "plan_op", "plan_travel", "hop_via", "plan_hover",
+    "plan_lift", "plan_touch",
+    "probe_travel_m", "to_knots", "blend_start", "dispatch_drift", "guard_arm_time_s", "joins", "PenDown", "pen_down", "PRESS", "RIDE", "HOVER",
+    "PHASE_TRAVEL", "PHASE_DESCEND", "PHASE_SETTLE", "PHASE_DRAW", "PHASE_LIFT", "PHASE_TOUCH",
     "Trim", "compose",
 ]
 

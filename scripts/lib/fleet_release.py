@@ -333,19 +333,6 @@ def reusable(stage: Path, source_sha: str, node: str, features, binaries,
     return receipt
 
 
-def planner_binary(checkout: Path) -> Path:
-    """The offline planner an offline rung (a compile's executor preflight)
-    runs: on a stamped checkout the build receipt's `path_plan_check`, so a
-    trace's planner digest is the receipt's, and the checkout's own build
-    otherwise (a development worktree, or a node whose receipt names no
-    planner)."""
-    own = checkout / 'cpp/teleop/build/path_plan_check'
-    if not (checkout / STAMP).is_file():
-        return own
-    record = verify(checkout)['binaries'].get('path_plan_check')
-    return Path(record['path']) if record else own
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)

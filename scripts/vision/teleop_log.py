@@ -13,8 +13,7 @@ at the same time.
 This is also the single home of "the arm held still" and "the pen was pressing
 on something": the log carries the follower's *external* (gravity-compensated)
 efforts at 400 Hz, so a touch-off is a still interval whose effort sits above
-the log's own free-space baseline. Consumers: il_touchoff.py, teleop_poses.py,
-evaluate_ee_tracker.py.
+the log's own free-space baseline. Consumer: teleop_poses.py.
 
   python3 teleop_log.py <log.wxtl> [--tolerance-rad 0.003] [--min-still 0.5]
 """

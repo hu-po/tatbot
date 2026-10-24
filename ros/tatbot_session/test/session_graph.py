@@ -4,6 +4,7 @@ description, the three controllers and tatbot_session: the session's part of sta
 tatbot_bringup exec-depends on tatbot_session, so its config is read from the checkout."""
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import random
@@ -70,6 +71,21 @@ def base_stack(**changes) -> dict:
     return stack
 
 
+def fast_motion(*, mock: bool = False) -> dict:
+    """Temporary mock tuning; fake-driver contact/interlock sequences keep the original motion."""
+    import tatbot_motion
+
+    motion = tatbot_motion.load_motion()
+    if mock:   # GenericSystem tracks instantly; fake-driver timing/interlock tests retain their motion.
+        motion["touch"]["settle_s"] = 0.0
+        for mode in ("press", "ride", "hover"):
+            motion["pen"][mode]["settle_s"] = 0.0
+        motion["approach"].update(omega_max_rad_s=0.8, angular_accel_rad_s2=0.8,
+                                  final_m_s=0.020, lift_m_s=0.040)
+        motion["corners"].update(pen_up_m_s2=0.1, touchdown_m_s2=0.030)
+    return motion
+
+
 class Graph:
     def __init__(self, tmp: Path):
         self.tmp = tmp
@@ -80,11 +96,12 @@ class Graph:
         port = free_port()
         self.env = dict(os.environ, RMW_IMPLEMENTATION="rmw_zenoh_cpp", ROS_DOMAIN_ID=str(random.randint(100, 200)),
                         TATBOT_REPO=str(repo()), TATBOT_LOG_ROOT=str(tmp / "logs"), ROS_LOG_DIR=str(tmp / "ros"),
-                        ZENOH_CONFIG_OVERRIDE=f'connect/endpoints=["tcp/127.0.0.1:{port}"]')
-        self.start([str(ZENOHD)], "router", ZENOH_CONFIG_OVERRIDE=f'listen/endpoints=["tcp/127.0.0.1:{port}"]')
+                        ZENOH_CONFIG_OVERRIDE=f'connect/endpoints=["tcp/127.0.0.1:{port}"];scouting/multicast/enabled=false')
+        self.start([str(ZENOHD)], "router", ZENOH_CONFIG_OVERRIDE=
+                   f'listen/endpoints=["tcp/127.0.0.1:{port}"];scouting/multicast/enabled=false')
         time.sleep(1.0)
 
-    def up(self, urdf: str, stack: dict) -> Graph:
+    def up(self, urdf: str, stack: dict, *, motion: dict | None = None, sensing: bool = False) -> Graph:
         """robot_state_publisher, ros2_control_node, the spawners and tatbot_session; waits for /tatbot/safety."""
         (self.tmp / "rsp.yaml").write_text(yaml.safe_dump(
             {"robot_state_publisher": {"ros__parameters": {"robot_description": urdf}}}))
@@ -110,7 +127,14 @@ class Graph:
                           "right_arm_controller", "right_safety_controller", "--param-file", controllers,
                           "--controller-manager-timeout", "60"], timeout=90)
         assert spawn.returncode == 0, spawn.stdout + spawn.stderr
-        self.start([executable("tatbot_session", "session"), "--ros-args", "-p",
+        session = [executable("tatbot_session", "session")]
+        if motion is not None:
+            (self.tmp / "motion.yaml").write_text(yaml.safe_dump(motion))
+            session = [sys.executable, str(Path(__file__).with_name("fixture_session.py")),
+                       str(self.tmp / "motion.yaml"), str(self.tmp / "stack.yaml")]
+            if sensing:
+                session.append("--sensing")
+        self.start([*session, "--ros-args", "-p",
                     f"stack:={self.tmp / 'stack.yaml'}"], "session")
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
@@ -171,12 +195,13 @@ class Graph:
         return False
 
     def stop(self) -> None:
+        # Keep the router alive until its clients have left: killing it alongside them made zenoh shutdown
+        # wait for disconnected peers. Each process group owns only this fixture's descendants.
         for proc in reversed(self.procs):
             if proc.poll() is None:
                 os.killpg(proc.pid, signal.SIGINT)
-        for proc in reversed(self.procs):
             try:
-                proc.wait(timeout=10)
+                proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 os.killpg(proc.pid, signal.SIGKILL)
                 proc.wait()
@@ -188,7 +213,6 @@ def square_program(tmp: Path, *, name: str, sides=(0.010,), pause: bool = False,
     """Compile closed squares (the first centred, the next ones 15 mm above) with tatbot_ink; with pause,
     a pause op follows the first stroke (on a cartridge tool a colour change compiles to one)."""
     from tatbot_contracts.artwork import freeze_artwork
-    from tatbot_contracts.canonical import canonical_digest
     from tatbot_contracts.paths import freeze_program
     from tatbot_ink import compile, write_program
 
@@ -206,25 +230,8 @@ def square_program(tmp: Path, *, name: str, sides=(0.010,), pause: bool = False,
                               conversion={'adapter': 'dbv3-batik-paths/1', 'recipe_sha256': 'b'*64,
                                           'chord_error_m': .000005})
 
-    def placement(side, anchor):
-        return {"schema": "tatbot.surface-placement/2", "physical_scale_m": [side, side], "rotation_rad": 0.0,
-                "mirrored": False, "warp": None,
-                "review": {"status": "pending", "reviewer": "fixture", "evidence_sha256": 'a'*64},
-                "provenance": {"producer": "fixture", "version": "1", "created_utc": "1970-01-01T00:00:00Z", "source_sha256": 'a'*64},
-                "target": {"kind": "plane", "canvas_m": [0.1, 0.15], "anchor_uv_m": anchor, "margin_m": 0.005}}
-
-    artworks = {f"a{i}": artwork(side) for i, side in enumerate(sides)}
-    placements = [{"id": f"p{i}", "artwork_id": f"a{i}", "placement": placement(side, [0.0, 0.015 * i])}
-                  for i, side in enumerate(sides)]
-    for item in placements:
-        placed = item['placement']
-        placed['tattoo_program_sha256'] = artworks[item['artwork_id']]['program']['content_sha256']
-        placed['content_sha256'] = canonical_digest(placed)
-    design = tmp / name / "inkmap-design.json"
-    design.parent.mkdir(parents=True, exist_ok=True)
-    document = {"schema": "tatbot.inkmap-design/1", "name": name, "artworks": artworks, "placements": placements}
-    document['content_sha256'] = canonical_digest(document)
-    design.write_text(json.dumps(document))
+    directory = tmp / name
+    directory.mkdir(parents=True, exist_ok=True)
     # Each fixture artwork is prepared independently through the single-pen
     # shorthand. The test explicitly binds their acquired identities to the
     # same configured assembly when composing several placements.
@@ -233,13 +240,22 @@ def square_program(tmp: Path, *, name: str, sides=(0.010,), pause: bool = False,
     from tatbot_contracts.ros_program import validate_for_execution
 
     prepared = []
-    for item in placements:
-        artwork_path = design.parent/(item['id']+'.json')
-        artwork_path.write_text(json.dumps(artworks[item['artwork_id']]))
-        value = compile(artwork_path, repo=repo(), speed_m_s=speed_m_s, at_m=item['placement']['target']['anchor_uv_m'])
+    for index, side in enumerate(sides):
+        identity = f"p{index}"
+        artwork_path = directory / (identity + ".json")
+        artwork_path.write_text(json.dumps(artwork(side)))
+        # Preparation binds the same temporary tuning that the fixture node reloads; keep the research
+        # configuration digest check live rather than editing the prepared digest after compilation.
+        from unittest.mock import patch
+
+        motion = tmp / "motion.yaml"
+        override = (patch("tatbot_ink.program.load_motion", return_value=yaml.safe_load(motion.read_text()))
+                    if motion.exists() else contextlib.nullcontext())
+        with override:
+            value = compile(artwork_path, repo=repo(), speed_m_s=speed_m_s, at_m=[0.0, 0.015 * index])
         for op in value['ops']:
             if op['op'] == 'stroke':
-                op['src']['placement'] = item['id']
+                op['src']['placement'] = identity
         prepared.append(value)
     program = copy.deepcopy(prepared[0])
     program['ops'] = [program['ops'][0], *[op for value in prepared for op in value['ops'] if op['op'] == 'stroke']]
@@ -250,7 +266,7 @@ def square_program(tmp: Path, *, name: str, sides=(0.010,), pause: bool = False,
     if pause:
         first, *rest = program["ops"]
         program["ops"] = [first, {"op": "pause", "id": "p9001", "reason": "test pause"}, *rest]
-    return write_program(program, design.parent / "program.json")
+    return write_program(program, directory / "program.json")
 
 
 def last_json(text: str) -> dict:

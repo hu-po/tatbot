@@ -352,3 +352,50 @@ def test_no_conversion_key_keeps_the_previous_behaviour(tmp_path):
     fake = FakeGenerator()
     assert run(root, request, fake)["accepted"] == 2
     assert fake.calls == []
+
+
+def test_http_generator_says_why_a_refusal_happened_and_waits_out_its_retry(monkeypatch):
+    import http.server
+    import threading
+
+    import batch
+    from contracts import GenerationRequest
+
+    class Refuse(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 - the http.server hook name
+            body = json.dumps({"error": "daily limit reached", "retry_after_s": 7}).encode()
+            self.send_response(503)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Refuse)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    waited = []
+    monkeypatch.setattr(batch.time, "sleep", waited.append)
+    try:
+        generate = batch._http_generator(f"http://127.0.0.1:{server.server_port}", 5.0)
+        with pytest.raises(batch.BatchError, match="HTTP 503: daily limit reached"):
+            generate(GenerationRequest(subject="a heron", seed=1))
+    finally:
+        server.shutdown()
+    assert waited == [7.0]
+
+
+def test_status_reads_the_ledger_without_changing_it(tmp_path, capsys):
+    import batch
+
+    root = tmp_path / "job"
+    request = make_request(count=2)
+    with Job.open(root, request) as job:
+        for entry in job.entries.values():
+            entry.state = "failed"
+        job._save_ledger()
+    before = (root / ".job/ledger.json").read_bytes()
+    assert batch.main(["status", str(root)]) == 0
+    assert json.loads(capsys.readouterr().out)["failed"] == len(request["items"])
+    assert (root / ".job/ledger.json").read_bytes() == before

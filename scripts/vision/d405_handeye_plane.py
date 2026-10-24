@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plane-route hand-eye for the wrist D405s (surface-first drawing, decision 7).
+"""Plane-route hand-eye for the wrist D405s (surface-first drawing).
 
     d405_handeye_plane.py <capture-dir>... [--out DIR] [--roi 0.5] [--paper-z Z]
     d405_handeye_plane.py --self-test
@@ -8,9 +8,12 @@ Input: capture-*.npz files (docs/surface-formats.md "Wrist captures") taken with
 D405s looking at the touched-off paper plane from many wrist orientations —
 `tatbot vision capture once` at hand-guided poses.
 For each capture and camera the central depth ROI is fitted with a plane
-(RANSAC + least squares) in the camera optical frame. The nominal URDF chain
+(RANSAC + least squares) in the camera optical frame. The URDF chain
 root_from_camera(joints) predicts where that plane is in root; the truth is
-z = paper_plane_z (config/workspace.yaml) with normal +z. Per camera, one
+z = paper_plane_z (config/workspace.yaml) with normal +z. The joints are the
+captures' measured encoder readings plus the arm's joint_offsets_rad, the
+encoder-zero correction the drawing stack's model carries
+(kinematic_calibration); the report names the offsets. Per camera, one
 correction
 
     link6_from_camera = link6_from_camera_nominal @ Exp(delta),  delta = (dr, dt)
@@ -44,6 +47,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/lib"))
 from tatbot_paths import bootstrap  # noqa: E402
 
 bootstrap()
+import tool_spec  # noqa: E402
+from kinematic_calibration import KEY as JOINT_OFFSETS_KEY  # noqa: E402
+from kinematic_calibration import validate_offsets  # noqa: E402
 from urdf_kinematics import UrdfChain, driver_joint_names  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
@@ -207,12 +213,9 @@ def summarize(rows):
 # --- inputs ---------------------------------------------------------------------------------
 
 
-def paper_plane_z(path=WORKSPACE):
-    for line in Path(path).read_text().splitlines():
-        s = line.strip()
-        if s.startswith("paper_plane_z:"):
-            return float(s.split(":", 1)[1].split("#")[0])
-    raise ValueError(f"no paper_plane_z in {path}")
+def right_workspace(path):
+    """The right section: its touched-off paper_plane_z and its joint offsets."""
+    return tool_spec.parse_simple_yaml(Path(path).read_text()).get("right") or {}
 
 
 def joint_map(joints):
@@ -224,8 +227,8 @@ def nominal_link6_from_cam(chain, role):
     return np.linalg.inv(chain.link_pose(LINK6, zero)) @ chain.link_pose(OPTICAL_FRAME[role], zero)
 
 
-def load_observations(capture_dirs, chain, roi):
-    """role -> (obs list, per-capture notes)."""
+def load_observations(capture_dirs, chain, roi, offsets):
+    """role -> (obs list, per-capture notes); link 6 at the measured joints plus `offsets`."""
     per_role = {r: [] for r in OPTICAL_FRAME}
     notes = {r: [] for r in OPTICAL_FRAME}
     files = []
@@ -237,7 +240,7 @@ def load_observations(capture_dirs, chain, roi):
         sys.exit(f"d405_handeye_plane: no capture-*.npz under {[str(d) for d in capture_dirs]}")
     for f in files:
         z = np.load(f)
-        joints = np.asarray(z["joints"], float)
+        joints = np.asarray(z["joints"], float) + offsets[:6]
         root_from_link6 = chain.link_pose(LINK6, joint_map(joints))
         for role in OPTICAL_FRAME:
             if f"depth_{role}" not in z:
@@ -320,12 +323,16 @@ def print_role(role, rec):
 
 def run(capture_dirs, out, roi, paper_z, urdf):
     chain = UrdfChain(urdf)
-    z_true = paper_z if paper_z is not None else paper_plane_z()
-    per_role, notes, files = load_observations(capture_dirs, chain, roi)
+    right = right_workspace(WORKSPACE)
+    offsets = np.asarray(validate_offsets(right.get(JOINT_OFFSETS_KEY)))
+    z_true = paper_z if paper_z is not None else right.get("paper_plane_z")
+    if z_true is None:
+        raise ValueError(f"no right paper_plane_z in {WORKSPACE}")
+    per_role, notes, files = load_observations(capture_dirs, chain, roi, offsets)
     result = {"schema": "tatbot.d405-handeye/1", "roles": {},
               "provenance": {"captures": files, "paper_plane_z": z_true, "urdf": str(urdf),
-                             "workspace": str(WORKSPACE), "roi": roi, "git": git_sha(), "t_wall": time.time(),
-                             "notes": notes}}
+                             "workspace": str(WORKSPACE), JOINT_OFFSETS_KEY: offsets.tolist(),
+                             "roi": roi, "git": git_sha(), "t_wall": time.time(), "notes": notes}}
     print(f"paper plane z = {z_true * 1000:.2f} mm (normal +z); {len(files)} capture file(s)")
     for role, obs in per_role.items():
         for line in notes[role]:

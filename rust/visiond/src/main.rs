@@ -8,7 +8,6 @@ use clap::{Parser, Subcommand};
 #[cfg(any(feature = "rerun", feature = "fiducials"))]
 use serde::Deserialize;
 #[cfg(any(
-    feature = "gstreamer",
     feature = "realsense",
     feature = "rerun",
     feature = "fiducials"
@@ -18,62 +17,46 @@ use tatbot_visiond::{
     CalibrationBundle, VisionConfig, pairwise_sync_report, read_recording_entries,
 };
 
-#[cfg(any(feature = "gstreamer", feature = "realsense"))]
+#[cfg(feature = "realsense")]
 use tatbot_visiond::FrameSynchronizer;
-#[cfg(any(feature = "gstreamer", feature = "realsense"))]
+#[cfg(feature = "realsense")]
 use tatbot_visiond::UnixFramePublisher;
 use tracing_subscriber::EnvFilter;
-#[cfg(any(feature = "gstreamer", feature = "realsense"))]
+#[cfg(feature = "realsense")]
 use tatbot_visiond::frame_ops::{BoundedStrings, bounded_capture_event_channel};
-#[cfg(feature = "fiducials")]
-use tatbot_visiond::frame_ops::{
-    camera_reacquisition_due, decoded_frame_dimensions, fiducial_set_due,
-};
-#[cfg(feature = "gstreamer")]
-use tatbot_visiond::frame_ops::{TimingSamples, crop_video_set, parse_socket_crops, timing_summary};
 #[cfg(feature = "rerun")]
 use tatbot_visiond::frame_ops::decimate_replay_rows;
-#[cfg(any(feature = "gstreamer", feature = "rerun"))]
+#[cfg(feature = "rerun")]
 use tatbot_visiond::frame_ops::scale_video_set;
 // Only capture-realsense-all's Rerun path scales depth, so this import is
 // narrower than scale_video_set's: a rerun-only build never reaches it.
 #[cfg(all(feature = "realsense", feature = "rerun"))]
 use tatbot_visiond::frame_ops::scale_depth_set;
 
-#[cfg(feature = "gstreamer")]
-use std::env;
-
 #[cfg(any(feature = "rerun", feature = "fiducials"))]
 use std::fs::File;
 #[cfg(any(feature = "rerun", feature = "fiducials"))]
 use std::io::{BufRead, BufReader};
-#[cfg(any(feature = "gstreamer", feature = "realsense"))]
+#[cfg(feature = "realsense")]
 use std::sync::mpsc;
-#[cfg(any(feature = "gstreamer", feature = "realsense", feature = "fiducials"))]
+#[cfg(any(feature = "realsense", feature = "fiducials"))]
 use std::{
     fs::OpenOptions,
     io::{BufWriter, Write},
 };
 
 #[cfg(any(
-    feature = "gstreamer",
     feature = "realsense",
     feature = "rerun",
     feature = "fiducials"
 ))]
 use std::collections::BTreeMap;
-#[cfg(any(feature = "rerun", feature = "gstreamer", feature = "fiducials"))]
+#[cfg(feature = "rerun")]
 use std::time::{SystemTime, UNIX_EPOCH};
-#[cfg(any(
-    feature = "gstreamer",
-    feature = "realsense",
-    feature = "rerun",
-    feature = "fiducials"
-))]
+#[cfg(any(feature = "realsense", feature = "rerun"))]
 use std::{thread, time::Duration};
 
 #[cfg(any(
-    feature = "gstreamer",
     feature = "realsense",
     feature = "rerun",
     feature = "fiducials"
@@ -82,10 +65,7 @@ use std::time::Instant;
 
 use anyhow::Context;
 
-#[cfg(feature = "gstreamer")]
-use tatbot_visiond::gstreamer_backend::{PoeRtspCapture, PoeStream};
-
-#[cfg(any(feature = "gstreamer", feature = "realsense"))]
+#[cfg(feature = "realsense")]
 use tatbot_visiond::EvidenceRecorder;
 
 #[cfg(feature = "realsense")]
@@ -93,15 +73,10 @@ use tatbot_visiond::realsense_backend::RealsenseCapture;
 #[cfg(feature = "realsense")]
 use tatbot_visiond::time::{RawClockProbeFrame, RawDeviceClockProbe, RawDeviceClockRead, RAW_DEVICE_CLOCK_SAMPLE_SCHEMA};
 
-#[cfg(feature = "fiducials")]
-use tatbot_visiond::DetectionRoi;
-#[cfg(all(feature = "rerun", any(feature = "gstreamer", feature = "realsense")))]
+#[cfg(all(feature = "rerun", feature = "realsense"))]
 use tatbot_visiond::RerunSink;
 #[cfg(any(feature = "rerun", feature = "fiducials"))]
-#[cfg(any(feature = "gstreamer", feature = "rerun", feature = "fiducials"))]
 use tatbot_visiond::SynchronizedFrameSet;
-#[cfg(feature = "fiducials")]
-use tatbot_visiond::expanded_detection_roi;
 #[cfg(any(feature = "rerun", feature = "fiducials"))]
 use tatbot_visiond::read_recording_frame;
 #[cfg(feature = "fiducials")]
@@ -141,12 +116,25 @@ enum Command {
     /// Cockpit subscriber: receives bus frames and joins the existing viewer.
     #[cfg(all(feature = "zenoh", feature = "rerun"))]
     Subscribe {
-        #[arg(long)]
-        connect: String,
+        /// The fleet viewer's gRPC proxy; optional when --output is given.
+        #[arg(long, required_unless_present = "output")]
+        connect: Option<String>,
         #[arg(long)]
         recording_id: String,
+        /// Overall cap on every bus key, Hz; each stream's own rate is beneath it.
         #[arg(long, default_value_t = 5.0)]
         max_fps: f64,
+        /// The overhead D555's colour, Hz: a 640x360 JPEG, ~52 KB a frame.
+        #[arg(long, default_value_t = tatbot_visiond::frame_bus::CockpitRates::DEFAULT.overhead_color_hz)]
+        overhead_color_hz: f64,
+        /// The overhead D555's depth cloud, Hz: 320x180 RVL, ~17 KB a frame.
+        #[arg(long, default_value_t = tatbot_visiond::frame_bus::CockpitRates::DEFAULT.overhead_depth_hz)]
+        overhead_depth_hz: f64,
+        /// Each wrist tap's colour, Hz (640x360 JPEG); its depth is not shown
+        /// here, the bridge draws the wrist cloud.
+        #[arg(long, default_value_t = tatbot_visiond::frame_bus::CockpitRates::DEFAULT.wrist_hz)]
+        wrist_hz: f64,
+        /// 0 runs until SIGINT or SIGTERM.
         #[arg(long, default_value_t = 0)]
         duration_seconds: u64,
         /// URDF whose visual meshes should be added to the persistent 3D scene.
@@ -158,22 +146,22 @@ enum Command {
         /// Robot-world registration for world-frame tracking overlays.
         #[arg(long)]
         robot_world: Option<PathBuf>,
-    },
-    /// Existing native shadow estimator, subscribing to one camera owner's socket.
-    #[cfg(feature = "fiducials")]
-    TrackSocket {
-        #[arg(long)]
-        socket: PathBuf,
-        #[arg(long)]
-        calibration: PathBuf,
-        #[arg(long)]
-        inventory: PathBuf,
-        #[arg(long)]
-        wrist_layout: PathBuf,
-        #[arg(long)]
-        output: PathBuf,
-        #[arg(long, default_value_t = 30)]
-        duration_seconds: u64,
+        /// Draw trackd's and stencild's poses as published, at identity in
+        /// the bus's camera world (the ROS `world`), where the Demo tab shows them.
+        #[arg(long, conflicts_with_all = ["robot_world", "calibration"])]
+        camera_world: bool,
+        /// Also write what is shown to this .rrd file (an offline capture).
+        #[arg(long, value_name = "FILE.rrd")]
+        output: Option<PathBuf>,
+        /// Show the overhead D555's depth out to this range, metres, so the
+        /// floor and the room do not fill the scene; 0 shows all of it.
+        #[arg(long, value_name = "METRES", default_value_t = tatbot_visiond::frame_bus::OVERHEAD_DEPTH_MAX_M)]
+        overhead_depth_max_m: f64,
+        /// Outline the palette's tag (this fiducial inventory's `palette`
+        /// target) on the overhead colour, read by the cockpit itself once a
+        /// second; needs a build with the fiducials feature.
+        #[arg(long, value_name = "INVENTORY")]
+        fiducials: Option<PathBuf>,
     },
     /// Parse and validate a vision configuration without opening hardware.
     ValidateConfig { config: PathBuf },
@@ -213,7 +201,7 @@ enum Command {
     /// Re-run the Rust EE pose solver on retained live detections without images or hardware.
     #[cfg(feature = "fiducials")]
     ReplayEeDetections {
-        /// estimates.jsonl emitted by capture-poe-all --fiducial-output.
+        /// A retained estimates.jsonl whose rows carry per-camera `detections`.
         input: PathBuf,
         #[arg(long)]
         inventory: PathBuf,
@@ -303,11 +291,15 @@ enum Command {
     #[cfg(feature = "rerun")]
     SendBlueprint {
         /// The viewer's gRPC proxy, e.g. rerun+http://127.0.0.1:9876/proxy.
-        #[arg(long)]
-        connect: String,
+        #[arg(long, required_unless_present = "output")]
+        connect: Option<String>,
         /// Recording joined by the persistent live preview.
         #[arg(long)]
         recording_id: Option<String>,
+        /// Write the blueprint alone to this file instead, to open beside a
+        /// recorded .rrd: `rerun capture.rrd blueprint.rbl`.
+        #[arg(long, value_name = "FILE.rbl", conflicts_with_all = ["connect", "recording_id"])]
+        output: Option<PathBuf>,
     },
     /// Rewrite an RRD as fleet data only, dropping embedded blueprints.
     #[cfg(feature = "rerun")]
@@ -324,7 +316,7 @@ enum Command {
     /// This process never opens an arm connection or participates in control.
     #[cfg(feature = "rerun")]
     StreamTeleop {
-        // Localhost by default (plan Phase 3): receiving joint state from
+        // Localhost by default: receiving joint state from
         // another node is an explicit deployment decision (--bind 0.0.0.0:9878).
         #[arg(long, default_value = "127.0.0.1:9878")]
         bind: String,
@@ -355,195 +347,6 @@ enum Command {
         /// Report missing telemetry at this age; 0 disables the warning.
         #[arg(long, default_value_t = 3.0)]
         idle_timeout_seconds: f64,
-    },
-    /// Capture one live PoE stream into the evidence format.
-    #[cfg(feature = "gstreamer")]
-    CapturePoe {
-        config: PathBuf,
-        #[arg(long)]
-        sensor: String,
-        #[arg(long, default_value = "main")]
-        stream: String,
-        #[arg(long, default_value_t = 10)]
-        duration_seconds: u64,
-        /// Decode H.264 into BGR pixels before recording or transport.
-        #[arg(long)]
-        decoded: bool,
-        /// Drop delta frames before decode; ~2 Hz I-frames at GOP=10.
-        #[arg(long)]
-        keyframes_only: bool,
-        #[arg(long)]
-        output: Option<PathBuf>,
-        #[arg(long)]
-        calibration: Option<PathBuf>,
-    },
-    /// Capture the configured PoE cameras concurrently into one evidence set.
-    #[cfg(feature = "gstreamer")]
-    CapturePoeAll {
-        config: PathBuf,
-        #[arg(long, default_value = "main")]
-        stream: String,
-        #[arg(long, default_value_t = 10)]
-        duration_seconds: u64,
-        /// Decode H.264 into BGR pixels before recording or transport.
-        #[arg(long)]
-        decoded: bool,
-        /// Drop delta frames before decode; ~2 Hz I-frames at GOP=10.
-        #[arg(long)]
-        keyframes_only: bool,
-        #[arg(long)]
-        output: Option<PathBuf>,
-        /// Preserve exact decoded pixels instead of JPEG in bounded subscriber captures.
-        #[arg(long)]
-        lossless_evidence: bool,
-        #[arg(long)]
-        calibration: Option<PathBuf>,
-        /// Canonical fiducial inventory. Enables in-process AprilTag detection.
-        #[cfg(feature = "fiducials")]
-        #[arg(long)]
-        fiducial_inventory: Option<PathBuf>,
-        /// Calibrated wrist layout. Enables EE pose estimation; omitted means detection-only.
-        #[cfg(feature = "fiducials")]
-        #[arg(long)]
-        wrist_layout: Option<PathBuf>,
-        /// Write detection batches or EE pose estimates as JSONL.
-        #[cfg(feature = "fiducials")]
-        #[arg(long)]
-        fiducial_output: Option<PathBuf>,
-        /// Optional detector image scale in (0, 1].
-        #[cfg(feature = "fiducials")]
-        #[arg(long)]
-        fiducial_scale: Option<f64>,
-        /// Cap expensive fiducial passes per second. 0 processes every synchronized set.
-        #[cfg(feature = "fiducials")]
-        #[arg(long, default_value_t = 0.0)]
-        fiducial_max_fps: f64,
-        /// Minimum fresh cameras in a bounded partial tracker set. Complete
-        /// sets still emit immediately. Applies to a --zenoh camera owner and
-        /// to tracker-only no-record runs.
-        #[cfg(feature = "fiducials")]
-        #[arg(long, default_value_t = 3)]
-        fiducial_min_cameras: usize,
-        /// Maximum wait for a complete tracker set before a fresh partial set
-        /// may emit. Applies to a --zenoh camera owner and to tracker-only
-        /// no-record runs.
-        #[cfg(feature = "fiducials")]
-        #[arg(long, default_value_t = 60)]
-        fiducial_max_sync_wait_ms: u64,
-        /// Tracker synchronization tolerance in milliseconds. Zero uses the
-        /// calibrated session tolerance. Applies to a --zenoh camera owner and
-        /// to tracker-only no-record runs.
-        #[cfg(feature = "fiducials")]
-        #[arg(long, default_value_t = 0.0)]
-        fiducial_sync_tolerance_ms: f64,
-        /// Refuse a measured tracker update when capture-to-processing age
-        /// exceeds this bound. The output becomes predicted/unavailable.
-        #[cfg(feature = "fiducials")]
-        #[arg(long, default_value_t = 350.0)]
-        fiducial_max_capture_age_ms: f64,
-        /// Omit a camera from fiducial detection/pose only; repeat as needed.
-        #[cfg(feature = "fiducials")]
-        #[arg(long)]
-        fiducial_exclude_camera: Vec<String>,
-        /// Track detections inside the previous full-resolution bounds plus this margin. 0 disables.
-        #[cfg(feature = "fiducials")]
-        #[arg(long, default_value_t = 0)]
-        fiducial_roi_margin_px: usize,
-        /// Staggered full-frame reacquisition interval per camera. 0 disables.
-        #[cfg(feature = "fiducials")]
-        #[arg(long, default_value_t = 50)]
-        fiducial_full_scan_period: usize,
-        /// Consecutive empty ROI scans before falling back to full-frame search.
-        #[cfg(feature = "fiducials")]
-        #[arg(long, default_value_t = 3)]
-        fiducial_roi_hold_frames: usize,
-        /// Full-frame search cadence for a camera with no active ROI. 0 scans every set.
-        #[cfg(feature = "fiducials")]
-        #[arg(long, default_value_t = 5)]
-        fiducial_reacquire_period: usize,
-        #[arg(long)]
-        socket: Option<PathBuf>,
-        /// Cap synchronized sets sent to the local socket. 0 sends every set.
-        #[arg(long, default_value_t = 0.0)]
-        socket_max_fps: f64,
-        /// Uniformly scale decoded BGR/RGB frames before local socket transport.
-        /// Metadata dimensions are updated; consumers must scale calibrated
-        /// intrinsics explicitly and may not treat this as a calibrated profile.
-        #[arg(long, default_value_t = 1.0)]
-        socket_scale: f64,
-        /// Send full-resolution detector luma on the local socket; color bus output is unchanged.
-        #[arg(long)]
-        socket_luma: bool,
-        /// Crop a decoded camera before local socket transport, as
-        /// CAMERA=X,Y,WIDTH,HEIGHT in source pixels. Repeat once for every
-        /// configured PoE camera; partial crop sets are refused so an omitted
-        /// camera cannot silently restore full-frame copying and backpressure.
-        #[arg(long, value_name = "CAMERA=X,Y,WIDTH,HEIGHT")]
-        socket_crop: Vec<String>,
-        /// Write synchronized decoded frames to an Rerun recording.
-        #[cfg(feature = "rerun")]
-        #[arg(long)]
-        rerun_output: Option<PathBuf>,
-        /// Stream synchronized decoded frames to a local Rerun Viewer.
-        #[cfg(feature = "rerun")]
-        #[arg(long)]
-        rerun_spawn: bool,
-        /// Stream synchronized decoded frames to a Rerun viewer elsewhere on
-        /// the network, e.g. rerun+http://192.0.2.90:9876/proxy (color is
-        /// JPEG-encoded for the wire).
-        #[cfg(feature = "rerun")]
-        #[arg(long)]
-        rerun_connect: Option<String>,
-        /// Cap how many synchronized sets per second are logged to Rerun.
-        /// A viewer keeps every frame it is sent, so an unthrottled live
-        /// view will exhaust the viewer host's RAM. 0 disables the cap.
-        #[cfg(feature = "rerun")]
-        #[arg(long, default_value_t = 4.0)]
-        rerun_max_fps: f64,
-        /// Share this Rerun recording with other producers (e.g. the Python
-        /// surface reconstruction) so their data overlays this stream.
-        #[cfg(feature = "rerun")]
-        #[arg(long)]
-        rerun_recording_id: Option<String>,
-        /// Add the robot model to the live 3D scene.
-        #[cfg(feature = "rerun")]
-        #[arg(long, value_name = "URDF")]
-        urdf: Option<PathBuf>,
-        /// Draw the calibrated camera frustums in the live 3D scene.
-        #[cfg(feature = "rerun")]
-        #[arg(long, value_name = "BUNDLE")]
-        rerun_calibration: Option<PathBuf>,
-        /// URDF link the calibration world frame is anchored to.
-        #[cfg(feature = "rerun")]
-        #[arg(long, default_value = "")]
-        calibration_anchor: String,
-        /// robot-world JSON from `tatbot ros calib apply`: places the calibration
-        /// frame by the MEASURED world_from_base, overriding the anchor guess.
-        #[cfg(feature = "rerun")]
-        #[arg(long, value_name = "JSON")]
-        robot_world: Option<PathBuf>,
-        /// Live-view mode: do not write evidence or a sync index to disk.
-        #[arg(long)]
-        no_record: bool,
-    },
-    /// Continuously monitor the PoE cameras (substream by default) and serve
-    /// per-camera health as Prometheus metrics. Runs until stopped.
-    #[cfg(feature = "gstreamer")]
-    MonitorPoe {
-        config: PathBuf,
-        #[arg(long, default_value = "sub")]
-        stream: String,
-        /// Bind host for the /metrics endpoint. Localhost by default; a
-        /// deployment that wants network scraping states it explicitly
-        /// (plan Phase 3: no default network listener).
-        #[arg(long, default_value = "127.0.0.1")]
-        bind_host: String,
-        /// TCP port for the /metrics endpoint.
-        #[arg(long, default_value_t = 9099)]
-        port: u16,
-        /// Stop after this many seconds; 0 means run forever.
-        #[arg(long, default_value_t = 0)]
-        duration_seconds: u64,
     },
     /// Capture one live RealSense device into the evidence format.
     #[cfg(feature = "realsense")]
@@ -613,8 +416,8 @@ enum Command {
         #[cfg(feature = "rerun")]
         #[arg(long, default_value_t = 1.0)]
         rerun_image_scale: f64,
-        /// Share this Rerun recording with other producers (the PoE-camera
-        /// node, stream-teleop) so everything lands in one viewer.
+        /// Share this Rerun recording with other producers (stream-teleop)
+        /// so everything lands in one viewer.
         #[cfg(feature = "rerun")]
         #[arg(long)]
         rerun_recording_id: Option<String>,
@@ -654,8 +457,30 @@ fn apply_positive_override(target: &mut f64, value: Option<f64>, name: &str) -> 
     Ok(())
 }
 
+/// Raised by SIGINT or SIGTERM so the cockpit leaves its loop and flushes
+/// its sinks (an `--output` file is finished, not cut off mid-write).
+#[cfg(all(feature = "zenoh", feature = "rerun"))]
+static STOP_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// The first signal asks the loop to stop; a second one (a flush that hangs
+/// on an unreachable hub) exits at once.
+#[cfg(all(feature = "zenoh", feature = "rerun"))]
+extern "C" fn request_stop(_: libc::c_int) {
+    if STOP_REQUESTED.swap(true, std::sync::atomic::Ordering::AcqRel) {
+        // SAFETY: _exit is async-signal-safe.
+        unsafe { libc::_exit(130) };
+    }
+}
 
+#[cfg(all(feature = "zenoh", feature = "rerun"))]
+fn install_stop_signals() {
+    // SAFETY: the handler only stores an atomic flag.
+    unsafe {
+        let handler = request_stop as extern "C" fn(libc::c_int) as libc::sighandler_t;
+        libc::signal(libc::SIGTERM, handler);
+        libc::signal(libc::SIGINT, handler);
+    }
+}
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -664,31 +489,23 @@ fn main() -> Result<()> {
         .with_target(false)
         .init();
 
-    #[cfg(all(feature = "zenoh", any(feature = "gstreamer", feature = "realsense")))]
+    #[cfg(all(feature = "zenoh", feature = "realsense"))]
     let frame_publisher = if cli.zenoh {
         let group = match &cli.command {
-            #[cfg(feature = "gstreamer")]
-            Command::CapturePoeAll { decoded: true, .. } => "poe",
             #[cfg(feature = "realsense")]
             Command::CaptureRealsenseAll { group, .. } => group
                 .as_deref()
                 .context("capture-realsense-all --group is required with --zenoh")?,
-            _ => anyhow::bail!("--zenoh requires decoded capture-poe-all or capture-realsense-all"),
+            _ => anyhow::bail!("--zenoh requires capture-realsense-all"),
         };
         anyhow::ensure!(!cli.bus_connect.is_empty(), "--bus-connect required");
         Some(tatbot_visiond::frame_bus::FramePublisher::open(
             &cli.bus_connect,
-            tatbot_bus::Producer {
-                node: cli
-                    .bus_node
+            tatbot_bus::Producer::this_process(
+                cli.bus_node
                     .ok_or_else(|| anyhow::anyhow!("--bus-node required"))?,
-                pid: std::process::id(),
-                sha: option_env!("TATBOT_SOURCE_COMMIT")
-                    .unwrap_or("development")
-                    .into(),
-                run_id: std::env::var("TATBOT_RUN_ID")
-                    .unwrap_or_else(|_| format!("visiond-{}", std::process::id())),
-            },
+                "visiond",
+            ),
             group,
         )?)
     } else {
@@ -697,137 +514,59 @@ fn main() -> Result<()> {
 
     #[cfg(all(
         feature = "zenoh",
-        not(any(feature = "gstreamer", feature = "realsense"))
+        not(feature = "realsense")
     ))]
     anyhow::ensure!(
         !cli.zenoh,
         "camera publication requires a capture backend feature"
     );
     match cli.command {
-        #[cfg(feature = "fiducials")]
-        Command::TrackSocket {
-            socket,
-            calibration,
-            inventory,
-            wrist_layout,
-            output,
-            duration_seconds,
-        } => {
-            anyhow::ensure!(
-                duration_seconds > 0 && duration_seconds <= 3600,
-                "subscriber duration must be 1..3600 seconds"
-            );
-            let calibration = CalibrationBundle::load(calibration)?;
-            let mut pipeline = FiducialPipeline::new(
-                inventory,
-                Some(wrist_layout),
-                output,
-                Some(0.3),
-                vec![],
-                100,
-                100,
-                3,
-                5,
-                350.0,
-                calibration.clone(),
-            )?;
-            let mut client = tatbot_visiond::UnixFrameClient::connect(&socket)?;
-            client.set_read_timeout(Duration::from_secs(2))?;
-            let latest = std::sync::Arc::new(std::sync::Mutex::new(None));
-            let incoming = latest.clone();
-            let stopped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-            let stop = stopped.clone();
-            let (errors, error_rx) = std::sync::mpsc::sync_channel(1);
-            let reader = thread::spawn(move || {
-                while !stop.load(std::sync::atomic::Ordering::Acquire) {
-                    match client.recv() {
-                        Ok(frame) => {
-                            let old = incoming.lock().unwrap().replace(frame);
-                            drop(old);
-                        }
-                        Err(error) => {
-                            let _ = errors.try_send(error);
-                            break;
-                        }
-                    }
-                }
-            });
-            let result = (|| -> Result<()> {
-                let deadline = Instant::now() + Duration::from_secs(duration_seconds);
-                let mut last = None;
-                while Instant::now() < deadline {
-                    if let Ok(error) = error_rx.try_recv() {
-                        return Err(error);
-                    }
-                    let received = latest.lock().unwrap().take();
-                    let Some(frame) = received else {
-                        thread::sleep(Duration::from_millis(2));
-                        continue;
-                    };
-                    if !fiducial_set_due(frame.timestamp_ns, last, Some(100_000_000)) {
-                        continue;
-                    }
-                    let set = SynchronizedFrameSet {
-                        sequence: frame.sequence,
-                        timestamp_basis: frame.timestamp_basis,
-                        timestamp_ns: frame.timestamp_ns,
-                        maximum_skew_ns: frame.maximum_skew_ns,
-                        frames: frame
-                            .frames
-                            .into_iter()
-                            .map(|f| (f.metadata.sensor_name.clone(), f))
-                            .collect(),
-                    };
-                    anyhow::ensure!(
-                        set.frames
-                            .values()
-                            .all(|f| f.metadata.calibration_id.as_deref()
-                                == Some(calibration.bundle_id.as_str())),
-                        "owner calibration differs from reference"
-                    );
-                    pipeline.process(&set)?;
-                    last = Some(set.timestamp_ns);
-                }
-                pipeline.flush()?;
-                anyhow::ensure!(pipeline.rows > 0, "no reference estimates received");
-                println!(
-                    "native shadow subscriber estimates={} camera_owner_preserved=true",
-                    pipeline.rows
-                );
-                Ok(())
-            })();
-            stopped.store(true, std::sync::atomic::Ordering::Release);
-            reader
-                .join()
-                .map_err(|_| anyhow::anyhow!("reference socket reader panicked"))?;
-            result?;
-        }
         #[cfg(all(feature = "zenoh", feature = "rerun"))]
         Command::Subscribe {
             connect,
             recording_id,
             max_fps,
+            overhead_color_hz,
+            overhead_depth_hz,
+            wrist_hz,
             duration_seconds,
             urdf,
             calibration,
             robot_world,
+            camera_world,
+            output,
+            overhead_depth_max_m,
+            fiducials,
         } => {
             anyhow::ensure!(!cli.bus_connect.is_empty(), "--bus-connect required");
             anyhow::ensure!(
                 calibration.is_none() || robot_world.is_some(),
                 "--calibration requires --robot-world for measured placement against the robot"
             );
+            install_stop_signals();
             tatbot_visiond::frame_bus::view_bus(
                 &cli.bus_connect,
-                &connect,
-                &recording_id,
-                max_fps,
-                duration_seconds,
+                tatbot_visiond::frame_bus::ViewBusOutput {
+                    connect: connect.as_deref(),
+                    output: output.as_deref(),
+                    recording_id: &recording_id,
+                    max_fps,
+                    rates: tatbot_visiond::frame_bus::CockpitRates {
+                        overhead_color_hz,
+                        overhead_depth_hz,
+                        wrist_hz,
+                    },
+                    duration_seconds,
+                    camera_world,
+                    overhead_depth_max_m,
+                    fiducials: fiducials.as_deref(),
+                },
                 tatbot_visiond::frame_bus::ViewBusScene {
                     urdf: urdf.as_deref(),
                     calibration: calibration.as_deref(),
                     robot_world: robot_world.as_deref(),
                 },
+                &STOP_REQUESTED,
             )?;
         }
         Command::ValidateConfig { config } => {
@@ -841,28 +580,6 @@ fn main() -> Result<()> {
         Command::DescribeConfig { config } => {
             let config = VisionConfig::load(config)?;
             println!("schema_version={}", config.schema_version);
-            println!("ntp_server={}", config.sync.ntp_server);
-            for camera in &config.cameras.poe {
-                println!(
-                    "poe {} {} main={}x{}@{:.3} {:?}",
-                    camera.name,
-                    camera.address,
-                    camera.main.width,
-                    camera.main.height,
-                    camera.main.fps(),
-                    camera.main.format
-                );
-                if let Some(sub) = &camera.sub {
-                    println!(
-                        "poe {} sub={}x{}@{:.3} {:?}",
-                        camera.name,
-                        sub.width,
-                        sub.height,
-                        sub.fps(),
-                        sub.format
-                    );
-                }
-            }
             for camera in &config.cameras.realsense {
                 println!(
                     "realsense {} serial={} color={}x{}@{:.3} {:?} depth={}x{}@{:.3} {:?}",
@@ -1259,11 +976,18 @@ fn main() -> Result<()> {
         Command::SendBlueprint {
             connect,
             recording_id,
+            output,
         } => {
+            if let Some(path) = output {
+                tatbot_visiond::rerun_viewer::viewer_blueprint().save(&path)?;
+                println!("wrote the fixed blueprint to {}", path.display());
+                return Ok(());
+            }
+            let connect = connect.context("--connect or --output required")?;
             let viewer = RerunViewer::connect_with_blueprint(&connect, recording_id.as_deref())?;
             viewer.finish()?;
             println!(
-                "installed fixed Session / Telemetry / Calibration blueprint at {connect}{}",
+                "installed fixed Demo / Session / Telemetry / Calibration blueprint at {connect}{}",
                 recording_id
                     .as_deref()
                     .map(|id| format!(" for recording {id}"))
@@ -1430,957 +1154,6 @@ fn main() -> Result<()> {
             println!("live_teleop_received={received} ");
             println!("live_teleop_dropped_out_of_order={dropped_out_of_order}");
             println!("live_teleop_malformed={malformed}");
-        }
-        #[cfg(feature = "gstreamer")]
-        Command::CapturePoe {
-            config,
-            sensor,
-            stream,
-            duration_seconds,
-            decoded,
-            keyframes_only,
-            output,
-            calibration,
-        } => {
-            let config = VisionConfig::load(config)?;
-            let calibration = calibration.map(CalibrationBundle::load).transpose()?;
-            let camera = config
-                .cameras
-                .poe
-                .iter()
-                .find(|camera| camera.name == sensor)
-                .cloned()
-                .with_context(|| format!("unknown PoE sensor {sensor}"))?;
-            let stream = match stream.as_str() {
-                "main" => PoeStream::Main,
-                "sub" => PoeStream::Sub,
-                other => anyhow::bail!("stream must be main or sub, got {other}"),
-            };
-            let password = env::var(&camera.password_env).with_context(|| {
-                format!(
-                    "missing password environment variable {}",
-                    camera.password_env
-                )
-            })?;
-            let mut capture = PoeRtspCapture::new_with_options(
-                camera.clone(),
-                stream,
-                &password,
-                decoded,
-                keyframes_only,
-            )?;
-            let output_root = output.unwrap_or_else(|| PathBuf::from(&config.session.record_root));
-            let mut recorder = EvidenceRecorder::create(&output_root, &camera.name)?;
-            let deadline = Instant::now() + Duration::from_secs(duration_seconds);
-            let mut frames = 0_u64;
-            while Instant::now() < deadline {
-                if let Some(frame) = capture.next_frame(Duration::from_millis(1500))? {
-                    let mut frame = frame;
-                    stamp_calibration(&mut frame, calibration.as_ref())?;
-                    recorder.write(&frame)?;
-                    frames += 1;
-                }
-            }
-            let manifest = recorder.finish()?;
-            capture.stop()?;
-            println!(
-                "captured {} frames for {} into {}",
-                frames,
-                camera.name,
-                output_root.display()
-            );
-            println!("health={}", serde_json::to_string(&capture.health())?);
-            println!("manifest={}", serde_json::to_string(&manifest)?);
-        }
-        #[cfg(feature = "gstreamer")]
-        Command::CapturePoeAll {
-            lossless_evidence,
-            config,
-            stream,
-            duration_seconds,
-            decoded,
-            keyframes_only,
-            output,
-            calibration,
-            #[cfg(feature = "fiducials")]
-            fiducial_inventory,
-            #[cfg(feature = "fiducials")]
-            wrist_layout,
-            #[cfg(feature = "fiducials")]
-            fiducial_output,
-            #[cfg(feature = "fiducials")]
-            fiducial_scale,
-            #[cfg(feature = "fiducials")]
-            fiducial_max_fps,
-            #[cfg(feature = "fiducials")]
-            fiducial_min_cameras,
-            #[cfg(feature = "fiducials")]
-            fiducial_max_sync_wait_ms,
-            #[cfg(feature = "fiducials")]
-            fiducial_sync_tolerance_ms,
-            #[cfg(feature = "fiducials")]
-            fiducial_max_capture_age_ms,
-            #[cfg(feature = "fiducials")]
-            fiducial_exclude_camera,
-            #[cfg(feature = "fiducials")]
-            fiducial_roi_margin_px,
-            #[cfg(feature = "fiducials")]
-            fiducial_full_scan_period,
-            #[cfg(feature = "fiducials")]
-            fiducial_roi_hold_frames,
-            #[cfg(feature = "fiducials")]
-            fiducial_reacquire_period,
-            socket,
-            socket_max_fps,
-            socket_scale,
-            socket_luma,
-            socket_crop,
-            #[cfg(feature = "rerun")]
-            rerun_output,
-            #[cfg(feature = "rerun")]
-            rerun_spawn,
-            #[cfg(feature = "rerun")]
-            rerun_connect,
-            #[cfg(feature = "rerun")]
-            rerun_max_fps,
-            #[cfg(feature = "rerun")]
-            rerun_recording_id,
-            #[cfg(feature = "rerun")]
-            urdf,
-            #[cfg(feature = "rerun")]
-            rerun_calibration,
-            #[cfg(feature = "rerun")]
-            calibration_anchor,
-            #[cfg(feature = "rerun")]
-            robot_world,
-            no_record,
-        } => {
-            let config = VisionConfig::load(config)?;
-            let socket_crops = parse_socket_crops(&socket_crop)?;
-            if socket_luma
-                && (socket.is_none()
-                    || socket_max_fps != 0.0
-                    || !decoded
-                    || socket_scale != 1.0
-                    || !socket_crops.is_empty())
-            {
-                anyhow::bail!(
-                    "--socket-luma requires an uncapped, unscaled, uncropped decoded --socket"
-                );
-            }
-            if !(0.0..=1.0).contains(&socket_scale) || socket_scale == 0.0 {
-                anyhow::bail!("--socket-scale must be in (0, 1]");
-            }
-            if !socket_max_fps.is_finite() || socket_max_fps < 0.0 {
-                anyhow::bail!("--socket-max-fps must be finite and non-negative");
-            }
-            if socket.is_none()
-                && (socket_scale != 1.0 || socket_max_fps != 0.0 || !socket_crops.is_empty())
-            {
-                anyhow::bail!("--socket-scale/--socket-max-fps/--socket-crop require --socket");
-            }
-            if (socket_scale != 1.0 || !socket_crops.is_empty()) && !decoded {
-                anyhow::bail!("--socket-scale/--socket-crop require --decoded BGR/RGB frames");
-            }
-            if !socket_crops.is_empty() {
-                let configured = config
-                    .cameras
-                    .poe
-                    .iter()
-                    .map(|camera| camera.name.as_str())
-                    .collect::<std::collections::BTreeSet<_>>();
-                let supplied = socket_crops
-                    .keys()
-                    .map(String::as_str)
-                    .collect::<std::collections::BTreeSet<_>>();
-                if supplied != configured {
-                    let missing = configured
-                        .difference(&supplied)
-                        .copied()
-                        .collect::<Vec<_>>();
-                    let unknown = supplied
-                        .difference(&configured)
-                        .copied()
-                        .collect::<Vec<_>>();
-                    anyhow::bail!(
-                        "--socket-crop must cover every configured PoE camera; missing={missing:?} unknown={unknown:?}"
-                    );
-                }
-            }
-            #[cfg(feature = "fiducials")]
-            {
-                if !fiducial_max_fps.is_finite() || fiducial_max_fps < 0.0 {
-                    anyhow::bail!("--fiducial-max-fps must be finite and non-negative");
-                }
-                if fiducial_min_cameras == 0 || fiducial_min_cameras > config.cameras.poe.len() {
-                    anyhow::bail!(
-                        "--fiducial-min-cameras must be in 1..={}, got {fiducial_min_cameras}",
-                        config.cameras.poe.len()
-                    );
-                }
-                if fiducial_max_sync_wait_ms == 0 {
-                    anyhow::bail!("--fiducial-max-sync-wait-ms must be positive");
-                }
-                if !fiducial_sync_tolerance_ms.is_finite() || fiducial_sync_tolerance_ms < 0.0 {
-                    anyhow::bail!("--fiducial-sync-tolerance-ms must be finite and non-negative");
-                }
-                if !fiducial_max_capture_age_ms.is_finite() || fiducial_max_capture_age_ms <= 0.0 {
-                    anyhow::bail!("--fiducial-max-capture-age-ms must be finite and positive");
-                }
-                if fiducial_output.is_some() && fiducial_inventory.is_none() {
-                    anyhow::bail!("--fiducial-output requires --fiducial-inventory");
-                }
-                if fiducial_inventory.is_some() && fiducial_output.is_none() {
-                    anyhow::bail!("--fiducial-inventory requires --fiducial-output");
-                }
-                if wrist_layout.is_some() && fiducial_inventory.is_none() {
-                    anyhow::bail!("--wrist-layout requires --fiducial-inventory");
-                }
-                if fiducial_inventory.is_some() && calibration.is_none() {
-                    anyhow::bail!("fiducial detection requires --calibration");
-                }
-                if fiducial_inventory.is_some() && !decoded {
-                    anyhow::bail!("fiducial detection requires decoded pixels; add --decoded");
-                }
-                if fiducial_max_fps != 0.0 && fiducial_inventory.is_none() {
-                    anyhow::bail!("--fiducial-max-fps requires --fiducial-inventory");
-                }
-                if !fiducial_exclude_camera.is_empty() && fiducial_inventory.is_none() {
-                    anyhow::bail!("--fiducial-exclude-camera requires --fiducial-inventory");
-                }
-                if fiducial_roi_margin_px != 0 && fiducial_inventory.is_none() {
-                    anyhow::bail!("--fiducial-roi-margin-px requires --fiducial-inventory");
-                }
-                let configured_cameras: std::collections::BTreeSet<_> = config
-                    .cameras
-                    .poe
-                    .iter()
-                    .map(|camera| camera.name.as_str())
-                    .collect();
-                for camera in &fiducial_exclude_camera {
-                    if !configured_cameras.contains(camera.as_str()) {
-                        anyhow::bail!("unknown --fiducial-exclude-camera {camera}");
-                    }
-                }
-            }
-            #[cfg(feature = "rerun")]
-            if (rerun_output.is_some() || rerun_spawn || rerun_connect.is_some()) && !decoded {
-                anyhow::bail!("PoE Rerun output requires decoded pixels; add --decoded");
-            }
-            #[cfg(feature = "rerun")]
-            let rerun_viewer = open_rerun_viewer(
-                rerun_output,
-                rerun_spawn,
-                rerun_connect,
-                rerun_recording_id.as_deref(),
-            )?;
-            #[cfg(feature = "rerun")]
-            if let Some(viewer) = rerun_viewer.as_ref() {
-                let rerun_bundle = rerun_calibration
-                    .as_deref()
-                    .map(CalibrationBundle::load)
-                    .transpose()?;
-                viewer.log_session_metadata(
-                    "capture_poe_all",
-                    rerun_recording_id.as_deref(),
-                    urdf.as_deref(),
-                    rerun_bundle
-                        .as_ref()
-                        .map(|bundle| bundle.bundle_id.as_str()),
-                )?;
-                // Static scene: robot model and calibrated frustums, logged
-                // once so the live stream has spatial context.
-                if urdf.is_some() {
-                    viewer.log_scene(None, urdf.as_deref(), None)?;
-                }
-                if let Some(bundle) = &rerun_bundle {
-                    viewer.log_calibration(
-                        bundle,
-                        urdf.as_deref(),
-                        Some(calibration_anchor.as_str()),
-                        robot_world.as_deref(),
-                    )?;
-                }
-            }
-            #[cfg(feature = "rerun")]
-            let rerun_sink = rerun_viewer.map(RerunSink::new);
-            #[cfg(feature = "rerun")]
-            let rerun_min_interval =
-                (rerun_max_fps > 0.0).then(|| Duration::from_secs_f64(1.0 / rerun_max_fps));
-            #[cfg(feature = "rerun")]
-            let mut rerun_last_logged: Option<Instant> = None;
-            let calibration = calibration.map(CalibrationBundle::load).transpose()?;
-            #[cfg(feature = "fiducials")]
-            let mut fiducial_pipeline = match (fiducial_inventory, fiducial_output) {
-                (Some(inventory_path), Some(output_path)) => Some(FiducialPipeline::new(
-                    inventory_path,
-                    wrist_layout,
-                    output_path,
-                    fiducial_scale,
-                    fiducial_exclude_camera,
-                    fiducial_roi_margin_px,
-                    fiducial_full_scan_period,
-                    fiducial_roi_hold_frames,
-                    fiducial_reacquire_period,
-                    fiducial_max_capture_age_ms,
-                    calibration
-                        .as_ref()
-                        .expect("fiducial calibration precondition checked")
-                        .clone(),
-                )?),
-                (None, None) => None,
-                _ => unreachable!("fiducial CLI preconditions checked"),
-            };
-            #[cfg(feature = "fiducials")]
-            let fiducial_min_interval_ns = (fiducial_max_fps > 0.0)
-                .then(|| (1_000_000_000.0 / fiducial_max_fps).max(1.0) as i128);
-            #[cfg(feature = "fiducials")]
-            let mut fiducial_last_processed_ns: Option<i128> = None;
-            let stream = match stream.as_str() {
-                "main" => PoeStream::Main,
-                "sub" => PoeStream::Sub,
-                other => anyhow::bail!("stream must be main or sub, got {other}"),
-            };
-            let output_root = output.unwrap_or_else(|| PathBuf::from(&config.session.record_root));
-            let mut recorders = if no_record {
-                None
-            } else {
-                let mut map = BTreeMap::new();
-                for camera in &config.cameras.poe {
-                    map.insert(
-                        camera.name.clone(),
-                        EvidenceRecorder::create(&output_root, &camera.name)?,
-                    );
-                }
-                Some(map)
-            };
-            let sensor_names: Vec<_> = config
-                .cameras
-                .poe
-                .iter()
-                .map(|camera| camera.name.clone())
-                .collect();
-            let tolerance_ns = (config.sync.max_pairwise_skew_ms * 1_000_000.0) as u128;
-            #[cfg(all(feature = "rerun", feature = "fiducials"))]
-            let has_rerun_consumer = rerun_sink.is_some();
-            #[cfg(all(not(feature = "rerun"), feature = "fiducials"))]
-            let has_rerun_consumer = false;
-            #[cfg(feature = "fiducials")]
-            let partial_tracking = {
-                #[cfg(feature = "zenoh")]
-                let camera_owner = cli.zenoh;
-                #[cfg(not(feature = "zenoh"))]
-                let camera_owner = false;
-                camera_owner
-                    || (fiducial_pipeline.is_some()
-                        && no_record
-                        && socket.is_none()
-                        && !has_rerun_consumer
-                        && fiducial_min_cameras < sensor_names.len())
-            };
-            #[cfg(not(feature = "fiducials"))]
-            let partial_tracking = false;
-            #[cfg(feature = "fiducials")]
-            let tracking_tolerance_ns = if fiducial_sync_tolerance_ms > 0.0 {
-                (fiducial_sync_tolerance_ms * 1_000_000.0) as u128
-            } else {
-                tolerance_ns
-            };
-            let mut synchronizer = if partial_tracking {
-                #[cfg(feature = "fiducials")]
-                {
-                    FrameSynchronizer::new_partial(
-                        sensor_names,
-                        fiducial_min_cameras,
-                        tracking_tolerance_ns,
-                        u128::from(fiducial_max_sync_wait_ms) * 1_000_000,
-                        config.session.queue_capacity,
-                    )
-                    .map_err(anyhow::Error::msg)?
-                }
-                #[cfg(not(feature = "fiducials"))]
-                unreachable!()
-            } else {
-                FrameSynchronizer::new(sensor_names, tolerance_ns, config.session.queue_capacity)
-                    .map_err(anyhow::Error::msg)?
-            };
-            let mut sync_index = if no_record {
-                None
-            } else {
-                let sync_index_path = output_root.join("synchronized_frames.jsonl");
-                Some(BufWriter::new(
-                    OpenOptions::new()
-                        .create_new(true)
-                        .write(true)
-                        .open(&sync_index_path)
-                        .with_context(|| format!("opening {}", sync_index_path.display()))?,
-                ))
-            };
-            let mut publisher = socket.as_ref().map(UnixFramePublisher::bind).transpose()?;
-            let luma_publisher = if socket_luma {
-                publisher
-                    .take()
-                    .map(tatbot_visiond::transport::LumaFramePublisher::spawn)
-            } else {
-                None
-            };
-            // The listener is bound, so `After=` consumers may connect. The
-            // RTSP connections below are deliberately not part of readiness:
-            // a subscriber needs the listener, not frames, and one camera
-            // slow to come up must not hold the whole unit's start open.
-            tatbot_visiond::systemd::notify_socket_ready(socket.as_deref());
-            let socket_min_interval =
-                (socket_max_fps > 0.0).then(|| Duration::from_secs_f64(1.0 / socket_max_fps));
-            let mut socket_last_published: Option<Instant> = None;
-            let deadline = (duration_seconds > 0)
-                .then(|| Instant::now() + Duration::from_secs(duration_seconds));
-            let expected = config.cameras.poe.len();
-            // Decoded main-stream frames are about 15 MiB each.  An unbounded
-            // channel let capture outrun fiducial processing during motion;
-            // a 60 s run accumulated ~26 GiB and kept processing for minutes
-            // after its deadline.  Retain only one complete set's worth of
-            // ingress events. Backpressure then reaches each appsink, whose
-            // own bounded `drop=true` queue keeps recent frames. The
-            // synchronizer still owns its configured per-sensor tolerance
-            // queues; duplicating that capacity here only adds frame age.
-            let worker_queue_capacity = expected.max(1);
-            let (sender, receiver) = bounded_capture_event_channel(worker_queue_capacity);
-            let mut workers = Vec::new();
-            #[cfg(feature = "zenoh")]
-            let source_socket = cli
-                .subscribe_socket
-                .clone()
-                .or_else(|| (!cli.zenoh).then(|| PathBuf::from("/tmp/tatbot-poe-frames.sock")));
-            #[cfg(not(feature = "zenoh"))]
-            let source_socket: Option<PathBuf> = None;
-            let subscriber_only = source_socket.is_some();
-            anyhow::ensure!(
-                !lossless_evidence || (subscriber_only && decoded && !no_record && (1..=30).contains(&duration_seconds)),
-                "--lossless-evidence requires a decoded subscriber recording lasting 1..30 seconds"
-            );
-            let mut owner_failure: Option<String> = None;
-            if let Some(path) = source_socket {
-                let mut client = tatbot_visiond::UnixFrameClient::connect(path)?;
-                client.set_read_timeout(Duration::from_secs(2))?;
-                // Drain the owner independently of compression/disk work. Keep
-                // one complete pending set; replacing it never mixes cameras.
-                let pending = std::sync::Arc::new(std::sync::Mutex::new(None));
-                let incoming = pending.clone();
-                workers.push(thread::spawn(move || {
-                    let mut superseded = 0_u64;
-                    while deadline.is_none_or(|d| Instant::now() < d) {
-                        match client.recv_if_ready() {
-                            Ok(None) => continue,
-                            Ok(Some(set)) => {
-                                let old = incoming.lock().unwrap().replace(Ok(set));
-                                superseded += u64::from(old.is_some());
-                                drop(old);
-                            }
-                            Err(error) => {
-                                *incoming.lock().unwrap() = Some(Err(error));
-                                break;
-                            }
-                        }
-                    }
-                    eprintln!("subscriber_superseded_sets={superseded}");
-                }));
-                let sender = sender.clone();
-                let sensors = config
-                    .cameras
-                    .poe
-                    .iter()
-                    .map(|camera| camera.name.clone())
-                    .collect::<Vec<_>>();
-                workers.push(thread::spawn(move || {
-                    while deadline.is_none_or(|d| Instant::now() < d) {
-                        let next = pending.lock().unwrap().take();
-                        let Some(next) = next else {
-                            thread::sleep(Duration::from_millis(2));
-                            continue;
-                        };
-                        match next {
-                            Ok(set) => {
-                                for frame in set.frames {
-                                    if sender
-                                        .send(PoeWorkerEvent::Frame {
-                                            frame,
-                                            enqueued_at: Instant::now(),
-                                        })
-                                        .is_err()
-                                    {
-                                        return;
-                                    }
-                                }
-                            }
-                            Err(error) => {
-                                let _ = sender.send(PoeWorkerEvent::Error {
-                                    sensor: "camera-owner".into(),
-                                    message: error.to_string(),
-                                });
-                                break;
-                            }
-                        }
-                    }
-                    for sensor in sensors {
-                        let health = tatbot_visiond::SensorHealth::new(sensor.clone()).snapshot();
-                        let _ = sender.send(PoeWorkerEvent::Finished { sensor, health });
-                    }
-                }));
-            } else {
-                for camera in config.cameras.poe.clone() {
-                    let sender = sender.clone();
-                    workers.push(thread::spawn(move || {
-                        let sensor = camera.name.clone();
-                        let mut capture = None;
-                        let mut had_capture = false;
-                        let mut reconnects = 0_u64;
-                        let mut recent_errors = BoundedStrings::new(16);
-                        while deadline.is_none_or(|d| Instant::now() < d) {
-                            if capture.is_none() {
-                                match env::var(&camera.password_env)
-                                    .with_context(|| {
-                                        format!(
-                                            "missing password environment variable {}",
-                                            camera.password_env
-                                        )
-                                    })
-                                    .and_then(|password| {
-                                        PoeRtspCapture::new_with_options(
-                                            camera.clone(),
-                                            stream,
-                                            &password,
-                                            decoded,
-                                            keyframes_only,
-                                        )
-                                    }) {
-                                    Ok(value) => {
-                                        if had_capture {
-                                            reconnects = reconnects.saturating_add(1);
-                                        }
-                                        had_capture = true;
-                                        capture = Some(value);
-                                    }
-                                    Err(error) => {
-                                        recent_errors.push(error.to_string());
-                                        let _ = sender.send(PoeWorkerEvent::Error {
-                                            sensor: sensor.clone(),
-                                            message: error.to_string(),
-                                        });
-                                        thread::sleep(Duration::from_millis(250));
-                                        continue;
-                                    }
-                                }
-                            }
-                            let result = capture
-                                .as_mut()
-                                .expect("capture initialized")
-                                .next_frame(Duration::from_millis(1500));
-                            match result {
-                                Ok(Some(frame)) => {
-                                    if sender
-                                        .send(PoeWorkerEvent::Frame {
-                                            frame,
-                                            enqueued_at: Instant::now(),
-                                        })
-                                        .is_err()
-                                    {
-                                        break;
-                                    }
-                                }
-                                Ok(None) => {}
-                                Err(error) => {
-                                    recent_errors.push(error.to_string());
-                                    let _ = sender.send(PoeWorkerEvent::Error {
-                                        sensor: sensor.clone(),
-                                        message: error.to_string(),
-                                    });
-                                    if let Some(value) = capture.take() {
-                                        let _ = value.stop();
-                                    }
-                                    thread::sleep(Duration::from_millis(250));
-                                }
-                            }
-                        }
-                        let mut health = capture
-                            .as_ref()
-                            .map(PoeRtspCapture::health)
-                            .unwrap_or_else(|| {
-                                tatbot_visiond::SensorHealth::new(sensor.clone()).snapshot()
-                            });
-                        health.reconnects = health.reconnects.saturating_add(reconnects);
-                        health.recent_errors = recent_errors.into_vec();
-                        if let Some(value) = capture {
-                            let _ = value.stop();
-                        }
-                        let _ = sender.send(PoeWorkerEvent::Finished { sensor, health });
-                    }));
-                }
-            }
-            drop(sender);
-
-            let mut finished = 0;
-            let mut frame_counts = BTreeMap::<String, u64>::new();
-            let mut pipeline_capture_ages_ms = BTreeMap::<String, TimingSamples>::new();
-            let mut pipeline_stage_latencies_ms =
-                BTreeMap::<String, BTreeMap<String, TimingSamples>>::new();
-            let mut capture_event_channel_waits_ms = BTreeMap::<String, TimingSamples>::new();
-            let mut synchronizer_waits_ms = TimingSamples::default();
-            #[cfg(feature = "fiducials")]
-            let mut fiducial_processing_ms = TimingSamples::default();
-            #[cfg(feature = "fiducials")]
-            let mut fiducial_rate_limit_remaining_ms = TimingSamples::default();
-            let mut errors = BoundedStrings::new(64);
-            let mut health = BTreeMap::new();
-            let mut synchronized_sets = 0_u64;
-            let mut frames_discarded_after_deadline = 0_u64;
-            #[cfg(feature = "fiducials")]
-            let mut fiducial_sets_rate_limited = 0_u64;
-            while finished < expected {
-                match receiver.recv_timeout(Duration::from_secs(15)) {
-                    Ok(PoeWorkerEvent::Frame { frame, enqueued_at }) => {
-                        // `duration_seconds` is a wall-clock bound, not merely
-                        // an ingestion bound.  Once it expires, drain frames
-                        // without expensive recording/detection so blocked
-                        // workers can publish their final health and exit.
-                        if deadline.is_some_and(|d| Instant::now() >= d) {
-                            frames_discarded_after_deadline =
-                                frames_discarded_after_deadline.saturating_add(1);
-                            continue;
-                        }
-                        let mut frame = frame;
-                        stamp_calibration(&mut frame, calibration.as_ref())?;
-                        let sensor = frame.metadata.sensor_name.clone();
-                        capture_event_channel_waits_ms
-                            .entry(sensor.clone())
-                            .or_default()
-                            .push(enqueued_at.elapsed().as_secs_f64() * 1000.0);
-                        let event_received_unix_ns = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap_or(Duration::ZERO)
-                            .as_nanos();
-                        frame.metadata.attributes.insert(
-                            "capture_event_received_unix_ns".to_string(),
-                            event_received_unix_ns.to_string(),
-                        );
-                        if let Some(age_ms) = frame
-                            .metadata
-                            .attributes
-                            .get("pipeline_capture_age_ns")
-                            .and_then(|value| value.parse::<i128>().ok())
-                            .map(|value| value as f64 / 1e6)
-                        {
-                            pipeline_capture_ages_ms
-                                .entry(sensor.clone())
-                                .or_default()
-                                .push(age_ms);
-                        }
-                        for (name, value) in &frame.metadata.attributes {
-                            if name.starts_with("pipeline_")
-                                && name.ends_with("_ns")
-                                && name != "pipeline_capture_age_ns"
-                                && name != "pipeline_pts_ns"
-                                && name != "pipeline_dts_ns"
-                                && name != "pipeline_running_time_ns"
-                                && name != "pipeline_pts_to_now_ns"
-                            {
-                                if let Ok(value_ns) = value.parse::<u128>() {
-                                    pipeline_stage_latencies_ms
-                                        .entry(sensor.clone())
-                                        .or_default()
-                                        .entry(
-                                            name.trim_start_matches("pipeline_")
-                                                .trim_end_matches("_ns")
-                                                .to_string(),
-                                        )
-                                        .or_default()
-                                        .push(value_ns as f64 / 1e6);
-                                }
-                            }
-                        }
-                        *frame_counts.entry(sensor.clone()).or_default() += 1;
-                        if let Some(recorders) = recorders.as_mut() {
-                            let recorder = recorders
-                                .get_mut(&sensor)
-                                .with_context(|| format!("no recorder for {sensor}"))?;
-                            #[cfg(feature = "zenoh")]
-                            if subscriber_only && !lossless_evidence {
-                                recorder.write_jpeg(&frame)?;
-                            } else {
-                                recorder.write(&frame)?;
-                            }
-                            #[cfg(not(feature = "zenoh"))]
-                            recorder.write(&frame)?;
-                        }
-                        for mut set in synchronizer.push(frame).map_err(anyhow::Error::msg)? {
-                            let set_processing_unix_ns = SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap_or(Duration::ZERO)
-                                .as_nanos();
-                            let synchronizer_wait_ns = set
-                                .frames
-                                .values()
-                                .filter_map(|frame| {
-                                    frame
-                                        .metadata
-                                        .attributes
-                                        .get("capture_event_received_unix_ns")
-                                        .and_then(|value| value.parse::<u128>().ok())
-                                })
-                                .map(|received| set_processing_unix_ns.saturating_sub(received))
-                                .max()
-                                .unwrap_or(0);
-                            synchronizer_waits_ms.push(synchronizer_wait_ns as f64 / 1e6);
-                            for frame in set.frames.values_mut() {
-                                frame.metadata.attributes.insert(
-                                    "synchronized_unix_ns".into(),
-                                    set_processing_unix_ns.to_string(),
-                                );
-                            }
-                            #[cfg(feature = "fiducials")]
-                            if let Some(pipeline) = fiducial_pipeline.as_mut() {
-                                if fiducial_set_due(
-                                    set.timestamp_ns,
-                                    fiducial_last_processed_ns,
-                                    fiducial_min_interval_ns,
-                                ) {
-                                    fiducial_last_processed_ns = Some(set.timestamp_ns);
-                                    let fiducial_started = Instant::now();
-                                    pipeline.process(&set)?;
-                                    fiducial_processing_ms
-                                        .push(fiducial_started.elapsed().as_secs_f64() * 1000.0);
-                                } else {
-                                    fiducial_sets_rate_limited =
-                                        fiducial_sets_rate_limited.saturating_add(1);
-                                    if let (Some(interval), Some(last)) =
-                                        (fiducial_min_interval_ns, fiducial_last_processed_ns)
-                                    {
-                                        let elapsed = (set.timestamp_ns - last).max(0);
-                                        fiducial_rate_limit_remaining_ms
-                                            .push((interval - elapsed).max(0) as f64 / 1e6);
-                                    }
-                                }
-                            }
-                            let set = std::sync::Arc::new(set);
-                            #[cfg(feature = "zenoh")]
-                            if let Some(publisher) = &frame_publisher {
-                                publisher.submit_shared(set.clone())?;
-                            }
-                            if let Some(publisher) = &luma_publisher {
-                                publisher.submit_shared(set.clone())?;
-                            }
-                            if let Some(publisher) = publisher.as_mut() {
-                                let due = match (socket_min_interval, socket_last_published) {
-                                    (Some(interval), Some(last)) => last.elapsed() >= interval,
-                                    _ => true,
-                                };
-                                if due {
-                                    socket_last_published = Some(Instant::now());
-                                    if socket_scale == 1.0 && socket_crops.is_empty() {
-                                        publisher.publish(&set)?;
-                                    } else {
-                                        let mut transport_set = if socket_crops.is_empty() {
-                                            (*set).clone()
-                                        } else {
-                                            crop_video_set(&set, &socket_crops, "transport")?
-                                        };
-                                        if socket_scale != 1.0 {
-                                            transport_set = scale_video_set(
-                                                &transport_set,
-                                                socket_scale,
-                                                "transport",
-                                            )?;
-                                        }
-                                        publisher.publish(&transport_set)?;
-                                    }
-                                }
-                            }
-                            if let Some(sync_index) = sync_index.as_mut() {
-                                let frame_sequences = set
-                                    .frames
-                                    .iter()
-                                    .map(|(name, frame)| (name.clone(), frame.metadata.sequence))
-                                    .collect();
-                                serde_json::to_writer(
-                                    &mut *sync_index,
-                                    &SyncIndexEntry {
-                                        sequence: set.sequence,
-                                        timestamp_basis: set.timestamp_basis.clone(),
-                                        timestamp_ns: set.timestamp_ns,
-                                        maximum_skew_ns: set.maximum_skew_ns,
-                                        frame_sequences,
-                                    },
-                                )?;
-                                sync_index.write_all(b"\n")?;
-                            }
-                            #[cfg(feature = "rerun")]
-                            if let Some(sink) = rerun_sink.as_ref() {
-                                let due = match (rerun_min_interval, rerun_last_logged) {
-                                    (Some(interval), Some(last)) => last.elapsed() >= interval,
-                                    _ => true,
-                                };
-                                if due {
-                                    rerun_last_logged = Some(Instant::now());
-                                    sink.submit(std::sync::Arc::unwrap_or_clone(set));
-                                }
-                            }
-                            synchronized_sets = synchronized_sets.saturating_add(1);
-                        }
-                    }
-                    Ok(PoeWorkerEvent::Error { sensor, message }) => {
-                        if sensor == "camera-owner" {
-                            owner_failure = Some(message.clone());
-                        }
-                        errors.push(format!("{sensor}: {message}"));
-                    }
-                    Ok(PoeWorkerEvent::Finished {
-                        sensor,
-                        health: value,
-                    }) => {
-                        finished += 1;
-                        health.insert(sensor, value);
-                    }
-                    Err(mpsc::RecvTimeoutError::Timeout) => {
-                        anyhow::bail!(
-                            "PoE capture workers did not finish within the safety timeout"
-                        )
-                    }
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                }
-            }
-            for worker in workers {
-                worker
-                    .join()
-                    .map_err(|_| anyhow::anyhow!("PoE capture worker panicked"))?;
-            }
-            let manifests: Vec<_> = recorders
-                .map(|map| {
-                    map.into_values()
-                        .map(EvidenceRecorder::finish)
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .transpose()?
-                .unwrap_or_default();
-            if let Some(sync_index) = sync_index.as_mut() {
-                sync_index.flush()?;
-            }
-            #[cfg(feature = "fiducials")]
-            if let Some(pipeline) = fiducial_pipeline.as_mut() {
-                pipeline.flush()?;
-                println!("fiducial_rows={}", pipeline.rows);
-                println!(
-                    "fiducial_roi_scans={{\"roi\":{},\"full\":{},\"backoff_skipped\":{}}}",
-                    pipeline.roi_camera_scans,
-                    pipeline.full_camera_scans,
-                    pipeline.backoff_skipped_camera_scans
-                );
-            }
-            #[cfg(feature = "rerun")]
-            if let Some(sink) = rerun_sink {
-                println!("rerun_sink={}", serde_json::to_string(&sink.finish()?)?);
-            }
-            if no_record {
-                println!("live view finished (no evidence recorded)");
-            } else {
-                println!(
-                    "captured PoE stream {stream:?} into {}",
-                    output_root.display()
-                );
-            }
-            println!("frame_counts={}", serde_json::to_string(&frame_counts)?);
-            let capture_age_summary: BTreeMap<_, _> = pipeline_capture_ages_ms
-                .iter()
-                .filter_map(|(sensor, samples)| {
-                    timing_summary(samples).map(|summary| (sensor, summary))
-                })
-                .collect();
-            println!(
-                "pipeline_capture_age_ms={}",
-                serde_json::to_string(&capture_age_summary)?
-            );
-            let stage_latency_summary: BTreeMap<_, _> = pipeline_stage_latencies_ms
-                .iter()
-                .map(|(sensor, stages)| {
-                    let summaries: BTreeMap<_, _> = stages
-                        .iter()
-                        .filter_map(|(stage, samples)| {
-                            timing_summary(samples).map(|summary| (stage, summary))
-                        })
-                        .collect();
-                    (sensor, summaries)
-                })
-                .collect();
-            println!(
-                "pipeline_stage_latency_ms={}",
-                serde_json::to_string(&stage_latency_summary)?
-            );
-            let channel_wait_summary: BTreeMap<_, _> = capture_event_channel_waits_ms
-                .iter()
-                .filter_map(|(sensor, samples)| {
-                    timing_summary(samples).map(|summary| (sensor, summary))
-                })
-                .collect();
-            println!(
-                "capture_event_channel_wait_ms={}",
-                serde_json::to_string(&channel_wait_summary)?
-            );
-            println!(
-                "synchronizer_wait_ms={}",
-                serde_json::to_string(&timing_summary(&synchronizer_waits_ms))?
-            );
-            #[cfg(feature = "fiducials")]
-            println!(
-                "fiducial_processing_ms={}",
-                serde_json::to_string(&timing_summary(&fiducial_processing_ms))?
-            );
-            #[cfg(feature = "fiducials")]
-            println!(
-                "fiducial_rate_limit_remaining_ms={}",
-                serde_json::to_string(&timing_summary(&fiducial_rate_limit_remaining_ms))?
-            );
-            println!("errors={}", serde_json::to_string(&errors.values)?);
-            println!("errors_dropped={}", errors.dropped);
-            println!("health={}", serde_json::to_string(&health)?);
-            println!("synchronized_sets={synchronized_sets}");
-            println!("capture_event_queue_capacity={worker_queue_capacity}");
-            println!("frames_discarded_after_deadline={frames_discarded_after_deadline}");
-            #[cfg(feature = "fiducials")]
-            println!("fiducial_sets_rate_limited={fiducial_sets_rate_limited}");
-            println!(
-                "synchronizer_dropped_unmatched={}",
-                synchronizer.dropped_unmatched()
-            );
-            println!(
-                "synchronizer_complete_sets={}",
-                synchronizer.complete_sets()
-            );
-            println!("synchronizer_partial_sets={}", synchronizer.partial_sets());
-            if let Some(publisher) = publisher.as_ref() {
-                println!("transport_clients={}", publisher.client_count());
-            }
-            println!("manifests={}", serde_json::to_string(&manifests)?);
-            anyhow::ensure!(
-                !subscriber_only || (owner_failure.is_none() && synchronized_sets > 0),
-                "camera subscriber failed: {}",
-                owner_failure
-                    .as_deref()
-                    .unwrap_or("no synchronized frames from owner")
-            );
-        }
-        #[cfg(feature = "gstreamer")]
-        Command::MonitorPoe {
-            config,
-            stream,
-            bind_host,
-            port,
-            duration_seconds,
-        } => {
-            let config = VisionConfig::load(config)?;
-            let stream = match stream.as_str() {
-                "main" => PoeStream::Main,
-                "sub" => PoeStream::Sub,
-                other => anyhow::bail!("stream must be main or sub, got {other}"),
-            };
-            tatbot_visiond::monitor::run(config, stream, &bind_host, port, duration_seconds)?;
         }
         #[cfg(feature = "realsense")]
         Command::CaptureRealsense {
@@ -2558,9 +1331,9 @@ fn main() -> Result<()> {
                 ))
             };
             let mut publisher = socket.as_ref().map(UnixFramePublisher::bind).transpose()?;
-            // Same contract as the PoE owner: readiness is the bind, so a
-            // caller that starts this service gets a connectable socket back
-            // rather than a process that has merely been exec'd.
+            // Readiness is the bind, so a caller that starts this service
+            // gets a connectable socket back rather than a process that has
+            // merely been exec'd.
             tatbot_visiond::systemd::notify_socket_ready(socket.as_deref());
             let deadline = (duration_seconds > 0)
                 .then(|| Instant::now() + Duration::from_secs(duration_seconds));
@@ -2866,9 +1639,12 @@ fn main() -> Result<()> {
                             anyhow::bail!("no recorder for {sensor}");
                         }
                         for set in synchronizer.push(frame).map_err(anyhow::Error::msg)? {
+                            // Shared, not copied: the bus publisher keeps the set
+                            // while the socket, index and viewer read it.
+                            let set = std::sync::Arc::new(set);
                             #[cfg(feature = "zenoh")]
                             if let Some(publisher) = &frame_publisher {
-                                publisher.submit(&set)?;
+                                publisher.submit_shared(set.clone())?;
                             }
                             if let Some(publisher) = publisher.as_mut() {
                                 publisher.publish(&set)?;
@@ -2910,7 +1686,7 @@ fn main() -> Result<()> {
                                             "visualization",
                                         )
                                     } else {
-                                        set
+                                        std::sync::Arc::unwrap_or_clone(set)
                                     };
                                     sink.submit(set);
                                 }
@@ -3065,8 +1841,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-
-#[cfg(all(feature = "rerun", any(feature = "gstreamer", feature = "realsense")))]
+#[cfg(all(feature = "rerun", feature = "realsense"))]
 fn open_rerun_viewer(
     output: Option<PathBuf>,
     spawn: bool,
@@ -3181,7 +1956,6 @@ impl ReplaySource {
 }
 
 #[cfg(any(
-    feature = "gstreamer",
     feature = "realsense",
     feature = "rerun",
     feature = "fiducials"
@@ -3198,7 +1972,6 @@ struct SyncIndexEntry {
     maximum_skew_ns: u128,
     frame_sequences: BTreeMap<String, u64>,
 }
-
 
 #[cfg(feature = "fiducials")]
 #[derive(Debug, Serialize)]
@@ -3263,275 +2036,7 @@ impl FiducialDetectionBatch {
     }
 }
 
-#[cfg(feature = "fiducials")]
-struct FiducialPipeline {
-    inventory_hash: String,
-    calibration: CalibrationBundle,
-    detector: AprilTagDetectorFactory,
-    excluded_cameras: std::collections::BTreeSet<String>,
-    roi_margin_px: usize,
-    full_scan_period: usize,
-    roi_hold_frames: usize,
-    reacquire_period: usize,
-    max_capture_age_ms: f64,
-    roi_by_camera: BTreeMap<String, DetectionRoi>,
-    roi_misses: BTreeMap<String, usize>,
-    roi_camera_scans: u64,
-    full_camera_scans: u64,
-    backoff_skipped_camera_scans: u64,
-    tracker: Option<RustEeTracker>,
-    writer: BufWriter<File>,
-    rows: u64,
-}
-
-#[cfg(feature = "fiducials")]
-impl FiducialPipeline {
-    #[allow(clippy::too_many_arguments)] // Preserve the existing shadow pipeline CLI contract.
-    fn new(
-        inventory_path: PathBuf,
-        wrist_layout_path: Option<PathBuf>,
-        output_path: PathBuf,
-        scale: Option<f64>,
-        excluded_cameras: Vec<String>,
-        roi_margin_px: usize,
-        full_scan_period: usize,
-        roi_hold_frames: usize,
-        reacquire_period: usize,
-        max_capture_age_ms: f64,
-        calibration: CalibrationBundle,
-    ) -> Result<Self> {
-        let inventory = FiducialInventory::load(inventory_path)?;
-        // Detection-only surveys every configured mounted target. Pose mode
-        // narrows the detector to the wrist before the estimator sees data.
-        let detector_target = wrist_layout_path.as_ref().map(|_| "wrist");
-        let detector = AprilTagDetectorFactory::new(&inventory, detector_target, scale)?;
-        let tracker = wrist_layout_path
-            .map(|path| {
-                let layout = WristLayout::load(path, &inventory, false)?;
-                RustEeTracker::new(&calibration, &inventory, layout, EstimatorConfig::default())
-            })
-            .transpose()?;
-        let writer = BufWriter::new(
-            OpenOptions::new()
-                .create_new(true)
-                .write(true)
-                .open(&output_path)
-                .with_context(|| format!("opening {}", output_path.display()))?,
-        );
-        Ok(Self {
-            inventory_hash: inventory.inventory_hash,
-            calibration,
-            detector,
-            excluded_cameras: excluded_cameras.into_iter().collect(),
-            roi_margin_px,
-            full_scan_period,
-            roi_hold_frames,
-            reacquire_period,
-            max_capture_age_ms,
-            roi_by_camera: BTreeMap::new(),
-            roi_misses: BTreeMap::new(),
-            roi_camera_scans: 0,
-            full_camera_scans: 0,
-            backoff_skipped_camera_scans: 0,
-            tracker,
-            writer,
-            rows: 0,
-        })
-    }
-
-    fn process(&mut self, set: &SynchronizedFrameSet) -> Result<()> {
-        // The previous `latency_ms` started here and therefore measured only
-        // detector/solver CPU time.  It hid seconds of queued-frame age during
-        // the exact overload this metric is supposed to catch.  The
-        // synchronized timestamp is normalized Unix time for live PoE sets,
-        // so include capture-to-processing age and clamp small clock noise.
-        let now_ns = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or(Duration::ZERO)
-            .as_nanos() as i128;
-        let queue_latency_ms = ((now_ns - set.timestamp_ns).max(0) as f64) / 1e6;
-        let started = Instant::now();
-        if queue_latency_ms > self.max_capture_age_ms
-            && let Some(tracker) = self.tracker.as_mut()
-        {
-            let mut estimate = tracker.update_constrained(
-                set.sequence,
-                set.timestamp_ns,
-                set.maximum_skew_ns,
-                Vec::new(),
-                queue_latency_ms,
-                0.0,
-                started,
-                2,
-            );
-            estimate.input_cameras = set.frames.keys().cloned().collect();
-            estimate.partial_input = Some(set.frames.len() < self.calibration.cameras.len());
-            estimate.reason = Some(format!(
-                "capture age {queue_latency_ms:.1} ms exceeds {:.1} ms tracker bound",
-                self.max_capture_age_ms
-            ));
-            serde_json::to_writer(&mut self.writer, &estimate)?;
-            self.writer.write_all(b"\n")?;
-            self.rows = self.rows.saturating_add(1);
-            return Ok(());
-        }
-        let (rois, excluded, scanned_cameras) = self.detection_plan(set);
-        let detected =
-            self.detector
-                .detect_set_profiled(&self.calibration, set, &excluded, &rois)?;
-        let detection_latency_ms = started.elapsed().as_secs_f64() * 1000.0;
-        self.roi_camera_scans = self
-            .roi_camera_scans
-            .saturating_add(detected.roi_camera_count as u64);
-        self.full_camera_scans = self
-            .full_camera_scans
-            .saturating_add(scanned_cameras.saturating_sub(detected.roi_camera_count) as u64);
-        let configured_camera_count = set
-            .frames
-            .keys()
-            .filter(|name| !self.excluded_cameras.contains(*name))
-            .count();
-        self.backoff_skipped_camera_scans = self
-            .backoff_skipped_camera_scans
-            .saturating_add(configured_camera_count.saturating_sub(scanned_cameras) as u64);
-        self.update_rois(set, &detected.detections, &excluded);
-        if let Some(tracker) = self.tracker.as_mut() {
-            // A bounded partial camera set must still contain two distinct
-            // physical wrist IDs before it can refresh a measured pose. With
-            // less geometry the tracker falls back to its bounded prediction
-            // or unavailable state instead of silently accepting a weak fix.
-            let minimum_tag_ids =
-                usize::from(set.frames.len() < self.calibration.cameras.len()) * 2;
-            let mut estimate = tracker.update_constrained(
-                set.sequence,
-                set.timestamp_ns,
-                set.maximum_skew_ns,
-                detected.detections,
-                queue_latency_ms,
-                detection_latency_ms,
-                started,
-                minimum_tag_ids,
-            );
-            estimate.input_cameras = set.frames.keys().cloned().collect();
-            estimate.partial_input = Some(set.frames.len() < self.calibration.cameras.len());
-            estimate.image_prep_latency_ms = detected.image_prep_latency_ms;
-            estimate.apriltag_latency_ms = detected.apriltag_latency_ms;
-            estimate.quad_detection_latency_ms = detected.quad_detection_latency_ms;
-            estimate.pose_candidate_latency_ms = detected.pose_candidate_latency_ms;
-            estimate.roi_camera_count = detected.roi_camera_count;
-            serde_json::to_writer(&mut self.writer, &estimate)?;
-        } else {
-            let batch = FiducialDetectionBatch::new(
-                set,
-                &self.inventory_hash,
-                &self.calibration.bundle_id,
-                queue_latency_ms,
-                detection_latency_ms,
-                detected.image_prep_latency_ms,
-                detected.apriltag_latency_ms,
-                detected.roi_camera_count,
-                queue_latency_ms + started.elapsed().as_secs_f64() * 1000.0,
-                "capture_to_estimate",
-                detected.detections,
-            );
-            serde_json::to_writer(&mut self.writer, &batch)?;
-        }
-        self.writer.write_all(b"\n")?;
-        self.rows = self.rows.saturating_add(1);
-        Ok(())
-    }
-
-    fn detection_plan(
-        &self,
-        set: &SynchronizedFrameSet,
-    ) -> (
-        BTreeMap<String, DetectionRoi>,
-        std::collections::BTreeSet<String>,
-        usize,
-    ) {
-        if self.roi_margin_px == 0 {
-            let scanned = set
-                .frames
-                .keys()
-                .filter(|name| !self.excluded_cameras.contains(*name))
-                .count();
-            return (BTreeMap::new(), self.excluded_cameras.clone(), scanned);
-        }
-        let camera_count = set.frames.len().max(1);
-        let stagger = (self.full_scan_period / camera_count).max(1);
-        let mut rois = BTreeMap::new();
-        let mut excluded = self.excluded_cameras.clone();
-        let mut scanned = 0_usize;
-        for (index, name) in set.frames.keys().enumerate() {
-            if self.excluded_cameras.contains(name) {
-                continue;
-            }
-            if let Some(roi) = self.roi_by_camera.get(name).copied() {
-                let force_full = self.full_scan_period > 0
-                    && self.rows > 0
-                    && (self.rows as usize + index * stagger) % self.full_scan_period == 0;
-                if !force_full {
-                    rois.insert(name.clone(), roi);
-                }
-                scanned += 1;
-                continue;
-            }
-            let misses = self.roi_misses.get(name).copied().unwrap_or(0);
-            let immediate_search = self.rows == 0 || misses < self.roi_hold_frames;
-            if immediate_search
-                || camera_reacquisition_due(self.rows as usize, index, self.reacquire_period)
-            {
-                scanned += 1;
-            } else {
-                excluded.insert(name.clone());
-            }
-        }
-        (rois, excluded, scanned)
-    }
-
-    fn update_rois(
-        &mut self,
-        set: &SynchronizedFrameSet,
-        detections: &[FiducialDetection],
-        excluded_this_set: &std::collections::BTreeSet<String>,
-    ) {
-        if self.roi_margin_px == 0 {
-            return;
-        }
-        for (name, frame) in &set.frames {
-            if excluded_this_set.contains(name) {
-                continue;
-            }
-            let camera_detections = detections
-                .iter()
-                .filter(|detection| detection.camera == *name)
-                .collect::<Vec<_>>();
-            if let Some((width, height)) = decoded_frame_dimensions(frame)
-                && let Some(roi) =
-                    expanded_detection_roi(&camera_detections, width, height, self.roi_margin_px)
-            {
-                self.roi_by_camera.insert(name.clone(), roi);
-                self.roi_misses.insert(name.clone(), 0);
-                continue;
-            }
-            let misses = self.roi_misses.entry(name.clone()).or_default();
-            *misses = misses.saturating_add(1);
-            if *misses >= self.roi_hold_frames {
-                self.roi_by_camera.remove(name);
-            }
-        }
-    }
-
-    fn flush(&mut self) -> Result<()> {
-        self.writer.flush().context("flushing fiducial JSONL")
-    }
-}
-
-
-
-
-
-#[cfg(any(feature = "gstreamer", feature = "realsense"))]
+#[cfg(feature = "realsense")]
 fn stamp_calibration(
     frame: &mut tatbot_visiond::FrameRecord,
     calibration: Option<&CalibrationBundle>,
@@ -3549,38 +2054,6 @@ fn stamp_calibration(
         .push("calibration_bundle_verified".to_string());
     Ok(())
 }
-
-
-
-
-
-
-
-
-
-#[cfg(feature = "gstreamer")]
-#[derive(Debug)]
-#[allow(clippy::large_enum_variant)] // Bounded ingress; image payloads already own heap buffers.
-enum PoeWorkerEvent {
-    Frame {
-        frame: tatbot_visiond::FrameRecord,
-        enqueued_at: Instant,
-    },
-    Error {
-        sensor: String,
-        message: String,
-    },
-    Finished {
-        sensor: String,
-        health: tatbot_visiond::HealthSnapshot,
-    },
-}
-
-
-
-
-
-
 
 #[cfg(feature = "realsense")]
 #[derive(Debug)]
@@ -3622,9 +2095,8 @@ enum FrameTimeoutAction {
 /// and reopen it; exit for systemd only on a second timeout inside one minute
 /// (four safety timeouts). The count is the bound and the existing timeout the
 /// clock, so a reset that restored frames for a minute has earned the next
-/// timeout its own reset rather than a unit restart. The 2026-09-17 owner
-/// crash-loop (five 15 s restarts, a hand-issued hardware reset the remedy)
-/// is the case this answers.
+/// timeout its own reset rather than a unit restart, where a crash-looping
+/// unit would otherwise wait for a hand-issued hardware reset.
 #[derive(Debug, Default)]
 #[cfg_attr(not(feature = "realsense"), allow(dead_code))]
 struct FrameTimeoutPolicy {

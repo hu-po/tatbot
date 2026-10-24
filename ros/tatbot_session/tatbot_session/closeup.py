@@ -55,6 +55,20 @@ def on_paper(base_from_page, base_from_cam, frame: gauge.Frame) -> np.ndarray:
     return page
 
 
+def on_skin(skin, base_from_cam, frame: gauge.Frame):
+    """A curved page's `skin` (PageSurface) moved along its normal onto the skin this frame's depth measures about
+    the tip (through base_from_cam), as on_paper moves a flat page: (its base, the moved skin)."""
+    from tatbot_session import curved
+
+    cam = np.asarray(base_from_cam, float)
+    gap, normal = skin.height_over((cam @ [*frame.c, 1.0])[:3])
+    about = gauge.ring(frame)   # the skin about the tip it did see, rather than its point under the pen
+    seen = curved.skin_gap(skin, about @ cam[:3, :3].T + cam[:3, 3]) if len(about) else None
+    base = np.asarray(skin.base, float).copy()
+    base[:3, 3] += (gap if seen is None else seen) * normal
+    return base, skin.moved(base)
+
+
 def in_clear(window, px_per_mm: float, clear_m, margin_m: float = 0.001) -> np.ndarray:
     """The page image pixels inside the print's clear centre (`clear_m`, the print's page) less margin_m:
     outside it the stencil's printed border would read as ink."""

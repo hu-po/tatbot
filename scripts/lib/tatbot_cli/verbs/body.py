@@ -20,26 +20,8 @@ from tatbot_contracts.body import (
 
 from tatbot_cli import EXIT_OK, EXIT_USAGE
 from tatbot_cli.registry import OFFLINE, verb
-from tatbot_cli.verbs._common import py
 
 DOC = "docs/architecture.md#body-cache-verification"
-
-
-def _export_args(parser):
-    parser.add_argument("--python", required=True, help="interpreter with the pinned SOMA/Torch runtime")
-
-
-@verb(effects=('read_files', 'write_files', 'start_process'), visibility="public", noun="body", verb="export", tier=OFFLINE,
-      summary="bake genuine articulated SOMA poses into the shared Inkmap and simulation catalog",
-      wraps=("web/inkmap/tools/export-soma.py",), args=_export_args,
-      passthrough="export-soma.py", example=("--python", "/path/to/locked/python", "--", "--help"), doc=DOC,
-      invariants=("Uses the pinned offline provider with pose correctives and audited immutable model assets.",
-                  "--extend preserves the verified reference and existing pose bytes; records bounded platform arithmetic differences."))
-def body_export(ctx, ns, rest):
-    plan = py(ctx, "web/inkmap/tools/export-soma.py", *rest)
-    plan.argv[0] = ns.python
-    plan.env = {"HF_HUB_OFFLINE": "1"}
-    return plan
 
 
 def _emit(ctx, payload: dict[str, Any]) -> None:

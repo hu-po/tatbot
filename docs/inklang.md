@@ -30,8 +30,7 @@ body-independent intent -- needs_choice / rejected
 rest-surface resolution = face + barycentric coordinates
         |
         +--> Inkmap preview / manual adjustment
-        +--> PlacementFile v6
-        +--> TattooScenario (pose and simulation are downstream)
+        +--> PlacementFile v6 (pose is downstream)
 ```
 
 ## Examples
@@ -96,7 +95,7 @@ Versions have separate meanings:
   and its result. Schema 2 adds the optional `relative` walk record.
 - PlacementFile version 6 stores all model, identity, topology, and
   rest-surface bindings with canonical rest-surface anchors;
-  pose belongs in TattooScenario, not PlacementFile.
+  pose does not belong in a PlacementFile.
 
 Changing a body mesh, vocabulary, atlas representation, resolver algorithm,
 or placement format is therefore a different change and must not be hidden
@@ -150,12 +149,11 @@ must not assume a resolved anchor is finer than its face.
 | Inkmap | browser preview/editor, ambiguity confirmation, manual placement, and PlacementFile authoring | another grammar or resolver |
 | Inkgen | motif/style prompt to a source image for DBV3 acquisition | body location |
 | PlacementFile | design plus canonical rest-surface anchor and provenance | pose or executable behavior |
-| TattooScenario | one resolved pose/support/world/tool/surface-trace realization | changing the placement's rest-surface meaning |
 
-Simulation invokes the same TypeScript resolver and consumes its complete JSON;
-there is no Python grammar or competing semantic face chooser. A downstream
-sampling policy may filter canonically resolved region-UV candidates for a
-pose, but it cannot redefine the requested site.
+Every consumer invokes the same TypeScript resolver and consumes its complete
+JSON; there is no Python grammar or competing semantic face chooser. A
+downstream sampling policy may filter canonically resolved region-UV
+candidates for a pose, but it cannot redefine the requested site.
 
 ## Vocabulary and extension rules
 
@@ -190,6 +188,6 @@ npm --prefix web/inkmap run check
 uvx pytest -q scripts/tests/test_inklang.py
 ```
 
-InkLang and Inkmap are design and simulation tools. A valid resolution does not
-demonstrate physical reachability, authorize powered motion, qualify contact,
-model deformable human tissue, or establish readiness for human use.
+InkLang and Inkmap are design tools. A valid resolution does not
+demonstrate physical reachability or model deformable tissue; the drawing stack
+measures the surface it draws on.

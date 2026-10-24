@@ -53,23 +53,6 @@ class SparsePatchTracker:
         self.timestamp_ns = None
         self.loss = None
 
-    def seed_points(self, image, timestamp_ns, points):
-        """Initialize externally verified image correspondences without redetection."""
-        gray = image if image.ndim == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        xy = np.asarray(points, np.float32).reshape(-1, 2)
-        if gray.dtype != np.uint8 or gray.ndim != 2 or not np.isfinite(xy).all():
-            raise ValueError("verified seed requires an 8-bit image and finite points")
-        if not self.settings.min_points <= len(xy) <= self.settings.max_points:
-            raise ValueError("verified seed count is outside tracker bounds")
-        if np.any(xy < 0) or np.any(xy >= (gray.shape[1], gray.shape[0])):
-            raise ValueError("verified seed points must be inside the image")
-        self.previous = gray.copy()
-        self.points = xy.reshape(-1, 1, 2).copy()
-        self.ids = np.arange(len(xy))
-        self.anchors = xy.copy()
-        self.timestamp_ns = int(timestamp_ns)
-        self.loss = None
-
     def step(self, image, timestamp_ns):
         gray = image if image.ndim == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         if gray.dtype != np.uint8 or gray.ndim != 2:

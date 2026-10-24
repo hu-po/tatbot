@@ -99,16 +99,3 @@ def test_declare_stamps_every_checkpoint_and_reads_back(tmp_path: Path) -> None:
         contract = MODULE.load_contract(str(run / step / "checkpoint"))
         assert contract["mask_external_effort"] is True
 
-
-def test_rollout_launcher_passes_contract_mask_to_the_robot_client() -> None:
-    # il_rollout_async.sh is the one rollout launcher (the synchronous
-    # il_rollout.sh and il_compare_policies.sh were retired 2026-09-02: the
-    # first could not run the flagship, the second could not pass arm_gate
-    # past its first launch).
-    async_ = (REPO / "scripts" / "il_rollout_async.sh").read_text()
-
-    assert "--robot.mask_external_effort=$MASK_EXT_EFF_BOOL" in async_
-    assert "launcher-controlled rollout option cannot be overridden" in async_
-    assert "Teach the client to zero" not in async_
-    assert not (REPO / "scripts" / "il_rollout.sh").exists()
-    assert not (REPO / "scripts" / "il_compare_policies.sh").exists()

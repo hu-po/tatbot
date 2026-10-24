@@ -77,19 +77,17 @@ def world_from_arm_base(stack: dict, arm: str):
 
 
 def open_bus(endpoint: str):
-    """A zenoh client session on the tatbot bus. It only reads, except put() of the arm's joints."""
+    """A zenoh client session on the tatbot bus; the bridge only reads it."""
     import json
 
     import zenoh
     config = zenoh.Config()
-    for key, value in (("mode", "client"), ("connect/endpoints", [endpoint]),
-                       ("scouting/multicast/enabled", False), ("connect/timeout_ms", 3000),
-                       ("connect/exit_on_failure", False)):
+    settings = [("mode", "client"), ("connect/endpoints", [endpoint]), ("scouting/multicast/enabled", False),
+                ("connect/timeout_ms", 3000), ("connect/exit_on_failure", False)]
+    credentials = fleet().bus_credentials()   # the router admits only it once its node holds one
+    if credentials:
+        settings += [("transport/auth/usrpwd/user", credentials[0]), ("transport/auth/usrpwd/password", credentials[1])]
+    for key, value in settings:
         config.insert_json5(key, json.dumps(value))
     return zenoh.open(config)
 
-
-def put(bus, key: str, data: bytes) -> None:
-    """A latest-value put: under congestion the sample is dropped, never queued."""
-    import zenoh
-    bus.put(key, data, congestion_control=zenoh.CongestionControl.DROP)

@@ -10,17 +10,19 @@ endif()
 option(TATBOT_NO_ARM_SDK "Build hardware-independent targets without fetching the arm SDK" OFF)
 
 # Official vendor SDK, pinned to the same version as the repo's python dep
-# (pyproject.toml: trossen-arm==1.8.5). Public (BSD-3-Clause), ships a
+# (python/lerobot_robot_tatbot/pyproject.toml: trossen-arm==1.11.0) and the ros
+# stack's (ros/tatbot_hardware), whose major.minor must match the controllers'
+# firmware (v1.11.1 since 2026-10-07). Public (BSD-3-Clause), ships a
 # prebuilt static library, fetched from Trossen's GitHub. The SDK stays in
 # the default build (decision 2026-08-31) — but when the fetch is impossible
 # (no network, cold cache), the hardware-independent libraries and their
-# tests still configure, build, and pass (plan Phase 2 exit gate). The
+# tests still configure, build, and pass. The
 # SDK-linked targets are simply skipped, loudly.
 include(FetchContent)
 FetchContent_Declare(
   trossen_arm_sdk
   GIT_REPOSITORY https://github.com/TrossenRobotics/trossen_arm.git
-  GIT_TAG v1.8.5
+  GIT_TAG v1.11.0
   GIT_SHALLOW TRUE
   # The SDK's CMakeLists assumes it is the top-level project (its CPack config
   # breaks under add_subdirectory). We only need its headers and prebuilt lib,
@@ -126,6 +128,12 @@ add_executable(square_probe_test square_probe_test.cpp)
 target_link_libraries(square_probe_test PRIVATE square_probe)
 add_test(NAME square_probe_test COMMAND square_probe_test)
 
+if(TROSSEN_SDK_AVAILABLE)
+  add_executable(arm_model_test arm_model_test.cpp)
+  target_link_libraries(arm_model_test PRIVATE trossen::arm pthread)
+  target_compile_definitions(arm_model_test PRIVATE TATBOT_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
+  add_test(NAME arm_model_test COMMAND arm_model_test)
+endif()
 add_executable(teleop_mapping_test teleop_mapping_test.cpp)
 add_test(NAME teleop_mapping COMMAND teleop_mapping_test)
 add_executable(teleop_startup_test teleop_startup_test.cpp)

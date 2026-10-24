@@ -39,10 +39,14 @@ class Bridge:
     def _start(self, app, jar):
         source = Path(__file__).with_name("Dbv3Bridge.java")
         classpath = f"{self.work}:{app / 'lib/app/*'}"
-        subprocess.run(["javac", "-cp", str(jar), "-d", str(self.work), str(source)], check=True, timeout=60)
+        # An installation may carry its own JDK (an aarch64 node: a JDK with JavaFX, since the Premium jar holds only
+        # x86-64 JavaFX natives); otherwise the system Java runs it.
+        jdk = app / "jdk/bin"
+        java, javac = (str(jdk / "java"), str(jdk / "javac")) if (jdk / "java").is_file() else ("java", "javac")
+        subprocess.run([javac, "-cp", str(jar), "-d", str(self.work), str(source)], check=True, timeout=60)
         self.log = (self.work / "jvm.log").open("w")
         self.process = subprocess.Popen(
-            ["xvfb-run", "-a", "-s", "-screen 0 1280x1024x24 -extension GLX", "java", "-Xlog:all=warning:stderr", "-Dprism.order=sw",
+            ["xvfb-run", "-a", "-s", "-screen 0 1280x1024x24 -extension GLX", java, "-Xlog:all=warning:stderr", "-Dprism.order=sw",
              f"-Duser.home={Path.home()}", "-cp", classpath, "Dbv3Bridge", str(self.work / "application.log")],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log, start_new_session=True)
         self.selector = selectors.DefaultSelector()
@@ -50,7 +54,7 @@ class Bridge:
         self.identity = {"edition": "Premium", "version": "1.6.22", "jar_sha256": digest(jar),
                          "bridge_sha256": digest(source), "mode": "JavaFX with Xvfb, one job per process",
                          "runtime_flags": ["prism.order=sw", "xvfb:GLX=off"],
-                         "java_version": subprocess.run(["java", "-Xlog:all=warning:stderr", "-version"], capture_output=True,
+                         "java_version": subprocess.run([java, "-Xlog:all=warning:stderr", "-version"], capture_output=True,
                                                         text=True, check=True, timeout=10).stderr.strip()}
         self._read(100)
         self._wait(lambda: self.call({"op": "status"})["loaded"], 90,
@@ -59,18 +63,25 @@ class Bridge:
 
     def _read(self, timeout: float):
         deadline = time.monotonic() + timeout
-        while b"\n" not in self.pending:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0 or not self.selector.select(remaining):
-                raise TimeoutError("DrawingBotV3 did not respond; inspect the worker logs")
-            data = os.read(self.process.stdout.fileno(), 65536)
-            if not data:
-                raise RuntimeError("DrawingBotV3 exited; inspect the worker logs")
-            self.pending += data
-            if len(self.pending) > 2_000_000:
-                raise RuntimeError("DrawingBotV3 reply exceeded the protocol limit")
-        line, self.pending = self.pending.split(b"\n", 1)
-        reply = json.loads(line)
+        while True:
+            while b"\n" not in self.pending:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not self.selector.select(remaining):
+                    raise TimeoutError("DrawingBotV3 did not respond; inspect the worker logs")
+                data = os.read(self.process.stdout.fileno(), 65536)
+                if not data:
+                    raise RuntimeError("DrawingBotV3 exited; inspect the worker logs")
+                self.pending += data
+                if len(self.pending) > 2_000_000:
+                    raise RuntimeError("DrawingBotV3 reply exceeded the protocol limit")
+            line, self.pending = self.pending.split(b"\n", 1)
+            try:
+                reply = json.loads(line)
+                break
+            except ValueError:
+                # Native libraries (Mesa EGL, GDK, the OpenCL loader on aarch64) also write to stdout; every reply
+                # is one JSON value per line, so anything else is kept with the JVM's log.
+                self.log.write(line.decode(errors="replace") + "\n")
         if isinstance(reply, dict) and "error" in reply:
             raise RuntimeError(reply["error"])
         return reply

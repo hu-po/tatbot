@@ -1,4 +1,5 @@
-"""The fitted tool's tip, contact-free: joint 6 turned under the palette camera (ros/README.md section 7).
+"""The fitted tool's tip, contact-free: joint 6 turned, and the tool tilted, under the palette camera (ros/README.md
+section 7).
 
 The arm parks the tool upright PARK_OVER_M over the station's ball, at the yaw whose turns the camera sees best, and
 holds there for small known translations (they give the camera its scale, orientation and depth) and for turns of
@@ -7,15 +8,28 @@ working tip is found in it, and the ball, which stands still, marks the camera's
 image, a pinhole at the nominal focal length and the tip across its axis, then explains every still.
 
 The pen sits 45 degrees off joint 6's axis, so a turn swings the tip on a circle of about 12 mm and tilts the pen. A
-turn sees the tip's two components across that axis and none along it: with the tip's length held at the installed
-one, a length error (or the detector's bias along the pen) reads in the fitted tip one for one along the factor
-report.md gives. Each turn is a Touch MODE_MOVE to FK of the park's planned joints with joint 6 turned, so joints 1-5
-stay where the park put them (to the planner's few mrad) and their offsets do not enter; the jog client would
-re-command them at their measured, sagged values, with neither the probe guard nor the two-arm one. Every hold is
-a probe-guarded move through Calibration.way_check, the tool's envelope off the station's parts on its way and
-BALL_CLEAR_M off the fix's ball; the turns go only when the park's still shows the tip TURN_CLEAR_M over the ball's
-top under the lowest turn. The run writes holds.jsonl, stills/, candidate.json and report.md; `tatbot ros calib
-apply --run ID` adopts the tip.
+turn sees the tip's two components across that axis and none along it, so the tip's length and its offset across
+the mount trade one for one along the factor report.md gives. Each turn is a Touch MODE_MOVE to FK of the park's
+planned joints with joint 6 turned, so joints 1-5 stay where the park put them (to the planner's few mrad) and their
+offsets do not enter; the jog client would re-command them at their measured, sagged values, with neither the probe
+guard nor the two-arm one.
+
+The tilts see the length. Each holds the installed tip where the park put it and turns the tool TILTS_DEG about it,
+about the camera's line of sight: a working tip that stands off the installed one swings across the camera by the
+tilt times that offset (2 mm at 10 deg for 12 mm), so with them the fit frees the tip's length. Joint 6 could not:
+its axis is fixed in the mount, so turns at any park leave the same direction unseen, and a second joint's turns
+swing the tip 4 mm a degree. A tilt moves every joint a few degrees, and their offsets enter only through the arm's
+Jacobian changing over it (~0.5 mm at the tip for half a degree off over 12 degrees). On 2026-10-22 the 3RL's tip
+stood 12.6 mm shorter in the wrist camera than the installed length, which no turn could see.
+
+The tip is what is in focus: the lens is set at the ball, so the pen is sharp and whatever stands behind the station
+is blurred (on 2026-10-22 a person behind it moved between the stills, and the pen's change against the lifted still
+ran out of its window). It ends where its width falls under END_FRACTION of the tool's end across, so a needle
+standing out of a cartridge's tube is not taken for the tube's end, the tcp. Every hold is a probe-guarded move
+through Calibration.way_check, the tool's envelope off the station's parts on its way and BALL_CLEAR_M off the fix's
+ball; the turns and the tilts go only when the park's still leaves the tip TURN_CLEAR_M over the ball's top under
+the lowest of them. The run writes holds.jsonl, stills/, candidate.json and report.md; `tatbot ros calib apply --run
+ID` adopts the tip.
 """
 from __future__ import annotations
 
@@ -39,6 +53,20 @@ PARK_OVER_M = 0.006       # the tip over the fix's ball top at the park; the fix
                           # take the tip down up to 1.4 mm
 SHIFT_M = 0.003           # the translations: across the camera's line of sight both ways, up, and along it
 TURNS_DEG = tuple(range(-30, 31, 6))
+TILTS_DEG = (-12, -6, 6, 12)   # the tool about the installed tip, about the camera's line of sight
+TIP_DOUBT_M = 0.015       # how far the working tip may stand off the installed one before the tilts measure it: a tilt
+                          # swings it down by this times the tilt's sine at most
+END_FRACTION = 0.9        # the tip is where the in-focus pen's width falls under this much of the tool's end across
+EMPTY_UP_M = 0.025         # the reference still: the pen this far over the park, out of the search's window
+MOVED_WINDOW_M = (0.016, 0.010, 0.010)   # find_tip_moved's window over, under and across the prediction
+MOVED_MIN = 18.0           # a change in colour under this (0-441) is not the pen
+MOVED_GROW_K = 4.0         # ... unless it joins the pen's sure change and stands this many noises over the median:
+                           # a dark tube in a dim room changed 20-25 over a speckled one (2026-10-22, the region broke)
+MOVED_NEEDLE_M = 0.00015   # the needle's group is ~0.3 mm across; a changed row narrower than half that is not it
+MOVED_END_M = 0.0004       # its middle across over this much of its end
+AGREE_M = 0.004            # two finders that see the pen's end stand within this along it (pick_end)
+BALL_SEEN_M = 0.0005       # the park's still shows the ball's top within this of the lifted still's (Sweep.first)
+TIP_BY = {"focus": "", "change": ", by its change against the lifted still", "contrast": ", by the metal's contrast"}
 YAWS_DEG = tuple(range(-180, 180, 15))
 SETTLE_S = 1.0
 BALL_CLEAR_M = 0.003      # planned: each hold keeps the tool's envelope this far off the fix's ball
@@ -180,6 +208,116 @@ def find_park_tip(image, near, down, px) -> np.ndarray | None:
     return None
 
 
+def _in_focus(strip, px):
+    """The strip's in-focus regions (cv2.connectedComponentsWithStats: count, labels, stats): where its grey stands
+    off its own 0.15 mm blur well over the strip's median, closed over 9 px. The lens is focused at the ball, so the
+    ball, its stylus and a pen over it are sharp and the room behind them is not."""
+    import cv2
+
+    grey = strip.mean(axis=2)
+    sharp = cv2.GaussianBlur(np.abs(grey - cv2.GaussianBlur(grey, (0, 0), 0.00015 * px)), (0, 0), 2.0)
+    level = float(np.median(sharp)) + 6.0 * max(0.5, 1.4826 * float(np.median(np.abs(sharp - np.median(sharp)))))
+    on = cv2.morphologyEx((sharp > level).astype(np.uint8), cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(on, connectivity=8)
+    return count, labels, stats
+
+
+def find_tip_sharp(image, near, down, px, end_m: float) -> np.ndarray | None:
+    """The pen's working tip (u, v) by what is in focus about the prediction `near`, the pen running along `down`:
+    the sharp region entering MOVED_WINDOW_M's top, its lowest row at least `end_m` across (the tool's end, not a
+    needle standing out of it: on 2026-10-22 the 3RL's tube read 1.3 mm across in focus, its needle 0.3-0.7 mm),
+    averaged across over that row's last 0.3 mm. A blurred lamp, screen or person behind the station never stands
+    sharp there. None without one."""
+    import cv2
+
+    up, below, half = MOVED_WINDOW_M
+    strip, s, w, across = _strip(image, near, down, px, up, below, half)
+    count, labels, stats = _in_focus(strip, px)
+    entering = [k for k in range(1, count) if stats[k, cv2.CC_STAT_TOP] <= 2]
+    if not entering:
+        return None
+    pen = labels == max(entering, key=lambda k: stats[k, cv2.CC_STAT_AREA])
+    rows = np.flatnonzero(pen.sum(axis=1) >= end_m * px)
+    if not len(rows) or rows[-1] >= len(s) - 2:
+        return None                      # nothing as wide as the end, or the pen runs out of the window's foot
+    low = rows[-1]
+    end = (s > s[low] - 0.0003 * px) & (s <= s[low])
+    cols = np.nonzero(pen[end])[1]
+    return np.asarray(near, float) + s[low] * np.asarray(down, float) / np.linalg.norm(down) + \
+        float(np.mean(w[cols])) * across
+
+
+def find_tip_moved(image, empty, near, down, px) -> np.ndarray | None:
+    """The pen's working tip (u, v) by what the pen itself changes: the still against `empty`, taken from the same
+    camera with the pen EMPTY_UP_M higher, so the background (lamps, ink caps, the ball, a clear cartridge's glare)
+    cancels. Searched MOVED_WINDOW_M about the prediction `near`, the pen running along `down`: the changed region
+    (grown from the sure change through the weaker, MOVED_GROW_K) entering the window's top, its lowest point along the pen (where the changed width falls under the needle's),
+    averaged across over the last MOVED_END_M. On 2026-10-13 find_tip took a lamp's blur and empty air under a clear
+    11RL tube for the tip, 2.6-7 mm off; this does not look for a metal tip's contrast at all. None without one."""
+    import cv2
+
+    up, below, half = MOVED_WINDOW_M
+    a, s, w, across = _strip(image, near, down, px, up, below, half)
+    b, _, _, _ = _strip(empty, near, down, px, up, below, half)
+    diff = np.linalg.norm(cv2.GaussianBlur(a, (0, 0), 2.0) - cv2.GaussianBlur(b, (0, 0), 2.0), axis=2)
+    median = float(np.median(diff))
+    noise = max(1.0, 1.4826 * float(np.median(np.abs(diff - median))))
+    sure = diff > max(MOVED_MIN, median + 8.0 * noise)
+    on = cv2.morphologyEx((sure | (diff > median + MOVED_GROW_K * noise)).astype(np.uint8), cv2.MORPH_OPEN,
+                          np.ones((3, 3), np.uint8))
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(on, connectivity=8)
+    seeded = np.isin(np.arange(count), labels[sure])
+    entering = [k for k in range(1, count) if stats[k, cv2.CC_STAT_TOP] <= 2 and seeded[k]]
+    if not entering:
+        return None
+    pen = labels == max(entering, key=lambda k: stats[k, cv2.CC_STAT_AREA])
+    width = pen.sum(axis=1)
+    rows = np.flatnonzero(width >= MOVED_NEEDLE_M * px)
+    if not len(rows) or rows[-1] >= len(s) - 2:
+        return None                      # nothing as wide as the needle, or the pen runs out of the window's foot
+    low = rows[-1]
+    end = (s > s[low] - MOVED_END_M * px) & (s <= s[low])
+    cols = np.nonzero(pen[end])[1]
+    return np.asarray(near, float) + s[low] * np.asarray(down, float) / np.linalg.norm(down) + \
+        float(np.mean(w[cols])) * across
+
+
+def pick_end(sharp, moved, contrast, down, px) -> tuple[np.ndarray, str]:
+    """The pen's end and its finder from find_tip_sharp's and find_tip_moved's: the one in focus within AGREE_M of the
+    change's (a tube's end and its needle's, 0.5-2.5 mm apart), else the one find_tip's `contrast` agrees with, else
+    the lower. Each region stops where the pen's breaks, 6-16 mm high (2026-10-22: a dark tube in a dim room, the
+    3RL's clear grip in daylight), and one that runs on past the pen finds none."""
+    unit = np.asarray(down, float) / np.linalg.norm(down)
+    ends = {"focus": sharp, "change": moved}
+    along = {how: float(np.dot(end, unit)) / px for how, end in (*ends.items(), ("contrast", contrast)) if end is not None}
+    if abs(along["focus"] - along["change"]) <= AGREE_M:
+        return sharp, "focus"
+    how = next((how for how in ends if "contrast" in along and abs(along[how] - along["contrast"]) <= AGREE_M),
+               max(ends, key=along.get))
+    return ends[how], how
+
+
+def find_ball_top_sharp(image, near, down, px) -> np.ndarray | None:
+    """The probe ball's top (u, v) by its predicted centre `near` from what is in focus: the lens is focused on the
+    ball, so the ball and its stylus are the sharp blob standing up from the window's foot, whatever the blurred
+    background behind (a blown-out lamp hid them from find_ball_top's colour contrast, 2026-10-13); its top row as
+    the middle across of its top half millimetre. None without one as wide as the ball.""" 
+    import cv2
+
+    strip, s, w, across = _strip(image, near, down, px, 0.008, 0.006, 0.004)
+    count, labels, stats = _in_focus(strip, px)
+    standing = [k for k in range(1, count) if stats[k, cv2.CC_STAT_TOP] + stats[k, cv2.CC_STAT_HEIGHT] >= len(s) - 2]
+    if not standing:
+        return None
+    blob = labels == max(standing, key=lambda k: stats[k, cv2.CC_STAT_AREA])
+    top = int(np.flatnonzero(blob.any(axis=1))[0])
+    if top == 0 or not (blob.sum(axis=1) >= 0.0008 * px).any():
+        return None                      # the blob runs out of the window's top, or nothing is as wide as the ball
+    cols = np.nonzero(blob[top:top + round(0.0005 * px)])[1]
+    return np.asarray(near, float) + s[top] * np.asarray(down, float) / np.linalg.norm(down) + \
+        float(np.mean(w[cols])) * across
+
+
 def find_ball_top(image, near, down, px) -> np.ndarray | None:
     """The probe ball's top (u, v) by its predicted centre `near`: where the ball (its dark rim, its highlight) and
     the stylus under it begin to stand out over 0.4 mm of the columns about their middle, under whatever glow the
@@ -222,6 +360,21 @@ class BallMark:
         return np.array([i + _vertex(score[j, i - 1:i + 2]) - self.m, j + _vertex(score[j - 1:j + 2, i]) - self.m])
 
 
+def mark(image, path: Path, found, near, px) -> None:
+    """A crop of the still about the prediction with the tip found (green) and the prediction (red), kept in the
+    run so anyone can see what was measured."""
+    import cv2
+
+    r = round(0.012 * px)
+    x, y = (int(v) for v in near)
+    crop = image[max(0, y - r):y + r, max(0, x - r):x + r].copy()
+    origin = np.array([max(0, x - r), max(0, y - r)])
+    cv2.drawMarker(crop, tuple(int(v) for v in np.asarray(near) - origin), (0, 0, 255), cv2.MARKER_CROSS, 40, 3)
+    if found is not None:
+        cv2.circle(crop, tuple(int(v) for v in np.asarray(found) - origin), 12, (0, 255, 0), 3)
+    cv2.imwrite(str(path), cv2.resize(crop, (800, 800 * crop.shape[0] // max(1, crop.shape[1]))))
+
+
 def _grey(image):
     return image.astype(np.float32).mean(axis=2)
 
@@ -232,24 +385,30 @@ def _vertex(three) -> float:
 
 
 # --- the fit ------------------------------------------------------------------------------------
-def fit(mounts, uv, tip0, camera: Camera, free: bool = True):
-    """The tip in the tool mount (x and y, its length held at tip0's; or tip0 itself unless `free`) and the camera
-    (turned and moved from `camera`), by least squares over every still's tip: FK(q)·tip through the pinhole. Returns
-    (tip, camera, misses in px, the tip's 1-sigma in m)."""
+def fit(mounts, uv, tip0, camera: Camera, free: bool = True, length: bool = False):
+    """The tip in the tool mount (x and y, its length held at tip0's unless `length`; or tip0 itself unless `free`)
+    and the camera (turned and moved from `camera`), by least squares over every still's tip: FK(q)·tip through the
+    pinhole. Returns (tip, camera, misses in px, the tip's 1-sigma in m, one per free component)."""
     tip0 = np.asarray(tip0, float)
+    n = (3 if length else 2) if free else 0
 
     def unpack(x):
-        return camera.moved(x[:6]), (np.array([x[6], x[7], tip0[2]]) if free else tip0)
+        return camera.moved(x[:6]), np.concatenate([x[6:6 + n], tip0[n:]])
 
     def residuals(x):
         cam, tip = unpack(x)
         return (cam.project(mounts[:, :3, :3] @ tip + mounts[:, :3, 3]) - uv).ravel()
 
-    result = least_squares(residuals, np.concatenate([np.zeros(6), tip0[:2] if free else []]), x_scale="jac")
+    result = least_squares(residuals, np.concatenate([np.zeros(6), tip0[:n]]), x_scale="jac")
     cam, tip = unpack(result.x)
     scale = float(result.fun @ result.fun) / max(1, result.fun.size - result.x.size)
     cov = np.linalg.pinv(result.jac.T @ result.jac) * scale
     return tip, cam, result.fun.reshape(-1, 2), np.sqrt(np.clip(np.diag(cov)[6:], 0.0, None))
+
+
+def measures_length(rows) -> bool:
+    """Whether stills `rows` see the tip's length: two tilts or more (the module's note)."""
+    return sum(row["kind"] == "tilt" for row in rows) >= 2
 
 
 def gap(camera: Camera, tip_m, tip_px, top_px) -> float:
@@ -278,15 +437,20 @@ class Sweep:
     """One run's holds and stills; the Calibration supplies the rig, the way checks and the records."""
 
     def __init__(self, cal: program.Calibration, fix: station.StationFix, tool: str, station_path: str = "",
-                 ask=ask_still):
+                 ask=ask_still, yaw_deg: float | None = None, overhead: station.StationFix | None = None):
         self.cal, self.fix, self.tool, self.station_path, self.ask = cal, fix, tool, station_path, ask
+        self.overhead = overhead or fix   # the fresh fix, before program.touched_fix moved it onto the touch
+        self.stated_yaw = yaw_deg
         self.kin = cal.kin
         self.camera = nominal_camera(fix.base_from_palette, cal.repo / "urdf" / "palette.urdf")
         self.tip0 = np.asarray(cal.tip0, float)
         self.holds: list[dict] = []
         self.offset = np.zeros(2)        # the park's tip as seen less where the nominal camera puts it
         self.mark = self.top = None      # the ball's patch (BallMark) and its top in the park's still
+        self.empty = None                # the still with the pen EMPTY_UP_M over the park (find_tip_moved)
         self.yaw, self.q_park = 0.0, None
+        envelope = cal.halo.envelope   # ((h, r), ...) up from the end: its first radius is the end's own
+        self.end_m = END_FRACTION * 2.0 * (envelope[0][1] if envelope else cal.halo.wall_radius_m)
 
     def mount(self, q) -> np.ndarray:
         return self.kin.frame(np.asarray(q, float), f"{self.cal.arm}/tool_mount")
@@ -311,8 +475,8 @@ class Sweep:
         return float(np.linalg.svd((rows - rows.mean(axis=0)).reshape(-1, 2), compute_uv=False)[-1])
 
     def yaws(self) -> list[float]:
-        """The yaws the arm parks at from rest with the planner's joint margin, its wrist clear of the posts, the
-        other arm and the station (reach._margin), and joint 6 inside its limits through the turns; best seen
+        """The yaws the arm parks at from rest with the planner's joint margin, its wrist clear of the posts and the
+        station (reach._margin), and joint 6 inside its limits through the turns; best seen
         first."""
         from tatbot_session import ready
 
@@ -321,18 +485,21 @@ class Sweep:
         ranked = []
         for yaw in YAWS_DEG:
             pose = self.park_pose(yaw)
-            if reach._margin(self.kin, pose, self.cal.bodies, self.cal.posts, self.cal.guard, self.cal.arm,
-                             self.cal.station_clear) < margin:
+            if reach._margin(self.kin, pose, self.cal.bodies, self.cal.posts, self.cal.station_clear) < margin:
                 continue
             q = ready.solve_ik_seeded(self.kin, pose, reach.REST)
             if lower <= q[5] + math.radians(min(TURNS_DEG)) and q[5] + math.radians(max(TURNS_DEG)) <= upper:
                 ranked.append((self.seen(q), yaw))
-        return [yaw for _, yaw in sorted(ranked, reverse=True)]
+        best = [yaw for _, yaw in sorted(ranked, reverse=True)]
+        # a stated yaw goes first: the ranking knows the geometry, not the lens's focus (2026-10-07: the 3RL ranked
+        # -45 deg put the camera 163 mm off and lost the tip in four turns; 0 deg, 134 mm, fitted it on 10-05)
+        return best if self.stated_yaw not in best else [self.stated_yaw] + [y for y in best if y != self.stated_yaw]
 
     def move(self, label: str, pose: np.ndarray) -> None:
         """One probe-guarded move, refused (RuntimeError, nothing sent) when the tool's envelope would meet a station
         part on the executor's way (up, across, down) or stand within BALL_CLEAR_M of the fix's ball, or the way fails
-        Calibration.way_check (no plan, the floor, the other arm, the camera's post, the arm against the station)."""
+        Calibration.way_check (no plan, the floor, the arm against itself, the camera's post, the arm against the
+        station)."""
         here = self.kin.fk(self.cal.rig.joints())[:3, 3]
         top = max(here[2], pose[2, 3] + self.cal.clearance_m)
         way = [here, np.array([here[0], here[1], top]), np.array([pose[0, 3], pose[1, 3], top]), pose[:3, 3]]
@@ -397,8 +564,8 @@ class Sweep:
                "q_moved_rad": float(np.max(np.abs(after - before)[:6])), "still": path.name, **self.look(path, q)}
         self.holds.append(row)
         self.cal.log("holds.jsonl", row)
-        self.cal.say(f"{label}: the tip " + (f"at {np.round(row['tip_px'], 1).tolist()} px" if row["tip_px"]
-                                             else "not found"))
+        self.cal.say(f"{label}: the tip " + (f"at {np.round(row['tip_px'], 1).tolist()} px{TIP_BY[row['tip_by']]}"
+                                             if row["tip_px"] else "not found"))
         return row
 
     def look(self, path: Path, q) -> dict:
@@ -410,26 +577,61 @@ class Sweep:
             raise RuntimeError(f"{path.name}: not a {SIZE[0]} x {SIZE[1]} still")
         tip, axis = self.tip(q), self.mount(q)[:3, 2]
         near, up = self.camera.project([tip, tip - 0.005 * axis]) + self.offset
-        px = self.camera.f / self.camera.depth(tip)
-        found = find_tip(image, near, near - up, px) if self.holds else find_park_tip(image, near, near - up, px)
+        px, down = self.camera.f / self.camera.depth(tip), near - up
+        found, how = find_tip_sharp(image, near, down, px, self.end_m), "focus"
+        moved = find_tip_moved(image, self.empty, near, down, px) if self.empty is not None else None
+        contrast = find_tip(image, near, down, px) if self.holds else find_park_tip(image, near, down, px)
+        if found is not None and moved is not None:
+            found, how = pick_end(found, moved, contrast, down, px)
+        elif found is None and self.empty is not None:
+            found, how = moved, "change"
+        elif found is None:
+            found, how = contrast, "contrast"
+        mark(image, path.with_name("marked-" + path.name), found, near, px)
         if not self.holds:
             if found is None:
                 raise RuntimeError(f"{path.name}: the palette camera does not see the pen's tip at the park")
             self.first(image, found - near, px)
         shift = self.mark.shift(image) if self.mark is not None else None
-        return {"tip_px": None if found is None else found.tolist(),
+        return {"tip_px": None if found is None else found.tolist(), "tip_by": None if found is None else how,
                 "shift_px": None if shift is None else shift.tolist()}
+
+    def take_empty(self, park: np.ndarray) -> None:
+        """The reference still: the pen EMPTY_UP_M over the park, everything else as it will stand."""
+        import cv2
+
+        pose = park.copy()
+        pose[2, 3] += EMPTY_UP_M
+        self.move("empty", pose)
+        self.cal.rig.spin(SETTLE_S)
+        path = self.cal.run.dir / "stills" / "empty.jpg"
+        path.parent.mkdir(exist_ok=True)
+        self.ask(path)
+        self.empty = cv2.imread(str(path))
+        self.move("park", park)
 
     def first(self, image, offset, px) -> None:
         """The park's still: where the tip stands off the nominal camera's prediction places the later stills'
         search; the ball's top there, the gap's reference and the drift's patch."""
         self.offset = offset
         centre, under = self.camera.project([self.fix.ball, self.fix.ball - [0.0, 0.0, 0.001]])
-        self.top = find_ball_top(image, centre, under - centre, self.camera.f / self.camera.depth(self.fix.ball))
+        ball_px = self.camera.f / self.camera.depth(self.fix.ball)
+
+        def top_in(still):
+            found = find_ball_top_sharp(still, centre, under - centre, ball_px)
+            return find_ball_top(still, centre, under - centre, ball_px) if found is None else found
+
+        self.top = top_in(image)
         if self.top is None:
             self.cal.say("park: the ball's top is not found: no drift is taken off, and the turns go on the planned "
                          "clearance")
             return
+        # A pen on the ball, or before it, is read for its top: 2.1 and 3.9 mm off the lifted still's on 2026-10-22,
+        # under station priors 9 mm off; 0.2 mm at most over 18 runs with the pen clear of it.
+        lifted = top_in(self.empty) if self.empty is not None else None
+        if lifted is not None and np.linalg.norm(self.top - lifted) > BALL_SEEN_M * ball_px:
+            raise RuntimeError(f"park: the ball's top {np.linalg.norm(self.top - lifted) / ball_px * 1000:.1f} mm from the "
+                               "lifted still's: the pen is on the ball or before it, so the station's prior is off")
         self.mark = BallMark(image, self.top, px)
         self.cal.say(f"park: the ball's top at {np.round(self.top, 1).tolist()} px")
 
@@ -463,6 +665,24 @@ class Sweep:
         for deg, pose in poses.items():
             self.hold(f"turn {deg:+d}", "turn", pose)
 
+    def tilted(self, park: np.ndarray, deg: float) -> np.ndarray:
+        """The park's pose turned `deg` about the camera's line of sight through the installed tip, which stays put."""
+        turn = Rotation.from_rotvec(math.radians(deg) * self.fix.base_from_palette[:3, 0]).as_matrix()
+        pose = park.copy()
+        pose[:3, :3] = turn @ park[:3, :3]
+        return pose
+
+    def tilts(self, park: np.ndarray) -> None:
+        """TILTS_DEG about the installed tip, once the park's still leaves a tip TIP_DOUBT_M off it room to swing
+        down that far."""
+        drop = TIP_DOUBT_M * math.sin(math.radians(max(abs(deg) for deg in TILTS_DEG)))
+        room = self.room()
+        if room is not None and room - drop < TURN_CLEAR_M:
+            raise RuntimeError(f"the park's still shows the tip {room * 1000:.1f} mm over the ball's top and a tilt may "
+                               f"take it {drop * 1000:.1f} mm lower, under {TURN_CLEAR_M * 1000:.0f} mm; no tilt sent")
+        for deg in TILTS_DEG:
+            self.hold(f"tilt {deg:+d}", "tilt", self.tilted(park, deg))
+
     def leak(self) -> np.ndarray:
         """What an error in the tip's length does to the fitted tip: (dx, dy) per metre of it. A turn cannot see the
         tip along joint 6's axis, n in the mount, so holding the length takes an error e along z as -e n_xy / n_z."""
@@ -474,22 +694,25 @@ class Sweep:
         """The fit over `rows`, and each turn left out: (the fit's record, held-out misses, tip moves), in metres."""
         mounts = np.array([self.mount(row["q"]) for row in rows])
         uv = np.array([np.subtract(row["tip_px"], row["shift_px"] or (0.0, 0.0)) for row in rows])
-        tip, camera, miss, sigma = fit(mounts, uv, self.tip0, self.camera)
+        length = measures_length(rows)
+        tip, camera, miss, sigma = fit(mounts, uv, self.tip0, self.camera, length=length)
         park = rows[0]
         px = camera.f / camera.depth(self.tip(park["q"], tip))
         held, moved = {}, {}
-        for i in (i for i, row in enumerate(rows) if row["kind"] == "turn"):
+        for i in (i for i, row in enumerate(rows) if row["kind"] in ("turn", "tilt")):
             keep = np.arange(len(rows)) != i
-            t, cam, _, _ = fit(mounts[keep], uv[keep], self.tip0, camera)
+            t, cam, _, _ = fit(mounts[keep], uv[keep], self.tip0, camera,
+                               length=measures_length([rows[k] for k in np.flatnonzero(keep)]))
             held[rows[i]["label"]] = float(np.linalg.norm(cam.project(self.tip(rows[i]["q"], t))[0] - uv[i]) / px)
             moved[rows[i]["label"]] = float(np.linalg.norm(t - tip))
         turned = np.array([row["q"][:5] for row in rows if row["kind"] == "turn"]) - np.asarray(park["q"][:5])
         out = {"tip_m": tip.tolist(), "rms_m": {"image": float(np.sqrt(np.mean(np.sum(miss ** 2, axis=1)))) / px},
-               "sigma": {"tip_m": [*sigma.tolist(), 0.0]}, "length_leak": self.leak().tolist(), "px_per_m": px,
+               "sigma": {"tip_m": np.pad(sigma, (0, 3 - len(sigma))).tolist()}, "length_measured": length,
+               "length_leak": self.leak().tolist(), "px_per_m": px,
                "camera_m": float(np.linalg.norm(camera.R.T @ camera.T + self.tip(park["q"], tip))),
                "drift_px": max([float(np.hypot(*row["shift_px"])) for row in rows if row["shift_px"]], default=None),
                "joints_1_5_moved_rad": float(np.max(np.abs(turned))), "yaw_deg": self.yaw,
-               "stills": {kind: sum(row["kind"] == kind for row in rows) for kind in ("park", "shift", "turn")}}
+               "stills": {kind: sum(row["kind"] == kind for row in rows) for kind in ("park", "shift", "turn", "tilt")}}
         if self.top is not None and park["kind"] == "park":
             out["gap_m"] = gap(camera, self.tip(park["q"], tip), park["tip_px"], self.top)
             out["ball_top_z_m"] = float(self.tip(park["q"], tip)[2]) - out["gap_m"]
@@ -516,10 +739,43 @@ class Sweep:
     def run(self) -> int:
         program._preflight(self.cal)
         park = self.park()
+        self.take_empty(park)
         self.still("park", "park", park)
         self.shifts(park)
         self.turns()
+        self.tilts(park)
         return self.write()
+
+    def height(self) -> int:
+        """The station touch's ball height from one still at the park: the tip over the ball's top as the palette
+        camera sees them, under the tcp the arm commands. A needle cartridge's touch never measures it (its edge
+        passes do not trip: S1 settles a fixed depth under the overhead's guess, 3-8 mm high), and the dips aimed by
+        it went too deep (operator, 2026-10-13). Read through the commanded tcp, the height holds whatever the tcp's
+        length gets wrong: the dip commands the same tcp. Writes the arm's station touch with that height, unless no
+        later reader would take it (3; on 2026-10-22 a misread tip set it 12.1 mm low, refused only by the gauge)."""
+        program._preflight(self.cal)
+        park = self.park()
+        self.take_empty(park)
+        row = self.still("park", "park", park)
+        if self.top is None:
+            self.cal.say("height: the palette camera does not see the ball's top; the touch keeps its height")
+            return 1
+        q = np.asarray(row["q"], float)
+        top_z = float(self.tip(q)[2]) - gap(self.camera, self.tip(q), row["tip_px"], self.top)
+        touch = station.load_touch(self.cal.arm)
+        before = float(touch.ball[2])
+        touch.ball = np.array([touch.ball[0], touch.ball[1], top_z - halo.BALL_RADIUS_M])
+        off = float(touch.ball[2] - self.overhead.ball[2])
+        if abs(off) > station.FIX_HEIGHT_CAMERA_M:   # the limit every reader of the touch holds it to
+            self.cal.say(f"height: refused: the ball {off * 1000:+.1f} mm from the overhead fix's, past "
+                         f"{station.FIX_HEIGHT_CAMERA_M * 1000:.0f}: the tip or the ball misread, or the registration off")
+            return 3
+        touch.height_source = f"the palette camera, {self.cal.run.dir.name} (the tip{TIP_BY[row['tip_by']] or ', in focus'})"
+        touch.write(self.cal.run.dir / "station-touch.json")
+        touch.write()
+        self.cal.say(f"height: the ball's top at z {top_z * 1000:.2f} mm by the palette camera; the station touch's "
+                     f"ball moved {(touch.ball[2] - before) * 1000:+.2f} mm to it")
+        return 0
 
 
 def _report(run: str, arm: str, out: dict, held: dict, moved: dict, tip0) -> str:
@@ -529,21 +785,24 @@ def _report(run: str, arm: str, out: dict, held: dict, moved: dict, tip0) -> str
     tip, sig, leak = np.asarray(out["tip_m"]), out["sigma"]["tip_m"], out["length_leak"]
     stills = out["stills"]
     lines = [f"# Tip from the joint-6 sweep ({run})", "",
-             f"- stills: the park, {stills['shift']} shifts and {stills['turn']} turns of joint 6 at yaw "
-             f"{out['yaw_deg']:+.0f} deg; the image misses by rms {mm(out['rms_m']['image']):.3f} mm at the tip "
+             f"- stills: the park, {stills['shift']} shifts, {stills['turn']} turns of joint 6 and {stills['tilt']} "
+             f"tilts about the installed tip at yaw {out['yaw_deg']:+.0f} deg; the image misses by rms "
+             f"{mm(out['rms_m']['image']):.3f} mm at the tip "
              f"({out['px_per_m'] / 1000:.1f} px/mm, the camera {mm(out['camera_m']):.0f} mm away)",
              f"- tip across its axis in the tool mount: ({mm(tip[0]):.3f}, {mm(tip[1]):.3f}) mm +- ({mm(sig[0]):.3f}, "
              f"{mm(sig[1]):.3f}); installed ({mm(tip0[0]):.3f}, {mm(tip0[1]):.3f}): moved ({mm(tip[0] - tip0[0]):+.3f}, "
              f"{mm(tip[1] - tip0[1]):+.3f}) mm",
-             f"- along its axis it stays {mm(tip0[2]):.3f} mm: the turns cannot see the tip along joint 6's axis, so a "
-             f"length error of 1 mm reads here as ({leak[0]:+.2f}, {leak[1]:+.2f}) mm",
-             "- each turn left out: misses by (mm) " + ", ".join(f"{k} {mm(v):.3f}" for k, v in held.items()),
-             f"- each turn left out moves the tip by up to {mm(max(moved.values())):.3f} mm",
+             (f"- along its axis, measured by the tilts: {mm(tip[2]):.3f} mm +- {mm(sig[2]):.3f}; installed "
+              f"{mm(tip0[2]):.3f}: moved {mm(tip[2] - tip0[2]):+.3f} mm" if out["length_measured"] else
+              f"- along its axis it stays {mm(tip0[2]):.3f} mm: the turns cannot see the tip along joint 6's axis, so a "
+              f"length error of 1 mm reads here as ({leak[0]:+.2f}, {leak[1]:+.2f}) mm"),
+             "- each turn and tilt left out: misses by (mm) " + ", ".join(f"{k} {mm(v):.3f}" for k, v in held.items()),
+             f"- each left out moves the tip by up to {mm(max(moved.values())):.3f} mm",
              f"- joints 1-5 moved up to {mm(out['joints_1_5_moved_rad']):.2f} mrad over the turns (measured); the ball's "
              "patch drifted " + ("unseen" if out["drift_px"] is None else f"up to {out['drift_px']:.1f} px")]
     if "gap_m" in out:
         lines.append(f"- at the park the tip stood {mm(out['gap_m']):.2f} mm over the ball's top: the top at z "
-                     f"{mm(out['ball_top_z_m']):.2f} mm in the base through the fitted tip and the installed length")
+                     f"{mm(out['ball_top_z_m']):.2f} mm in the base through the fitted tip")
     return "\n".join([*lines, "", f"Adopt with `tatbot ros calib apply --arm {arm} --run {run}`."]) + "\n"
 
 
@@ -564,7 +823,6 @@ def equip(cal: program.Calibration, fix: station.StationFix, motion: dict) -> No
 def run(args) -> int:
     from tatbot_description import repo_root, robot_description
     from tatbot_motion import Kinematics, load_motion
-    from tatbot_session.lease import PaletteLease
 
     repo = repo_root(None)
     try:
@@ -583,11 +841,13 @@ def run(args) -> int:
                                  attach_logging=False, argv=["tatbot_calib", "sweep", "--arm", args.arm])
     cal = program.Calibration(None, run_log, repo, args.arm, halo_tip, 0.0, kin)
     equip(cal, fix, load_motion())
+    overhead, fix = fix, program.touched_fix(cal, fix, tool.tool_id)
+    program.place_station(cal, fix)
     cal.rig, code = program.Rig(args.arm), 1
     try:
-        with PaletteLease(program.palette_zone(repo, args.arm, fix, run_log.dir.name)):
-            code = Sweep(cal, fix, tool.tool_id, args.station).run()
-    except RuntimeError as error:   # a refusal, a failed goal, or the palette held by the other arm's run
+        sweep = Sweep(cal, fix, tool.tool_id, args.station, yaw_deg=args.yaw, overhead=overhead)
+        code = sweep.height() if args.height else sweep.run()
+    except RuntimeError as error:   # a refusal or a failed goal
         cal.say(f"stopped: {error}")
     finally:
         if not program._latched(cal):   # lifted and landed; a latched arm stays where it holds
@@ -605,6 +865,10 @@ def main(argv=None) -> int:
     parser.add_argument("--station", required=True, help="this run's station.json (tatbot ros station)")
     parser.add_argument("--run-started", type=float, required=True, help="epoch seconds this run began")
     parser.add_argument("--max-age-s", type=float, default=station.MAX_AGE_S)
+    parser.add_argument("--height", action="store_true",
+                        help="only the station touch's ball height, from the park's still (Sweep.height)")
+    parser.add_argument("--yaw", type=float, default=None,
+                        help="park at this yaw (deg, a multiple of 15) when the arm reaches it; the best seen otherwise")
     return run(parser.parse_args(argv))
 
 

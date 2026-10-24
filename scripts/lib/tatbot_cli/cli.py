@@ -25,7 +25,6 @@ from tatbot_cli import (
     nodes,
     rig,
 )
-from tatbot_cli.aliases import AliasError, for_command, translate
 from tatbot_cli.audience import visible as is_visible
 from tatbot_cli.metadata import operation_effects, output_capability, requirements
 from tatbot_cli.registry import (
@@ -179,15 +178,6 @@ def parse_globals(argv: list[str]) -> tuple[dict, str | None, list[str]]:
             break
         i += 1
     rest = list(argv[i + 1:]) if noun else []
-    try:
-        rest, deprecations = translate(noun, rest, BARE_GLOBALS, explain=g["explain"])
-    except AliasError as exc:
-        # These legacy sim selectors own no JSON option. A trailing --json
-        # still selects structured usage output, even when translation refuses.
-        head = rest[:rest.index("--")] if "--" in rest else rest
-        if "--json" in head:
-            _JSON_OUTPUT.set(True)
-        raise UsageError(str(exc)) from exc
     head, tail = split_dashdash(rest)
     kept: list[str] = []
     ownership_error = None
@@ -202,32 +192,10 @@ def parse_globals(argv: list[str]) -> tuple[dict, str | None, list[str]]:
         action = parser._option_string_actions.get(key) if parser else None
         if action is not None:
             kept.append(token)
-            j += 1
-            count = action.nargs
-            if count != 0 and not equal:
-                if count is None:
-                    count = 1
-                if isinstance(count, int):
-                    # argparse will report a missing/invalid value; globals
-                    # never get to steal a declared option's operand.
-                    consumed = 0
-                    for _ in range(count):
-                        if j >= len(head) or head[j].startswith("--"):
-                            break
-                        kept.append(head[j])
-                        j += 1
-                        consumed += 1
-                    if consumed < count:
-                        ownership_error = f"{key} needs {count} value(s) before the next option"
-                elif count in ("?", "*", "+"):
-                    start = j
-                    while j < len(head) and not head[j].startswith("-"):
-                        kept.append(head[j])
-                        j += 1
-                        if count == "?":
-                            break
-                    if count == "+" and start == j:
-                        ownership_error = f"{key} needs a value before the next option"
+            operands, error = ([], None) if equal else _option_operands(action, key, head, j + 1)
+            kept += operands
+            j += 1 + len(operands)
+            ownership_error = error or ownership_error
             continue
         if key in VALUED_GLOBALS:
             if not equal:
@@ -245,19 +213,45 @@ def parse_globals(argv: list[str]) -> tuple[dict, str | None, list[str]]:
             g[SWITCH_GLOBALS[token]] = True
         else:
             kept.append(token)
-            if parser:
-                sub = next((a for a in parser._actions if isinstance(a, argparse._SubParsersAction)), None)
-                if sub and token in sub.choices:
-                    parser = sub.choices[token]
-                    remainder = _is_remainder_passthrough(parser)
+            chosen = _subcommand(parser, token)
+            if chosen is not parser:
+                parser, remainder = chosen, _is_remainder_passthrough(chosen)
         j += 1
     if ownership_error and not g["explain"] and not g["help"] and not {"-h", "--help"}.intersection(head):
         raise UsageError(ownership_error)
     globals_, routing = _global_tokens(g)
     g["invocation"] = Invocation(list(argv), globals_, ([noun] if noun else []) + kept, tail,
-                                 routing_tokens=routing, has_passthrough="--" in rest,
-                                 deprecations=deprecations)
+                                 routing_tokens=routing, has_passthrough="--" in rest)
     return g, noun, kept + (["--", *tail] if "--" in rest else [])
+
+
+def _option_operands(action: argparse.Action, key: str, head: list[str],
+                     j: int) -> tuple[list[str], str | None]:
+    """The operands a declared option takes from head[j:], and the ownership
+    error when it is short of them. argparse reports a missing or invalid value
+    later; globals never get to steal a declared option's operand."""
+    count = 1 if action.nargs is None else action.nargs
+    if isinstance(count, int):
+        taken = []
+        while len(taken) < count and j + len(taken) < len(head) and not head[j + len(taken)].startswith("--"):
+            taken.append(head[j + len(taken)])
+        return taken, (f"{key} needs {count} value(s) before the next option" if len(taken) < count else None)
+    if count not in ("?", "*", "+"):
+        return [], None
+    taken = []
+    while j + len(taken) < len(head) and not head[j + len(taken)].startswith("-"):
+        taken.append(head[j + len(taken)])
+        if count == "?":
+            break
+    return taken, (f"{key} needs a value before the next option" if count == "+" and not taken else None)
+
+
+def _subcommand(parser, token: str):
+    """The subparser `token` selects under `parser`, else `parser` itself."""
+    if not parser:
+        return parser
+    sub = next((a for a in parser._actions if isinstance(a, argparse._SubParsersAction)), None)
+    return sub.choices[token] if sub and token in sub.choices else parser
 
 
 def _is_remainder_passthrough(parser) -> bool:
@@ -289,8 +283,8 @@ def _attach(parser: argparse.ArgumentParser, entries: list[tuple[list[str], Verb
             show_all: bool = False) -> None:
     """Build (possibly nested) subparsers from verb names split on spaces.
 
-    A token can be both a verb and a prefix (`ink session` shows the session,
-    `ink session start` opens one): the leaf becomes the parser's default and
+    A token can be both a verb and a prefix (bare `ink -- …` passes through,
+    `ink status` reads): the leaf becomes the parser's default and
     its sub-verbs are optional. Subparser defaults win over the parent's, so a
     named sub-verb still resolves to itself.
 
@@ -303,11 +297,6 @@ def _attach(parser: argparse.ArgumentParser, entries: list[tuple[list[str], Verb
         v = leaves[0]
         v.argument_spec.install(parser)
         parser.set_defaults(_verb=v)
-        aliases = for_command(v.name)
-        if aliases:
-            parser.epilog = (parser.epilog or "") + "\nDeprecated compatibility forms:\n" + "\n".join(
-                "  tatbot " + a.source + " -> tatbot " + a.canonical_form for a in aliases
-            )
         if not deeper:
             return
     sub = parser.add_subparsers(dest="_sub", metavar="<verb>")
@@ -427,7 +416,6 @@ def _home_relative(arg: str) -> str:
 
 def print_plan(ctx: Ctx, v: Verb, plan: Plan, *, hop_to: str | None = None,
                launch_id: str | None = None, ns=None, passthrough=()) -> None:
-    _warn_deprecations(ctx)
     role = v.required_role(ns)
     role_note = ""
     if role:
@@ -439,7 +427,6 @@ def print_plan(ctx: Ctx, v: Verb, plan: Plan, *, hop_to: str | None = None,
             "effects": operation_effects(v, ns, passthrough, plan=plan, remote=bool(hop_to)),
             "requirements": requirements(v, ns, passthrough, plan=plan, remote=bool(hop_to)),
             "passthrough": list(passthrough),
-            "deprecations": ctx.invocation.deprecations if ctx.invocation else [],
             "invocation": ctx.invocation.command_tokens if ctx.invocation else ctx.argv,
             "dry_run": True, "verb": v.name, "tier": v.tier, "node": ctx.node, "hop": hop_to,
             "role": role, "argv": plan.argv, "cwd": str(plan.cwd) if plan.cwd else None,
@@ -505,20 +492,18 @@ def tool_selection(ctx: Ctx, v: Verb, hop_to: str | None = None) -> dict | None:
 
 
 def print_explain(ctx: Ctx, v: Verb) -> None:
-    _warn_deprecations(ctx)
     nmap = nodes.load(ctx.repo)
     where = (nodes.nodes_with(nmap, v.role) if v.role
              else [v.role_for.describe] if v.role_for else ["any node"])
     if ctx.json:
         print(json.dumps({
             "schema": "tatbot.cli-explain/2", "effects": operation_effects(v), "requirements": requirements(v),
-            "output": v.output, "deprecations": ctx.invocation.deprecations if ctx.invocation else [],
+            "output": v.output,
             "audience": v.audience, "disposition": v.disposition,
             "verb": v.name, "tier": v.tier, "tier_meaning": TIER_MEANING[v.tier],
             "summary": v.summary, "role": v.role, "role_from": v.role_for.describe if v.role_for else None,
             "nodes": where, "gates": list(v.gates),
-            "needs_tool": v.needs_tool, "launch_id": v.launch_id,
-            "ink_hook": v.ink_hook, "passthrough": v.passthrough,
+            "needs_tool": v.needs_tool, "launch_id": v.launch_id, "passthrough": v.passthrough,
             "wraps": list(v.wraps), "doc": v.doc, "invariants": list(v.invariants),
             "example": f"tatbot {v.name} {shlex.join(v.example)}".strip(),
         }, indent=2))
@@ -532,9 +517,7 @@ def print_explain(ctx: Ctx, v: Verb) -> None:
         print(f"  gate       {g}")
     if v.launch_id:
         print("  launch id  automatic: minted on the arm node right before exec (also over --on), written to "
-              "/tmp/tatbot-arm-token, ledgered + audited by arm_gate (pid chain, SSH origin); --tag <label> adds a label")
-    if v.ink_hook:
-        print("  ink        --no-ink: no ink session, no stroke debit; the run is stamped tracking=false")
+              "/tmp/tatbot-arm-token, ledgered + audited by arm_gate (pid chain, SSH origin)")
     if v.passthrough:
         print(f"  after --   passes through to {v.passthrough}")
     if v.wraps:
@@ -560,10 +543,16 @@ def resolve_owner(nmap: dict, v: Verb, role: str, node: str, on: str | None):
     """
     owners = nodes.nodes_with(nmap, role)
     if v.routing == PREFER_LOCAL:
-        if node in owners:
-            return node, None, None
+        # An explicit --on is the operator's choice among the owners: it wins
+        # over this node, and naming a node without the role refuses rather
+        # than quietly running somewhere else.
         if on in owners:
             return on, None, None
+        if on is not None:
+            return (None, f"{v.name} needs role \"{role}\", which {on} does not hold",
+                    f"name one: tatbot --on <{'|'.join(owners)}> {v.name}" if owners else None)
+        if node in owners:
+            return node, None, None
         if len(owners) == 1:
             return owners[0], None, None
         if not owners:
@@ -619,6 +608,202 @@ def _admit(ctx: Ctx, v: Verb, ns: argparse.Namespace) -> tuple[str | None, int |
         return None, refuse(ctx, EXIT_WRONG_NODE, "node", str(error))
 
 
+def _route_to_owner(ctx: Ctx, v: Verb, nmap: dict, role: str) -> tuple[bool, int | None]:
+    """Point ctx.on at the owner of a role-declaring command. Returns (whether
+    the CLI chose a hop the operator did not type, exit code to stop with)."""
+    owner, reason, fix = resolve_owner(nmap, v, role, ctx.node, ctx.on)
+    if owner is None:
+        return False, refuse(ctx, EXIT_WRONG_NODE, "node", reason, fix)
+    if owner == ctx.node:
+        # An explicit --on naming this node is honoured by running here, not
+        # refused as an unnecessary self-hop.
+        ctx.on = None
+        return False, None
+    if ctx.no_hop:
+        return False, refuse(ctx, EXIT_WRONG_NODE, "node",
+                             f"{v.name} requires role {role}; refusing a second hop from {ctx.node}")
+    resolved, ctx.on = owner != ctx.on, owner
+    return resolved, None
+
+
+def _route(ctx: Ctx, v: Verb, nmap: dict, role: str | None) -> tuple[bool, int | None]:
+    """Settle ctx.on: the owner a role-declaring command routes itself to, or the
+    typed --on, validated. Runs before binding files or probing hardware, which
+    belong to the execution node; the remote CLI repeats validation, a hop is no
+    authority. Returns (whether the CLI chose the hop, exit code to stop with)."""
+    resolved = False
+    if v.auto_hop and role:
+        resolved, stop = _route_to_owner(ctx, v, nmap, role)
+        if stop is not None:
+            return False, stop
+    if not ctx.on:
+        return resolved, None
+    if v.needs_tool and (ctx.ee_tool or os.environ.get("TATBOT_EE_TOOL")) and gates.known_tools(ctx.repo):
+        # A typo is refused here rather than after an ssh, stated by flag or
+        # carried from TATBOT_EE_TOOL (which crosses the hop as --ee-tool); an
+        # omitted tool is deliberately NOT resolved: the owner's configuration decides.
+        _, _, err = gates.resolve_tool(ctx.repo, ctx.ee_tool)
+        if err:
+            return False, refuse(ctx, EXIT_GATE_REFUSED, "ee_tool", err, gates.FLAG_HINT)
+    if ctx.on not in nmap:
+        return False, _usage_error(f"unknown node '{ctx.on}' (known: {', '.join(nmap)})")
+    if role and role not in nodes.roles_of(nmap, ctx.on):
+        return False, refuse(ctx, EXIT_WRONG_NODE, "node", f"{ctx.on} does not own required role {role}")
+    if ctx.on == ctx.node:
+        ctx.on = None
+    return resolved, None
+
+
+def _hop(ctx: Ctx, v: Verb, ns: argparse.Namespace, passthrough: list[str], nmap: dict,
+         role: str | None, resolved: bool) -> int:
+    """Re-run this invocation on ctx.on over ssh: plan it, or exec it."""
+    # Autonomous motion hops too. The hop is `ssh -t`; the launch id is minted on
+    # the arm node right before exec and ledgered + audited by its arm_gate; what
+    # moves is the keyboard, not the e-stop operator, who stays at the rig.
+    if v.autonomous(ns) and v.launch_id and not ctx.quiet and not ctx.dry_run and not ctx.json:
+        print(f"tatbot: autonomous motion over --on {ctx.on}: the launch id is minted there right before "
+              "exec; the e-stop operator stays at the rig", file=sys.stderr)
+    if "checkout" in nmap[ctx.on] and nmap[ctx.on]["checkout"] is None:
+        return refuse(ctx, EXIT_USAGE, "node", f"{ctx.on} has no git checkout to run in",
+                      nmap[ctx.on].get("note"))
+    if not nodes.ssh_target(nmap, ctx.on):
+        return refuse(ctx, EXIT_WRONG_NODE, "node", f"{ctx.on} has no configured transport address")
+    invocation = ctx.invocation or parse_globals(ctx.argv)[0]["invocation"]
+    remote_argv = [_home_relative(a) for a in invocation.remote_tokens()]
+    notes = [f"remote exit code is returned as-is; run ids carry the node ({ctx.on})"]
+    carried = os.environ.get("TATBOT_EE_TOOL")
+    if v.needs_tool and not ctx.ee_tool and carried:
+        # Valued globals lead, which every released parser accepts.
+        remote_argv[:0] = ["--ee-tool", carried]
+        notes.append(f"TATBOT_EE_TOOL={carried} is carried over as an explicit --ee-tool")
+    elif v.needs_tool and not ctx.ee_tool:
+        notes.append(f"no tool stated: {ctx.on} resolves its own configured fitted tool")
+    if v.sync:
+        notes.append(f"the {ctx.on} checkout is fast-forwarded to origin/main first")
+    plan = Plan(argv=nodes.hop_argv(nmap, ctx.on, remote_argv, tty=v.tty or v.tier in MOTION_TIERS,
+                                    sync=v.sync),
+                notes=notes)
+    if ctx.dry_run:
+        print_plan(ctx, v, plan, hop_to=ctx.on, ns=ns, passthrough=passthrough)
+        return EXIT_OK
+    if ctx.json and output_capability(v, ns, passthrough) == "text":
+        return refuse(ctx, EXIT_USAGE, "output", f"{v.name} has text-only execution; use --dry-run --json")
+    if resolved:
+        routing_notice(ctx, v, ctx.on, role=role)
+    os.execvp(plan.argv[0], plan.argv)
+    return EXIT_OK  # unreachable outside tests that stub the exec
+
+
+def _rig_gate(ctx: Ctx, v: Verb, ns: argparse.Namespace, passthrough: list[str],
+              role: str | None) -> int | None:
+    """`tatbot rig sleep` switched the cameras and trackers off, so a motion or
+    sensor verb would only fail piecemeal; say why once. A read-only status
+    survives it, and a dry run only notes it."""
+    if v.noun == "rig":
+        return None
+    effects = set(operation_effects(v, ns, passthrough))
+    diagnostic = (v.verb == "status" and v.tier == OFFLINE and
+                  effects <= {"read_files", "network", "remote_exec"})
+    if not (v.tier in MOTION_TIERS or (role and role in rig.SLEEPING_ROLES and not diagnostic)):
+        return None
+    asleep = rig.asleep()
+    if not asleep:
+        return None
+    why = (f"the rig is asleep since {asleep.get('since')} "
+           f"(rig sleep {asleep.get('run_id')} from {asleep.get('by')})")
+    if not ctx.dry_run:
+        return refuse(ctx, EXIT_HW_UNREACHABLE, "rig", why, "tatbot rig wake")
+    print(f"tatbot: dry-run note (rig gate would refuse): {why}", file=sys.stderr)
+    return None
+
+
+def _motion_gates(ctx: Ctx, passthrough: list[str]) -> tuple[dict, int | None]:
+    """A motion verb refuses an E-stop override and needs a complete hardware
+    profile, resolved and validated before anything connects. A dry run only
+    plans, so it reports a profile problem instead of refusing (the public tree
+    has no default profile and must still --dry-run). Returns (the profile's
+    environment, exit code to stop with)."""
+    bad = gates.estop_overrides(passthrough)
+    if bad:
+        return {}, refuse(ctx, EXIT_GATE_REFUSED, "estop_guard",
+                          f"refusing E-stop override in a production launcher: {' '.join(bad)}",
+                          "use the lower-level component command for an intentional hardware-free bench run")
+    import tatbot_profile
+    try:
+        profile = tatbot_profile.load(ctx.repo)
+        perrs = tatbot_profile.hardware_errors(profile)
+        pwhy = (f"profile '{profile['name']}' cannot drive hardware: "
+                + "; ".join(perrs)) if perrs else None
+    except tatbot_profile.ProfileError as e:
+        profile, pwhy = None, str(e)
+    if pwhy:
+        if not ctx.dry_run:
+            return {}, refuse(ctx, EXIT_GATE_REFUSED, "profile", pwhy)
+        print(f"tatbot: dry-run note (profile gate would refuse): {pwhy}", file=sys.stderr)
+        return {}, None
+    return (tatbot_profile.env_exports(profile) if profile is not None else {}), None
+
+
+def _local_role(ctx: Ctx, v: Verb, nmap: dict, role: str | None) -> int | None:
+    """A command that stays here still needs its role here, unless --no-hop
+    (the remote side of a hop) says to warn and carry on."""
+    if not role or role in nodes.roles_of(nmap, ctx.node):
+        return None
+    if ctx.no_hop:
+        if not ctx.json:
+            print(f"tatbot: warning: {ctx.node} lacks role {role} (continuing: --no-hop)", file=sys.stderr)
+        return None
+    cands = nodes.nodes_with(nmap, role)
+    hint = f"tatbot --on {cands[0]} {shlex.join(ctx.argv)}" if cands else "no node in config/nodes.json has that role"
+    return refuse(ctx, EXIT_WRONG_NODE, "node",
+                  f"{v.name} needs role \"{role}\" — this node ({ctx.node}) has "
+                  f"[{', '.join(nodes.roles_of(nmap, ctx.node)) or 'no roles'}]", hint)
+
+
+def _prepare(ctx: Ctx, v: Verb, ns: argparse.Namespace) -> int | None:
+    if not v.prepare:
+        return None
+    try:
+        v.prepare(ctx, v, ns)
+    except UsageError as error:
+        # An impossible selection is the operator's typing, not a gate.
+        return _usage_error(str(error))
+    except (ValueError, KeyError, OSError) as error:
+        return refuse(ctx, EXIT_GATE_REFUSED, v.noun, str(error))
+    return None
+
+
+def _gate(ctx: Ctx, v: Verb, ns: argparse.Namespace, passthrough: list[str],
+          role: str | None) -> tuple[dict, int | None]:
+    """Gates the CLI can decide itself, in order; the launcher re-checks every
+    one of them. Returns (profile environment, exit code to stop with)."""
+    stop = _prepare(ctx, v, ns)
+    if stop is None:
+        stop = _rig_gate(ctx, v, ns, passthrough, role)
+    if stop is not None:
+        return {}, stop
+    profile_env = {}
+    if v.tier in MOTION_TIERS:
+        profile_env, stop = _motion_gates(ctx, passthrough)
+        if stop is not None:
+            return {}, stop
+    if v.needs_tool:
+        tool, source, err = gates.resolve_tool(ctx.repo, ctx.ee_tool, arm=v.tool_arm)
+        if err:
+            return {}, refuse(ctx, EXIT_GATE_REFUSED, "ee_tool", err, gates.FLAG_HINT)
+        # A read-only prepare hook may already have bound an authoritative
+        # identity (a saved session's recorded tool); keep whose it was.
+        ctx.ee_tool, ctx.tool_source = tool, ctx.tool_source or source
+    err = gates.tag_error(getattr(ns, "tag", None))
+    if err:
+        return {}, refuse(ctx, EXIT_USAGE, "tag", err)
+    if ctx.json and not ctx.dry_run and output_capability(v, ns, passthrough) == "text":
+        return {}, refuse(ctx, EXIT_USAGE, "output",
+                          f"{v.name} executes a text-only tool; JSON execution is unsupported",
+                          "use --dry-run --json or --explain --json, or run without global --json")
+    return profile_env, None
+
+
 def dispatch(ctx: Ctx, v: Verb, ns: argparse.Namespace, passthrough: list[str]) -> int:
     if ctx.explain:
         print_explain(ctx, v)
@@ -628,153 +813,17 @@ def dispatch(ctx: Ctx, v: Verb, ns: argparse.Namespace, passthrough: list[str]) 
     if stop is not None:
         return stop
     nmap = nodes.load(ctx.repo)
-
-    # Route before binding files or probing hardware: these belong to the
-    # execution node. The remote CLI repeats validation; a hop is no authority.
-    if v.auto_hop and role:
-        owner, reason, fix = resolve_owner(nmap, v, role, ctx.node, ctx.on)
-        if owner is None:
-            return refuse(ctx, EXIT_WRONG_NODE, "node", reason, fix)
-        if owner != ctx.node:
-            if ctx.no_hop:
-                return refuse(ctx, EXIT_WRONG_NODE, "node",
-                              f"{v.name} requires role {role}; refusing a second hop from {ctx.node}")
-            ctx.on = owner
-        else:
-            # The owner is this node. An explicit --on naming it is honoured by
-            # running here, not refused as an unnecessary self-hop.
-            ctx.on = None
-
-    # Node routing.
-    if ctx.on and v.needs_tool and (ctx.ee_tool or os.environ.get("TATBOT_EE_TOOL")) \
-            and gates.known_tools(ctx.repo):
-        # A typo is refused here rather than after an ssh, stated by flag or
-        # carried from TATBOT_EE_TOOL (which crosses the hop as --ee-tool); an
-        # omitted tool is deliberately NOT resolved: the owner's configuration decides.
-        _, _, err = gates.resolve_tool(ctx.repo, ctx.ee_tool)
-        if err:
-            return refuse(ctx, EXIT_GATE_REFUSED, "ee_tool", err, gates.FLAG_HINT)
+    resolved, stop = _route(ctx, v, nmap, role)
+    if stop is not None:
+        return stop
     if ctx.on:
-        if ctx.on not in nmap:
-            return _usage_error(f"unknown node '{ctx.on}' (known: {', '.join(nmap)})")
-        if role and role not in nodes.roles_of(nmap, ctx.on):
-            return refuse(ctx, EXIT_WRONG_NODE, "node", f"{ctx.on} does not own required role {role}")
-        if ctx.on == ctx.node:
-            ctx.on = None
-    if ctx.on:
-        # Autonomous motion hops too (operator decision 2026-09-02: the draw
-        # sessions are launched from the viewer node). The hop is `ssh -t`; the
-        # launch id is minted on the arm node right before exec and ledgered +
-        # audited by its arm_gate; what moves is the keyboard, not the e-stop
-        # operator, who stays at the rig.
-        if v.autonomous(ns) and v.launch_id and not ctx.quiet and not ctx.dry_run and not ctx.json:
-            print(f"tatbot: autonomous motion over --on {ctx.on}: the launch id is minted there right before "
-                  "exec; the e-stop operator stays at the rig", file=sys.stderr)
-        if "checkout" in nmap[ctx.on] and nmap[ctx.on]["checkout"] is None:
-            return refuse(ctx, EXIT_USAGE, "node", f"{ctx.on} has no git checkout to run in",
-                          nmap[ctx.on].get("note"))
-        if not nodes.ssh_target(nmap, ctx.on):
-            return refuse(ctx, EXIT_WRONG_NODE, "node", f"{ctx.on} has no configured transport address")
-        invocation = ctx.invocation or parse_globals(ctx.argv)[0]["invocation"]
-        remote_argv = [_home_relative(a) for a in invocation.remote_tokens()]
-        notes = [f"remote exit code is returned as-is; run ids carry the node ({ctx.on})"]
-        carried = os.environ.get("TATBOT_EE_TOOL")
-        if v.needs_tool and not ctx.ee_tool and carried:
-            # Valued globals lead, which every released parser accepts.
-            remote_argv[:0] = ["--ee-tool", carried]
-            notes.append(f"TATBOT_EE_TOOL={carried} is carried over as an explicit --ee-tool")
-        elif v.needs_tool and not ctx.ee_tool:
-            notes.append(f"no tool stated: {ctx.on} resolves its own configured fitted tool")
-        if v.sync:
-            notes.append(f"the {ctx.on} checkout is fast-forwarded to origin/main first")
-        plan = Plan(argv=nodes.hop_argv(nmap, ctx.on, remote_argv, tty=v.tty or v.tier in MOTION_TIERS,
-                                        sync=v.sync),
-                    notes=notes)
-        if ctx.dry_run:
-            print_plan(ctx, v, plan, hop_to=ctx.on, ns=ns, passthrough=passthrough)
-            return EXIT_OK
-        if ctx.json and output_capability(v, ns, passthrough) == "text":
-            return refuse(ctx, EXIT_USAGE, "output", f"{v.name} has text-only execution; use --dry-run --json")
-        _warn_deprecations(ctx)
-        routing_notice(ctx, v, ctx.on, role=role)
-        os.execvp(plan.argv[0], plan.argv)
-    if role and role not in nodes.roles_of(nmap, ctx.node):
-        cands = nodes.nodes_with(nmap, role)
-        hint = f"tatbot --on {cands[0]} {shlex.join(ctx.argv)}" if cands else "no node in config/nodes.json has that role"
-        if ctx.no_hop:
-            if not ctx.json:
-                print(f"tatbot: warning: {ctx.node} lacks role {role} (continuing: --no-hop)", file=sys.stderr)
-        else:
-            return refuse(ctx, EXIT_WRONG_NODE, "node",
-                          f"{v.name} needs role \"{role}\" — this node ({ctx.node}) has "
-                          f"[{', '.join(nodes.roles_of(nmap, ctx.node)) or 'no roles'}]", hint)
-
-    if v.prepare:
-        try:
-            v.prepare(ctx, v, ns)
-        except UsageError as error:
-            # An impossible selection is the operator's typing, not a gate.
-            return _usage_error(str(error))
-        except (ValueError, KeyError, OSError) as error:
-            return refuse(ctx, EXIT_GATE_REFUSED, v.noun, str(error))
-
-    profile_env = {}
-    # Gates the CLI can decide itself. The launcher re-checks every one of them.
-    # The rig marker: `tatbot rig sleep` switched the cameras, screen and hosts
-    # off, so a hardware verb would only report exit 5 piecemeal; say why once.
-    effects = set(operation_effects(v, ns, passthrough))
-    diagnostic = (v.verb == "status" and v.tier == OFFLINE and
-                  effects <= {"read_files", "network", "remote_exec"})
-    if v.noun != "rig" and (v.tier in MOTION_TIERS or
-                                                 (role and role in rig.SLEEPING_ROLES and not diagnostic)):
-        asleep = rig.asleep()
-        if asleep:
-            why = (f"the rig is asleep since {asleep.get('since')} "
-                   f"(rig sleep {asleep.get('run_id')} from {asleep.get('by')})")
-            if not ctx.dry_run:
-                return refuse(ctx, EXIT_HW_UNREACHABLE, "rig", why, "tatbot rig wake")
-            print(f"tatbot: dry-run note (rig gate would refuse): {why}", file=sys.stderr)
-    if v.tier in MOTION_TIERS:
-        bad = gates.estop_overrides(passthrough)
-        if bad:
-            return refuse(ctx, EXIT_GATE_REFUSED, "estop_guard",
-                          f"refusing E-stop override in a production launcher: {' '.join(bad)}",
-                          "use the lower-level component command for an intentional hardware-free bench run")
-        # Hardware profile gate (plan Phase 2): motion needs a complete
-        # hardware profile, resolved and validated BEFORE anything connects.
-        # A dry run only plans, so it reports the problem instead of refusing
-        # (the public tree has no default profile and must still --dry-run).
-        import tatbot_profile
-        try:
-            profile = tatbot_profile.load(ctx.repo)
-            perrs = tatbot_profile.hardware_errors(profile)
-            pwhy = (f"profile '{profile['name']}' cannot drive hardware: "
-                    + "; ".join(perrs)) if perrs else None
-        except tatbot_profile.ProfileError as e:
-            profile, pwhy = None, str(e)
-        if pwhy:
-            if not ctx.dry_run:
-                return refuse(ctx, EXIT_GATE_REFUSED, "profile", pwhy)
-            print(f"tatbot: dry-run note (profile gate would refuse): {pwhy}",
-                  file=sys.stderr)
-        elif profile is not None:
-            profile_env = tatbot_profile.env_exports(profile)
-    if v.needs_tool:
-        tool, source, err = gates.resolve_tool(ctx.repo, ctx.ee_tool, arm=v.tool_arm)
-        if err:
-            return refuse(ctx, EXIT_GATE_REFUSED, "ee_tool", err, gates.FLAG_HINT)
-        # A read-only prepare hook may already have bound an authoritative
-        # identity (a saved session's recorded tool); keep whose it was.
-        ctx.ee_tool, ctx.tool_source = tool, ctx.tool_source or source
-    tag = getattr(ns, "tag", None)
-    err = gates.tag_error(tag)
-    if err:
-        return refuse(ctx, EXIT_USAGE, "tag", err)
-    needs_launch_id = v.launch_id
-
-    if ctx.json and not ctx.dry_run and output_capability(v, ns, passthrough) == "text":
-        return refuse(ctx, EXIT_USAGE, "output", f"{v.name} executes a text-only tool; JSON execution is unsupported",
-                      "use --dry-run --json or --explain --json, or run without global --json")
+        return _hop(ctx, v, ns, passthrough, nmap, role, resolved)
+    stop = _local_role(ctx, v, nmap, role)
+    if stop is not None:
+        return stop
+    profile_env, stop = _gate(ctx, v, ns, passthrough, role)
+    if stop is not None:
+        return stop
     if ctx.tool_source and ctx.tool_source != "flag":
         routing_notice(ctx, v, None, gates.TOOL_SOURCES[ctx.tool_source])
 
@@ -799,7 +848,7 @@ def dispatch(ctx: Ctx, v: Verb, ns: argparse.Namespace, passthrough: list[str]) 
         plan.env.setdefault("TATBOT_EE_TOOL", ctx.ee_tool)
     # The launch id: minted here, on the node that execs, right before the exec.
     # The launcher's arm_gate reads it from the token file, ledgers and audits it.
-    launch_id = gates.mint_launch_id(tag) if needs_launch_id else None
+    launch_id = gates.mint_launch_id() if v.launch_id else None
     if ctx.dry_run:
         print_plan(ctx, v, plan, launch_id=launch_id, ns=ns, passthrough=passthrough)
         return EXIT_OK
@@ -811,7 +860,6 @@ def dispatch(ctx: Ctx, v: Verb, ns: argparse.Namespace, passthrough: list[str]) 
             print(json.dumps({"launch_id": launch_id}), flush=True)
         elif not ctx.quiet:
             print(f"tatbot: launch id {launch_id}", flush=True)
-    _warn_deprecations(ctx)
     env = dict(os.environ)
     env.update(plan.env)
     if plan.cwd:
@@ -822,12 +870,6 @@ def dispatch(ctx: Ctx, v: Verb, ns: argparse.Namespace, passthrough: list[str]) 
     except FileNotFoundError:
         return refuse(ctx, EXIT_USAGE, "exec", f"not found: {plan.argv[0]}",
                       "build it first (scripts/check builds cpp/rust) or check the path")
-
-
-def _warn_deprecations(ctx):
-    if ctx.invocation and ctx.invocation.deprecations:
-        # Once per invocation, including multiple deprecated option spellings.
-        print("tatbot: " + "; ".join(dict.fromkeys(ctx.invocation.deprecations)), file=sys.stderr)
 
 
 def _call_handler(ctx, v, ns, passthrough):

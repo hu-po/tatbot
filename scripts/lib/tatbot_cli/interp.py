@@ -1,6 +1,6 @@
-"""Interpreter selection that used to live in scripts/dataset_hub.sh (phase 3 absorb).
+"""Interpreter selection for the dataset hub tools.
 
-The sim host has no lerobot venv and the training nodes have theirs under
+Some nodes have no lerobot venv and the training nodes keep theirs under
 ~/il-train, so pick whichever known environment can import huggingface_hub
 and fall back to a throwaway `uv run --with` environment. Same order, same
 fallback, same failure as the bash it replaces; test_cli.py pins each branch.

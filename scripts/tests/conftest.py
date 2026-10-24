@@ -28,6 +28,15 @@ from pathlib import Path
 
 import pytest
 
+# Git exports its repository variables to hooks and `git bisect run` steps.
+# With them set, a test that builds a scratch repository (`git init`, `git
+# add`, `git update-ref`) acts on the repository they name instead, and can
+# rewrite its config. No test here needs them: drop them before any runs.
+GIT_LOCATION = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+                "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_PREFIX", "GIT_NAMESPACE")
+for _name in GIT_LOCATION:
+    os.environ.pop(_name, None)
+
 # The suite's one path setup. Test modules import repo modules by bare name
 # (`import pen_path`), which needs every script root on sys.path; pytest
 # loads this conftest before any of them, so no test file carries its own
@@ -38,10 +47,11 @@ from tatbot_paths import bootstrap  # noqa: E402
 bootstrap()
 _repo_root = Path(__file__).resolve().parents[2]
 # These ROS build roots provide pure compiler/geometry libraries to root tests;
-# loading their submitted source needs neither a ROS install nor an executor.
+# loading their submitted source needs neither a ROS install nor an executor
+# (tatbot_session for its pure modules only: inspect's wrist camera, not its nodes).
 _SOURCE_ROOTS = [
     _repo_root / "python/tatbot_contracts/src",
-    *(_repo_root / "ros" / name for name in ("tatbot_ink", "tatbot_motion", "tatbot_description")),
+    *(_repo_root / "ros" / name for name in ("tatbot_ink", "tatbot_motion", "tatbot_description", "tatbot_session")),
 ]
 for root in _SOURCE_ROOTS:
     sys.path.insert(0, str(root))
@@ -199,12 +209,10 @@ collect_ignore = [f"{stem}.py" for stem in _missing]
 # and a test that cannot run is a SKIP, not a failure — the same contract
 # scripts/check keeps for a node that lacks a toolchain.
 DEPLOYMENT_FILES: dict[str, tuple[str, ...]] = {
-    "test_ee_fiducial": ("config/fiducials.json",),
     "test_estop_launchers": ("config/nodes.json",),
     "test_eval_checkpoint_contract": ("config/nodes.json",),
     "test_fiducial_inventory": ("config/fiducials.json",),
     "test_palette_scan_entry": ("config/fiducials.json",),
-    "test_ink_hook": ("config/inks.yaml", "config/palette.yaml"),
     "test_ink_spec": ("config/inks.yaml", "config/palette.yaml"),
     "test_arm_context": ("config/trossen/leader.yaml",),
     "test_draw_research": ("config/workspace.yaml",),
@@ -219,6 +227,7 @@ DEPLOYMENT_FILES: dict[str, tuple[str, ...]] = {
     "test_runlog": ("config/nodes.json",),
     "test_staged_pose_single_source": ("config/trossen/tatbot.yaml",),
     "test_tool_spec": ("config/workspace.yaml",),
+    "test_wrist_tap": ("config/workspace.yaml",),   # tatbot_session.inspect resolves the repo at import
 }
 
 _unconfigured = {
@@ -276,7 +285,7 @@ NEEDS_FLEET = {
     "test_sim_compile_placement_takes_the_stated_tool",
     "test_sim_compile_sample_delegates_to_bounded_offline_materializer",
     "test_sim_is_six_verbs",
-    "test_sim_preview_reach_cinematic_viewer_audit_samples",
+    "test_sim_audit_and_samples",
     "test_tags_scan_hops_to_the_camera_node",
     "test_teleop_start_is_the_canonical_bare_teleop",
     "test_tool_from_environment_is_accepted",
@@ -298,14 +307,11 @@ NEEDS_PRIVATE_TOOLING: dict[str, tuple[str, ...]] = {
     "test_data_hub_dry_run_names_the_interpreter": ("scripts/dataset_hub.py",),
     "test_inkgen_deploy_constructs_deploy_script_argv": ("scripts/inkgen_deploy.sh",),
     "test_inkmap_deploy_constructs_deploy_script_argv": ("scripts/inkmap_deploy.sh",),
-    "test_identities_resolve_each_label_to_its_arm_controller_and_tag_triplet": ("config/fiducials.json",),
-    "test_no_tags_is_retained_without_a_calibration_claim": ("config/fiducials.json",),
+    "test_the_drawing_arms_label_resolves_to_its_controller_and_tag_triplet": ("config/fiducials.json",),
     "test_camera_unit_uses_the_selected_manifest_node": ("config/systemd/tatbot-visiond-d405.service",),
     "test_every_viewer_server_generation_installs_one_fixed_blueprint": ("config/systemd/tatbot-viewer@.service",),
-    "test_replaced_carriers_use_the_current_measured_tag_frames": ("config/wrist_tags_measured_left.json",),
-    "test_both_installed_attachments_follow_their_own_carriage_and_camera": ("cad/leader-laser-v1/build.py",),
     "test_session_capture_names_the_arm_whose_wrist_cameras_answer": ("rust/visiond/config/vision.toml",),
-    "test_live_manifest_assigns_distinct_wrist_arms_and_owners": ("rust/visiond/config/vision.toml",),
+    "test_live_manifest_puts_both_wrist_cameras_on_the_pink_arm_under_one_owner": ("rust/visiond/config/vision.toml",),
 }
 
 # These compare generated paths or compiled constants with the deployment's
@@ -315,12 +321,8 @@ NEEDS_WORKSPACE = {
     "test_ballpoint_tip_matches_urdf_tool_mount_plus_pen_offset",
     "test_tip_constant_matches_workspace_derivation",
     "test_right_arm_model_reproduces_the_module_constants",
-    "test_left_arm_model_is_the_mirrored_leader_from_the_urdf",
-    "test_leader_laser_is_modelled_as_a_standoff_tool_at_its_measured_face",
-    "test_rollout_tool_default_comes_from_left_workspace",
     "test_bundled_native_acquisition_keeps_source_recipe_pen_and_traversal",
     "test_precedence_is_flag_then_environment_then_configured",
-    "test_posed_witness_refuses_unbound_camera_and_configuration",
 }
 
 _no_fleet = not (_repo_root / "config" / "nodes.json").is_file()

@@ -1,14 +1,10 @@
 """The mapped surface, in numpy.
 
-A numpy port of ``tatbot_sim.surface`` (``Chart``, ``PlaneChart``,
-``CylinderChart``, ``_catmull_rom`` and ``DisplacedSurface``) so the drawing
-stages can run in a NumPy-only environment without torch or ManiSkill, plus what the sim never
-needed: fitting a chart to wrist-camera points, fusing those points into the
-height grid, and reading/writing ``surface.npz`` (``docs/surface-formats.md``).
-
-The math is kept line-for-line with the torch version on purpose: the sim
-loads the same ``.npz`` into ``DisplacedSurface`` and a parity test pins the
-two within a micrometre. If you change a formula here, change it there.
+Charts (``Chart``, ``PlaneChart``, ``CylinderChart``), Catmull-Rom height
+sampling and the displaced surface, first ported from the deleted ManiSkill
+simulator's torch surface so the drawing stages run NumPy-only, plus fitting a
+chart to wrist-camera points, fusing those points into the height grid, and
+reading/writing ``surface.npz`` (``docs/surface-formats.md``).
 
 Conventions (``docs/surface-formats.md``, "surface.npz"): a chart is parameterised in
 canvas metres ``(u, v)`` with ``u`` in ``[-w/2, w/2]`` and ``v`` in
@@ -34,22 +30,6 @@ SCHEMA = "tatbot.surface/1"
 def _optional_floats(values):
     """Unknown anchors use NaN in NPZ and null in the JSON sidecar."""
     return [None if math.isnan(float(value)) else float(value) for value in values]
-
-sim_parity_note = """Parity with ``tatbot_sim.surface.DisplacedSurface``.
-
-``HeightFieldSurface.to_npz`` writes the ``tatbot.surface/1`` layout and
-``tatbot_sim.surface_io.displaced_surface_from_npz`` reads it back into a
-batch-1 ``DisplacedSurface`` on the same chart with the same ``height`` grid.
-Both implement the same Catmull-Rom sampling (border-replicated 4x4 patch,
-u first then v), the same frame assembly (chart point + h * n, tangents with
-the ``h * dn/duv`` curvature term, cross-product normal re-oriented to the
-chart's outward sense) and the same Gauss-Newton projection on the tangential
-residual. ``python/tatbot_sim/tests/test_surface_io.py`` checks frame points
-and normals agree within 1e-6 m / 1e-6 on a grid of uv. The sim's texel
-resolution (``cols``/``rows``) is not stored in the file: it is a rendering
-concern, chosen by the loader so texels stay isotropic.
-"""
-
 
 # --------------------------------------------------------------------------- charts
 
@@ -228,7 +208,6 @@ def catmull_rom(p, t):
     """Catmull-Rom through 4 samples ``(..., 4)`` at ``t`` in [0, 1] between p1 and p2.
 
     Returns ``(value, d value / d t)``; ``t`` broadcasts against ``p[..., 0]``.
-    Same coefficients as ``tatbot_sim.surface._catmull_rom``.
     """
     p = np.asarray(p, dtype=np.float64)
     t = np.asarray(t, dtype=np.float64)

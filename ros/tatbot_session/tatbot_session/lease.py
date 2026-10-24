@@ -1,79 +1,9 @@
-"""The palette lease: one arm's run holds the palette, and the other arm's goals keep out of it (2026-09-30: the two
-arms share one stack, the pink one drawing while the blue one calibrates at the palette; before, pink's inspection
-views came near the palette unchecked).
-
-The holder (tatbot_calib's run) takes an exclusive flock on LEASE_PATH, one file on the node whatever stack or lane
-runs there, since the palette is one, and writes the zone it keeps: a cylinder in the camera's world, standing on
-the table's normal about every part of the palette. The session node reads it at each goal (held_zone): a lock it
-can share means no holder. The kernel drops the lock with the holder's process, so a crashed run leaves no lease.
-Pure Python.
-"""
+"""The in-cap marker: a dip's tool may still be in a cap. Pure Python."""
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 from pathlib import Path
-
-LEASE_PATH = Path("/tmp/tatbot-palette.lease")
-
-
-class PaletteLease:
-    """The palette held by `arm`'s run until close(): {"arm", "run", "world_from_zone" (4x4, its z the table's
-    normal, its origin on the table under the zone's axis), "radius_m", "height_m"}. RuntimeError when another run
-    holds it."""
-
-    def __init__(self, zone: dict, path: Path = LEASE_PATH):
-        self.path = Path(path)
-        self._fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o644)
-        try:
-            fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            holder = _read(self._fd)
-            os.close(self._fd)
-            self._fd = None
-            raise RuntimeError(f"the palette is held by the {holder.get('arm', '?')} arm's run "
-                               f"{holder.get('run', '?')}; wait for it to end") from None
-        os.ftruncate(self._fd, 0)
-        os.pwrite(self._fd, json.dumps(zone).encode(), 0)
-        os.fsync(self._fd)
-
-    def close(self) -> None:
-        if self._fd is not None:
-            fcntl.flock(self._fd, fcntl.LOCK_UN)
-            os.close(self._fd)
-            self._fd = None
-
-    def __enter__(self) -> PaletteLease:
-        return self
-
-    def __exit__(self, *exc) -> None:
-        self.close()
-
-
-def held_zone(path: Path = LEASE_PATH) -> dict | None:
-    """The zone of the run that holds the palette, or None when none does."""
-    try:
-        fd = os.open(path, os.O_RDONLY)
-    except FileNotFoundError:
-        return None
-    try:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return _read(fd) or None
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        return None
-    finally:
-        os.close(fd)
-
-
-def _read(fd: int) -> dict:
-    try:
-        return json.loads(os.pread(fd, 65536, 0).decode() or "{}")
-    except (OSError, ValueError):
-        return {}
-
 
 # A dip writes this marker before its tool goes into a cap and removes it once the tool is back over the rim. It
 # outlives the session (a crash, a cancel that holds in the cap, a reboot): while it stands, the arm is not landed,

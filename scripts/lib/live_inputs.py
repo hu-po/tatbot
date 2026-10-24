@@ -1,14 +1,13 @@
-"""Decode registered, checksum-bound Session display captures from camera owners."""
+"""Decode registered, checksum-bound live captures from camera owners (the stencil observer's input)."""
 
 import json
 from pathlib import Path
 
 import schemas
-from rgbd_geometry import require_calibrated_model
-from stencil_surface import rgbd_frame
+from rgbd_geometry import require_calibrated_model, rgbd_frame
 from tracking_rgb import registered_frame
 from view_assets import bound_read, read
-from visiond_wire import decode_depth, decode_video
+from visiond_wire import decode_depth
 
 
 def load_frames(path):
@@ -25,31 +24,6 @@ def load_frames(path):
             raise ValueError('live capture payload length changed')
         frames[name] = (entry, data)
     return manifest, frames
-
-
-def rgbd_pair(frames, color_name):
-    """Decode one original pair with active optics, without assigning a pose."""
-    color, color_bytes = frames[color_name]
-    cm = color['metadata']
-    depths = [(entry, data) for entry, data in frames.values()
-              if entry['metadata']['profile']['format'] == 'z16'
-              and entry['metadata']['attributes'].get('aligned_to') == color_name]
-    if len(depths) != 1:
-        raise ValueError('capture needs exactly one depth aligned to the named color sensor')
-    depth, depth_bytes = depths[0]
-    dm = depth['metadata']
-    intrinsics = json.loads(cm['attributes']['intrinsics'])
-    if any(intrinsics[key] != cm['profile'][key] for key in ('width', 'height')):
-        raise ValueError('active intrinsics disagree with the image profile')
-    frame = {'image': decode_video(color_bytes, cm['profile']),
-             'timestamp_ns': cm['timestamps']['normalized_unix_ns'],
-             'color_metadata': cm, 'depth_metadata': dm, 'camera_model': intrinsics,
-             'depth_m': decode_depth(depth_bytes, dm['profile']).astype(float)
-                        * float(dm['attributes']['depth_units_m'])}
-    _, warnings = rgbd_frame(frame)
-    if warnings:
-        raise ValueError('; '.join(warnings))
-    return frame
 
 
 def capture(path, calibration, robot):

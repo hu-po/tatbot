@@ -88,11 +88,11 @@ stored pose: `tatbot ros station` places it in the arm's base from the
 overhead D555's view of the palette tag, through the arm's registration
 (`ros/README.md` §7). The arm registration and palette placement must describe the current rig.
 
-Measure each arm separately:
+Every cap belongs to the drawing arm (`config/palette.yaml`); `tatbot ros
+setup` measures its station, as does:
 
 ```sh
 tatbot ros station --arm right
-tatbot ros station --arm left
 ```
 
 The ROS stack measures the station afresh from the D555, validates the views,
@@ -101,14 +101,6 @@ arm base. The subsequent calibration run enforces freshness and checks for
 station movement. The earlier camera-scan placement (`tatbot vision palette`
 and its viewer preview) is retired. A missing placement never falls back to
 the synthetic simulation pose.
-
-## Simulation
-
-The simulator loads the palette from `urdf/palette.urdf` and
-`config/palette.yaml`, with the tag from the fiducial inventory. It places the
-palette at `simulation_root_xyz_m` and `simulation_root_quaternion_wxyz` in
-`config/palette_geometry.json`, a synthetic scene pose that is never a
-hardware fallback.
 
 ## Dipping
 
@@ -127,8 +119,9 @@ connector, aimed along −X at the probe ball 122 mm away. This mount now reache
 focus and image scale must be checked on the installed camera. Measurements
 from the former 55 mm mount do not describe the new optical setup.
 The probe relay and the driver's probe guard read the probe, and the probe
-calibration touches the tool's tube end on its ball (`ros/README.md` §7); no
-software reads the camera yet.
+calibration touches the tool's tube end on its ball (`ros/README.md` §7). The
+camera watches the tip contact-free: `tatbot ros calib sweep` from joint-6
+turns, and `tatbot ros calib height` for the ball's height that dips aim by.
 
 ## Retired
 

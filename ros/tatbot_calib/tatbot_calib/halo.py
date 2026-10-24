@@ -46,6 +46,10 @@ class Halo:
     side_height_m: float    # calibration.side_touch_height_m: a side touch meets the ball this far up the wall
     envelope: tuple = ()    # ((h, r), ...): the tool's outside radius r, h up the axis from the end plane
     axial_tip: bool = False  # ballpoint_tip: the working ball moves; the side touches meet the rigid nozzle
+    # An edge pass over the ball can trip the probe. A needle cartridge's (accuracy_profile needle-tube) never has:
+    # 0 of 41 passes over 9 runs of the 3RL and 11RL, 2026-10-05..12; its floating needles graze the ball without
+    # the force the probe trips at (seen by the operator, 2026-10-12).
+    edges_trip: bool = True
 
     @classmethod
     def from_datasheet(cls, calibration: dict, profile=()) -> Halo:
@@ -61,7 +65,8 @@ class Halo:
             raise ValueError("the halo lacks " + ", ".join(f"calibration.{name}" for name in missing))
         end = float(profile[-1][0]) if profile else 0.0
         envelope = tuple(sorted((end - float(z), float(r)) for z, r in profile))
-        halo = cls(*(float(calibration[name]) for name in fields), envelope, axial_tip)
+        halo = cls(*(float(calibration[name]) for name in fields), envelope, axial_tip,
+                   calibration.get("accuracy_profile") != "needle-tube")
         ring = 0.0 <= halo.hole_radius_m < halo.rim_radius_m < halo.wall_radius_m
         if not (ring and halo.side_height_m > 0.0):
             raise ValueError(f"the halo's dimensions are out of order: hole {halo.hole_radius_m}, rim "

@@ -1,9 +1,7 @@
 """End to end on TatbotArm with its fake SDK (every driver interlock live, no network, no lock): the e-stop over UDP
 from an emulated relay, the no-step unlatch, the three tip-lag page touches against a fake paper plane, a SIGTERM
 that cancels a touch mid-descent, a mid-stroke press -> continue refused while pressed -> release -> continue
-resumes at the arc, press -> release -> land to idle, and the landed arm refusing every motion goal. Skips unless
-the installed TatbotArm is the full driver (its e-stop reader header is installed) and the description renders
-fake hardware."""
+resumes at the arc, press -> release -> land to idle, and the landed arm refusing every motion goal. Requires the built TatbotArm and a description that renders fake hardware."""
 from __future__ import annotations
 
 import itertools
@@ -11,13 +9,13 @@ import signal
 import socket
 import threading
 import time
-from pathlib import Path
 
 import numpy as np
 import pytest
 import session_graph as sg
 
-pytestmark = pytest.mark.skipif(not sg.ZENOHD.exists(), reason="needs ROS 2 Jazzy with rmw_zenoh_cpp")
+pytestmark = [pytest.mark.slow,
+              pytest.mark.skipif(not sg.ZENOHD.exists(), reason="needs ROS 2 Jazzy with rmw_zenoh_cpp")]
 
 
 class Pico:
@@ -37,30 +35,12 @@ class Pico:
                 time.sleep(0.01)
 
 
-def _full_driver() -> bool:
-    """The Phase-0 stub TatbotArm has no e-stop source, latching or fake paper; the full driver installs
-    tatbot_hardware/estop.hpp beside its plugin."""
-    from ament_index_python.packages import PackageNotFoundError, get_package_prefix
-
-    try:
-        include = Path(get_package_prefix("tatbot_hardware")) / "include"
-    except PackageNotFoundError:
-        return False
-    return any(include.rglob("estop.hpp"))
-
-
 def _fake_urdf(stack: dict) -> str:
     from tatbot_description import robot_description
 
-    if not _full_driver():
-        pytest.skip("the installed tatbot_hardware is the stub driver (no e-stop reader, no latch)")
-
     # the fake paper lies where the fixed page says and gives like the arm and EE mount
     stack["fake"] = {"page_z": stack["page"]["fixed"]["right"]["xyz"][2], "page_stiffness_n_m": 1500.0}
-    try:
-        return robot_description(sg.repo(), arms=("right",), hardware="fake", ros2_control=stack)
-    except NotImplementedError:
-        pytest.skip("tatbot_description renders no fake-hardware <ros2_control> yet")
+    return robot_description(sg.repo(), arms=("right",), hardware="fake", ros2_control=stack)
 
 
 @pytest.fixture(scope="module")
@@ -74,7 +54,7 @@ def graph(tmp_path_factory):
     g = sg.Graph(tmp)
     g.pico, g.page_z, g.page_xyz = pico, stack["fake"]["page_z"], stack["page"]["fixed"]["right"]["xyz"]
     try:
-        yield g.up(urdf, stack)
+        yield g.up(urdf, stack, motion=sg.fast_motion())
     finally:
         g.stop()
         pico.running = False
@@ -109,6 +89,7 @@ def _touch_timeout_s() -> float:
     return 7 * float(touch["max_travel_m"]) / float(touch["slow_m_s"])
 
 
+@pytest.mark.slow
 def test_three_touches_find_the_fake_page(graph):
     proc = graph.client("touch", "--arm", "right", timeout=_touch_timeout_s())
     result = sg.last_json(proc.stdout)
@@ -174,10 +155,12 @@ def _flight(graph) -> np.ndarray:
     """Every record of the driver's 400 Hz flight log so far (ros/README.md "Flight log")."""
     raw = (graph.tmp / "right-flight.bin").read_bytes()
     header, _, body = raw.partition(b"\n")
-    dtype = np.dtype([("t", "<f8"), *((name, "<f4", 7) for name in ("q", "qd", "effort", "cmd_q", "sent_q", "sent_qd")),
+    dtype = np.dtype([("t", "<f8"), *((name, "<f4", 7) for name in ("q", "qd", "effort", "cmd_q", "sent_q", "sent_qd",
+                                                                    "compensation", "rotor_temp")),
+                      ("controller_id", "<u4"), ("controller_us", "<u8"),
                       ("estop_age_s", "<f4"), ("rt_period_max_ms", "<f4"), ("estop_ok", "u1"), ("latched", "u1"),
                       ("latch_reason", "u1"), ("phase", "u1")])
-    assert int(header.split()[-1]) == dtype.itemsize
+    assert header.split()[1] == b"2" and int(header.split()[-1]) == dtype.itemsize
     return np.frombuffer(body[: len(body) // dtype.itemsize * dtype.itemsize], dtype=dtype)
 
 
@@ -226,7 +209,7 @@ def test_estop_then_land_goes_idle(graph):
     finally:
         graph.end(proc)
     log = (graph.tmp / "estop-land.log").read_text()
-    assert " landed " in log and "clear before landing" in log  # the pen was down: lifted, then landed
+    assert " landed " in log and "along the skin's normal before landing" in log  # the pen was down: lifted, then landed
     right = _status(graph)
     assert right["landed"] is True and right["latched"] is False
 

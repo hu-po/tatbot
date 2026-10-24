@@ -1,6 +1,8 @@
 #pragma once
 #include "rust/cxx.h"
+#include <array>
 #include <chrono>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -13,6 +15,9 @@ class Driver {
  public:
   Driver();
   ~Driver();
+  // The fitted tool's identified palm load (config/workspace.yaml <arm>.payload), set before
+  // configure; without it the dated preset's palm stands.
+  void set_palm(double mass_kg, rust::Slice<const double> com_m);
   void configure(rust::Str ip, bool follower, bool clear_error, double timeout_s);
   // Joint feedback comes from the controller's UDP output the SDK already
   // holds (sub-microsecond). Modes and the error string are TCP queries of
@@ -41,6 +46,8 @@ class Driver {
   std::unique_ptr<trossen_arm::TrossenArmDriver> driver_;
   bool configured_{false};
   bool follower_{true};
+  double palm_mass_kg_{std::numeric_limits<double>::quiet_NaN()};
+  std::array<double, 3> palm_com_m_{};
   bool status_valid_{false};
   std::vector<trossen_arm::Mode> modes_;
   std::string error_;

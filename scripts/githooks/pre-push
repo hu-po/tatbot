@@ -4,25 +4,10 @@
 # Armed with the rest of scripts/githooks (scripts/check --install-hooks).
 # Bypass in an emergency:  git push --no-verify
 #
-# This used to also run `scripts/check sim-fast` for a push touching the
-# simulator. That was added on 2026-09-03, after two pushes seventeen minutes
-# apart left `tatbot sim compile` and `sim resolve` failing while
-# `scripts/check --light` stayed green. Removed 2026-09-09, because the cost
-# outgrew the protection:
-#
-#   - it was tuned to 4.5 minutes and measured 606s and 613s on 2026-09-09,
-#     against a main that advances every 10-20 minutes -- the stale-ref problem
-#     it was written to avoid;
-#   - the cost multiplies by the number of agents. Two agents pushing near each
-#     other run the same heavy suite at once and halve each other's throughput;
-#     this repository is built for 2-3 sharing a checkout;
-#   - a PASS was fingerprinted against content, so anyone who had already run it
-#     skipped it anyway. It taxed whoever had not, rather than gating everyone;
-#   - CI and the isolated CI worker run the full suite for every origin/main, so
-#     the 2026-09-03 breakage is still caught -- later, and not by the author.
-#
-# Run `scripts/check sim-fast` yourself when you touch the simulator. That is
-# now a choice rather than a toll, and the export gate below still runs always.
+# No heavy suite runs here: main advances every few minutes, several agents push
+# near each other, and a ten-minute gate multiplies by all of them. CI runs the
+# full suite for every origin/main; run `scripts/check sim2 sim2-gpu` yourself
+# when you touch the simulator.
 
 set -uo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
@@ -36,11 +21,9 @@ while read -r _local_ref _local_sha remote_ref _remote_sha; do
 done
 ((to_main)) || exit 0
 # The public export gate costs 11 seconds and is the only check that catches a
-# stale substitution rule or an unmatched manifest path. When only CI ran it,
-# on 2026-09-08 it failed on 60 consecutive pushes across four hours while
-# nobody looked -- a red CI nobody reads prevents nothing. Run it here so the
-# author who breaks it is the one who is told, and `tatbot release` finds main
-# publishable.
+# stale substitution rule or an unmatched manifest path. A red CI nobody reads
+# prevents nothing: run it here so the author who breaks it is the one who is
+# told, and `tatbot release` finds main publishable.
 #
 # It can fail on breakage someone else pushed; that is the point. The gate names
 # the rule or path, `scripts/check export` reproduces it, and whoever pushes next

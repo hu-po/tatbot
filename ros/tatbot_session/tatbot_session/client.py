@@ -11,7 +11,7 @@
 
 Events print as they arrive; decisions go through `client decide` from another shell. Exit 0 when the
 goal succeeded, 1 otherwise. With a keypad in stack.yaml, a draw that lands for a cartridge swap waits for its
-Enter, wakes the arm and resumes the run; Ctrl-C there leaves the run to resume by hand. A cancelled draw, by Ctrl-C
+enter (Fn+Enter), wakes the arm and resumes the run; Ctrl-C there leaves the run to resume by hand. A cancelled draw, by Ctrl-C
 before then or `client cancel`, does not wait: it too is resumed by hand.
 
 Ctrl-C, SIGTERM and SIGHUP (a dropped ssh) during a draw or touch cancel its goal and wait for the arm to
@@ -180,7 +180,7 @@ def _draw(node: Node, args) -> int:
         if swap is None:
             return 0 if ok else 1
         arm, text = swap
-        print(f"{time.strftime('%H:%M:%S')} [{arm}] {text}: fit it, then press Enter on the keypad to resume "
+        print(f"{time.strftime('%H:%M:%S')} [{arm}] {text}: fit it, then press Fn+Enter on the station keyboard to resume "
               f"(Ctrl-C leaves it to: tatbot ros draw <program> --arm {arm} --resume {result.run_id})", flush=True)
         if not _enter(node, arm) or _wake(node, argparse.Namespace(arm=arm)) != 0:
             return 1
@@ -192,7 +192,7 @@ def _swap(run_dir: str, arm: str) -> tuple[str, str] | None:
     left `sent` (the arm landed for it) on an arm stack.yaml gives the keypad; else None."""
     keypad = config.load_stack().get("keypad") or {}
     run = Path(run_dir or "")
-    if not keypad.get("device") or not (run / "program.json").is_file() or arm not in ("", keypad.get("arm")):
+    if not keypad.get("port") or not (run / "program.json").is_file() or arm not in ("", keypad.get("arm")):
         return None
     arm = keypad["arm"]
     ops, rows = json.loads((run / "program.json").read_text())["ops"], ledger_mod.read(run / "ledger.jsonl")
@@ -203,7 +203,7 @@ def _swap(run_dir: str, arm: str) -> tuple[str, str] | None:
 
 
 def _enter(node: Node, arm: str) -> bool:
-    """Wait for the keypad's Enter for this arm; False on Ctrl-C."""
+    """Wait for the keypad's enter (Fn+Enter) for this arm; False on Ctrl-C."""
     from std_msgs.msg import String
 
     keys: queue.Queue = queue.Queue()
@@ -303,8 +303,7 @@ def _hardware(node: Node, arm: str, state_id: int, label: str) -> None:
 
 
 def _wake(node: Node, args) -> int:
-    """A landed arm taken back without restarting the stack, which would take the other arm down mid-goal
-    (2026-09-30, two agents on one rig): its two controllers off, its hardware alone cycled inactive and
+    """A landed arm taken back without restarting the stack: its two controllers off, its hardware alone cycled inactive and
     active (the driver re-enters control at the rest it measures and holds it, as at the stack's start), its
     controllers on again, the trajectory controller starting from the measured pose. An arm that has not
     landed is left as it is; a stack that cannot find the arm, or one whose cycle fails, exits 1."""
@@ -432,12 +431,16 @@ def _rest(io, kin, args) -> None:
     print(f"{time.strftime('%H:%M:%S')} [{args.arm}] rest: {status} {text}".rstrip(), flush=True)
 
 
+LIFT_MIN_M = 0.001   # a shorter lift is skipped: under ~0.1 mm the pen-up profile stalls (the close-up's lift after
+                     # the views, which left the pen at the lift height to IK round-off, 2026-10-18)
+
+
 def _inspect_lift(io, kin, q, used, motion, args):
     from tatbot_motion import plan_lift, to_knots
 
     normal = used[:3, 2]
     height = float((kin.fk(q)[:3, 3] - used[:3, 3]) @ normal)
-    if height < args.lift:
+    if height < args.lift - LIFT_MIN_M:
         status, _, text = io.execute(to_knots(plan_lift(q_seed=q, direction=normal, distance_m=args.lift - height,
                                                         kin=kin, motion=motion), 100.0))
         if status != "ok":
@@ -445,11 +448,13 @@ def _inspect_lift(io, kin, q, used, motion, args):
             raise RuntimeError(f"lift: {status} {text}")
 
 
-def _closeup_hold(io, kin, cam, used, xy, heading, cal, window, motion, cfg, args, out_dir, n):
+def _closeup_hold(io, kin, cam, used, xy, heading, cal, window, motion, cfg, args, out_dir, n, skin=None):
     """One close-up hold (tatbot_session.closeup): a joint move over page point xy, straight down to the hover
     height at the drawing's heading, frames grabbed, each put on the page through the gauge-anchored camera pose
     and kept within HOLD_RADIUS_M of the tip, then straight back up. Returns the page image, or None when the
-    camera does not make out the pen and the paper."""
+    camera does not make out the pen and the paper. A curved page's `skin` (PageSurface over used): the gauge reads
+    the skin under the tip, the camera is anchored to the skin's normal there, and the frames go onto the skin in
+    the print's millimetres (on the forearm the plane smeared the swallow, 2026-10-07)."""
     import cv2
     import numpy as np
     from tatbot_motion import plan_lift, to_knots
@@ -474,20 +479,29 @@ def _closeup_hold(io, kin, cam, used, xy, heading, cal, window, motion, cfg, arg
         time.sleep(args.settle)
         colors, _ = cam.grab_both(args.frames)
         q_m = io.measured()
-        frame = gauge.measure(cam.raw_depth[0], colors[0], cam.depth_metadata, cal)
+        frame = gauge.measure(cam.raw_depth[0], colors[0], cam.depth_metadata, cal,
+                              **({"curved": True} if skin is not None else {}))
         cv2.imwrite(str(out_dir / f"closeup-hold{n}.png"), colors[0])
+        if skin is not None:   # its depth too, to read the skin again offline
+            np.savez_compressed(out_dir / f"closeup-hold{n}.npz", depth_raw=cam.raw_depth[0], q=np.asarray(q_m, float),
+                                meta=json.dumps(cam.depth_metadata))
         if frame is None:
             print(f"close-up hold {n}: the wrist camera makes out no pen and paper", file=sys.stderr)
             return None
-        pose = closeup.anchored(kin.frame(q_m, ins.camera_frame(args.arm)), kin.fk(q_m)[:3, 3], frame, cal, normal)
-        here = closeup.on_paper(used, pose, frame)   # the page where this frame's depth puts the paper
+        tcp, shape = kin.fk(q_m)[:3, 3], None
+        if skin is None:
+            pose = closeup.anchored(kin.frame(q_m, ins.camera_frame(args.arm)), tcp, frame, cal, normal)
+            here = closeup.on_paper(used, pose, frame)   # the page where this frame's depth puts the paper
+        else:   # the skin's normal under the tip, and the skin where this frame's depth puts it
+            pose = closeup.anchored(kin.frame(q_m, ins.camera_frame(args.arm)), tcp, frame, cal, skin.foot(tcp)[2])
+            here, shape = closeup.on_skin(skin, pose, frame)
         gx, gy = ins.page_grid(window, args.px_per_mm)
         far = np.hypot(gx - xy[0], gy - xy[1]) > closeup.HOLD_RADIUS_M
         pages, paper = [], gauge.on_paper(cam.raw_depth[0], cam.depth_metadata, frame, colors[0].shape)
         for img in colors:
             img = img.copy()
             img[closeup.pen_mask(img) | ~paper] = 0   # the pen by its teal, and any cartridge by its depth
-            page = ins.rectify(img, here, pose, cam.k, cam.dist, window, args.px_per_mm)
+            page = ins.rectify(img, here, pose, cam.k, cam.dist, window, args.px_per_mm, surface=shape)
             page[far] = 0
             pages.append(page)
         print(f"{time.strftime('%H:%M:%S')} [{args.arm}] close-up hold {n} over ({xy[0] * 1e3:+.1f} {xy[1] * 1e3:+.1f}) "
@@ -519,6 +533,11 @@ def _closeup(io, kin, used, page, program, clear_m, out_dir, motion, args) -> di
         print(f"{time.strftime('%H:%M:%S')} [{args.arm}] close-up: {why}", flush=True)
         return None
     cal = json.loads(path.read_text())
+    skin = None
+    if (page.get("surface") or {}).get("field"):   # a curved page: its field over the page in use
+        from tatbot_motion.surface import HeightField, PageSurface
+
+        skin = PageSurface(used, HeightField.from_dict(page["surface"]["field"]))
     rows = page.get("gauge") or page.get("touches") or []
     heading = np.array(rows[0]["tcp"], float) if rows else kin.fk(io.measured())   # the drawing's own heading
     window = closeup.extent(program)
@@ -526,8 +545,8 @@ def _closeup(io, kin, used, page, program, clear_m, out_dir, motion, args) -> di
     cam = ins.WristCamera(serial=args.serial, depth=True)
     try:
         views = [v for n, xy in enumerate(closeup.holds(program, float(cfg.get("closeup_step_m", 0.012))))
-                 if (v := _closeup_hold(io, kin, cam, used, xy, heading, cal, window, motion, cfg, args, out_dir, n))
-                 is not None]
+                 if (v := _closeup_hold(io, kin, cam, used, xy, heading, cal, window, motion, cfg, args, out_dir, n,
+                                        skin)) is not None]
     finally:
         cam.close()
     if not views:
@@ -560,7 +579,6 @@ def _inspect(node: Node, args) -> int:
     from rclpy.callback_groups import ReentrantCallbackGroup
     from rclpy.executors import MultiThreadedExecutor
     from sensor_msgs.msg import JointState
-    from tatbot_bridge import capture
     from tatbot_description import repo_root, robot_description
     from tatbot_motion import Kinematics, load_motion
 
@@ -581,7 +599,7 @@ def _inspect(node: Node, args) -> int:
         stack_page = {**stack_page, "pattern_id": page["pattern_id"]}
     stack_page = config.print_page(repo_root(None), stack_page)   # that print's page
     clear, size = stack_page["clear_m"], stack_page["size_m"]
-    inner = ins.inner_edges(clear, stack_page.get("inner_edges_m"))   # a malformed key refuses before the arm moves
+    tile = ins.print_artwork(stack_page.get("pattern_id"))
     if _goal_running(node, args.arm):
         print(f"{args.arm}: a trajectory goal is running (a draw or touch); inspect after it ends", file=sys.stderr)
         return 1
@@ -617,19 +635,14 @@ def _inspect(node: Node, args) -> int:
         views, poses = _inspect_views(io, kin, cam, used, centre, extent, frame, out_dir, args)
         if views:   # none reachable (a design on the arm's own side of the page): the close-up still looks
             gate = stack_page.get("inspect") or {}
-            # the views aim at the design's centre: the border fit's scale is about it (inspect.solve_in_plane)
-            analysis = ins.analyse(views, program, clear, extent, args.px_per_mm, ink_prior_m=gate.get("ink_prior_m"),
-                                   ink_gate_m=float(gate.get("ink_gate_m", 0.003)), inner_m=inner, size_m=size,
+            # the views aim at the design's centre: the ink's shift is measured there
+            analysis = ins.analyse(views, program, clear, extent, args.px_per_mm, tile=tile,
+                                   ink_prior_m=gate.get("ink_prior_m"), ink_gate_m=float(gate.get("ink_gate_m", 0.003)),
                                    centre_m=centre)
-            capture._lib(repo_root(None))
-            from stencil_coded_live import write_inspection
-
-            write_inspection(out_dir, poses, program, stack_page['pattern_id'], views, analysis, ins,
-                             clear, extent, args.px_per_mm)
+            ins.write_inspection(out_dir, views, analysis, program, clear, extent, args.px_per_mm)
         meta = {"run": run.name, "camera": {"serial": cam.serial, "k": cam.k.tolist(), "dist": cam.dist.tolist(),
                                              "model": cam.model, "frame": frame},
-                "base_from_page": used.tolist(), "extent_m": list(extent), "px_per_mm": args.px_per_mm, "poses": poses,
-                "inner_edges_m": inner}
+                "base_from_page": used.tolist(), "extent_m": list(extent), "px_per_mm": args.px_per_mm, "poses": poses}
         (out_dir / "meta.json").write_text(json.dumps(meta, indent=1))
         cam.close()
         cam = None
@@ -724,6 +737,7 @@ def _status(node: Node, args) -> int:
                   "latched": s.latched, "latch_reason": LATCH_TEXT.get(s.latch_reason, s.latch_reason),
                   "guard_mode": s.guard_mode, "probe_triggered": s.probe_triggered, "landing": s.landing,
                   "landed": s.landed, "controller_error": s.controller_error, "machine_off": s.machine_off,
+                  "machine_powered": s.machine_powered, "machine_reply_age_s": round(s.machine_reply_age_s, 3),
                   "rt_period_max_ms": round(s.rt_period_max_ms, 3)}
             for arm, s in sorted(states.items())}
     if args.json:
@@ -762,7 +776,7 @@ def main(argv=None) -> int:
     p.add_argument("--arm", default="right")
     p.add_argument("--run", default="", help="a ros-draw run id (default: the newest)")
     p.add_argument("--logs", default="~/tatbot-logs/ros-draw")
-    p.add_argument("--serial", default="", help="the wrist D405 (default: the one attached)")
+    p.add_argument("--serial", default="", help="the wrist D405 (default: stack.yaml page.locate.camera's)")
     p.add_argument("--clearance", type=float, default=0.015, help="pen tip over the page at least, m")
     p.add_argument("--lift", type=float, default=0.040, help="lift the pen to this height first, m")
     p.add_argument("--poses", type=int, default=3)
@@ -799,5 +813,8 @@ def main(argv=None) -> int:
         return {"draw": _draw, "touch": _touch, "jog": _jog, "inspect": _inspect, "decide": _decide, "land": _land,
                 "wake": _wake, "cancel": _cancel_all, "status": _status}[args.verb](node, args)
     finally:
-        node.destroy_node()
-        rclpy.try_shutdown()
+        try:
+            node.destroy_node()
+            rclpy.try_shutdown()
+        except RuntimeError as exc:   # the verb's result stands: rmw_zenoh's session close timed out after a jog's ok
+            print(f"middleware shutdown: {exc}", file=sys.stderr)   # (2026-10-21), and the exit said it failed

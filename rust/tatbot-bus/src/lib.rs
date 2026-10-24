@@ -1,6 +1,5 @@
 //! Versioned bus envelope and bounded latest-value test transport.
 //! This bus is never part of the e-stop control path.
-pub mod capture;
 pub mod fleet;
 #[cfg(feature = "zenoh")]
 pub mod service;
@@ -25,6 +24,20 @@ pub struct Producer {
     pub pid: u32,
     pub sha: String,
     pub run_id: String,
+}
+impl Producer {
+    /// This process on `node`: the run id its launcher exported (TATBOT_RUN_ID,
+    /// else `<program>-<pid>`) and the source commit its release was built from
+    /// (TATBOT_SOURCE_COMMIT at build time, else "development").
+    pub fn this_process(node: impl Into<String>, program: &str) -> Self {
+        let pid = std::process::id();
+        Self {
+            node: node.into(),
+            pid,
+            sha: option_env!("TATBOT_SOURCE_COMMIT").unwrap_or("development").into(),
+            run_id: std::env::var("TATBOT_RUN_ID").unwrap_or_else(|_| format!("{program}-{pid}")),
+        }
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]

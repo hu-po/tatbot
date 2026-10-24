@@ -13,7 +13,7 @@ licenses. Package dependencies are declared in their respective lockfiles.
 | `web/inkmap/src/vendor/vectortracer/` | vectortracer 0.1.2 / vtracer, MIT; [existing license and attribution](web/inkmap/src/vendor/vectortracer/LICENSE.txt). |
 | Three `dbv3-acquired-v1` examples | Original Tatbot raster sources and native acquired outputs, CC0-1.0; [dedication](web/inkmap/public/designs/LICENSE.txt), recipes and per-design source metadata. |
 
-The Trossen arm SDK (v1.8.5, BSD-3-Clause) is fetched at CMake configure time,
+The Trossen arm SDK (v1.11.0, BSD-3-Clause) is fetched at CMake configure time,
 not vendored. DrawingBotV3 is not bundled; its acquisition tools expect a
 licensed installation supplied by the user. Other end-effector, frame and camera meshes are Tatbot's MIT work.
 The nominal body is synthetic, not a participant scan; model weights are not

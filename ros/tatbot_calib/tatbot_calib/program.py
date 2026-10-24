@@ -11,6 +11,7 @@ of either sign), and page touches cancel the tip's length. The run writes candid
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import math
 import sys
@@ -19,8 +20,7 @@ from pathlib import Path
 
 import numpy as np
 from tatbot_motion.collision import PALETTE_BODY_MARGIN_M, PALETTE_PADS
-from tatbot_motion.station import ZONE_MARGIN_M, station_world_parts  # noqa: F401 -- existing calibration API
-from tatbot_motion.station import palette_zone as measured_zone
+from tatbot_motion.station import station_world_parts  # noqa: F401 -- existing calibration API
 
 from tatbot_calib import halo, reach, solve, station
 from tatbot_calib.tool import ToolRefusedError, fitted_tool
@@ -50,6 +50,7 @@ FIX_HEIGHT_M = 0.002
 # lower searches SEARCH_OVER_SIDE_M over it: a ballpoint's tip at its side height passes over the ball from a fix
 # 2 mm high, and 1 mm higher it meets the tip or the body's end from a fix 2 mm off either way.
 SEARCH_BELOW_M = 0.004
+SEARCH_STEP_DOWN_M = 0.003     # a search that met nothing goes once more this much lower (Calibration.s1)
 SEARCH_OVER_SIDE_M = 0.001
 # A search starts where no ball within SEARCH_ACROSS_M of the estimate lies under the tool coming down onto the
 # start: the stylus reaches the search's height, a fix FIX_HEIGHT_M low and the ball's radius over its end plane, and
@@ -64,6 +65,10 @@ STAGING_ALONG = (0.5, 0.3, 0.7)
 STAGING_OVER_M = (0.0, 0.05)
 STAGING_TURN_DEG = (-30.0, 0.0, 30.0, -60.0, 60.0)
 SEARCH_MARGIN_M = 0.002
+# A seed from the arm's last touch (search_seed) is used only within these of it: the tip's error across the axis
+# turns with the heading (pink's 3RL met the ball 7 mm apart at headings 0 and -30, 2026-10-08).
+SEED_TURN_DEG = 5.0
+SEED_MAX_M = 0.02
 # When nothing meets the search's line, further lines run this many side radii apart: a pass meets the stylus
 # within about the tool's side radius across its line (the wall and the ball, the tool widening above them), so
 # the lines leave no gap. The laser's reach covers the prior's 12 mm from one line; a cartridge's tube needs more.
@@ -101,7 +106,7 @@ class Rig:
         self.rclpy, self.Touch, self.arm, self.names = rclpy, Touch, arm, names
         self.node = rclpy.create_node("tatbot_calib")
         self.client = ActionClient(self.node, Touch, names.TOUCH_ACTION)
-        self.safety, self.q, self.others = None, None, {}
+        self.safety, self.q = None, None
         self.node.create_subscription(SafetyState, names.SAFETY_TOPIC, self._on_safety, 10)
         self.node.create_subscription(JointState, "/joint_states", self._on_joints, 10)
 
@@ -114,10 +119,6 @@ class Rig:
         wanted = self.names.joint_names(self.arm)
         if all(name in index for name in wanted):
             self.q = np.array([msg.position[index[name]] for name in wanted])
-        for other in self.names.ARMS:   # the other arm, when this stack drives it too: where it stands now
-            names_ = self.names.joint_names(other)
-            if other != self.arm and all(name in index for name in names_):
-                self.others[other] = np.array([msg.position[index[name]] for name in names_])
 
     def spin(self, seconds: float):
         end = time.monotonic() + seconds
@@ -130,15 +131,32 @@ class Rig:
             self.spin(0.05)
         return self.q.copy()
 
-    def goal(self, start: np.ndarray, *, move=False, direction=(0.0, 0.0, -1.0), prior=0.0, guard=None) -> dict:
+    def page(self, timeout_s: float = 5.0):
+        """The bridge's latest Page (stencild's or the fixed one), or None within timeout_s."""
+        from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+        from tatbot_interfaces.msg import Page
+
+        got = []
+        qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE)
+        sub = self.node.create_subscription(Page, self.names.PAGE_TOPIC, got.append, qos)
+        end = time.monotonic() + timeout_s
+        while not got and time.monotonic() < end:
+            self.spin(0.1)
+        self.node.destroy_subscription(sub)
+        return got[-1] if got else None
+
+    def goal(self, start: np.ndarray, *, move=False, direction=(0.0, 0.0, -1.0), prior=0.0, guard=None,
+             speed=0.0, view=False) -> dict:
         """One Touch goal from `start` (the tcp in the arm base). The station's probe guard unless `guard` says
-        otherwise: a view far from the station (a registration hold) moves with guard 0, none."""
+        otherwise: a view far from the station (a registration hold) moves with guard 0, none. `speed` the slow
+        leg's, 0 for motion.yaml probe.slow_m_s. `view`: a hold by one joint move (MODE_VIEW, Calibration.go_to)."""
         from action_msgs.msg import GoalStatus
         from tatbot_session.geometry import matrix_quat
 
-        goal = self.Touch.Goal(mode=self.Touch.Goal.MODE_MOVE if move else self.Touch.Goal.MODE_SINGLE, arm=self.arm,
-                               guard=self.Touch.Goal.GUARD_PROBE if guard is None else int(guard),
-                               prior_distance_m=float(prior))
+        modes = self.Touch.Goal
+        goal = modes(mode=modes.MODE_VIEW if view else modes.MODE_MOVE if move else modes.MODE_SINGLE, arm=self.arm,
+                     guard=modes.GUARD_PROBE if guard is None else int(guard), prior_distance_m=float(prior),
+                     speed_m_s=float(speed))
         goal.start_pose.header.frame_id = self.names.base_frame(self.arm)
         pose = goal.start_pose.pose
         pose.position.x, pose.position.y, pose.position.z = (float(v) for v in start[:3, 3])
@@ -182,7 +200,10 @@ class Rig:
 
     def close(self):
         self.node.destroy_node()
-        self.rclpy.try_shutdown()
+        try:
+            self.rclpy.try_shutdown()
+        except RuntimeError as error:   # zenoh's close timing out right after a stack restart: the run's work is done
+            print(f"# the ROS context did not close: {error}", flush=True)
 
 
 class Calibration:
@@ -195,12 +216,14 @@ class Calibration:
         self.side_radius = halo_tip.wall_radius_m + halo.BALL_RADIUS_M - SIDE_GIVE_M   # where a side touch trips
         self.lateral_cap_m = 0.0025    # motion.yaml probe.lateral_cap_m (run() reads it)
         self.clearance_m = 0.030       # motion.yaml probe.clearance_m (run() reads it)
+        self.search_speed_m_s = 0.0    # motion.yaml probe.search_m_s (run() reads it); 0: probe.slow_m_s
         # the station's parts to keep out of: the fix's palette pose, carried with the ball's current estimate
         # (the parts are rigid about it, and the fix itself stood 10 mm off on 2026-09-28)
         self.station_pose: np.ndarray | None = None
         self.ball_in_palette, self.inkcaps = np.zeros(3), ()
         self.proven = False            # a trip in this run has shown the probe fires (the search rule)
         self.trips = 0                 # how many touches have tripped: a search counts its own
+        self.seeded = False            # the ball estimate is a search_seed, good across, not in height
         self.stuck = False             # a ring's back-out failed (back_out): the run ends without its lift
         self.world_from_base: np.ndarray | None = None    # the arm's registration: its base in the collision scene's world
         # the posts the wrist must keep clear of (reach.overhead_post), and the wrist's bodies (reach.wrist_bodies)
@@ -210,6 +233,7 @@ class Calibration:
         self.floor_z = -math.inf       # the tool's lowest point stays over this (FLOOR_UNDER_TOP_M; _stages sets it)
         self.s1_side_radius: float | None = None     # S1's side pairs' half-span: the side radius until two yaws are fitted
         self.top_bound: float | None = None          # the highest the ball's top can stand after the last edge passes (top())
+        self.edges: tuple | None = None              # the last edge passes (top()): the axis's start and stop, the lowest miss, any trip
         self.guard = None              # the stack's two-arm collision guard (tatbot_motion.collision), when it has one
         self.fitted: solve.Fit | None = None             # the fit so far (solve.Fit), which places the ball for the next yaw
         self.tip0: np.ndarray | None = None               # the installed tip in the tool mount (the tcp the executor plans with)
@@ -278,11 +302,52 @@ class Calibration:
                 rows = np.vstack([rows, ready.solve_ik_seeded(self.kin, pose, rows[-1])])
         except (ValueError, PlanError) as error:   # 2026-09-29: an IK stall here ended a run before any motion
             raise RuntimeError(f"{label}: no plan to it ({error}); not sent") from None
+        self.rows_check(label, rows)
+        return rows[-1]
+
+    def view_way(self, label: str, pose: np.ndarray) -> str | None:
+        """Why a hold at `pose` cannot go by one joint move from where the arm stands (Touch MODE_VIEW, the
+        executor's ready.view_move), or None: the move dips under its lower end (ready.station_dip), fails
+        rows_check, or brings the tool's envelope onto a station part or within clearance_m of the stylus: a column
+        about the ball up to that far over its top, which the station's way rises to before it crosses."""
+        from tatbot_session import ready
+
+        if self.motion is None or self.station_pose is None or self.ball is None:
+            return "nothing places the station"
+        q = self.rig.joints()
+        try:
+            move = ready.view_move(self.kin, self.motion, q, pose, 100.0)
+            if ready.station_dip(self.kin, move, q, move.q[-1]) is not None:
+                return "the joint move dips"
+            self.rows_check(label, move.q)
+        except (ValueError, RuntimeError) as error:
+            return str(error)
+        reach_m = halo.BALL_RADIUS_M + self.clearance_m
+        zones = self.zones() + [("probe's stylus", self.ball + [0.0, 0.0, reach_m], reach_m, True)]
+        tcps = [self.kin.fk(row) for row in move.q]
+        for a, b in zip(tcps[:-1], tcps[1:], strict=True):
+            if (zone := halo.meets([a[:3, 3], b[:3, 3]], a[:3, 2], zones, self.halo, self.wall_floor())) is not None:
+                return f"the tool would meet the {zone}"
+        return None
+
+    def go_to(self, label: str, pose: np.ndarray) -> None:
+        """A hold's travel: one joint move (MODE_VIEW) where view_way lets it, else the station's way (MODE_MOVE) once
+        way_check passes that (RuntimeError, nothing sent, when it does not). Each hold over the station's way rose
+        30 mm turning, crossed and came down, three starts and stops in 11-23 s (2026-10-22)."""
+        why = self.view_way(label, pose)
+        if why is None:
+            self.rig.goal(pose, view=True)
+            return
+        self.say(f"{label}: by the station's way ({why})")
+        self.way_check(label, [pose])
+        self.rig.goal(pose, move=True)
+
+    def rows_check(self, label: str, rows) -> None:
+        """way_check's refusals of rows of joints from where the arm stands (rows[0]); [q, q]: the arm standing at q."""
         tips = [self.kin.fk(row) for row in rows]
         self.floor_check(label, [tip[:3, 3] for tip in tips], tips[-1][:3, 2])
-        why = (self.guard.refusal(self.arm, rows, dict(getattr(self.rig, "others", {})))
-               if self.guard is not None else None)
-        if why:   # the executor refuses it too (ArmIO.execute): the other arm as this stack sees it, landed
+        why = self.guard.refusal(self.arm, rows) if self.guard is not None else None
+        if why:   # the executor refuses it too (ArmIO.execute)
             raise RuntimeError(f"{label}: {why}")
         if self.posts:
             gap, row = reach.path_clearance(self.kin, rows, self.bodies, self.posts)
@@ -290,7 +355,6 @@ class Calibration:
                 raise RuntimeError(f"{label}: the wrist would pass {gap * 1000:.0f} mm from the overhead camera's "
                                    f"post (at the tcp {np.round(self.kin.fk(row)[:3, 3], 3).tolist()}); not sent")
         self.palette_check(label, rows)
-        return rows[-1]
 
     def palette_check(self, label: str, rows) -> None:
         """Refuse a way on which a body of the arm other than its tool (links, gripper carriages with their rubber
@@ -353,7 +417,8 @@ class Calibration:
             end[:3, 3] += (plan.prior_m + extra + self.lateral_cap_m) * plan.direction
             self.floor_check(plan.label, [here, start[:3, 3], end[:3, 3]], start[:3, 2])
             self.way_check(plan.label, [start, end])
-            result = self.rig.goal(start, direction=plan.direction, prior=plan.prior_m + extra)
+            result = self.rig.goal(start, direction=plan.direction, prior=plan.prior_m + extra,
+                                   speed=self.search_speed_m_s if plan.kind == "search" else 0.0)
             row = {"group": group, "kind": plan.kind, "label": plan.label, "extra_m": extra,
                    "start": start.tolist(), "direction": plan.direction.tolist(), "prior_m": plan.prior_m, **result}
             self.log("touches.jsonl", row)
@@ -456,7 +521,7 @@ class Calibration:
                 return self.ball.copy(), half["d"], half["p"]
         return None
 
-    def search(self, rotation: np.ndarray, heading: np.ndarray, group: str = "S1 search"
+    def search(self, rotation: np.ndarray, heading: np.ndarray, group: str = "S1 search", lines: bool = True
                ) -> tuple[np.ndarray, float, float] | None:
         """S1's search, and an S4 yaw's when the fit has not placed the ball: sides() through the estimate. A pass
         meets the stylus only within the
@@ -467,7 +532,7 @@ class Calibration:
             return None
         trips = self.trips
         found = self.sides(rotation, group, heading, search=True)
-        if found is not None or self.trips > trips:
+        if found is not None or self.trips > trips or not lines:
             return found
         _, across = halo._across(rotation[:, 2], heading)
         origin, step = self.ball.copy(), SEARCH_LINE_SPACING * (self.side_radius + SIDE_GIVE_M)
@@ -497,10 +562,10 @@ class Calibration:
         refused = [first]
         for along in STAGING_ALONG:
             xy = here[:2] + along * (prior[:2] - here[:2])
-            for over in STAGING_OVER_M:
+            for rise in STAGING_OVER_M:   # not `over`: the way checked after the staging pose is over the ball's
                 for turn in STAGING_TURN_DEG:
-                    pose = halo.tool_pose(np.array([xy[0], xy[1], here[2] + over]), self.heading + math.radians(turn))
-                    label = f"staging ({xy[0]:.3f}, {xy[1]:.3f}, {here[2] + over:.3f}) {math.degrees(self.heading) + turn:+.0f}"
+                    pose = halo.tool_pose(np.array([xy[0], xy[1], here[2] + rise]), self.heading + math.radians(turn))
+                    label = f"staging ({xy[0]:.3f}, {xy[1]:.3f}, {here[2] + rise:.3f}) {math.degrees(self.heading) + turn:+.0f}"
                     try:
                         q = self.way_check(label, [pose])
                         self.way_check(f"{label} on over the ball", [over], q)
@@ -540,25 +605,42 @@ class Calibration:
         stop = (max(reach - EDGE_SHORT_M, self.halo.hole_radius_m + halo.BALL_RADIUS_M + HOLE_MARGIN_M)
                 if self.halo.hole_takes_ball else self.halo.rim_radius_m)
         prior = min(side.prior_m, self.side_radius + side.prior_m - self.lateral_cap_m - stop)
-        tested = False
+        tested, tripped = False, False
+        if not self.halo.edges_trip:
+            # every pass would read a miss, and the bisection would settle on `met` (2026-10-05..12): settle there
+            # without the passes' 3 minutes. The side touches that centred the stylus set its height, as they did.
+            over, tested = met + TOP_RESOLUTION_M, True
         while over - met > TOP_RESOLUTION_M:
             z = (met + over) / 2.0
             if self.touch(halo.edge_pass(side, z, prior), f"{group} top", (0.0,)) is not None:
-                met = z
+                met, tripped = z, True
             else:
                 over, tested = z, True
         if not tested and self.touch(halo.edge_pass(side, over, prior), f"{group} top", (0.0,)) is not None:
             raise RuntimeError(f"the stylus still stands at z {over:.4f} m, over the searched range: the prior is "
                                "too far off to trust its height")
-        # the ring's nearest edge to the ball's centre where the passes stop: outside the ring, or over its hole
-        near = max(0.0, stop + EDGE_LAG_M - self.halo.wall_radius_m, self.halo.hole_radius_m - stop)
-        if near >= halo.BALL_RADIUS_M:
-            raise RuntimeError(f"the edge passes stop with the ring {near * 1000:.1f} mm off the ball's centre: they "
-                               "cannot reach over the ball, so its top is unmeasured")
-        self.top_bound = over + EDGE_TRIGGER_M + halo.BALL_RADIUS_M - math.sqrt(halo.BALL_RADIUS_M ** 2 - near ** 2)
-        self.say(f"{group}: the ball's top between {met * 1000:.1f} and {over * 1000:.1f} mm (base z), at most "
-                 f"{self.top_bound * 1000:.1f}")
+        start = side.start[:3, 3]   # the axis stops at the pass's cap, the executor's lag short of it
+        self.edges = (start, start + (prior + self.lateral_cap_m - EDGE_LAG_M) * side.direction, over, tripped)
+        self.say(f"{group}: the ball's top between {met * 1000:.1f} and {over * 1000:.1f} mm (base z)")
+        self.bound_top(self.ball)
         return (met + over) / 2.0 - halo.BALL_RADIUS_M
+
+    def bound_top(self, ball: np.ndarray) -> None:
+        """The highest the ball's top can stand, its centre at `ball`, after the last edge passes (top()): over their
+        lowest miss by the trigger's depth and the ball's fall from its top to the nearest the ring came on its way. A
+        ring that never came within the ball's radius of its centre could not meet it, and its top is unmeasured. The
+        floor stands FLOOR_UNDER_TOP_M under it."""
+        start, end, over, _ = self.edges
+        path = (end - start)[:2]
+        along = float(np.clip((ball - start)[:2] @ path / (path @ path), 0.0, 1.0))
+        near = max(0.0, float(np.linalg.norm((ball - start)[:2] - along * path)) - self.halo.wall_radius_m)
+        if near >= halo.BALL_RADIUS_M:
+            raise RuntimeError(f"the edge passes' ring stayed {near * 1000:.1f} mm off the ball centred at "
+                               f"({ball[0]:.4f}, {ball[1]:.4f}) m: they cannot reach over it, so its top is unmeasured")
+        self.top_bound = over + EDGE_TRIGGER_M + halo.BALL_RADIUS_M - math.sqrt(halo.BALL_RADIUS_M ** 2 - near ** 2)
+        self.floor_z = self.top_bound - FLOOR_UNDER_TOP_M
+        self.say(f"the ball's top at most {self.top_bound * 1000:.1f} mm; the floor is now z {self.floor_z * 1000:.1f} "
+                 f"mm, {FLOOR_UNDER_TOP_M * 1000:.0f} mm under it")
 
     def search_heading(self) -> np.ndarray:
         """The search pairs' heading: the base heading turned (by under 45 degrees) until the palette camera
@@ -572,6 +654,38 @@ class Calibration:
         a = toward + round((self.heading - toward) / (math.pi / 2.0)) * math.pi / 2.0
         return np.array([math.cos(a), math.sin(a), 0.0])
 
+    def step_down(self, across: np.ndarray) -> bool:
+        """The search's estimate and the floor SEARCH_STEP_DOWN_M lower, back at `across` (where the search started:
+        a pass that tripped moved the estimate). The D555 reads the station high: 3-5 mm through the 10-12
+        registrations, and 6.2 mm on one, where every pass went over the ball's top. A search that centred nothing
+        went over the stylus, or grazed its top with the needles, which trip only now and then (10-13: 7 of 24
+        passes, never an opposed pair, at one height): either way the top stands at least that much under the fix's,
+        and the floor goes down with it, still more than 10 mm under the top."""
+        if self.stuck or _latched(self):
+            return False
+        self.ball[:2] = across[:2]
+        self.ball[2] -= SEARCH_STEP_DOWN_M
+        self.floor_z -= SEARCH_STEP_DOWN_M
+        self.say(f"S1: nothing met; searching again {SEARCH_STEP_DOWN_M * 1000:.0f} mm lower")
+        return True
+
+    def find_stylus(self, rotation: np.ndarray):
+        """S1's search from the estimate, and once more SEARCH_STEP_DOWN_M lower when nothing met it. From a seed,
+        good across to a millimetre or two (search_seed), one pair at each height comes first: what a seed misses is
+        the height (10-13: four lines across, 7 min, before the lower height found it). sides()'s result, or None."""
+        across = self.ball.copy()
+        if self.seeded:
+            found = self.sides(rotation, "S1 search", self.search_heading(), search=True)
+            if found is not None:
+                return found
+            if self.step_down(across):
+                return self.sides(rotation, "S1 search", self.search_heading(), search=True) or self.search(
+                    rotation, self.search_heading())
+        found = self.search(rotation, self.search_heading())
+        if found is None and not self.seeded and self.step_down(across):
+            found = self.search(rotation, self.search_heading())
+        return found
+
     def s1(self) -> bool:
         """The station found from a prior good to 12 mm across and 11 mm in height: search, top, sides."""
         if self.ball is None:
@@ -579,7 +693,7 @@ class Calibration:
         rotation = halo.tool_pose(np.zeros(3), self.heading)[:3, :3]
         heading = self.heading_vector()
         prior_top = float(self.ball[2]) + halo.BALL_RADIUS_M
-        found = self.search(rotation, self.search_heading())
+        found = self.find_stylus(rotation)
         if found is None:
             self.say("S1: the search found no stylus within 12 mm of the prior")
             return False
@@ -589,11 +703,15 @@ class Calibration:
                  f"its side radius at the ball {self.side_radius * 1000:.2f})")
         met = float(self.ball[2]) - self.search_below
         self.ball[2] = self.top(rotation, heading, met, prior_top + TOP_OVER_M, "S1")
-        if self.top_bound is not None:
-            self.floor_z = self.top_bound - FLOOR_UNDER_TOP_M
-            self.say(f"S1: the floor is now z {self.floor_z * 1000:.1f} mm, {FLOOR_UNDER_TOP_M * 1000:.0f} mm under the "
-                     "highest top the edge passes allow")
-        return self.attitude(0.0, "S1")
+        if not self.attitude(0.0, "S1"):
+            return False
+        if not self.edges[3]:
+            # No edge pass met the stylus, so the bisection settled on the search's height: the top, when the prior
+            # stood a search depth high (2026-10-07, the 3RL at heading 0: the side pairs centred the stylus 0.9 mm
+            # from where the passes stopped); a search depth under it when the passes went by the ball, along a
+            # search centre off the stylus. Where the side pairs centre it tells the two apart.
+            self.bound_top(self.ball)
+        return True
 
     def placed(self, rotation: np.ndarray) -> np.ndarray | None:
         """The ball as this yaw's tcp must see it, from the fit of two or more yaws: the fitted ball less the fitted
@@ -618,8 +736,10 @@ class Calibration:
             self.search(rotation, heading, f"{group} search")
         found = self.sides(rotation, group, heading)
         if found is None and placed is not None:
-            self.say(f"{group}: the placed ball met nothing; searching")
-            self.search(rotation, heading, f"{group} search")
+            # one search through the placed ball, not its lines across: on 2026-10-17 the 3RL's +30 and +45 placed
+            # balls met nothing, and their lines out to 12 mm met nothing either (36 touches, 18 min)
+            self.say(f"{group}: the placed ball met nothing; searching its line")
+            self.search(rotation, heading, f"{group} search", lines=False)
             found = self.sides(rotation, group, heading)
         if found is None:
             return False
@@ -654,6 +774,21 @@ def _report(run_dir: Path, fitted: solve.Fit, held: dict, moved: dict, tip0, n_t
              "", f"Adopt with `tatbot ros calib apply --arm <arm> --run {run_dir.name}`."]
     return "\n".join(lines) + "\n"
 
+
+
+def _adopt_touch(cal, touch, live: Path):
+    """The touch dips aim by: the camera's ball height of the touch it replaces carried when it speaks for this one
+    (station.carry_height; the 2026-10-15 re-touch dropped it and a dip went 5.3 mm deep), the replaced file kept
+    beside it."""
+    previous = station.load_touch(cal.arm, live) if live.is_file() else None
+    touch, note = station.carry_height(touch, previous)
+    if note:
+        cal.say(f"S1: {note}")
+    if previous is not None:
+        live.with_name(f"{live.name}.replaced-{cal.run.dir.name}").write_text(live.read_text())
+    touch.write(cal.run.dir / "station-touch.json")
+    cal.say(f"S1: dips aim by this touch from now on ({touch.write(live)})")
+    return touch
 
 def run(args) -> int:
     from tatbot_description import repo_root, robot_description
@@ -691,7 +826,7 @@ def run(args) -> int:
                                 >= PALETTE_BODY_MARGIN_M)
     heading, unreached = ((args.heading_deg, []) if args.heading_deg is not None else
                           reach.choose_heading(kin, args.arm, fix.ball, args.attitudes,
-                                               float(motion["clik"]["joint_limit_margin_rad"]), posts, guard,
+                                               float(motion["clik"]["joint_limit_margin_rad"]), posts,
                                                station_ok))
     args.attitudes = [a for a in args.attitudes if tuple(a) not in unreached]
     rig = Rig(args.arm)
@@ -708,16 +843,10 @@ def run(args) -> int:
             + (", ".join(f"{yaw:+.0f}/{tilt:+.0f}" for yaw, tilt in unreached) or "none"))
     probe = motion["probe"]
     cal.lateral_cap_m, cal.clearance_m = float(probe["lateral_cap_m"]), float(probe["clearance_m"])
+    cal.search_speed_m_s = float(probe.get("search_m_s", 0.0))
     code = 1
     try:
-        from tatbot_session.lease import PaletteLease
-
-        with PaletteLease(palette_zone(repo, args.arm, fix, run_log.dir.name)):
-            code = _stages(cal, fix, args)
-    except RuntimeError as error:   # the palette held by the other arm's run: nothing moved
-        if "the palette is held" not in str(error):
-            raise
-        cal.say(f"S0: {error}")
+        code = _stages(cal, fix, args)
     finally:
         if not _latched(cal) and not cal.stuck:   # landed; a latched arm, or one whose ring may be on the stylus
             # (Calibration.back_out), stays where it holds
@@ -756,24 +885,17 @@ def world_from_base(repo: Path, arm: str) -> np.ndarray | None:
     return np.asarray(json.loads(Path(path).expanduser().read_text())["world_from_arm_base"], float)
 
 
-def palette_zone(repo: Path, arm: str, fix: station.StationFix, run: str) -> dict:
-    """The palette's zone for its lease (tatbot_session.lease): a cylinder in the camera's world, its axis the arm
-    base's z (the table's normal) through the palette's root, wide and tall enough for every part of the palette
-    (station.parts, the inkcaps too) and ZONE_MARGIN_M more. The arm's registration places its base in the world."""
-    base = world_from_base(repo, arm)
-    urdf = repo / "urdf" / "palette.urdf"
-    parts = station.parts(fix.base_from_palette, station.inkcap_rims(
-        urdf, repo / "config" / "palette.yaml", base_from_palette=fix.base_from_palette), urdf)
-    return measured_zone(arm, fix, run, base, parts)
-
-
 def retreat(rig: Rig, kin) -> str:
     """Straight up RETREAT_LIFT_M under the probe guard (a landing's joint path then starts clear of the probe),
     then the verified landing."""
     pose = kin.fk(rig.joints())
     if pose[2, 2] < -0.9:   # the tool points down, as at the station: lift it first
         pose[2, 3] += RETREAT_LIFT_M
-        rig.goal(pose, move=True)
+        try:
+            rig.goal(pose, move=True)
+        except RuntimeError as error:   # 2026-10-16: the lift met joint 3's guarded limit and the arm was left holding;
+            # 2026-10-22 from roof-tag views a 15 mm lift met it as a 60 mm one did: the pose, not the height
+            print(f"the lift before landing was refused ({error}); landing from where the arm stands", flush=True)
     return rig.land()
 
 
@@ -792,6 +914,72 @@ def _latched(cal: Calibration) -> bool:
     return s is None or s.latched or not s.estop_ok
 
 
+def touched_fix(cal: Calibration, fix: station.StationFix, tool_id: str) -> station.StationFix:
+    """The fix carried onto the arm's station touch while the touch speaks for now (station.touched_palette: the
+    tool, joint model, registration and palette unchanged), so S1's prior, the sweep's park and its camera's
+    prediction, and the way checks stand where this arm's tip meets the ball. Through the registration the overhead's
+    ball stands 3-10 mm off it: on 2026-10-07 the 3RL's sweep parks stood ~10 mm aside the ball (the detector took
+    the stylus for the tip), and S1's lines from the fix met nothing out to 9 mm. The fix as it is when no touch
+    speaks; a new touch still records the overhead fix it started from."""
+    import dataclasses
+
+    urdf = cal.repo / "urdf" / "palette.urdf"
+    try:
+        touch = station.load_touch(cal.arm)
+        base_from_palette = station.touched_palette(touch, fix, tool_id=tool_id, tcp_m=cal.tip0,
+                                                    joint_offsets=station.joint_offsets(cal.repo, cal.arm),
+                                                    palette_urdf=urdf,
+                                                    same_body=station.same_machine(cal.repo, touch.tool_id, tool_id))
+    except station.StaleStationError as error:
+        cal.say(f"S0: the station prior is the overhead fix: {error}")
+        return fix
+    ball = base_from_palette[:3, :3] @ station.ball_in_palette(urdf) + base_from_palette[:3, 3]
+    cal.say(f"S0: the station prior is the touch {touch.run}: the ball "
+            f"{np.round((ball - np.asarray(fix.ball, float)) * 1000, 1).tolist()} mm from the overhead fix")
+    return dataclasses.replace(fix, base_from_palette=base_from_palette, ball=ball)
+
+
+def search_seed(cal: Calibration, fix: station.StationFix, tool_id: str) -> np.ndarray | None:
+    """Where S1's search starts when no touch speaks for now: the fix's ball moved by where the arm's last touch
+    found the ball from its own fix, when that touch held this tool (or a cartridge of its machine) at this heading.
+    The overhead puts the ball off the arm's touches by an error of the arm and its tool, not of the layout: pink's
+    11RL and 3RL met it 9.0 and 9.2 mm across the fix at heading -30 a week and a re-layout apart (2026-10-05,
+    2026-10-12), so a search from the fix swept 7 empty lines (8 of its 17 minutes) first. The search verifies the
+    seed, and _stages falls back to the fix when it finds nothing there. None when no such touch exists, or it was
+    touched under another registration."""
+    try:
+        touch = station.load_touch(cal.arm)
+    except (station.StaleStationError, ValueError, KeyError):
+        return None
+    rotation = halo.tool_pose(np.zeros(3), cal.heading)[:3, :3]
+    turned = math.degrees(math.acos(np.clip((np.trace(rotation.T @ touch.rotation) - 1.0) / 2.0, -1.0, 1.0)))
+    same = touch.tool_id == tool_id or station.same_machine(cal.repo, touch.tool_id, tool_id)
+    # through the tcp in use: the same joints put a tcp moved since by d a rotation of d further on
+    # (station.touched_palette); the 1011RL's adopted tip moved it 10 mm (2026-10-12)
+    moved = np.asarray(getattr(cal, "tip0", touch.tcp_m), float) - np.asarray(touch.tcp_m, float)
+    offset = np.asarray(touch.ball, float) + np.asarray(touch.rotation, float) @ moved - np.asarray(touch.fix.ball, float)
+    halo_tip = getattr(cal, "halo", None)
+    if halo_tip is None or halo_tip.edges_trip:
+        offset[2] = 0.0   # across only: a tool whose edge passes measure the top takes the fix's height
+    else:
+        # A needle cartridge's touch records the ball a fixed depth under the height its passes met the stylus at
+        # (Calibration.top), so its own ball would walk lower each run (2026-10-12: 80.6 -> 75.8 mm). Seeded so its
+        # passes run again where they met the stylus, it holds. The overhead reads the ball 6-8 mm high: every
+        # search from the fix's height went over the ball before stepping down (2026-10-17, 8-14 passes a touch).
+        # (Calibration.top without edge passes: the top half its resolution over the passes, the centre a radius under)
+        offset[2] += halo.BALL_RADIUS_M - TOP_RESOLUTION_M / 2.0 + cal.search_below
+    # The offset is the touch's from its own fix, through that fix's registration: across another one it carries the
+    # old one's error (2026-10-22: the wrist's registration took out the cube's ~9 mm, and the cube's offset sent
+    # the search 13.5 mm over the ball)
+    registered = touch.fix.detail.get("registration_sha256") == fix.detail.get("registration_sha256")
+    if (touch.arm != cal.arm or not same or not registered or turned > SEED_TURN_DEG
+            or float(np.linalg.norm(offset)) > SEED_MAX_M):
+        return None
+    cal.say(f"S1: the search starts {np.round(offset * 1000, 1).tolist()} mm from the fix, where the touch "
+            f"{touch.run} met the ball from its own")
+    return np.asarray(fix.ball, float) + offset
+
+
 def place_station(cal: Calibration, fix: station.StationFix) -> None:
     """The station's parts, the floor and the ball's prior from the run's fix (the joint-6 sweep's too)."""
     urdf = cal.repo / "urdf" / "palette.urdf"
@@ -807,9 +995,27 @@ def place_station(cal: Calibration, fix: station.StationFix) -> None:
 
 def _stages(cal: Calibration, fix: station.StationFix, args) -> int:
     _preflight(cal)
-    place_station(cal, fix)
+    prior = touched_fix(cal, fix, args.tool)
+    if prior is not fix and not cal.halo.edges_trip:
+        # No edge pass trips, so S1 settles the top at its search height, a fixed depth under the prior's: from a
+        # touch's ball that walks 4.8 mm lower each run (2026-10-12: 80.6 -> 75.8 mm, and every further yaw then
+        # stood under the floor). The overhead's height does not walk (80.1-80.6 mm over four registrations).
+        prior = dataclasses.replace(prior, ball=np.array([*prior.ball[:2], fix.ball[2]], float))
+        cal.say("S1: the prior's height is the overhead fix's: this tool's edge passes cannot measure the top")
+    place_station(cal, prior)
+    seed = search_seed(cal, fix, args.tool) if prior is fix else None
+    floor = cal.floor_z
+    if seed is not None:
+        cal.ball, cal.seeded = seed.copy(), True
+        # the floor 10 mm under the seed's top when that is lower than the fix's (a needle's height seed)
+        cal.floor_z = min(floor, float(seed[2]) + halo.BALL_RADIUS_M - FLOOR_UNDER_TOP_M + FIX_HEIGHT_M)
     cal.approach(cal.ball)
-    if not cal.s1():
+    found = cal.s1()
+    if not found and seed is not None and not cal.stuck and not _latched(cal):
+        cal.say("S1: nothing at the seed; searching from the fix")
+        cal.ball, cal.seeded, cal.floor_z = np.asarray(fix.ball, float).copy(), False, floor
+        found = cal.s1()
+    if not found:
         cal.say("S1: the side touches did not find the ball; stopping")
         return 1
     cal.say(f"S1: the ball stands {np.round((cal.ball - np.asarray(fix.ball, float)) * 1000, 1).tolist()} mm from the fix")
@@ -817,9 +1023,10 @@ def _stages(cal: Calibration, fix: station.StationFix, args) -> int:
     touch = station.StationTouch(cal.arm, args.tool, measured, halo.tool_pose(np.zeros(3), cal.heading)[:3, :3],
                                  np.asarray(cal.tip0, float), station.joint_offsets(cal.repo, cal.arm), fix,
                                  cal.run.dir.name, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
-    touch.write(cal.run.dir / "station-touch.json")
     if getattr(args, "touch_path", None):
-        cal.say(f"S1: dips aim by this touch from now on ({touch.write(Path(args.touch_path).expanduser())})")
+        touch = _adopt_touch(cal, touch, Path(args.touch_path).expanduser())
+    else:
+        touch.write(cal.run.dir / "station-touch.json")
     if getattr(args, "station_only", False):
         return 0
     _fit(cal)
@@ -843,12 +1050,18 @@ def _stages(cal: Calibration, fix: station.StationFix, args) -> int:
 
 
 def s4(cal: Calibration, attitudes, measured: np.ndarray) -> int:
-    """S4: the candidate yaws in turn until ATTITUDES_WANTED have measured the ball; one the executor will not
-    plan, or whose pairs do not both trip, is skipped and its contacts dropped. Returns how many measured."""
-    done = 0
-    for yaw, tilt in attitudes:
-        if done == ATTITUDES_WANTED:
-            break
+    """S4: the candidate yaws until ATTITUDES_WANTED have measured the ball; one the executor will not plan, or whose
+    pairs do not both trip, is skipped and its contacts dropped. The yaws kept are the list's first that measure, as
+    in its own order, but those still wanted are swept from the end of their span nearer the tool's yaw: from S1's
+    0, -60 -30 +60 turns the wrist 180 deg where the list's -60 +60 -30 turned it 270, and +60's ball is still placed
+    by the 0..-60 fan (2026-10-22: joints 3 and 4 rang 14-15 mrad on its 20-27 s swings). Returns how many measured."""
+    done, at, tried = 0, 0.0, set()
+    while wanted := sorted([i for i in range(len(attitudes)) if i not in tried][:ATTITUDES_WANTED - done],
+                           key=lambda i: attitudes[i][0]):
+        i = min((wanted[0], wanted[-1]), key=lambda i: (abs(attitudes[i][0] - at), i))
+        tried.add(i)
+        yaw, tilt = attitudes[i]
+        at = yaw
         group = f"S4 {yaw:+.0f}/{tilt:+.0f}"
         cal.ball = measured.copy()   # attitude() places it by the fit once two yaws are in
         kept = len(cal.contacts)

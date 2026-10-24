@@ -23,6 +23,8 @@ def _cockpit_args(p):
       invariants=(
           "Opens no camera and no arm: it subscribes to the frames the camera owners already publish on the bus.",
           "Viewer memory and the subscriber's rate are capped; the launcher refuses an uncapped start.",
+          "Streams into a recording of its own, which every window on the fleet viewer switches to; it refuses "
+          "to join live-cameras, the standing cockpit's recording, whose overlays sit in camera world.",
       ))
 def cockpit(ctx, ns, rest):
     flags = ["--display-quality", ns.display_quality] if ns.display_quality != "normal" else []

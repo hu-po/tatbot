@@ -24,39 +24,8 @@ def test_runtime_tag_frame_matches_the_installed_cad_manifest():
     assert ink_spec.tag_in_palette_root(REPO) == pytest.approx(transform[:3, 3])
 
 
-def test_tip_pivot_recovers_a_known_tag_centre():
-    """The authoritative solve: rolling the planted tip about one point recovers
-    that point in the base frame, whatever the tip offset — the FK guarantee the
-    tip source rests on."""
-    import il_touchoff as touchoff
-    rng = np.random.default_rng(0)
-    tag = np.array([0.30, -0.02, 0.16])       # the planted point (base)
-    tip = np.array([0.0597, -0.0032, -0.0005])  # tip in the EE frame
-    poses = []
-    for _ in range(12):
-        ax = rng.normal(size=3)
-        ax = ax / np.linalg.norm(ax)
-        rmat = _rot(ax, rng.uniform(-0.5, 0.5))
-        poses.append(_homog(rmat, tag - rmat @ tip))
-    fit = touchoff.solve_pivot_trimmed(poses)
-    assert np.linalg.norm(fit["pivot"] - tag) < 1e-6
-    assert np.linalg.norm(fit["p"] - tip) < 1e-6
-
-
-def _rot(axis, angle):
-    axis = np.array(axis, float)
-    x, y, z = axis / np.linalg.norm(axis)
-    c, sn = np.cos(angle), np.sin(angle)
-    k = 1 - c
-    return np.array([
-        [c + x * x * k, x * y * k - z * sn, x * z * k + y * sn],
-        [y * x * k + z * sn, c + y * y * k, y * z * k - x * sn],
-        [z * x * k - y * sn, z * y * k + x * sn, c + z * z * k]])
-
-
 def test_base_from_root_is_the_inverse_of_the_urdf_mount():
-    """base_from_root maps the arm's base origin (in root) back to the origin —
-    the transform cal_tip needs because touchoff solves in the root frame."""
+    """base_from_root maps the arm's base origin (in root) back to the origin."""
     import xml.etree.ElementTree as ET
     bfr = ink_spec.base_from_root_matrix(REPO, "right")
     # The base origin in root is the URDF mount; base_from_root takes it home.
@@ -68,13 +37,6 @@ def test_base_from_root_is_the_inverse_of_the_urdf_mount():
 
 
 import json  # noqa: E402
-
-
-def _homog(rmat, t):
-    m = np.eye(4)
-    m[:3, :3] = rmat
-    m[:3, 3] = t
-    return m
 
 
 def test_installed_geometry_matches_cad_and_robot_has_no_palette():

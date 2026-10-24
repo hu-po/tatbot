@@ -1,4 +1,4 @@
-"""NumPy time laws from pen_path: one position/rotation per tick; assembled paths use feedforward."""
+"""NumPy time laws: one position/rotation per tick; assembled paths use feedforward."""
 from __future__ import annotations
 
 import math
@@ -27,13 +27,18 @@ class Retime:
     angular_accel_rad_s2: float = 0.1
 
 
+def arc_lengths(poly: np.ndarray) -> np.ndarray:
+    """Arc length at each vertex of a polyline, from 0."""
+    return np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(np.asarray(poly, float), axis=0), axis=1))]
+
+
 def polyline_length(poly: np.ndarray) -> float:
     poly = np.asarray(poly, float)
     return float(np.linalg.norm(np.diff(poly, axis=0), axis=1).sum()) if len(poly) > 1 else 0.0
 
 
 def resample_polyline_by_arclength(poly: np.ndarray, s: np.ndarray):
-    """Points and unit tangents of a polyline at arc lengths `s` (scripts/lib/stroke_material.py)."""
+    """Points and unit tangents of a polyline at arc lengths `s`."""
     poly = np.asarray(poly, float)
     seg = np.diff(poly, axis=0)
     seg_len = np.linalg.norm(seg, axis=1)
@@ -52,7 +57,7 @@ def resample_polyline_by_arclength(poly: np.ndarray, s: np.ndarray):
 def trim_polyline(poly: np.ndarray, from_s: float) -> np.ndarray:
     """The part of a polyline from arc length `from_s` on (its first row is the point at from_s)."""
     poly = np.asarray(poly, float)
-    cum = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(poly, axis=0), axis=1))])
+    cum = arc_lengths(poly)
     if from_s <= 0.0:
         return poly
     start, _ = resample_polyline_by_arclength(poly, np.array([from_s]))
@@ -106,10 +111,17 @@ def align_rotation(a, b) -> np.ndarray:
 
 
 def rotation_slerp(r0: np.ndarray, r1: np.ndarray, blend: np.ndarray) -> np.ndarray:
-    """Rotations from r0 to r1 along the geodesic at fractions `blend`."""
+    """Rotations from r0 to r1 along the geodesic at fractions `blend` (axis_rotation's closed form, per knot)."""
     r0 = np.asarray(r0, float)
     axis, angle = rotation_log(np.asarray(r1, float) @ r0.T)
-    return np.stack([axis_rotation(axis, float(b) * angle) @ r0 for b in np.atleast_1d(blend)])
+    theta = np.atleast_1d(np.asarray(blend, float)) * angle
+    x, y, z = (float(v) for v in axis)
+    c, s = np.cos(theta), np.sin(theta)
+    k = 1.0 - c
+    turn = np.stack([x * x * k + c, x * y * k - z * s, x * z * k + y * s,
+                     y * x * k + z * s, y * y * k + c, y * z * k - x * s,
+                     z * x * k - y * s, z * y * k + x * s, z * z * k + c], axis=-1).reshape(-1, 3, 3)
+    return turn @ r0
 
 
 # --- the stroke time law -----------------------------------------------------------------------
@@ -171,6 +183,23 @@ def polyline_turn_angles(poly: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return arc, turn
 
 
+def _capped(excess, n: int, cruise: float, iterations: int) -> np.ndarray:
+    """Per-knot speed caps: cruise where excess(cruise) <= 0, else the largest speed bisection finds with
+    excess <= 0 (excess rises with speed)."""
+    caps = np.full(n, float(cruise))
+    limited = excess(caps) > 0.0
+    if not limited.any():
+        return caps
+    lo, hi = np.zeros(n), caps.copy()
+    for _ in range(iterations):
+        mid = 0.5 * (lo + hi)
+        over = excess(mid) > 0.0
+        hi = np.where(over, mid, hi)
+        lo = np.where(over, lo, mid)
+    caps[limited] = lo[limited]
+    return caps
+
+
 def corner_speed_limits(arc: np.ndarray, turn: np.ndarray, cruise: float, accel: float, window_s: float,
                         iterations: int = 40) -> np.ndarray:
     """Tip speed cap at every vertex so the direction change within the feedforward window costs at most
@@ -186,18 +215,7 @@ def corner_speed_limits(arc: np.ndarray, turn: np.ndarray, cruise: float, accel:
         hi = np.searchsorted(arc, arc + half, side="right")
         return v * (cumulative[hi] - cumulative[lo]) - budget
 
-    caps = np.full(len(arc), float(cruise))
-    limited = excess(caps) > 0.0
-    if not limited.any():
-        return caps
-    lo, hi = np.zeros(len(arc)), caps.copy()
-    for _ in range(iterations):
-        mid = 0.5 * (lo + hi)
-        over = excess(mid) > 0.0
-        hi = np.where(over, mid, hi)
-        lo = np.where(over, lo, mid)
-    caps[limited] = lo[limited]
-    return caps
+    return _capped(excess, len(arc), cruise, iterations)
 
 
 def _refine_knots(arc: np.ndarray, values: np.ndarray, max_step: float, fill: float):
@@ -280,18 +298,7 @@ def rotary_speed_limits(arc, rates, cruise: float, alpha: float, window_s: float
         half = 0.5 * v * float(window_s)
         return v * np.linalg.norm(rate_at(arc + half) - rate_at(arc - half), axis=1) - budget
 
-    caps = np.full(len(arc), float(cruise))
-    limited = excess(caps) > 0.0
-    if not limited.any():
-        return caps
-    lo, hi = np.zeros(len(arc)), caps.copy()
-    for _ in range(iterations):
-        mid = 0.5 * (lo + hi)
-        over = excess(mid) > 0.0
-        hi = np.where(over, mid, hi)
-        lo = np.where(over, lo, mid)
-    caps[limited] = lo[limited]
-    return caps
+    return _capped(excess, len(arc), cruise, iterations)
 
 
 def budgeted_speed_profile(knots, caps, accel, retime: Retime, v_start=None, v_end=None, *,
@@ -456,7 +463,9 @@ def pen_up_leg(points, r_from, r_to, speed_caps, retime: Retime, period_s: float
     vertex_caps = corner_speed_limits(arc, turn, cruise, retime.pen_up_accel_m_s2, retime.window_s)
     vertex_caps[:-1] = np.minimum(vertex_caps[:-1], chord_caps)
     vertex_caps[1:] = np.minimum(vertex_caps[1:], chord_caps)
-    knots, knot_caps = _refine_knots(arc, vertex_caps, PEN_UP_KNOT_STEP_M, math.inf)
+    # a leg under two knot steps (a travel to where the pen already stands, off by IK round-off) still gets an
+    # interior knot: with only its two ends, both at rest, the profile would never move
+    knots, knot_caps = _refine_knots(arc, vertex_caps, min(PEN_UP_KNOT_STEP_M, 0.5 * float(arc[-1])), math.inf)
     chord_of_knot = np.clip(np.searchsorted(arc, knots, side="right") - 1, 0, len(chord_len) - 1)
     knot_caps = np.minimum(knot_caps, chord_caps[chord_of_knot])
     mids = 0.5 * (knots[:-1] + knots[1:])

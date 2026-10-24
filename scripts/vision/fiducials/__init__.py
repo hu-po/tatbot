@@ -1,4 +1,4 @@
-"""Shared fiducial configuration, detection, geometry, and wire models."""
+"""Shared fiducial configuration, detection and geometry."""
 
 from .config import (
     DEFAULT_INVENTORY_PATH,

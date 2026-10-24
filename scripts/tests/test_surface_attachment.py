@@ -18,6 +18,7 @@ def sample(instance, sequence=0, **kwargs):
 
 
 @pytest.mark.slow  # 80 sustained frames through the real observer, ~90 s: full tier only.
+@pytest.mark.timeout(300)  # Keep all frames under concurrent CPU work.
 def test_silhouette_features_do_not_break_sustained_material_attachment():
     from surface_attachment_benchmark import sustained_samples
 

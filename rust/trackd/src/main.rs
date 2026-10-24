@@ -60,15 +60,10 @@ struct Args {
     max_sets: u64,
 }
 
-/// The physical arm whose end effector a wrist target rides; other targets
-/// are tracked scene objects. `wrist` predates per-arm targets and keeps its
-/// unsuffixed service name and topic.
+/// The physical arm whose end effector a wrist target rides, the pink
+/// (right) one; other targets are tracked scene objects.
 fn tracked_arm(target: &str) -> Option<&'static str> {
-    match target {
-        "wrist" => Some("right"),
-        "wrist_left" => Some("left"),
-        _ => None,
-    }
+    (target == "wrist").then_some("right")
 }
 
 fn main() -> Result<()> {
@@ -111,16 +106,8 @@ fn main() -> Result<()> {
     };
     let mut tracker =
         RustEeTracker::new(&calibration, &inventory, layout, EstimatorConfig::default())?;
-    let bus = Bus::open(&args.connect, &[]).map_err(|e| anyhow::anyhow!("{e}"))?;
-    let producer = Producer {
-        node: args.node,
-        pid: std::process::id(),
-        sha: option_env!("TATBOT_SOURCE_COMMIT")
-            .unwrap_or("development")
-            .into(),
-        run_id: std::env::var("TATBOT_RUN_ID")
-            .unwrap_or_else(|_| format!("trackd-{}", std::process::id())),
-    };
+    let bus = Bus::open(&args.connect).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let producer = Producer::this_process(args.node, "trackd");
     let lease = ServiceLease::declare(
         &bus,
         producer.clone(),
@@ -388,11 +375,13 @@ fn main() -> Result<()> {
             });
             format!("tatbot/tracking/target/{}", args.target)
         };
-        output.write_record(&serde_json::to_vec(&if tracked_arm(&args.target).is_some() {
-            record
-        } else {
-            serde_json::to_value(&message)?
-        })?)?;
+        output.write_record(&serde_json::to_vec(
+            &if tracked_arm(&args.target).is_some() {
+                record
+            } else {
+                serde_json::to_value(&message)?
+            },
+        )?)?;
         bus.publish(&topic, &message)
             .map_err(|e| anyhow::anyhow!("{e}"))?;
         last_processed_unix_ms = now as f64 / 1e6;

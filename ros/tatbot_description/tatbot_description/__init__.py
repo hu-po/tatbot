@@ -21,7 +21,8 @@ XACRO = Path("ros") / "tatbot_description" / "urdf" / "ros2_control.xacro"  # bo
 STACK_YAML = Path("ros") / "tatbot_bringup" / "config" / "stack.yaml"
 # config/trossen/tatbot.yaml `follower` keys the driver takes as parameters of the same name. The
 # follower section describes the pink (right) arm's qualified carriage; every TatbotArm reads it.
-FOLLOWER_KEYS = ("carriage_contact_cap_n", "carriage_contact_deflect_m", "carriage_retract_m", "staged_positions")
+FOLLOWER_KEYS = ("carriage_contact_cap_n", "carriage_contact_deflect_m", "carriage_retract_m", "staged_positions",
+                 "motor_parameters", "idle_velocity_ki_scale")
 
 
 def repo_root(repo: str | Path | None = None) -> Path:
@@ -112,14 +113,14 @@ def _arm_subtree(robot: ET.Element, arm: str, repo: Path) -> tuple[list[ET.Eleme
     return keep, mount
 
 
-def robot_description(repo: str | Path | None = None, *, arms=names.DEFAULT_ARMS, hardware: str | None = None,
+def robot_description(repo: str | Path | None = None, *, arms=names.ARMS, hardware: str | None = None,
                       registrations: dict | None = None, ros2_control: dict | None = None) -> str:
     """URDF XML text rooted at `world`, one arm subtree per entry of `arms`.
 
     registrations: {arm: path to arm-registration-<arm>-current.json, or a 4x4 world_from_arm_base}.
         An arm without one hangs at its nominal urdf/tatbot.urdf mount (world = the URDF root); the
         launch allows that only when the page is not the camera-tracked stencil (or the arm not real).
-    hardware: None (kinematics only) | "mock" | "fake" | "real" -> <ros2_control> per arm via xacro.
+    hardware: None (kinematics only) | "mock" | "fake" | "real" | "sim" -> <ros2_control> per arm via xacro.
     ros2_control: the effective stack.yaml dict (launch overrides applied, plus "flight_path") that
         hardware_params() reads; None = the checkout's stack.yaml.
     """
@@ -183,25 +184,102 @@ def _param_text(value) -> str:
     return "" if value is None else str(value)
 
 
+def _carriage_position_offset(root: Path, arm_cfg: dict) -> float | str:
+    """The carriage's position_offset in the arm's golden (config/trossen/<role>.yaml): firmware 1.11 reads the
+    carriage 0.70 mm higher than 1.8.4, and the offset keeps the frame every calibration was measured in. Empty
+    without a golden (a clone without the rig's configuration): the driver leaves the controller's own."""
+    import yaml
+
+    path = root / arm_cfg["controller_config"]
+    if not path.is_file():
+        return ""
+    return float(yaml.safe_load(path.read_text())["joint_characteristics"][6].get("position_offset", 0.0))
+
+
+def same_machine(root: str | Path | None, tool_a: str | None, tool_b: str | None) -> bool:
+    """Two tools are one machine body (config/tools/<id>.yaml `body`): cartridges swapped in one mount, which share
+    its palm and its station touch."""
+    import yaml
+
+    if tool_a == tool_b:
+        return bool(tool_a)
+    bodies = []
+    for tool in (tool_a, tool_b):
+        path = repo_root(root) / "config" / "tools" / f"{tool}.yaml"
+        bodies.append((yaml.safe_load(path.read_text()) or {}).get("body") if tool and path.is_file() else None)
+    return bool(bodies[0]) and bodies[0] == bodies[1]
+
+
+def _palm(root: Path, arm_cfg: dict) -> dict[str, object]:
+    """The controller's palm for the arm's fitted tool: config/workspace.yaml `<arm>.payload` when it was identified
+    with (`identified_with`) the tool the calibration names (`<arm>.tool_id`) or another cartridge of its machine,
+    else empty (the preset's palm)."""
+    import yaml
+
+    path = root / "config" / "workspace.yaml"
+    side = ((yaml.safe_load(path.read_text()) if path.is_file() else None) or {}).get(arm_cfg["workspace_section"]) or {}
+    payload = side.get("payload") or {}
+    if (not payload or not same_machine(root, payload.get("identified_with"), side.get("tool_id"))
+            or payload.get("preset") != arm_cfg["sdk_end_effector"]):
+        return {"palm_mass_kg": "", "palm_com_m": ""}
+    return {"palm_mass_kg": float(payload["palm_mass_kg"]), "palm_com_m": [float(v) for v in payload["palm_com_m"]]}
+
+
+TUNING_KEYS = ("position_kp_scale", "velocity_kp_scale", "velocity_ki_scale", "friction_transition_velocity",
+               "friction_constant_term")
+
+
+def _tuning(section: dict) -> dict:
+    """tatbot.yaml ros_tuning.<role>: six values per key (arm joints 0-5), null keeping the controller's own; an
+    absent key is empty, which the driver reads as Trossen's gains and the controller's friction."""
+    unknown = set(section) - set(TUNING_KEYS)
+    if unknown:
+        raise ValueError(f"tatbot.yaml ros_tuning: unknown keys {sorted(unknown)}")
+    out = {}
+    for key in TUNING_KEYS:
+        values = section.get(key)
+        if values is not None and len(values) != 6:
+            raise ValueError(f"tatbot.yaml ros_tuning {key}: six values, one per arm joint")
+        out[key] = [math.nan if v is None else float(v) for v in values] if values is not None else ""
+    return out
+
+
+def _tuning_section(ros_tuning: dict, role: str, profile: str) -> dict:
+    """tatbot.yaml ros_tuning.<role>, with ros_tuning.profiles.<profile>.<role> laid over it for a stack started on a
+    profile (stack.yaml tuning, `tatbot ros up --tuning`). Gains are set at connect only (ros/README.md ros2_control)."""
+    section = dict(ros_tuning.get(role) or {})
+    if profile:
+        profiles = ros_tuning.get("profiles") or {}
+        if profile not in profiles:
+            raise ValueError(f"tatbot.yaml ros_tuning: no profile {profile!r} (profiles: {sorted(profiles)})")
+        section.update((profiles[profile] or {}).get(role) or {})
+    return section
+
+
 def hardware_params(repo: str | Path | None, arm: str, stack: dict, hardware: str) -> dict[str, str]:
     """The `<param>`s of one arm's `<ros2_control>` system (README "ros2_control"). mock takes none.
 
     Values resolve from the checkout, never from literals here: the arm address (real only; fake gets
     none) and SDK end effector through config/arms.json and config/profiles/<profile>.json, the
-    carriage cap, deflection, retract and staged pose from config/trossen/tatbot.yaml `follower`,
-    everything else from `stack`. `stack["flight_path"]` (set by the launch) is where the driver
+    carriage cap, deflection, retract, staged pose and motor parameter set from config/trossen/tatbot.yaml
+    `follower`, the carriage's position offset from the arm's golden, the palm from config/workspace.yaml
+    `<arm>.payload` when its tool is the calibrated one, everything else from `stack`. `stack["flight_path"]` (set by the launch) is where the driver
     writes its flight rings. fake alone may add `fake_page_z` (stack.yaml `fake.page_z`, base-frame z of
-    a simulated paper plane the fake tip cannot pass) after the HARDWARE_PARAMETERS.
+    a simulated paper plane the fake tip cannot pass) after the HARDWARE_PARAMETERS; sim alone adds the sim
+    server's `sim_endpoint`, `sim_keepalive_s` and `sim_reply_timeout_s` (stack.yaml `sim.*`) there.
     """
     if hardware == "mock":
         return {}
-    if hardware not in ("fake", "real"):
-        raise ValueError(f"hardware {hardware!r}: mock | fake | real")
+    if hardware not in ("fake", "real", "sim"):
+        raise ValueError(f"hardware {hardware!r}: mock | fake | real | sim")
+    sim = stack.get("sim") or {}
+    if hardware == "sim" and not sim.get("endpoint"):
+        raise ValueError("hardware sim needs the sim server's address: stack.yaml sim.endpoint (tcp://host:port)")
     import yaml
 
     root = repo_root(repo)
     arm_cfg = json.loads((root / "config" / "arms.json").read_text())["arms"][arm]
-    ip = ""  # the fake SDK is never handed an arm address
+    ip = ""  # the fake and the sim are never handed an arm address
     if hardware == "real":
         profile = root / "config" / "profiles" / f"{stack['profile']}.json"
         ip = json.loads(profile.read_text())["driver"].get(arm_cfg["profile_ip_field"], "") if profile.is_file() else ""
@@ -234,6 +312,9 @@ def hardware_params(repo: str | Path | None, arm: str, stack: dict, hardware: st
         **_flatten(stack["safety"]),
         **{key: follower[key] for key in FOLLOWER_KEYS},
         "carriage_qualified": bool((trossen.get(role) or {}).get("carriage_qualified", True)),
+        "carriage_position_offset_m": _carriage_position_offset(root, arm_cfg),
+        **_palm(root, arm_cfg),
+        **_tuning(_tuning_section(trossen.get("ros_tuning") or {}, role, stack.get("tuning") or "")),
         "flight_path": stack.get("flight_path", ""),
     }
     page_z = (stack.get("fake") or {}).get("page_z")
@@ -242,6 +323,9 @@ def hardware_params(repo: str | Path | None, arm: str, stack: dict, hardware: st
         stiffness = (stack.get("fake") or {}).get("page_stiffness_n_m")
         if stiffness:
             params["fake_page_stiffness_n_m"] = float(stiffness)
+    if hardware == "sim":
+        params.update(sim_endpoint=str(sim["endpoint"]), sim_keepalive_s=float(sim.get("keepalive_s", 0.1)),
+                      sim_reply_timeout_s=float(sim.get("reply_timeout_s", 30.0)))
     text = {key: _param_text(value) for key, value in params.items()}
     bad = [f"{k}={v}" for k, v in text.items() if ";" in v or "=" in v]
     if bad:

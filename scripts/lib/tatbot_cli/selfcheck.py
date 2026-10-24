@@ -3,7 +3,7 @@
 - every verb answers --help and its registered example answers --dry-run with
   the node and tool it needs; an unconfigured public fleet must refuse ownership;
 - root help lists every noun; selected effects agree;
-- no orphans: every executable under scripts/ and every sim entry module is
+- no orphans: every executable under scripts/ is
   wrapped by a verb or listed with a reason in config/cli-orphans.txt, and every
   listed path still exists;
 - docs/cli.md is what `schema --md` generates now;
@@ -26,7 +26,6 @@ from pathlib import Path
 from tatbot_cli import EXIT_WRONG_NODE, nodes
 from tatbot_cli.registry import all_verbs, repo_root
 
-SIM_PKG = "python/tatbot_sim/src/tatbot_sim"
 EXTRA_ENTRY_POINTS = ("cpp/teleop/analyze_log.py",)
 
 
@@ -56,7 +55,8 @@ def check_root_help(repo: Path) -> list[str]:
 def check_plan_effects(repo: Path) -> list[str]:
     """A few behavioral expectations, deliberately independent of effect callbacks."""
     cases = [
-        ("sim sample", ["--count", "2"], {"write_files", "network", "environment_setup"}, {"autonomous_motion"}),
+        # Always `uv run`: a verb that prefers an existing venv plans setup effects only on a node without one.
+        ("vision tags print", ["--", "--help"], {"write_files", "network", "environment_setup"}, {"autonomous_motion"}),
         ("logs", ["list"], {"read_files"}, {"write_files", "delete_files"}),
         ("logs", ["prune", "--yes"], {"delete_files"}, set()),
         ("status", [], {"read_files"}, {"remote_exec"}),
@@ -154,7 +154,7 @@ def _tracked(repo: Path, *paths: str) -> list[str]:
 
 
 def entry_points(repo: Path) -> list[str]:
-    """Things a human could run: executables and *.sh/*.py under scripts/, sim entry modules."""
+    """Things a human could run: executables and *.sh/*.py under scripts/."""
     found = []
     for rel in _tracked(repo, "scripts"):
         if rel.startswith(("scripts/lib/", "scripts/tests/")) or "__pycache__" in rel or rel == "scripts/tatbot":
@@ -164,11 +164,6 @@ def entry_points(repo: Path) -> list[str]:
             found.append(rel)
         elif rel.endswith(".py"):
             text = p.read_text(errors="replace")
-            if "__main__" in text or "tyro.cli" in text:
-                found.append(rel)
-    for rel in _tracked(repo, SIM_PKG):
-        if rel.endswith(".py") and not rel.endswith("__init__.py"):
-            text = (repo / rel).read_text(errors="replace")
             if "__main__" in text or "tyro.cli" in text:
                 found.append(rel)
     found.extend(EXTRA_ENTRY_POINTS)
@@ -261,91 +256,70 @@ def check_docs(repo: Path) -> list[str]:
     return problems
 
 
+def _declaration_problems(v, names, nouns, audiences) -> list[str]:
+    """What a command must declare about itself."""
+    problems = []
+    if v.noun not in nouns:
+        problems.append(f"{v.name}: missing noun declaration")
+    if v.group not in ("operator", "development", "administration"):
+        problems.append(f"{v.name}: unknown help group {v.group}")
+    if not v.effects or not v.group:
+        problems.append(f"{v.name}: effects and group must be declared")
+    if v.output not in ("text", "json", "json-lines"):
+        problems.append(f"{v.name}: invalid output capability {v.output}")
+    if v.visibility not in ("private", "public"):
+        problems.append(f"{v.name}: invalid visibility {v.visibility}")
+    if v.audience not in audiences:
+        problems.append(f"{v.name}: unknown help audience {v.audience!r}")
+    if not v.disposition:
+        problems.append(f"{v.name}: no entry in tatbot_cli/audience.py — every command needs a "
+                        "stated audience and the reason it sits there")
+    if v.canonical_name not in names:
+        problems.append(f"{v.name}: missing canonical command {v.canonical_name}")
+    return problems
+
+
+def _argument_problems(v) -> list[str]:
+    """A command's own options never collide with each other or with a global."""
+    problems = []
+    flags = [flag for arg in v.argument_spec.arguments for flag in arg.names if flag.startswith("-")]
+    if len(flags) != len(set(flags)):
+        problems.append(f"{v.name}: duplicate owned option")
+    destinations = [a.schema()["name"] for a in v.argument_spec.arguments]
+    if len(destinations) != len(set(destinations)) or {"_verb", "_sub"}.intersection(destinations):
+        problems.append(f"{v.name}: argument destination collision")
+    for arg in v.argument_spec.arguments:
+        for name in arg.names:
+            if name in ("--on", "--ee-tool", "--dry-run", "--explain", "--no-hop"):
+                problems.append(f"{v.name}: command option collides with global {name}")
+            if name == "--json" and "--output" not in arg.names:
+                problems.append(f"{v.name}: ambiguous command --json (only the deprecated report alias is allowed)")
+    return problems
+
+
 def check_registry(repo: Path) -> list[str]:
     """Require an explicit, serializable interface contract for every command."""
+    from collections import Counter
+
     from tatbot_cli import schema
-    from tatbot_cli.aliases import ALIASES
     from tatbot_cli.audience import AUDIENCES, DISPOSITION
+    from tatbot_cli.registry import NOUNS
 
     problems = []
     names = {v.name for v in all_verbs(include_unavailable=True)}
     for listed in sorted(set(DISPOSITION) - names):
         problems.append(f"tatbot_cli/audience.py lists {listed!r}, which is not a command")
     verbs = all_verbs()
-    from tatbot_cli.registry import NOUNS
-    names = [v.name for v in verbs]
-    for alias in ALIASES:
-        # Exported checkouts hide commands whose wrapped programs are absent.
-        if alias.canonical_name not in names and (repo / "internal").is_dir():
-            problems.append(f"alias has no canonical target: {alias.source}")
-    if len({a.source for a in ALIASES}) != len(ALIASES):
-        problems.append("duplicate alias source")
+    counts = Counter(v.name for v in verbs)
     for v in verbs:
-        if names.count(v.name) != 1:
+        if counts[v.name] != 1:
             problems.append(f"duplicate command: {v.name}")
-        if v.noun not in NOUNS:
-            problems.append(f"{v.name}: missing noun declaration")
-        if v.group not in ("operator", "development", "administration"):
-            problems.append(f"{v.name}: unknown help group {v.group}")
-        if not v.effects or not v.group:
-            problems.append(f"{v.name}: effects and group must be declared")
-        if v.output not in ("text", "json", "json-lines"):
-            problems.append(f"{v.name}: invalid output capability {v.output}")
-        if v.visibility not in ("private", "public"):
-            problems.append(f"{v.name}: invalid visibility {v.visibility}")
-        if v.audience not in AUDIENCES:
-            problems.append(f"{v.name}: unknown help audience {v.audience!r}")
-        if not v.disposition:
-            problems.append(f"{v.name}: no entry in tatbot_cli/audience.py — every command needs a "
-                            "stated audience and the reason it sits there")
-        if v.canonical_name not in names:
-            problems.append(f"{v.name}: missing canonical command {v.canonical_name}")
-        flags = [flag for arg in v.argument_spec.arguments for flag in arg.names if flag.startswith("-")]
-        if len(flags) != len(set(flags)):
-            problems.append(f"{v.name}: duplicate owned option")
-        destinations = [a.schema()["name"] for a in v.argument_spec.arguments]
-        if len(destinations) != len(set(destinations)) or {"_verb", "_sub"}.intersection(destinations):
-            problems.append(f"{v.name}: argument destination collision")
-        for arg in v.argument_spec.arguments:
-            for name in arg.names:
-                if name in ("--on", "--ee-tool", "--dry-run", "--explain", "--no-hop"):
-                    problems.append(f"{v.name}: command option collides with global {name}")
-                if name == "--json" and "--output" not in arg.names:
-                    problems.append(f"{v.name}: ambiguous command --json (only the deprecated report alias is allowed)")
+        problems += _declaration_problems(v, counts, NOUNS, AUDIENCES)
+        problems += _argument_problems(v)
     try:
         json.dumps(schema.as_dict(repo))
     except (TypeError, ValueError) as exc:
         problems.append(f"schema is not JSON serializable: {exc}")
-    return problems
-
-
-def check_alternate_plans(repo: Path) -> list[str]:
-    """Exercise selectors and compatibility through the real parser, plan only."""
-    problems = []
-    names = {v.name for v in all_verbs()}
-    pairs = [
-        ("sim compile --sample 2", "sim sample --count 2"),
-        ("sim preview --reach", "sim reach"),
-        ("sim cinematic --viewer /tmp/renders", "sim viewer /tmp/renders"),
-        ("sim audit --samples /tmp/dataset", "sim samples /tmp/dataset"),
-        ("sim eval /tmp/dataset", "sim eval dataset /tmp/dataset"),
-        ("sim eval --policy-rollout -- --client-mode hold-control", "sim eval policy -- --client-mode hold-control"),
-    ]
-    for old, new in pairs:
-        if not any(new == name or new.startswith(name + " ") for name in names):
-            continue
-        reports = []
-        for form in (old, new):
-            r = _run(repo, ["--json", "--dry-run", "--no-hop", *form.split()], {"TATBOT_NODE": "localnode"})
-            try:
-                assert r.returncode == 0
-                report = json.loads(r.stdout)
-                report.pop("deprecations")
-                reports.append(report)
-            except (ValueError, KeyError, AssertionError):
-                problems.append(f"alternate plan failed: {form}: {r.stderr.strip()[:200]}")
-        if len(reports) == 2 and reports[0] != reports[1]:
-            problems.append(f"alias plan differs from canonical: {old}")
     return problems
 
 
@@ -372,11 +346,11 @@ def main(argv: list[str]) -> int:
     else:
         problems = (check_root_help(repo) + check_plan_effects(repo)
                     + check_help_and_dry_run(repo) + check_orphans(repo) + check_docs(repo)
-                    + check_registry(repo) + check_alternate_plans(repo))
+                    + check_registry(repo))
     for p in problems:
         print(p, file=sys.stderr)
     if not problems:
         n = len(all_verbs())
-        print(f"cli: {n} command contracts, JSON plans, aliases, ownership and local documentation links pass" if what != "nodes"
+        print(f"cli: {n} command contracts, JSON plans, ownership and local documentation links pass" if what != "nodes"
               else "nodes: config/nodes.json agrees with the network document and every rig-LAN address is in __rig__")
     return 1 if problems else 0

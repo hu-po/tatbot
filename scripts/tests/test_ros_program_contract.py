@@ -141,3 +141,34 @@ def test_a_height_ladder_is_a_native_diagnostic_of_one_tool_and_ink():
     with pytest.raises(ValueError, match=r'ride_fraction must be in \(0, 2\)'):
         validate_for_execution(_ladder((.9, 2.5, 1.1)))
 
+
+
+def test_a_rehearsal_is_the_same_strokes_in_the_air_with_no_dips(monkeypatch):
+    """ros_program.rehearsal: every resource hovers (the machine off) at the given height, its cap and dips gone and
+    its rinse a manual change, one tool's resources one ink (no landing between them), the source's digest kept."""
+    from tatbot_contracts.ros_program import program_sha256, rehearsal
+
+    value = program()
+    dipping = copy.deepcopy(value['resources'][0])
+    dipping['tool'].update(id='needles', ink='dip', stroke_mm=4.0, contact_reference='tube_end')
+    dip = {'mm_per_dip': 100.0}
+    value['resources'] = [{**dipping, 'id': 'black', 'ink_id': 'black', 'pen_mode': 'ride', 'slot': 'cap1',
+                           'dip': dip, 'ride_fraction': 0.875},
+                          {**dipping, 'id': 'grey', 'ink_id': 'grey', 'pen_mode': 'ride', 'slot': 'cap2', 'dip': dip}]
+    stroke = {**value['ops'][1], 'resource_id': 'black'}
+    value['ops'] = [{**value['ops'][0], 'resource_id': 'black'}, {'op': 'dip', 'id': 'd0001', 'resource_id': 'black',
+                    'slot': 'cap1'}, stroke, {**value['ops'][0], 'id': 't0002', 'initial': False, 'resource_id': 'grey'},
+                    {**stroke, 'id': 's0004', 'resource_id': 'grey'}]
+    import tatbot_contracts.ros_program as contract
+    monkeypatch.setattr(contract, 'validate_dip', lambda dip: None)   # the profile's checks are the dip contract's
+    contract.validate_for_execution(value)
+    out = rehearsal(value, 0.006)
+    assert [op['op'] for op in out['ops']] == ['tool_change', 'stroke', 'tool_change', 'stroke']
+    assert all(r['pen_mode'] == 'hover' and r['dip'] is None and r['slot'] is None and 'ride_fraction' not in r
+               and r['hover_height_m'] == 0.006 and r['ink_id'] == 'black' for r in out['resources'])
+    assert out['rehearsal'] == {'of': program_sha256(value), 'height_m': 0.006}
+    assert [op['points_m'] for op in out['ops'] if op['op'] == 'stroke'] == [stroke['points_m']] * 2
+    assert value['resources'][0]['pen_mode'] == 'ride'                   # the source is untouched
+    assert rehearsal(value)['resources'][0].get('hover_height_m') is None
+    with pytest.raises(ValueError, match='hover_height_m'):
+        rehearsal(value, 0.001)

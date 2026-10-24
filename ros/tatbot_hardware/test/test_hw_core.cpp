@@ -469,6 +469,118 @@ TEST(HwCore, TipLagGuardIgnoresLateralAndUpwardError)
   EXPECT_EQ(r.s("latch_reason"), names::kLatchGuardTipLag);
 }
 
+TEST(HwCore, SnagGuardHoldsTheArmWhereTheWorkHoldsTheNeedle)
+{
+  // The work holds the needle (the fake frozen) while the arm lifts at 10 mm/s: the tip is 1.5 mm off its command after
+  // 0.15 s, the guard holds 0.2 s later, and the hold is where the needle is, not where the lift went.
+  FakeOptions o;
+  o.fk = toy_fk;
+  Rig r({}, o, toy_fk);
+  r.activate();
+  r.cmd.guard_mode = names::kGuardSnag;
+  r.step(40);
+  EXPECT_EQ(r.s("guard_mode"), names::kGuardSnag);
+  r.fake.set_frozen(true);
+  const double t0 = r.t;
+  while (r.s("latched") == 0 && r.t < t0 + 1.0) {
+    r.cmd.q[1] -= 0.1 * kDt;
+    r.cmd.qd[1] = -0.1;
+    r.step();
+  }
+  EXPECT_EQ(r.s("latch_reason"), names::kLatchGuardSnag);
+  EXPECT_EQ(r.s("guard_tripped"), 1);
+  EXPECT_GT(r.t - t0, 0.15 + 0.2 - 0.005);
+  EXPECT_LT(r.t - t0, 0.15 + 0.2 + 0.01);
+  EXPECT_NEAR(r.s("trip_q1"), r.fb.q[1], 1e-9);
+  expect_near(r.out.q, r.fb.q, 1e-9);
+  // Unlatched where it holds, still armed, nothing trips at rest; the work still holding it trips the next move again.
+  r.cmd.qd = Vec7{};
+  r.unlatch(1);
+  EXPECT_EQ(r.s("latched"), 0);
+  r.step(200);
+  EXPECT_EQ(r.s("latched"), 0);
+  r.cmd.q[0] += 0.02;   // 2 mm sideways
+  r.step(static_cast<int>(0.25 / kDt));
+  EXPECT_EQ(r.s("latch_reason"), names::kLatchGuardSnag);
+}
+
+TEST(HwCore, SnagGuardCountsEveryDirectionOnlyWhenArmed)
+{
+  // 1.6 mm off the command sideways, deeper or shallower: nothing unarmed, a hold 0.2 s after the snag guard is armed.
+  FakeOptions o;
+  o.fk = toy_fk;
+  for (const auto & [joint, step] : std::vector<std::pair<size_t, double>>{{0, 0.016}, {1, -0.016}, {1, 0.016}}) {
+    Rig r({}, o, toy_fk);
+    r.activate();
+    r.fake.set_frozen(true);
+    r.cmd.q[joint] += step;
+    r.step(static_cast<int>(1.0 / kDt));
+    EXPECT_EQ(r.s("latched"), 0) << joint << " " << step;
+    r.cmd.guard_mode = names::kGuardSnag;
+    r.step(static_cast<int>(0.19 / kDt));
+    EXPECT_EQ(r.s("latched"), 0) << joint << " " << step;
+    r.step(static_cast<int>(0.02 / kDt));
+    EXPECT_EQ(r.s("latch_reason"), names::kLatchGuardSnag) << joint << " " << step;
+  }
+}
+
+TEST(HwCore, ACarriagePushedPastItsCapRetractsWithTheSnagGuardArmed)
+{
+  // The carriage carries the tool, so its deflection moves the tip too. With the snag guard's hold at the cap's 40
+  // ticks both trip on one tick, and the cap's retract wins; without the cap the snag guard holds on that tick.
+  const TipFk fk = [](const Vec7 & q) {
+      return TipPose{{0.3, 0.1 * q[0], 0.2 - 0.1 * q[1] - q[kCarriage]}, {0.0, 0.0, -1.0}};
+    };
+  for (const bool cap : {true, false}) {
+    Config c;
+    c.snag_hold_s = 38.5 * kDt;
+    if (!cap) {c.carriage_contact_deflect_m = 1.0;}
+    FakeOptions o;
+    o.fk = fk;
+    Rig r(c, o, fk);
+    r.activate();
+    r.cmd.guard_mode = names::kGuardSnag;
+    r.step(10);
+    r.fake.set_frozen(true);
+    r.cmd.q[kCarriage] -= 0.0025;   // the work holds the carriage 2.5 mm out
+    r.step(39);
+    EXPECT_EQ(r.s("latched"), 0) << cap;
+    r.step();
+    EXPECT_EQ(r.s("latch_reason"), cap ? names::kLatchCarriageContact : names::kLatchGuardSnag) << cap;
+    EXPECT_EQ(r.core.phase(), cap ? Phase::kRetracting : Phase::kLatched) << cap;
+  }
+}
+
+TEST(HwCore, SnagGuardRidesThroughTrackingAndShortPulls)
+{
+  // Tracking at 20 mm/s (the pen-down cap) with its velocity fed forward, a 0.15 s pull that leaves the tip 3 mm behind
+  // and lets it catch up, and 1.4 mm held for a second: none is a snag.
+  FakeOptions o;
+  o.fk = toy_fk;
+  Rig r({}, o, toy_fk);
+  r.activate();
+  r.cmd.guard_mode = names::kGuardSnag;
+  auto ride = [&r](double seconds) {
+      for (int i = 0; i < static_cast<int>(seconds / kDt); ++i) {
+        r.cmd.q[0] += 0.2 * kDt;
+        r.cmd.qd[0] = 0.2;
+        r.step();
+      }
+    };
+  ride(1.0);
+  r.fake.set_frozen(true);
+  ride(0.15);
+  r.fake.set_frozen(false);
+  ride(0.5);
+  EXPECT_EQ(r.s("latched"), 0);
+  r.cmd.qd = Vec7{};
+  r.step(100);
+  r.fake.set_frozen(true);
+  r.cmd.q[1] -= 0.014;
+  r.step(static_cast<int>(1.0 / kDt));
+  EXPECT_EQ(r.s("latched"), 0);
+}
+
 TEST(HwCore, DeactivateAndErrorHoldNeverIdle)
 {
   Rig r;

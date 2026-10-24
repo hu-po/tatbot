@@ -1,0 +1,53 @@
+{
+ "schema": "tatbot.station-fix/1",
+ "arm": "right",
+ "base_from_palette": [
+  [
+   -0.989016,
+   -0.147809,
+   0.0,
+   0.31
+  ],
+  [
+   0.147809,
+   -0.989016,
+   0.0,
+   0.29
+  ],
+  [
+   0.0,
+   0.0,
+   1.0,
+   0.03
+  ],
+  [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ]
+ ],
+ "ball": [
+  0.31,
+  0.29,
+  0.0856
+ ],
+ "measured_utc": "2026-01-02T03:04:05.000Z",
+ "source": "overhead_tag",
+ "detail": {
+  "camera": "overhead_depth_color",
+  "calibration_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "registration": "~/tatbot-ros/calib/arm-registration-right-current.json",
+  "rms_px": 0.4,
+  "overhead_camera_m": [
+   0.1,
+   0.4,
+   0.6
+  ],
+  "registration_sha256": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+  "placed_by_depth": 8,
+  "shots": 8,
+  "shot_spread_mm": 0.2,
+  "shot_spread_deg": 0.04
+ }
+}

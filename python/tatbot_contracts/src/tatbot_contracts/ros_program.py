@@ -23,6 +23,42 @@ OPS = ('tool_change', 'dip', 'stroke')
 DIAGNOSTIC = 'native-diagnostic-to-ros/2'   # directly authored calibration shapes, not DBV3 artwork
 
 
+HOVER_M = (0.003, 0.020)   # a rehearsal's hover over the measured page (the session also keeps a needle's reach clear)
+
+
+def rehearsal(program, height_m=None):
+    """The same program drawn in the air: every resource's pen held `height_m` (else motion.yaml pen.hover.height_m)
+    over the measured page with the tattoo machine off (pen_mode hover), no palette cap and no dip op, so the page
+    setup, the gauge holds, the hover stops, the stencil's follow and every stroke run as they will with ink, and
+    nothing touches the skin. Resources of one tool become one ink (it carries none), so their tool changes go on
+    without landing; a writing height reference is dropped. The source program's digest is kept as `rehearsal.of`;
+    validated as any program."""
+    import copy
+
+    out = copy.deepcopy(program)
+    first = out['resources'][0] if out.get('resources') else None
+    for resource in out.get('resources', []):
+        resource.update(pen_mode='hover', slot=None, dip=None)
+        resource.pop('ride_fraction', None)
+        if (resource.get('activation') or {}).get('method') == 'rinse':
+            resource['activation'] = {'method': 'manual', **resource['tool'].get('cartridge_activation',
+                                                                                 {'action': 'exchange'})}
+        if first is not None and resource['tool']['id'] == first['tool']['id']:
+            resource['ink_id'] = first['ink_id']
+        if height_m is not None:
+            resource['hover_height_m'] = float(height_m)
+    out['ops'] = [op for op in out['ops'] if op['op'] != 'dip']
+    out.pop('writing_height_reference', None)   # a writing reference sets the pen's height from a run: not a hover's
+    for op in out['ops']:
+        if op['op'] == 'tool_change' and 'activation' in op:
+            op['activation'] = next(r['activation'] for r in out['resources'] if r['id'] == op['resource_id'])
+    if isinstance(out.get('stats'), dict):
+        out['stats'] = {**out['stats'], 'dips': 0}
+    out['rehearsal'] = {'of': program_sha256(program), 'height_m': None if height_m is None else float(height_m)}
+    validate_for_execution(out)
+    return out
+
+
 def program_sha256(program):
     """The run's program digest; refuses nonfinite values rather than hash them."""
     return hashlib.sha256(json.dumps(program, sort_keys=True, allow_nan=False).encode()).hexdigest()
@@ -53,8 +89,8 @@ def _id(value, name):
 
 
 def _validate(program):
-    if program['arm'] not in ('left', 'right'):
-        raise ValueError('the program names no arm')
+    if program['arm'] != 'right':
+        raise ValueError('the program names no drawing arm')
     _number(program['draw_speed_m_s'], 'draw_speed_m_s')
     page = program['page']
     if page['kind'] not in ('plane', 'stencil') or any(c > s for c, s in zip(page['clear_m'], page['size_m'], strict=True)):
@@ -115,6 +151,10 @@ def _resource(resource):
             _number(tool[key], f"{resource['id']}: a riding tool's {key}")
     if 'ride_fraction' in resource and not 0 < _number(resource['ride_fraction'], 'ride_fraction') < 2:
         raise ValueError(f"{resource['id']}: ride_fraction must be in (0, 2)")
+    if 'hover_height_m' in resource and (resource['pen_mode'] != 'hover' or not
+                                         HOVER_M[0] <= _number(resource['hover_height_m'], 'hover_height_m') <= HOVER_M[1]):
+        raise ValueError(f"{resource['id']}: hover_height_m is a hover resource's, {HOVER_M[0] * 1e3:g}-"
+                         f"{HOVER_M[1] * 1e3:g} mm")
     if tool['ink'] == 'dip' and (resource['slot'] is not None or resource['dip'] is not None):
         _id(resource['slot'], f"{resource['id']}: palette slot")
         validate_dip(resource['dip'])

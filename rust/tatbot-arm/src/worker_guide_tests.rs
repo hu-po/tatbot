@@ -160,7 +160,8 @@ fn hand_guiding_enters_records_operator_motion_and_stops_with_an_exact_trace() {
         ]
     );
     // Retained telemetry carries the guiding flag and the mixed mode code.
-    let samples: Vec<_> = rig.telemetry.take().unwrap().try_iter().collect();
+    // Keep the receiver connected until Rig drops its worker first.
+    let samples: Vec<_> = rig.telemetry.as_ref().unwrap().try_iter().collect();
     assert!(
         samples
             .iter()

@@ -43,7 +43,7 @@ def test_selection_and_required_profiles_are_validated(monkeypatch):
     monkeypatch.setenv("TATBOT_RUST_REQUIRED_PROFILES", "vision-wrist")
     assert profile_rows(REPO).splitlines() == [
         "vision-wrist|realsense,rerun|realsense2|1", "vision-core|||0"]
-    monkeypatch.setenv("TATBOT_RUST_REQUIRED_PROFILES", "vision-poe")
+    monkeypatch.setenv("TATBOT_RUST_REQUIRED_PROFILES", "vision-wrist-bus")
     with pytest.raises(ValueError, match="included"):
         profile_rows(REPO)
     monkeypatch.setenv("TATBOT_RUST_PROFILES", "typo")
@@ -109,9 +109,8 @@ def test_unified_features_name_what_this_node_cannot_compile(tmp_path, native):
     skips = result.stdout.split("SKIPS=", 1)[1].splitlines()[0].split()
     assert {"tatbot-visiond/rerun", "tatbot-visiond/zenoh", "tatbot-bus/zenoh"} <= set(features)
     assert "rust-trossen" in skips and "tatbot-arm/trossen" not in features
-    assert ("tatbot-visiond/gstreamer" in features) is native
     assert ("tatbot-visiond/realsense" in features) is native
-    assert ("rust-gstreamer" in skips) is not native
+    assert ("rust-realsense" in skips) is not native
 
 
 @pytest.mark.parametrize("required,state", [(False, "SKIP"), (True, "FAIL")])

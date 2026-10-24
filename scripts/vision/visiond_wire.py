@@ -68,8 +68,7 @@ def decode_depth(data: bytes, descriptor: dict) -> np.ndarray:
 
     The D405 reports 0.1 mm per unit (`depth_units_m` in the frame metadata
     attributes); most other D4xx report 1 mm. Readers scale by that attribute,
-    never by an assumed constant (the retired scripts/depth_probe.py learned
-    that the expensive way on 2026-08-22; scripts/il_patch_lerobot.py patch 6).
+    never by an assumed constant.
     """
     width, height = int(descriptor["width"]), int(descriptor["height"])
     if width <= 0 or height <= 0:
@@ -119,7 +118,7 @@ class UnixWireReader:
         """One set's validated header and its payload bytes, nothing decoded.
 
         The owner writes each set to every client with a 20 ms timeout and drops
-        a client that stalls it; a luma set from five PoE cameras is ~25 MB, so a
+        a client that stalls it; a multi-camera set runs to tens of MB, so a
         reader that converts each frame between payload reads stalls that long
         whenever OpenCV is cold or the node is loaded (measured 5 of 6 readers
         dropped under a running tracker). Nothing here touches a pixel.

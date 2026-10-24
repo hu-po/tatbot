@@ -31,11 +31,18 @@ from tatbot_motion import plan as pplan
 from tatbot_motion import timelaw as tl
 
 FLOOR_CLEAR_M = 0.0005     # the tool's end never comes nearer the cap's inner floor than this
+# A cap filled nearly to its rim is dipped with the tool's end this far under the rim, closer to the ink than
+# above_ink_m: the shallow dip that stopped the 3RL's drips (2026-10-08). Refusing it stopped a draw at its first
+# dip over caps declared 8.5 mm deep in 9.5 (2026-10-13; operator: a full cap must not prevent drawing).
+RIM_UNDER_M = 0.0005
 TRACK_M = 0.0005           # a measured tick may stray this far from the planned axis line inside the cap
 OVERSHOOT_M = 0.001        # going in, the tool's end may pass its dwell height by this much; the arm settles ~0.5 mm
                            # into its dwell (cap M2, 2026-10-05)
-HOVER_LAG_M = 0.002        # a goal that rises to the hover may end this far under it while the arm catches up (a
-                           # retract out of cap M2 ended 0.5 mm short, 2026-10-05); the hover is hover_m over the rim
+# The owner doubled every stop of this kind (2026-10-20: "if it's 1 millimeter, make it 2"): a descent or dwell may end
+# this far over its dwell height (0.5 mm before), a goal that rises to the hover this far under it while the arm
+# catches up (2 mm before; a retract out of cap M2 ended 0.5 mm short, 2026-10-05; the 3RL's hover is 8 mm over the rim)
+DWELL_HIGH_M = 0.001
+HOVER_LAG_M = 0.004
 STATION_CLEAR_M = 0.010    # the tool's lowest point over the station's top while it crosses
 
 
@@ -158,11 +165,9 @@ class Dip:
         self.cap_from_base = np.linalg.inv(cap.base_from_cap)
         rotation = np.asarray(rotation, float)
         self.rotation = tl.align_rotation(rotation[:, 2], -cap.axis) @ rotation   # the tool down the cap's axis
-        self.dwell_height_m = cap.inner_floor_m + level_m + settings['above_ink_m']
+        self.dwell_height_m = min(cap.inner_floor_m + level_m + settings['above_ink_m'], cap.rim_m - RIM_UNDER_M)
         if self.dwell_height_m < cap.inner_floor_m + FLOOR_CLEAR_M:
             raise ValueError(f"{cap.slot}: the dwell would put the tool's end on the cap's floor")
-        if self.dwell_height_m >= cap.rim_m:
-            raise ValueError(f"{cap.slot}: the declared ink is so high the tool's end stays over the rim")
         if reach_m is not None:
             if not reach_m > settings['above_ink_m']:
                 raise ValueError(f"{cap.slot}: the needles reach {reach_m * 1000:.1f} mm past the tube's end, which the "
@@ -199,23 +204,6 @@ class Dip:
         """The tool's end under the rim and over the bore: in the cap, or entering it."""
         height, off = self.local(pose)
         return height < self.cap.rim_m + self.settings['hover_m'] - 1e-4 and off < self.cap.bore_radius_m
-
-
-def headings(rotation, step_deg: float = 45.0) -> list[np.ndarray]:
-    """Upright tool rotations to try for a dip, the given one's heading first and then outward from it in
-    step_deg turns about the vertical: the arm reaches a cap at some headings and not others (joint 3 at the
-    crossing's height, joint 5's wrist turn), and the touches' heading is where the tcp's own error cancels."""
-    r = np.asarray(rotation, float)
-    yaw = math.atan2(float(r[1, 0]), float(r[0, 0]))
-    out = []
-    for k in [0, *[s * n for n in range(1, int(180 / step_deg) + 1) for s in (-1, 1)]]:
-        a = yaw + math.radians(k * step_deg)
-        c, s = math.cos(a), math.sin(a)
-        rz = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
-        candidate = rz @ np.diag([1.0, -1.0, -1.0])
-        if not any(np.allclose(candidate, seen, atol=1e-9) for seen in out):
-            out.append(candidate)
-    return out
 
 
 def check_tick(dip: Dip, stage: str, pose, station_top_m: float) -> None:
@@ -340,7 +328,7 @@ def plan_axial(dip: Dip, phase: str, *, q_seed, kin, motion, check=lambda *a: No
         target[:3, 3] += dip.cap.axis * max(0., dip.hover_height_m - height)
         feedback = pplan.PHASE_LIFT
     elif phase == 'dwell':
-        if not -OVERSHOOT_M <= height - dip.dwell_height_m <= TRACK_M:
+        if not -OVERSHOOT_M <= height - dip.dwell_height_m <= DWELL_HIGH_M:
             raise ValueError(f"dwell: the tool's end is {(height - dip.dwell_height_m) * 1000:+.2f} mm from its dwell "
                              "height")
         feedback = pplan.PHASE_SETTLE
@@ -374,9 +362,17 @@ def plan_return(dip: Dip, *, q_seed, kin, motion, return_tcp, station_top_m, che
     return traj
 
 
-def verify_return(pose, target, motion) -> None:
-    """ValueError unless the measured TCP came back to the page standoff it left."""
+# A return judged at the page standoff it left, once the arm has settled: its quintic stop from ~118 mm/s rings joint 4
+# at ~6.5 Hz, 5 mrad, the tip 0.3-1.9 mm off for its first ~0.5 s, and two misses read at once (1.09, then 1.66 mm
+# and 0.0052 rad) ended a tattoo with the arm holding (2026-10-20). Twice the stroke join's 1 mm and the CLIK's
+# 0.005 rad, the owner's doubling of the stops; the session plans a miss again once, then goes on from where it is.
+RETURN_M, RETURN_RAD, RETURN_SETTLE_S = 0.002, 0.010, 1.0
+
+
+def return_miss(pose, target) -> str | None:
+    """How far the measured TCP stands from the page standoff it left, when past RETURN_M or RETURN_RAD; else None."""
     position = float(np.linalg.norm(np.asarray(pose)[:3, 3] - np.asarray(target)[:3, 3]))
     rotation = float(tl.rotation_angle(np.asarray(pose)[:3, :3].T @ np.asarray(target)[:3, :3]))
-    if position > motion['dispatch_drift']['start_tolerance_m'] or rotation > motion['clik']['max_orientation_error_rad']:
-        raise ValueError(f"the return ended {position * 1000:.2f} mm, {rotation:.4f} rad from the page standoff")
+    if position <= RETURN_M and rotation <= RETURN_RAD:
+        return None
+    return f"the return ended {position * 1000:.2f} mm, {rotation:.4f} rad from the page standoff"

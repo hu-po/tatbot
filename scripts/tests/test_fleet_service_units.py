@@ -84,10 +84,11 @@ def test_trackd_uses_overhead_only_with_the_shared_calibration_bundle():
     text = SERVICE.read_text()
     assert '{"overhead_depth_color", "overhead_depth_depth"} <= set(cameras)' in text
     assert 'd555_calibrated && D555_CALIBRATION=(--calibration "$CALIBRATION")' in text
-    assert 'd555_calibrated && TRACKD_SOCKETS+=(--socket /tmp/tatbot-d555-frames.sock)' in text
-    assert 'has_role poe-cameras && TRACKD_SOCKETS+=(--socket /tmp/tatbot-poe-frames.sock)' in text
-    assert (directive("tatbot-trackd.service", "Requires") or "").split() == ["tatbot-visiond-d555.service"]
-    assert (directive("tatbot-trackd.service", "Wants") or "").split() == ["tatbot-visiond-poe.service"]
+    assert "d555_calibrated || { echo 'trackd: no calibrated fixed camera on this node'" in text
+    trackd = next(line for line in text.splitlines() if '"$RELEASE/bin/trackd"' in line)
+    assert '--socket /tmp/tatbot-d555-frames.sock' in trackd and '--calibration "$CALIBRATION"' in trackd
+    assert directive("tatbot-trackd.service", "Requires") is None
+    assert (directive("tatbot-trackd.service", "Wants") or "").split() == ["tatbot-visiond-d555.service"]
 
 
 def test_the_d555_owner_binds_dds_discovery_to_its_own_rig_address():
@@ -106,22 +107,16 @@ def test_the_d555_owner_binds_dds_discovery_to_its_own_rig_address():
         assert nodes[owner].get("lan"), f"{owner} owns the D555 but states no rig address"
 
 
-def test_stencild_subscribes_to_both_owners_with_installed_references_and_no_node_name():
-    """The fleet stencil observer is one subscriber beside the two trackers:
-    the PoE socket always, the overhead socket only under the shared
-    calibration bundle, references from the log root, the release's own
-    interpreter, and a unit whose node is rendered at install time."""
+def test_stencild_subscribes_to_the_overhead_owner_with_installed_references_and_no_node_name():
+    """The fleet stencil observer is one subscriber beside the tracker: the
+    overhead socket under the shared calibration bundle, references from the
+    log root, the release's own interpreter, and a unit whose node is
+    rendered at install time."""
     text = SERVICE.read_text()
     line = next(line for line in text.splitlines() if '"$RELEASE/bin/stencild"' in line)
     assert 'runlog::run' in line
-    # the PoE cameras only where the node owns them (the demo stack has none),
-    # the overhead under the shared bundle, and at least one of the two
-    assert 'has_role poe-cameras && STENCILD_SOCKETS+=(--poe-socket /tmp/tatbot-poe-frames.sock)' in text
-    assert 'd555_calibrated && STENCILD_SOCKETS+=(--overhead-socket /tmp/tatbot-d555-frames.sock)' in text
-    assert '[ "${#STENCILD_SOCKETS[@]}" -gt 0 ] ||' in text
-    # the lone D555 places a print by its artwork where no PoE camera can read it
-    assert 'has_role poe-cameras || STENCILD_ARTWORK=(--overhead-artwork-match)' in text
-    assert '"${STENCILD_ARTWORK[@]}"' in line
+    assert "d555_calibrated || { echo 'stencild: no calibrated overhead camera on this node'" in text
+    assert '--overhead-socket /tmp/tatbot-d555-frames.sock' in line
     assert '--calibration "$CALIBRATION"' in line
     assert '--references "$STENCIL_REFERENCES"' in line
     assert 'STENCIL_REFERENCES="$(tatbot_paths::log_root)/stencils/references"' in text
@@ -130,15 +125,13 @@ def test_stencild_subscribes_to_both_owners_with_installed_references_and_no_nod
     assert '--work "$STENCIL_WORK"' in line
     assert 'STENCIL_WORK="${RUNTIME_DIRECTORY:-$RUN_DIR}/captures"' in text
     assert '--output "$RUN_DIR/estimates.jsonl"' in line
-    assert '--exclude-anchor' not in line   # every fixed camera may anchor a print
-    # The wrist views: the registry names each arm's D405 and its owner, the
-    # registrations beside the bundle pose them, the release's URDF is the FK.
-    assert '--vision-config "$VISION_CONFIG"' in line
-    assert '--registrations "$(dirname "$CALIBRATION")"' in line
-    assert '--urdf "$ROOT/urdf/tatbot.urdf"' in line
+    # the observer reads the overhead view only: no PoE set, no wrist views
+    for gone in ('--poe-socket', '--vision-config', '--registrations', '--urdf', 'artwork'):
+        assert gone not in line
     unit = "tatbot-stencild.service"
-    assert (directive(unit, "Requires") or "").split() == ["tatbot-visiond-d555.service"]
-    assert "tatbot-visiond-poe.service" in (directive(unit, "Wants") or "").split()
+    # Wants=, not Requires=: a Requires= job fails with the owner's first boot-time start and is never retried
+    assert directive(unit, "Requires") is None
+    assert directive(unit, "Wants") == "tatbot-visiond-d555.service"
     assert directive(unit, "RuntimeDirectory") == "tatbot-stencild"
     assert directive(unit, "RuntimeDirectoryMode") == "0700"
     environment = [value for key, value in directives(unit) if key == "Environment"]
@@ -247,3 +240,57 @@ def _publishes_a_socket(unit: str) -> bool:
         if line.rstrip().endswith(";;"):
             break
     return "--socket " in "\n".join(branch)
+
+
+def test_the_cockpit_is_a_display_subscriber_into_the_standing_recording_beside_its_hub():
+    """The demo cockpit runs the release's visiond against the bus and the hub
+    and nothing else: no camera, no lease, no liveliness, part `station`."""
+    text = SERVICE.read_text()
+    line = next(line for line in text.splitlines()
+                if '"$RELEASE/bin/tatbot-visiond" --bus-connect "$BUS" subscribe' in line)
+    assert line.strip().startswith("runlog::run")
+    for flag in ('--connect "rerun+http://$HUB:${RERUN_PORT:-9876}/proxy"', "--recording-id live-cameras",
+                 "--duration-seconds 0", "--camera-world"):
+        assert flag in line
+    for owner_flag in ("--zenoh", "--socket", "--group", "--dds-address", "capture-"):
+        assert owner_flag not in line
+    assert 'print("127.0.0.1" if server[0] == sys.argv[2] else server[1])' in text
+    unit = "tatbot-cockpit.service"
+    after = (directive(unit, "After") or "").split()
+    assert "tatbot-zenohd.service" in after and "tatbot-viewer@@USER@.service" in after
+    assert directive(unit, "Requires") is None and directive(unit, "Restart") == "on-failure"
+    assert directive(unit, "Nice") and directive(unit, "MemoryMax")
+    assert int(directive(unit, "CPUWeight")) < 100, "nice alone does not yield across service cgroups"
+    assert directive(unit, "ExecStart") == "@RELEASE@/source/scripts/fleet_service.sh cockpit"
+    nodes = json.loads((REPO / "config/nodes.json").read_text())
+    for name, record in nodes.items():
+        services = {} if name.startswith(("__", "//")) else {s["unit"]: s for s in record.get("services", [])}
+        if unit not in services:
+            continue
+        cockpit = services[unit]
+        assert cockpit["liveliness"] is None and cockpit["part"] == "station"
+        assert "rerun-server" in record["roles"], "the cockpit runs beside its hub"
+        owner = services.get("tatbot-visiond-d555.service")
+        if owner:  # one visiond build serves both units
+            assert cockpit["features"] == owner["features"]
+
+
+def test_the_cockpit_unit_renders_for_its_node_and_is_an_approved_manifested_unit(tmp_path):
+    import importlib.util
+    import sys
+
+    sys.path.insert(0, str(REPO / "scripts/lib"))
+    spec = importlib.util.spec_from_file_location("fleet_install", REPO / "scripts/lib/fleet_install.py")
+    installer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(installer)
+    stage = tmp_path / "release"
+    (stage / "source/config/systemd").mkdir(parents=True)
+    unit = "tatbot-cockpit.service"
+    (stage / "source/config/systemd" / unit).write_text((UNITS / unit).read_text())
+    rendered = installer._unit_text(stage, stage / "source", unit, "robot", tmp_path, "ros-node")
+    assert "After=network-online.target tatbot-zenohd.service tatbot-viewer@robot.service" in rendered
+    assert "User=robot" in rendered and "Environment=TATBOT_NODE=ros-node" in rendered
+    assert f"ExecStart={stage}/source/scripts/fleet_service.sh cockpit" in rendered
+    assert unit in (REPO / "scripts/lib/fleet_install.py").read_text()
+    deploy = (REPO / "scripts/lib/fleet_deploy.py").read_text()
+    assert f"'{unit}': ()," in deploy

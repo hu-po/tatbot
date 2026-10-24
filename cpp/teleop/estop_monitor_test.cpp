@@ -57,7 +57,7 @@ int main()
 
     {
       std::atomic<int> state{tatbot::estop::disabled};
-      tatbot::estop::Monitor monitor(slave, true, state);
+      tatbot::estop::Monitor monitor(slave, state);
       require(state.load() == tatbot::estop::fault, "monitor must start fail-safe");
 
       int seq = 0;

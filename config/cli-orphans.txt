@@ -6,27 +6,16 @@
 # path                                          reason
 scripts/gen_motion_constants.py                   renders cpp/teleop/motion_constants.hpp from config/motion_constants.json; runs inside `scripts/check motion-constants`
 scripts/complexity_budget.py                    Python complexity ratchet against config/complexity-debt.tsv; runs inside `scripts/check complexity`, and by hand with --update
-scripts/il_client_shield.py                     wrapper used inside il_rollout*.sh, not a user entry point
-scripts/il_patch_lerobot.py                     applied by docs/cli.md after uv sync; not user-facing
+scripts/deps_audit.py                           locked and pinned dependencies against OSV and config/deps-audit-allow.tsv; runs inside `scripts/check deps-audit` and the scheduled deps-audit workflows
+scripts/il_patch_lerobot.py                     applied by the training launcher after uv sync; not user-facing
 scripts/rerun_maximized.bash                    ~/.bashrc helper sourced by the operator shell (wraps rerun_session)
 scripts/githooks/pre-commit                     git hook; runs scripts/check --staged
 scripts/githooks/pre-push                       git hook; the public export gate, for a push to main only
 scripts/githooks/post-commit                    git hook; pushes an agent branch after every commit (tatbot work)
-scripts/vision/evaluate_ee_tracker.py           tracker tuning evaluation against a held-out teleop log; the procedure in docs/vision.md
-scripts/vision/compare_fiducial_detectors.py    Python/Rust detector parity gate, run before promoting Rust detector settings; docs/vision.md, docs/fiducials.md
 scripts/vision/urdf_kinematics.py               library with a self-test main
 scripts/vision/teleop_log.py                    library (.wxtl reader) with a self-test main
-scripts/tool_body_qualify.py                    optional five-reseat body-axis study; docs/tools.md; never run on the rig
-python/tatbot_sim/src/tatbot_sim/distributions.py  library (the three recipes); `tatbot sim list` prints them
-python/tatbot_sim/src/tatbot_sim/fiducial_benchmark.py  sim-to-real EE benchmark; docs/vision.md
-python/tatbot_sim/src/tatbot_sim/policy_worker.py  internal ManiSkill subprocess owned by `tatbot sim eval policy`
-python/tatbot_sim/src/tatbot_sim/body_models/audit.py  body asset reproducibility and parity evidence generator; docs/simulation.md
-python/tatbot_sim/src/tatbot_sim/human_rep/examples.py  deterministic checked-in TattooProgram example renderer; invoked by evidence and tests
-python/tatbot_sim/src/tatbot_sim/human_rep/registration_replay.py  offline Rerun registration replay helper; owned by the registration evidence generator
-python/tatbot_sim/src/tatbot_sim/human_rep/registration_suite.py  offline synthetic registration qualification generator; docs/simulation.md
-python/tatbot_sim/src/tatbot_sim/human_rep/review_evidence.py  capability release-review packet generator; docs/simulation.md
 
-scripts/vision/prepare_palette_viewer_asset.py  offline GLB material embed for the palette viewer asset, run once per print; cad/calibration-palette-v11/README.md; no robot workflow
+scripts/vision/prepare_palette_viewer_asset.py  offline GLB material embed for the palette viewer asset (urdf/meshes/palette/*.glb), run once per print; no robot workflow
 scripts/vision/surface_consistency.py  shared RGB-flow/depth cross-check for tatbot vision surface rgbd; no standalone workflow
 
 scripts/vision/surface_attachment.py  original-reference observer library consumed by vision comparison; a surface-deformation algorithm kept when the mock material session went; no standalone workflow
@@ -35,10 +24,8 @@ scripts/vision/surface_appearance_warp.py  measured rigid appearance chart share
 scripts/vision/surface_rigid_support.py  bounded sparse-anchor rigid-patch inference; a surface-deformation algorithm kept with its tests when the mock material session went; no standalone workflow
 scripts/vision/surface_attachment_inputs.py  bounded RGB-D decoder and calibrated fixture library consumed by vision comparison
 
-scripts/lib/bounded_npz.py  shared pre-allocation archive validator used by the stencil state and evidence readers; no standalone workflow
 
 
 scripts/lib/view_assets.py                              bounded, hash-bound artifact reads for the stencil observer and live inputs; no standalone workflow
-scripts/vision/stencil_observer.py                      the stencil observer estimator, supervised by stencild on the camera node; no device access or standalone viewer
-scripts/vision/stencil_bench_fit.py              one-off fit of stencil-bench degradation priors from a photo of a print beside its transfer; results live in PHOTO_FIT and the experiment record; docs/stencil-bench.md
+scripts/vision/stencil_observer.py                      the stencil observer (a fiducial tile placed by its markers), supervised by stencild on the camera node; no device access or standalone viewer
 

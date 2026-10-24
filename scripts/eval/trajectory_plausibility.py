@@ -415,7 +415,7 @@ def extract_fixture(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def wire_features(scenario: str, *, sensor_profile: str = "deployment") -> dict[str, dict[str, Any]]:
+def wire_features(scenario: str) -> dict[str, dict[str, Any]]:
     state_names = (
         JOINT_NAMES + EXTERNAL_EFFORT_NAMES
         if scenario == "act_rgbd14_masked"
@@ -430,7 +430,7 @@ def wire_features(scenario: str, *, sensor_profile: str = "deployment") -> dict[
     }
     from wrist_cameras import describe
 
-    for camera in describe(Path(__file__).resolve().parents[2], profile=sensor_profile):
+    for camera in describe(Path(__file__).resolve().parents[2]):
         name = camera.role
         features[f"observation.images.{name}"] = {
             "dtype": "image",
@@ -514,7 +514,7 @@ def probe(args: argparse.Namespace) -> dict[str, Any]:
     fixture = {key: loaded[key] for key in loaded.files}
     contract = json.loads(args.contract.read_text())
     postprocessor_artifacts = validate_postprocessor_binding(contract, args.postprocessor)
-    features = wire_features(args.scenario, sensor_profile=args.sensor_profile)
+    features = wire_features(args.scenario)
     from wrist_cameras import read_checkpoint_config, validate_checkpoint_views
 
     config_path, config = read_checkpoint_config(args.policy, args.checkpoint_config)
@@ -605,7 +605,6 @@ def probe(args: argparse.Namespace) -> dict[str, Any]:
             "reject" if failures else "review_no_arm_only" if warnings else "pass_no_arm_only"
         ),
         "scenario": args.scenario,
-        "sensor_profile": args.sensor_profile,
         "checkpoint_config_sha256": sha256_file(config_path),
         "server": args.server,
         "policy": args.policy,
@@ -661,7 +660,6 @@ def main() -> None:
     fixture_parser.add_argument("--npz-out", type=Path, required=True)
 
     probe_parser = subparsers.add_parser("probe", help="query a policy server without a robot")
-    probe_parser.add_argument("--sensor-profile", choices=("deployment", "legacy-two-view"), default="deployment")
     probe_parser.add_argument(
         "scenario", choices=("act_rgb", "act_rgbd14_masked")
     )

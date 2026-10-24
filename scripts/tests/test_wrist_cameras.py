@@ -1,4 +1,4 @@
-"""One USB owner per physical wrist; recording and policy views never cross arms."""
+"""One USB owner per camera; an arm's recording and policy views are its own cameras', never another's."""
 from __future__ import annotations
 
 import json
@@ -31,11 +31,14 @@ def write_config(root, entries):
 
 @pytest.fixture
 def rig(tmp_path):
+    # The pink wrist's two D405s (2026-10-23), here on two USB owners.
     entries = [
-        {'name': 'depth-a', 'serial': 'device-a', 'role': 'wrist_left', 'group': 'd405',
-         'arm': 'left', 'owner_role': 'left-wrist-cameras'},
-        {'name': 'depth-b', 'serial': 'device-b', 'role': 'wrist_upper', 'group': 'd405',
-         'arm': 'right', 'owner_role': 'realsense'},
+        {'name': 'depth-a', 'serial': 'device-a', 'role': 'wrist_lower', 'group': 'd405', 'arm': 'right',
+         'owner_role': 'lower-cameras', 'optical_frame': 'right/realsense_lower_color_optical_frame',
+         'depth_optical_frame': 'right/realsense_lower_depth_optical_frame'},
+        {'name': 'depth-b', 'serial': 'device-b', 'role': 'wrist_upper', 'group': 'd405', 'arm': 'right',
+         'owner_role': 'realsense', 'optical_frame': 'right/realsense_color_optical_frame',
+         'depth_optical_frame': 'right/realsense_depth_optical_frame'},
     ]
     write_config(tmp_path, entries)
     (tmp_path / 'config').mkdir()
@@ -43,7 +46,7 @@ def rig(tmp_path):
     (tmp_path / 'urdf').mkdir()
     shutil.copyfile(REPO / 'urdf/tatbot.urdf', tmp_path / 'urdf/tatbot.urdf')
     (tmp_path / 'config/nodes.json').write_text(json.dumps({
-        'capture-a': {'roles': ['left-wrist-cameras'], 'ssh': 'user@left.invalid'},
+        'capture-a': {'roles': ['lower-cameras'], 'ssh': 'user@lower.invalid'},
         'capture-b': {'roles': ['realsense', 'arm'], 'ssh': 'user@right.invalid'},
     }))
     return tmp_path, entries
@@ -60,42 +63,28 @@ def test_each_capture_owner_selects_only_its_device(rig):
 def test_descriptions_resolve_without_device_ownership_and_keep_physical_arms(rig):
     root, _ = rig
     (root / 'config/nodes.json').unlink()
-    right, = cameras.describe(root)
-    assert (right.role, right.arm) == ('wrist_upper', 'right')
-    assert right.optical_frame == 'right/realsense_color_optical_frame'
-    assert (right.width, right.height, right.fps) == (640, 480, 30)
-    assert right.intrinsic_basis == 'nominal-fov'
-    assert 'serial' not in json.dumps(right.as_dict())
-    left, follower = cameras.describe(root, arms=('left', 'right'))
-    assert left.role == 'wrist_left' and left.optical_frame.startswith('left/')
-    assert follower == right
-    # Each optical frame must have a rigid mount on its declared arm. A
-    # cross-arm attachment traverses moving joints and cannot pass this check.
-    for description in (left, follower):
-        cameras.fixed_chain(REPO, f'{description.arm}/link_6', description.optical_frame)
-        other = 'right' if description.arm == 'left' else 'left'
+    lower, upper = cameras.describe(root)
+    assert (upper.role, upper.arm, lower.role, lower.arm) == ('wrist_upper', 'right', 'wrist_lower', 'right')
+    assert upper.optical_frame == 'right/realsense_color_optical_frame'
+    assert lower.optical_frame == 'right/realsense_lower_color_optical_frame'
+    assert (upper.width, upper.height, upper.fps) == (640, 480, 30)
+    assert upper.intrinsic_basis == 'nominal-fov'
+    assert 'serial' not in json.dumps(upper.as_dict())
+    # Each optical frame has a rigid mount on its arm's link_6; the teleop leader carries no camera.
+    for description in (lower, upper):
+        cameras.fixed_chain(REPO, 'right/link_6', description.optical_frame)
         with pytest.raises(ValueError, match='fixed camera chain'):
-            cameras.fixed_chain(REPO, f'{other}/link_6', description.optical_frame)
-
-
-def test_historical_profile_is_explicit_and_independent_of_current_inventory(rig):
-    root, _ = rig
-    legacy = cameras.describe(root, profile='legacy-two-view')
-    assert [c.role for c in legacy] == ['wrist_upper', 'wrist_lower']
-    assert all(c.geometry_basis == 'historical-two-view' for c in legacy)
-    assert len(cameras.describe(root)) == 1
-    with pytest.raises(ValueError, match='historical follower'):
-        cameras.describe(root, arms=('left', 'right'), profile='legacy-two-view')
+            cameras.fixed_chain(REPO, 'right/link_5_unknown', description.optical_frame)
+    assert cameras.describe(root, arms=('left',)) == ()
 
 
 def test_description_rejects_ambiguous_or_cross_arm_camera_geometry(rig):
     root, entries = rig
-    entries[0].update(arm='right')
+    del entries[0]['optical_frame']
     write_config(root, entries)
     with pytest.raises(ValueError, match='explicit optical frames'):
         cameras.describe(root)
     entries[0]['optical_frame'] = 'left/realsense_color_optical_frame'
-    entries[1]['optical_frame'] = 'right/realsense_color_optical_frame'
     write_config(root, entries)
     with pytest.raises(ValueError, match='another arm'):
         cameras.describe(root)
@@ -118,21 +107,17 @@ def test_remote_checkpoint_needs_its_config_before_any_action_query(tmp_path):
         cameras.validate_checkpoint_views(value, ('wrist_upper', 'wrist_lower'), use_depth=False)
 
 
-def test_one_arm_recording_never_requires_or_substitutes_the_other_view(rig):
+def test_an_arms_recording_needs_every_one_of_its_cameras_on_this_host(rig):
     root, _ = rig
-    result = json.loads(cameras.lerobot_config(root, 'right', 'capture-b', use_depth=True))
-    assert set(result) == {'wrist_upper'}
-    assert result['wrist_upper']['serial_number_or_name'] == 'device-b'
-    assert result['wrist_upper']['use_depth'] is True
-    left = json.loads(cameras.lerobot_config(root, 'left', 'capture-a', use_depth=False))
-    assert set(left) == {'wrist_left'}
     with pytest.raises(ValueError, match='another capture host'):
-        cameras.lerobot_config(root, 'left', 'capture-b', use_depth=True)
+        cameras.for_arm(root, 'right', 'capture-b')
+    with pytest.raises(ValueError, match='no D405 camera is assigned to the left arm'):
+        cameras.for_arm(root, 'left', 'capture-a')
 
 
 def test_two_cameras_on_the_same_physical_arm_remain_supported(rig):
     root, entries = rig
-    entries[0].update(arm='right', owner_role='realsense', role='wrist_lower')
+    entries[0].update(owner_role='realsense')
     write_config(root, entries)
     assert len(cameras.for_arm(root, 'right', 'capture-b')) == 2
     assert cameras.owned_names(root, 'capture-b') == ['depth-a', 'depth-b']
@@ -172,62 +157,60 @@ def checkpoint(*roles):
 
 def test_checkpoint_must_match_the_actual_local_view_set(rig):
     root, _ = rig
-    cameras.lerobot_config(root, 'right', 'capture-b', use_depth=False,
-                           checkpoint=checkpoint('wrist_upper'))
-    cameras.lerobot_config(root, 'right', 'capture-b', use_depth=True,
-                           checkpoint=checkpoint('wrist_upper', 'wrist_upper_depth'))
-    for policy in [checkpoint('wrist_upper', 'wrist_lower'), checkpoint('wrist_left'),
-                   checkpoint(), checkpoint('wrist_upper', 'wrist_upper_depth')]:
+    roles = tuple(c['role'] for c in cameras.mounted_for_arm(root, 'right'))
+    cameras.validate_checkpoint_views(checkpoint('wrist_lower', 'wrist_upper'), roles, use_depth=False)
+    cameras.validate_checkpoint_views(checkpoint('wrist_lower', 'wrist_upper', 'wrist_lower_depth', 'wrist_upper_depth'),
+                                      roles, use_depth=True)
+    for policy in [checkpoint('wrist_upper'), checkpoint('wrist_left'), checkpoint(),
+                   checkpoint('wrist_lower', 'wrist_upper', 'wrist_upper_depth')]:
         with pytest.raises(ValueError, match='no view substitution'):
-            cameras.lerobot_config(root, 'right', 'capture-b', use_depth=False, checkpoint=policy)
+            cameras.validate_checkpoint_views(policy, roles, use_depth=False)
 
 
-def test_session_capture_excludes_a_camera_moved_to_the_other_arm(rig, monkeypatch):
+def _capture_module(root, monkeypatch, name):
     import importlib.util
 
-    root, _ = rig
-    spec = importlib.util.spec_from_file_location('vision_capture_wrist_test', REPO / 'scripts/vision_capture.py')
+    spec = importlib.util.spec_from_file_location(name, REPO / 'scripts/vision_capture.py')
     capture = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(capture)
     monkeypatch.setattr(capture, 'REPO', root)
+    return capture
+
+
+def test_session_capture_refuses_an_arm_whose_cameras_another_host_owns(rig, monkeypatch):
+    root, entries = rig
+    capture = _capture_module(root, monkeypatch, 'vision_capture_wrist_test')
     monkeypatch.setenv('TATBOT_NODE', 'capture-b')
-    assert capture.registry_cameras('right') == {'wrist_upper': 'device-b'}
-    monkeypatch.setenv('TATBOT_NODE', 'capture-a')
     with pytest.raises(SystemExit, match='another capture host'):
         capture.registry_cameras('right')
+    entries[0]['owner_role'] = 'realsense'
+    write_config(root, entries)
+    assert capture.registry_cameras('right') == {'wrist_lower': 'device-a', 'wrist_upper': 'device-b'}
 
 
 def test_session_capture_names_the_arm_whose_wrist_cameras_answer(rig, monkeypatch):
-    import importlib.util
-
     import numpy as np
 
     root, entries = rig
-    spec = importlib.util.spec_from_file_location('vision_capture_arm_test', REPO / 'scripts/vision_capture.py')
-    capture = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(capture)
-    monkeypatch.setattr(capture, 'REPO', root)
-    # The left owner answers for the left arm's wrist camera under its own
-    # retained role; a registry role this checkout keeps no geometry for is
-    # refused naming the arm, never a default.
-    monkeypatch.setenv('TATBOT_NODE', 'capture-a')
-    assert capture.registry_cameras('left') == {'wrist_left': 'device-a'}
-    assert capture.ROLES == ('wrist_left', 'wrist_upper')
+    capture = _capture_module(root, monkeypatch, 'vision_capture_arm_test')
+    # The arm's owner answers for its wrist cameras under their retained roles; a registry role this
+    # checkout keeps no geometry for is refused naming the arm, never a default.
+    entries[0].update(owner_role='realsense', role='wrist_probe')
+    write_config(root, entries)
+    monkeypatch.setenv('TATBOT_NODE', 'capture-b')
+    assert capture.registry_cameras('right') == {'wrist_probe': 'device-a', 'wrist_upper': 'device-b'}
+    assert capture.ROLES == ('wrist_lower', 'wrist_upper')   # the live registry's, both on the pink wrist
     with pytest.raises(SystemExit, match='not configured'):
         capture.registry_cameras('centre')
     with pytest.raises(ValueError, match='not configured'):
         capture.open_cameras(True, False, 'centre')
-    entries[0]['role'] = 'wrist_probe'
-    write_config(root, entries)
-    assert capture.registry_cameras('left') == {'wrist_probe': 'device-a'}
-    # `once` and `serve` require --arm; the synthetic cameras answer with that
-    # arm's roles only.
-    out = root / 'fake-left'
-    assert capture.main(['once', str(out), '--fake', '--arm', 'left']) == 0
+    # `once` and `serve` require --arm; the synthetic cameras answer with that arm's roles only.
+    out = root / 'fake-right'
+    assert capture.main(['once', str(out), '--fake', '--arm', 'right']) == 0
     assert (out / 'capture-1.done').is_file()
     with np.load(out / 'capture-1.npz') as arrays:
-        assert json.loads(str(arrays['camera_roles'])) == ['wrist_probe']
-        assert 'depth_wrist_probe' in arrays.files and 'depth_wrist_upper' not in arrays.files
+        assert json.loads(str(arrays['camera_roles'])) == ['wrist_probe', 'wrist_upper']
+        assert 'depth_wrist_probe' in arrays.files and 'depth_wrist_lower' not in arrays.files
     with pytest.raises(SystemExit):
         capture.main(['once', str(root / 'fake-none'), '--fake'])
 
@@ -264,16 +247,16 @@ def test_service_passes_an_exact_sensor_selection_before_running_capture(rig, no
     assert argv[argv.index('--group') + 1] == 'd405'
 
 
-def test_live_manifest_assigns_distinct_wrist_arms_and_owners():
+def test_live_manifest_puts_both_wrist_cameras_on_the_pink_arm_under_one_owner():
+    """Both D405s are on the pink wrist since 2026-10-23, upper and lower, on one node's USB; the blue arm has none."""
     entries = cameras.registry(REPO)
     mapping = cameras.nodes.load(REPO)
-    assert {c['arm'] for c in entries} == {'left', 'right'}
-    assert len({cameras.owner(c, mapping) for c in entries}) == 2
-    for arm in ('left', 'right'):
-        assert {c['role'] for c in entries if c['arm'] == arm} <= set(cameras.CAPTURE_ROLES[arm])
-    assert cameras.capture_arm(['wrist_left']) == 'left'
+    assert {c['arm'] for c in entries} == {'right'}
+    assert len({cameras.owner(c, mapping) for c in entries}) == 1
+    assert sorted(cameras.CAPTURE_ROLES['right']) == ['wrist_lower', 'wrist_upper']
+    assert cameras.CAPTURE_ROLES['left'] == ()
     assert cameras.capture_arm(['wrist_upper']) == 'right'
-    for roles in ([], ['wrist_left', 'wrist_upper'], ['wrist_upper', 'wrist_upper'],
-                  ['wrist_lower'], ['wrist_probe']):
+    assert cameras.capture_arm(['wrist_lower', 'wrist_upper']) == 'right'
+    for roles in ([], ['wrist_left'], ['wrist_upper', 'wrist_upper'], ['wrist_probe']):
         with pytest.raises(ValueError, match='camera roles'):
             cameras.capture_arm(roles)

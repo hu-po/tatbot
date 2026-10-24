@@ -8,9 +8,8 @@
 # Everything the run prints lands in $RUN_DIR/console.log AND on the terminal.
 #
 # This library installs an EXIT trap and nothing else. It never traps INT or
-# TERM, so the coordinated-landing traps in teleop_start.sh and the
-# first-Ctrl+C-lands / repeats-swallowed semantics of il_client_shield.py keep
-# working exactly as they did. Nothing here runs while the arm is moving.
+# TERM, so the coordinated-landing traps in teleop_start.sh keep working
+# exactly as they did. Nothing here runs while the arm is moving.
 #
 # shellcheck shell=bash
 

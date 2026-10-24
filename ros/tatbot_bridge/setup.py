@@ -12,7 +12,7 @@ setup(
     zip_safe=True,
     maintainer="hu-po",
     maintainer_email="hello@tatbot.ai",
-    description="zenoh and ROS: stencild page poses on the tatbot bus become /tatbot/page and tf page/PATTERN_ID; /joint_states rides the bus as tatbot.arm-joints/1.",
+    description="zenoh and ROS: stencild page poses on the tatbot bus become /tatbot/page and tf page/PATTERN_ID.",
     license="MIT",
     tests_require=["pytest"],
     entry_points={"console_scripts": [

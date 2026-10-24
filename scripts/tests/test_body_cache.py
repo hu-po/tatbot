@@ -125,7 +125,6 @@ def _write_spec(path: Path, asset: Path, *, revision: str = "1" * 40) -> None:
         },
         "software_lock": {
             "path": "config/body-models/test.txt",
-            "sha256": "f" * 64,
             "environment": "cp312-x86_64-manylinux_2_28",
             "torch": "2.13.0",
         },
@@ -197,10 +196,14 @@ def test_tracked_model_spec_has_a_matching_cross_language_digest():
     assert digest == REVIEWED_SPEC_SHA256
 
 
-def test_tracked_model_spec_binds_the_software_lock_bytes():
+def test_tracked_model_spec_names_a_fully_hash_pinned_software_lock_outside_its_identity():
+    """The lock leaves the spec's digest (2026-10-24) so a security refresh does not rehash the body model;
+    it stays exact and hash-pinned, and scripts/deps_audit.py audits it."""
     spec, _ = _load_spec(REPO / "config" / "body-models" / "mhr-soma-v1.json")
-    lock = REPO / spec["software_lock"]["path"]
-    assert _digest(lock) == spec["software_lock"]["sha256"]
+    assert "sha256" not in spec["software_lock"]
+    lines = (REPO / spec["software_lock"]["path"]).read_text().splitlines()
+    pins = [line for line in lines if line and not line.startswith((" ", "#"))]
+    assert pins and all("==" in pin and pin.endswith("\\") for pin in pins)
 
 
 def test_bootstrap_refuses_unlisted_source_file(tmp_path):

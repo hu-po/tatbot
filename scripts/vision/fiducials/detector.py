@@ -38,6 +38,9 @@ class _FunctionalDetector:
     def detectMarkers(self, gray):  # noqa: N802 -- OpenCV's name
         return cv2.aruco.detectMarkers(gray, self.dictionary, parameters=self.params)
 
+    def setDetectorParameters(self, params):  # noqa: N802 -- OpenCV's name
+        self.params = params
+
 
 def _marker_detector(dictionary, params):
     if hasattr(cv2.aruco, "ArucoDetector"):
@@ -102,6 +105,8 @@ class Detection:
 
 @dataclasses.dataclass(frozen=True)
 class DetectorConfig:
+    # The image is resized by `scale` before detection, (0, 2]: under 1 to save time on large tags, over 1 to give
+    # tags of under 2 px a cell more pixels to threshold and decode.
     scale: float = 1.0
     adaptive_window_max: int = 45
     min_side_px: float = 12.0
@@ -118,6 +123,19 @@ class DetectorConfig:
     # read the tag in 0 of 10 frames, 0.30 in 10 of 10; in a dimmed room 2 and 8 of 10; in daylight both read it
     # (2026-09-30).
     cell_margin: float = 0.13
+    # A faint, bled transfer on skin (the fiducial-tile stencil): each code corrected as far as its dictionary's
+    # distance allows (which only a short id allowlist and a check against the printed layout make safe), its bits
+    # read from 8 px a cell and its outline fitted looser; an edge fit that fails keeps the contour's corners
+    # instead of dropping the tag. On the 2026-10-17 forearm frames: 174 distinct markers against 87 over 24
+    # frames, every synthetic one kept (a smaller perimeter, smaller threshold windows and a looser border, tried
+    # too, found 16 more on skin and lost 10 of 101 synthetic markers to texture candidates); the edge fit failed
+    # on 30% of them.
+    skin: bool = False
+    # A contour's smallest perimeter as a share of the frame's larger side, whatever ROI is cut from it (OpenCV's
+    # minMarkerPerimeterRate, set per image so a window reads as the whole frame does), and OpenCV's
+    # adaptiveThreshConstant; OpenCV's 0.03 of the image detected in and 7 when None.
+    min_perimeter_rate: float | None = None
+    threshold_constant: float | None = None
 
     @classmethod
     def from_profile(cls, profile: DetectorProfile) -> "DetectorConfig":
@@ -152,6 +170,13 @@ class FiducialDetector:
         )
         params.adaptiveThreshWinSizeMax = self.config.adaptive_window_max
         params.perspectiveRemoveIgnoredMarginPerCell = self.config.cell_margin
+        if self.config.skin:
+            params.errorCorrectionRate = 1.0
+            params.perspectiveRemovePixelPerCell = 8
+            params.polygonalApproxAccuracyRate = 0.06
+        if self.config.threshold_constant is not None:
+            params.adaptiveThreshConstant = self.config.threshold_constant
+        self.params = params
         self.detectors = [
             (name, _marker_detector(tag_dictionary(name), params), ids & self.allowed_ids)
             for name, ids in ids_by_family.items()
@@ -164,22 +189,20 @@ class FiducialDetector:
 
     def _refined(self, gray: np.ndarray, candidates: list) -> list:
         """The candidates with their corners fitted to the tag's edges under refinement "edges", dropping one
-        whose edges do not fit (no corner to trust there); else as detected."""
+        whose edges do not fit (no corner to trust there; with `skin`, its contour's corners kept); else as
+        detected."""
         if not self.fit_edges:
             return candidates
-        fitted = ((family, refine_edges(gray, corners), tag_id) for family, corners, tag_id in candidates)
-        return [candidate for candidate in fitted if candidate[1] is not None]
+        fitted = ((family, refine_edges(gray, corners), corners, tag_id) for family, corners, tag_id in candidates)
+        if self.config.skin:
+            return [(family, corners if fit is None else fit, tag_id) for family, fit, corners, tag_id in fitted]
+        return [(family, fit, tag_id) for family, fit, _, tag_id in fitted if fit is not None]
 
-    def detect(
-        self,
-        camera: str,
-        frame: np.ndarray,
-        timestamp_ns: int,
-        roi_xyxy: tuple[int, int, int, int] | None = None,
-    ) -> list[Detection]:
+    def _image(self, frame: np.ndarray, roi_xyxy) -> tuple[np.ndarray, np.ndarray]:
+        """(the grey image detected in: roi_xyxy cut from the frame and resized by `scale`, the cut's offset)."""
         scale = self.config.scale
-        if not 0 < scale <= 1.0:
-            raise ValueError("detector scale must be in (0, 1]")
+        if not 0 < scale <= 2.0:
+            raise ValueError("detector scale must be in (0, 2]")
         offset = np.zeros(2, dtype=np.float64)
         work = frame
         if roi_xyxy is not None:
@@ -189,9 +212,29 @@ class FiducialDetector:
                 raise ValueError(f"invalid detector ROI {roi_xyxy} for {width}x{height}")
             work = frame[y0:y1, x0:x1]
             offset[:] = (x0, y0)
-        if scale != 1.0:
-            work = cv2.resize(work, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-        gray = cv2.cvtColor(work, cv2.COLOR_BGR2GRAY)
+        if scale != 1.0:   # bicubic up: on the overhead's 10 px stencil markers it read more than bilinear
+            work = cv2.resize(work, None, fx=scale, fy=scale,
+                              interpolation=cv2.INTER_AREA if scale < 1.0 else cv2.INTER_CUBIC)
+        gray = work if work.ndim == 2 else cv2.cvtColor(work, cv2.COLOR_BGR2GRAY)
+        if self.config.min_perimeter_rate is not None:
+            self.params.minMarkerPerimeterRate = (self.config.min_perimeter_rate * max(frame.shape[:2]) * scale
+                                                  / max(gray.shape[:2]))
+            for _, detector, _ in self.detectors:
+                detector.setDetectorParameters(self.params)
+        return gray, offset
+
+    def detect(
+        self,
+        camera: str,
+        frame: np.ndarray,
+        timestamp_ns: int,
+        roi_xyxy: tuple[int, int, int, int] | None = None,
+        *,
+        only: frozenset[int] | None = None,
+    ) -> list[Detection]:
+        """Every allowed tag read in the frame; with `only`, those ids alone, the others never refined."""
+        scale = self.config.scale
+        gray, offset = self._image(frame, roi_xyxy)
         found: list[Detection] = []
         candidates = []
         for family, detector, allowed in self.detectors:
@@ -199,9 +242,12 @@ class FiducialDetector:
             if ids is not None:
                 candidates.extend((family, corner, int(tag_id))
                                   for corner, tag_id in zip(corners, ids.flatten(), strict=True)
-                                  if int(tag_id) in allowed)
+                                  if int(tag_id) in allowed and (only is None or int(tag_id) in only))
         for family, candidate, tag_id in self._refined(gray, candidates):
-            pixels = normalize_corners(candidate) / scale + offset
+            pixels = normalize_corners(candidate)
+            if scale != 1.0:   # cv2.resize puts a resized pixel's centre u at (u + 0.5) / scale - 0.5 in the frame
+                pixels = (pixels + 0.5) / scale - 0.5
+            pixels = pixels + offset
             side_px = float(
                 np.mean(
                     [np.linalg.norm(pixels[index] - pixels[(index + 1) % 4]) for index in range(4)]

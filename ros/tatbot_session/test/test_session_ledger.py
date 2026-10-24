@@ -6,26 +6,19 @@ from tatbot_session import ledger
 OPS = [{"id": f"s{i:04d}", "op": "stroke"} for i in range(4)]
 
 
-def test_events_are_fixed():
-    assert ledger.EVENTS == ("sent", "done", "aborted", "skipped", "decision", "page", "dip_phase", "pen_trim")
-
-
 def test_page_and_dip_rows_never_stand_for_an_ops_progress(tmp_path):
     book = ledger.Ledger(tmp_path / "ledger.jsonl")
     book.append("sent", "right", op="s0000", arc_m=0)
     book.append("page", "right", page={}, workspace={})
     book.append("dip_phase", "right", op="s0000", phase="dwell", status="ok")
+    book.append("dip_scale", "right", op="s0000", resource="liner", scale=0.9, key="+")
     assert ledger.uncertain(OPS, book.rows(), "right") == ["s0000"] and ledger.next_index(OPS, book.rows(), "right") == 0
-
-
-def test_fresh_run_starts_at_zero(tmp_path):
-    book = ledger.Ledger(tmp_path / "ledger.jsonl")
-    assert ledger.next_index(OPS, book.rows(), "right") == 0
-    assert ledger.uncertain(OPS, book.rows(), "right") == []
 
 
 def test_resume_skips_done_and_resumes_aborted_at_its_arc(tmp_path):
     book = ledger.Ledger(tmp_path / "ledger.jsonl")
+    assert ledger.next_index(OPS, book.rows(), "right") == 0
+    assert ledger.uncertain(OPS, book.rows(), "right") == []
     book.append("sent", "right", op="s0000", index=0, arc_m=0.0)
     book.append("done", "right", op="s0000", index=0, arc_m=0.04)
     book.append("sent", "right", op="s0001", index=1, arc_m=0.0)

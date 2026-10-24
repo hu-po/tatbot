@@ -50,17 +50,16 @@ def test_guard_rejects_every_safety_override_surface():
 
 def test_every_production_launcher_sources_the_guard():
     for path in (
-        "scripts/il_rollout_async.sh",
+        "scripts/il_joint_payload_measure.sh",
+        "scripts/il_wrist_pose.sh",
+        "scripts/teleop_start.sh",
     ):
         text = _text(path)
         assert "scripts/lib/estop_guard.sh" in text, path
         assert "estop_guard::reject_overrides" in text, path
 
 
-def test_follower_and_recovery_are_all_required():
-    assert "--robot.estop_required=true" in _text("scripts/il_rollout_async.sh")
-    # The device comes from the hardware profile (profile_env exports it);
-    # required=True is the safety property this test pins.
+def test_recovery_is_required():
     # The recovery launcher hands the profile's device to the native landing
     # binary, which fails closed: no --estop, no landing.
     text = _text("scripts/il_recover_arm.sh")
@@ -68,7 +67,7 @@ def test_follower_and_recovery_are_all_required():
     assert "profile_env::require" in text
     assert "uv run" not in text and "lerobot" not in text.lower().replace("lerobot plugins", "")
     native = _text("cpp/teleop/arm_recover.cpp")
-    assert "tatbot::estop::Monitor>(opt.estop_device, true, g_estop)" in native
+    assert "tatbot::estop::Monitor>(opt.estop_device, g_estop)" in native
     assert '"--estop DEV is required"' in native
 
 
@@ -183,26 +182,13 @@ def test_native_deadline_ends_hung_child_and_never_starts_leader(tmp_path):
     assert 'arm state is UNKNOWN' in (logs[0].parent / 'console.log').read_text()
 
 
-def test_policy_launcher_fails_closed_on_floor_estop_and_surviving_client():
-    launcher = _text("scripts/il_rollout_async.sh")
-    shield = _text("scripts/il_client_shield.py")
-
-    assert "--robot.require_z_floor=true" in launcher
-    assert "--robot.abort_on_estop=true" in launcher
-    assert '--robot.max_joint_velocity="$TARGET_VELOCITY"' in launcher
-    assert '--robot.controller_velocity_limit="$CONTROLLER_VELOCITY"' in launcher
-    assert "E-stop event makes the rollout a failure" in launcher
-    assert "STATUS=137" in launcher
-    assert "PR_SET_PDEATHSIG" in shield
-
-
 def test_cpp_and_teleop_launcher_chain_uses_the_deployed_device():
     teleop = _text("cpp/teleop/wxai_teleop.cpp")
-    assert "bool estop_required = true" in teleop
+    assert "bool estop_enabled = true" in teleop and "make_unique<tatbot::estop::Monitor>(\n      opt.estop_dev, g_estop)" in teleop
     friction = _text("cpp/teleop/friction_tune.cpp")
     # Device comes from the hardware profile env; required monitoring stays on.
     assert 'std::getenv("TATBOT_ESTOP_DEVICE")' in friction
-    assert "estop_device, true, estop_state" in friction
+    assert "estop_device, estop_state" in friction
     launcher = _text("scripts/teleop_start.sh")
     assert "scripts/lib/estop_guard.sh" in launcher
     assert "estop_guard::reject_overrides" in launcher

@@ -1,0 +1,66 @@
+# Advisories scripts/deps_audit.py accepts: id, package, review-by date, reason (tab-separated).
+# Past its date an advisory fails the audit again. Accept only what is capped upstream or unreachable here,
+# and say which; fix everything else. RustSec 'unmaintained' notices are listed by the audit, never failed on.
+GHSA-4j2p-28q2-5m79	accelerate	2026-12-01	1.14.0: no fixed release; the sharded-checkpoint traversal needs a crafted checkpoint and inkgen loads one pinned model revision
+PYSEC-2026-3804	accelerate	2026-12-01	1.14.0: no fixed release; the sharded-checkpoint traversal needs a crafted checkpoint and inkgen loads one pinned model revision
+GHSA-379c-qx7v-6h59	datasets	2026-12-01	4.8.5: lerobot 0.6.1 caps datasets below 5; the folder-builder traversal needs a crafted dataset and the fleet reads its own
+PYSEC-2026-3716	datasets	2026-12-01	4.8.5: lerobot 0.6.1 caps datasets below 5; the folder-builder traversal needs a crafted dataset and the fleet reads its own
+GHSA-567q-5qvw-pf92	filelock	2026-12-01	3.32.3: plugin lock: a local planted-symlink issue in ReadWriteLock, which no consumer uses (they take FileLock); the fix is in the fast-moving 4.x major
+GHSA-9vhv-jxww-xfm5	filelock	2026-12-01	3.32.3: plugin lock: a local planted-symlink issue in ReadWriteLock, which no consumer uses (they take FileLock); the fix is in the fast-moving 4.x major
+GHSA-v4x8-3wr5-3wq8	filelock	2026-12-01	3.32.3: plugin lock: a local planted-symlink issue in ReadWriteLock, which no consumer uses (they take FileLock); the fix is in the fast-moving 4.x major
+GHSA-27vj-qcqg-25rc	fsspec	2026-12-01	2026.2.0: datasets 4.8.5 pins fsspec<=2026.2.0 and lerobot 0.6.1 caps datasets below 5; no ReferenceFileSystem spec is opened
+PYSEC-2026-4217	fsspec	2026-12-01	2026.2.0: datasets 4.8.5 pins fsspec<=2026.2.0 and lerobot 0.6.1 caps datasets below 5; no ReferenceFileSystem spec is opened
+GHSA-vvp9-7p8x-rfvv	lz4_flex	2026-12-01	0.10.0: zenoh 1.10 requires ^0.10; reached only through transport compression, which the fleet bus never enables
+RUSTSEC-2026-0041	lz4_flex	2026-12-01	0.10.0: zenoh 1.10 requires ^0.10; reached only through transport compression, which the fleet bus never enables
+RUSTSEC-2026-0186	memmap2	2026-12-01	0.5.10: unsound notice for a crate in Cargo.lock that no Linux build compiles
+GHSA-22hg-r758-rrw9	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-24rc-8hj2-v98c	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-254f-3936-288h	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-27h8-gf7j-v5hc	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-332p-7hrc-92wf	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-3j72-p6qg-6xp7	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-4558-3h8r-v8xp	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-462x-pgg6-55fp	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-4rm8-3hmm-39fg	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-4rr5-89j8-mwwm	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-58r4-6rv3-gfh8	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-5x8w-8jj5-q52h	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-5xm2-6676-qcp9	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-654x-cwwv-5j9c	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-65qm-jvmh-6pqg	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-74r2-7ff9-mjj2	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-78g4-xqwv-q3g8	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-7mwm-ghpf-9vrm	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-8g5g-8vmr-9782	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-9v9v-9qvf-h2hj	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-c6hw-5grf-ff96	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-cp9v-662q-vvx9	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-f2g6-542v-9j58	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-fc9g-5qg7-mf45	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-g4qv-2jxx-769h	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-g7cr-3p24-7wf7	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-g842-9rc4-69pw	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-gg2r-wvfm-q9rx	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-j4m9-6w36-pw47	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-jg86-v3jv-hrpm	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-mrfp-p49p-3hf2	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-p4wg-p73j-c528	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-p8hx-v2p6-rp84	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-pchr-8j38-3x4p	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-q45j-58j2-45rg	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-rfgq-q3w2-pmv2	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-v9pv-5gc8-w2m6	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-vx6w-vv9f-6gvg	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-w889-685w-c8fh	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-xgh8-jp6q-p5x8	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+GHSA-xvh5-g6gv-559v	pillow	2026-12-01	12.3.0: every gradio release and lerobot 0.6.1 cap pillow below 13, where these are fixed; the fleet decodes its own frames and stencils, and inkgen decodes no upload
+RUSTSEC-2026-0194	quick-xml	2026-12-01	0.36.2: urdf-rs under rerun 0.36 needs ^0.36; a parsing DoS, and only our own URDF is parsed
+RUSTSEC-2026-0195	quick-xml	2026-12-01	0.36.2: urdf-rs under rerun 0.36 needs ^0.36; a parsing DoS, and only our own URDF is parsed
+GHSA-h35f-9h28-mq5c	setuptools	2026-12-01	81.0.0: plugin build backend, capped below 82 by lerobot 0.6.1; macOS sdist and local issues
+GHSA-xmj3-9gf7-h52w	setuptools	2026-12-01	81.0.0: plugin build backend, capped below 82 by lerobot 0.6.1; macOS sdist and local issues
+PYSEC-2026-3447	setuptools	2026-12-01	81.0.0: plugin build backend, capped below 82 by lerobot 0.6.1; macOS sdist and local issues
+GHSA-2f9f-gq7v-9h6m	thrift	2026-12-01	0.17.0: parquet under rerun 0.36's importer; reached only by importing parquet files, which the fleet does not
+GHSA-rrmf-rvhw-rf47	torch	2026-12-01	2.11.0: fixed in 2.13; lerobot 0.6.1 and inkgen cap torch below 2.12; torch.jit.script on our own code, locally
+RUSTSEC-2026-0367	zip	2026-12-01	8.6.0: in Cargo.lock but compiled by no Linux build of any feature set; fixed in 9, a major
+RUSTSEC-2026-0368	zip	2026-12-01	8.6.0: in Cargo.lock but compiled by no Linux build of any feature set; fixed in 9, a major
+RUSTSEC-2026-0369	zip	2026-12-01	8.6.0: in Cargo.lock but compiled by no Linux build of any feature set; fixed in 9, a major

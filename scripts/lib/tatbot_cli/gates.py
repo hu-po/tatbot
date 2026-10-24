@@ -114,15 +114,12 @@ def short_hostname() -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "", host)[:16] or "node"
 
 
-def mint_launch_id(tag: str | None = None, *, now: float | None = None) -> str:
-    """`<UTC %Y%m%dT%H%M%SZ>-<short hostname>-<4 hex>[-<tag>]`: the id every autonomous
+def mint_launch_id(*, now: float | None = None) -> str:
+    """`<UTC %Y%m%dT%H%M%SZ>-<short hostname>-<4 hex>`: the id every autonomous
     launch carries. arm_gate.sh ledgers and audits it (pid chain, SSH origin); a repeat is
     audited, never refused. Minted on the node that execs, right before the exec."""
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(now))
-    parts = [stamp, short_hostname(), secrets.token_hex(2)]
-    if tag:
-        parts.append(tag)
-    return "-".join(parts)
+    return "-".join((stamp, short_hostname(), secrets.token_hex(2)))
 
 
 def write_launch_id(launch_id: str) -> None:

@@ -8,6 +8,8 @@ uint8 MODE_SINGLE=0    # one touch from start_pose along direction
 uint8 MODE_PAGE=1      # three touches spread over the page clear center; result carries the plane
 uint8 MODE_MOVE=2      # no touch: travel to start_pose under the guard and hold there (a view of the station);
                        # a guard trip on the way is an error
+uint8 MODE_VIEW=3      # MODE_MOVE by one joint-space move (tatbot_session.ready.view_move), not the station's way up,
+                       # across and down: the caller has checked that move clear of the station (a calibration view)
 
 # Goal
 uint8 mode

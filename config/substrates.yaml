@@ -1,25 +1,19 @@
 # What the tools work ON, one entry per physical substrate.
 #
 # A tool and a substrate come as a pair on this bench: the ballpoint draws on
-# the two paper fixtures, and the laser and the 3RL only ever work on the
-# silicone skin. Each tool datasheet names its default substrate and the
-# others it admits, so nothing has to guess from context and a tool swap
-# moves the whole scene with it.
+# the two paper fixtures, the needle cartridges tattoo silicone practice skin
+# or human skin, and the laser works on the silicone skin. Each tool datasheet
+# names its default substrate and the others it admits, so nothing has to
+# guess from context and a tool swap moves the whole scene with it.
 #
-# Dimensions are measured, not nominal. The sim sizes its geometry AND its
-# texture from these, so the two cannot drift apart, and the real workspace
-# records its plane against the same numbers. Inkmap's Paper and Cylinder
-# workspaces default to the same fixtures (web/inkmap/src/core/fixtures.ts,
-# held equal to this file by a test).
-#
-# texel_cols/rows are chosen so the texture is square-pixelled (the kernels
-# assume that) at roughly 2.37 px/mm. Changing them invalidates every cached
-# sheet under the ManiSkill asset directory; the sheet generator notices the
-# size or pitch mismatch and rebuilds.
+# Dimensions are measured, not nominal. The sim sizes its fixtures from
+# these, and the real workspace records its plane against the same numbers.
+# Inkmap's Paper and Cylinder workspaces default to the same fixtures
+# (web/inkmap/src/core/fixtures.ts, held equal to this file by a test).
 #
 # A `shape` says how the material is presented. `pad` (the default) is a flat
-# sheet whose profile the scenario may still bend (SurfaceDR); `cylinder` is a
-# rigid fixture with one fixed radius, which the scenario cannot flatten.
+# sheet a scenario may still lay over a support; `cylinder` is a rigid fixture
+# with one fixed radius, which the scenario cannot flatten.
 
 schema_version: 1
 
@@ -29,9 +23,6 @@ paper_pad:
   width_m: 0.1905
   height_m: 0.2794
   thickness_m: 0.010
-  texel_cols: 452
-  texel_rows: 662
-  surface_phrase: on the paper pad
   # printed 1/4 in (6.35 mm) square grid; the maze task traces it, so it is
   # the stencil
   ruled: true
@@ -39,18 +30,6 @@ paper_pad:
   # white paper, faint blue rules
   base_color: 1.0 1.0 1.0
   rule_color: 0.62 0.74 0.90
-  # a pad is put down wherever there is room on the bench, including on top of
-  # whatever else is already there
-  rest_z_m: [0.0, 0.055]
-  # The undulation of a gridded sheet lying on a pad: a millimetre or so of
-  # lift leaning by a couple of degrees, over a hand's width. That is ALL the
-  # shape a ballpoint episode should ever see, and these are the values every
-  # paper dataset generated before 2026-08-27 was drawn from -- they lived as
-  # the defaults of tatbot_sim.config.SurfaceDR, which described the paper pad
-  # for every substrate. Changing them changes the paper distribution.
-  surface_amplitude_m: [0.0004, 0.0018]
-  surface_max_slope_rad: [0.005, 0.04]
-  surface_feature_m: [0.05, 0.12]
 
 paper_cylinder:
   display_name: gridded paper cylinder
@@ -67,20 +46,10 @@ paper_cylinder:
   width_m: 0.2003
   height_m: 0.1905
   thickness_m: 0.085
-  texel_cols: 475
-  texel_rows: 452
-  surface_phrase: on the paper cylinder
   ruled: true
   grid_pitch_m: 0.00635
   base_color: 1.0 1.0 1.0
   rule_color: 0.62 0.74 0.90
-  # crest height when the cylinder lies on the bench where the pad rests:
-  # one diameter above it, a few millimetres of cradle either way
-  rest_z_m: [0.080, 0.090]
-  # A rigid fixture: no sheet undulation on top of the cylinder.
-  surface_amplitude_m: [0.0, 0.0]
-  surface_max_slope_rad: [0.0, 0.0]
-  surface_feature_m: [0.05, 0.12]
 
 silicon_skin:
   display_name: silicone practice skin
@@ -89,17 +58,22 @@ silicon_skin:
   width_m: 0.140
   height_m: 0.185
   thickness_m: 0.0025
-  texel_cols: 336
-  texel_rows: 444
-  surface_phrase: on the silicone skin
   # blank: there is no ruling to trace, so a removal episode's target is ink
   # that is already there rather than a printed line
   ruled: false
   # pink/peach, the colour practice skin is sold in
   base_color: 0.91 0.71 0.65
-  # On the table, near enough. Cylindrical profiles curve down from this crest;
-  # they do not add the former artificial mound height to the reach envelope.
-  rest_z_m: [0.000, 0.002]
-  # Small residual ripples are opt-in through SurfaceDR.enabled. Until measured
-  # on flat and cylindrical fixtures independently, the conservative shared
-  # defaults remain available but are not enabled by the named recipes.
+
+human_skin:
+  display_name: human skin
+  # A person's skin, e.g. the outer forearm. The drawing stack measures the
+  # surface it draws on each run (the wrist gauge, and `ros up --surface
+  # fitted` on a curved limb), so these numbers only size a sim stand-in and
+  # are nominal, not measured: a 60 x 180 mm forearm band, ~2 mm of skin.
+  # Rides, dips and motion are the needle cartridge's, exactly as on the
+  # silicone skin; depth is trimmed live from the station keyboard.
+  width_m: 0.060
+  height_m: 0.180
+  thickness_m: 0.002
+  ruled: false
+  base_color: 0.87 0.68 0.56

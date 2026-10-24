@@ -323,13 +323,9 @@ def test_async_wire_uses_zero_copy_image_wrap_and_highest_pickle_protocol() -> N
     pickle_replacements = [
         new
         for module, _old, new in patches
-        if module in {
-            "lerobot.async_inference.policy_server",
-            "lerobot.async_inference.robot_client",
-        }
-        and "pickle.HIGHEST_PROTOCOL" in new
+        if module == "lerobot.async_inference.policy_server" and "pickle.HIGHEST_PROTOCOL" in new
     ]
-    assert len(pickle_replacements) == 3
+    assert len(pickle_replacements) == 1
 
 
 def test_chunk_guard_is_before_action_serialization_and_opt_in() -> None:

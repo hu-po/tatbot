@@ -1,6 +1,6 @@
 {
   "compiler_sha256": "d22cb7b3c94214261230f0b94b286d4bcfcb0bca3079807af89981b9bfeff912",
-  "content_sha256": "5d720cb39a1c990e8e4aa03f03df8e37afeabe18aaa4f581970054f422a249dd",
+  "content_sha256": "e5b402eb0cbd7d1a40ef064d50407c637b5aef4261621ea8118c718ec373943f",
   "events": [
     {
       "kind": "pen_transition",
@@ -87,7 +87,7 @@
     "version": "1"
   },
   "schema": "tatbot.ink-program/1",
-  "surface_placement_sha256": "f8aaea34bf0318ea48cf17091114b73ff51b7ed4431bf2a036977277eacc3691",
+  "surface_placement_sha256": "90837f9ffacc888d74a9afe3b3a89c02bd4203d54534505da275a8cb46fdb61c",
   "tattoo_program_sha256": "6e46984c4abc85cf6588524699edb588b1701d89bac4bfffc8f9e37e593f4e0b",
   "total_material_path_length_m": 0.01,
   "uncertainty": {

@@ -16,6 +16,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_mock_stack test/test_mock_stack.py ENV ${_env} TATBOT_CHECK_HARDWARE=mock TIMEOUT 240)
   # The same checks on TatbotArm with its fake SDK: the driver's interlocks wired through the launch.
   ament_add_pytest_test(test_fake_stack test/test_mock_stack.py ENV ${_env} TATBOT_CHECK_HARDWARE=fake TIMEOUT 240)
+  # hardware sim against test/sim_peer.py: sim time, one goal, the peer's clock, a timeout latch. Private, like the
+  # sim backend it needs, so a tree without it skips this.
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/test_sim_stack_launch.py")
+    ament_add_pytest_test(test_sim_stack_launch test/test_sim_stack_launch.py ENV ${_env} TIMEOUT 240)
+  endif()
 endif()
 
 ament_package()

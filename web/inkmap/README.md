@@ -18,14 +18,10 @@ npm run check
 npm run dev
 ```
 
-Open `http://127.0.0.1:4180/?showcase=1` for the shared-artwork pose gallery. It replays generated scenario fixtures with the same renderer,
-rig, decals, and compiled surface anchors used by the editor and simulator.
-`npm test` regenerates missing showcase scenarios from the tracked manifest using
-`python/tatbot_sim/.venv/bin/python`. Set up that environment with
-`uv sync --project python/tatbot_sim` from the repository root first. The
-pretest step preserves the manifest and its source provenance; generated
-scenarios remain ignored build output. It establishes no reach or physical
-qualification.
+Open `http://127.0.0.1:4180/?showcase=1` for the shared-artwork pose gallery.
+It places collection artwork from the tracked `public/showcase/manifest.json`
+on five named poses with the editor's own renderer, rig and decals. It
+establishes no reach or physical qualification.
 
 The app must run against local fixtures. Service endpoints and deployment
 credentials are supplied by the deployment environment and are not committed.

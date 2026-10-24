@@ -1,10 +1,9 @@
-"""Wrist and overhead capture geometry: deprojection, capture views, registration.
+"""Wrist and overhead capture deprojection, and the overhead camera's registration into the URDF root.
 
-The helpers the stencil observer,
-`tatbot vision surface rgbd` and the tracking views import. Capture and surface file formats: docs/surface-formats.md.
+`tatbot vision surface rgbd` imports the owner-profile rays. Capture and surface file formats:
+docs/surface-formats.md.
 
-numpy only; `rgbd_geometry`, `wrist_cameras`, `depth_quality` and
-`robot_world` are imported where they are used.
+numpy only; `rgbd_geometry` and `robot_world` are imported where they are used.
 """
 
 from __future__ import annotations
@@ -23,30 +22,12 @@ from tatbot_paths import bootstrap  # noqa: E402
 
 bootstrap()
 
-import arm_kinematics as dk  # noqa: E402
-
-DEPTH_MIN_M, DEPTH_MAX_M = dk.D405_DEPTH_RANGE_M   # the D405 depth the map trusts
+DEPTH_MIN_M, DEPTH_MAX_M = 0.07, 0.5   # the D405 depth the map trusts
 OVERHEAD_DEPTH_RANGE_M = (0.3, 1.5)
-CAMERA_LINKS = dk.CAMERA_LINKS
 
 
 class StageError(RuntimeError):
     pass
-
-
-def _deproject(depth: np.ndarray, units_m: float, intrinsics,
-               depth_range=(DEPTH_MIN_M, DEPTH_MAX_M)) -> np.ndarray:
-    """Pinhole deprojection of a uint16 depth image into the camera optical frame (N,3)."""
-    fx, fy, ppx, ppy = (float(v) for v in np.asarray(intrinsics, float)[:4])
-    depth = np.asarray(depth)
-    valid = (depth > 0) & (depth < 65535)
-    z = depth.astype(np.float64) * float(units_m)
-    valid &= (z >= depth_range[0]) & (z <= depth_range[1])
-    rows, cols = np.nonzero(valid)
-    z = z[rows, cols]
-    x = (cols.astype(np.float64) - ppx) / fx * z
-    y = (rows.astype(np.float64) - ppy) / fy * z
-    return np.stack([x, y, z], axis=1)
 
 
 class OverheadUnboundError(StageError):
@@ -120,120 +101,6 @@ def _deproject_owner(depth, units, profile_json):
             raise StageError(str(error)) from error
     valid &= z > 0
     return rays[valid] * z[valid, None]
-
-
-def declared_roles(npz) -> list[str]:
-    """The views a capture declares (`camera_roles`): one arm's retained roles,
-    and every owner-frame field it holds is one of them."""
-    from wrist_cameras import capture_arm
-
-    if 'camera_roles' not in npz:
-        raise ValueError('capture lacks declared camera roles')
-    roles = json.loads(str(npz['camera_roles']))
-    if not isinstance(roles, list):
-        raise ValueError('invalid capture camera roles')
-    capture_arm(roles)
-    observed = {key.removeprefix('owner_frames_') for key in npz if key.startswith('owner_frames_')}
-    if observed and observed != set(roles):
-        raise ValueError('capture owner frames differ from declared camera roles')
-    return roles
-
-
-def capture_views(npz) -> tuple[str | None, dict[str, str]]:
-    """The arm a capture belongs to and that arm's role -> depth optical frame
-    mapping (`CAMERA_LINKS[arm]`): the declared `camera_roles` (every capture
-    the owner writes), else the depth views present (legacy captures), one
-    arm's retained roles with every present view mapped on that arm's own
-    URDF chain. A view the mapping lacks is refused by name, never registered
-    through another arm's transform. A capture holding no depth view belongs
-    to no arm and maps nothing: `(None, {})`."""
-    from wrist_cameras import capture_arm
-
-    present = {key.removeprefix('depth_') for key in npz if key.startswith('depth_')}
-    if 'camera_roles' in npz:
-        try:
-            declared = set(declared_roles(npz))
-        except ValueError as error:
-            raise StageError(f'capture camera roles are invalid: {error}') from error
-        if declared != present:
-            raise StageError('capture depth fields differ from declared camera roles')
-    if not present:
-        return None, {}
-    try:
-        arm = capture_arm(sorted(present))
-    except ValueError as error:
-        raise StageError(f'capture camera roles {sorted(present)}: {error}') from error
-    links = CAMERA_LINKS[arm]
-    if present - links.keys():
-        raise StageError(f'capture camera roles {sorted(present - links.keys())} are absent from the '
-                         f'{arm} arm URDF mapping {sorted(links)}; use its original model')
-    return arm, links
-
-
-def _pinhole_capture_points(npz, role, depth, units):
-    from capture_projection import validate as validate_projection
-    from wrist_cameras import describe
-
-    if f'owner_profile_{role}' in npz.files:
-        raise StageError('capture has conflicting device and pinhole projection profiles')
-    camera = next((camera for camera in describe(REPO) if camera.role == role), None)
-    if camera is None:
-        raise StageError('capture projection has no configured camera')
-    try:
-        link = validate_projection(json.loads(str(npz[f'projection_profile_{role}'])), camera,
-            shape=npz[f'depth_{role}'].shape, intrinsics=npz[f'intrinsics_{role}'], units_m=units)
-    except (ValueError, TypeError, KeyError) as error:
-        raise StageError(str(error)) from error
-    return _deproject(depth, units, npz[f'intrinsics_{role}']), link
-
-
-def _capture_points(npz, role, depth, units, link):
-    if f'projection_profile_{role}' in npz.files:
-        return _pinhole_capture_points(npz, role, depth, units)
-    if f'owner_profile_{role}' in npz.files:
-        # The device owner explicitly aligns depth into the color optical frame.
-        return (_deproject_owner(depth, units, str(npz[f'owner_profile_{role}'])),
-                link.replace('_depth_optical_frame', '_color_optical_frame'))
-    return _deproject(depth, units, npz[f'intrinsics_{role}']), link
-
-
-def _capture_cloud(npz, chain, selected_role=None, quality=None, quality_reports=None) -> tuple[np.ndarray, list[str]]:
-    """All valid depth pixels of one capture in root, plus the roles that contributed."""
-    joints = np.asarray(npz["joints"], float)
-    carriage = float(np.asarray(npz["carriage_m"]).reshape(-1)[0])
-    if joints.shape != (6,) or not np.isfinite(joints).all() or not np.isfinite(carriage):
-        raise StageError("capture has no finite measured arm/carriage pose; registration refused")
-    arm, links = capture_views(npz)
-    values = dk.ArmModel(arm, chain=chain).joint_map(joints, carriage) if links else {}
-    clouds = []
-    roles = []
-    for role, link in links.items():
-        if selected_role is not None and role != selected_role:
-            continue
-        key = f"depth_{role}"
-        if key not in npz.files:
-            continue
-        units = float(np.asarray(npz[f"units_m_{role}"]).reshape(-1)[0])
-        from depth_quality import filter_depth
-        frame_count = int(npz[f'frames_{role}']) if f'frames_{role}' in npz.files else 8
-        depth, quality_report = filter_depth(npz[key], units,
-                               npz[f'valid_{role}'] if f'valid_{role}' in npz.files else None,
-                               frame_count,
-                               npz[f'temporal_mad_m_{role}'] if f'temporal_mad_m_{role}' in npz.files else None,
-                               options=quality)
-        points, link = _capture_points(npz, role, depth, units, link)
-        if quality_reports is not None:
-            quality_reports[role] = {**quality_report, 'optical_frame': link}
-            if f'projection_profile_{role}' in npz.files:
-                quality_reports[role]['projection_profile'] = json.loads(str(npz[f'projection_profile_{role}']))
-        if len(points) == 0:
-            continue
-        pose = chain.link_pose(link, values)
-        clouds.append(points @ pose[:3, :3].T + pose[:3, 3])
-        roles.append(role)
-    if not clouds:
-        return np.zeros((0, 3)), roles
-    return np.concatenate(clouds), roles
 
 
 def _verified_overhead_payload(capture_dir: Path, entry: dict) -> bytes:

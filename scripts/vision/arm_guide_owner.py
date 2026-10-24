@@ -143,6 +143,6 @@ def validate_native_build(receipt: dict, expected: dict, arch: str | None) -> No
     if build.get("profile") != "release":
         raise CaptureError("arm owner needs the release native build for its control loop")
     sdk = build.get("sdk") or {}
-    if (sdk.get("version") != "1.8.5" or sdk.get("revision") != "fdfd9f68f57b3bd05c4e85011fa5c11296525b2f"
+    if (sdk.get("version") != "1.11.0" or sdk.get("revision") != "507451794d11e54f11494ef3be1d786ec6060d4a"
             or len(sdk.get("library_sha256", "")) != 64 or len(receipt.get("binary_sha256", "")) != 64):
         raise CaptureError("arm owner binary lacks the pinned SDK/library identity")

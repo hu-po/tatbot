@@ -1,7 +1,7 @@
 # `scripts/lib` is not a package: every script here runs from a bare clone with
 # `sys.path.insert(0, "scripts/lib")` and no install, and that stays true.
 #
-# This file exists only so the two uv projects under `python/` can depend on the
+# This file exists only so the uv projects under `python/` can depend on the
 # handful of modules they share with the scripts, instead of reaching across the
 # tree with `importlib.util.spec_from_file_location`. Each of those bespoke
 # loaders had to re-register `sys.modules` by hand so dataclasses could resolve
@@ -13,9 +13,8 @@
 # definition, and changing it changes all three.
 #
 # tatbot_paths is the exception that makes the list honest: its bootstrap()
-# puts every script root on sys.path, so tatbot_sim (which by 2026-09 reached
-# 28 modules here and 5 under scripts/vision through per-file sys.path edits)
-# calls it once in its package __init__ instead of naming each module.
+# puts every script root on sys.path, so a consumer that needs more of the
+# script tree calls it once instead of naming each module.
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -30,11 +29,8 @@ dependencies = ["numpy", "tatbot-contracts==0.1.0"]
 
 [tool.setuptools]
 py-modules = [
-  "dip_motion",
+  "gpu_lease",
   "ink_spec",
-  "motion_constants",
-  "robot_world",
-  "stroke_material",
   "tatbot_paths",
   "tatbot_runlog",
   "tool_spec",

@@ -126,7 +126,7 @@ def test_custom_layout_places_unchanged_artwork_and_limits_rows(study):
     {'rows_mm': []}, {'rows_mm': '42,14'}, {'rows_mm': [0]*1001},
     {'columns_mm': [15, -15]}, {'columns_mm': [-15, 0, 15]},
     {'rows_mm': [42, 16]}, {'rows_mm': [42, 17]}, {'columns_mm': [-13, 13]},
-    {'rows_mm': [44]}, {'columns_mm': [-20, 20]}, {'slot_mm': [26, '26']}, {'units': 'mm'},
+    {'rows_mm': [68]}, {'columns_mm': [-33, 33]}, {'slot_mm': [26, '26']}, {'units': 'mm'},
 ])
 def test_invalid_layout_refuses_before_creating_study(study, change):
     from draw_research import prepare

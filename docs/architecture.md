@@ -17,7 +17,6 @@ operator or test
       ├── C++ teleop ─────────┤
       ├── LeRobot adapter ────┼── robot interface
       ├── Rust visiond ───────┘
-      ├── Python simulator
       └── Web Inkmap ── placement JSON
 
 placement text ── InkLang intent + body atlas ── rest-surface anchor
@@ -36,13 +35,15 @@ body placement ── measured address mapping still required (refused)
 - `ros/` owns autonomous drawing: the ROS 2 Jazzy stack that compiles a design,
   registers the page, touches it and draws (`ros/README.md`).
 - `cpp/teleop/` owns the high-rate leader/follower teleop loop.
-- `python/lerobot_robot_tatbot/` owns the LeRobot adapter and episode API.
+- `python/lerobot_robot_tatbot/` owns the LeRobot environment for training and
+  policy serving.
 - `rust/visiond/` owns camera capture, synchronization, and replay data.
-- `python/tatbot_sim/` owns hardware-independent fixtures and simulation.
+- `python/tatbot_surface/` owns the torch-free readers of the reference body
+  surface, its pose rig and the placements on it.
 - `web/inkmap/src/core/inklang/` owns the single placement-text to
   rest-surface-anchor implementation. Its JSON contracts are language-neutral.
 - `web/inkmap/` owns browser-side placement confirmation, editing, and preview;
-  Python simulation consumes canonical InkLang output rather than resolving a
+  Python consumers read canonical InkLang output rather than resolving a
   second semantic location.
 - `web/inkgen/` owns artwork generation, never anatomy grounding.
 - `firmware/estop_pico/` owns the e-stop heartbeat endpoint.
@@ -57,9 +58,8 @@ missing observed cell.
 
 `TattooProgram`, `SurfacePlacement`, and `InkProgram` carry artwork,
 target addresses, and ordered tool intent. The robot draws plane designs:
-`tatbot_ink` compiles them into the ROS 2 stack's `program.json`. Simulation
-lowers retained designs through the shared Cartesian compiler and C++ planner
-into checked `tatbot.draw-samples/1`. Neither supplies a body mapping.
+`tatbot_ink` compiles them into the ROS 2 stack's `program.json`; that does not
+supply a body mapping.
 
 The old `ExecutionProgram/1` schema and synthetic fixtures remain readable
 for historical inspection, but its standalone compiler has been retired.
@@ -69,8 +69,7 @@ The pinned [MHR-through-SOMA model spec](../config/body-models/mhr-soma-v1.json)
 has an explicit offline cache bootstrap and hash-only audit. It is the sole
 nominal-body provider and Inkmap default: a numeric `BodyIdentity/1` is
 transferred through SOMA's fixed mid topology, and named poses preserve those
-face addresses. This software cutover does not authorize deployment, capture,
-motion, emissions, or human contact.
+face addresses. The drawing stack does not read the body model.
 
 ## Body cache verification
 
@@ -82,18 +81,16 @@ the command for machine output; `--output DIR` on audit optionally writes an
 immutable report outside the cache and repository.
 
 The stdlib `tatbot-contracts` package owns canonical JSON and these validators.
-The CLI and simulator use the same reviewed spec digest and verify assets again
-at their respective input boundaries. Missing, changed, writable, symlinked,
+The CLI uses the reviewed spec digest and verifies assets again at its input
+boundary. Missing, changed, writable, symlinked,
 or unlisted assets are refusals. Hash verification is not model execution or
 hardware qualification.
 
 A nominal body cannot supply a missing physical measurement.
 
 Differentiable patches, proposal training, compliant phantom mechanics, coupled
-mechanics and generic anatomy are frozen experiments. Existing tests and
-historical reproducers remain, but new runtime consumers are rejected by the
-stdlib body check. Reopening requires a named consumer, measured baseline
-deficiency, experiment and acceptance criteria. See
+mechanics and generic anatomy were frozen experiments of the ManiSkill
+simulator and were deleted with it. See
 [human-representation consumers and evidence](human-representation.md) for the
 maintained core and the next non-human fixture experiment.
 
@@ -102,7 +99,7 @@ are deliberately not part of this page.
 
 See [InkLang](inklang.md) for the prompt-to-location contract and
 [Inkmap](inkmap.md) for its browser consumer. Pose, support, world transforms,
-and reach enter only when a PlacementFile is compiled into a TattooScenario.
+and reach are never part of a PlacementFile.
 
 ## Change guide
 

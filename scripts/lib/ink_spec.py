@@ -56,7 +56,6 @@ PALETTE_RELPATH = "config/palette.yaml"
 LOAD_RELPATH = "config/palette_load.yaml"
 INVENTORY_RELPATH = "config/inventory.yaml"
 MODES = ("real", "rehearsal", "none", "cartridge")
-DIP_REASONS = ("session_start", "low_charge", "color_change", "operator")
 NO_INK = "none"
 
 
@@ -165,22 +164,6 @@ class SlotLoad:
     def dry(self) -> bool:
         return self.ink_id is None or (self.fill_known and self.fill_ul <= 0)
 
-
-@dataclass(frozen=True)
-class ContinuousSupply:
-    """Legacy session account retained for journal compatibility."""
-
-    supply_id: str
-    budget_ms: int
-    started_at_ms: int
-    observed_at_ms: int
-
-    def __post_init__(self):
-        if (not isinstance(self.supply_id, str) or not self.supply_id.strip()
-                or any(type(v) is not int or not 0 <= v <= 2**64 - 1
-                       for v in (self.budget_ms, self.started_at_ms, self.observed_at_ms))
-                or self.budget_ms == 0 or self.observed_at_ms < self.started_at_ms):
-            raise ValueError("invalid continuous supply account")
 
 @dataclass(frozen=True)
 class InkPolicy:
@@ -565,7 +548,7 @@ def select_slot(policy: InkPolicy, palette: dict[str, PaletteSlot], load: dict[s
 # --- what a planned program will cost ---------------------------------------------------
 
 def need_from_polylines(polylines_m, policy: InkPolicy, speed_m_s: float,
-                        settle_s: float = 0.2, ink_id: str | None = None) -> float:
+                        settle_s: float = 0.2) -> float:
     """Microlitres a planned program spends: every stroke's length in contact
     and its time on the surface (the draw plus the settle before the lift),
     through the same stroke_ul the ledger uses. ``polylines_m`` is a list of
@@ -627,6 +610,62 @@ def _open_bottle(inventory: dict, ink_id: str) -> str | None:
     return best
 
 
+def _cartridge_prep(inventory: dict, tool_id: str) -> Prep:
+    """The fresh cartridge to fit: the first unretired box that fits the tool."""
+    for cid, c in (inventory.get("cartridges") or {}).items():
+        if c.get("fits") == tool_id and not c.get("retired"):
+            n = c.get("count")
+            if n is None:
+                return Prep("cartridge", f"count the {c.get('needle_code')} box {cid} (never counted)")
+            if n <= 0:
+                return Prep("cartridge", f"{cid} is empty — no fresh {c.get('needle_code')} to fit")
+            return Prep("cartridge", f"fit a fresh {c.get('needle_code')} from {cid} ({n} left)")
+    return Prep("cartridge", f"no cartridge box in inventory fits {tool_id}")
+
+
+def _ink_preps(ink_id: str, need: float, policy: InkPolicy, palette: dict[str, PaletteSlot],
+               load: dict[str, SlotLoad], ink: Ink, inventory: dict, arm: str, taken: set[str]) -> list[Prep]:
+    """Refills and fills that load ``need`` uL of one ink, claiming the caps they use in ``taken``."""
+    out: list[Prep] = []
+    pref = CAP_SIZE_PREFERENCE.get(ink.viscosity, CAP_SIZE_PREFERENCE[None])
+    have = 0.0
+    for s, sl in load.items():
+        if palette[s].arm != arm or sl.ink_id != ink_id:
+            continue
+        usable = palette[s].size.capacity_ul * palette[s].size.usable_frac
+        if sl.fill_ul >= policy.min_fill_frac * usable:
+            have += sl.fill_ul
+        else:
+            top = usable - sl.fill_ul
+            out.append(Prep("refill", f"top up {s} with {ink_id}: {top:.0f} uL (below the floor)",
+                            slot_id=s, ink_id=ink_id, ul=top))
+            have += usable
+        taken.add(s)
+    # the uptake per dip is the unit the caps are spent in; ask for a
+    # little more than the need so the last dip is not refused
+    want = need * 1.15 + policy.uptake_ul
+    while have < want:
+        dry = [s for s, sl in load.items()
+               if palette[s].arm == arm and sl.dry and s not in taken]
+        if not dry:
+            out.append(Prep("info", f"{ink_id}: {want - have:.0f} uL short and no dry cap left to fill"))
+            break
+        dry.sort(key=lambda s: (pref.index(palette[s].size.size_id)
+                                if palette[s].size.size_id in pref else 9))
+        s = dry[0]
+        usable = palette[s].size.capacity_ul * palette[s].size.usable_frac
+        ul = min(usable, max(want - have, policy.min_fill_frac * usable + policy.uptake_ul * 2))
+        bottle = _open_bottle(inventory, ink_id)
+        src = f" from {bottle}" if bottle else " — no bottle of it in inventory.yaml"
+        out.append(Prep("fill", f"fill {s} ({palette[s].size.size_id}) with {ink_id}: {ul:.0f} uL{src}",
+                        slot_id=s, ink_id=ink_id, ul=ul))
+        have += ul
+        taken.add(s)
+    if have >= want and not out:
+        out.append(Prep("ok", f"{ink_id}: {have:.0f} uL loaded covers {need:.0f} uL", ink_id=ink_id))
+    return out
+
+
 def mise_en_place(policy: InkPolicy, palette: dict[str, PaletteSlot], load: dict[str, SlotLoad],
                   inks: dict[str, Ink], inventory: dict, needs: dict[str, float],
                   tool_id: str = "tool", arm: str = "right") -> list[Prep]:
@@ -647,61 +686,13 @@ def mise_en_place(policy: InkPolicy, palette: dict[str, PaletteSlot], load: dict
                             slot_id=s, ink_id=load[s].ink_id))
         return out or [Prep("ok", "every cap is dry")]
 
-    for cid, c in (inventory.get("cartridges") or {}).items():
-        if c.get("fits") == tool_id and not c.get("retired"):
-            n = c.get("count")
-            if n is None:
-                out.append(Prep("cartridge", f"count the {c.get('needle_code')} box {cid} (never counted)"))
-            elif n <= 0:
-                out.append(Prep("cartridge", f"{cid} is empty — no fresh {c.get('needle_code')} to fit"))
-            else:
-                out.append(Prep("cartridge", f"fit a fresh {c.get('needle_code')} from {cid} ({n} left)"))
-            break
-    else:
-        out.append(Prep("cartridge", f"no cartridge box in inventory fits {tool_id}"))
-
+    out.append(_cartridge_prep(inventory, tool_id))
     taken: set[str] = set()
     for ink_id, need in sorted(needs.items(), key=lambda kv: -kv[1]):
         if ink_id not in inks:
             out.append(Prep("info", f"{ink_id} is not in config/inks.yaml"))
             continue
-        pref = CAP_SIZE_PREFERENCE.get(inks[ink_id].viscosity, CAP_SIZE_PREFERENCE[None])
-        have = 0.0
-        for s, sl in load.items():
-            if palette[s].arm != arm or sl.ink_id != ink_id:
-                continue
-            usable = palette[s].size.capacity_ul * palette[s].size.usable_frac
-            if sl.fill_ul >= policy.min_fill_frac * usable:
-                have += sl.fill_ul
-                taken.add(s)
-            else:
-                top = usable - sl.fill_ul
-                out.append(Prep("refill", f"top up {s} with {ink_id}: {top:.0f} uL (below the floor)",
-                                slot_id=s, ink_id=ink_id, ul=top))
-                have += usable
-                taken.add(s)
-        # the uptake per dip is the unit the caps are spent in; ask for a
-        # little more than the need so the last dip is not refused
-        want = need * 1.15 + policy.uptake_ul
-        while have < want:
-            dry = [s for s, sl in load.items()
-                   if palette[s].arm == arm and sl.dry and s not in taken]
-            if not dry:
-                out.append(Prep("info", f"{ink_id}: {want - have:.0f} uL short and no dry cap left to fill"))
-                break
-            dry.sort(key=lambda s: (pref.index(palette[s].size.size_id)
-                                    if palette[s].size.size_id in pref else 9))
-            s = dry[0]
-            usable = palette[s].size.capacity_ul * palette[s].size.usable_frac
-            ul = min(usable, max(want - have, policy.min_fill_frac * usable + policy.uptake_ul * 2))
-            bottle = _open_bottle(inventory, ink_id)
-            src = f" from {bottle}" if bottle else " — no bottle of it in inventory.yaml"
-            out.append(Prep("fill", f"fill {s} ({palette[s].size.size_id}) with {ink_id}: {ul:.0f} uL{src}",
-                            slot_id=s, ink_id=ink_id, ul=ul))
-            have += ul
-            taken.add(s)
-        if have >= want and not any(o.kind in ("fill", "refill") and o.ink_id == ink_id for o in out):
-            out.append(Prep("ok", f"{ink_id}: {have:.0f} uL loaded covers {need:.0f} uL", ink_id=ink_id))
+        out += _ink_preps(ink_id, need, policy, palette, load, inks[ink_id], inventory, arm, taken)
     for s, sl in load.items():
         if palette[s].arm == arm and not sl.dry and sl.ink_id not in needs:
             out.append(Prep("info", f"{s} holds {sl.ink_id}, which this session does not use",
@@ -849,7 +840,7 @@ def base_from_root_matrix(repo: Path | str = REPO, arm: str = "right"):
     driver's Cartesian API and FK-derived poses live in the arm base; the
     robot-world calibration bundle solves in the rig ROOT (see
     docs/ee_fiducial_tracking.md), so a vision observation must cross this to
-    land in the same frame as il_dip's caps."""
+    land in the same frame as the palette's caps."""
     import xml.etree.ElementTree as ET
 
     from tatbot_cli.arms import load as configured_arms
@@ -880,24 +871,13 @@ def palette_geometry(repo: Path | str = REPO) -> dict:
     return json.loads((Path(repo) / "config/palette_geometry.json").read_text())
 
 
-def palette_root_in_base(repo: Path | str = REPO, arm: str = "right") -> tuple[float, float, float]:
-    """Synthetic simulation placement only. Hardware uses measured SE(3)."""
-    point = palette_geometry(repo)["simulation_root_xyz_m"]
-    transform = base_from_root_matrix(repo, arm)
-    return tuple(float(sum(transform[i, j] * point[j] for j in range(3)) + transform[i, 3])
-                 for i in range(3))
-
-
-def palette_rim_layout(repo: Path | str = REPO, *, measured: bool = True) -> dict:
+def palette_rim_layout(repo: Path | str = REPO) -> dict:
     """CAD XY plus the rim Z of each cap above the waist underside.
 
     Rim Z is the pocket floor plus the cap's OUTER height — the outside is what
     rests in the pocket, so using the bore depth would sit every rim a wall
     thickness low. An explicit entry in palette_geometry.json's rim_z_m
     overrides the computed value for that cap.
-
-    ``measured`` is accepted for callers that still pass it and no longer
-    changes anything: the geometry is the same arithmetic either way.
     """
     layout = palette_layout_from_urdf(repo)
     geometry = palette_geometry(repo)

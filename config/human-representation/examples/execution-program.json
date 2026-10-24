@@ -1,8 +1,8 @@
 {
   "body_state": {
-    "body_identity_sha256": "800babcf48d09f4ff1da9d2e8a0ebe266869a19849557450c7210c9a9fb9a1b6",
+    "body_identity_sha256": "ed4b000260e5e5598ea00848b6f664a828a241e1791afa292e12b8db54d1a993",
     "confidence": 1,
-    "content_sha256": "93ff21cbb19fc061f0c97e5556a00fddbfe619c1dcab31e2ab7d42924567be98",
+    "content_sha256": "c7a7ac08a93afdc2a3fe6eb27a555ecb3d3de833d3e7917a01ff04a483f4b1f9",
     "correctives_enabled": true,
     "joint_rotations_xyzw": [
       [
@@ -468,7 +468,7 @@
         1
       ]
     ],
-    "model_spec_sha256": "e615b8485c367509833ee68b0405cd1e0ce6015604eaa4c1b2b699f4fc8d5144",
+    "model_spec_sha256": "234a951c4e534b5ec7826907eaf2ee86d1d287f62e26e530b85e1dff5d44bd1d",
     "named_pose": "canonical-t",
     "tracked_source": null,
     "posed_surface_sha256": "caa66dff9b3625771c8f4c35bfe59556d30acdc3800880106f98f0ce75c49a95",
@@ -510,7 +510,7 @@
     "captured_utc": "2026-09-04T01:09:37Z",
     "sha256": "c94919d7f2ce44ff1d9768c9cde0cc742caccf0147893d8fc1b312e61a09e5ce"
   },
-  "content_sha256": "894a4a2cee7c9e883e03ec2ecf24622357d693b006dc76daacf516fc3dd20b10",
+  "content_sha256": "016109a49a75d458c781f04ff44406776b529a52ff9b5610c6b73d1ae4627e36",
   "exact_events": [
     {
       "ink_event_index": 1,
@@ -523,7 +523,7 @@
   ],
   "ink_program": {
     "compiler_sha256": "d22cb7b3c94214261230f0b94b286d4bcfcb0bca3079807af89981b9bfeff912",
-    "content_sha256": "5d720cb39a1c990e8e4aa03f03df8e37afeabe18aaa4f581970054f422a249dd",
+    "content_sha256": "e5b402eb0cbd7d1a40ef064d50407c637b5aef4261621ea8118c718ec373943f",
     "events": [
       {
         "kind": "pen_transition",
@@ -610,7 +610,7 @@
       "version": "1"
     },
     "schema": "tatbot.ink-program/1",
-    "surface_placement_sha256": "f8aaea34bf0318ea48cf17091114b73ff51b7ed4431bf2a036977277eacc3691",
+    "surface_placement_sha256": "90837f9ffacc888d74a9afe3b3a89c02bd4203d54534505da275a8cb46fdb61c",
     "tattoo_program_sha256": "6e46984c4abc85cf6588524699edb588b1701d89bac4bfffc8f9e37e593f4e0b",
     "total_material_path_length_m": 0.01,
     "uncertainty": {
@@ -679,7 +679,7 @@
     "schema": "tatbot.draw-samples/1",
     "sha256": "484962efd080f9063e17fc1cbd66ae7e2b2e4508bf06166724a719061d438197",
     "sidecar_path": "current-samples.manifest.json",
-    "sidecar_sha256": "3224a9018715de3b4d0d888839e236c1bb894e6c395c726d240a6372b5524bec"
+    "sidecar_sha256": "727f9083dc9b8c0479f2e2b05621129ac05526458283f16b26bf01848ee17176"
   },
   "schema": "tatbot.execution-program/1",
   "support": {
@@ -687,11 +687,11 @@
     "kind": "rigid-non-human-phantom"
   },
   "surface_registration": {
-    "body_state_sha256": "93ff21cbb19fc061f0c97e5556a00fddbfe619c1dcab31e2ab7d42924567be98",
+    "body_state_sha256": "c7a7ac08a93afdc2a3fe6eb27a555ecb3d3de833d3e7917a01ff04a483f4b1f9",
     "calibration_sha256": "c94919d7f2ce44ff1d9768c9cde0cc742caccf0147893d8fc1b312e61a09e5ce",
     "capture_sha256": "20b9dba1ad573ab771a59553f3f05f79476221b7e268454a19949b00024f564b",
     "confidence": 1,
-    "content_sha256": "e172991374c279676fe2e3541a899b51c48672cf5852eb011f043b0ae0c5e22c",
+    "content_sha256": "242880b6adb2cc11dccd6cf316fa00767f3d93683fc842e8ae6b26d3e034117e",
     "correspondences": [
       {
         "canonical": {

@@ -1,5 +1,6 @@
 #include "trossen-arm-sys/src/lib.rs.h"
 #include "libtrossen_arm/trossen_arm.hpp"
+#include <algorithm>
 #include <arpa/inet.h>
 #include <cmath>
 #include <stdexcept>
@@ -29,11 +30,31 @@ void validate_command(rust::Slice<const double> q, rust::Slice<const double> v,
   if (!std::isfinite(goal_s) || goal_s < 0.0 || goal_s > 60.0)
     throw std::invalid_argument("goal time must be finite and in [0,60] seconds");
 }
+// The dated presets the arms have always run with (driver 1.11 moved the undated follower name to its
+// 2026-06-26 model), the palm replaced by the fitted tool's identified load when one was set.
+static trossen_arm::EndEffector arm_model(bool follower, double palm_mass_kg, const std::array<double, 3> & palm_com_m) {
+  trossen_arm::EndEffector ee = follower ? trossen_arm::StandardEndEffector::wxai_v0_follower_20250509
+                                         : trossen_arm::StandardEndEffector::wxai_v0_leader_20250509;
+  if (std::isfinite(palm_mass_kg)) {
+    ee.palm.mass = palm_mass_kg;
+    ee.palm.origin_xyz = palm_com_m;
+  }
+  return ee;
+}
 Driver::Driver() : driver_(std::make_unique<trossen_arm::TrossenArmDriver>()) {}
 Driver::~Driver() = default;
 std::unique_ptr<Driver> make_driver() { return std::make_unique<Driver>(); }
 void Driver::require_connected() {
   if (!configured_ || !driver_->get_is_configured()) throw std::runtime_error("driver is not configured");
+}
+void Driver::set_palm(double mass_kg, rust::Slice<const double> com_m) {
+  if (configured_) throw std::runtime_error("set the palm before configure");
+  if (!std::isfinite(mass_kg) || mass_kg <= 0.0 || com_m.size() != 3)
+    throw std::invalid_argument("palm needs a positive mass and a three-value centre of mass");
+  for (double v : com_m)
+    if (!std::isfinite(v)) throw std::invalid_argument("palm centre of mass must be finite");
+  palm_mass_kg_ = mass_kg;
+  std::copy(com_m.begin(), com_m.end(), palm_com_m_.begin());
 }
 void Driver::configure(rust::Str ip, bool follower, bool clear_error, double timeout_s) {
   const std::string address(ip);
@@ -43,10 +64,11 @@ void Driver::configure(rust::Str ip, bool follower, bool clear_error, double tim
   if (!std::isfinite(timeout_s) || timeout_s <= 0.0 || timeout_s > 20.0)
     throw std::invalid_argument("connection timeout must be in (0,20] seconds");
   if (configured_ || driver_->get_is_configured()) throw std::runtime_error("fresh driver required before reconnect");
-  driver_->configure(trossen_arm::Model::wxai_v0,
-      follower ? trossen_arm::StandardEndEffector::wxai_v0_follower
-               : trossen_arm::StandardEndEffector::wxai_v0_leader,
+  driver_->configure(trossen_arm::Model::wxai_v0, arm_model(follower, palm_mass_kg_, palm_com_m_),
       address, clear_error, timeout_s);
+  // Firmware 1.10+ boots with 2026-03-17's position gains, which sagged the tool 30-38 mm; the
+  // arms run on 2025-05-09's (the goldens load the same numbers).
+  driver_->set_motor_parameters(trossen_arm::StandardMotorParameters::wxai_v0_20250509);
   follower_ = follower;
   configured_ = true;
   invalidate_status();
@@ -177,8 +199,7 @@ void Driver::load_config(rust::Str path) {
   invalidate_status();
   driver_->load_configs_from_file(file);
   // Match configure_arm: old arm files contain obsolete EE properties.
-  driver_->set_end_effector(follower_ ? trossen_arm::StandardEndEffector::wxai_v0_follower
-                                    : trossen_arm::StandardEndEffector::wxai_v0_leader);
+  driver_->set_end_effector(arm_model(follower_, palm_mass_kg_, palm_com_m_));
 }
 void Driver::cleanup() { configured_ = false; invalidate_status(); driver_->cleanup(false); }
 }

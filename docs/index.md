@@ -8,21 +8,21 @@ audience: [dev, artist, contributor]
 # Tatbot
 
 Tatbot is an open robotics project for exploring robot-assisted tattoo design
-and placement. This site documents public technical interfaces: simulation,
+and placement. This site documents public technical interfaces:
 teleoperation, vision concepts, Inkmap, contribution workflow, and safety scope.
 
 ```{admonition} Scope
 :class: warning
 
-The public project is a research and software collaboration. It is not a
-tattooing service, medical device, or authorization to operate a robot around a
-person. Use simulation or an instrumented non-human fixture while developing.
+The public project is a research and software collaboration, not a tattooing
+service or a medical device. The drawing stack tattoos practice skin and human
+skin behind the interlocks in [safety scope](safety.md); replay and the mock
+arm are the quickest way to develop.
 ```
 
 ## Start here
 
 - [Overview and installation](development.md)
-- [Run the simulation](simulation.md)
 - [For artists: design and placement data](design-format.md)
 - [Turn placement words into a body location with InkLang](inklang.md)
 - [For developers: architecture](architecture.md)
@@ -34,15 +34,12 @@ person. Use simulation or an instrumented non-human fixture while developing.
 - [Robot model and kinematics](robot.md)
 - [Teleoperation](teleop_tuning.md)
 - [Vision and fiducials](vision.md)
-- [Printable seeded stencil frames](stencil-frames.md)
-- [Stencil design bench (tier 0)](stencil-bench.md)
+- [The skin stencil: fiducial tiles](stencil-frames.md)
 - [Rig sleep and wake](rig.md)
 - [Fleet deploy, releases and services](fleet.md)
 - [Imitation-learning interfaces](imitation_learning.md)
 - [Inkmap preview](inkmap.md)
-- [Designs from images, headless](design.md)
 - [DrawingBotV3 stroke experiments](drawingbot.md)
-- [InkLang placement grounding](inklang.md)
 - [Tools and configuration](tools.md)
 - [Bill of materials](bill-of-materials.md)
 - [Run-log format](run_logs.md)
@@ -62,7 +59,6 @@ person. Use simulation or an instrumented non-human fixture while developing.
 :hidden:
 
 development
-simulation
 design-format
 architecture
 contributing
@@ -73,7 +69,6 @@ fleet
 surface-formats
 vision
 stencil-frames
-stencil-bench
 rig
 demo-stack
 fiducials
@@ -82,7 +77,6 @@ ee_fiducial_tracking
 imitation_learning
 inkmap
 human-representation
-design
 drawingbot
 research
 inklang

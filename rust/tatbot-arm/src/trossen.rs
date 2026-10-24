@@ -28,6 +28,9 @@ pub struct Config {
     pub contact: crate::ContactPolicy,
     /// `config/trossen/tatbot.yaml <role>.carriage_qualified`.
     pub carriage_qualified: bool,
+    /// The fitted tool's identified palm (`crate::profile::Palm::identified`);
+    /// None leaves the dated preset's.
+    pub palm: Option<crate::profile::Palm>,
 }
 impl Role {
     fn name(self) -> &'static str {
@@ -469,6 +472,9 @@ impl ArmBackend for TrossenArm {
         self.guiding = false;
         self.limits.clear();
         let mut driver = sdk(ffi::make_driver())?;
+        if let Some(palm) = self.config.palm {
+            sdk(driver.pin_mut().set_palm(palm.mass_kg, &palm.com_m))?;
+        }
         self.released()?;
         sdk(driver.pin_mut().configure(
             &self.config.address.to_string(),
@@ -761,9 +767,10 @@ impl ArmBackend for TrossenArm {
             "backend": "trossen",
             "sdk_version": trossen_arm_sys::SDK_VERSION,
             "standard_end_effector": match self.config.role {
-                Role::Follower => "wxai_v0_follower",
-                Role::Leader => "wxai_v0_leader",
+                Role::Follower => "wxai_v0_follower_20250509",
+                Role::Leader => "wxai_v0_leader_20250509",
             },
+            "palm_identified": self.config.palm,
             "palm_mass_kg": ee.palm_mass_kg,
             "palm_origin_xyz_m": ee.palm_origin_xyz_m,
             "palm_inertia": ee.palm_inertia,
@@ -773,7 +780,7 @@ impl ArmBackend for TrossenArm {
             "offset_finger_right_m": ee.offset_finger_right_m,
             "pitch_circle_radius_m": ee.pitch_circle_radius_m,
             "t_flange_tool": ee.t_flange_tool,
-            "note": "vendor standard end effector reapplied after configuration loading; the fitted mount, tool, camera and cable load are not represented in it",
+            "note": "dated vendor end effector reapplied after configuration loading, its palm the fitted tool's identified load when workspace.yaml records one for it (palm_identified), else the preset's",
         })))
     }
     fn clear_error(&mut self) -> Result<()> {
@@ -1030,6 +1037,7 @@ mod tests {
                 golden,
                 contact: crate::ContactPolicy::Contact,
                 carriage_qualified: true,
+                palm: None,
             },
             stop.clone(),
             lease,
@@ -1110,6 +1118,7 @@ mod tests {
                     golden: golden.clone(),
                     contact: crate::ContactPolicy::Standoff,
                     carriage_qualified: false,
+                    palm: None,
                 },
                 stop.clone(),
                 lease.clone(),

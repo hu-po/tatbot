@@ -11,8 +11,15 @@
   <exec_depend>tatbot_interfaces</exec_depend>
   <exec_depend>tatbot_description</exec_depend>
   <exec_depend>tatbot_bridge</exec_depend>
+  <!-- the scene models are tatbot_contracts.ros_scene ($TATBOT_REPO/python/tatbot_contracts/src on PYTHONPATH),
+       which imports tatbot_motion for a fitted page's surface and the station touch -->
+  <exec_depend>tatbot_motion</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
-  <!-- rerun-sdk 0.36 (the fleet pin) is a pip package, needed only when rerun is enabled -->
+  <!-- rerun-sdk 0.36 (the fleet pin) is a pip package, needed only when rerun is enabled: `tatbot ros deploy`
+       installs it with pyarrow 21, no deps, into <root>/rerun-sdk, which the launch puts on this node's PYTHONPATH
+       alone (never the user or system site, where its numpy 2 would shadow the apt numpy 1.26 under cv2);
+       the wrist D405 feed uses the zenoh Python package tatbot_bridge already needs -->
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>tf2_ros_py</exec_depend>
 

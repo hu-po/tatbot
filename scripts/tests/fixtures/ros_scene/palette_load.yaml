@@ -1,0 +1,53 @@
+# A made-up palette load for the scene tests: six slots, four inked, two caps absent.
+schema_version: 1
+utc: "2026-01-01T00:00:00Z"
+note: null
+slots:
+  inkcap_large_1:
+    ink: water
+    fill_ul: 0.0
+    bottle: null
+    utc: "2026-01-01T00:00:00Z"
+    cap_present: true
+    level_lower_bound_m: 0.0115
+    fill_known: false
+  inkcap_medium_1:
+    ink: example_white
+    fill_ul: 0.0
+    bottle: null
+    utc: "2026-01-01T00:00:00Z"
+    cap_present: true
+    level_lower_bound_m: 0.0075
+    fill_known: false
+  inkcap_small_1:
+    ink: none
+    fill_ul: 0.0
+    bottle: null
+    utc: "2026-01-01T00:00:00Z"
+    cap_present: false
+    level_lower_bound_m: null
+    fill_known: false
+  inkcap_small_2:
+    ink: none
+    fill_ul: 0.0
+    bottle: null
+    utc: "2026-01-01T00:00:00Z"
+    cap_present: false
+    level_lower_bound_m: null
+    fill_known: false
+  inkcap_medium_2:
+    ink: example_red
+    fill_ul: 0.0
+    bottle: null
+    utc: "2026-01-01T00:00:00Z"
+    cap_present: true
+    level_lower_bound_m: 0.0075
+    fill_known: false
+  inkcap_large_2:
+    ink: example_black
+    fill_ul: 0.0
+    bottle: null
+    utc: "2026-01-01T00:00:00Z"
+    cap_present: true
+    level_lower_bound_m: 0.0115
+    fill_known: false

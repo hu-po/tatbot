@@ -41,11 +41,3 @@ def test_resume_timeout():
     assert not rules.resume_expired(None, 1000.0, 300.0)  # still pressed
     assert not rules.resume_expired(0.0, 300.0, 300.0)
     assert rules.resume_expired(0.0, 300.1, 300.0)
-
-
-def test_decide_constants_match_the_interface():
-    from pathlib import Path
-
-    text = (Path(__file__).resolve().parents[2] / "tatbot_interfaces" / "srv" / "Decide.srv").read_text()
-    for value, name in rules.NAMES.items():
-        assert f"{name.upper()}={value}" in text

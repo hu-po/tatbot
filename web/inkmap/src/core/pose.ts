@@ -59,7 +59,7 @@ interface PoseCatalog {
 }
 
 export const POSE_CATALOG = catalogJson as unknown as PoseCatalog;
-// Exact sha256 of the catalog file bytes, written by tools/export-soma.py
+// Exact sha256 of the catalog file bytes, written by the pose bake (export-soma.py, in git history)
 // beside the catalog. Python derives the same value from the bytes and refuses
 // a stale digest file; tests/pose.test.ts hashes the file here.
 const digest = digestJson as { schema: string; catalog_path: string; sha256: string };

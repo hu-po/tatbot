@@ -1,6 +1,6 @@
 {
   "schema": "tatbot.inkmap-synthetic-identity-catalog/1",
-  "model_spec_sha256": "e615b8485c367509833ee68b0405cd1e0ce6015604eaa4c1b2b699f4fc8d5144",
+  "model_spec_sha256": "234a951c4e534b5ec7826907eaf2ee86d1d287f62e26e530b85e1dff5d44bd1d",
   "source_evidence": {
     "sha256": "a8be23f3644bb7b5ed6ba1b92dade0cd0fe903f1f4753a9c0cabc28f8054786f",
     "qualification": "offline CPU geometry and region-transfer audit only"
@@ -10,7 +10,7 @@
       "id": "reference",
       "coefficient_pattern": "zero",
       "scale_pattern": "zero",
-      "identity_sha256": "800babcf48d09f4ff1da9d2e8a0ebe266869a19849557450c7210c9a9fb9a1b6",
+      "identity_sha256": "ed4b000260e5e5598ea00848b6f664a828a241e1791afa292e12b8db54d1a993",
       "rest_surface_sha256": "caa66dff9b3625771c8f4c35bfe59556d30acdc3800880106f98f0ce75c49a95",
       "review": {"offline_cpu": "accepted", "region_checks": "accepted", "human_visual": "accepted_reference", "gpu_render": "pending"}
     },
@@ -18,7 +18,7 @@
       "id": "mixed-alternating-2sigma",
       "coefficient_pattern": "alternating-plus-minus-2",
       "scale_pattern": "zero",
-      "identity_sha256": "c8ac94c6aee8eaf41f8d8a7df9f234950323f81878bd5c7b5660b619838bf02f",
+      "identity_sha256": "8e0ae2cd0a5396f70f8266461f43d50f267bcebac66292a53c3452670a5db853",
       "rest_surface_sha256": "d96ced03c5c913e485f1006acd5d722a45cd899c2bfa1717d3d603a28ff72922",
       "review": {"offline_cpu": "accepted", "region_checks": "accepted", "human_visual": "pending", "gpu_render": "pending"}
     },
@@ -26,7 +26,7 @@
       "id": "mixed-positive-2sigma",
       "coefficient_pattern": "all-plus-2",
       "scale_pattern": "zero",
-      "identity_sha256": "890deb3962368a2153b70db32cb854a961172b93f50f9ae6dd00d5c99d9d36d2",
+      "identity_sha256": "0927f18350c5654558e4afce36fb6668927aeb42355a01e8e93d27958e10a469",
       "rest_surface_sha256": "b896b5838372cb7d0c36d14ec1df23b245d32376372b7d0ca663af573411c9ab",
       "review": {"offline_cpu": "accepted", "region_checks": "accepted", "human_visual": "pending", "gpu_render": "pending"}
     },
@@ -34,7 +34,7 @@
       "id": "mixed-negative-2sigma",
       "coefficient_pattern": "all-minus-2",
       "scale_pattern": "zero",
-      "identity_sha256": "2a028b8c0d7c283cc2844c46f70ff05f1bd11e3590b1d23b0ebbd5b5e7c88c9b",
+      "identity_sha256": "84e3f3ead64072f5f006876dd452f41dc2a205b8d3a8b1a984d173105e9674c0",
       "rest_surface_sha256": "b49c194f8bf386de449af6587ef0b0ce112384cb2adcdef43e3074640149db92",
       "review": {"offline_cpu": "accepted", "region_checks": "accepted", "human_visual": "pending", "gpu_render": "pending"}
     }

@@ -5,6 +5,7 @@ import re
 import struct
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
@@ -14,8 +15,13 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(REPO / 'scripts/vision'), str(REPO / 'scripts/lib')]
 import arm_kinematics as kin  # noqa: E402
 import ballpoint_fixture  # noqa: E402
+import kinematic_calibration  # noqa: E402
 import tool_spec  # noqa: E402
 from teleop_poses import export  # noqa: E402
+from urdf_kinematics import UrdfChain  # noqa: E402
+
+# 2026-10-04's adopted pink offsets: the test's own, whatever config/workspace.yaml holds today.
+OFFSETS = [0., .0098, .0003, -.0195, -.0023, 0., 0.]
 
 
 def inputs(tmp_path):
@@ -39,6 +45,27 @@ def inputs(tmp_path):
     return log, model, workspace, rows
 
 
+def calibrated_chain(tmp_path, model, offsets, arm='right'):
+    """The model as the drawing stack carries it: joint origins turned by the encoder-zero offsets."""
+    tree = ET.parse(model)
+    kinematic_calibration.apply_origins(tree.getroot().findall('joint'), arm, offsets)
+    path = tmp_path / f'calibrated-{arm}.urdf'
+    tree.write(path)
+    return UrdfChain(path)
+
+
+def workspace_offsets(workspace, arm='right'):
+    return tool_spec.parse_simple_yaml(workspace.read_text())[arm].get(kinematic_calibration.KEY)
+
+
+def with_offsets(text: str, offsets) -> str:
+    """The right section carrying `offsets` as its joint_offsets_rad, in place of any it has."""
+    right, sep, left = text.partition('\nleft:')
+    right = re.sub(r'^  joint_offsets_rad:.*\n', '', right, flags=re.M)
+    right = right.replace('right:\n', f'right:\n  joint_offsets_rad: {json.dumps(offsets)}\n', 1)
+    return right + sep + left
+
+
 def fault_touchoff(text: str, field: str, value: str) -> str:
     """Set the right arm's touch-off `field` to `value`, whatever today's calibration measured.
 
@@ -51,15 +78,6 @@ def fault_touchoff(text: str, field: str, value: str) -> str:
     return changed + sep + left
 
 
-def without_touchoff(text: str, arm: str) -> str:
-    """The `arm` section as it reads before any touch-off: no measured tip."""
-    head, sep, rest = text.partition(f'\n{arm}:\n')
-    assert sep, arm
-    body, sep2, tail = rest.partition('\n\n') if '\n\n' in rest else (rest, '', '')
-    body = re.sub(r'^(  pen_tip_offset_[xyz]: ).*$', r'\1null', body, flags=re.M)
-    return head + sep + body + sep2 + tail
-
-
 def test_actual_follower_carriage_tip_axes_and_integer_read_time(tmp_path):
     log, model, workspace, rows = inputs(tmp_path)
     out = tmp_path / 'out'
@@ -70,10 +88,9 @@ def test_actual_follower_carriage_tip_axes_and_integer_read_time(tmp_path):
         np.array([1_700_000_000_123_756_789, 1_700_000_000_126_256_789, 1_700_000_000_133_756_789]))
     tcp, link6 = data['root_from_tcp'], data['root_from_link6']
     np.testing.assert_allclose(link6[0], link6[1], atol=1e-12)
-    np.testing.assert_allclose(tcp[1, :3, 3]-tcp[0, :3, 3],
-                               link6[0, :3, :3] @ kin.CARRIAGE_AXIS_IN_LINK6 * .002, atol=1e-12)
-    chain = kin.urdf_chain(model)
-    mount = chain.link_pose(kin.TOOL_MOUNT_NAME, kin.joint_map(rows[0, 19:25], 0))
+    np.testing.assert_allclose(tcp[1, :3, 3]-tcp[0, :3, 3], link6[0, :3, :3] @ [0, .002, 0], atol=1e-12)
+    chain = calibrated_chain(tmp_path, model, workspace_offsets(workspace))
+    mount = chain.link_pose('right/tool_mount', kin.ArmModel('right').joint_map(rows[0, 19:25], 0))
     tip = tool_spec.tip_offset_m(tool_spec.parse_simple_yaml(workspace.read_text()))
     np.testing.assert_allclose(tcp[0, :3, 3], mount[:3, 3] + mount[:3, :3] @ tip)
     np.testing.assert_allclose(tcp[0, :3, :3], mount[:3, :3])
@@ -83,49 +100,29 @@ def test_actual_follower_carriage_tip_axes_and_integer_read_time(tmp_path):
     assert json.loads((out / 'manifest.json').read_text()) == report
 
 
-def test_leader_export_uses_its_recorded_joints_and_nominal_tool(tmp_path):
-    """`--arm left` exports the leader's recorded joints through the left chain
-    to its own tool mount; a standoff tool without a touch-off sits at its
-    datasheet nominal and the manifest says so."""
+def test_poses_carry_the_workspace_joint_offsets(tmp_path):
+    """The follower's poses are the drawing stack's arm model at the recorded joints: the joint
+    offsets turn the chain (kinematic_calibration.apply_origins), millimetres from the nominal
+    URDF; the npz keeps the joints as read and the manifest names the offsets."""
     log, model, workspace, rows = inputs(tmp_path)
-    leader = np.array([.2, -.3, .5, -.1, .2, .1, 0.])
-    rows[:, 5:12] = leader
-    rows[1:, 11] = .002
-    rows[2, 5] += .3
-    header = (log.read_bytes())[:64]
-    log.write_bytes(header + rows.astype('<f8').tobytes())
-    # The repository's left arm has carried a touch-off since 2026-09-16; the
-    # premise here is the leader before one.
-    workspace.write_text(without_touchoff(workspace.read_text(), 'left'))
-    out = tmp_path / 'left'
-    report = export(log, out, model, workspace, 'picosecond-laser-pen', arm='left')
-    assert report['arm'] == 'left' and report['controller_role'] == 'leader'
-    assert report['tip_source'] == 'datasheet nominal' and 'leader_pos' in report['joint_source']
-    data = np.load(out / 'poses.npz', allow_pickle=False)
-    np.testing.assert_array_equal(data['follower_positions'], rows[:, 5:12])
-    np.testing.assert_array_equal(data['follower_read_offset_s'], rows[:, 2])
-    tcp, link6 = data['root_from_tcp'], data['root_from_link6']
-    chain = kin.urdf_chain(model)
-    arm = kin.ArmModel('left', chain=chain, workspace=tool_spec.parse_simple_yaml(workspace.read_text()))
-    # The URDF's needle link follows the measured touch-off the repository
-    # holds; the nominal working point is the datasheet's protrusion along
-    # the mount's +z, which is what a leader without a touch-off exports.
-    nominal = np.array(tool_spec.load_tool('picosecond-laser-pen', REPO).nominal_tip_offset_m)
-    for i in range(3):
-        values = arm.joint_map(rows[i, 5:11], rows[i, 11])
-        mount = chain.link_pose('left/tool_mount', values)
-        np.testing.assert_allclose(tcp[i, :3, 3], mount[:3, :3] @ nominal + mount[:3, 3], atol=1e-12)
-        np.testing.assert_allclose(link6[i], chain.link_pose('left/link_6', values), atol=1e-12)
-    # the leader's tool rides left/carriage_left, which the carriage joint
-    # moves along +y of link 6 (the follower's rides the other carriage, -y)
-    np.testing.assert_allclose(tcp[1, :3, 3]-tcp[0, :3, 3], link6[0, :3, :3] @ [0, .002, 0], atol=1e-12)
-    with pytest.raises(ValueError, match='stated tool differs'):
-        export(log, tmp_path / 'wrong', model, workspace, 'lutin-ballpoint-dot', arm='left')
-    with pytest.raises(ValueError, match='unknown arm'):
-        export(log, tmp_path / 'middle', model, workspace, 'picosecond-laser-pen', arm='middle')
+    workspace.write_text(with_offsets(workspace.read_text(), OFFSETS))
+    report = export(log, tmp_path / 'out', model, workspace, 'lutin-ballpoint-dot')
+    assert report['joint_offsets_rad'] == OFFSETS
+    data = np.load(tmp_path / 'out/poses.npz', allow_pickle=False)
+    np.testing.assert_array_equal(data['follower_positions'], rows[:, 19:26])
+    calibrated, nominal = calibrated_chain(tmp_path, model, OFFSETS), UrdfChain(model)
+    tip = tool_spec.tip_offset_m(tool_spec.parse_simple_yaml(workspace.read_text()))
+    for i in range(len(rows)):
+        values = kin.ArmModel('right').joint_map(rows[i, 19:25], rows[i, 25])
+        mount = calibrated.link_pose('right/tool_mount', values)
+        np.testing.assert_allclose(data['root_from_link6'][i], calibrated.link_pose('right/link_6', values), atol=1e-12)
+        np.testing.assert_allclose(data['root_from_tcp'][i, :3, 3], mount[:3, :3] @ tip + mount[:3, 3], atol=1e-12)
+        drift = data['root_from_link6'][i, :3, 3] - nominal.link_pose('right/link_6', values)[:3, 3]
+        assert np.linalg.norm(drift) > 1e-3
 
 
-@pytest.mark.parametrize('fault', ['truncated', 'nonfinite', 'unordered', 'missing_tip', 'nonfinite_calibration', 'tool', 'model', 'output'])
+@pytest.mark.parametrize('fault', ['truncated', 'nonfinite', 'unordered', 'missing_tip', 'nonfinite_calibration',
+                                   'joint_offsets', 'tool', 'model', 'output'])
 def test_invalid_or_incomplete_inputs_refuse_before_output(tmp_path, fault):
     log, model, workspace, rows = inputs(tmp_path)
     out = tmp_path / 'out'
@@ -139,6 +136,8 @@ def test_invalid_or_incomplete_inputs_refuse_before_output(tmp_path, fault):
         workspace.write_text('right:\n  tool_id: lutin-ballpoint-dot\n')
     elif fault == 'nonfinite_calibration':
         workspace.write_text(fault_touchoff(workspace.read_text(), 'residual_mm', 'nan'))
+    elif fault == 'joint_offsets':  # the controller's yaw joint has no model correction
+        workspace.write_text(with_offsets(workspace.read_text(), [.01, *OFFSETS[1:]]))
     elif fault == 'tool':
         tool = 'another-tool'
     elif fault == 'model':
@@ -191,7 +190,6 @@ def test_explicit_urdf_geometry_is_used_instead_of_default(tmp_path):
 
 @pytest.mark.parametrize('fault', ['arm_fixed', 'zero_axis', 'scaled_axis', 'unknown_movable', 'detached_link6'])
 def test_malformed_kinematic_ancestry_refuses(tmp_path, fault):
-    import xml.etree.ElementTree as ET
     log, model, workspace, _ = inputs(tmp_path)
     tree = ET.parse(model)
     root = tree.getroot()
@@ -199,20 +197,20 @@ def test_malformed_kinematic_ancestry_refuses(tmp_path, fault):
     if fault == 'arm_fixed':
         joints['right/joint_0'].set('type', 'fixed')
     elif fault == 'zero_axis':
-        joints[kin.CARRIAGE_JOINT_NAME].find('axis').set('xyz', '0 0 0')
+        joints['right/left_carriage_joint'].find('axis').set('xyz', '0 0 0')
     elif fault == 'scaled_axis':
-        joints[kin.CARRIAGE_JOINT_NAME].find('axis').set('xyz', '0 2 0')
+        joints['right/left_carriage_joint'].find('axis').set('xyz', '0 2 0')
     elif fault == 'unknown_movable':
         joints['right/tool_mount_joint'].set('type', 'revolute')
     else:
         for joint in root.findall('joint'):
             for tag in ('parent', 'child'):
                 element = joint.find(tag)
-                if element is not None and element.get('link') == kin.LINK6_NAME:
+                if element is not None and element.get('link') == 'right/link_6':
                     element.set('link', 'right/alternate_link6')
         extra = ET.SubElement(root, 'joint', {'name': 'detached6', 'type': 'fixed'})
         ET.SubElement(extra, 'parent', {'link': 'root'})
-        ET.SubElement(extra, 'child', {'link': kin.LINK6_NAME})
+        ET.SubElement(extra, 'child', {'link': 'right/link_6'})
     tree.write(model)
     with pytest.raises(ValueError):
         export(log, tmp_path / 'out', model, workspace, 'lutin-ballpoint-dot')

@@ -56,21 +56,12 @@ std::string json_string(const std::string & value)
 }
 }  // namespace
 
-Monitor::Monitor(
-  const std::string & device, bool required, std::atomic<int> & state)
+Monitor::Monitor(const std::string & device, std::atomic<int> & state)
 : device_(device), state_(state)
 {
   fd_ = open_device();
   if (fd_ < 0) {
-    if (required) {
-      throw std::runtime_error("cannot open e-stop device: " + device_);
-    }
-    state_.store(disabled);
-    std::cout << "\nWARNING: e-stop device " << device_ << " not found — "
-              << "running WITHOUT hardware e-stop.\n"
-              << "         (plug it in and restart, or pass --estop PATH "
-              << "to make it mandatory)\n" << std::endl;
-    return;
+    throw std::runtime_error("cannot open e-stop device: " + device_);
   }
   state_.store(fault);
   thread_ = std::thread([this]() {run();});

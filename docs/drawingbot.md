@@ -61,7 +61,7 @@ tatbot ros compile /path/to/new-acquisition/artwork.json --at=0,0 --width 20 --s
 Install and activate Premium 1.6.22 normally. The version-specific bridge uses
 Java 21, JavaFX and Xvfb; it is not an official headless API. Application and
 activation remain private. Native acquisition needs `javac`, `java` and
-`xvfb-run`. Install `uv` for the drawing commands: `tatbot drawingbot`,
+`xvfb-run`. The Premium jar carries x86-64 JavaFX and OpenCV natives only, so on an aarch64 node the installation holds its own JDK with JavaFX at `<installation>/jdk` (the bridge prefers it to the system Java) and the bytedeco `linux-arm64` jars of the bundled OpenCV, OpenBLAS and JavaCPP versions beside the Premium jar. Install `uv` for the drawing commands: `tatbot drawingbot`,
 `tatbot research` and local ROS artwork preparation resolve the same locked
 Python 3.12.14 environment with NumPy 2.5.3 and PyYAML 6.0.3. The first command
 downloads missing runtime dependencies into uv's cache; subsequent commands
@@ -79,7 +79,12 @@ ROS node processes retain their deployed ROS environment.
 Open `artwork.json` in Inkmap, or inspect the acquired `preview.svg` and the
 prepared `preview.svg`. Preparation preserves DBV3 order and physical size;
 `--width` is an assertion, and changing size requires regeneration. Multiple
-pens require explicit ink bindings. See ROS preparation in `ros/README.md`, section 4.2.
+pens require explicit ink bindings. It drops a dot-sized path that lies on a
+line of its own ink (`--min-stroke-mm`, default 1; 0 keeps every path), and the
+prepared preview shades where the pen passes over a spot three or more times,
+counted at the tool's line width, else the path's generation width
+(`--mark-width-mm` gives another). See ROS
+preparation in `ros/README.md`, section 4.2.
 
 Study comparisons use **File → Review study…** in Inkmap. Build a portable
 review with `tatbot research review`, then import downloaded human observations

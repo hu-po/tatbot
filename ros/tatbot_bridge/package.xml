@@ -3,7 +3,7 @@
 <package format="3">
   <name>tatbot_bridge</name>
   <version>0.1.0</version>
-  <description>zenoh and ROS: stencild page poses on the tatbot bus become /tatbot/page and tf page/PATTERN_ID; /joint_states rides the bus as tatbot.arm-joints/1.</description>
+  <description>zenoh and ROS: stencild page poses on the tatbot bus become /tatbot/page and tf page/PATTERN_ID.</description>
   <maintainer email="hello@tatbot.ai">hu-po</maintainer>
   <license>MIT</license>
 
@@ -17,7 +17,6 @@
   <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>tf2_ros_py</exec_depend>
-  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <!-- zenoh-python (eclipse-zenoh 1.10, the fleet bus version) is a pip package: no rosdep key -->

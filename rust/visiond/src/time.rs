@@ -84,10 +84,6 @@ impl MonotonicClock {
     }
 }
 
-pub fn duration_to_ns(duration: Duration) -> u128 {
-    duration.as_nanos()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

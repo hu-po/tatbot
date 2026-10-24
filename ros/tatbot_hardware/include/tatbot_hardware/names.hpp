@@ -27,7 +27,8 @@ enum LatchReason : int {
   kLatchControllerError = 8,
   kLatchDeactivated = 9,
   kLatchStepRefused = 10,
+  kLatchGuardSnag = 11,
 };
-enum GuardMode : int { kGuardNone = 0, kGuardTipLag = 1, kGuardProbe = 2 };
+enum GuardMode : int { kGuardNone = 0, kGuardTipLag = 1, kGuardProbe = 2, kGuardSnag = 3 };
 
 }  // namespace tatbot_hardware::names

@@ -118,6 +118,64 @@ impl ControllerRole {
             Self::Follower => "follower",
         }
     }
+    /// The physical arm (`config/arms.json`) whose controller plays this role.
+    pub fn physical_arm(self) -> &'static str {
+        match self {
+            Self::Leader => "left",
+            Self::Follower => "right",
+        }
+    }
+    /// The dated Trossen preset the bridge configures for this role (driver
+    /// 1.11 moved the undated follower name to its 2026-06-26 model).
+    pub fn preset(self) -> &'static str {
+        match self {
+            Self::Leader => "wxai_v0_leader_20250509",
+            Self::Follower => "wxai_v0_follower_20250509",
+        }
+    }
+}
+
+/// The controller's palm load identified with one tool in the mount
+/// (`config/workspace.yaml <arm>.payload`): the stock palm left 3-4 Nm
+/// unmodelled at the elbow with a tool fitted.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct Palm {
+    pub mass_kg: f64,
+    pub com_m: [f64; 3],
+}
+impl Palm {
+    /// The arm's payload when it was identified with `tool_id` on this role's
+    /// preset, by the plugin's and the ros stack's rule; None leaves the
+    /// preset's palm. A payload that names the tool but cannot be read is an
+    /// error, never the stock palm.
+    pub fn identified(
+        workspace: &[u8],
+        role: ControllerRole,
+        tool_id: &str,
+    ) -> Result<Option<Self>> {
+        let document: serde_yaml::Value = serde_yaml::from_slice(workspace).map_err(error)?;
+        let payload = &document[role.physical_arm()]["payload"];
+        if payload["identified_with"].as_str() != Some(tool_id)
+            || payload["preset"].as_str() != Some(role.preset())
+        {
+            return Ok(None);
+        }
+        let mass_kg = payload["palm_mass_kg"]
+            .as_f64()
+            .filter(|m| m.is_finite() && *m > 0.0);
+        let com: Option<Vec<f64>> = payload["palm_com_m"]
+            .as_sequence()
+            .map(|s| s.iter().filter_map(serde_yaml::Value::as_f64).collect());
+        match (mass_kg, com.and_then(|c| <[f64; 3]>::try_from(c).ok())) {
+            (Some(mass_kg), Some(com_m)) if com_m.iter().all(|v| v.is_finite()) => {
+                Ok(Some(Self { mass_kg, com_m }))
+            }
+            _ => Err(Error(format!(
+                "{} payload for {tool_id} needs palm_mass_kg and a three-value palm_com_m",
+                role.physical_arm()
+            ))),
+        }
+    }
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct NativeProfile {
@@ -262,8 +320,9 @@ impl NativeProfile {
         stop: std::sync::Arc<std::sync::atomic::AtomicI32>,
         lease: std::sync::Arc<crate::lease::HardwareLease>,
         policy: crate::ContactPolicy,
+        palm: Option<Palm>,
     ) -> Result<crate::worker::Worker> {
-        self.spawn_native(stop, lease, policy, None)
+        self.spawn_native(stop, lease, policy, palm, None)
     }
     /// The same cold native worker, optionally forwarding every tick's
     /// feedback to a recorder (the hand-guiding owner retains all of it).
@@ -273,6 +332,7 @@ impl NativeProfile {
         stop: std::sync::Arc<std::sync::atomic::AtomicI32>,
         lease: std::sync::Arc<crate::lease::HardwareLease>,
         policy: crate::ContactPolicy,
+        palm: Option<Palm>,
         telemetry: Option<std::sync::mpsc::SyncSender<crate::worker::TelemetrySample>>,
     ) -> Result<crate::worker::Worker> {
         use crate::{
@@ -305,6 +365,7 @@ impl NativeProfile {
                         golden: profile.golden_path,
                         contact: policy,
                         carriage_qualified: profile.carriage_qualified,
+                        palm,
                     },
                     stop.clone(),
                     lease,
@@ -564,19 +625,80 @@ mod tests {
             assert!(NativeProfile::load(snapshot.profile_path.parent().unwrap()).is_err());
         }
     }
+    #[test]
+    fn a_palm_applies_only_to_the_tool_and_preset_it_was_identified_with() {
+        let workspace = |tool: &str, preset: &str, mass: &str| {
+            format!(
+                "right:\n  tool_id: pen\n  payload:   # comment\n    identified_with: {tool}\n    \
+                 preset: {preset}\n    palm_mass_kg: {mass}\n    palm_com_m: [0.008, -0.001, 0.009]\n"
+            )
+        };
+        let follower = ControllerRole::Follower;
+        let fitted = workspace("pen", "wxai_v0_follower_20250509", "1.6120");
+        assert_eq!(
+            Palm::identified(fitted.as_bytes(), follower, "pen").unwrap(),
+            Some(Palm {
+                mass_kg: 1.612,
+                com_m: [0.008, -0.001, 0.009]
+            })
+        );
+        // Another tool in the mount, the other arm, an undated preset: the preset's palm.
+        assert_eq!(
+            Palm::identified(fitted.as_bytes(), follower, "laser").unwrap(),
+            None
+        );
+        assert_eq!(
+            Palm::identified(fitted.as_bytes(), ControllerRole::Leader, "pen").unwrap(),
+            None
+        );
+        let undated = workspace("pen", "wxai_v0_follower", "1.6120");
+        assert_eq!(
+            Palm::identified(undated.as_bytes(), follower, "pen").unwrap(),
+            None
+        );
+        assert_eq!(
+            Palm::identified(b"right:\n  tool_id: pen\n", follower, "pen").unwrap(),
+            None
+        );
+        // A payload that names the tool but cannot be read refuses.
+        let unread = workspace("pen", "wxai_v0_follower_20250509", "null");
+        assert!(Palm::identified(unread.as_bytes(), follower, "pen").is_err());
+    }
     #[cfg(feature = "trossen")]
     #[test]
     fn native_factory_is_cold_and_retains_lease_until_worker_drop() {
         use std::sync::{Arc, atomic::AtomicI32};
         let temp = tempfile::tempdir().unwrap();
+        // Synthetic parser inputs keep this cold-construction test runnable
+        // without a deployment's measured controller profiles.
+        let mut follower = serde_json::to_value(RecoveryProfile::simulation().unwrap()).unwrap();
+        follower["carriage_qualified"] = serde_json::json!(false);
+        std::fs::write(
+            temp.path().join("tatbot.yaml"),
+            serde_yaml::to_string(&serde_json::json!({"follower": follower})).unwrap(),
+        )
+        .unwrap();
+        let limits = vec![
+            serde_json::json!({"position_min": -3.2, "position_max": 3.2, "velocity_max": 2.0});
+            7
+        ];
+        std::fs::write(
+            temp.path().join("follower.yaml"),
+            serde_yaml::to_string(&serde_json::json!({
+                "manual_ip": "192.0.2.1", "joint_limits": limits,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
         let lock = temp.path().join("lease");
         let lease = Arc::new(crate::lease::HardwareLease::for_test(&lock));
-        let worker = NativeProfile::load(&source())
+        let worker = NativeProfile::load(temp.path())
             .unwrap()
             .spawn(
                 Arc::new(AtomicI32::new(crate::estop::FAULT)),
                 lease.clone(),
                 crate::ContactPolicy::Contact,
+                None,
             )
             .unwrap();
         drop(lease);

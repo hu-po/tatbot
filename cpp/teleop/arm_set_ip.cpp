@@ -14,7 +14,7 @@ int main(int argc, char ** argv)
     trossen_arm::TrossenArmDriver driver;
     driver.configure(
       trossen_arm::Model::wxai_v0,
-      trossen_arm::StandardEndEffector::wxai_v0_base,
+      trossen_arm::StandardEndEffector::wxai_v0_base_20250509,
       argv[1], true, 10.0);
     driver.set_ip_method(trossen_arm::IPMethod::manual);
     driver.set_manual_ip(argv[2]);

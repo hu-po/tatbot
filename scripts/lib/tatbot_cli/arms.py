@@ -15,9 +15,8 @@ from pathlib import Path, PurePosixPath
 # The current teleop adapter has these two hardware roles.
 ARM_IDS = ("left", "right")
 REVERSE_BLOCKER = (
-    "Reverse teleop execution is limited to --wrist-calibration: right-leading-left "
-    "with joints 0, 4 and 5 mirrored from the starting poses for free-space capture. Other modes still require the "
-    "physical right arm as receiver. Controller addresses stay physically bound."
+    "Reverse teleop execution is not implemented: the executor requires the physical right arm as receiver. "
+    "Controller addresses stay physically bound."
 )
 
 
@@ -95,16 +94,12 @@ def load(repo: Path) -> dict[str, PhysicalArm]:
 CONTROLLER_ROLES = {"config/trossen/leader.yaml": "leader", "config/trossen/follower.yaml": "follower"}
 
 
-def execution_blockers(arms: dict[str, PhysicalArm], roles: TeleopRoles,
-                       wrist_calibration: bool = False) -> list[str]:
+def execution_blockers(arms: dict[str, PhysicalArm], roles: TeleopRoles) -> list[str]:
     """Describe the existing executor, not a user-editable qualification switch."""
     blockers = []
     if set(arms) != set(ARM_IDS):
         blockers.append("the current teleop executor requires exactly the configured left and right arms")
-    if wrist_calibration:
-        if roles != select_roles("right", "left"):
-            blockers.append("wrist calibration requires right leader and left follower")
-    elif roles != select_roles():
+    if roles != select_roles():
         blockers.append(REVERSE_BLOCKER)
     for arm_id, legacy_role in (("left", "leader"), ("right", "follower")):
         if arm_id not in arms:
@@ -112,13 +107,13 @@ def execution_blockers(arms: dict[str, PhysicalArm], roles: TeleopRoles,
         arm = arms[arm_id]
         if (arm.control_role != "arm" or arm.profile_ip_field != f"{legacy_role}_ip"
                 or arm.controller_config != f"config/trossen/{legacy_role}.yaml"
-                or arm.sdk_end_effector != f"wxai_v0_{legacy_role}"):
+                or arm.sdk_end_effector != f"wxai_v0_{legacy_role}_20250509"):
             blockers.append(f"{arm_id}: registry differs from the current executor's physical binding")
     return blockers
 
 
-def require_current_executor(repo: Path, roles: TeleopRoles, *, wrist_calibration: bool = False) -> None:
-    blockers = execution_blockers(load(repo), roles, wrist_calibration)
+def require_current_executor(repo: Path, roles: TeleopRoles) -> None:
+    blockers = execution_blockers(load(repo), roles)
     if blockers:
         raise ValueError("; ".join(blockers))
 

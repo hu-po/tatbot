@@ -29,7 +29,7 @@ use tatbot_arm::{
         encode_sample, summarize_window, telemetry_header,
     },
     lease::{DriverLease, HardwareLease},
-    profile::NativeProfile,
+    profile::{NativeProfile, Palm},
     worker::{Primitive, Status, TelemetrySample, Worker},
 };
 
@@ -332,6 +332,9 @@ struct Owner {
     telemetry_sender: Option<mpsc::SyncSender<TelemetrySample>>,
     profile: NativeProfile,
     policy: ContactPolicy,
+    /// The palm the controller is configured with (None: the preset's).
+    #[cfg(feature = "trossen")]
+    palm: Option<Palm>,
     _hardware_lease: Option<Arc<HardwareLease>>,
     _mock_lease: Option<DriverLease>,
     _estop_monitor: Option<estop::Monitor>,
@@ -434,6 +437,7 @@ impl Owner {
                     self.stop_word.clone(),
                     lease,
                     self.policy,
+                    self.palm,
                     Some(sender.clone()),
                 )?;
                 // The heartbeat must be seen released before any command.
@@ -1244,7 +1248,7 @@ fn main() {
     };
     // The fitted tool's datasheet decides the worker's contact policy; its
     // digest binds the owner record to the exact sheet read.
-    let (policy, datasheet_sha256) = match std::fs::read(&args.tool_datasheet)
+    let (policy, palm, datasheet_sha256) = match std::fs::read(&args.tool_datasheet)
         .map_err(|e| {
             Error(format!(
                 "tool datasheet {}: {e}",
@@ -1259,7 +1263,22 @@ fn main() {
                 ))
             })?;
             let policy = ContactPolicy::from_datasheet(&datasheet)?;
-            Ok((policy, format!("{:x}", Sha256::digest(&bytes))))
+            // The controller's palm for this tool: config/workspace.yaml beside
+            // the profile directory, read here so the owner record names it.
+            let tool_id = datasheet["tool_id"].as_str().ok_or_else(|| {
+                Error(format!(
+                    "tool datasheet {} has no tool_id",
+                    args.tool_datasheet.display()
+                ))
+            })?;
+            let workspace = args.profile_dir.join("../workspace.yaml");
+            let palm = Palm::identified(
+                &std::fs::read(&workspace)
+                    .map_err(|e| Error(format!("{}: {e}", workspace.display())))?,
+                role,
+                tool_id,
+            )?;
+            Ok((policy, palm, format!("{:x}", Sha256::digest(&bytes))))
         }) {
         Ok(read) => read,
         Err(error) => {
@@ -1289,7 +1308,9 @@ fn main() {
         "tool_datasheet": args.tool_datasheet,
         "tool_datasheet_sha256": datasheet_sha256,
         "contact_policy": policy,
-        "sdk_version": option_env!("TATBOT_SDK_VERSION").unwrap_or("1.8.5"),
+        "end_effector": role.preset(),
+        "palm_identified": palm,
+        "sdk_version": option_env!("TATBOT_SDK_VERSION").unwrap_or("1.11.0"),
         "source_commit": option_env!("TATBOT_SOURCE_COMMIT").unwrap_or("development"),
         "native_backend_compiled": cfg!(feature = "trossen"),
         "build": build_info(),
@@ -1312,6 +1333,8 @@ fn main() {
         telemetry_sender: None,
         profile,
         policy,
+        #[cfg(feature = "trossen")]
+        palm,
         _hardware_lease: None,
         _mock_lease: None,
         _estop_monitor: None,

@@ -84,10 +84,6 @@ struct ProbeSettings
   int udp_port = 7641;          // 0 binds an ephemeral port (tests)
   std::string relay_addr;       // the only source address accepted
   double timeout_s = 0.2;       // frames come at 50 Hz
-  bool operator==(const ProbeSettings & o) const
-  {
-    return udp_port == o.udp_port && relay_addr == o.relay_addr && timeout_s == o.timeout_s;
-  }
 };
 
 // Relay time maps onto this host's steady clock by the smallest (receive - send) over the last
@@ -105,7 +101,6 @@ public:
   ProbeReader & operator=(const ProbeReader &) = delete;
 
   ProbeStatus status(int64_t now) const;
-  const ProbeSettings & settings() const {return settings_;}
   int bound_port() const {return bound_port_;}
   // Accept one parsed frame received at t on this clock (reader thread; public for tests).
   void accept(long seq, int state, int64_t edge_ns, int64_t sent_ns, int64_t t);

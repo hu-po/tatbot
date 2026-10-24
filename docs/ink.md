@@ -9,7 +9,7 @@ audience: [dev, contributor]
 
 Tatbot represents consumables as versioned data so a design or experiment can
 state which material assumptions it used. The public interface is a schema and
-ledger shape, not a purchasing or human-use procedure.
+ledger shape, not a purchasing procedure.
 
 ## Rules
 
@@ -25,16 +25,15 @@ ledger shape, not a purchasing or human-use procedure.
 
 ## CLI
 
-The operator surface is six `tatbot ink` verbs over `scripts/ink.py`:
-`ink status` (reads; `--session` for the open session, `--ledger [-n N]` for
-the event tail), `ink mise-en-place` (the pre-session checklist for the stated
-`--ee-tool`; `--strokes` dry-runs the dip planner), `ink session start` /
-`ink session end` (what the next run debits), `ink edit -- <load|dump|bottle|
+The operator surface is four `tatbot ink` verbs over `scripts/ink.py`:
+`ink status` (reads; `--ledger [-n N]` for the event tail), `ink
+mise-en-place` (the pre-session checklist for the stated `--ee-tool`;
+`--strokes` dry-runs the dip planner), `ink edit -- <load|dump|bottle|
 cartridge|caps|reconcile|weigh> …` (the one `mutates-config` verb: it rewrites
 the tracked load/inventory files or appends a ledger event, and refuses any
 subcommand that does not write), and `ink sync` (`remote`: copies other
 nodes' ledgers here). Anything else `ink.py` offers, such as `fit` or
-`session rebuild <id>`, passes through `tatbot ink -- …` as `offline`.
+`plan`, passes through `tatbot ink -- …` as `offline`.
 `tatbot ink <verb> --explain` states the tier and gates.
 
 Consumers should validate the schema at read time and fail closed on an unknown

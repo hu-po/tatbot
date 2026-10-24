@@ -1,6 +1,6 @@
 {
   "schema": "tatbot.body-model-spec/1",
-  "content_sha256": "e615b8485c367509833ee68b0405cd1e0ce6015604eaa4c1b2b699f4fc8d5144",
+  "content_sha256": "234a951c4e534b5ec7826907eaf2ee86d1d287f62e26e530b85e1dff5d44bd1d",
   "name": "mhr-soma-v1",
   "sources": {
     "soma_x": {
@@ -187,7 +187,6 @@
   },
   "software_lock": {
     "path": "config/body-models/mhr-soma-v1.requirements.txt",
-    "sha256": "bb9fb6474fb390dca23cc0c10238d5fe44100d458aff8337fcbeb27941d20a9c",
     "environment": "cp312-x86_64-manylinux_2_28",
     "torch": "2.13.0"
   },

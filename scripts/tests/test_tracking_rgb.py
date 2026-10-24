@@ -57,7 +57,7 @@ def test_fixed_rgb_and_depth_roundtrip_solver_root_fk_with_arm_mount(tmp_path, j
 
     entry, camera, robot, manifest = fixture(tmp_path)
     root_from_wrist = dk.urdf_chain().link_pose('right/link_6', pose_joint_values({'joints': joints}, 'right'))
-    assert np.linalg.norm(dk.BASE_IN_ROOT) > .1  # A zero mount would hide the original bug.
+    assert np.linalg.norm(dk.urdf_chain().link_pose('right/base_link')[:3, 3]) > .1  # A zero mount would hide the original bug.
     world_from_root = np.eye(4)
     world_from_root[:3, :3] = vector_to_rotation(np.array([.4, -.2, .6]))
     world_from_root[:3, 3] = [.2, -.1, .5]

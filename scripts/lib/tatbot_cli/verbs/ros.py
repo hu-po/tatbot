@@ -3,7 +3,8 @@
 Every verb execs one backend, scripts/lib/tatbot_cli/tatbot_ros.py, from this checkout. The
 backend resolves the `ros` role owner in config/nodes.json and acts there over ssh inside
 ~/tatbot-ros (never that node's own git checkout), or locally on the owner. So these verbs declare
-no role and never hop.
+no role and never hop. A sim lane (`up --hardware sim`, or TATBOT_ROS_LANE for every verb) resolves
+the `ros-sim` role's owner instead and runs the stack in a container there, never on the ros node.
 """
 
 from __future__ import annotations
@@ -91,43 +92,62 @@ def _deploy_args(p):
     p.add_argument("--clean", action="store_true", help="drop build/ and install/ first (a full rebuild)")
 
 
-@verb(effects=("read_files", "network", "remote_exec", "remote_write", "environment_setup"), noun="ros", verb="deploy",
+@verb(effects=("read_files", "network", "remote_exec", "remote_write", "environment_setup", "stop_process",
+               "autonomous_motion"), noun="ros", verb="deploy",
       tier=REMOTE, args=_deploy_args, wraps=WRAPS, doc=DOC, example=("--no-build",),
       summary="sync this checkout's ros/, config/, urdf/ and scripts/ to the ros node's ~/tatbot-ros and colcon-build there",
       invariants=("Never touches the ros node's own git checkout.",
+                  "A build of tatbot_interfaces, or a clean one, first lands and stops a running stack (as down), refused (exit 6) while a draw, touch or calibration runs there.",
                   "Copies the adopted arm registrations; writes no tracked config.",
-                  "Does not start, stop or restart the stack (tatbot ros up does)."))
+                  "Never starts or restarts the stack (tatbot ros up does); it lands and stops one only before a "
+                  "build it could no longer reach afterwards."))
 def ros_deploy(ctx, ns, rest):
     return _backend(ctx, "deploy", *_flags(ns, (("no_build", "--no-build"), ("units", "--units"), ("clean", "--clean"))), *rest)
 
 
 def _up_args(p):
-    p.add_argument("--hardware", choices=("mock", "fake", "real"), help="default: stack.yaml hardware (mock)")
+    p.add_argument("--hardware", choices=("mock", "fake", "real", "sim"),
+                   help="default: stack.yaml hardware (mock); sim: the sim lane TATBOT_ROS_LANE (required) on the "
+                        "ros-sim owner, stepped by the sim server")
+    p.add_argument("--config", metavar="STACK_YAML",
+                   help="hardware sim: the run's stack.yaml (with the sim overlay), an absolute path on the ros-sim owner")
     p.add_argument("--estop", choices=("none", "serial", "udp"), help="e-stop source; default: stack.yaml estop.source")
     p.add_argument("--relay-addr", metavar="ADDR", help="udp: the relay's source address (default: role estop-relay `lan`)")
     p.add_argument("--page", choices=("stencil", "fixed"), help="page source; default: stack.yaml page.source")
     p.add_argument("--pattern", metavar="ID", help="the print to draw on, installed on the ros node: its pattern id or "
                                                    "the hex digits its sheet prints; default: stack.yaml page.pattern_id")
+    p.add_argument("--surface", choices=("plane", "fitted"),
+                   help="fitted: a curved page (a forearm) from the gauge holds' skin; default: stack.yaml "
+                        "page.surface.mode (plane)")
     p.add_argument("--arms", metavar="LIST", help="comma-separated arms; default: stack.yaml arms (right)")
     p.add_argument("--no-touch", action="store_true", help="skip the page touches at run start")
     p.add_argument("--rerun", action="store_true", help="also start the Rerun bridge to the fleet viewer")
     p.add_argument("--hold", action="store_true", help="restart a running stack without landing its arms first")
     p.add_argument("--probe", action="store_true",
                    help="read the station probe's PRB1 frames (from role estop-relay `lan`), so GUARD_PROBE can arm")
+    p.add_argument("--tuning", metavar="PROFILE",
+                   help="connect the arms on this config/trossen/tatbot.yaml ros_tuning profile (calibration: the "
+                        "velocity integral x1); default: stack.yaml tuning, the role's own")
 
 
 @verb(effects=("read_files", "network", "remote_exec", "remote_write", "start_process", "stop_process"), noun="ros",
       verb="up", tier=REMOTE, args=_up_args, wraps=WRAPS, doc=DOC, example=("--hardware", "mock"),
       summary="(re)start the stack on the ros node: router, controller_manager at 400 Hz, controllers, bridge, session",
       invariants=("--hardware real connects to the configured arms only (stack.yaml arms, right by default).",
+                  "--hardware sim runs on the ros-sim owner in a container, never on the ros node, and refuses "
+                  "(exit 6) while CI runs there or its lane is up.",
                   "A running stack lands every arm that has not landed before the restart, unless --hold.",
+                  "A running stack whose arms do not answer (no SafetyState) is refused, exit 3, while a driver may hold an arm, unless --hold.",
                   "The driver takes the arm-driver lock, so it never runs beside teleop or LeRobot.",
                   "The e-stop source is configuration: none, serial or udp."))
 def ros_up(ctx, ns, rest):
-    return _backend(ctx, "up", *_flags(ns, (("hardware", "--hardware"), ("estop", "--estop"), ("relay_addr", "--relay-addr"),
-                                            ("page", "--page"), ("pattern", "--pattern"), ("arms", "--arms"),
+    return _backend(ctx, "up", *_flags(ns, (("hardware", "--hardware"), ("config", "--config"), ("estop", "--estop"),
+                                            ("relay_addr", "--relay-addr"),
+                                            ("page", "--page"), ("pattern", "--pattern"), ("surface", "--surface"),
+                                            ("arms", "--arms"),
                                             ("no_touch", "--no-touch"),
-                                            ("rerun", "--rerun"), ("hold", "--hold"), ("probe", "--probe"))), *rest)
+                                            ("rerun", "--rerun"), ("hold", "--hold"), ("probe", "--probe"),
+                                            ("tuning", "--tuning"))), *rest)
 
 
 def _down_args(p):
@@ -139,7 +159,8 @@ def _down_args(p):
       args=_down_args, wraps=WRAPS, doc=DOC, example=(),
       summary="land every arm that has not landed, then stop the stack on the ros node",
       invariants=("An arm that has not landed can drop when its driver exits, so down lands it first unless --hold.",
-                  "A landing that fails leaves the stack up and holding."))
+                  "A landing that fails leaves the stack up and holding.",
+                  "A running stack whose arms do not answer is refused, exit 3, while a driver may hold an arm, unless --hold."))
 def ros_down(ctx, ns, rest):
     return _backend(ctx, "down", *_flags(ns, (("router", "--router"), ("hold", "--hold"))), *rest)
 
@@ -151,6 +172,20 @@ def ros_status(ctx, ns, rest):
     return _backend(ctx, "status", *(["--json"] if ctx.json else []), *rest)
 
 
+def _page_args(p):
+    p.add_argument("--arm", default="right", help="the arm whose base the pose is given in")
+    p.add_argument("--seconds", type=float, default=5.0, help="how long to watch the tracker (default 5)")
+
+
+@verb(effects=("network", "remote_exec", "sensor_read"), noun="ros", verb="page", tier=SENSOR, args=_page_args,
+      output="json", wraps=WRAPS, doc=DOC, example=("--seconds", "10"),
+      summary="the stencil page as the overhead tracker sees it now: measured or lost, its pose in the arm's base, "
+              "and how far it stands from the page the newest set-up placed; moves nothing")
+def ros_page(ctx, ns, rest):
+    return _backend(ctx, "page", "--arm", ns.arm, "--seconds", str(ns.seconds), *(["--json"] if ctx.json else []),
+                    *rest)
+
+
 def _station_args(p):
     p.add_argument("--arm", default="right", help="the arm whose frame the station is placed in (its registration)")
     p.add_argument("--against", default="",
@@ -158,7 +193,7 @@ def _station_args(p):
 
 
 @verb(effects=("network", "remote_exec", "sensor_read", "write_files"), noun="ros", verb="station", tier=SENSOR,
-      args=_station_args, wraps=WRAPS, doc=DOC, example=("--arm", "left"),
+      args=_station_args, wraps=WRAPS, doc=DOC, example=("--arm", "right"),
       summary="the station in an arm's frame, measured now from the palette's roof tag, never a stored pose")
 def ros_station(ctx, ns, rest):
     return _backend(ctx, "station", "--arm", ns.arm, *(["--against", ns.against] if ns.against else []), *rest)
@@ -173,8 +208,9 @@ def _register_args(p):
     p.add_argument("--heights", type=float, nargs="+", help="tool heights over the table, m (default 0.12 0.17)")
     p.add_argument("--max-holds", dest="max_holds", type=int, default=0, help="stop after this many holds")
     p.add_argument("--prior", default="",
-                   help="an earlier ros-register run id whose fit plans upright holds for what they measure of the "
-                        "camera, the tags' seat and joints 1-4")
+                   help="rest (the wrist tags the D555 sees at the arm's current pose; moves nothing) or an earlier "
+                        "ros-register run id, whose camera plans upright holds for what they measure of the camera, "
+                        "the tags' seat and joints 1-4")
     p.add_argument("--holds", type=int, default=0, help="with --prior: how many holds to plan (default 27)")
     p.add_argument("--adopt", action="store_true",
                    help="install a result that passes its gates on the ros node and restart the D555 owner")
@@ -201,6 +237,48 @@ def ros_register(ctx, ns, rest):
                     *(["--plan-only"] if ns.plan_only else []), *rest)
 
 
+def _setup_args(p):
+    p.add_argument("--arm", default="right", help="the arm to set up")
+    p.add_argument("--hardware", choices=("mock", "fake", "real"), help="default: stack.yaml hardware (mock)")
+    p.add_argument("--estop", choices=("none", "serial", "udp"), help="e-stop source; default: stack.yaml estop.source")
+    p.add_argument("--relay-addr", metavar="ADDR", help="udp: the relay's source address (default: role estop-relay `lan`)")
+    p.add_argument("--pattern", metavar="ID", help="the print on the skin, installed on the ros node; default: "
+                                                   "stack.yaml page.pattern_id")
+    p.add_argument("--surface", choices=("plane", "fitted"), help="fitted: a curved page; default: stack.yaml")
+    p.add_argument("--arms", metavar="LIST", help="comma-separated arms; default: stack.yaml arms (right)")
+    p.add_argument("--rerun", action="store_true", help="also start the Rerun bridge to the fleet viewer")
+    p.add_argument("--detach", action="store_true",
+                   help="return at once instead of following its log (it always runs in its own session, so a "
+                        "closed terminal or an agent's tool timeout cannot stop it partway); --progress follows it")
+    p.add_argument("--from", dest="start", choices=("register", "overhead", "station", "height", "gauge", "page"),
+                   help="resume at this step (a failed setup prints which); earlier steps keep what they measured")
+    p.add_argument("--progress", action="store_true",
+                   help="read only: the newest setup from this computer, running or finished, in a few lines")
+
+
+@verb(effects=("network", "remote_exec", "remote_write", "autonomous_motion", "sensor_read", "write_files",
+               "start_process", "stop_process"), noun="ros", verb="setup", tier=MOTION_AUTO, args=_setup_args,
+      wraps=WRAPS, doc=DOC, example=("--hardware", "real", "--estop", "udp"),
+      summary="measure an arm, the D555, the palette and the stencil afresh after setting the rig up: register, "
+              "the D555 again through the wrist, station touch, page set-up, then land",
+      invariants=("Nothing from an earlier layout is assumed: the registration's holds are planned from the tags the "
+                  "D555 sees at rest.",
+                  "The registration kept is the wrist camera's (calib overhead), not the tags', and is kept on this "
+                  "node too, so the next deploy carries it.",
+                  "A stack running an older commit of this checkout is deployed from it first (tatbot ros deploy, "
+                  "its build included); one running a commit this checkout lacks is left as it is.",
+                  "Each step stops the setup when it fails, and the arm lands either way."))
+def ros_setup(ctx, ns, rest):
+    flags = [part for flag, value in (("--ee-tool", ctx.ee_tool), ("--hardware", ns.hardware), ("--estop", ns.estop),
+                                      ("--relay-addr", ns.relay_addr), ("--pattern", ns.pattern),
+                                      ("--surface", ns.surface), ("--arms", ns.arms)) if value
+             for part in (flag, value)]
+    if ns.progress:
+        return _backend(ctx, "setup", "--progress", *(["--json"] if ctx.json else []), *rest)
+    return _backend(ctx, "setup", "--arm", ns.arm, *flags, *(["--rerun"] if ns.rerun else []),
+                    *(["--from", ns.start] if ns.start else []), *(["--detach"] if ns.detach else []), *rest)
+
+
 def _chain_args(p):
     p.add_argument("runs", nargs="+", help="ros-register run ids on the ros node, all of one arm, pooled")
     p.add_argument("--arm", default="right", help="the arm they registered")
@@ -216,9 +294,15 @@ def ros_chain(ctx, ns, rest):
 
 
 def _calib_args(p):
-    p.add_argument("action", choices=("run", "sweep", "apply"),
+    p.add_argument("action", choices=("run", "sweep", "height", "wristcam", "gauge", "overhead", "apply"),
                    help="run: measure the arm's tool tip across its axis on the station probe; sweep: measure it "
-                        "contact-free from joint-6 turns the palette camera watches; apply: adopt a run's tip")
+                        "contact-free from joint-6 turns and tilts about the tip the palette camera watches, the "
+                        "tilts its length; height: the station touch's "
+                        "ball height from the palette camera, the tip held over it; wristcam: the wrist camera on the tool "
+                        "mount from the palette's roof tag (a check: it adopts nothing); gauge: the wrist gauge's tip "
+                        "from known heights over the probe body's top, adopted when they agree; overhead: the overhead "
+                        "D555 registered through the wrist D405 (the roof tag, the holder's tile, both depths), not the "
+                        "wrist cube; apply: adopt a run's tip")
     p.add_argument("--run", default="", help="apply: the ros-calib run id whose candidate to adopt")
     p.add_argument("--arm", default="right", help="the arm to calibrate (the stack must be up with it and --probe)")
     p.add_argument("--attitudes", default="", help="upright yaws as yaw/0 degrees about the base heading, comma "
@@ -226,20 +310,24 @@ def _calib_args(p):
     p.add_argument("--heading-deg", dest="heading_deg", default="", help="the base attitude's tool heading")
     p.add_argument("--station-only", dest="station_only", action="store_true",
                    help="run: S1 alone, the station touch palette dips aim by; no tip is fitted")
+    p.add_argument("--pattern", default="", help="overhead: the fiducial tile on the holder (default: the stack's)")
+    p.add_argument("--adopt", action="store_true", help="overhead: install the registration and restart its readers")
 
 
 @verb(effects=("network", "remote_exec", "autonomous_motion", "sensor_read", "write_files"), noun="ros", verb="calib",
-      tier=MOTION_AUTO, args=_calib_args, wraps=WRAPS, doc=DOC, example=("run", "--arm", "left"),
+      tier=MOTION_AUTO, args=_calib_args, wraps=WRAPS, doc=DOC, example=("run", "--arm", "right"),
       summary="measure a tool tip across its axis on the station probe (station fix, side pairs at upright yaws, fit), "
-              "or contact-free from joint-6 turns under the palette camera (sweep); apply adopts a run's tip",
+              "or contact-free, its length too, from joint-6 turns and tilts under the palette camera (sweep); apply "
+              "adopts a run's tip",
       invariants=("The tool is the arm's fitted tool in config/workspace.yaml; a stated --ee-tool must be that one.",
                   "A tool whose datasheet declares no probe contact model is refused (exit 3) before anything moves.",
-                  "sweep: every hold is a probe-guarded Touch MODE_MOVE; the turns go only once the park's still "
-                  "shows the tip clear of the ball's top."))
+                  "sweep: every hold is a probe-guarded Touch MODE_MOVE; the turns and tilts go only once the park's "
+                  "still shows the tip clear of the ball's top."))
 def ros_calib(ctx, ns, rest):
     flags = [part for flag, value in (("--ee-tool", ctx.ee_tool), ("--attitudes", ns.attitudes),
-                                      ("--heading-deg", ns.heading_deg), ("--run", ns.run)) if value
-             for part in (flag, value)] + (["--station-only"] if ns.station_only else [])
+                                      ("--heading-deg", ns.heading_deg), ("--run", ns.run), ("--pattern", ns.pattern))
+             if value for part in (flag, value)] + (["--station-only"] if ns.station_only else []) + \
+        (["--adopt"] if ns.adopt else [])
     return _backend(ctx, "calib", ns.action, "--arm", ns.arm, *flags, *rest)
 
 
@@ -255,11 +343,22 @@ def ros_ready(ctx, ns, rest):
 
 
 def _compile_args(p):
-    p.add_argument("design", help="acquired DBV3 artwork.json or placed inkmap-design.json")
+    p.add_argument("design", nargs="+", help="acquired DBV3 artwork.json or placed inkmap-design.json; several "
+                                             "acquired artworks (one per pen) are layers, drawn in the order given")
     p.add_argument("--arm", default="right", help="whose fitted tool compiles it (default right)")
     p.add_argument("--speed", metavar="MM_S", help="draw speed in mm/s (default 3.5)")
     p.add_argument("--inks", metavar="FILE", help="tatbot-inks/3 file binding acquired pens to physical resources")
     p.add_argument("--max-segment-s", metavar="SECONDS", help="planned Cartesian duration per computational chunk (default 60)")
+    p.add_argument("--max-stroke-mm", metavar="MM", help="draw a longer path as strokes of at most this length, each "
+                                                        "lifted and read again (default: whole)")
+    p.add_argument("--min-stroke-mm", metavar="MM", help="drop a path no wider than this that lies on its own ink's "
+                                                        "line (default 1; 0 keeps every path)")
+    p.add_argument("--mark-width-mm", metavar="MM", help="count the pen's passes at this mark width (default: the tool's "
+                                                        "line width, else each path's generation width)")
+    p.add_argument("--keep-region", metavar="X,Y;X,Y;...",
+                   help="keep only the paths inside this polygon, mm in the page frame, as placed: a part of a design "
+                        "drawn again over its own (a crossing path goes with most of its length, or is cut at the edge "
+                        "when both sides hold over 20 mm of it); write --keep-region=... for a negative first x")
     p.add_argument("-o", "--out", metavar="DIR", help="where program.json and preview.svg go (default .)")
     _place(p)
 
@@ -268,21 +367,34 @@ def _compile_args(p):
       wraps=WRAPS, doc=DOC, example=("inkmap-design.json",),
       summary="prepare acquired DBV3 artwork into program.json + preview.svg (tatbot_ink; no arm, no ROS)")
 def ros_compile(ctx, ns, rest):
-    return _backend(ctx, "compile", ns.design, "--arm", ns.arm,
+    return _backend(ctx, "compile", *ns.design, "--arm", ns.arm,
                     *(["--ee-tool", ctx.ee_tool] if ctx.ee_tool else []),
-                    *_flags(ns, (("speed", "--speed"), ("inks", "--inks"), ("max_segment_s", "--max-segment-s"), ("out", "--out"))), *_place_flags(ns), *rest)
+                    *_flags(ns, (("speed", "--speed"), ("inks", "--inks"), ("max_segment_s", "--max-segment-s"),
+                                 ("min_stroke_mm", "--min-stroke-mm"), ("mark_width_mm", "--mark-width-mm"),
+                                 ("max_stroke_mm", "--max-stroke-mm"), ("out", "--out"))), *_place_flags(ns),
+                    *([f"--keep-region={ns.keep_region}"] if ns.keep_region else []), *rest)
 
 
 def _draw_args(p):
-    p.add_argument("program", help="program.json (or acquired artwork / placed design, prepared first)")
+    p.add_argument("program", nargs="?", help="program.json (or acquired artwork / placed design, prepared first)")
     p.add_argument("--arm", default="right", help="the arm that draws (default right)")
     p.add_argument("--from-op", metavar="ID", help="start at this op id")
     p.add_argument("--resume", metavar="RUN_ID", help="resume that run's ledger (after a cartridge swap, a landing)")
     p.add_argument("--no-inspect", action="store_true", help="skip the wrist-camera look after a complete draw")
+    p.add_argument("--rehearse", action="store_true",
+                   help="draw the same program in the air: page setup, gauge holds, hover stops and the stencil's "
+                        "follow as with ink, the pen held over the page, the machine off, no dips, no inspection")
+    p.add_argument("--standoff-mm", metavar="MM",
+                   help="with --rehearse: the pen this far over the measured page (default motion.yaml pen.hover, 6)")
     p.add_argument("--hold", action="store_true",
                    help="leave the arm holding at rest after the draw (default: land it, controller idle)")
     p.add_argument("--no-wake", action="store_true", help="do not automatically restart a landed arm")
     p.add_argument("--speed", metavar="MM_S", help="draw speed in mm/s when compiling a design (default 3.5)")
+    p.add_argument("--detach", action="store_true",
+                   help="return at once instead of following its log (it always runs in its own session, so a "
+                        "closed terminal or an agent's tool timeout cannot stop it partway); --progress follows it")
+    p.add_argument("--progress", action="store_true",
+                   help="read only: the newest draw from this computer, running or finished, in a few lines")
     _place(p)
 
 
@@ -293,10 +405,14 @@ def _draw_args(p):
                   "An e-stop press holds the arm; after release the arm waits for decide continue or land.",
                   "A tool change to another cartridge lands the arm; --resume says it is fitted and keeps the page."))
 def ros_draw(ctx, ns, rest):
-    return _backend(ctx, "draw", ns.program, "--arm", ns.arm,
+    if ns.progress:
+        return _backend(ctx, "draw", "--progress", *(["--json"] if ctx.json else []), *rest)
+    return _backend(ctx, "draw", *([ns.program] if ns.program else []), "--arm", ns.arm,
+                    *(["--detach"] if ns.detach else []),
                     *(["--ee-tool", ctx.ee_tool] if ctx.ee_tool else []),
                     *_flags(ns, (("from_op", "--from-op"), ("resume", "--resume"), ("no_inspect", "--no-inspect"),
-                                 ("hold", "--hold"), ("no_wake", "--no-wake"), ("speed", "--speed"))), *_place_flags(ns), *rest)
+                                 ("hold", "--hold"), ("no_wake", "--no-wake"), ("speed", "--speed"),
+                                 ("rehearse", "--rehearse"), ("standoff_mm", "--standoff-mm"))), *_place_flags(ns), *rest)
 
 
 def _touch_args(p):
@@ -426,13 +542,17 @@ def _relay_args(p):
     p.add_argument("--machine", action="store_true",
                    help="install the tattoo machine's switch (stack.yaml machine.gpio) as its own unit; run the plain "
                         "install again after it, so the e-stop relay feeds it")
+    p.add_argument("--keys", action="store_true",
+                   help="install the station keyboard's relay on the station node: its Fn-layer drawing keys to the "
+                        "stack's keypad node (stack.yaml keypad.port)")
 
 
 @verb(effects=("read_files", "network", "remote_exec", "remote_write", "start_process"), noun="ros", verb="relay-install",
-      tier=REMOTE, args=_relay_args, wraps=WRAPS + ("ros/tatbot_estop_relay/tatbot_estop_relay.py",), doc=DOC, example=(),
+      tier=REMOTE, args=_relay_args, wraps=WRAPS + ("ros/tatbot_estop_relay/tatbot_estop_relay.py", "ros/tatbot_keys_relay/tatbot_keys_relay.py"),
+      doc=DOC, example=(),
       summary="install the drawing e-stop relay (EST1 over UDP), or with --probe the station probe's relay and with "
-              "--machine the tattoo machine's switch, on the estop-relay node")
+              "--machine the tattoo machine's switch, on the estop-relay node; --keys the station keyboard's keys")
 def ros_relay_install(ctx, ns, rest):
     dests = [arg for d in (ns.dest or []) for arg in ("--dest", d)]
     return _backend(ctx, "relay-install", *dests, *_flags(ns, (("bind", "--bind"), ("probe", "--probe"),
-                                                                ("machine", "--machine"))), *rest)
+                                                                ("machine", "--machine"), ("keys", "--keys"))), *rest)

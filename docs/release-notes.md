@@ -1,5 +1,80 @@
 # Release Notes
 
+## 2026-10-24 — v0.11.0
+
+### Drawing on Curved Skin
+
+The ROS 2 stack now draws on a page that bends, such as a forearm or a
+silicone practice skin. The wrist gauge reads the skin under the tip, holds
+stand along its normals, the pen turns to each point's normal, and each stroke
+rides the skin its hover read along its own path. The default stencil is an
+AprilTag 16h5 fiducial tile, with forearm and silicone layouts, which the
+overhead D555 and the wrist D405 both read by its markers. The stack follows
+slow movement of the surface and sets the page up again only for a move that
+lasts. The page filter fuses the wrist's fits, including readings taken
+while a stroke draws, with the overhead's marker moves in one Kalman filter.
+
+### One Arm, Two Wrist Cameras
+
+The left arm is now only the teleop leader. Its LeRobot follower class,
+rollout launcher, travel demo, URDF chain, wrist tags and the cross-arm
+collision guard are deleted, and the ROS stack runs one arm. The right arm
+carries a second D405 under the first, turned 180°; the locate, the gauge holds
+and the page filter read it as a second view.
+
+### Needle Cartridges and Compile
+
+Tool datasheets cover several needle cartridges, each with its own tip length
+and ink laid per dip, and a `human_skin` substrate. `tatbot ros compile`
+counts how often the pen passes over each spot at the tool's mark width,
+drops dot-sized paths that lie on another path's line, splits long paths with
+`--max-stroke-mm`, and compiles part of a design in place with
+`--keep-region`. The depth keys trim the pen by up to ±4 mm, and
+`tatbot ros draw --rehearse` draws the real program in the air.
+
+### Calibration and Firmware
+
+Both arms run controller firmware 1.11 with dated presets, gains and
+identified palm loads. The overhead D555 is registered through the wrist D405,
+the palette camera's sweep measures the tool tip's length, and the hardware
+interface switches between travel and drawing gain sets between goals.
+`tatbot ros setup` measures the arm, the D555, the palette and the stencil
+afresh, resumes from a failed step, and can run detached. The hardware
+interface also has a lockstep simulation backend (`sdk=sim`).
+
+### Demo Viewer
+
+The Rerun viewer opens on a Demo tab: both wrist D405s upright, the overhead
+with the fiducials its trackers read, the design map under the strokes, the
+ink caps' fill, a status board with the depth trim, and system monitors for
+each host. `tatbot rig check` reports whether the demo hardware is up and
+`tatbot rig off` lands the arm and shuts the hosts down in order.
+
+### Retired
+
+The ManiSkill simulator (`python/tatbot_sim`) and its pages, the coded
+flower-of-life stencil tracker (replaced by the fiducial tile), visiond's PoE
+camera path and the left arm's drawing paths are deleted.
+
+### Security
+
+Dependencies with published advisories are updated: rustls, rustls-webpki and
+webpki-roots (which drops the compromised emSign roots), tokio, quinn-proto,
+aiohttp, urllib3 and multidict, certifi in the plugin, and Pillow 12.3 for
+stencil rendering, whose output is unchanged. The docs build installs a
+hashed lock. Every GitHub Action in this repository's workflows is pinned to
+a commit SHA, tokens are read-only, checkouts keep no credentials, and only
+the Pages deploy job may write. `SECURITY.md` describes private vulnerability
+reporting, and `scripts/deps_audit.py` checks every locked and pinned
+dependency against OSV each week, failing on any advisory not accepted, with a
+reason and a review date, in `config/deps-audit-allow.tsv`.
+
+The fleet bus router listens only on its rig address and, once the fleet
+holds a bus credential, admits only that credential, by Zenoh user and
+password and an access-control list (`docs/fleet.md`). The drawing keys are
+taken from the station alone. The inkgen Space moves to gradio 6.30 with exact
+pins and takes no uploads.
+
 ## 2026-10-06 — v0.10.0
 
 ### ROS 2 Drawing Stack
